@@ -1,0 +1,60 @@
+import { lazy, Suspense } from 'react';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { AppLayout } from '@/components/layout/app-layout';
+
+// Lazy-loaded pages
+const Login = lazy(() => import('@/pages/login'));
+const Home = lazy(() => import('@/pages/home'));
+const WorkloadExplorer = lazy(() => import('@/pages/workload-explorer'));
+const FleetOverview = lazy(() => import('@/pages/fleet-overview'));
+const ContainerHealth = lazy(() => import('@/pages/container-health'));
+const ContainerLogs = lazy(() => import('@/pages/container-logs'));
+const ImageFootprint = lazy(() => import('@/pages/image-footprint'));
+const NetworkTopology = lazy(() => import('@/pages/network-topology'));
+const AiMonitor = lazy(() => import('@/pages/ai-monitor'));
+const MetricsDashboard = lazy(() => import('@/pages/metrics-dashboard'));
+const Remediation = lazy(() => import('@/pages/remediation'));
+const TraceExplorer = lazy(() => import('@/pages/trace-explorer'));
+const LlmAssistant = lazy(() => import('@/pages/llm-assistant'));
+const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
+const Settings = lazy(() => import('@/pages/settings'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    </div>
+  );
+}
+
+function LazyPage({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
+
+export const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <LazyPage><Login /></LazyPage>,
+  },
+  {
+    path: '/',
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <LazyPage><Home /></LazyPage> },
+      { path: 'workloads', element: <LazyPage><WorkloadExplorer /></LazyPage> },
+      { path: 'fleet', element: <LazyPage><FleetOverview /></LazyPage> },
+      { path: 'health', element: <LazyPage><ContainerHealth /></LazyPage> },
+      { path: 'container-logs', element: <LazyPage><ContainerLogs /></LazyPage> },
+      { path: 'images', element: <LazyPage><ImageFootprint /></LazyPage> },
+      { path: 'topology', element: <LazyPage><NetworkTopology /></LazyPage> },
+      { path: 'ai-monitor', element: <LazyPage><AiMonitor /></LazyPage> },
+      { path: 'metrics', element: <LazyPage><MetricsDashboard /></LazyPage> },
+      { path: 'remediation', element: <LazyPage><Remediation /></LazyPage> },
+      { path: 'traces', element: <LazyPage><TraceExplorer /></LazyPage> },
+      { path: 'assistant', element: <LazyPage><LlmAssistant /></LazyPage> },
+      { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
+      { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
+    ],
+  },
+  { path: '*', element: <Navigate to="/" replace /> },
+]);
