@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:app.swaggerhub.com)",
+      "WebSearch",
+      "WebFetch(domain:docs.portainer.io)",
+      "WebFetch(domain:gist.github.com)",
+      "mcp__deepwiki__read_wiki_structure",
+      "mcp__deepwiki__ask_question",
+      "Bash(gh repo view:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git -C \"C:\\\\Users\\\\kenha\\\\Documents\\\\GIT\\\\ai-portainer-dashboard\" log --oneline --all)",
+      "Bash(gh api:*)",
+      "Bash(python -m base64:*)",
+      "Bash(tree:*)",
+      "Bash(python:*)",
+      "Bash(npm install)",
+      "Bash(where:*)",
+      "Bash(where npm:*)",
+      "Bash(cmd.exe /c \"node --version\")",
+      "Bash(docker:*)",
+      "Bash(docker compose:*)",
+      "Bash(node:*)",
+      "Bash(npm --version)",
+      "Bash(curl:*)",
+      "Bash(JWT=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOjEsInNjb3BlIjoiZGVmYXVsdCIsImZvcmNlQ2hhbmdlUGFzc3dvcmQiOmZhbHNlLCJleHAiOjE3Njk5MTgzMzEsImlhdCI6MTc2OTg4OTUzMSwianRpIjoiMmFhNTc0Y2ItZWFlNS00YzAxLTliMWYtZDY1ODQ4YmZlMWEyIn0.Y524brnQW5R1hDnlpVy7h2RyFar03Um9hC_Kg3qt6Yc\")",
+      "Bash(API_KEY=\"ptr_hYQuEvU5DEHXUGKY3VlCBuC/jYdvRceHFUVQ4PsiDfM=\")",
+      "Bash(python3:*)"
+    ]
+  }
+}
