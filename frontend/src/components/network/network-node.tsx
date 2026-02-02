@@ -1,0 +1,31 @@
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+
+export function NetworkNode({ data }: NodeProps) {
+  const label = (data as any).label || 'Unknown';
+  const driver = (data as any).driver || '';
+  const subnet = (data as any).subnet || '';
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <Handle type="target" position={Position.Top} className="!bg-gray-400" />
+      <div
+        className="h-12 w-12 rotate-45 border-2 border-blue-500 bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"
+        title={`${label} (${driver})`}
+      >
+        <span className="-rotate-45 text-xs font-bold text-blue-700 dark:text-blue-300">
+          N
+        </span>
+      </div>
+      <div className="text-xs font-medium max-w-[120px] truncate text-center">
+        {label}
+      </div>
+      {driver && (
+        <div className="text-[10px] text-muted-foreground">{driver}</div>
+      )}
+      {subnet && (
+        <div className="text-[10px] text-muted-foreground">{subnet}</div>
+      )}
+      <Handle type="source" position={Position.Bottom} className="!bg-gray-400" />
+    </div>
+  );
+}

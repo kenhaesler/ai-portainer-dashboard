@@ -1,0 +1,93 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+
+interface RemediationAction {
+  id: string;
+  type: string;
+  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
+  containerId: string;
+  endpointId: number;
+  description: string;
+  suggestedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedBy?: string;
+  result?: string;
+}
+
+export function useRemediationActions(status?: string) {
+  return useQuery<RemediationAction[]>({
+    queryKey: ['remediation', 'actions', status],
+    queryFn: async () => {
+      const params: Record<string, string> = {};
+      if (status) params.status = status;
+
+      const response = await api.get('/api/remediation/actions', { params });
+      return response.data;
+    },
+  });
+}
+
+export function useApproveAction() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (actionId) => {
+      await api.post(`/api/remediation/actions/${actionId}/approve`);
+    },
+    onSuccess: (_data, actionId) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      toast.success('Action approved', {
+        description: `Remediation action ${actionId} has been approved.`,
+      });
+    },
+    onError: (error) => {
+      toast.error('Failed to approve action', {
+        description: error.message,
+      });
+    },
+  });
+}
+
+export function useRejectAction() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (actionId) => {
+      await api.post(`/api/remediation/actions/${actionId}/reject`);
+    },
+    onSuccess: (_data, actionId) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      toast.success('Action rejected', {
+        description: `Remediation action ${actionId} has been rejected.`,
+      });
+    },
+    onError: (error) => {
+      toast.error('Failed to reject action', {
+        description: error.message,
+      });
+    },
+  });
+}
+
+export function useExecuteAction() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: async (actionId) => {
+      await api.post(`/api/remediation/actions/${actionId}/execute`);
+    },
+    onSuccess: (_data, actionId) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      toast.success('Action executed', {
+        description: `Remediation action ${actionId} has been executed.`,
+      });
+    },
+    onError: (error) => {
+      toast.error('Failed to execute action', {
+        description: error.message,
+      });
+    },
+  });
+}
