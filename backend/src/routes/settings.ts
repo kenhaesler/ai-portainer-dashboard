@@ -1,0 +1,137 @@
+import { FastifyInstance } from 'fastify';
+import { getDb } from '../db/sqlite.js';
+import { writeAuditLog } from '../services/audit-logger.js';
+
+export async function settingsRoutes(fastify: FastifyInstance) {
+  // Get all settings
+  fastify.get('/api/settings', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Get all settings',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          category: { type: 'string' },
+        },
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { category } = request.query as { category?: string };
+    const db = getDb();
+
+    if (category) {
+      return db.prepare('SELECT * FROM settings WHERE category = ?').all(category);
+    }
+    return db.prepare('SELECT * FROM settings').all();
+  });
+
+  // Set a setting
+  fastify.put('/api/settings/:key', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Create or update a setting',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { key: { type: 'string' } },
+        required: ['key'],
+      },
+      body: {
+        type: 'object',
+        required: ['value'],
+        properties: {
+          value: { type: 'string' },
+          category: { type: 'string', default: 'general' },
+        },
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { key } = request.params as { key: string };
+    const { value, category = 'general' } = request.body as { value: string; category?: string };
+    const db = getDb();
+
+    db.prepare(`
+      INSERT INTO settings (key, value, category, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
+    `).run(key, value, category, value, category);
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'settings.update',
+      target_type: 'setting',
+      target_id: key,
+      details: { category },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, key, value };
+  });
+
+  // Delete a setting
+  fastify.delete('/api/settings/:key', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Delete a setting',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { key: { type: 'string' } },
+        required: ['key'],
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { key } = request.params as { key: string };
+    const db = getDb();
+    db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+    return { success: true };
+  });
+
+  // Audit log
+  fastify.get('/api/settings/audit-log', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Get audit log entries',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' },
+          userId: { type: 'string' },
+          limit: { type: 'number', default: 100 },
+          offset: { type: 'number', default: 0 },
+        },
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { action, userId, limit = 100, offset = 0 } = request.query as {
+      action?: string;
+      userId?: string;
+      limit?: number;
+      offset?: number;
+    };
+
+    const db = getDb();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (action) { conditions.push('action = ?'); params.push(action); }
+    if (userId) { conditions.push('user_id = ?'); params.push(userId); }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const entries = db.prepare(`
+      SELECT * FROM audit_log ${where}
+      ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+
+    return { entries, limit, offset };
+  });
+}
