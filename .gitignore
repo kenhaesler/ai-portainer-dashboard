@@ -43,3 +43,6 @@ playwright-report/
 # Temp
 tmp/
 temp/
+
+# Claude Code
+.claude/
