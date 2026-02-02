@@ -2,20 +2,23 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
-interface Container {
+export interface Container {
   id: string;
   name: string;
   image: string;
   state: string;
   status: string;
   endpointId: number;
+  endpointName: string;
   ports: Array<{
     private: number;
-    public: number;
+    public?: number;
     type: string;
   }>;
-  created: string;
+  created: number;
   labels: Record<string, string>;
+  networks: string[];
+  healthStatus?: string;
 }
 
 interface ContainerActionParams {
@@ -28,9 +31,10 @@ export function useContainers(endpointId?: number) {
   return useQuery<Container[]>({
     queryKey: ['containers', endpointId],
     queryFn: async () => {
-      const params = endpointId ? { endpointId } : {};
-      const response = await api.get('/api/containers', { params });
-      return response.data;
+      const path = endpointId
+        ? `/api/containers?endpointId=${endpointId}`
+        : '/api/containers';
+      return api.get<Container[]>(path);
     },
   });
 }
@@ -49,7 +53,7 @@ export function useContainerAction() {
       const previousContainers = queryClient.getQueryData<Container[]>(['containers', endpointId])
         ?? queryClient.getQueryData<Container[]>(['containers', undefined]);
 
-      const targetState = action === 'stop' ? 'exited' : 'running';
+      const targetState = action === 'stop' ? 'stopped' : 'running';
 
       const updateContainers = (old: Container[] | undefined) => {
         if (!old) return old;
