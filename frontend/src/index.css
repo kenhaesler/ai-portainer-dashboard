@@ -42,6 +42,7 @@
 }
 
 @layer base {
+  /* Default Dark Theme */
   .dark {
     --color-background: hsl(240 10% 3.9%);
     --color-foreground: hsl(0 0% 98%);
@@ -75,6 +76,150 @@
     --color-chart-3: hsl(30 80% 55%);
     --color-chart-4: hsl(280 65% 60%);
     --color-chart-5: hsl(340 75% 55%);
+  }
+
+  /* Catppuccin Latte (Light) */
+  .catppuccin-latte {
+    --color-background: #eff1f5; /* Base */
+    --color-foreground: #4c4f69; /* Text */
+    --color-card: #e6e9ef; /* Surface0 */
+    --color-card-foreground: #4c4f69; /* Text */
+    --color-popover: #e6e9ef; /* Surface0 */
+    --color-popover-foreground: #4c4f69; /* Text */
+    --color-primary: #8839ef; /* Mauve */
+    --color-primary-foreground: #eff1f5; /* Base */
+    --color-secondary: #ccd0da; /* Surface1 */
+    --color-secondary-foreground: #4c4f69; /* Text */
+    --color-muted: #bcc0cc; /* Surface2 */
+    --color-muted-foreground: #6c6f85; /* Subtext0 */
+    --color-accent: #1e66f5; /* Blue */
+    --color-accent-foreground: #eff1f5; /* Base */
+    --color-destructive: #d20f39; /* Red */
+    --color-destructive-foreground: #eff1f5; /* Base */
+    --color-border: #ccd0da; /* Surface1 */
+    --color-input: #ccd0da; /* Surface1 */
+    --color-ring: #8839ef; /* Mauve */
+    --color-sidebar-background: #e6e9ef; /* Surface0 */
+    --color-sidebar-foreground: #4c4f69; /* Text */
+    --color-sidebar-primary: #8839ef; /* Mauve */
+    --color-sidebar-primary-foreground: #eff1f5; /* Base */
+    --color-sidebar-accent: #ccd0da; /* Surface1 */
+    --color-sidebar-accent-foreground: #4c4f69; /* Text */
+    --color-sidebar-border: #ccd0da; /* Surface1 */
+    --color-sidebar-ring: #1e66f5; /* Blue */
+    --color-chart-1: #8839ef; /* Mauve */
+    --color-chart-2: #209fb5; /* Sapphire */
+    --color-chart-3: #40a02b; /* Green */
+    --color-chart-4: #fe640b; /* Peach */
+    --color-chart-5: #df8e1d; /* Yellow */
+  }
+
+  /* Catppuccin Frappé (Dark) */
+  .catppuccin-frappe {
+    --color-background: #303446; /* Base */
+    --color-foreground: #c6d0f5; /* Text */
+    --color-card: #414559; /* Surface0 */
+    --color-card-foreground: #c6d0f5; /* Text */
+    --color-popover: #414559; /* Surface0 */
+    --color-popover-foreground: #c6d0f5; /* Text */
+    --color-primary: #ca9ee6; /* Mauve */
+    --color-primary-foreground: #303446; /* Base */
+    --color-secondary: #51576d; /* Surface1 */
+    --color-secondary-foreground: #c6d0f5; /* Text */
+    --color-muted: #626880; /* Surface2 */
+    --color-muted-foreground: #a5adce; /* Subtext0 */
+    --color-accent: #85c1dc; /* Sapphire */
+    --color-accent-foreground: #303446; /* Base */
+    --color-destructive: #e78284; /* Red */
+    --color-destructive-foreground: #303446; /* Base */
+    --color-border: #51576d; /* Surface1 */
+    --color-input: #51576d; /* Surface1 */
+    --color-ring: #ca9ee6; /* Mauve */
+    --color-sidebar-background: #292c3c; /* Mantle */
+    --color-sidebar-foreground: #c6d0f5; /* Text */
+    --color-sidebar-primary: #ca9ee6; /* Mauve */
+    --color-sidebar-primary-foreground: #303446; /* Base */
+    --color-sidebar-accent: #414559; /* Surface0 */
+    --color-sidebar-accent-foreground: #c6d0f5; /* Text */
+    --color-sidebar-border: #414559; /* Surface0 */
+    --color-sidebar-ring: #85c1dc; /* Sapphire */
+    --color-chart-1: #ca9ee6; /* Mauve */
+    --color-chart-2: #85c1dc; /* Sapphire */
+    --color-chart-3: #a6d189; /* Green */
+    --color-chart-4: #ef9f76; /* Peach */
+    --color-chart-5: #e5c890; /* Yellow */
+  }
+
+  /* Catppuccin Macchiato (Dark) */
+  .catppuccin-macchiato {
+    --color-background: #24273a; /* Base */
+    --color-foreground: #cad3f5; /* Text */
+    --color-card: #363a4f; /* Surface0 */
+    --color-card-foreground: #cad3f5; /* Text */
+    --color-popover: #363a4f; /* Surface0 */
+    --color-popover-foreground: #cad3f5; /* Text */
+    --color-primary: #c6a0f6; /* Mauve */
+    --color-primary-foreground: #24273a; /* Base */
+    --color-secondary: #494d64; /* Surface1 */
+    --color-secondary-foreground: #cad3f5; /* Text */
+    --color-muted: #5b6078; /* Surface2 */
+    --color-muted-foreground: #a5adcb; /* Subtext0 */
+    --color-accent: #7dc4e4; /* Sapphire */
+    --color-accent-foreground: #24273a; /* Base */
+    --color-destructive: #ed8796; /* Red */
+    --color-destructive-foreground: #24273a; /* Base */
+    --color-border: #494d64; /* Surface1 */
+    --color-input: #494d64; /* Surface1 */
+    --color-ring: #c6a0f6; /* Mauve */
+    --color-sidebar-background: #1e2030; /* Mantle */
+    --color-sidebar-foreground: #cad3f5; /* Text */
+    --color-sidebar-primary: #c6a0f6; /* Mauve */
+    --color-sidebar-primary-foreground: #24273a; /* Base */
+    --color-sidebar-accent: #363a4f; /* Surface0 */
+    --color-sidebar-accent-foreground: #cad3f5; /* Text */
+    --color-sidebar-border: #363a4f; /* Surface0 */
+    --color-sidebar-ring: #7dc4e4; /* Sapphire */
+    --color-chart-1: #c6a0f6; /* Mauve */
+    --color-chart-2: #7dc4e4; /* Sapphire */
+    --color-chart-3: #a6da95; /* Green */
+    --color-chart-4: #f5a97f; /* Peach */
+    --color-chart-5: #eed49f; /* Yellow */
+  }
+
+  /* Catppuccin Mocha (Darkest) */
+  .catppuccin-mocha {
+    --color-background: #1e1e2e; /* Base */
+    --color-foreground: #cdd6f4; /* Text */
+    --color-card: #313244; /* Surface0 */
+    --color-card-foreground: #cdd6f4; /* Text */
+    --color-popover: #313244; /* Surface0 */
+    --color-popover-foreground: #cdd6f4; /* Text */
+    --color-primary: #cba6f7; /* Mauve */
+    --color-primary-foreground: #1e1e2e; /* Base */
+    --color-secondary: #45475a; /* Surface1 */
+    --color-secondary-foreground: #cdd6f4; /* Text */
+    --color-muted: #585b70; /* Surface2 */
+    --color-muted-foreground: #a6adc8; /* Subtext0 */
+    --color-accent: #74c7ec; /* Sapphire */
+    --color-accent-foreground: #1e1e2e; /* Base */
+    --color-destructive: #f38ba8; /* Red */
+    --color-destructive-foreground: #1e1e2e; /* Base */
+    --color-border: #45475a; /* Surface1 */
+    --color-input: #45475a; /* Surface1 */
+    --color-ring: #cba6f7; /* Mauve */
+    --color-sidebar-background: #181825; /* Mantle */
+    --color-sidebar-foreground: #cdd6f4; /* Text */
+    --color-sidebar-primary: #cba6f7; /* Mauve */
+    --color-sidebar-primary-foreground: #1e1e2e; /* Base */
+    --color-sidebar-accent: #313244; /* Surface0 */
+    --color-sidebar-accent-foreground: #cdd6f4; /* Text */
+    --color-sidebar-border: #313244; /* Surface0 */
+    --color-sidebar-ring: #74c7ec; /* Sapphire */
+    --color-chart-1: #cba6f7; /* Mauve */
+    --color-chart-2: #74c7ec; /* Sapphire */
+    --color-chart-3: #a6e3a1; /* Green */
+    --color-chart-4: #fab387; /* Peach */
+    --color-chart-5: #f9e2af; /* Yellow */
   }
 }
 
