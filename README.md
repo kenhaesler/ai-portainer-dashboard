@@ -36,9 +36,11 @@ cp .env.example .env
 
 Edit `.env` with your Portainer credentials:
 ```
-PORTAINER_API_URL=http://localhost:9000
+PORTAINER_API_URL=http://host.docker.internal:9000
 PORTAINER_API_KEY=ptr_your_token_here
 ```
+
+> **Note**: Use `host.docker.internal` instead of `localhost` when Portainer runs on your host machine. Inside Docker containers, `localhost` refers to the container itself, not the host.
 
 ### 2. Start the development environment
 
@@ -150,7 +152,7 @@ ai-portainer-dashboard/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORTAINER_API_URL` | Portainer instance URL | `http://localhost:9000` |
+| `PORTAINER_API_URL` | Portainer instance URL | `http://host.docker.internal:9000` |
 | `PORTAINER_API_KEY` | Portainer API key | (required) |
 | `DASHBOARD_USERNAME` | Dashboard login username | `admin` |
 | `DASHBOARD_PASSWORD` | Dashboard login password | `changeme123` |

@@ -44,6 +44,10 @@ const containerColumns: ColumnDef<NormalizedContainer, any>[] = [
   {
     accessorKey: 'endpointName',
     header: 'Endpoint',
+    cell: ({ row }) => {
+      const container = row.original;
+      return `${container.endpointName} (ID: ${container.endpointId})`;
+    },
   },
   {
     accessorKey: 'created',
@@ -59,7 +63,7 @@ export default function HomePage() {
   const endpointBarData = useMemo(() => {
     if (!data?.endpoints) return [];
     return data.endpoints.map((ep) => ({
-      name: ep.name,
+      name: `${ep.name} (ID: ${ep.id})`,
       running: ep.containersRunning,
       stopped: ep.containersStopped,
       unhealthy: ep.containersUnhealthy,
@@ -69,7 +73,7 @@ export default function HomePage() {
   const workloadData = useMemo(() => {
     if (!data?.endpoints) return [];
     return data.endpoints.map((ep) => ({
-      endpoint: ep.name,
+      endpoint: `${ep.name} (ID: ${ep.id})`,
       containers: ep.totalContainers,
       running: ep.containersRunning,
       stopped: ep.containersStopped,

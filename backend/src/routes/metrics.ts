@@ -1,6 +1,28 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 
+function parseTimeRange(timeRange: string): { from: Date; to: Date } {
+  const now = new Date();
+  const to = now;
+  let from = new Date(now);
+
+  const match = timeRange.match(/^(\d+)([mhd])$/);
+  if (match) {
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    switch (unit) {
+      case 'm': from.setMinutes(from.getMinutes() - value); break;
+      case 'h': from.setHours(from.getHours() - value); break;
+      case 'd': from.setDate(from.getDate() - value); break;
+    }
+  } else {
+    // Default to 1 hour
+    from.setHours(from.getHours() - 1);
+  }
+
+  return { from, to };
+}
+
 export async function metricsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/metrics/:endpointId/:containerId', {
     schema: {
@@ -18,48 +40,68 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       querystring: {
         type: 'object',
         properties: {
-          metric_type: { type: 'string', enum: ['cpu', 'memory', 'memory_bytes'] },
+          metricType: { type: 'string', enum: ['cpu', 'memory', 'memory_bytes'] },
+          timeRange: { type: 'string' },
+          metric_type: { type: 'string' },
           from: { type: 'string' },
           to: { type: 'string' },
-          resolution: { type: 'string', enum: ['1m', '5m', '1h'], default: '5m' },
         },
       },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { containerId } = request.params as { endpointId: number; containerId: string };
-    const { metric_type, from, to } = request.query as {
+    const { endpointId, containerId } = request.params as { endpointId: number; containerId: string };
+    const query = request.query as {
+      metricType?: string;
+      timeRange?: string;
       metric_type?: string;
       from?: string;
       to?: string;
-      resolution?: string;
     };
+
+    // Support both naming conventions
+    const metricType = query.metricType || query.metric_type;
+    const timeRange = query.timeRange || '1h';
 
     const db = getDb();
     const conditions = ['container_id = ?'];
     const params: unknown[] = [containerId];
 
-    if (metric_type) {
+    if (metricType) {
       conditions.push('metric_type = ?');
-      params.push(metric_type);
+      params.push(metricType);
     }
-    if (from) {
+
+    // Parse timeRange or use explicit from/to
+    if (query.from) {
       conditions.push('timestamp >= ?');
-      params.push(from);
+      params.push(query.from);
+    } else {
+      const { from } = parseTimeRange(timeRange);
+      conditions.push('timestamp >= ?');
+      params.push(from.toISOString());
     }
-    if (to) {
+
+    if (query.to) {
       conditions.push('timestamp <= ?');
-      params.push(to);
+      params.push(query.to);
     }
 
     const where = conditions.join(' AND ');
     const metrics = db.prepare(`
-      SELECT * FROM metrics WHERE ${where}
+      SELECT timestamp, value FROM metrics WHERE ${where}
       ORDER BY timestamp ASC
       LIMIT 1000
-    `).all(...params);
+    `).all(...params) as Array<{ timestamp: string; value: number }>;
 
-    return { metrics, containerId };
+    // Return in format expected by frontend
+    return {
+      containerId,
+      endpointId,
+      metricType: metricType || 'cpu',
+      timeRange,
+      data: metrics,
+    };
   });
 
   fastify.get('/api/metrics/anomalies', {

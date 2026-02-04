@@ -44,7 +44,7 @@ export const ContainerSchema = z.object({
     PrivatePort: z.number().optional(),
     PublicPort: z.number().optional(),
     Type: z.string().optional(),
-  })).optional().default([]),
+  })).nullish().default([]),
   Labels: z.record(z.string()).optional().default({}),
   NetworkSettings: z.object({
     Networks: z.record(z.object({
