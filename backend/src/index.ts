@@ -5,6 +5,7 @@ import { createChildLogger } from './utils/logger.js';
 import { setupLlmNamespace } from './sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './sockets/monitoring.js';
 import { setupRemediationNamespace } from './sockets/remediation.js';
+import { startScheduler, stopScheduler } from './scheduler/setup.js';
 
 const log = createChildLogger('server');
 
@@ -20,10 +21,14 @@ async function main() {
   setupMonitoringNamespace(app.ioNamespaces.monitoring);
   setupRemediationNamespace(app.ioNamespaces.remediation);
 
+  // Start background schedulers
+  startScheduler();
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info({ signal }, 'Received shutdown signal');
     try {
+      stopScheduler();
       await app.close();
       closeDb();
       log.info('Graceful shutdown complete');

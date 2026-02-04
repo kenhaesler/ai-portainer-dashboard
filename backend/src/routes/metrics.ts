@@ -78,12 +78,12 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       params.push(query.from);
     } else {
       const { from } = parseTimeRange(timeRange);
-      conditions.push('timestamp >= ?');
+      conditions.push('timestamp >= datetime(?)');
       params.push(from.toISOString());
     }
 
     if (query.to) {
-      conditions.push('timestamp <= ?');
+      conditions.push('timestamp <= datetime(?)');
       params.push(query.to);
     }
 

@@ -47,7 +47,6 @@ const navigation: NavGroup[] = [
     title: 'Containers',
     items: [
       { label: 'Container Health', to: '/health', icon: HeartPulse },
-      { label: 'Container Logs', to: '/container-logs', icon: ScrollText },
       { label: 'Image Footprint', to: '/images', icon: PackageOpen },
       { label: 'Network Topology', to: '/topology', icon: Network },
     ],

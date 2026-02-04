@@ -10,8 +10,8 @@ const routeLabels: Record<string, string> = {
   '/': 'Home',
   '/workloads': 'Workload Explorer',
   '/fleet': 'Fleet Overview',
+  '/stacks': 'Stack Overview',
   '/health': 'Container Health',
-  '/container-logs': 'Container Logs',
   '/images': 'Image Footprint',
   '/topology': 'Network Topology',
   '/ai-monitor': 'AI Monitor',
@@ -39,15 +39,25 @@ export function Header() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const currentLabel = routeLabels[location.pathname] || 'Dashboard';
+  // Check if the current route is a container detail page
+  const containerDetailMatch = location.pathname.match(/^\/containers\/(\d+)\/([a-f0-9]+)$/);
 
-  // Build breadcrumbs
-  const breadcrumbs = [
+  let currentLabel = routeLabels[location.pathname] || 'Dashboard';
+  let breadcrumbs = [
     { label: 'Dashboard', path: '/' },
     ...(location.pathname !== '/'
       ? [{ label: currentLabel, path: location.pathname }]
       : []),
   ];
+
+  // Handle dynamic container detail breadcrumbs
+  if (containerDetailMatch) {
+    breadcrumbs = [
+      { label: 'Dashboard', path: '/' },
+      { label: 'Workload Explorer', path: '/workloads' },
+      { label: 'Container Details', path: location.pathname },
+    ];
+  }
 
   // Close user menu when clicking outside
   useEffect(() => {
