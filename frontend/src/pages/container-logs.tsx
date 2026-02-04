@@ -4,7 +4,7 @@ import { AlertTriangle, Download, ScrollText, Clock, Search } from 'lucide-react
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useContainerLogs } from '@/hooks/use-container-logs';
-import { SkeletonCard } from '@/components/shared/skeleton-card';
+import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { RefreshButton } from '@/components/shared/refresh-button';
 
 type TailCount = 100 | 500 | 1000 | -1;
