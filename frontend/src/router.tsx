@@ -9,7 +9,6 @@ const Home = lazy(() => import('@/pages/home'));
 const WorkloadExplorer = lazy(() => import('@/pages/workload-explorer'));
 const FleetOverview = lazy(() => import('@/pages/fleet-overview'));
 const ContainerHealth = lazy(() => import('@/pages/container-health'));
-const ContainerLogs = lazy(() => import('@/pages/container-logs'));
 const ImageFootprint = lazy(() => import('@/pages/image-footprint'));
 const NetworkTopology = lazy(() => import('@/pages/network-topology'));
 const AiMonitor = lazy(() => import('@/pages/ai-monitor'));
@@ -51,7 +50,6 @@ export const router = createBrowserRouter([
       { path: 'stacks', element: <LazyPage><StackOverview /></LazyPage> },
       { path: 'containers/:endpointId/:containerId', element: <LazyPage><ContainerDetail /></LazyPage> },
       { path: 'health', element: <LazyPage><ContainerHealth /></LazyPage> },
-      { path: 'container-logs', element: <LazyPage><ContainerLogs /></LazyPage> },
       { path: 'images', element: <LazyPage><ImageFootprint /></LazyPage> },
       { path: 'topology', element: <LazyPage><NetworkTopology /></LazyPage> },
       { path: 'ai-monitor', element: <LazyPage><AiMonitor /></LazyPage> },
