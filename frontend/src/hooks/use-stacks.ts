@@ -1,18 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-interface Stack {
+export interface Stack {
   id: number;
   name: string;
   type: number;
   endpointId: number;
-  status: number;
-  creationDate: string;
-  updateDate: string;
-  env?: Array<{
-    name: string;
-    value: string;
-  }>;
+  status: 'active' | 'inactive';
+  createdAt?: number;
+  updatedAt?: number;
+  envCount: number;
 }
 
 export function useStacks() {
