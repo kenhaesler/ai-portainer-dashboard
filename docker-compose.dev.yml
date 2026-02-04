@@ -2,7 +2,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     command: ["npx", "tsx", "watch", "src/index.ts"]
     ports:
       - "3001:3001"
@@ -37,8 +37,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    command: ["npx", "vite", "--host"]
+      dockerfile: Dockerfile.dev
     ports:
       - "5173:5173"
     environment:
