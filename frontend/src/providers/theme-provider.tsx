@@ -1,24 +1,48 @@
 import { useEffect } from 'react';
 import { useThemeStore } from '@/stores/theme-store';
 
+const ALL_THEME_CLASSES = [
+  'light',
+  'dark',
+  'catppuccin-latte',
+  'catppuccin-frappe',
+  'catppuccin-macchiato',
+  'catppuccin-mocha',
+];
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { theme, resolvedTheme } = useThemeStore();
+  const { theme, themeClass } = useThemeStore();
 
   useEffect(() => {
     const root = document.documentElement;
-    const resolved = resolvedTheme();
-    root.classList.remove('light', 'dark');
-    root.classList.add(resolved);
-  }, [theme, resolvedTheme]);
+    const currentClass = themeClass();
+
+    // Remove all theme classes
+    ALL_THEME_CLASSES.forEach((cls) => root.classList.remove(cls));
+
+    // Add the current theme class
+    root.classList.add(currentClass);
+
+    // For Catppuccin dark themes, also add 'dark' class for Tailwind dark: variants
+    if (
+      currentClass === 'catppuccin-frappe' ||
+      currentClass === 'catppuccin-macchiato' ||
+      currentClass === 'catppuccin-mocha'
+    ) {
+      root.classList.add('dark');
+    }
+  }, [theme, themeClass]);
 
   useEffect(() => {
     if (theme !== 'system') return;
+
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = () => {
       const root = document.documentElement;
-      root.classList.remove('light', 'dark');
+      ALL_THEME_CLASSES.forEach((cls) => root.classList.remove(cls));
       root.classList.add(mq.matches ? 'dark' : 'light');
     };
+
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, [theme]);
