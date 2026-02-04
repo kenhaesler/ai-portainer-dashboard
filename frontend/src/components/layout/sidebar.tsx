@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Boxes,
   Ship,
+  Layers,
   HeartPulse,
   ScrollText,
   PackageOpen,
@@ -39,6 +40,7 @@ const navigation: NavGroup[] = [
       { label: 'Home', to: '/', icon: LayoutDashboard },
       { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
       { label: 'Fleet Overview', to: '/fleet', icon: Ship },
+      { label: 'Stack Overview', to: '/stacks', icon: Layers },
     ],
   },
   {
