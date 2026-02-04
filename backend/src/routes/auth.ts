@@ -11,6 +11,8 @@ const loginSchema = z.object({
 });
 
 export async function authRoutes(fastify: FastifyInstance) {
+  const config = getConfig();
+
   // Login
   fastify.post('/api/auth/login', {
     schema: {
@@ -39,7 +41,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     },
     config: {
       rateLimit: {
-        max: 5,
+        max: config.LOGIN_RATE_LIMIT,
         timeWindow: '1 minute',
       },
     },
@@ -50,7 +52,6 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     const { username, password } = parsed.data;
-    const config = getConfig();
 
     // Compare against configured credentials
     if (username !== config.DASHBOARD_USERNAME) {

@@ -41,6 +41,11 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   SQLITE_PATH: z.string().default('./data/dashboard.db'),
+
+  // Rate Limiting
+  LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(
+    process.env.NODE_ENV === 'production' ? 5 : 30
+  ),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
