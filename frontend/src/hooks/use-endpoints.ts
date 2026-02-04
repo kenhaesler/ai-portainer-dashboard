@@ -1,15 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-interface Endpoint {
+export interface Endpoint {
   id: number;
   name: string;
-  type: string;
+  type: number;
   url: string;
-  status: 'up' | 'down' | 'unknown';
-  publicURL?: string;
-  groupId?: number;
-  tags?: string[];
+  status: 'up' | 'down';
+  containersRunning: number;
+  containersStopped: number;
+  containersHealthy: number;
+  containersUnhealthy: number;
+  totalContainers: number;
+  stackCount: number;
+  totalCpu: number;
+  totalMemory: number;
+  isEdge: boolean;
+  agentVersion?: string;
+  lastCheckIn?: number;
 }
 
 export function useEndpoints() {
