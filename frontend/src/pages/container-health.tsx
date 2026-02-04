@@ -1,14 +1,13 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, Activity, Cpu, HardDrive, Clock, RotateCw, Box, Server } from 'lucide-react';
+import { AlertTriangle, Activity, Clock, RotateCw, Box, Server, HardDrive } from 'lucide-react';
 import { useContainers, type Container } from '@/hooks/use-containers';
-import { useContainerMetrics } from '@/hooks/use-metrics';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate } from '@/lib/utils';
+import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
 
 function formatUptime(createdTimestamp: number): string {
   const now = Date.now();
@@ -54,7 +53,6 @@ function MetadataItem({ icon: Icon, label, value }: { icon: React.ElementType; l
 
 export default function ContainerHealthPage() {
   const [selectedContainerId, setSelectedContainerId] = useState<string | undefined>(undefined);
-  const [timeRange, setTimeRange] = useState<string>('1h');
 
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers();
   const { interval, setInterval } = useAutoRefresh(30);
@@ -69,27 +67,6 @@ export default function ContainerHealthPage() {
   const selectedContainer = useMemo(() =>
     runningContainers.find((c) => c.id === selectedContainerId),
     [runningContainers, selectedContainerId]
-  );
-
-  // Fetch metrics for selected container
-  const {
-    data: cpuMetrics,
-    isLoading: cpuLoading
-  } = useContainerMetrics(
-    selectedContainer?.endpointId,
-    selectedContainer?.id,
-    'cpu',
-    timeRange
-  );
-
-  const {
-    data: memoryMetrics,
-    isLoading: memoryLoading
-  } = useContainerMetrics(
-    selectedContainer?.endpointId,
-    selectedContainer?.id,
-    'memory',
-    timeRange
   );
 
   // Auto-select first container if none selected
@@ -162,25 +139,7 @@ export default function ContainerHealthPage() {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label htmlFor="time-range" className="text-sm font-medium">
-            Time Range
-          </label>
-          <select
-            id="time-range"
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="15m">Last 15 minutes</option>
-            <option value="1h">Last 1 hour</option>
-            <option value="6h">Last 6 hours</option>
-            <option value="24h">Last 24 hours</option>
-            <option value="7d">Last 7 days</option>
-          </select>
-        </div>
-
-        <span className="text-sm text-muted-foreground">
+        <span className="ml-4 text-sm text-muted-foreground">
           {runningContainers.length} running container{runningContainers.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -251,47 +210,10 @@ export default function ContainerHealthPage() {
           </div>
 
           {/* Metrics Charts */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* CPU Chart */}
-            <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <Cpu className="h-5 w-5 text-blue-500" />
-                <h3 className="text-lg font-semibold">CPU Usage</h3>
-              </div>
-              {cpuLoading ? (
-                <div className="flex h-[300px] items-center justify-center">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                </div>
-              ) : (
-                <MetricsLineChart
-                  data={cpuMetrics?.data ?? []}
-                  label="CPU"
-                  color="#3b82f6"
-                  unit="%"
-                />
-              )}
-            </div>
-
-            {/* Memory Chart */}
-            <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <HardDrive className="h-5 w-5 text-emerald-500" />
-                <h3 className="text-lg font-semibold">Memory Usage</h3>
-              </div>
-              {memoryLoading ? (
-                <div className="flex h-[300px] items-center justify-center">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                </div>
-              ) : (
-                <MetricsLineChart
-                  data={memoryMetrics?.data ?? []}
-                  label="Memory"
-                  color="#10b981"
-                  unit="%"
-                />
-              )}
-            </div>
-          </div>
+          <ContainerMetricsViewer
+            endpointId={selectedContainer.endpointId}
+            containerId={selectedContainer.id}
+          />
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Play, Square, RotateCw, AlertTriangle, X } from 'lucide-react';
 import { useContainers, useContainerAction, type Container } from '@/hooks/use-containers';
@@ -39,6 +39,7 @@ const ACTION_CONFIG: Record<ContainerAction, { label: string; variant: 'default'
 };
 
 export default function WorkloadExplorerPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
@@ -99,9 +100,17 @@ export default function WorkloadExplorerPage() {
     {
       accessorKey: 'name',
       header: 'Name',
-      cell: ({ getValue }) => (
-        <span className="font-medium">{truncate(getValue<string>(), 40)}</span>
-      ),
+      cell: ({ row, getValue }) => {
+        const container = row.original;
+        return (
+          <button
+            onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+            className="font-medium text-primary hover:underline text-left"
+          >
+            {truncate(getValue<string>(), 40)}
+          </button>
+        );
+      },
     },
     {
       accessorKey: 'image',
@@ -174,7 +183,7 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-  ], []);
+  ], [navigate]);
 
   if (isError) {
     return (
