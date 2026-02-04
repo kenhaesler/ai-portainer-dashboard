@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/app-layout';
+import { RouteErrorBoundary } from '@/components/shared/route-error-boundary';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('@/pages/login'));
@@ -35,10 +36,12 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LazyPage><Login /></LazyPage>,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/',
     element: <AppLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <LazyPage><Home /></LazyPage> },
       { path: 'workloads', element: <LazyPage><WorkloadExplorer /></LazyPage> },
@@ -56,5 +59,5 @@ export const router = createBrowserRouter([
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
     ],
   },
-  { path: '*', element: <Navigate to="/" replace /> },
+  { path: '*', element: <Navigate to="/" replace />, errorElement: <RouteErrorBoundary /> },
 ]);
