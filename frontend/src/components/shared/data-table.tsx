@@ -19,6 +19,7 @@ interface DataTableProps<T> {
   searchKey?: string;
   searchPlaceholder?: string;
   pageSize?: number;
+  onRowClick?: (row: T) => void;
 }
 
 export function DataTable<T>({
@@ -27,6 +28,7 @@ export function DataTable<T>({
   searchKey,
   searchPlaceholder = 'Filter...',
   pageSize = 10,
+  onRowClick,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -86,7 +88,14 @@ export function DataTable<T>({
           <tbody className="[&_tr:last-child]:border-0">
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-b transition-colors hover:bg-muted/50">
+                <tr
+                  key={row.id}
+                  className={cn(
+                    'border-b transition-colors hover:bg-muted/50',
+                    onRowClick && 'cursor-pointer'
+                  )}
+                  onClick={() => onRowClick?.(row.original)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 align-middle">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

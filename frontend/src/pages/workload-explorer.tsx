@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Play, Square, RotateCw, AlertTriangle } from 'lucide-react';
 import { useContainers, useContainerAction, type Container } from '@/hooks/use-containers';
@@ -38,8 +39,20 @@ const ACTION_CONFIG: Record<ContainerAction, { label: string; variant: 'default'
 };
 
 export default function WorkloadExplorerPage() {
-  const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>(undefined);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+
+  // Read endpoint from URL param
+  const endpointParam = searchParams.get('endpoint');
+  const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
+
+  const setSelectedEndpoint = (endpointId: number | undefined) => {
+    if (endpointId !== undefined) {
+      setSearchParams({ endpoint: String(endpointId) });
+    } else {
+      setSearchParams({});
+    }
+  };
 
   const { data: endpoints } = useEndpoints();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint);
