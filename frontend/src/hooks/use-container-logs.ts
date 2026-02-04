@@ -23,16 +23,15 @@ export function useContainerLogs(
 
   return useQuery<ContainerLogsResult>({
     queryKey: ['container-logs', endpointId, containerId, { tail, since, until, timestamps }],
-    queryFn: async () => {
+    queryFn: () => {
       const params: Record<string, string | number | boolean> = { tail, timestamps };
       if (since) params.since = since;
       if (until) params.until = until;
 
-      const response = await api.get(
+      return api.get<ContainerLogsResult>(
         `/api/containers/${endpointId}/${containerId}/logs`,
         { params }
       );
-      return response.data;
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
   });
