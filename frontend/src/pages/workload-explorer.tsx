@@ -89,6 +89,10 @@ export default function WorkloadExplorerPage() {
     {
       accessorKey: 'endpointName',
       header: 'Endpoint',
+      cell: ({ row }) => {
+        const container = row.original;
+        return `${container.endpointName} (ID: ${container.endpointId})`;
+      },
     },
     {
       accessorKey: 'created',
@@ -192,7 +196,7 @@ export default function WorkloadExplorerPage() {
           <option value="">All endpoints</option>
           {endpoints?.map((ep) => (
             <option key={ep.id} value={ep.id}>
-              {ep.name}
+              {ep.name} (ID: {ep.id})
             </option>
           ))}
         </select>
