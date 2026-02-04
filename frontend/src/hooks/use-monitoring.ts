@@ -26,10 +26,7 @@ export function useMonitoring() {
 
   const historyQuery = useQuery<Insight[]>({
     queryKey: ['monitoring', 'insights'],
-    queryFn: async () => {
-      const response = await api.get('/api/monitoring/insights');
-      return response.data;
-    },
+    queryFn: () => api.get<Insight[]>('/api/monitoring/insights'),
   });
 
   useEffect(() => {

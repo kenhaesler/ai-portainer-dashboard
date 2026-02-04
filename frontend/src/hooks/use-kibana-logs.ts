@@ -29,9 +29,13 @@ interface KibanaLogsResult {
 export function useKibanaLogs(options: KibanaLogsOptions) {
   return useQuery<KibanaLogsResult>({
     queryKey: ['kibana-logs', options],
-    queryFn: async () => {
-      const response = await api.get('/api/logs/search', { params: options });
-      return response.data;
+    queryFn: () => {
+      const { fields, ...rest } = options;
+      const params: Record<string, string | number | boolean | undefined> = {
+        ...rest,
+        fields: fields?.join(','),
+      };
+      return api.get<KibanaLogsResult>('/api/logs/search', { params });
     },
     enabled: Boolean(options.query),
   });

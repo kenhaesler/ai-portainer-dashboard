@@ -1,5 +1,9 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+interface RequestOptions extends RequestInit {
+  params?: Record<string, string | number | boolean | undefined>;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -11,11 +15,24 @@ class ApiClient {
     return this.token;
   }
 
+  private buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
+    const url = new URL(path, API_BASE || window.location.origin);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.append(key, String(value));
+        }
+      });
+    }
+    return url.toString();
+  }
+
   async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestOptions = {}
   ): Promise<T> {
-    const headers = new Headers(options.headers);
+    const { params, ...fetchOptions } = options;
+    const headers = new Headers(fetchOptions.headers);
     headers.set('Content-Type', 'application/json');
     headers.set('X-Request-ID', crypto.randomUUID());
 
@@ -23,8 +40,9 @@ class ApiClient {
       headers.set('Authorization', `Bearer ${this.token}`);
     }
 
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
+    const url = this.buildUrl(path, params);
+    const response = await fetch(url, {
+      ...fetchOptions,
       headers,
     });
 
@@ -42,8 +60,8 @@ class ApiClient {
     return response.json();
   }
 
-  get<T>(path: string) {
-    return this.request<T>(path, { method: 'GET' });
+  get<T>(path: string, options?: { params?: Record<string, string | number | boolean | undefined> }) {
+    return this.request<T>(path, { method: 'GET', ...options });
   }
 
   post<T>(path: string, body?: unknown) {

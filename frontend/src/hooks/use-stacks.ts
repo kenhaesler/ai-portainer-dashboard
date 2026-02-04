@@ -18,9 +18,6 @@ interface Stack {
 export function useStacks() {
   return useQuery<Stack[]>({
     queryKey: ['stacks'],
-    queryFn: async () => {
-      const response = await api.get('/api/stacks');
-      return response.data;
-    },
+    queryFn: () => api.get<Stack[]>('/api/stacks'),
   });
 }
