@@ -50,6 +50,8 @@
     "vite": "^6.0.7",
     "vitest": "^3.0.4",
     "@testing-library/react": "^16.1.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "jsdom": "^26.0.0",
     "tailwindcss": "^4.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "eslint": "^9.18.0",
