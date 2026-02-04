@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { api } from '@/lib/api';
 
+const AUTH_TOKEN_KEY = 'auth_token';
+const AUTH_USERNAME_KEY = 'auth_username';
+
 interface AuthContextType {
   isAuthenticated: boolean;
   username: string | null;
@@ -11,9 +14,44 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function getStoredAuth(): { token: string | null; username: string | null } {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const username = localStorage.getItem(AUTH_USERNAME_KEY);
+    return { token, username };
+  } catch {
+    return { token: null, username: null };
+  }
+}
+
+function storeAuth(token: string, username: string): void {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_USERNAME_KEY, username);
+  } catch {
+    // Ignore storage errors (e.g., private browsing)
+  }
+}
+
+function clearStoredAuth(): void {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USERNAME_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(() => getStoredAuth().token);
+  const [username, setUsername] = useState<string | null>(() => getStoredAuth().username);
+
+  // Initialize API client with stored token on mount
+  useEffect(() => {
+    if (token) {
+      api.setToken(token);
+    }
+  }, []);
 
   const login = useCallback(async (user: string, password: string) => {
     const data = await api.post<{ token: string; username: string }>(
@@ -22,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
     setToken(data.token);
     setUsername(data.username);
+    storeAuth(data.token, data.username);
     api.setToken(data.token);
   }, []);
 
@@ -33,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setToken(null);
     setUsername(null);
+    clearStoredAuth();
     api.setToken(null);
   }, []);
 
@@ -41,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handler = () => {
       setToken(null);
       setUsername(null);
+      clearStoredAuth();
     };
     window.addEventListener('auth:expired', handler);
     return () => window.removeEventListener('auth:expired', handler);
@@ -48,22 +89,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Token refresh timer
   useEffect(() => {
-    if (!token) return;
+    if (!token || !username) return;
     // Refresh at 50 minutes of 60 minute expiry
     const timer = setInterval(async () => {
       try {
         const data = await api.post<{ token: string }>('/api/auth/refresh');
         setToken(data.token);
+        storeAuth(data.token, username);
         api.setToken(data.token);
       } catch {
         setToken(null);
         setUsername(null);
+        clearStoredAuth();
         api.setToken(null);
       }
     }, 50 * 60 * 1000);
 
     return () => clearInterval(timer);
-  }, [token]);
+  }, [token, username]);
 
   return (
     <AuthContext.Provider

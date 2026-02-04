@@ -72,20 +72,17 @@ interface TraceSummary {
 export function useTraces(options?: TracesOptions) {
   return useQuery<Trace[]>({
     queryKey: ['traces', options],
-    queryFn: async () => {
-      const response = await api.get('/api/traces', { params: options });
-      return response.data;
-    },
+    queryFn: () => api.get<Trace[]>(
+      '/api/traces',
+      { params: options as Record<string, string | number | boolean | undefined> }
+    ),
   });
 }
 
 export function useTrace(traceId: string | undefined) {
   return useQuery<Trace>({
     queryKey: ['traces', traceId],
-    queryFn: async () => {
-      const response = await api.get(`/api/traces/${traceId}`);
-      return response.data;
-    },
+    queryFn: () => api.get<Trace>(`/api/traces/${traceId}`),
     enabled: Boolean(traceId),
   });
 }
@@ -93,19 +90,13 @@ export function useTrace(traceId: string | undefined) {
 export function useServiceMap() {
   return useQuery<ServiceMap>({
     queryKey: ['traces', 'service-map'],
-    queryFn: async () => {
-      const response = await api.get('/api/traces/service-map');
-      return response.data;
-    },
+    queryFn: () => api.get<ServiceMap>('/api/traces/service-map'),
   });
 }
 
 export function useTraceSummary() {
   return useQuery<TraceSummary>({
     queryKey: ['traces', 'summary'],
-    queryFn: async () => {
-      const response = await api.get('/api/traces/summary');
-      return response.data;
-    },
+    queryFn: () => api.get<TraceSummary>('/api/traces/summary'),
   });
 }
