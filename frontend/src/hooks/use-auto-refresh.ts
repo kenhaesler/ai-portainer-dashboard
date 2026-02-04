@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 const STORAGE_KEY = 'ai-portainer-auto-refresh';
 const VALID_INTERVALS = [0, 15, 30, 60, 120, 300] as const;
 
-type RefreshInterval = (typeof VALID_INTERVALS)[number];
+export type RefreshInterval = (typeof VALID_INTERVALS)[number];
 
 interface AutoRefreshState {
   interval: RefreshInterval;
