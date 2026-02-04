@@ -34,16 +34,12 @@ export function useContainerMetrics(
 ) {
   return useQuery<ContainerMetrics>({
     queryKey: ['metrics', endpointId, containerId, metricType, timeRange],
-    queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (metricType) params.metricType = metricType;
-      if (timeRange) params.timeRange = timeRange;
-
-      const response = await api.get(
+    queryFn: () => {
+      const params: Record<string, string | undefined> = { metricType, timeRange };
+      return api.get<ContainerMetrics>(
         `/api/metrics/${endpointId}/${containerId}`,
         { params }
       );
-      return response.data;
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
   });
@@ -52,9 +48,6 @@ export function useContainerMetrics(
 export function useAnomalies() {
   return useQuery<Anomaly[]>({
     queryKey: ['metrics', 'anomalies'],
-    queryFn: async () => {
-      const response = await api.get('/api/metrics/anomalies');
-      return response.data;
-    },
+    queryFn: () => api.get<Anomaly[]>('/api/metrics/anomalies'),
   });
 }

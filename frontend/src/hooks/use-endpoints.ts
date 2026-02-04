@@ -15,10 +15,7 @@ interface Endpoint {
 export function useEndpoints() {
   return useQuery<Endpoint[]>({
     queryKey: ['endpoints'],
-    queryFn: async () => {
-      const response = await api.get('/api/endpoints');
-      return response.data;
-    },
+    queryFn: () => api.get<Endpoint[]>('/api/endpoints'),
     staleTime: 60 * 1000,
   });
 }

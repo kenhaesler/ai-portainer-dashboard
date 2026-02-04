@@ -40,12 +40,9 @@ interface AuditLogOptions {
 export function useSettings(category?: string) {
   return useQuery<Setting[]>({
     queryKey: ['settings', category],
-    queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (category) params.category = category;
-
-      const response = await api.get('/api/settings', { params });
-      return response.data;
+    queryFn: () => {
+      const params: Record<string, string | undefined> = { category };
+      return api.get<Setting[]>('/api/settings', { params });
     },
   });
 }
@@ -74,9 +71,9 @@ export function useUpdateSetting() {
 export function useAuditLog(options?: AuditLogOptions) {
   return useQuery<{ entries: AuditLogEntry[]; total: number }>({
     queryKey: ['settings', 'audit-log', options],
-    queryFn: async () => {
-      const response = await api.get('/api/settings/audit-log', { params: options });
-      return response.data;
-    },
+    queryFn: () => api.get<{ entries: AuditLogEntry[]; total: number }>(
+      '/api/settings/audit-log',
+      { params: options as Record<string, string | number | boolean | undefined> }
+    ),
   });
 }

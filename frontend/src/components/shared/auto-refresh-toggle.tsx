@@ -1,7 +1,8 @@
 import { Timer, TimerOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { type RefreshInterval } from '@/hooks/use-auto-refresh';
 
-const INTERVALS = [
+const INTERVALS: { label: string; value: RefreshInterval }[] = [
   { label: 'Off', value: 0 },
   { label: '15s', value: 15 },
   { label: '30s', value: 30 },
@@ -11,8 +12,8 @@ const INTERVALS = [
 ];
 
 interface AutoRefreshToggleProps {
-  interval: number;
-  onIntervalChange: (interval: number) => void;
+  interval: RefreshInterval;
+  onIntervalChange: (interval: RefreshInterval) => void;
   className?: string;
 }
 
@@ -26,7 +27,7 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
       )}
       <select
         value={interval}
-        onChange={(e) => onIntervalChange(Number(e.target.value))}
+        onChange={(e) => onIntervalChange(Number(e.target.value) as RefreshInterval)}
         className="rounded-md border border-input bg-background px-2 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {INTERVALS.map((opt) => (

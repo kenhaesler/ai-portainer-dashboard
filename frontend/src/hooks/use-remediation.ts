@@ -19,12 +19,9 @@ interface RemediationAction {
 export function useRemediationActions(status?: string) {
   return useQuery<RemediationAction[]>({
     queryKey: ['remediation', 'actions', status],
-    queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (status) params.status = status;
-
-      const response = await api.get('/api/remediation/actions', { params });
-      return response.data;
+    queryFn: () => {
+      const params: Record<string, string | undefined> = { status };
+      return api.get<RemediationAction[]>('/api/remediation/actions', { params });
     },
   });
 }
