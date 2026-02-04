@@ -11,7 +11,7 @@ const routeLabels: Record<string, string> = {
   '/workloads': 'Workload Explorer',
   '/fleet': 'Fleet Overview',
   '/stacks': 'Stack Overview',
-  '/health': 'Container Health',
+  '/health': 'Running Containers',
   '/container-logs': 'Container Logs',
   '/images': 'Image Footprint',
   '/topology': 'Network Topology',

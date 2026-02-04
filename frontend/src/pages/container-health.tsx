@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
-import { AlertTriangle, Activity, Clock, RotateCw, Box, Server, HardDrive } from 'lucide-react';
+import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Activity, Clock, Box, Server, ChevronRight } from 'lucide-react';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -7,7 +8,6 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate } from '@/lib/utils';
-import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
 
 function formatUptime(createdTimestamp: number): string {
   const now = Date.now();
@@ -37,23 +37,72 @@ function getHealthStatus(container: Container): string {
   return 'unknown';
 }
 
-function MetadataItem({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string | number }) {
+interface ContainerCardProps {
+  container: Container;
+  onClick: () => void;
+}
+
+function ContainerCard({ container, onClick }: ContainerCardProps) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
-        <Icon className="h-4 w-4 text-muted-foreground" />
+    <button
+      onClick={onClick}
+      className="group relative w-full rounded-lg border bg-card p-6 shadow-sm transition-all hover:shadow-md hover:border-primary/50 text-left"
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 shrink-0">
+            <Box className="h-6 w-6 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold truncate group-hover:text-primary transition-colors">
+              {container.name}
+            </h3>
+            <p className="text-sm text-muted-foreground font-mono truncate">
+              {container.id.slice(0, 12)}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
       </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium">{value}</p>
+
+      {/* Status Badge */}
+      <div className="mb-4">
+        <StatusBadge status={getHealthStatus(container)} className="text-xs px-2 py-1" />
       </div>
-    </div>
+
+      {/* Metadata Grid */}
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-xs text-muted-foreground mb-1">Endpoint</p>
+          <p className="font-medium truncate">{container.endpointName}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground mb-1">Uptime</p>
+          <p className="font-medium">{formatUptime(container.created)}</p>
+        </div>
+        <div className="col-span-2">
+          <p className="text-xs text-muted-foreground mb-1">Image</p>
+          <p className="font-medium truncate">{container.image}</p>
+        </div>
+        <div className="col-span-2">
+          <p className="text-xs text-muted-foreground mb-1">Status</p>
+          <p className="text-xs">{container.status}</p>
+        </div>
+      </div>
+
+      {/* View Details Hint */}
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-xs text-muted-foreground group-hover:text-primary transition-colors">
+          Click to view details, logs, and metrics →
+        </p>
+      </div>
+    </button>
   );
 }
 
 export default function ContainerHealthPage() {
-  const [selectedContainerId, setSelectedContainerId] = useState<string | undefined>(undefined);
-
+  const navigate = useNavigate();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers();
   const { interval, setInterval } = useAutoRefresh(30);
 
@@ -63,26 +112,17 @@ export default function ContainerHealthPage() {
     [containers]
   );
 
-  // Get selected container
-  const selectedContainer = useMemo(() =>
-    runningContainers.find((c) => c.id === selectedContainerId),
-    [runningContainers, selectedContainerId]
-  );
-
-  // Auto-select first container if none selected
-  useMemo(() => {
-    if (!selectedContainerId && runningContainers.length > 0) {
-      setSelectedContainerId(runningContainers[0].id);
-    }
-  }, [selectedContainerId, runningContainers]);
+  const handleContainerClick = (container: Container) => {
+    navigate(`/containers/${container.endpointId}/${container.id}?tab=metrics`);
+  };
 
   if (isError) {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Container Health</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Running Containers</h1>
           <p className="text-muted-foreground">
-            Health status deep-dive with metrics
+            Monitor health and metrics for running containers
           </p>
         </div>
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
@@ -107,9 +147,9 @@ export default function ContainerHealthPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Container Health</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Running Containers</h1>
           <p className="text-muted-foreground">
-            Health status deep-dive with metrics
+            Monitor health and metrics for running containers
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -118,102 +158,47 @@ export default function ContainerHealthPage() {
         </div>
       </div>
 
-      {/* Container Selector */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label htmlFor="container-select" className="text-sm font-medium">
-            Container
-          </label>
-          <select
-            id="container-select"
-            value={selectedContainerId ?? ''}
-            onChange={(e) => setSelectedContainerId(e.target.value || undefined)}
-            className="min-w-[300px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="">Select a container</option>
-            {runningContainers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.endpointName})
-              </option>
-            ))}
-          </select>
+      {/* Stats */}
+      <div className="flex items-center gap-4">
+        <div className="rounded-lg border bg-card px-4 py-2">
+          <p className="text-2xl font-bold">{runningContainers.length}</p>
+          <p className="text-xs text-muted-foreground">Running Containers</p>
         </div>
-
-        <span className="ml-4 text-sm text-muted-foreground">
-          {runningContainers.length} running container{runningContainers.length !== 1 ? 's' : ''}
-        </span>
+        {containers && (
+          <div className="rounded-lg border bg-card px-4 py-2">
+            <p className="text-2xl font-bold">{containers.length}</p>
+            <p className="text-xs text-muted-foreground">Total Containers</p>
+          </div>
+        )}
       </div>
 
+      {/* Container Grid */}
       {isLoading ? (
-        <div className="grid gap-6 md:grid-cols-2">
-          <SkeletonCard className="h-[400px]" />
-          <SkeletonCard className="h-[400px]" />
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard className="h-[280px]" />
+          <SkeletonCard className="h-[280px]" />
+          <SkeletonCard className="h-[280px]" />
+          <SkeletonCard className="h-[280px]" />
+          <SkeletonCard className="h-[280px]" />
+          <SkeletonCard className="h-[280px]" />
         </div>
-      ) : !selectedContainer ? (
-        <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
-          <Activity className="mx-auto h-12 w-12 opacity-50" />
-          <p className="mt-4">
-            {runningContainers.length === 0
-              ? 'No running containers found'
-              : 'Select a container to view health metrics'}
+      ) : runningContainers.length === 0 ? (
+        <div className="rounded-lg border bg-card p-12 text-center">
+          <Activity className="mx-auto h-16 w-16 text-muted-foreground opacity-50" />
+          <p className="mt-4 text-lg font-medium">No running containers found</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Start some containers to see their health metrics here
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Health Status and Metadata Card */}
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
-                  <Box className="h-7 w-7 text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold">{selectedContainer.name}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedContainer.id.slice(0, 12)}
-                  </p>
-                </div>
-              </div>
-              <StatusBadge
-                status={getHealthStatus(selectedContainer)}
-                className="text-sm px-3 py-1"
-              />
-            </div>
-
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <MetadataItem
-                icon={Server}
-                label="Endpoint"
-                value={selectedContainer.endpointName}
-              />
-              <MetadataItem
-                icon={HardDrive}
-                label="Image"
-                value={selectedContainer.image.split(':')[0].split('/').pop() || selectedContainer.image}
-              />
-              <MetadataItem
-                icon={Clock}
-                label="Uptime"
-                value={formatUptime(selectedContainer.created)}
-              />
-              <MetadataItem
-                icon={Activity}
-                label="Status"
-                value={selectedContainer.status}
-              />
-              <MetadataItem
-                icon={RotateCw}
-                label="Created"
-                value={formatDate(new Date(selectedContainer.created * 1000))}
-              />
-            </div>
-          </div>
-
-          {/* Metrics Charts */}
-          <ContainerMetricsViewer
-            endpointId={selectedContainer.endpointId}
-            containerId={selectedContainer.id}
-          />
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {runningContainers.map((container) => (
+            <ContainerCard
+              key={container.id}
+              container={container}
+              onClick={() => handleContainerClick(container)}
+            />
+          ))}
         </div>
       )}
     </div>
