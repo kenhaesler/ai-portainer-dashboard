@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import type { Namespace } from 'socket.io';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getEndpoints, getContainers } from './portainer-client.js';
@@ -9,10 +10,26 @@ import { insertMetrics, type MetricInsert } from './metrics-store.js';
 import { detectAnomaly } from './anomaly-detector.js';
 import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
+import { suggestAction } from './remediation-service.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
 
 const log = createChildLogger('monitoring-service');
+
+let monitoringNamespace: Namespace | null = null;
+
+export function setMonitoringNamespace(ns: Namespace): void {
+  monitoringNamespace = ns;
+  log.info('Monitoring namespace registered for real-time broadcasting');
+}
+
+function broadcastInsight(insight: Insight): void {
+  if (!monitoringNamespace) return;
+
+  // Broadcast to all clients subscribed to this severity
+  monitoringNamespace.to(`severity:${insight.severity}`).emit('insights:new', insight);
+  monitoringNamespace.to('severity:all').emit('insights:new', insight);
+}
 
 function classifySeverity(findings: SecurityFinding[]): 'critical' | 'warning' | 'info' {
   if (findings.some((f) => f.severity === 'critical')) return 'critical';
@@ -209,11 +226,25 @@ export async function runMonitoringCycle(): Promise<void> {
       log.info('Ollama unavailable, using rule-based analysis only');
     }
 
-    // 7. Store all insights
+    // 7. Store all insights and suggest remediation actions
     const allInsights = [...anomalyInsights, ...securityInsights, ...aiInsights];
+    const suggestedActions: Array<{ actionId: string; actionType: string; insightId: string }> = [];
+
     for (const insight of allInsights) {
       try {
         insertInsight(insight);
+
+        // Broadcast insight in real-time via Socket.IO
+        broadcastInsight(insight as Insight);
+
+        // Attempt to suggest a remediation action for this insight
+        const suggestedAction = suggestAction(insight as Insight);
+        if (suggestedAction) {
+          suggestedActions.push({
+            ...suggestedAction,
+            insightId: insight.id,
+          });
+        }
       } catch (err) {
         log.warn({ insightId: insight.id, err }, 'Failed to insert insight');
       }
@@ -230,6 +261,7 @@ export async function runMonitoringCycle(): Promise<void> {
         anomalies: anomalyInsights.length,
         aiAvailable: ollamaAvailable,
         totalInsights: allInsights.length,
+        suggestedActions: suggestedActions.length,
       },
       'Monitoring cycle completed',
     );

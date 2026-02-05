@@ -38,6 +38,9 @@ export function useMonitoring() {
   useEffect(() => {
     if (!monitoringSocket) return;
 
+    // Subscribe to all severities on connect
+    monitoringSocket.emit('insights:subscribe', { severity: 'all' });
+
     const handleNewInsight = (insight: Insight) => {
       if (subscribedSeverities.has(insight.severity)) {
         setInsights((prev) => [insight, ...prev]);
