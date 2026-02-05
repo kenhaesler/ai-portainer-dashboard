@@ -1,4 +1,4 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 
 interface WorkloadData {
   endpoint: string;
@@ -11,6 +11,29 @@ interface WorkloadDistributionProps {
   data: WorkloadData[];
 }
 
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload) return null;
+
+  const total = payload.reduce((sum: number, entry: any) => sum + entry.value, 0);
+
+  return (
+    <div className="rounded-xl bg-popover/95 backdrop-blur-sm border border-border px-3 py-2 shadow-lg">
+      <p className="text-xs font-medium mb-1.5 text-foreground">{label}</p>
+      <div className="text-xs text-muted-foreground mb-1">Total: <span className="font-medium text-foreground">{total}</span></div>
+      {payload.map((entry: any) => (
+        <div key={entry.name} className="flex items-center gap-2 text-xs">
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="text-muted-foreground">{entry.name}:</span>
+          <span className="font-medium">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export function WorkloadDistribution({ data }: WorkloadDistributionProps) {
   if (!data.length) {
     return (
@@ -20,16 +43,73 @@ export function WorkloadDistribution({ data }: WorkloadDistributionProps) {
     );
   }
 
+  // Truncate endpoint names for display
+  const chartData = data.map(d => ({
+    ...d,
+    displayName: d.endpoint.length > 12 ? d.endpoint.slice(0, 12) + '…' : d.endpoint,
+  }));
+
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <BarChart data={data} layout="vertical" margin={{ top: 10, right: 30, left: 80, bottom: 0 }}>
-        <XAxis type="number" tick={{ fontSize: 12 }} />
-        <YAxis type="category" dataKey="endpoint" tick={{ fontSize: 12 }} width={80} />
-        <Tooltip />
-        <Legend />
-        <Bar dataKey="running" name="Running" fill="#10b981" stackId="a" />
-        <Bar dataKey="stopped" name="Stopped" fill="#ef4444" stackId="a" />
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="space-y-3">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart
+          data={chartData}
+          layout="vertical"
+          margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+        >
+          <defs>
+            <linearGradient id="workloadGradientRunning" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#10b981" />
+              <stop offset="100%" stopColor="#34d399" />
+            </linearGradient>
+            <linearGradient id="workloadGradientStopped" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="100%" stopColor="#f87171" />
+            </linearGradient>
+          </defs>
+          <XAxis
+            type="number"
+            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            type="category"
+            dataKey="displayName"
+            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+            axisLine={false}
+            tickLine={false}
+            width={90}
+          />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }} />
+          <Bar
+            dataKey="running"
+            name="Running"
+            fill="url(#workloadGradientRunning)"
+            stackId="a"
+            radius={[0, 0, 0, 0]}
+          />
+          <Bar
+            dataKey="stopped"
+            name="Stopped"
+            fill="url(#workloadGradientStopped)"
+            stackId="a"
+            radius={[0, 4, 4, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+
+      {/* Custom legend */}
+      <div className="flex justify-center gap-4">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
+          <span className="text-xs text-muted-foreground">Running</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-500 to-red-400" />
+          <span className="text-xs text-muted-foreground">Stopped</span>
+        </div>
+      </div>
+    </div>
   );
 }
