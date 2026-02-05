@@ -105,7 +105,7 @@ export default function WorkloadExplorerPage() {
         return (
           <button
             onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-            className="font-medium text-primary hover:underline text-left"
+            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:scale-105 hover:shadow-sm"
           >
             {truncate(getValue<string>(), 40)}
           </button>
@@ -116,7 +116,9 @@ export default function WorkloadExplorerPage() {
       accessorKey: 'image',
       header: 'Image',
       cell: ({ getValue }) => (
-        <span className="text-muted-foreground">{truncate(getValue<string>(), 50)}</span>
+        <span className="inline-flex items-center rounded-md bg-muted/50 px-2 py-0.5 text-xs font-mono text-muted-foreground">
+          {truncate(getValue<string>(), 50)}
+        </span>
       ),
     },
     {
@@ -136,7 +138,11 @@ export default function WorkloadExplorerPage() {
       header: 'Endpoint',
       cell: ({ row }) => {
         const container = row.original;
-        return `${container.endpointName} (ID: ${container.endpointId})`;
+        return (
+          <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+            {container.endpointName}
+          </span>
+        );
       },
     },
     {
