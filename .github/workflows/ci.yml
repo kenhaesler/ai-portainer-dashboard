@@ -7,10 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Run Tests
+  typecheck:
+    name: Type Check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,6 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install
@@ -26,20 +26,9 @@ jobs:
       - name: Run TypeScript type check
         run: npm run typecheck
 
-      - name: Run linting
-        run: npm run lint
-
-      - name: Run backend tests
-        run: npm run test -w backend
-
-      - name: Run frontend tests
-        run: npm run test -w frontend
-
-  build:
-    name: Build
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    needs: test
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,6 +37,73 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run linting
+        run: npm run lint
+
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run backend tests
+        run: npm run test -w backend
+
+  test-frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run frontend tests
+        run: npm run test -w frontend
+
+  test-gate:
+    name: Test Gate (Required)
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    steps:
+      - name: All tests passed
+        run: echo "All backend and frontend tests passed. PR is eligible for merge."
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, test-gate]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install
