@@ -1,14 +1,334 @@
+import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { X } from 'lucide-react';
+import { useContainers, type Container } from '@/hooks/use-containers';
+import { useNetworks, type Network } from '@/hooks/use-networks';
+import { useEndpoints } from '@/hooks/use-endpoints';
+import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { TopologyGraph } from '@/components/network/topology-graph';
+import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
+import { RefreshButton } from '@/components/shared/refresh-button';
+import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { formatDate } from '@/lib/utils';
+
+type SelectedNode =
+  | { type: 'container'; data: Container }
+  | { type: 'network'; data: Network }
+  | null;
+
 export default function NetworkTopologyPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedNode, setSelectedNode] = useState<SelectedNode>(null);
+
+  const endpointParam = searchParams.get('endpoint');
+  const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
+
+  const setSelectedEndpoint = (endpointId: number | undefined) => {
+    const params: Record<string, string> = {};
+    if (endpointId !== undefined) {
+      params.endpoint = String(endpointId);
+    }
+    setSearchParams(params);
+  };
+
+  const { data: endpoints } = useEndpoints();
+  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint);
+  const { data: networks, isLoading: networksLoading, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
+  const { interval, setInterval } = useAutoRefresh(30);
+
+  // Transform data for TopologyGraph
+  const graphData = useMemo(() => {
+    if (!containers || !networks) {
+      return { containers: [], networks: [] };
+    }
+
+    const transformedContainers = containers.map(c => ({
+      id: c.id,
+      name: c.name,
+      state: c.state as 'running' | 'stopped' | 'paused' | 'unknown',
+      image: c.image,
+      networks: c.networks,
+    }));
+
+    const transformedNetworks = networks.map(n => ({
+      id: n.id,
+      name: n.name,
+      driver: n.driver,
+      subnet: n.subnet,
+      containers: n.containers,
+    }));
+
+    return {
+      containers: transformedContainers,
+      networks: transformedNetworks,
+    };
+  }, [containers, networks]);
+
+  const handleRefresh = () => {
+    refetchContainers();
+    refetchNetworks();
+  };
+
+  const isLoading = containersLoading || networksLoading;
+  const isError = containersError || networksError;
+  const isFetching = containersFetching || networksFetching;
+
+  const handleNodeClick = (nodeId: string) => {
+    // Determine if it's a container or network node
+    if (nodeId.startsWith('container-')) {
+      const containerId = nodeId.replace('container-', '');
+      const container = containers?.find(c => c.id === containerId);
+      if (container) {
+        setSelectedNode({ type: 'container', data: container });
+      }
+    } else if (nodeId.startsWith('net-')) {
+      const networkId = nodeId.replace('net-', '');
+      const network = networks?.find(n => n.id === networkId);
+      if (network) {
+        setSelectedNode({ type: 'network', data: network });
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Network Topology</h1>
-        <p className="text-muted-foreground">
-          Interactive network graph visualization
-        </p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Network Topology</h1>
+          <p className="text-muted-foreground">
+            Interactive network graph visualization
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
+          <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
+        </div>
       </div>
-      <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
-        Coming soon
+
+      {/* Endpoint Filter */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label htmlFor="endpoint-select" className="text-sm font-medium">
+            Endpoint
+          </label>
+          <select
+            id="endpoint-select"
+            value={selectedEndpoint ?? ''}
+            onChange={(e) => setSelectedEndpoint(e.target.value ? Number(e.target.value) : undefined)}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">All endpoints</option>
+            {endpoints?.map((ep) => (
+              <option key={ep.id} value={ep.id}>
+                {ep.name} (ID: {ep.id})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {containers && networks && (
+          <span className="text-sm text-muted-foreground">
+            {containers.length} container{containers.length !== 1 ? 's' : ''} · {networks.length} network{networks.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {/* Graph Container */}
+      <div className="relative">
+        {isLoading ? (
+          <SkeletonCard className="h-[600px]" />
+        ) : isError ? (
+          <div className="flex h-[600px] items-center justify-center rounded-lg border bg-card p-8">
+            <div className="text-center">
+              <p className="text-lg font-semibold text-destructive">Error loading topology</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Failed to load containers or networks. Please try again.
+              </p>
+              <button
+                onClick={handleRefresh}
+                className="mt-4 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-4">
+            <div className={`transition-all ${selectedNode ? 'w-2/3' : 'w-full'}`}>
+              <TopologyGraph
+                containers={graphData.containers}
+                networks={graphData.networks}
+                onNodeClick={handleNodeClick}
+              />
+            </div>
+
+            {/* Side Panel */}
+            {selectedNode && (
+              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 h-[600px] overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">
+                    {selectedNode.type === 'container' ? 'Container Details' : 'Network Details'}
+                  </h3>
+                  <button
+                    onClick={() => setSelectedNode(null)}
+                    className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {selectedNode.type === 'container' ? (
+                  <ContainerDetails container={selectedNode.data} />
+                ) : (
+                  <NetworkDetails network={selectedNode.data} />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContainerDetails({ container }: { container: Container }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Name</label>
+        <p className="text-sm font-mono">{container.name}</p>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Status</label>
+        <div className="mt-1">
+          <StatusBadge status={container.state} />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Image</label>
+        <p className="text-sm font-mono break-all">{container.image}</p>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Endpoint</label>
+        <p className="text-sm">{container.endpointName}</p>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Networks</label>
+        <div className="mt-1 space-y-1">
+          {container.networks.length > 0 ? (
+            container.networks.map((net) => (
+              <div key={net} className="text-sm px-2 py-1 rounded bg-muted">
+                {net}
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">No networks</p>
+          )}
+        </div>
+      </div>
+
+      {container.ports.length > 0 && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Ports</label>
+          <div className="mt-1 space-y-1">
+            {container.ports.map((port, i) => (
+              <div key={i} className="text-sm font-mono">
+                {port.public ? `${port.public} → ` : ''}{port.private}/{port.type}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Created</label>
+        <p className="text-sm">{formatDate(container.created * 1000)}</p>
+      </div>
+
+      {Object.keys(container.labels).length > 0 && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Labels</label>
+          <div className="mt-1 space-y-1 max-h-40 overflow-y-auto">
+            {Object.entries(container.labels).map(([key, value]) => (
+              <div key={key} className="text-xs">
+                <span className="font-mono text-muted-foreground">{key}:</span>{' '}
+                <span className="font-mono">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NetworkDetails({ network }: { network: Network }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Name</label>
+        <p className="text-sm font-mono">{network.name}</p>
+      </div>
+
+      {network.driver && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Driver</label>
+          <p className="text-sm">{network.driver}</p>
+        </div>
+      )}
+
+      {network.scope && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Scope</label>
+          <p className="text-sm">{network.scope}</p>
+        </div>
+      )}
+
+      {network.subnet && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Subnet</label>
+          <p className="text-sm font-mono">{network.subnet}</p>
+        </div>
+      )}
+
+      {network.gateway && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Gateway</label>
+          <p className="text-sm font-mono">{network.gateway}</p>
+        </div>
+      )}
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Endpoint</label>
+        <p className="text-sm">{network.endpointName}</p>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Connected Containers</label>
+        <div className="mt-1">
+          {network.containers.length > 0 ? (
+            <div className="space-y-1">
+              {network.containers.map((containerId) => (
+                <div key={containerId} className="text-sm px-2 py-1 rounded bg-muted font-mono">
+                  {containerId.slice(0, 12)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No containers connected</p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">ID</label>
+        <p className="text-xs font-mono text-muted-foreground break-all">{network.id}</p>
       </div>
     </div>
   );

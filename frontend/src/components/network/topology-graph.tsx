@@ -32,6 +32,7 @@ interface NetworkData {
 interface TopologyGraphProps {
   containers: ContainerData[];
   networks: NetworkData[];
+  onNodeClick?: (nodeId: string) => void;
 }
 
 const nodeTypes = {
@@ -39,7 +40,7 @@ const nodeTypes = {
   network: NetworkNode,
 };
 
-export function TopologyGraph({ containers, networks }: TopologyGraphProps) {
+export function TopologyGraph({ containers, networks, onNodeClick }: TopologyGraphProps) {
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
@@ -104,6 +105,12 @@ export function TopologyGraph({ containers, networks }: TopologyGraphProps) {
     );
   }
 
+  const handleNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    if (onNodeClick) {
+      onNodeClick(node.id);
+    }
+  }, [onNodeClick]);
+
   return (
     <div className="h-[600px] rounded-lg border">
       <ReactFlow
@@ -111,6 +118,7 @@ export function TopologyGraph({ containers, networks }: TopologyGraphProps) {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
         fitView
         attributionPosition="bottom-left"
