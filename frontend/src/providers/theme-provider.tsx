@@ -4,6 +4,8 @@ import { useThemeStore } from '@/stores/theme-store';
 const ALL_THEME_CLASSES = [
   'light',
   'dark',
+  'apple-light',
+  'apple-dark',
   'catppuccin-latte',
   'catppuccin-frappe',
   'catppuccin-macchiato',
@@ -23,8 +25,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Add the current theme class
     root.classList.add(currentClass);
 
-    // For Catppuccin dark themes, also add 'dark' class for Tailwind dark: variants
+    // For dark themes, also add 'dark' class for Tailwind dark: variants
     if (
+      currentClass === 'apple-dark' ||
       currentClass === 'catppuccin-frappe' ||
       currentClass === 'catppuccin-macchiato' ||
       currentClass === 'catppuccin-mocha'

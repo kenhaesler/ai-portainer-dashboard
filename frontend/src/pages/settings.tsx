@@ -1,9 +1,10 @@
 import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
-import { Palette, Monitor, Sun, Moon } from 'lucide-react';
+import { Palette, Monitor, Sun, Moon, Apple } from 'lucide-react';
 
 function ThemeIcon({ theme }: { theme: Theme }) {
   if (theme === 'system') return <Monitor className="h-4 w-4" />;
   if (theme === 'light') return <Sun className="h-4 w-4" />;
+  if (theme.startsWith('apple')) return <Apple className="h-4 w-4" />;
   if (theme.startsWith('catppuccin')) return <Palette className="h-4 w-4" />;
   return <Moon className="h-4 w-4" />;
 }
