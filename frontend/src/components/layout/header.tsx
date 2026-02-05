@@ -1,5 +1,5 @@
-import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Search, LogOut, User } from 'lucide-react';
+import { useLocation, Link } from 'react-router-dom';
+import { Sun, Moon, Search, LogOut, User, Keyboard } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
@@ -75,15 +75,18 @@ export function Header() {
             {index > 0 && (
               <span className="text-muted-foreground">/</span>
             )}
-            <span
-              className={cn(
-                index === breadcrumbs.length - 1
-                  ? 'font-medium text-foreground'
-                  : 'text-muted-foreground'
-              )}
-            >
-              {crumb.label}
-            </span>
+            {index === breadcrumbs.length - 1 ? (
+              <span className="font-medium text-foreground">
+                {crumb.label}
+              </span>
+            ) : (
+              <Link
+                to={crumb.path}
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {crumb.label}
+              </Link>
+            )}
           </span>
         ))}
       </nav>

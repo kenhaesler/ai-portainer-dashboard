@@ -1,5 +1,5 @@
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/hooks/use-container-detail';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
@@ -126,20 +126,23 @@ export default function ContainerDetailPage() {
         <Tabs.List className="flex items-center gap-1 border-b">
           <Tabs.Trigger
             value="overview"
-            className="px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
           >
+            <Info className="h-4 w-4" />
             Overview
           </Tabs.Trigger>
           <Tabs.Trigger
             value="logs"
-            className="px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
           >
+            <ScrollText className="h-4 w-4" />
             Logs
           </Tabs.Trigger>
           <Tabs.Trigger
             value="metrics"
-            className="px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
           >
+            <Activity className="h-4 w-4" />
             Metrics
           </Tabs.Trigger>
         </Tabs.List>

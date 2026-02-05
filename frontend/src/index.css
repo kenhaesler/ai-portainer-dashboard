@@ -746,3 +746,48 @@
 .apple-dark .bg-primary:hover::before {
   left: 100%;
 }
+
+/* ====== SHIMMER LOADING ANIMATION ====== */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ====== STATUS PULSE ANIMATION ====== */
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* ====== PAGE TRANSITION ANIMATIONS ====== */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-in {
+  animation: page-fade-in 0.3s ease-out;
+}
+
+/* Apply to main content area */
+main > div {
+  animation: page-fade-in 0.25s ease-out;
+}

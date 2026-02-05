@@ -12,7 +12,10 @@ interface KpiCardProps {
 
 export function KpiCard({ label, value, trend, trendValue, icon, className }: KpiCardProps) {
   return (
-    <div className={cn('rounded-lg border bg-card p-6 shadow-sm', className)}>
+    <div className={cn(
+      'rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
+      className
+    )}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
         {icon && <div className="text-muted-foreground">{icon}</div>}
