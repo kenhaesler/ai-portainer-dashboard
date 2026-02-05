@@ -11,6 +11,7 @@ import { detectAnomaly } from './anomaly-detector.js';
 import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { suggestAction } from './remediation-service.js';
+import { triggerInvestigation } from './investigation-service.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
 
@@ -236,6 +237,13 @@ export async function runMonitoringCycle(): Promise<void> {
 
         // Broadcast insight in real-time via Socket.IO
         broadcastInsight(insight as Insight);
+
+        // Trigger root cause investigation for anomaly insights
+        if (insight.category === 'anomaly') {
+          triggerInvestigation(insight as Insight).catch((err) => {
+            log.warn({ insightId: insight.id, err }, 'Failed to trigger investigation');
+          });
+        }
 
         // Attempt to suggest a remediation action for this insight
         const suggestedAction = suggestAction(insight as Insight);
