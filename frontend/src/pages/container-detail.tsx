@@ -4,7 +4,6 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/hooks/use-container-detail';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { RefreshButton } from '@/components/shared/refresh-button';
-import { ContainerActionsBar } from '@/components/container/container-actions-bar';
 import { ContainerOverview } from '@/components/container/container-overview';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
 import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
@@ -117,9 +116,6 @@ export default function ContainerDetailPage() {
         </div>
         <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
       </div>
-
-      {/* Actions Bar */}
-      <ContainerActionsBar container={container} onActionComplete={() => refetch()} />
 
       {/* Tabs */}
       <Tabs.Root
