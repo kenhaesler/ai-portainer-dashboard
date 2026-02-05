@@ -5,6 +5,25 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 
 export type TailCount = 100 | 500 | 1000 | -1;
 
+type LogLevel = 'error' | 'warn' | 'info' | 'debug' | null;
+
+function getLogLevel(line: string): LogLevel {
+  const lower = line.toLowerCase();
+  if (lower.includes('error') || lower.includes('fatal') || lower.includes('panic') || lower.includes('exception')) {
+    return 'error';
+  }
+  if (lower.includes('warn') || lower.includes('warning')) {
+    return 'warn';
+  }
+  if (lower.includes('debug') || lower.includes('trace')) {
+    return 'debug';
+  }
+  if (lower.includes('info')) {
+    return 'info';
+  }
+  return null;
+}
+
 interface ContainerLogsViewerProps {
   endpointId: number;
   containerId: string;
@@ -192,24 +211,38 @@ export function ContainerLogsViewer({
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border bg-card shadow-sm">
+        <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
           <div
             ref={logViewerRef}
-            className="h-[600px] overflow-auto p-4 bg-slate-950 dark:bg-slate-950"
+            className="h-[600px] overflow-auto bg-slate-950 dark:bg-slate-950"
           >
-            <pre className="text-xs text-slate-100 font-mono leading-relaxed">
-              {displayLogs.map((line, index) => (
-                <div
-                  key={index}
-                  className={searchTerm && line.toLowerCase().includes(searchTerm.toLowerCase())
-                    ? 'bg-yellow-500/20'
-                    : undefined
-                  }
-                >
-                  {line}
-                </div>
-              ))}
-            </pre>
+            <table className="w-full text-sm font-mono">
+              <tbody>
+                {displayLogs.map((line, index) => {
+                  const isMatch = searchTerm && line.toLowerCase().includes(searchTerm.toLowerCase());
+                  const logLevel = getLogLevel(line);
+                  return (
+                    <tr
+                      key={index}
+                      className={`
+                        ${isMatch ? 'bg-yellow-500/30' : 'hover:bg-slate-800/50'}
+                        ${logLevel === 'error' ? 'text-red-400' : ''}
+                        ${logLevel === 'warn' ? 'text-yellow-400' : ''}
+                        ${logLevel === 'debug' ? 'text-slate-500' : ''}
+                        ${logLevel === 'info' || !logLevel ? 'text-slate-200' : ''}
+                      `}
+                    >
+                      <td className="select-none px-3 py-0.5 text-right text-slate-600 text-xs w-12 align-top">
+                        {index + 1}
+                      </td>
+                      <td className="px-3 py-0.5 whitespace-pre-wrap break-all leading-relaxed">
+                        {line}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
