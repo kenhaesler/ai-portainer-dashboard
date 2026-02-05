@@ -80,7 +80,7 @@ export const StackSchema = z.object({
   Env: z.array(z.object({
     name: z.string(),
     value: z.string(),
-  })).optional().default([]),
+  })).nullish().default([]),
 }).passthrough();
 
 export const ContainerStatsSchema = z.object({
