@@ -118,6 +118,22 @@ export function CommandPalette() {
               No results found.
             </Command.Empty>
 
+            {/* Keyboard shortcuts hint */}
+            <div className="mb-2 flex items-center justify-center gap-4 border-b border-border pb-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono">↑↓</kbd>
+                navigate
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono">↵</kbd>
+                select
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono">esc</kbd>
+                close
+              </span>
+            </div>
+
             <Command.Group
               heading="Pages"
               className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"

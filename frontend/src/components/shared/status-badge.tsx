@@ -29,21 +29,61 @@ const statusColors: Record<string, string> = {
   error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
 
+const statusDotColors: Record<string, string> = {
+  running: 'bg-emerald-500',
+  healthy: 'bg-emerald-500',
+  up: 'bg-emerald-500',
+  active: 'bg-emerald-500',
+  completed: 'bg-emerald-500',
+  ok: 'bg-emerald-500',
+  stopped: 'bg-red-500',
+  down: 'bg-red-500',
+  unhealthy: 'bg-red-500',
+  failed: 'bg-red-500',
+  error: 'bg-red-500',
+  critical: 'bg-red-500',
+  rejected: 'bg-red-500',
+  paused: 'bg-amber-500',
+  pending: 'bg-amber-500',
+  warning: 'bg-amber-500',
+  executing: 'bg-purple-500',
+  approved: 'bg-blue-500',
+  info: 'bg-blue-500',
+  unknown: 'bg-gray-500',
+  inactive: 'bg-gray-500',
+};
+
+// Active statuses get a pulse animation
+const activeStatuses = ['running', 'healthy', 'up', 'active', 'executing', 'pending'];
+
 interface StatusBadgeProps {
   status: Status | string;
   className?: string;
+  showDot?: boolean;
 }
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export function StatusBadge({ status, className, showDot = true }: StatusBadgeProps) {
   const colorClass = statusColors[status] || statusColors.unknown;
+  const dotColorClass = statusDotColors[status] || statusDotColors.unknown;
+  const isActive = activeStatuses.includes(status);
+
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',
         colorClass,
         className
       )}
     >
+      {showDot && (
+        <span
+          className={cn(
+            'h-1.5 w-1.5 rounded-full',
+            dotColorClass,
+            isActive && 'status-pulse'
+          )}
+        />
+      )}
       {status}
     </span>
   );

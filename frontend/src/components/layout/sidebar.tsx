@@ -17,6 +17,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,8 @@ const navigation: NavGroup[] = [
 export function Sidebar() {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const collapsedGroups = useUiStore((s) => s.collapsedGroups);
+  const toggleGroup = useUiStore((s) => s.toggleGroup);
 
   return (
     <aside
@@ -99,48 +102,71 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {navigation.map((group) => (
-          <div key={group.title} className="mb-4">
-            {!sidebarCollapsed && (
-              <h3 className="mb-1 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {group.title}
-              </h3>
-            )}
-            <ul className="space-y-0.5">
-              {group.items.map((item) => (
-                <li key={item.to}>
-                  <NavLink
-                    to={item.to}
-                    end={item.to === '/'}
-                    className={({ isActive }) =>
-                      cn(
-                        'group flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                          : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                        sidebarCollapsed && 'justify-center px-0'
-                      )
-                    }
-                    title={sidebarCollapsed ? item.label : undefined}
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {!sidebarCollapsed && (
-                      <>
-                        <span className="truncate">{item.label}</span>
-                        {item.badge != null && item.badge > 0 && (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
-                            {item.badge}
-                          </span>
-                        )}
-                      </>
+      <nav className="flex-1 overflow-y-auto py-4">
+        {navigation.map((group) => {
+          const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
+          return (
+            <div key={group.title} className="mb-2">
+              {!sidebarCollapsed && (
+                <button
+                  onClick={() => toggleGroup(group.title)}
+                  className="mb-1 flex w-full items-center justify-between px-4 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <span>{group.title}</span>
+                  <ChevronDown
+                    className={cn(
+                      'h-3 w-3 transition-transform duration-200',
+                      isGroupCollapsed && '-rotate-90'
                     )}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+                  />
+                </button>
+              )}
+              <div
+                className={cn(
+                  'grid transition-all duration-200 ease-in-out',
+                  isGroupCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+                )}
+              >
+                <ul className="space-y-0.5 overflow-hidden px-2">
+                  {group.items.map((item) => (
+                    <li key={item.to}>
+                      <NavLink
+                        to={item.to}
+                        end={item.to === '/'}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-all duration-200',
+                            isActive
+                              ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
+                              : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+                            sidebarCollapsed && 'justify-center px-0'
+                          )
+                        }
+                        title={sidebarCollapsed ? item.label : undefined}
+                      >
+                        {() => (
+                          <>
+                            <item.icon className="h-4 w-4 shrink-0" />
+                            {!sidebarCollapsed && (
+                              <>
+                                <span className="truncate">{item.label}</span>
+                                {item.badge != null && item.badge > 0 && (
+                                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
+                                    {item.badge}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Collapse toggle */}
