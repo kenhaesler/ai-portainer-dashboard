@@ -1,19 +1,30 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ScrollText } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
+import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
 
 export default function ContainerLogsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { interval, setInterval } = useAutoRefresh(0); // Off by default for logs
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // URL state management for endpoint
   const endpointParam = searchParams.get('endpoint');
   const containerParam = searchParams.get('container');
   const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
   const selectedContainer = containerParam || undefined;
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (interval === 0 || !selectedEndpoint || !selectedContainer) return;
+    const timer = window.setInterval(() => setRefreshKey(k => k + 1), interval * 1000);
+    return () => window.clearInterval(timer);
+  }, [interval, selectedEndpoint, selectedContainer]);
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
     const params: Record<string, string> = {};
@@ -47,11 +58,17 @@ export default function ContainerLogsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Container Logs</h1>
-        <p className="text-muted-foreground">
-          Docker container log viewer
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Container Logs</h1>
+          <p className="text-muted-foreground">
+            Docker container log viewer
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
+          <RefreshButton onClick={() => setRefreshKey(k => k + 1)} isLoading={false} />
+        </div>
       </div>
 
       {/* Selectors */}
@@ -110,6 +127,7 @@ export default function ContainerLogsPage() {
         </div>
       ) : (
         <ContainerLogsViewer
+          key={refreshKey}
           endpointId={selectedEndpoint}
           containerId={selectedContainer}
         />
