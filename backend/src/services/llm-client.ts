@@ -17,6 +17,22 @@ function getClient(): Ollama {
   return client;
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const config = getConfig();
+  const token = config.OLLAMA_BEARER_TOKEN;
+
+  if (!token) return {};
+
+  // Check if token is in username:password format (Basic auth)
+  if (token.includes(':')) {
+    const base64Credentials = Buffer.from(token).toString('base64');
+    return { 'Authorization': `Basic ${base64Credentials}` };
+  }
+
+  // Otherwise use Bearer token
+  return { 'Authorization': `Bearer ${token}` };
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -28,7 +44,6 @@ export async function chatStream(
   onChunk: (chunk: string) => void,
 ): Promise<string> {
   const config = getConfig();
-  const ollama = getClient();
 
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -38,17 +53,66 @@ export async function chatStream(
   let fullResponse = '';
 
   try {
-    const response = await ollama.chat({
-      model: config.OLLAMA_MODEL,
-      messages: fullMessages,
-      stream: true,
-    });
+    // Use authenticated fetch if API endpoint and token are configured
+    if (config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
+      const response = await fetch(config.OLLAMA_API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          model: config.OLLAMA_MODEL,
+          messages: fullMessages,
+          stream: true,
+        }),
+      });
 
-    for await (const part of response) {
-      const content = part.message?.content || '';
-      if (content) {
-        fullResponse += content;
-        onChunk(content);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line);
+            const content = json.choices?.[0]?.delta?.content || json.message?.content || '';
+            if (content) {
+              fullResponse += content;
+              onChunk(content);
+            }
+          } catch {
+            // Skip invalid JSON lines
+          }
+        }
+      }
+    } else {
+      // Use Ollama SDK for local/unauthenticated access
+      const ollama = getClient();
+      const response = await ollama.chat({
+        model: config.OLLAMA_MODEL,
+        messages: fullMessages,
+        stream: true,
+      });
+
+      for await (const part of response) {
+        const content = part.message?.content || '';
+        if (content) {
+          fullResponse += content;
+          onChunk(content);
+        }
       }
     }
 
