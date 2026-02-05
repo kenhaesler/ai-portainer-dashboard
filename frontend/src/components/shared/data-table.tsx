@@ -92,7 +92,7 @@ export function DataTable<T>({
                 <tr
                   key={row.id}
                   className={cn(
-                    'border-b transition-colors duration-200 hover:bg-accent/25',
+                    'border-b transition-colors duration-200 hover:bg-muted/30',
                     onRowClick && 'cursor-pointer'
                   )}
                   onClick={() => onRowClick?.(row.original)}
