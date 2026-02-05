@@ -11,18 +11,18 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5273,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3051',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3051',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:3051',
         ws: true,
         changeOrigin: true,
       },
