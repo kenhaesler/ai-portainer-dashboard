@@ -1,10 +1,83 @@
 import { FastifyInstance } from 'fastify';
 import { getConfig } from '../config/index.js';
+import { getDb } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('logs-route');
 
+interface ElasticsearchConfig {
+  enabled: boolean;
+  endpoint: string;
+  apiKey: string;
+  indexPattern: string;
+  verifySsl: boolean;
+}
+
+function getElasticsearchConfig(): ElasticsearchConfig | null {
+  const db = getDb();
+  const config = getConfig();
+
+  // Try to get settings from database first
+  const dbSettings = db.prepare(
+    "SELECT key, value FROM settings WHERE key LIKE 'elasticsearch.%'"
+  ).all() as Array<{ key: string; value: string }>;
+
+  const settingsMap: Record<string, string> = {};
+  dbSettings.forEach((s) => {
+    settingsMap[s.key] = s.value;
+  });
+
+  // Check if Elasticsearch is enabled in database settings
+  const dbEnabled = settingsMap['elasticsearch.enabled'] === 'true';
+  const dbEndpoint = settingsMap['elasticsearch.endpoint'];
+  const dbApiKey = settingsMap['elasticsearch.api_key'];
+  const dbIndexPattern = settingsMap['elasticsearch.index_pattern'] || 'logs-*';
+  const dbVerifySsl = settingsMap['elasticsearch.verify_ssl'] !== 'false';
+
+  // If database has valid config, use it
+  if (dbEnabled && dbEndpoint) {
+    return {
+      enabled: true,
+      endpoint: dbEndpoint,
+      apiKey: dbApiKey || '',
+      indexPattern: dbIndexPattern,
+      verifySsl: dbVerifySsl,
+    };
+  }
+
+  // Fall back to environment variables
+  if (config.KIBANA_ENDPOINT) {
+    return {
+      enabled: true,
+      endpoint: config.KIBANA_ENDPOINT,
+      apiKey: config.KIBANA_API_KEY || '',
+      indexPattern: 'logs-*',
+      verifySsl: true,
+    };
+  }
+
+  return null;
+}
+
 export async function logsRoutes(fastify: FastifyInstance) {
+  // Get Elasticsearch configuration status
+  fastify.get('/api/logs/config', {
+    schema: {
+      tags: ['Logs'],
+      summary: 'Get Elasticsearch configuration status',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    const esConfig = getElasticsearchConfig();
+    return {
+      configured: esConfig !== null,
+      endpoint: esConfig?.endpoint ? esConfig.endpoint.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') : null,
+      indexPattern: esConfig?.indexPattern || null,
+    };
+  });
+
+  // Search logs
   fastify.get('/api/logs/search', {
     schema: {
       tags: ['Logs'],
@@ -24,11 +97,12 @@ export async function logsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
-    const config = getConfig();
-    if (!config.KIBANA_ENDPOINT) {
+    const esConfig = getElasticsearchConfig();
+
+    if (!esConfig) {
       return reply.code(503).send({
         error: 'Elasticsearch/Kibana not configured',
-        message: 'Set KIBANA_ENDPOINT and KIBANA_API_KEY environment variables',
+        message: 'Configure Elasticsearch in Settings or set KIBANA_ENDPOINT environment variable',
       });
     }
 
@@ -66,11 +140,14 @@ export async function logsRoutes(fastify: FastifyInstance) {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (config.KIBANA_API_KEY) {
-        headers['Authorization'] = `ApiKey ${config.KIBANA_API_KEY}`;
+      if (esConfig.apiKey) {
+        headers['Authorization'] = `ApiKey ${esConfig.apiKey}`;
       }
 
-      const res = await fetch(`${config.KIBANA_ENDPOINT}/_search`, {
+      // Construct the search URL with index pattern
+      const searchUrl = `${esConfig.endpoint}/${esConfig.indexPattern}/_search`;
+
+      const res = await fetch(searchUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(esQuery),
@@ -81,7 +158,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
       if (!res.ok) {
         const body = await res.text();
         log.error({ status: res.status, body }, 'Elasticsearch query failed');
-        return reply.code(502).send({ error: 'Elasticsearch query failed' });
+        return reply.code(502).send({ error: 'Elasticsearch query failed', details: body });
       }
 
       const data = await res.json() as any;
@@ -98,6 +175,68 @@ export async function logsRoutes(fastify: FastifyInstance) {
     } catch (err) {
       log.error({ err }, 'Failed to fetch logs');
       return reply.code(502).send({ error: 'Failed to connect to Elasticsearch' });
+    }
+  });
+
+  // Test Elasticsearch connection
+  fastify.post('/api/logs/test-connection', {
+    schema: {
+      tags: ['Logs'],
+      summary: 'Test Elasticsearch connection',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        properties: {
+          endpoint: { type: 'string' },
+          apiKey: { type: 'string' },
+        },
+        required: ['endpoint'],
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const { endpoint, apiKey } = request.body as { endpoint: string; apiKey?: string };
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (apiKey) {
+        headers['Authorization'] = `ApiKey ${apiKey}`;
+      }
+
+      const res = await fetch(`${endpoint}/_cluster/health`, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const body = await res.text();
+        return reply.code(400).send({
+          success: false,
+          error: `Connection failed: ${res.status}`,
+          details: body,
+        });
+      }
+
+      const health = await res.json() as any;
+      return {
+        success: true,
+        cluster_name: health.cluster_name,
+        status: health.status,
+        number_of_nodes: health.number_of_nodes,
+      };
+    } catch (err) {
+      log.error({ err }, 'Failed to test Elasticsearch connection');
+      return reply.code(400).send({
+        success: false,
+        error: err instanceof Error ? err.message : 'Connection failed',
+      });
     }
   });
 }
