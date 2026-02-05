@@ -8,6 +8,7 @@ import socketIoPlugin from './plugins/socket-io.js';
 import staticPlugin from './plugins/static.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { oidcRoutes } from './routes/oidc.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { endpointsRoutes } from './routes/endpoints.js';
 import { containersRoutes } from './routes/containers.js';
@@ -54,6 +55,7 @@ export async function buildApp() {
   // Routes
   await app.register(healthRoutes);
   await app.register(authRoutes);
+  await app.register(oidcRoutes);
   await app.register(dashboardRoutes);
   await app.register(endpointsRoutes);
   await app.register(containersRoutes);
