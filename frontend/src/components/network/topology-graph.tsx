@@ -97,6 +97,12 @@ export function TopologyGraph({ containers, networks, onNodeClick }: TopologyGra
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
+  const handleNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    if (onNodeClick) {
+      onNodeClick(node.id);
+    }
+  }, [onNodeClick]);
+
   if (!containers.length && !networks.length) {
     return (
       <div className="flex h-[600px] items-center justify-center text-muted-foreground">
@@ -104,12 +110,6 @@ export function TopologyGraph({ containers, networks, onNodeClick }: TopologyGra
       </div>
     );
   }
-
-  const handleNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-    if (onNodeClick) {
-      onNodeClick(node.id);
-    }
-  }, [onNodeClick]);
 
   return (
     <div className="h-[600px] rounded-lg border">

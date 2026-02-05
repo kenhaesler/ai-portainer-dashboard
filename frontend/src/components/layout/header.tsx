@@ -35,7 +35,7 @@ export function Header() {
   // Check if the current route is a container detail page
   const containerDetailMatch = location.pathname.match(/^\/containers\/(\d+)\/([a-f0-9]+)$/);
 
-  let currentLabel = routeLabels[location.pathname] || 'Dashboard';
+  const currentLabel = routeLabels[location.pathname] || 'Dashboard';
   let breadcrumbs = [
     { label: 'Dashboard', path: '/' },
     ...(location.pathname !== '/'
