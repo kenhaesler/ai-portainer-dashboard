@@ -1,8 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL, cache } from '../services/portainer-cache.js';
+import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '../services/portainer-normalizers.js';
-import { writeAuditLog } from '../services/audit-logger.js';
 
 export async function containersRoutes(fastify: FastifyInstance) {
   // List containers (optionally filtered by endpoint)
@@ -74,113 +73,5 @@ export async function containersRoutes(fastify: FastifyInstance) {
     };
     const container = await portainer.getContainer(endpointId, containerId);
     return container;
-  });
-
-  // Start container
-  fastify.post('/api/containers/:endpointId/:containerId/start', {
-    schema: {
-      tags: ['Containers'],
-      summary: 'Start a container',
-      security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-          containerId: { type: 'string' },
-        },
-        required: ['endpointId', 'containerId'],
-      },
-    },
-    preHandler: [fastify.authenticate],
-  }, async (request) => {
-    const { endpointId, containerId } = request.params as {
-      endpointId: number;
-      containerId: string;
-    };
-    await portainer.startContainer(endpointId, containerId);
-    cache.invalidate(getCacheKey('containers', endpointId));
-    writeAuditLog({
-      user_id: request.user?.sub,
-      username: request.user?.username,
-      action: 'container.start',
-      target_type: 'container',
-      target_id: containerId,
-      details: { endpointId },
-      request_id: request.requestId,
-      ip_address: request.ip,
-    });
-    return { success: true, action: 'start', containerId };
-  });
-
-  // Stop container
-  fastify.post('/api/containers/:endpointId/:containerId/stop', {
-    schema: {
-      tags: ['Containers'],
-      summary: 'Stop a container',
-      security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-          containerId: { type: 'string' },
-        },
-        required: ['endpointId', 'containerId'],
-      },
-    },
-    preHandler: [fastify.authenticate],
-  }, async (request) => {
-    const { endpointId, containerId } = request.params as {
-      endpointId: number;
-      containerId: string;
-    };
-    await portainer.stopContainer(endpointId, containerId);
-    cache.invalidate(getCacheKey('containers', endpointId));
-    writeAuditLog({
-      user_id: request.user?.sub,
-      username: request.user?.username,
-      action: 'container.stop',
-      target_type: 'container',
-      target_id: containerId,
-      details: { endpointId },
-      request_id: request.requestId,
-      ip_address: request.ip,
-    });
-    return { success: true, action: 'stop', containerId };
-  });
-
-  // Restart container
-  fastify.post('/api/containers/:endpointId/:containerId/restart', {
-    schema: {
-      tags: ['Containers'],
-      summary: 'Restart a container',
-      security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-          containerId: { type: 'string' },
-        },
-        required: ['endpointId', 'containerId'],
-      },
-    },
-    preHandler: [fastify.authenticate],
-  }, async (request) => {
-    const { endpointId, containerId } = request.params as {
-      endpointId: number;
-      containerId: string;
-    };
-    await portainer.restartContainer(endpointId, containerId);
-    cache.invalidate(getCacheKey('containers', endpointId));
-    writeAuditLog({
-      user_id: request.user?.sub,
-      username: request.user?.username,
-      action: 'container.restart',
-      target_type: 'container',
-      target_id: containerId,
-      details: { endpointId },
-      request_id: request.requestId,
-      ip_address: request.ip,
-    });
-    return { success: true, action: 'restart', containerId };
   });
 }
