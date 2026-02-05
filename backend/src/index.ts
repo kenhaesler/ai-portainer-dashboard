@@ -7,6 +7,7 @@ import { setupMonitoringNamespace } from './sockets/monitoring.js';
 import { setupRemediationNamespace } from './sockets/remediation.js';
 import { startScheduler, stopScheduler } from './scheduler/setup.js';
 import { setMonitoringNamespace } from './services/monitoring-service.js';
+import { setInvestigationNamespace } from './services/investigation-service.js';
 
 const log = createChildLogger('server');
 
@@ -24,6 +25,7 @@ async function main() {
 
   // Register monitoring namespace for real-time insight broadcasting
   setMonitoringNamespace(app.ioNamespaces.monitoring);
+  setInvestigationNamespace(app.ioNamespaces.monitoring);
 
   // Start background schedulers
   startScheduler();
