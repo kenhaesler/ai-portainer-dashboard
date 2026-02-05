@@ -99,15 +99,19 @@ function SpanBar({ span, traceStartTime, traceDuration, depth, isSelected, onCli
 
 interface TraceListItemProps {
   trace: {
-    traceId: string;
-    rootSpan: {
-      serviceName: string;
-      operationName: string;
-    };
-    duration: number;
-    spans: unknown[];
-    services: string[];
-    startTime: string;
+    trace_id?: string;
+    traceId?: string;
+    root_span?: string;
+    rootSpan?: { serviceName?: string; operationName?: string };
+    duration_ms?: number;
+    duration?: number;
+    span_count?: number;
+    spans?: unknown[];
+    services?: string[];
+    service_name?: string;
+    serviceName?: string;
+    start_time?: string;
+    startTime?: string;
     status: string;
   };
   isSelected: boolean;
@@ -115,6 +119,15 @@ interface TraceListItemProps {
 }
 
 function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
+  // Normalize field names (API uses snake_case, we prefer camelCase)
+  const traceId = trace.traceId || trace.trace_id || '';
+  const serviceName = trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || 'Unknown';
+  const operationName = trace.root_span || trace.rootSpan?.operationName || 'Unknown operation';
+  const duration = trace.duration ?? trace.duration_ms ?? 0;
+  const spanCount = trace.span_count ?? trace.spans?.length ?? 0;
+  const serviceCount = trace.services?.length ?? 1;
+  const startTime = trace.startTime || trace.start_time || '';
+
   return (
     <button
       onClick={onClick}
@@ -128,32 +141,32 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4 text-primary" />
-          <span className="font-mono text-xs">{trace.traceId.slice(0, 16)}</span>
+          <span className="font-mono text-xs">{traceId.slice(0, 16)}</span>
         </div>
         <StatusBadge status={trace.status} showDot={false} />
       </div>
       <div className="mt-2">
-        <p className="font-medium">{trace.rootSpan?.serviceName || 'Unknown'}</p>
+        <p className="font-medium">{serviceName}</p>
         <p className="text-sm text-muted-foreground truncate">
-          {trace.rootSpan?.operationName || 'Unknown operation'}
+          {operationName}
         </p>
       </div>
       <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <Timer className="h-3 w-3" />
-          {formatDuration(trace.duration)}
+          {formatDuration(duration)}
         </span>
         <span className="flex items-center gap-1">
           <Layers className="h-3 w-3" />
-          {trace.spans?.length || 0} spans
+          {spanCount} spans
         </span>
         <span className="flex items-center gap-1">
           <Server className="h-3 w-3" />
-          {trace.services?.length || 0} services
+          {serviceCount} services
         </span>
       </div>
       <div className="mt-2 text-xs text-muted-foreground">
-        {formatDate(trace.startTime)}
+        {formatDate(startTime)}
       </div>
     </button>
   );
@@ -169,26 +182,103 @@ export default function TraceExplorerPage() {
   const { interval, setInterval } = useAutoRefresh(0);
 
   // Fetch data
-  const { data: traces, isLoading, isError, error, refetch, isFetching } = useTraces({
+  const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces({
     service: serviceFilter || undefined,
     limit: 50,
   });
 
-  const { data: selectedTrace } = useTrace(selectedTraceId || undefined);
+  const { data: selectedTraceData } = useTrace(selectedTraceId || undefined);
   const { data: serviceMapData } = useServiceMap();
   const { data: summary } = useTraceSummary();
 
+  // Normalize API responses (API returns { traces: [...] } or { traceId, spans: [...] })
+  const traces = useMemo(() => {
+    if (!tracesData) return [];
+    // Handle both array and { traces: [...] } formats
+    if (Array.isArray(tracesData)) return tracesData;
+    if (Array.isArray((tracesData as { traces?: unknown[] }).traces)) {
+      return (tracesData as { traces: unknown[] }).traces;
+    }
+    return [];
+  }, [tracesData]) as Array<{
+    trace_id?: string;
+    traceId?: string;
+    root_span?: string;
+    rootSpan?: { serviceName?: string; operationName?: string };
+    duration_ms?: number;
+    duration?: number;
+    status: string;
+    service_name?: string;
+    serviceName?: string;
+    start_time?: string;
+    startTime?: string;
+    span_count?: number;
+    spans?: unknown[];
+    services?: string[];
+  }>;
+
+  const selectedTrace = useMemo(() => {
+    if (!selectedTraceData) return null;
+    // Handle { traceId, spans: [...] } format
+    const data = selectedTraceData as {
+      traceId?: string;
+      spans?: Array<{
+        spanId?: string;
+        span_id?: string;
+        parentSpanId?: string;
+        parent_span_id?: string;
+        operationName?: string;
+        name?: string;
+        serviceName?: string;
+        service_name?: string;
+        startTime?: string;
+        start_time?: string;
+        duration?: number;
+        duration_ms?: number;
+        status: string;
+        attributes?: Record<string, unknown>;
+      }>;
+    };
+    if (!data.spans) return null;
+    // Normalize span field names
+    const normalizedSpans = data.spans.map((s) => ({
+      spanId: s.spanId || s.span_id || '',
+      parentSpanId: s.parentSpanId || s.parent_span_id,
+      operationName: s.operationName || s.name || '',
+      serviceName: s.serviceName || s.service_name || '',
+      startTime: s.startTime || s.start_time || '',
+      duration: s.duration ?? s.duration_ms ?? 0,
+      status: s.status,
+      attributes: s.attributes,
+    }));
+    // Compute status and services from spans
+    const hasError = normalizedSpans.some((s) => s.status === 'error');
+    const uniqueServices = [...new Set(normalizedSpans.map((s) => s.serviceName))];
+
+    return {
+      traceId: data.traceId,
+      spans: normalizedSpans,
+      duration: Math.max(...normalizedSpans.map((s) => s.duration), 0),
+      startTime: normalizedSpans[0]?.startTime || '',
+      status: hasError ? 'error' : 'ok',
+      services: uniqueServices,
+    };
+  }, [selectedTraceData]);
+
   // Filter traces
   const filteredTraces = useMemo(() => {
-    if (!traces) return [];
+    if (!traces || traces.length === 0) return [];
     return traces.filter((trace) => {
       if (statusFilter !== 'all' && trace.status !== statusFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
+        const traceId = (trace.traceId || trace.trace_id || '').toLowerCase();
+        const serviceName = (trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || '').toLowerCase();
+        const operationName = (trace.root_span || trace.rootSpan?.operationName || '').toLowerCase();
         return (
-          trace.traceId.toLowerCase().includes(q) ||
-          trace.rootSpan?.serviceName?.toLowerCase().includes(q) ||
-          trace.rootSpan?.operationName?.toLowerCase().includes(q)
+          traceId.includes(q) ||
+          serviceName.includes(q) ||
+          operationName.includes(q)
         );
       }
       return true;
@@ -197,21 +287,26 @@ export default function TraceExplorerPage() {
 
   // Get unique services for filter
   const services = useMemo(() => {
-    if (!traces) return [];
+    if (!traces || traces.length === 0) return [];
     const set = new Set<string>();
-    traces.forEach((t) => t.services?.forEach((s) => set.add(s)));
+    traces.forEach((t) => {
+      // Handle both field name formats
+      const serviceName = t.serviceName || t.service_name;
+      if (serviceName) set.add(serviceName);
+      t.services?.forEach((s) => set.add(s));
+    });
     return Array.from(set).sort();
   }, [traces]);
 
   // Build span tree for selected trace
   const spanTree = useMemo(() => {
-    if (!selectedTrace?.spans) return [];
+    if (!selectedTrace?.spans || selectedTrace.spans.length === 0) return [];
 
     const spans = selectedTrace.spans;
-    const spanMap = new Map(spans.map((s) => [s.spanId, s]));
     const rootSpans = spans.filter((s) => !s.parentSpanId);
 
-    const buildTree = (span: typeof spans[0], depth: number): Array<{ span: typeof spans[0]; depth: number }> => {
+    type SpanType = typeof spans[0];
+    const buildTree = (span: SpanType, depth: number): Array<{ span: SpanType; depth: number }> => {
       const result = [{ span, depth }];
       const children = spans.filter((s) => s.parentSpanId === span.spanId);
       children.forEach((child) => {
@@ -407,17 +502,20 @@ export default function TraceExplorerPage() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Trace List */}
           <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-            {filteredTraces.map((trace) => (
-              <TraceListItem
-                key={trace.traceId}
-                trace={trace}
-                isSelected={selectedTraceId === trace.traceId}
-                onClick={() => {
-                  setSelectedTraceId(trace.traceId);
-                  setSelectedSpanId(null);
-                }}
-              />
-            ))}
+            {filteredTraces.map((trace) => {
+              const id = trace.traceId || trace.trace_id || '';
+              return (
+                <TraceListItem
+                  key={id}
+                  trace={trace}
+                  isSelected={selectedTraceId === id}
+                  onClick={() => {
+                    setSelectedTraceId(id);
+                    setSelectedSpanId(null);
+                  }}
+                />
+              );
+            })}
           </div>
 
           {/* Trace Detail */}
