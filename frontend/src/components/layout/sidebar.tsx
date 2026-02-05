@@ -20,6 +20,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
+import { useRemediationActions } from '@/hooks/use-remediation';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -57,7 +58,7 @@ const navigation: NavGroup[] = [
     items: [
       { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
       { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-      { label: 'Remediation', to: '/remediation', icon: Shield, badge: 3 },
+      { label: 'Remediation', to: '/remediation', icon: Shield },
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
     ],
@@ -76,6 +77,8 @@ export function Sidebar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const collapsedGroups = useUiStore((s) => s.collapsedGroups);
   const toggleGroup = useUiStore((s) => s.toggleGroup);
+  const { data: pendingActions } = useRemediationActions('pending');
+  const pendingCount = pendingActions?.length ?? 0;
 
   return (
     <aside
@@ -150,11 +153,14 @@ export function Sidebar() {
                             {!sidebarCollapsed && (
                               <>
                                 <span className="truncate">{item.label}</span>
-                                {item.badge != null && item.badge > 0 && (
-                                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
-                                    {item.badge}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const badge = item.to === '/remediation' ? pendingCount : item.badge;
+                                  return badge != null && badge > 0 ? (
+                                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
+                                      {badge}
+                                    </span>
+                                  ) : null;
+                                })()}
                               </>
                             )}
                           </>
