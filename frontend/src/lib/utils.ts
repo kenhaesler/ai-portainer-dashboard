@@ -13,13 +13,22 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
 }
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date: string | Date | null | undefined): string {
+  if (!date) return 'N/A';
+
+  // Handle SQLite datetime format (YYYY-MM-DD HH:MM:SS) by replacing space with 'T'
+  const dateStr = typeof date === 'string' ? date.replace(' ', 'T') : date;
+  const dateObj = new Date(dateStr);
+
+  // Check if date is valid
+  if (isNaN(dateObj.getTime())) return 'Invalid date';
+
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(date));
+  }).format(dateObj);
 }
 
 export function formatDuration(ms: number): string {
