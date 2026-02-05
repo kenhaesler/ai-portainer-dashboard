@@ -47,6 +47,19 @@ class TtlCache {
     }
   }
 
+  getEntries(): Array<{ key: string; expiresIn: number }> {
+    const now = Date.now();
+    const entries: Array<{ key: string; expiresIn: number }> = [];
+    for (const [key, entry] of this.store.entries()) {
+      if (now > entry.expiresAt) {
+        this.store.delete(key);
+        continue;
+      }
+      entries.push({ key, expiresIn: Math.round((entry.expiresAt - now) / 1000) });
+    }
+    return entries;
+  }
+
   clear(): void {
     this.store.clear();
     log.info('Cache cleared');

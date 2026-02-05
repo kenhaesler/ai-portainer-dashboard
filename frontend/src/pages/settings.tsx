@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
+import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -254,6 +255,8 @@ export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
+  const { data: cacheStats } = useCacheStats();
+  const cacheClear = useCacheClear();
 
   // Local state for edited values
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
@@ -551,6 +554,68 @@ export default function SettingsPage() {
         onChange={handleChange}
         disabled={isSaving}
       />
+
+      {/* Cache Status */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">Cache Status</h2>
+          </div>
+          <button
+            onClick={() => cacheClear.mutate()}
+            disabled={cacheClear.isPending}
+            className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {cacheClear.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Clear All Cache
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg bg-muted/50 p-4">
+              <p className="text-xs text-muted-foreground">Entries</p>
+              <p className="text-2xl font-bold mt-1">{cacheStats?.size ?? 0}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 p-4">
+              <p className="text-xs text-muted-foreground">Hits</p>
+              <p className="text-2xl font-bold mt-1">{cacheStats?.hits ?? 0}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 p-4">
+              <p className="text-xs text-muted-foreground">Misses</p>
+              <p className="text-2xl font-bold mt-1">{cacheStats?.misses ?? 0}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 p-4">
+              <p className="text-xs text-muted-foreground">Hit Rate</p>
+              <p className="text-2xl font-bold mt-1">{cacheStats?.hitRate ?? 'N/A'}</p>
+            </div>
+          </div>
+          {cacheStats?.entries && cacheStats.entries.length > 0 && (
+            <div className="rounded-lg border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-3 font-medium">Cache Key</th>
+                    <th className="text-right p-3 font-medium">Expires In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cacheStats.entries.map((entry) => (
+                    <tr key={entry.key} className="border-b last:border-0">
+                      <td className="p-3 font-mono text-xs">{entry.key}</td>
+                      <td className="p-3 text-right text-muted-foreground">{entry.expiresIn}s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* LLM Settings */}
       <SettingsSection

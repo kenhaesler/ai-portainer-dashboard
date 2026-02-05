@@ -8,6 +8,7 @@ import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 
@@ -89,6 +90,7 @@ export default function FleetOverviewPage() {
   const navigate = useNavigate();
 
   const { data: endpoints, isLoading, isError, error, refetch, isFetching } = useEndpoints();
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
   const handleEndpointClick = (endpointId: number) => {
@@ -200,7 +202,7 @@ export default function FleetOverviewPage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

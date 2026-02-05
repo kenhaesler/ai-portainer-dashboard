@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
 import { EndpointStatusBar } from '@/components/charts/endpoint-status-bar';
@@ -21,6 +22,7 @@ import { formatDate, truncate } from '@/lib/utils';
 export default function HomePage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: allContainers } = useContainers();
@@ -143,7 +145,7 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 
