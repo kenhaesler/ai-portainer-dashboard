@@ -117,12 +117,6 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
             <p className="text-xs text-muted-foreground">Full Image</p>
             <p className="text-sm font-mono">{container.image}</p>
           </div>
-          {container.imageId && (
-            <div>
-              <p className="text-xs text-muted-foreground">Image ID</p>
-              <p className="text-sm font-mono">{container.imageId.slice(0, 19)}</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -164,10 +158,10 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
               <tbody>
                 {ports.map((port, index) => (
                   <tr key={index} className="border-b last:border-0">
-                    <td className="py-2 px-3 font-mono">{port.privatePort}</td>
-                    <td className="py-2 px-3 font-mono">{port.publicPort || '-'}</td>
+                    <td className="py-2 px-3 font-mono">{port.private}</td>
+                    <td className="py-2 px-3 font-mono">{port.public || '-'}</td>
                     <td className="py-2 px-3 uppercase">{port.type}</td>
-                    <td className="py-2 px-3 font-mono">{port.ip || '0.0.0.0'}</td>
+                    <td className="py-2 px-3 font-mono">0.0.0.0</td>
                   </tr>
                 ))}
               </tbody>
