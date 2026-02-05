@@ -53,7 +53,7 @@ async function buildInfrastructureContext(): Promise<string> {
           TTL.CONTAINERS,
           () => portainer.getContainers(ep.id),
         );
-        allContainers.push(...containers.map(c => normalizeContainer(c, ep)));
+        allContainers.push(...containers.map(c => normalizeContainer(c, ep.id, ep.name)));
       } catch (err) {
         log.warn({ endpointId: ep.id }, 'Failed to fetch containers for endpoint');
       }
@@ -85,9 +85,9 @@ async function buildInfrastructureContext(): Promise<string> {
       .join('\n');
 
     const runningContainers = allContainers.filter(c => c.state === 'running');
-    const stoppedContainers = allContainers.filter(c => c.state === 'stopped' || c.state === 'exited');
+    const stoppedContainers = allContainers.filter(c => c.state === 'stopped');
     const unhealthyContainers = allContainers.filter(c =>
-      c.state === 'dead' || c.state === 'paused' || c.state === 'restarting'
+      c.state === 'dead' || c.state === 'paused' || c.state === 'unknown'
     );
 
     const containerSummary = `Total: ${allContainers.length}, Running: ${runningContainers.length}, Stopped: ${stoppedContainers.length}, Unhealthy: ${unhealthyContainers.length}`;
@@ -119,7 +119,7 @@ async function buildInfrastructureContext(): Promise<string> {
       ...runningContainers.slice(0, 5)
     ]
       .slice(0, 20)
-      .map(c => `- ${c.name} (${c.image}): ${c.state}, CPU: ${c.cpuUsage?.toFixed(1) || 'N/A'}%, Mem: ${c.memoryUsage?.toFixed(1) || 'N/A'}% on ${c.endpointName}`)
+      .map(c => `- ${c.name} (${c.image}): ${c.state} on ${c.endpointName}`)
       .join('\n');
 
     return `## Infrastructure Overview
