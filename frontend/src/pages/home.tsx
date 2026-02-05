@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle } from 'lucide-react';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useContainers } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { DataTable } from '@/components/shared/data-table';
@@ -9,56 +11,79 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
 import { EndpointStatusBar } from '@/components/charts/endpoint-status-bar';
 import { WorkloadDistribution } from '@/components/charts/workload-distribution';
+import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 
-const containerColumns: ColumnDef<NormalizedContainer, any>[] = [
-  {
-    accessorKey: 'name',
-    header: 'Name',
-    cell: ({ getValue }) => (
-      <span className="font-medium">{truncate(getValue<string>(), 40)}</span>
-    ),
-  },
-  {
-    accessorKey: 'image',
-    header: 'Image',
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground">{truncate(getValue<string>(), 50)}</span>
-    ),
-  },
-  {
-    accessorKey: 'state',
-    header: 'State',
-    cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
-    ),
-  },
-  {
-    accessorKey: 'endpointName',
-    header: 'Endpoint',
-    cell: ({ row }) => {
-      const container = row.original;
-      return `${container.endpointName} (ID: ${container.endpointId})`;
-    },
-  },
-  {
-    accessorKey: 'created',
-    header: 'Created',
-    cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
-  },
-];
-
 export default function HomePage() {
+  const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
   const { interval, setInterval } = useAutoRefresh(30);
+  const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
+  const { data: allContainers } = useContainers();
+
+  const favoriteContainers = useMemo(() => {
+    if (!allContainers || favoriteIds.length === 0) return [];
+    return allContainers.filter((c) =>
+      favoriteIds.includes(`${c.endpointId}:${c.id}`),
+    );
+  }, [allContainers, favoriteIds]);
+
+  const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row, getValue }) => {
+        const container = row.original;
+        return (
+          <div className="flex items-center gap-1">
+            <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
+            <button
+              onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+              className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
+            >
+              {truncate(getValue<string>(), 40)}
+            </button>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'image',
+      header: 'Image',
+      cell: ({ getValue }) => (
+        <span className="text-muted-foreground">{truncate(getValue<string>(), 50)}</span>
+      ),
+    },
+    {
+      accessorKey: 'state',
+      header: 'State',
+      cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ getValue }) => (
+        <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
+      ),
+    },
+    {
+      accessorKey: 'endpointName',
+      header: 'Endpoint',
+      cell: ({ row }) => {
+        const container = row.original;
+        return `${container.endpointName} (ID: ${container.endpointId})`;
+      },
+    },
+    {
+      accessorKey: 'created',
+      header: 'Created',
+      cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
+    },
+  ], [navigate]);
 
   const endpointBarData = useMemo(() => {
     if (!data?.endpoints) return [];
@@ -159,6 +184,43 @@ export default function HomePage() {
           />
         </div>
       ) : null}
+
+      {/* Pinned Favorites */}
+      {favoriteContainers.length > 0 && (
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+            Pinned Favorites
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {favoriteContainers.map((c) => (
+              <div
+                key={`${c.endpointId}:${c.id}`}
+                className="group flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50"
+              >
+                <button
+                  onClick={() => navigate(`/containers/${c.endpointId}/${c.id}`)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <p className="truncate text-sm font-medium">{c.name}</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <StatusBadge status={c.state} />
+                    <span className="truncate text-xs text-muted-foreground">
+                      {c.endpointName}
+                    </span>
+                  </div>
+                </button>
+                <FavoriteButton
+                  endpointId={c.endpointId}
+                  containerId={c.id}
+                  size="sm"
+                  className="ml-2 shrink-0"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Charts */}
       {isLoading ? (

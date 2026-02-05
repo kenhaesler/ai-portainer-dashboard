@@ -9,6 +9,7 @@ import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { FavoriteButton } from '@/components/shared/favorite-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate, truncate } from '@/lib/utils';
 
@@ -63,12 +64,15 @@ export default function WorkloadExplorerPage() {
       cell: ({ row, getValue }) => {
         const container = row.original;
         return (
-          <button
-            onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
-          >
-            {truncate(getValue<string>(), 45)}
-          </button>
+          <div className="flex items-center gap-1">
+            <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
+            <button
+              onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+              className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
+            >
+              {truncate(getValue<string>(), 45)}
+            </button>
+          </div>
         );
       },
     },
