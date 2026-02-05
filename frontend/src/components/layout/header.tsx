@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Monitor, Search, LogOut, User } from 'lucide-react';
+import { Sun, Moon, Search, LogOut, User } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
@@ -23,13 +23,6 @@ const routeLabels: Record<string, string> = {
   '/settings': 'Settings',
 };
 
-type Theme = 'dark' | 'light' | 'system';
-
-const themeOptions: { value: Theme; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
-  { value: 'light', icon: Sun, label: 'Light' },
-  { value: 'dark', icon: Moon, label: 'Dark' },
-  { value: 'system', icon: Monitor, label: 'System' },
-];
 
 export function Header() {
   const location = useLocation();
@@ -109,25 +102,27 @@ export function Header() {
           </kbd>
         </button>
 
-        {/* Theme toggle */}
-        <div className="flex items-center rounded-md border border-input">
-          {themeOptions.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setTheme(option.value)}
-              className={cn(
-                'flex items-center justify-center p-1.5 transition-colors',
-                theme === option.value
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-              title={option.label}
-              aria-label={`Switch to ${option.label} theme`}
-            >
-              <option.icon className="h-4 w-4" />
-            </button>
-          ))}
-        </div>
+        {/* Theme toggle - pill style */}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="relative flex h-8 w-16 items-center rounded-full bg-muted p-1 transition-colors"
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+        >
+          <span
+            className={cn(
+              'absolute h-6 w-6 rounded-full bg-background shadow-sm transition-all duration-200',
+              theme === 'dark' ? 'translate-x-8' : 'translate-x-0'
+            )}
+          />
+          <Sun className={cn(
+            'relative z-10 h-4 w-4 transition-colors',
+            theme === 'dark' ? 'text-muted-foreground' : 'text-amber-500'
+          )} />
+          <Moon className={cn(
+            'relative z-10 ml-auto h-4 w-4 transition-colors',
+            theme === 'dark' ? 'text-blue-400' : 'text-muted-foreground'
+          )} />
+        </button>
 
         {/* User menu */}
         <div ref={userMenuRef} className="relative">
