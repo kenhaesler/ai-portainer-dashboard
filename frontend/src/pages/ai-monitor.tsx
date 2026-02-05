@@ -117,7 +117,7 @@ function InsightCard({ insight }: InsightCardProps) {
             {insight.metadata?.containerName && (
               <div className="hidden sm:flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs">
                 <Box className="h-3 w-3 text-muted-foreground" />
-                <span className="font-mono">{insight.metadata.containerName}</span>
+                <span className="font-mono">{String(insight.metadata.containerName)}</span>
               </div>
             )}
             {expanded ? (

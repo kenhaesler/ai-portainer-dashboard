@@ -248,7 +248,7 @@ function ContainerDetails({ container }: { container: Container }) {
 
       <div>
         <label className="text-xs font-medium text-muted-foreground">Created</label>
-        <p className="text-sm">{formatDate(container.created * 1000)}</p>
+        <p className="text-sm">{formatDate(new Date(container.created * 1000))}</p>
       </div>
 
       {Object.keys(container.labels).length > 0 && (

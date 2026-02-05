@@ -293,11 +293,12 @@ function MarkdownContent({ content }: { content: string }) {
           td: ({ children }) => (
             <td className="px-4 py-2 text-[13px] border-t border-border">{children}</td>
           ),
-          code({ inline, className, children, ...props }) {
+          code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
             const codeContent = String(children).replace(/\n$/, '');
+            const isCodeBlock = match !== null;
 
-            return !inline ? (
+            return isCodeBlock ? (
               <CodeBlock code={codeContent} language={match?.[1]} />
             ) : (
               <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono border border-border/50" {...props}>
