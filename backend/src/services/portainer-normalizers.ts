@@ -1,4 +1,4 @@
-import type { Endpoint, Container, Stack } from '../models/portainer.js';
+import type { Endpoint, Container, Stack, Network } from '../models/portainer.js';
 
 export interface NormalizedEndpoint {
   id: number;
@@ -43,6 +43,18 @@ export interface NormalizedStack {
   createdAt?: number;
   updatedAt?: number;
   envCount: number;
+}
+
+export interface NormalizedNetwork {
+  id: string;
+  name: string;
+  driver?: string;
+  scope?: string;
+  subnet?: string;
+  gateway?: string;
+  endpointId: number;
+  endpointName: string;
+  containers: string[];
 }
 
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
@@ -115,5 +127,24 @@ export function normalizeStack(s: Stack): NormalizedStack {
     createdAt: s.CreationDate,
     updatedAt: s.UpdateDate,
     envCount: s.Env?.length || 0,
+  };
+}
+
+export function normalizeNetwork(
+  n: Network,
+  endpointId: number,
+  endpointName: string,
+): NormalizedNetwork {
+  const ipamConfig = n.IPAM?.Config?.[0];
+  return {
+    id: n.Id,
+    name: n.Name,
+    driver: n.Driver,
+    scope: n.Scope,
+    subnet: ipamConfig?.Subnet,
+    gateway: ipamConfig?.Gateway,
+    endpointId,
+    endpointName,
+    containers: Object.keys(n.Containers || {}),
   };
 }

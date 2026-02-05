@@ -21,6 +21,7 @@ import { backupRoutes } from './routes/backup.js';
 import { settingsRoutes } from './routes/settings.js';
 import { logsRoutes } from './routes/logs.js';
 import { imagesRoutes } from './routes/images.js';
+import { networksRoutes } from './routes/networks.js';
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -66,6 +67,7 @@ export async function buildApp() {
   await app.register(settingsRoutes);
   await app.register(logsRoutes);
   await app.register(imagesRoutes);
+  await app.register(networksRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);
