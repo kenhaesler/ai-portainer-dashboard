@@ -244,6 +244,8 @@ export async function runMonitoringCycle(): Promise<void> {
           notifyInsight(insight as Insight).catch((err) =>
             log.warn({ err, insightId: insight.id }, 'Failed to send notification'),
           );
+        }
+
         // Trigger root cause investigation for anomaly insights
         if (insight.category === 'anomaly') {
           triggerInvestigation(insight as Insight).catch((err) => {
