@@ -8,10 +8,10 @@ interface ContainerStatePieProps {
 }
 
 const COLORS = {
-  running: { start: '#34d399', end: '#10b981' },
-  stopped: { start: '#f87171', end: '#ef4444' },
-  unhealthy: { start: '#fbbf24', end: '#f59e0b' },
-  paused: { start: '#9ca3af', end: '#6b7280' },
+  running: { main: '#00f5d4', glow: '#00f5d480' },
+  stopped: { main: '#ff6b6b', glow: '#ff6b6b80' },
+  unhealthy: { main: '#ffd93d', glow: '#ffd93d80' },
+  paused: { main: '#a8a8a8', glow: '#a8a8a880' },
 };
 
 export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: ContainerStatePieProps) {
@@ -38,53 +38,86 @@ export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: C
         <PieChart>
           <defs>
             {Object.entries(COLORS).map(([key, colors]) => (
-              <linearGradient key={key} id={`gradient-${key}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={colors.start} stopOpacity={1} />
-                <stop offset="100%" stopColor={colors.end} stopOpacity={1} />
-              </linearGradient>
+              <filter key={`glow-${key}`} id={`glow-${key}`} x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                <feMerge>
+                  <feMergeNode in="coloredBlur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             ))}
           </defs>
+          {/* Glow layer */}
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={65}
+            outerRadius={95}
+            paddingAngle={4}
+            dataKey="value"
+            stroke="none"
+            isAnimationActive={false}
+          >
+            {data.map((entry) => (
+              <Cell
+                key={`glow-${entry.key}`}
+                fill={COLORS[entry.key].glow}
+                style={{ filter: `blur(8px)` }}
+              />
+            ))}
+          </Pie>
+          {/* Main layer */}
           <Pie
             data={data}
             cx="50%"
             cy="50%"
             innerRadius={70}
-            outerRadius={100}
-            paddingAngle={3}
+            outerRadius={90}
+            paddingAngle={4}
             dataKey="value"
             stroke="none"
             animationBegin={0}
-            animationDuration={800}
+            animationDuration={1000}
+            animationEasing="ease-out"
           >
             {data.map((entry) => (
               <Cell
                 key={entry.key}
-                fill={`url(#gradient-${entry.key})`}
-                className="drop-shadow-sm"
+                fill={COLORS[entry.key].main}
               />
             ))}
           </Pie>
         </PieChart>
       </ResponsiveContainer>
 
-      {/* Center label */}
+      {/* Center label with glow */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-center">
-          <div className="text-3xl font-bold">{total}</div>
-          <div className="text-xs text-muted-foreground">Total</div>
+          <div className="text-4xl font-light tracking-tight" style={{ textShadow: '0 0 20px rgba(255,255,255,0.3)' }}>
+            {total}
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-1">Containers</div>
         </div>
       </div>
 
-      {/* Custom legend */}
-      <div className="flex justify-center gap-4 mt-2">
+      {/* Futuristic legend */}
+      <div className="flex justify-center gap-6 mt-4">
         {data.map((entry) => (
-          <div key={entry.key} className="flex items-center gap-1.5">
-            <div
-              className="w-2.5 h-2.5 rounded-full"
-              style={{ background: `linear-gradient(180deg, ${COLORS[entry.key].start}, ${COLORS[entry.key].end})` }}
-            />
-            <span className="text-xs text-muted-foreground">{entry.name}</span>
-            <span className="text-xs font-medium">{entry.value}</span>
+          <div key={entry.key} className="flex items-center gap-2 group">
+            <div className="relative">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{
+                  backgroundColor: COLORS[entry.key].main,
+                  boxShadow: `0 0 8px ${COLORS[entry.key].main}`
+                }}
+              />
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">{entry.name}</span>
+              <span className="text-sm font-medium" style={{ color: COLORS[entry.key].main }}>{entry.value}</span>
+            </div>
           </div>
         ))}
       </div>
