@@ -102,27 +102,32 @@ export function Header() {
           </kbd>
         </button>
 
-        {/* Theme toggle - pill style */}
-        <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-        >
-          <span
-            className={cn(
-              'absolute h-5 w-5 rounded-full bg-background shadow-sm transition-all duration-200',
-              theme === 'dark' ? 'left-[calc(100%-1.625rem)]' : 'left-1.5'
-            )}
-          />
-          <Sun className={cn(
-            'relative z-10 h-3.5 w-3.5 transition-colors',
-            theme === 'dark' ? 'text-muted-foreground' : 'text-amber-500'
-          )} />
-          <Moon className={cn(
-            'relative z-10 h-3.5 w-3.5 transition-colors',
-            theme === 'dark' ? 'text-blue-400' : 'text-muted-foreground'
-          )} />
-        </button>
+        {/* Theme toggle - pill style (Glass Light / Glass Dark) */}
+        {(() => {
+          const isDark = theme === 'dark' || theme === 'apple-dark' || theme.includes('mocha') || theme.includes('macchiato') || theme.includes('frappe');
+          return (
+            <button
+              onClick={() => setTheme(isDark ? 'apple-light' : 'apple-dark')}
+              className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
+              aria-label={`Switch to ${isDark ? 'Glass Light' : 'Glass Dark'} theme`}
+            >
+              <span
+                className={cn(
+                  'absolute h-5 w-5 rounded-full bg-background shadow-sm transition-all duration-200',
+                  isDark ? 'left-[calc(100%-1.625rem)]' : 'left-1.5'
+                )}
+              />
+              <Sun className={cn(
+                'relative z-10 h-3.5 w-3.5 transition-colors',
+                isDark ? 'text-muted-foreground' : 'text-amber-500'
+              )} />
+              <Moon className={cn(
+                'relative z-10 h-3.5 w-3.5 transition-colors',
+                isDark ? 'text-blue-400' : 'text-muted-foreground'
+              )} />
+            </button>
+          );
+        })()}
 
         {/* User menu */}
         <div ref={userMenuRef} className="relative">
