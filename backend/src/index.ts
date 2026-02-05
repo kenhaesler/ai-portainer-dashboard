@@ -6,6 +6,7 @@ import { setupLlmNamespace } from './sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './sockets/monitoring.js';
 import { setupRemediationNamespace } from './sockets/remediation.js';
 import { startScheduler, stopScheduler } from './scheduler/setup.js';
+import { setMonitoringNamespace } from './services/monitoring-service.js';
 
 const log = createChildLogger('server');
 
@@ -20,6 +21,9 @@ async function main() {
   setupLlmNamespace(app.ioNamespaces.llm);
   setupMonitoringNamespace(app.ioNamespaces.monitoring);
   setupRemediationNamespace(app.ioNamespaces.remediation);
+
+  // Register monitoring namespace for real-time insight broadcasting
+  setMonitoringNamespace(app.ioNamespaces.monitoring);
 
   // Start background schedulers
   startScheduler();
