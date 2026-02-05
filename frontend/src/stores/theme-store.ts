@@ -5,6 +5,8 @@ export type Theme =
   | 'system'
   | 'light'
   | 'dark'
+  | 'apple-light'
+  | 'apple-dark'
   | 'catppuccin-latte'
   | 'catppuccin-frappe'
   | 'catppuccin-macchiato'
@@ -14,6 +16,8 @@ export const themeOptions: { value: Theme; label: string; description: string }[
   { value: 'system', label: 'System', description: 'Follow system preference' },
   { value: 'light', label: 'Light', description: 'Default light theme' },
   { value: 'dark', label: 'Dark', description: 'Default dark theme' },
+  { value: 'apple-light', label: 'Glass Light', description: 'Futuristic frosted glass with gradients' },
+  { value: 'apple-dark', label: 'Glass Dark', description: 'Deep space glassmorphism aesthetic' },
   { value: 'catppuccin-latte', label: 'Catppuccin Latte', description: 'Warm light pastel theme' },
   { value: 'catppuccin-frappe', label: 'Catppuccin Frappé', description: 'Medium dark pastel theme' },
   { value: 'catppuccin-macchiato', label: 'Catppuccin Macchiato', description: 'Darker pastel theme' },
@@ -39,7 +43,7 @@ export const useThemeStore = create<ThemeState>()(
             ? 'dark'
             : 'light';
         }
-        if (theme === 'light' || theme === 'catppuccin-latte') {
+        if (theme === 'light' || theme === 'catppuccin-latte' || theme === 'apple-light') {
           return 'light';
         }
         return 'dark';

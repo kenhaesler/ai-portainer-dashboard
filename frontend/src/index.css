@@ -221,6 +221,94 @@
     --color-chart-4: #fab387; /* Peach */
     --color-chart-5: #f9e2af; /* Yellow */
   }
+
+  /* ================================================
+     APPLE GLASSMORPHISM LIGHT THEME
+     Modern frosted glass UI with gradient backgrounds
+     ================================================ */
+  .apple-light {
+    /* Glass card backgrounds - semi-transparent */
+    --color-background: #f0f4f8; /* Will be overridden by gradient */
+    --color-foreground: #1a1a2e; /* Deep blue-black text */
+    --color-card: rgba(255, 255, 255, 0.7); /* Frosted glass */
+    --color-card-foreground: #1a1a2e;
+    --color-popover: rgba(255, 255, 255, 0.85);
+    --color-popover-foreground: #1a1a2e;
+    --color-primary: #6366f1; /* Vibrant indigo */
+    --color-primary-foreground: #ffffff;
+    --color-secondary: rgba(255, 255, 255, 0.5);
+    --color-secondary-foreground: #1a1a2e;
+    --color-muted: rgba(148, 163, 184, 0.3);
+    --color-muted-foreground: #64748b;
+    --color-accent: #8b5cf6; /* Purple accent */
+    --color-accent-foreground: #ffffff;
+    --color-destructive: #ef4444;
+    --color-destructive-foreground: #ffffff;
+    --color-border: rgba(255, 255, 255, 0.4); /* Glass edge highlight */
+    --color-input: rgba(255, 255, 255, 0.6);
+    --color-ring: #6366f1;
+    --color-sidebar-background: rgba(255, 255, 255, 0.6);
+    --color-sidebar-foreground: #1a1a2e;
+    --color-sidebar-primary: #6366f1;
+    --color-sidebar-primary-foreground: #ffffff;
+    --color-sidebar-accent: rgba(99, 102, 241, 0.1);
+    --color-sidebar-accent-foreground: #1a1a2e;
+    --color-sidebar-border: rgba(255, 255, 255, 0.3);
+    --color-sidebar-ring: #6366f1;
+    --color-chart-1: #6366f1; /* Indigo */
+    --color-chart-2: #06b6d4; /* Cyan */
+    --color-chart-3: #10b981; /* Emerald */
+    --color-chart-4: #f59e0b; /* Amber */
+    --color-chart-5: #ec4899; /* Pink */
+    --radius-sm: 0.75rem;
+    --radius-md: 1rem;
+    --radius-lg: 1.25rem;
+    --radius-xl: 1.5rem;
+  }
+
+  /* ================================================
+     APPLE GLASSMORPHISM DARK THEME
+     Deep space aesthetic with glowing glass elements
+     ================================================ */
+  .apple-dark {
+    /* Glass card backgrounds - dark translucent */
+    --color-background: #0a0a0f; /* Will be overridden by gradient */
+    --color-foreground: #f1f5f9; /* Bright text */
+    --color-card: rgba(30, 32, 48, 0.6); /* Dark frosted glass */
+    --color-card-foreground: #f1f5f9;
+    --color-popover: rgba(30, 32, 48, 0.85);
+    --color-popover-foreground: #f1f5f9;
+    --color-primary: #818cf8; /* Soft indigo */
+    --color-primary-foreground: #0a0a0f;
+    --color-secondary: rgba(51, 65, 85, 0.5);
+    --color-secondary-foreground: #f1f5f9;
+    --color-muted: rgba(71, 85, 105, 0.4);
+    --color-muted-foreground: #94a3b8;
+    --color-accent: #a78bfa; /* Violet accent */
+    --color-accent-foreground: #0a0a0f;
+    --color-destructive: #f87171;
+    --color-destructive-foreground: #0a0a0f;
+    --color-border: rgba(148, 163, 184, 0.15); /* Subtle glass edge */
+    --color-input: rgba(51, 65, 85, 0.5);
+    --color-ring: #818cf8;
+    --color-sidebar-background: rgba(15, 15, 25, 0.8);
+    --color-sidebar-foreground: #f1f5f9;
+    --color-sidebar-primary: #818cf8;
+    --color-sidebar-primary-foreground: #0a0a0f;
+    --color-sidebar-accent: rgba(129, 140, 248, 0.15);
+    --color-sidebar-accent-foreground: #f1f5f9;
+    --color-sidebar-border: rgba(148, 163, 184, 0.1);
+    --color-sidebar-ring: #818cf8;
+    --color-chart-1: #818cf8; /* Indigo */
+    --color-chart-2: #22d3ee; /* Cyan */
+    --color-chart-3: #34d399; /* Emerald */
+    --color-chart-4: #fbbf24; /* Amber */
+    --color-chart-5: #f472b6; /* Pink */
+    --radius-sm: 0.75rem;
+    --radius-md: 1rem;
+    --radius-lg: 1.25rem;
+    --radius-xl: 1.5rem;
+  }
 }
 
 @layer base {
@@ -231,4 +319,430 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ============================================
+   GLASSMORPHISM UI - FUTURISTIC DESIGN SYSTEM
+   ============================================ */
+
+/* ====== GRADIENT MESH BACKGROUNDS ====== */
+
+/* Light theme - soft pastel gradient mesh */
+.apple-light {
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 0%, rgba(236, 72, 153, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 100%, rgba(6, 182, 212, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 0% 100%, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
+    linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Dark theme - deep space gradient with subtle aurora */
+.apple-dark {
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.2) 0%, transparent 40%),
+    radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
+    radial-gradient(ellipse at 80% 80%, rgba(6, 182, 212, 0.12) 0%, transparent 40%),
+    radial-gradient(ellipse at 20% 80%, rgba(236, 72, 153, 0.1) 0%, transparent 40%),
+    linear-gradient(180deg, #0f0f1a 0%, #0a0a12 50%, #050508 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* ====== GLOBAL TRANSITIONS ====== */
+.apple-light,
+.apple-dark {
+  scroll-behavior: smooth;
+
+  & * {
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  & button,
+  & a,
+  & input,
+  & select,
+  & textarea,
+  & [role="button"],
+  & .bg-card,
+  & .border {
+    transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* ====== FROSTED GLASS CARDS ====== */
+
+/* Light theme cards */
+.apple-light {
+  & .bg-card,
+  & .rounded-lg.border.bg-card {
+    background: rgba(255, 255, 255, 0.65) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5) !important;
+    box-shadow:
+      0 8px 32px rgba(99, 102, 241, 0.08),
+      0 4px 16px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  & .bg-card:hover {
+    background: rgba(255, 255, 255, 0.75) !important;
+    box-shadow:
+      0 12px 40px rgba(99, 102, 241, 0.12),
+      0 8px 24px rgba(0, 0, 0, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    transform: translateY(-2px);
+  }
+}
+
+/* Dark theme cards */
+.apple-dark {
+  & .bg-card,
+  & .rounded-lg.border.bg-card {
+    background: rgba(30, 32, 48, 0.5) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(148, 163, 184, 0.12) !important;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      0 4px 16px rgba(99, 102, 241, 0.05),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  & .bg-card:hover {
+    background: rgba(40, 42, 60, 0.6) !important;
+    border-color: rgba(129, 140, 248, 0.2) !important;
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, 0.4),
+      0 8px 24px rgba(129, 140, 248, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+  }
+}
+
+/* ====== SIDEBAR GLASS EFFECT ====== */
+
+.apple-light {
+  & [data-sidebar],
+  & .bg-sidebar-background,
+  & aside {
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-right: 1px solid rgba(255, 255, 255, 0.5) !important;
+  }
+}
+
+.apple-dark {
+  & [data-sidebar],
+  & .bg-sidebar-background,
+  & aside {
+    background: rgba(15, 15, 25, 0.75) !important;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-right: 1px solid rgba(148, 163, 184, 0.08) !important;
+  }
+}
+
+/* ====== GLASS BUTTONS ====== */
+
+.apple-light {
+  & button,
+  & [role="button"] {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  & .bg-primary {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+    box-shadow:
+      0 4px 16px rgba(99, 102, 241, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  & .bg-primary:hover {
+    box-shadow:
+      0 8px 24px rgba(99, 102, 241, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+  }
+
+  & button:not(.bg-primary):not(.bg-destructive):hover,
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+    background: rgba(99, 102, 241, 0.1) !important;
+    border-color: rgba(99, 102, 241, 0.3) !important;
+  }
+}
+
+.apple-dark {
+  & button,
+  & [role="button"] {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  & .bg-primary {
+    background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%) !important;
+    box-shadow:
+      0 4px 16px rgba(129, 140, 248, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  & .bg-primary:hover {
+    box-shadow:
+      0 8px 28px rgba(129, 140, 248, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+  }
+
+  & button:not(.bg-primary):not(.bg-destructive):hover,
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+    background: rgba(129, 140, 248, 0.15) !important;
+    border-color: rgba(129, 140, 248, 0.3) !important;
+  }
+}
+
+/* ====== GLASS INPUTS ====== */
+
+.apple-light {
+  & input,
+  & textarea,
+  & select {
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(148, 163, 184, 0.3) !important;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  }
+
+  & input:focus,
+  & textarea:focus,
+  & select:focus {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border-color: rgba(99, 102, 241, 0.5) !important;
+    box-shadow:
+      0 0 0 3px rgba(99, 102, 241, 0.15),
+      inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  }
+}
+
+.apple-dark {
+  & input,
+  & textarea,
+  & select {
+    background: rgba(30, 32, 48, 0.6) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(148, 163, 184, 0.15) !important;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  & input:focus,
+  & textarea:focus,
+  & select:focus {
+    background: rgba(40, 42, 60, 0.8) !important;
+    border-color: rgba(129, 140, 248, 0.5) !important;
+    box-shadow:
+      0 0 0 3px rgba(129, 140, 248, 0.2),
+      inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* ====== GLASS POPOVERS & DROPDOWNS ====== */
+
+.apple-light {
+  & .bg-popover,
+  & [data-radix-popper-content-wrapper] > div {
+    background: rgba(255, 255, 255, 0.85) !important;
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    box-shadow:
+      0 24px 48px rgba(0, 0, 0, 0.12),
+      0 12px 24px rgba(99, 102, 241, 0.08);
+  }
+}
+
+.apple-dark {
+  & .bg-popover,
+  & [data-radix-popper-content-wrapper] > div {
+    background: rgba(20, 22, 35, 0.85) !important;
+    backdrop-filter: blur(24px) saturate(200%);
+    -webkit-backdrop-filter: blur(24px) saturate(200%);
+    border: 1px solid rgba(148, 163, 184, 0.12) !important;
+    box-shadow:
+      0 24px 48px rgba(0, 0, 0, 0.5),
+      0 12px 24px rgba(129, 140, 248, 0.05);
+  }
+}
+
+/* ====== TABLES WITH GLASS EFFECT ====== */
+
+.apple-light {
+  & table {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+
+  & th {
+    background: rgba(99, 102, 241, 0.08);
+  }
+
+  & tr:hover td {
+    background: rgba(99, 102, 241, 0.05);
+  }
+}
+
+.apple-dark {
+  & table {
+    background: rgba(30, 32, 48, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+
+  & th {
+    background: rgba(129, 140, 248, 0.1);
+  }
+
+  & tr:hover td {
+    background: rgba(129, 140, 248, 0.08);
+  }
+}
+
+/* ====== BADGES & STATUS INDICATORS ====== */
+
+.apple-light {
+  & .rounded-full {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+.apple-dark {
+  & .rounded-full {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+/* ====== FOCUS STATES ====== */
+
+.apple-light {
+  & *:focus-visible {
+    outline: 2px solid rgba(99, 102, 241, 0.6);
+    outline-offset: 2px;
+  }
+}
+
+.apple-dark {
+  & *:focus-visible {
+    outline: 2px solid rgba(129, 140, 248, 0.6);
+    outline-offset: 2px;
+  }
+}
+
+/* ====== SELECTION HIGHLIGHT ====== */
+
+.apple-light ::selection {
+  background: rgba(99, 102, 241, 0.25);
+}
+
+.apple-dark ::selection {
+  background: rgba(129, 140, 248, 0.35);
+}
+
+/* ====== SCROLLBAR STYLING ====== */
+
+.apple-light {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.5);
+  }
+}
+
+.apple-dark {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(129, 140, 248, 0.3);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(129, 140, 248, 0.5);
+  }
+}
+
+/* ====== HEADER GLASS EFFECT ====== */
+
+.apple-light {
+  & header,
+  & nav {
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+  }
+}
+
+.apple-dark {
+  & header,
+  & nav {
+    background: rgba(15, 15, 25, 0.75) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
+  }
+}
+
+/* ====== ANIMATED GLOW ON INTERACTIVE ELEMENTS ====== */
+
+.apple-light .bg-primary,
+.apple-dark .bg-primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.apple-light .bg-primary::before,
+.apple-dark .bg-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.apple-light .bg-primary:hover::before,
+.apple-dark .bg-primary:hover::before {
+  left: 100%;
 }
