@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useMonitoring } from '@/hooks/use-monitoring';
+import { useInvestigations, safeParseJson } from '@/hooks/use-investigations';
+import type { Investigation, RecommendedAction } from '@/hooks/use-investigations';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
@@ -17,6 +19,11 @@ import {
   Server,
   Box,
   Filter,
+  Search,
+  Loader2,
+  XCircle,
+  Clock,
+  Brain,
 } from 'lucide-react';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -36,6 +43,7 @@ interface InsightCardProps {
     is_acknowledged: number;
     created_at: string;
   };
+  investigation?: Investigation;
 }
 
 function SeverityBadge({ severity }: { severity: Severity }) {
@@ -72,7 +80,148 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
-function InsightCard({ insight }: InsightCardProps) {
+function InvestigationStatusBadge({ status }: { status: Investigation['status'] }) {
+  const config = {
+    pending: { label: 'Pending', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300', spinning: false },
+    gathering: { label: 'Gathering Evidence', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', spinning: true },
+    analyzing: { label: 'Analyzing', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', spinning: true },
+    complete: { label: 'Complete', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', spinning: false },
+    failed: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', spinning: false },
+  }[status];
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', config.className)}>
+      {config.spinning && <Loader2 className="h-3 w-3 animate-spin" />}
+      {status === 'complete' && <Brain className="h-3 w-3" />}
+      {status === 'failed' && <XCircle className="h-3 w-3" />}
+      {config.label}
+    </span>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: 'high' | 'medium' | 'low' }) {
+  const config = {
+    high: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    low: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  }[priority];
+
+  return (
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', config)}>
+      {priority}
+    </span>
+  );
+}
+
+function InvestigationSection({ investigation }: { investigation: Investigation }) {
+  if (investigation.status === 'pending' || investigation.status === 'gathering' || investigation.status === 'analyzing') {
+    return (
+      <div className="mt-3 rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Search className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+          <h4 className="text-sm font-medium text-purple-900 dark:text-purple-100">Root Cause Investigation</h4>
+          <InvestigationStatusBadge status={investigation.status} />
+        </div>
+        <p className="text-sm text-purple-700 dark:text-purple-300">
+          {investigation.status === 'pending' && 'Investigation queued...'}
+          {investigation.status === 'gathering' && 'Gathering container logs, metrics, and related context...'}
+          {investigation.status === 'analyzing' && 'AI is analyzing the evidence...'}
+        </p>
+      </div>
+    );
+  }
+
+  if (investigation.status === 'failed') {
+    return (
+      <div className="mt-3 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+          <h4 className="text-sm font-medium text-red-900 dark:text-red-100">Investigation Failed</h4>
+        </div>
+        <p className="text-sm text-red-700 dark:text-red-300">
+          {investigation.error_message || 'An unknown error occurred during analysis.'}
+        </p>
+      </div>
+    );
+  }
+
+  // Complete investigation
+  const contributingFactors = safeParseJson<string[]>(investigation.contributing_factors) ?? [];
+  const recommendedActions = safeParseJson<RecommendedAction[]>(investigation.recommended_actions) ?? [];
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Brain className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+        <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-100">Root Cause Investigation</h4>
+        <InvestigationStatusBadge status="complete" />
+      </div>
+
+      {/* Root Cause */}
+      {investigation.root_cause && (
+        <div className="rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3">
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-1">Root Cause</h5>
+          <p className="text-sm text-purple-900 dark:text-purple-100">{investigation.root_cause}</p>
+        </div>
+      )}
+
+      {/* Contributing Factors */}
+      {contributingFactors.length > 0 && (
+        <div>
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Contributing Factors</h5>
+          <ul className="space-y-1">
+            {contributingFactors.map((factor, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-purple-500 flex-shrink-0" />
+                {factor}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Recommended Actions */}
+      {recommendedActions.length > 0 && (
+        <div>
+          <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Recommended Actions</h5>
+          <div className="space-y-2">
+            {recommendedActions.map((action, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <PriorityBadge priority={action.priority} />
+                <div className="flex-1">
+                  <p className="text-foreground">{action.action}</p>
+                  {action.rationale && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{action.rationale}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Metadata footer */}
+      <div className="flex items-center gap-4 pt-2 border-t text-xs text-muted-foreground">
+        {investigation.confidence_score != null && (
+          <span className="flex items-center gap-1">
+            Confidence: {Math.round(investigation.confidence_score * 100)}%
+          </span>
+        )}
+        {investigation.analysis_duration_ms != null && (
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {(investigation.analysis_duration_ms / 1000).toFixed(1)}s
+          </span>
+        )}
+        {investigation.llm_model && (
+          <span>Model: {investigation.llm_model}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InsightCard({ insight, investigation }: InsightCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const categoryIcon = {
@@ -82,6 +231,9 @@ function InsightCard({ insight }: InsightCardProps) {
   }[insight.category.split(':')[0]] || Server;
 
   const CategoryIcon = categoryIcon;
+
+  const hasInvestigation = !!investigation;
+  const isInvestigating = investigation && ['pending', 'gathering', 'analyzing'].includes(investigation.status);
 
   return (
     <div
@@ -102,6 +254,9 @@ function InsightCard({ insight }: InsightCardProps) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <SeverityBadge severity={insight.severity} />
+                {hasInvestigation && (
+                  <InvestigationStatusBadge status={investigation.status} />
+                )}
                 <span className="text-xs text-muted-foreground">
                   {formatDate(insight.created_at)}
                 </span>
@@ -117,6 +272,9 @@ function InsightCard({ insight }: InsightCardProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isInvestigating && (
+              <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+            )}
             {insight.container_name && (
               <div className="hidden sm:flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs">
                 <Box className="h-3 w-3 text-muted-foreground" />
@@ -151,6 +309,11 @@ function InsightCard({ insight }: InsightCardProps) {
                   </p>
                 </div>
               </div>
+            )}
+
+            {/* Investigation Report */}
+            {investigation && (
+              <InvestigationSection investigation={investigation} />
             )}
 
             {(insight.endpoint_name || insight.container_name) && (
@@ -214,6 +377,8 @@ export default function AiMonitorPage() {
     unsubscribeSeverity,
     refetch,
   } = useMonitoring();
+
+  const { getInvestigationForInsight } = useInvestigations();
 
   // Filter insights by severity
   const filteredInsights = useMemo(() => {
@@ -428,7 +593,11 @@ export default function AiMonitorPage() {
       ) : (
         <div className="space-y-3">
           {filteredInsights.map((insight) => (
-            <InsightCard key={insight.id} insight={insight} />
+            <InsightCard
+              key={insight.id}
+              insight={insight}
+              investigation={getInvestigationForInsight(insight.id)}
+            />
           ))}
         </div>
       )}

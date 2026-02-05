@@ -34,6 +34,26 @@ export function setupMonitoringNamespace(ns: Namespace) {
       }
     });
 
+    // Send recent investigations on request
+    socket.on('investigations:history', (data?: { limit?: number }) => {
+      try {
+        const db = getDb();
+        const limit = data?.limit || 50;
+
+        const investigations = db.prepare(
+          `SELECT i.*, ins.title as insight_title, ins.severity as insight_severity, ins.category as insight_category
+           FROM investigations i
+           LEFT JOIN insights ins ON i.insight_id = ins.id
+           ORDER BY i.created_at DESC LIMIT ?`
+        ).all(limit);
+
+        socket.emit('investigations:history', { investigations });
+      } catch (err) {
+        log.error({ err }, 'Failed to fetch investigation history');
+        socket.emit('investigations:error', { error: 'Failed to fetch investigation history' });
+      }
+    });
+
     socket.on('insights:subscribe', (data?: { severity?: string }) => {
       if (data?.severity) {
         socket.join(`severity:${data.severity}`);
