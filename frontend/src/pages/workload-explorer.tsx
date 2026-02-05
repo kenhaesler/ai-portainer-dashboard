@@ -1,47 +1,20 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Play, Square, RotateCw, AlertTriangle, X } from 'lucide-react';
-import { useContainers, useContainerAction, type Container } from '@/hooks/use-containers';
+import { AlertTriangle, X } from 'lucide-react';
+import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate, truncate } from '@/lib/utils';
 
-type ContainerAction = 'start' | 'stop' | 'restart';
-
-interface PendingAction {
-  container: Container;
-  action: ContainerAction;
-}
-
-const ACTION_CONFIG: Record<ContainerAction, { label: string; variant: 'default' | 'destructive'; description: (name: string) => string }> = {
-  start: {
-    label: 'Start',
-    variant: 'default',
-    description: (name) => `Are you sure you want to start container "${name}"?`,
-  },
-  stop: {
-    label: 'Stop',
-    variant: 'destructive',
-    description: (name) => `Are you sure you want to stop container "${name}"? Running processes will be terminated.`,
-  },
-  restart: {
-    label: 'Restart',
-    variant: 'default',
-    description: (name) => `Are you sure you want to restart container "${name}"?`,
-  },
-};
-
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   // Read endpoint and stack from URL params
   const endpointParam = searchParams.get('endpoint');
@@ -74,7 +47,6 @@ export default function WorkloadExplorerPage() {
 
   const { data: endpoints } = useEndpoints();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint);
-  const containerAction = useContainerAction();
   const { interval, setInterval } = useAutoRefresh(30);
 
   // Filter containers by stack if stack parameter is present
@@ -82,19 +54,6 @@ export default function WorkloadExplorerPage() {
     if (!containers || !selectedStack) return containers;
     return containers.filter(c => c.labels['com.docker.compose.project'] === selectedStack);
   }, [containers, selectedStack]);
-
-  const handleAction = (container: Container, action: ContainerAction) => {
-    setPendingAction({ container, action });
-  };
-
-  const confirmAction = async () => {
-    if (!pendingAction) return;
-    await containerAction.mutateAsync({
-      endpointId: pendingAction.container.endpointId,
-      containerId: pendingAction.container.id,
-      action: pendingAction.action,
-    });
-  };
 
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
@@ -150,45 +109,6 @@ export default function WorkloadExplorerPage() {
       accessorKey: 'created',
       header: 'Created',
       cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
-    },
-    {
-      id: 'actions',
-      header: 'Actions',
-      enableSorting: false,
-      cell: ({ row }) => {
-        const container = row.original;
-        const isRunning = container.state === 'running';
-        return (
-          <div className="flex items-center gap-1">
-            {isRunning ? (
-              <>
-                <button
-                  onClick={() => handleAction(container, 'stop')}
-                  title="Stop"
-                  className="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                >
-                  <Square className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => handleAction(container, 'restart')}
-                  title="Restart"
-                  className="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-amber-100 hover:text-amber-700 dark:hover:bg-amber-900/30 dark:hover:text-amber-400"
-                >
-                  <RotateCw className="h-4 w-4" />
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => handleAction(container, 'start')}
-                title="Start"
-                className="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-emerald-100 hover:text-emerald-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400"
-              >
-                <Play className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        );
-      },
     },
   ], [navigate]);
 
@@ -296,19 +216,6 @@ export default function WorkloadExplorerPage() {
           />
         </div>
       ) : null}
-
-      {/* Confirm Dialog */}
-      {pendingAction && (
-        <ConfirmDialog
-          open={!!pendingAction}
-          onOpenChange={(open) => { if (!open) setPendingAction(null); }}
-          title={`${ACTION_CONFIG[pendingAction.action].label} Container`}
-          description={ACTION_CONFIG[pendingAction.action].description(pendingAction.container.name)}
-          confirmLabel={ACTION_CONFIG[pendingAction.action].label}
-          variant={ACTION_CONFIG[pendingAction.action].variant}
-          onConfirm={confirmAction}
-        />
-      )}
     </div>
   );
 }
