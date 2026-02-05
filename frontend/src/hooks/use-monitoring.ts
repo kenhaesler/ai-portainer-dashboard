@@ -7,14 +7,17 @@ type Severity = 'critical' | 'warning' | 'info';
 
 interface Insight {
   id: string;
-  type: string;
+  endpoint_id: number | null;
+  endpoint_name: string | null;
+  container_id: string | null;
+  container_name: string | null;
   severity: Severity;
+  category: string;
   title: string;
   description: string;
-  source: string;
-  timestamp: string;
-  metadata?: Record<string, unknown>;
-  acknowledged: boolean;
+  suggested_action: string | null;
+  is_acknowledged: number;
+  created_at: string;
 }
 
 export function useMonitoring() {
@@ -24,14 +27,14 @@ export function useMonitoring() {
     new Set(['critical', 'warning', 'info'])
   );
 
-  const historyQuery = useQuery<Insight[]>({
+  const historyQuery = useQuery<{ insights: Insight[]; total: number }>({
     queryKey: ['monitoring', 'insights'],
-    queryFn: () => api.get<Insight[]>('/api/monitoring/insights'),
+    queryFn: () => api.get<{ insights: Insight[]; total: number }>('/api/monitoring/insights'),
   });
 
   useEffect(() => {
-    if (historyQuery.data) {
-      setInsights(historyQuery.data);
+    if (historyQuery.data?.insights) {
+      setInsights(historyQuery.data.insights);
     }
   }, [historyQuery.data]);
 

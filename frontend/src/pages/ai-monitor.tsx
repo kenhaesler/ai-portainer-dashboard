@@ -24,14 +24,17 @@ type Severity = 'critical' | 'warning' | 'info';
 interface InsightCardProps {
   insight: {
     id: string;
-    type: string;
+    endpoint_id: number | null;
+    endpoint_name: string | null;
+    container_id: string | null;
+    container_name: string | null;
     severity: Severity;
+    category: string;
     title: string;
     description: string;
-    source: string;
-    timestamp: string;
-    metadata?: Record<string, unknown>;
-    acknowledged: boolean;
+    suggested_action: string | null;
+    is_acknowledged: number;
+    created_at: string;
   };
 }
 
@@ -76,7 +79,7 @@ function InsightCard({ insight }: InsightCardProps) {
     security: Shield,
     anomaly: Activity,
     'ai-analysis': Sparkles,
-  }[insight.type.split(':')[0]] || Server;
+  }[insight.category.split(':')[0]] || Server;
 
   const CategoryIcon = categoryIcon;
 
@@ -100,7 +103,7 @@ function InsightCard({ insight }: InsightCardProps) {
               <div className="flex items-center gap-2 mb-1">
                 <SeverityBadge severity={insight.severity} />
                 <span className="text-xs text-muted-foreground">
-                  {formatDate(insight.timestamp)}
+                  {formatDate(insight.created_at)}
                 </span>
               </div>
               <h3 className="font-semibold text-base leading-snug mb-1">
@@ -114,10 +117,10 @@ function InsightCard({ insight }: InsightCardProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {insight.metadata?.containerName && (
+            {insight.container_name && (
               <div className="hidden sm:flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs">
                 <Box className="h-3 w-3 text-muted-foreground" />
-                <span className="font-mono">{insight.metadata.containerName}</span>
+                <span className="font-mono">{insight.container_name}</span>
               </div>
             )}
             {expanded ? (
@@ -139,28 +142,57 @@ function InsightCard({ insight }: InsightCardProps) {
               </p>
             </div>
 
-            {insight.metadata && Object.keys(insight.metadata).length > 0 && (
+            {insight.suggested_action && (
               <div>
-                <h4 className="text-sm font-medium mb-2">Additional Details</h4>
+                <h4 className="text-sm font-medium mb-2">Suggested Action</h4>
+                <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 p-3">
+                  <p className="text-sm text-blue-900 dark:text-blue-100">
+                    {insight.suggested_action}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {(insight.endpoint_name || insight.container_name) && (
+              <div>
+                <h4 className="text-sm font-medium mb-2">Resource Details</h4>
                 <div className="rounded-md bg-muted p-3 space-y-1">
-                  {Object.entries(insight.metadata).map(([key, value]) => (
-                    <div key={key} className="flex gap-2 text-xs">
+                  {insight.endpoint_name && (
+                    <div className="flex gap-2 text-xs">
                       <span className="text-muted-foreground font-medium min-w-[120px]">
-                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:
+                        Endpoint:
                       </span>
-                      <span className="font-mono">{String(value)}</span>
+                      <span className="font-mono">{insight.endpoint_name}</span>
                     </div>
-                  ))}
+                  )}
+                  {insight.container_name && (
+                    <div className="flex gap-2 text-xs">
+                      <span className="text-muted-foreground font-medium min-w-[120px]">
+                        Container:
+                      </span>
+                      <span className="font-mono">{insight.container_name}</span>
+                    </div>
+                  )}
+                  {insight.container_id && (
+                    <div className="flex gap-2 text-xs">
+                      <span className="text-muted-foreground font-medium min-w-[120px]">
+                        Container ID:
+                      </span>
+                      <span className="font-mono">{insight.container_id.slice(0, 12)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             <div className="flex items-center justify-between pt-2 border-t text-xs text-muted-foreground">
               <div className="flex items-center gap-4">
-                <span>Source: {insight.source}</span>
-                <span>Type: {insight.type}</span>
+                <span>Category: {insight.category}</span>
+                <span>ID: {insight.id.slice(0, 8)}</span>
               </div>
-              <span className="font-mono text-[10px]">{insight.id.slice(0, 8)}</span>
+              <span className={insight.is_acknowledged ? 'text-emerald-600' : ''}>
+                {insight.is_acknowledged ? 'Acknowledged' : 'Unacknowledged'}
+              </span>
             </div>
           </div>
         </div>
