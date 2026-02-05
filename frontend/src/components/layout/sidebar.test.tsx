@@ -1,14 +1,16 @@
-import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from './sidebar';
 
-const mockUseRemediationActions = vi.fn();
-
 vi.mock('@/hooks/use-remediation', () => ({
-  useRemediationActions: (...args: unknown[]) => mockUseRemediationActions(...args),
+  useRemediationActions: vi.fn(),
 }));
+
+import { useRemediationActions } from '@/hooks/use-remediation';
+
+const mockUseRemediationActions = vi.mocked(useRemediationActions);
 
 function renderSidebar() {
   const queryClient = new QueryClient({
@@ -24,27 +26,44 @@ function renderSidebar() {
 }
 
 describe('Sidebar', () => {
-  it('shows badge with pending remediation count when actions exist', () => {
+  it('shows pending remediation count as badge', () => {
     mockUseRemediationActions.mockReturnValue({
-      data: [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }, { id: '5' }],
-    });
+      data: [
+        { id: '1', type: 'restart', status: 'pending', containerId: 'c1', endpointId: 1, description: 'test', suggestedBy: 'ai', createdAt: '', updatedAt: '' },
+        { id: '2', type: 'restart', status: 'pending', containerId: 'c2', endpointId: 1, description: 'test', suggestedBy: 'ai', createdAt: '', updatedAt: '' },
+      ],
+    } as any);
+
     renderSidebar();
-    expect(screen.getByText('5')).toBeInTheDocument();
+
+    const badge = screen.getByText('2');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass('bg-destructive');
   });
 
-  it('hides badge when there are no pending remediation actions', () => {
-    mockUseRemediationActions.mockReturnValue({ data: [] });
+  it('shows no badge when there are zero pending actions', () => {
+    mockUseRemediationActions.mockReturnValue({
+      data: [],
+    } as any);
+
     renderSidebar();
-    expect(screen.queryByText('0')).not.toBeInTheDocument();
-    // The destructive badge should not be rendered
+
+    // Remediation link should exist but no badge
+    expect(screen.getByText('Remediation')).toBeInTheDocument();
+    // No destructive badge elements should exist
     const badges = document.querySelectorAll('.bg-destructive');
-    expect(badges.length).toBe(0);
+    expect(badges).toHaveLength(0);
   });
 
-  it('hides badge when remediation data is loading', () => {
-    mockUseRemediationActions.mockReturnValue({ data: undefined });
+  it('shows no badge when data is undefined (loading)', () => {
+    mockUseRemediationActions.mockReturnValue({
+      data: undefined,
+    } as any);
+
     renderSidebar();
+
+    expect(screen.getByText('Remediation')).toBeInTheDocument();
     const badges = document.querySelectorAll('.bg-destructive');
-    expect(badges.length).toBe(0);
+    expect(badges).toHaveLength(0);
   });
 });

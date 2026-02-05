@@ -51,6 +51,20 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   SQLITE_PATH: z.string().default('./data/dashboard.db'),
 
+  // Notifications — Teams
+  TEAMS_WEBHOOK_URL: z.string().url().optional(),
+  TEAMS_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+
+  // Notifications — Email
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_SECURE: z.coerce.boolean().default(true),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().default('AI Portainer Dashboard <notifications@example.com>'),
+  EMAIL_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+  EMAIL_RECIPIENTS: z.string().default(''),
+
   // Rate Limiting
   LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(
     process.env.NODE_ENV === 'production' ? 5 : 30

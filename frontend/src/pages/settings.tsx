@@ -19,6 +19,8 @@ import {
   Shield,
   Eye,
   EyeOff,
+  Bell,
+  Send,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
@@ -26,6 +28,7 @@ import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 
 // Default settings definitions
 const DEFAULT_SETTINGS = {
@@ -39,6 +42,16 @@ const DEFAULT_SETTINGS = {
     { key: 'anomaly.memory_threshold', label: 'Memory Threshold', description: 'Memory usage percentage to trigger anomaly alert', type: 'number', defaultValue: '85', min: 50, max: 100 },
     { key: 'anomaly.network_spike_threshold', label: 'Network Spike Threshold', description: 'Network traffic spike multiplier to trigger alert', type: 'number', defaultValue: '3', min: 1.5, max: 10 },
     { key: 'anomaly.detection_enabled', label: 'Enable Anomaly Detection', description: 'Enable automatic anomaly detection', type: 'boolean', defaultValue: 'true' },
+  ],
+  notifications: [
+    { key: 'notifications.teams_enabled', label: 'Enable Teams Notifications', description: 'Send alerts to Microsoft Teams via webhook', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.teams_webhook_url', label: 'Teams Webhook URL', description: 'Microsoft Teams incoming webhook URL', type: 'password', defaultValue: '' },
+    { key: 'notifications.email_enabled', label: 'Enable Email Notifications', description: 'Send alerts via SMTP email', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.smtp_host', label: 'SMTP Host', description: 'SMTP server hostname', type: 'string', defaultValue: '' },
+    { key: 'notifications.smtp_port', label: 'SMTP Port', description: 'SMTP server port', type: 'number', defaultValue: '587', min: 1, max: 65535 },
+    { key: 'notifications.smtp_user', label: 'SMTP Username', description: 'SMTP authentication username', type: 'string', defaultValue: '' },
+    { key: 'notifications.smtp_password', label: 'SMTP Password', description: 'SMTP authentication password', type: 'password', defaultValue: '' },
+    { key: 'notifications.email_recipients', label: 'Email Recipients', description: 'Comma-separated list of recipient email addresses', type: 'string', defaultValue: '' },
   ],
   cache: [
     { key: 'cache.container_ttl', label: 'Container Cache TTL', description: 'Time to cache container list (seconds)', type: 'number', defaultValue: '30', min: 5, max: 300 },
@@ -251,6 +264,49 @@ function SettingsSection({
   );
 }
 
+function NotificationTestButtons() {
+  const [testingTeams, setTestingTeams] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+
+  const handleTest = async (channel: 'teams' | 'email') => {
+    const setTesting = channel === 'teams' ? setTestingTeams : setTestingEmail;
+    setTesting(true);
+    try {
+      await api.post('/api/notifications/test', { channel });
+      toast.success(`Test ${channel} notification sent successfully`);
+    } catch (err) {
+      toast.error(`Failed to send test ${channel} notification: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
+      <Info className="h-4 w-4 text-muted-foreground shrink-0" />
+      <span className="text-sm text-muted-foreground">Send a test notification to verify your configuration:</span>
+      <div className="flex items-center gap-2 ml-auto">
+        <button
+          onClick={() => handleTest('teams')}
+          disabled={testingTeams}
+          className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {testingTeams ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          Test Teams
+        </button>
+        <button
+          onClick={() => handleTest('email')}
+          disabled={testingEmail}
+          className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {testingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          Test Email
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
@@ -310,6 +366,14 @@ export default function SettingsPage() {
       'oidc.issuer_url',
       'oidc.client_id',
       'oidc.client_secret',
+      'notifications.teams_enabled',
+      'notifications.teams_webhook_url',
+      'notifications.email_enabled',
+      'notifications.smtp_host',
+      'notifications.smtp_port',
+      'notifications.smtp_user',
+      'notifications.smtp_password',
+      'notifications.email_recipients',
     ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
@@ -542,6 +606,22 @@ export default function SettingsPage() {
         onChange={handleChange}
         disabled={isSaving}
       />
+
+      {/* Notification Settings */}
+      <SettingsSection
+        title="Notifications"
+        icon={<Bell className="h-5 w-5" />}
+        category="notifications"
+        settings={DEFAULT_SETTINGS.notifications}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        requiresRestart
+        disabled={isSaving}
+      />
+
+      {/* Notification Test Buttons */}
+      <NotificationTestButtons />
 
       {/* Cache Settings */}
       <SettingsSection
