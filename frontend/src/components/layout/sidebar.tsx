@@ -102,15 +102,15 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      <nav className="flex-1 overflow-y-auto py-4">
         {navigation.map((group) => {
           const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
           return (
-            <div key={group.title} className="mb-4">
+            <div key={group.title} className="mb-2">
               {!sidebarCollapsed && (
                 <button
                   onClick={() => toggleGroup(group.title)}
-                  className="mb-1 flex w-full items-center justify-between px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                  className="mb-1 flex w-full items-center justify-between px-4 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <span>{group.title}</span>
                   <ChevronDown
@@ -121,50 +121,52 @@ export function Sidebar() {
                   />
                 </button>
               )}
-              <ul
+              <div
                 className={cn(
-                  'space-y-0.5 overflow-hidden transition-all duration-200',
-                  isGroupCollapsed && 'h-0'
+                  'grid transition-all duration-200 ease-in-out',
+                  isGroupCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
                 )}
               >
-                {group.items.map((item) => (
-                  <li key={item.to}>
-                    <NavLink
-                      to={item.to}
-                      end={item.to === '/'}
-                      className={({ isActive }) =>
-                        cn(
-                          'group relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-all duration-200',
-                          isActive
-                            ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
-                            : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
-                          sidebarCollapsed && 'justify-center px-0'
-                        )
-                      }
-                      title={sidebarCollapsed ? item.label : undefined}
-                    >
-                      {({ isActive }) => (
-                        <>
-                          {isActive && !sidebarCollapsed && (
-                            <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
-                          )}
-                          <item.icon className="h-4 w-4 shrink-0" />
-                          {!sidebarCollapsed && (
-                            <>
-                              <span className="truncate">{item.label}</span>
-                              {item.badge != null && item.badge > 0 && (
-                                <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
-                                  {item.badge}
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
+                <ul className="space-y-0.5 overflow-hidden px-2">
+                  {group.items.map((item) => (
+                    <li key={item.to} className="relative">
+                      <NavLink
+                        to={item.to}
+                        end={item.to === '/'}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-all duration-200',
+                            isActive
+                              ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
+                              : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+                            sidebarCollapsed && 'justify-center px-0'
+                          )
+                        }
+                        title={sidebarCollapsed ? item.label : undefined}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            {isActive && !sidebarCollapsed && (
+                              <span className="absolute -left-2 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+                            )}
+                            <item.icon className="h-4 w-4 shrink-0" />
+                            {!sidebarCollapsed && (
+                              <>
+                                <span className="truncate">{item.label}</span>
+                                {item.badge != null && item.badge > 0 && (
+                                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
+                                    {item.badge}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           );
         })}
