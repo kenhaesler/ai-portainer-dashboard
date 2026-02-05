@@ -4,6 +4,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/hooks/use-container-detail';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerOverview } from '@/components/container/container-overview';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
 import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
@@ -108,7 +109,10 @@ export default function ContainerDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{container.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold tracking-tight">{container.name}</h1>
+              <FavoriteButton endpointId={parsedEndpointId} containerId={containerId} />
+            </div>
             <p className="text-muted-foreground">
               {container.id.slice(0, 12)} • {container.endpointName}
             </p>
