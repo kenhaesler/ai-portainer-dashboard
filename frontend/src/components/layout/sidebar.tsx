@@ -129,7 +129,7 @@ export function Sidebar() {
               >
                 <ul className="space-y-0.5 overflow-hidden px-2">
                   {group.items.map((item) => (
-                    <li key={item.to} className="relative">
+                    <li key={item.to}>
                       <NavLink
                         to={item.to}
                         end={item.to === '/'}
@@ -144,11 +144,8 @@ export function Sidebar() {
                         }
                         title={sidebarCollapsed ? item.label : undefined}
                       >
-                        {({ isActive }) => (
+                        {() => (
                           <>
-                            {isActive && !sidebarCollapsed && (
-                              <span className="absolute -left-2 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
-                            )}
                             <item.icon className="h-4 w-4 shrink-0" />
                             {!sidebarCollapsed && (
                               <>
