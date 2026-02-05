@@ -63,7 +63,7 @@ describe('Search Routes', () => {
     ] as any);
 
     mockPortainer.getImages.mockResolvedValue([
-      { Id: 'img1', RepoTags: ['nginx:alpine'], Size: 123, Created: 1700000000 },
+      { Id: 'img1', RepoTags: ['web-proxy:latest'], Size: 123, Created: 1700000000 },
     ] as any);
 
     mockPortainer.getStacks.mockResolvedValue([
