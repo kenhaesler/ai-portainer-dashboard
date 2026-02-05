@@ -15,6 +15,9 @@ import {
   Settings2,
   Info,
   CheckCircle2,
+  Search,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
@@ -46,6 +49,13 @@ const DEFAULT_SETTINGS = {
     { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://ollama:11434' },
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '2048', min: 256, max: 8192 },
   ],
+  elasticsearch: [
+    { key: 'elasticsearch.enabled', label: 'Enable Elasticsearch', description: 'Enable Elasticsearch/Kibana integration for edge agent logs', type: 'boolean', defaultValue: 'false' },
+    { key: 'elasticsearch.endpoint', label: 'Elasticsearch URL', description: 'URL of your Elasticsearch cluster (e.g., https://localhost:9200)', type: 'string', defaultValue: '' },
+    { key: 'elasticsearch.api_key', label: 'API Key', description: 'Elasticsearch API key for authentication (keep blank for no auth)', type: 'password', defaultValue: '' },
+    { key: 'elasticsearch.index_pattern', label: 'Index Pattern', description: 'Index pattern for log searching (e.g., logs-* or filebeat-*)', type: 'string', defaultValue: 'logs-*' },
+    { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true' },
+  ],
 } as const;
 
 type SettingCategory = keyof typeof DEFAULT_SETTINGS;
@@ -66,6 +76,8 @@ interface SettingInputProps {
 }
 
 function SettingInput({ setting, value, onChange, disabled }: SettingInputProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
   if (setting.type === 'boolean') {
     return (
       <button
@@ -101,6 +113,28 @@ function SettingInput({ setting, value, onChange, disabled }: SettingInputProps)
           </option>
         ))}
       </select>
+    );
+  }
+
+  if (setting.type === 'password') {
+    return (
+      <div className="relative">
+        <input
+          type={showPassword ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder="••••••••"
+          className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
     );
   }
 
@@ -256,6 +290,9 @@ export default function SettingsPage() {
       'monitoring.enabled',
       'llm.ollama_url',
       'llm.model',
+      'elasticsearch.enabled',
+      'elasticsearch.endpoint',
+      'elasticsearch.api_key',
     ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
@@ -494,6 +531,19 @@ export default function SettingsPage() {
         icon={<Bot className="h-5 w-5" />}
         category="llm"
         settings={DEFAULT_SETTINGS.llm}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        requiresRestart
+        disabled={isSaving}
+      />
+
+      {/* Elasticsearch Settings */}
+      <SettingsSection
+        title="Elasticsearch / Kibana"
+        icon={<Search className="h-5 w-5" />}
+        category="elasticsearch"
+        settings={DEFAULT_SETTINGS.elasticsearch}
         values={editedValues}
         originalValues={originalValues}
         onChange={handleChange}

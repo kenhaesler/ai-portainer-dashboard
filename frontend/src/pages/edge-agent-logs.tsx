@@ -178,32 +178,34 @@ function NotConfiguredState() {
           Edge Agent Logs require an Elasticsearch or Kibana connection to search and display logs.
         </p>
 
-        <div className="w-full rounded-lg bg-muted/50 p-4 text-left">
+        <div className="w-full rounded-lg bg-muted/50 p-4 text-left mb-6">
           <h3 className="font-medium mb-3 flex items-center gap-2">
             <Terminal className="h-4 w-4" />
-            Setup Instructions
+            Quick Setup
           </h3>
           <ol className="space-y-3 text-sm text-muted-foreground">
             <li className="flex gap-2">
               <span className="font-medium text-foreground">1.</span>
-              <div>
-                Add the following environment variables to your <code className="text-xs bg-muted px-1 py-0.5 rounded">.env</code> file:
-                <pre className="mt-2 p-2 bg-muted rounded text-xs font-mono overflow-x-auto">
-{`KIBANA_ENDPOINT=https://your-elasticsearch-host:9200
-KIBANA_API_KEY=your-api-key`}
-                </pre>
-              </div>
+              <span>Go to Settings and scroll to the "Elasticsearch / Kibana" section.</span>
             </li>
             <li className="flex gap-2">
               <span className="font-medium text-foreground">2.</span>
-              <span>Restart the backend service to apply the configuration.</span>
+              <span>Enable Elasticsearch and enter your cluster URL and API key.</span>
             </li>
             <li className="flex gap-2">
               <span className="font-medium text-foreground">3.</span>
-              <span>Refresh this page to start searching logs.</span>
+              <span>Save and return to this page to start searching logs.</span>
             </li>
           </ol>
         </div>
+
+        <a
+          href="/settings"
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          <Settings className="h-4 w-4" />
+          Configure Elasticsearch
+        </a>
 
         <a
           href="https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-create-api-key.html"
