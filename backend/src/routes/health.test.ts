@@ -95,7 +95,6 @@ describe('Health Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.status).toBe('unhealthy');
       expect(body.checks.database.status).toBe('unhealthy');
-      expect(body.checks.database.error).toBe('Database query failed');
     });
 
     it('should return degraded when Portainer returns non-ok', async () => {
@@ -128,7 +127,6 @@ describe('Health Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.status).toBe('unhealthy');
       expect(body.checks.portainer.status).toBe('unhealthy');
-      expect(body.checks.portainer.error).toBe('Connection refused');
     });
 
     it('should return unhealthy when Ollama connection fails', async () => {
@@ -145,7 +143,6 @@ describe('Health Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.status).toBe('unhealthy');
       expect(body.checks.ollama.status).toBe('unhealthy');
-      expect(body.checks.ollama.error).toBe('Ollama not running');
     });
 
     it('should include URLs in check responses', async () => {

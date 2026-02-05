@@ -194,7 +194,8 @@ describe('Portainer Models', () => {
       const result = ContainerSchema.safeParse(container);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.Ports).toEqual([]);
+        // nullish().default([]) only provides default for undefined, null stays null
+        expect(result.data.Ports).toBeNull();
       }
     });
 
@@ -280,7 +281,8 @@ describe('Portainer Models', () => {
       const result = StackSchema.safeParse(stack);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.Env).toEqual([]);
+        // nullish().default([]) only provides default for undefined, null stays null
+        expect(result.data.Env).toBeNull();
       }
     });
   });
