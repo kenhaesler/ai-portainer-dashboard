@@ -25,6 +25,7 @@ import { imagesRoutes } from './routes/images.js';
 import { networksRoutes } from './routes/networks.js';
 import { searchRoutes } from './routes/search.js';
 import { cacheAdminRoutes } from './routes/cache-admin.js';
+import { notificationRoutes } from './routes/notifications.js';
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -74,6 +75,7 @@ export async function buildApp() {
   await app.register(networksRoutes);
   await app.register(searchRoutes);
   await app.register(cacheAdminRoutes);
+  await app.register(notificationRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);

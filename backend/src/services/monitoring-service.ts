@@ -13,6 +13,7 @@ import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm
 import { suggestAction } from './remediation-service.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
+import { notifyInsight } from './notification-service.js';
 
 const log = createChildLogger('monitoring-service');
 
@@ -236,6 +237,13 @@ export async function runMonitoringCycle(): Promise<void> {
 
         // Broadcast insight in real-time via Socket.IO
         broadcastInsight(insight as Insight);
+
+        // Send notification for critical/warning insights
+        if (insight.severity === 'critical' || insight.severity === 'warning') {
+          notifyInsight(insight as Insight).catch((err) =>
+            log.warn({ err, insightId: insight.id }, 'Failed to send notification'),
+          );
+        }
 
         // Attempt to suggest a remediation action for this insight
         const suggestedAction = suggestAction(insight as Insight);
