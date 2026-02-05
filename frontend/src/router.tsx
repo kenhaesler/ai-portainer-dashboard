@@ -5,6 +5,7 @@ import { RouteErrorBoundary } from '@/components/shared/route-error-boundary';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('@/pages/login'));
+const AuthCallback = lazy(() => import('@/pages/auth-callback'));
 const Home = lazy(() => import('@/pages/home'));
 const WorkloadExplorer = lazy(() => import('@/pages/workload-explorer'));
 const FleetOverview = lazy(() => import('@/pages/fleet-overview'));
@@ -37,6 +38,11 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LazyPage><Login /></LazyPage>,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/auth/callback',
+    element: <LazyPage><AuthCallback /></LazyPage>,
     errorElement: <RouteErrorBoundary />,
   },
   {

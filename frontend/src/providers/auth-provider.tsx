@@ -9,6 +9,7 @@ interface AuthContextType {
   username: string | null;
   token: string | null;
   login: (username: string, password: string) => Promise<void>;
+  loginWithToken: (token: string, username: string) => void;
   logout: () => Promise<void>;
 }
 
@@ -64,6 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     api.setToken(data.token);
   }, []);
 
+  const loginWithToken = useCallback((newToken: string, newUsername: string) => {
+    setToken(newToken);
+    setUsername(newUsername);
+    storeAuth(newToken, newUsername);
+    api.setToken(newToken);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.post('/api/auth/logout');
@@ -115,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username,
         token,
         login,
+        loginWithToken,
         logout,
       }}
     >

@@ -16,6 +16,7 @@ import {
   Info,
   CheckCircle2,
   Search,
+  Shield,
   Eye,
   EyeOff,
 } from 'lucide-react';
@@ -48,6 +49,15 @@ const DEFAULT_SETTINGS = {
     { key: 'llm.temperature', label: 'Temperature', description: 'Creativity of LLM responses (0-1)', type: 'number', defaultValue: '0.7', min: 0, max: 1, step: 0.1 },
     { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://ollama:11434' },
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '2048', min: 256, max: 8192 },
+  ],
+  authentication: [
+    { key: 'oidc.enabled', label: 'Enable OIDC/SSO', description: 'Enable OpenID Connect single sign-on authentication', type: 'boolean', defaultValue: 'false' },
+    { key: 'oidc.issuer_url', label: 'Issuer URL', description: 'OIDC provider issuer URL (e.g., https://auth.example.com/realms/master)', type: 'string', defaultValue: '' },
+    { key: 'oidc.client_id', label: 'Client ID', description: 'OIDC client identifier registered with your provider', type: 'string', defaultValue: '' },
+    { key: 'oidc.client_secret', label: 'Client Secret', description: 'OIDC client secret for server-side authentication', type: 'password', defaultValue: '' },
+    { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL (e.g., http://localhost:5173/auth/callback)', type: 'string', defaultValue: '' },
+    { key: 'oidc.scopes', label: 'Scopes', description: 'Space-separated OIDC scopes to request', type: 'string', defaultValue: 'openid profile email' },
+    { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true' },
   ],
   elasticsearch: [
     { key: 'elasticsearch.enabled', label: 'Enable Elasticsearch', description: 'Enable Elasticsearch/Kibana integration for edge agent logs', type: 'boolean', defaultValue: 'false' },
@@ -293,6 +303,10 @@ export default function SettingsPage() {
       'elasticsearch.enabled',
       'elasticsearch.endpoint',
       'elasticsearch.api_key',
+      'oidc.enabled',
+      'oidc.issuer_url',
+      'oidc.client_id',
+      'oidc.client_secret',
     ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
@@ -487,6 +501,19 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {/* Authentication Settings */}
+      <SettingsSection
+        title="Authentication"
+        icon={<Shield className="h-5 w-5" />}
+        category="authentication"
+        settings={DEFAULT_SETTINGS.authentication}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        requiresRestart
+        disabled={isSaving}
+      />
 
       {/* Monitoring Settings */}
       <SettingsSection
