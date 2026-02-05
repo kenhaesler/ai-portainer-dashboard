@@ -65,7 +65,7 @@ export default function WorkloadExplorerPage() {
         return (
           <button
             onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-colors duration-200 hover:bg-primary/20"
+            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
           >
             {truncate(getValue<string>(), 45)}
           </button>
