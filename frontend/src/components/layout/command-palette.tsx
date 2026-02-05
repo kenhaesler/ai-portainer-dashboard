@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Command } from 'cmdk';
 import {
@@ -17,10 +17,17 @@ import {
   Settings,
   RefreshCw,
   Palette,
+  Package,
+  Layers,
+  ScrollText,
+  Clock,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
+import { useGlobalSearch } from '@/hooks/use-global-search';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useSearch } from '@/providers/search-provider';
 
 interface PageEntry {
   label: string;
@@ -49,12 +56,27 @@ export function CommandPalette() {
   const open = useUiStore((s) => s.commandPaletteOpen);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const { theme, setTheme } = useThemeStore();
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 250);
+  const { data, isLoading } = useGlobalSearch(debouncedQuery, open);
+  const { recent, addRecent } = useSearch();
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isEditable = !!activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+      );
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setOpen(!open);
+      }
+      if (e.key === '/' && !isEditable) {
+        e.preventDefault();
+        setOpen(true);
       }
     },
     [open, setOpen]
@@ -65,10 +87,38 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  useEffect(() => {
+    if (!open) {
+      setQuery('');
+    }
+  }, [open]);
+
   const navigateTo = (path: string) => {
     navigate(path);
     setOpen(false);
   };
+
+  const onSearchSelect = () => {
+    addRecent(query);
+    setOpen(false);
+  };
+
+  const formatRelative = (timestamp: number) => {
+    const diff = Date.now() - timestamp;
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    return `${Math.floor(diff / 86_400_000)}d ago`;
+  };
+
+  const containers = data?.containers ?? [];
+  const images = data?.images ?? [];
+  const stacks = data?.stacks ?? [];
+  const logs = data?.logs ?? [];
+  const hasRecent = query.trim().length === 0 && recent.length > 0;
+  const hasSearchResults = query.trim().length >= 2 && (
+    containers.length + images.length + stacks.length + logs.length > 0
+  );
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark';
@@ -104,19 +154,27 @@ export function CommandPalette() {
         >
           <div className="flex items-center border-b border-border px-3">
             <Command.Input
-              placeholder="Type a command or search..."
+              placeholder="Search containers, images, stacks, logs..."
               className={cn(
                 'flex h-12 w-full bg-transparent py-3 text-sm text-foreground outline-none',
                 'placeholder:text-muted-foreground'
               )}
+              value={query}
+              onValueChange={setQuery}
               autoFocus
             />
           </div>
 
           <Command.List className="max-h-72 overflow-y-auto p-2">
-            <Command.Empty className="py-6 text-center text-sm text-muted-foreground">
-              No results found.
-            </Command.Empty>
+            {query.trim().length < 2 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                Type at least 2 characters to search.
+              </div>
+            ) : (
+              <Command.Empty className="py-6 text-center text-sm text-muted-foreground">
+                {isLoading ? 'Searching...' : 'No results found.'}
+              </Command.Empty>
+            )}
 
             {/* Keyboard shortcuts hint */}
             <div className="mb-2 flex items-center justify-center gap-4 border-b border-border pb-2 text-xs text-muted-foreground">
@@ -133,6 +191,170 @@ export function CommandPalette() {
                 close
               </span>
             </div>
+
+            {hasRecent && (
+              <>
+                <Command.Group
+                  heading="Recent"
+                  className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+                >
+                  {recent.map((item) => (
+                    <Command.Item
+                      key={item.term}
+                      value={item.term}
+                      onSelect={() => setQuery(item.term)}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm',
+                        'text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground'
+                      )}
+                    >
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span className="flex-1">{item.term}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatRelative(item.lastUsed)}
+                      </span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              </>
+            )}
+
+            {query.trim().length >= 2 && (
+              <>
+                {containers.length > 0 && (
+                  <Command.Group
+                    heading="Containers"
+                    className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+                  >
+                    {containers.map((container) => (
+                      <Command.Item
+                        key={container.id}
+                        value={`container-${container.name}`}
+                        onSelect={() => {
+                          onSearchSelect();
+                          navigateTo(`/containers/${container.endpointId}/${container.id}?tab=overview`);
+                        }}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm',
+                          'text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground'
+                        )}
+                      >
+                        <Package className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex flex-col">
+                          <span>{container.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {container.image} • {container.endpointName}
+                          </span>
+                        </div>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+
+                {images.length > 0 && (
+                  <>
+                    <Command.Separator className="my-1 h-px bg-border" />
+                    <Command.Group
+                      heading="Images"
+                      className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+                    >
+                      {images.map((image) => (
+                        <Command.Item
+                          key={`${image.id}-${image.endpointId}`}
+                          value={`image-${image.name}`}
+                          onSelect={() => {
+                            onSearchSelect();
+                            navigateTo('/images');
+                          }}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm',
+                            'text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground'
+                          )}
+                        >
+                          <Layers className="h-4 w-4 text-muted-foreground" />
+                          <div className="flex flex-col">
+                            <span>{image.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {image.tags[0] || 'untagged'} • {image.endpointName || `Endpoint ${image.endpointId}`}
+                            </span>
+                          </div>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  </>
+                )}
+
+                {stacks.length > 0 && (
+                  <>
+                    <Command.Separator className="my-1 h-px bg-border" />
+                    <Command.Group
+                      heading="Stacks"
+                      className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+                    >
+                      {stacks.map((stack) => (
+                        <Command.Item
+                          key={stack.id}
+                          value={`stack-${stack.name}`}
+                          onSelect={() => {
+                            onSearchSelect();
+                            navigateTo('/stacks');
+                          }}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm',
+                            'text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground'
+                          )}
+                        >
+                          <Boxes className="h-4 w-4 text-muted-foreground" />
+                          <div className="flex flex-col">
+                            <span>{stack.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {stack.status} • Endpoint {stack.endpointId}
+                            </span>
+                          </div>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  </>
+                )}
+
+                {logs.length > 0 && (
+                  <>
+                    <Command.Separator className="my-1 h-px bg-border" />
+                    <Command.Group
+                      heading="Logs"
+                      className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+                    >
+                      {logs.map((logItem) => (
+                        <Command.Item
+                          key={logItem.id}
+                          value={`log-${logItem.id}`}
+                          onSelect={() => {
+                            onSearchSelect();
+                            navigateTo(`/containers/${logItem.endpointId}/${logItem.containerId}?tab=logs`);
+                          }}
+                          className={cn(
+                            'flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 text-sm',
+                            'text-foreground aria-selected:bg-accent aria-selected:text-accent-foreground'
+                          )}
+                        >
+                          <ScrollText className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                          <div className="flex flex-col">
+                            <span className="font-medium">{logItem.containerName}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {logItem.message}
+                            </span>
+                          </div>
+                        </Command.Item>
+                      ))}
+                    </Command.Group>
+                  </>
+                )}
+              </>
+            )}
+
+            {(hasRecent || hasSearchResults) && (
+              <Command.Separator className="my-1 h-px bg-border" />
+            )}
 
             <Command.Group
               heading="Pages"

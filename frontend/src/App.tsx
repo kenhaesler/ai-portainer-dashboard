@@ -4,6 +4,7 @@ import { ThemeProvider } from './providers/theme-provider';
 import { QueryProvider } from './providers/query-provider';
 import { AuthProvider } from './providers/auth-provider';
 import { SocketProvider } from './providers/socket-provider';
+import { SearchProvider } from './providers/search-provider';
 import { Toaster } from 'sonner';
 
 export function App() {
@@ -12,8 +13,10 @@ export function App() {
       <QueryProvider>
         <AuthProvider>
           <SocketProvider>
-            <RouterProvider router={router} />
-            <Toaster richColors position="top-right" />
+            <SearchProvider>
+              <RouterProvider router={router} />
+              <Toaster richColors position="top-right" />
+            </SearchProvider>
           </SocketProvider>
         </AuthProvider>
       </QueryProvider>

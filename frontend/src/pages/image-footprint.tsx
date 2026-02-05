@@ -7,6 +7,7 @@ import { ImageTreemap } from '@/components/charts/image-treemap';
 import { ImageSunburst } from '@/components/charts/image-sunburst';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,7 @@ export default function ImageFootprintPage() {
 
   const { data: endpoints } = useEndpoints();
   const { data: images, isLoading, isError, error, refetch, isFetching } = useImages(selectedEndpoint);
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('images', refetch);
   const { interval, setInterval } = useAutoRefresh(60);
 
   const stats = useMemo(() => {
@@ -92,7 +94,7 @@ export default function ImageFootprintPage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

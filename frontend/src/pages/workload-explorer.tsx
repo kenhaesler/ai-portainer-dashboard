@@ -9,6 +9,7 @@ import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate, truncate } from '@/lib/utils';
@@ -48,6 +49,7 @@ export default function WorkloadExplorerPage() {
 
   const { data: endpoints } = useEndpoints();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint);
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
   // Filter containers by stack if stack parameter is present
@@ -154,7 +156,7 @@ export default function WorkloadExplorerPage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

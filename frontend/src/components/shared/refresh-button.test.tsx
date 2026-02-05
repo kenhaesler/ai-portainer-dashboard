@@ -107,4 +107,59 @@ describe('RefreshButton', () => {
     expect(icon).toHaveClass('h-4');
     expect(icon).toHaveClass('w-4');
   });
+
+  describe('split-button (with onForceRefresh)', () => {
+    it('should render single button when no onForceRefresh', () => {
+      const onClick = vi.fn();
+      render(<RefreshButton onClick={onClick} />);
+
+      const buttons = screen.getAllByRole('button');
+      expect(buttons).toHaveLength(1);
+    });
+
+    it('should render two buttons when onForceRefresh provided', () => {
+      const onClick = vi.fn();
+      const onForceRefresh = vi.fn();
+      render(<RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} />);
+
+      const buttons = screen.getAllByRole('button');
+      expect(buttons).toHaveLength(2);
+    });
+
+    it('should call onForceRefresh (not onClick) when force refresh button clicked', () => {
+      const onClick = vi.fn();
+      const onForceRefresh = vi.fn();
+      render(<RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} />);
+
+      const buttons = screen.getAllByRole('button');
+      fireEvent.click(buttons[1]); // second button is force refresh
+
+      expect(onForceRefresh).toHaveBeenCalledTimes(1);
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('should disable both buttons when loading', () => {
+      const onClick = vi.fn();
+      const onForceRefresh = vi.fn();
+      render(
+        <RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} isLoading={true} />
+      );
+
+      const buttons = screen.getAllByRole('button');
+      expect(buttons[0]).toBeDisabled();
+      expect(buttons[1]).toBeDisabled();
+    });
+
+    it('should still call onClick on first button in split mode', () => {
+      const onClick = vi.fn();
+      const onForceRefresh = vi.fn();
+      render(<RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} />);
+
+      const buttons = screen.getAllByRole('button');
+      fireEvent.click(buttons[0]);
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+      expect(onForceRefresh).not.toHaveBeenCalled();
+    });
+  });
 });
