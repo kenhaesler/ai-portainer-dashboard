@@ -282,7 +282,7 @@ Default credentials: `admin` / `changeme123`
 
 ### UI Features
 
-- **Command Palette** — `Ctrl+K` / `Cmd+K` for instant navigation and search
+- **Command Palette** — `Ctrl+K` / `Cmd+K` or `/` for global search across containers, images, stacks, and logs
 - **Collapsible Sidebar** — Click section headers to expand/collapse navigation groups
 - **Theme Toggle** — Glass Light and Glass Dark themes with Catppuccin variants
 - **Auto-Refresh** — Configurable automatic data refresh across all views
@@ -343,6 +343,7 @@ Default credentials: `admin` / `changeme123`
 | `GET` | `/api/settings/audit-log` | Audit log entries |
 | `GET` | `/api/traces` | Distributed traces |
 | `POST` | `/api/backup` | Create database backup |
+| `GET` | `/api/search` | Global search across containers, images, stacks, and logs |
 | `GET` | `/api/logs/search` | Search Elasticsearch logs |
 | `GET` | `/health` | Liveness check |
 | `GET` | `/health/ready` | Readiness check (DB + Portainer + Ollama) |
