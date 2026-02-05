@@ -9,6 +9,7 @@ import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 
@@ -100,6 +101,7 @@ export default function StackOverviewPage() {
   const navigate = useNavigate();
 
   const { data: stacks, isLoading: stacksLoading, isError, error, refetch, isFetching } = useStacks();
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('stacks', refetch);
   const { data: endpoints, isLoading: endpointsLoading } = useEndpoints();
   const { interval, setInterval } = useAutoRefresh(30);
 
@@ -223,7 +225,7 @@ export default function StackOverviewPage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

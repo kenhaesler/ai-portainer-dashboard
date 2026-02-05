@@ -16,6 +16,7 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 
 interface HealthStats {
@@ -125,6 +126,7 @@ function UnhealthyContainerRow({ container, onClick }: UnhealthyContainerRowProp
 export default function ContainerHealthPage() {
   const navigate = useNavigate();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers();
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
   const stats = useMemo(() => {
@@ -202,7 +204,7 @@ export default function ContainerHealthPage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
 

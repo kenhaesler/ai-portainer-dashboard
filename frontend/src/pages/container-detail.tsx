@@ -4,6 +4,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/hooks/use-container-detail';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { RefreshButton } from '@/components/shared/refresh-button';
+import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerOverview } from '@/components/container/container-overview';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
@@ -27,6 +28,7 @@ export default function ContainerDetailPage() {
     refetch,
     isFetching
   } = useContainerDetail(parsedEndpointId!, containerId!);
+  const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
 
   // Handle tab change
   const handleTabChange = (value: string) => {
@@ -118,7 +120,7 @@ export default function ContainerDetailPage() {
             </p>
           </div>
         </div>
-        <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+        <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
       </div>
 
       {/* Tabs */}
