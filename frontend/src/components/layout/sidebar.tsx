@@ -88,9 +88,12 @@ export function Sidebar() {
             <Brain className="h-4 w-4" />
           </div>
           {!sidebarCollapsed && (
-            <span className="truncate text-sm font-semibold text-sidebar-foreground">
-              AI Portainer
-            </span>
+            <div className="flex flex-col">
+              <span className="truncate text-sm font-semibold text-sidebar-foreground">
+                Container-Infrastructure
+              </span>
+              <span className="text-[10px] text-muted-foreground">powered by ai</span>
+            </div>
           )}
         </div>
       </div>

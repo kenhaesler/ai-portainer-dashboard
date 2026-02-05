@@ -36,9 +36,10 @@ export default function LoginPage() {
       <div className="w-full max-w-sm rounded-lg border bg-card p-8 shadow-lg">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold tracking-tight">
-            AI Portainer Dashboard
+            Container-Infrastructure
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">powered by ai</p>
+          <p className="mt-3 text-sm text-muted-foreground">
             Sign in to your account
           </p>
         </div>
