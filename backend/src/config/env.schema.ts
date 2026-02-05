@@ -35,6 +35,13 @@ export const envSchema = z.object({
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(30),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
 
+  // Investigation (Root Cause Analysis)
+  INVESTIGATION_ENABLED: z.coerce.boolean().default(true),
+  INVESTIGATION_COOLDOWN_MINUTES: z.coerce.number().int().min(1).default(30),
+  INVESTIGATION_MAX_CONCURRENT: z.coerce.number().int().min(1).default(2),
+  INVESTIGATION_LOG_TAIL_LINES: z.coerce.number().int().min(10).default(50),
+  INVESTIGATION_METRICS_WINDOW_MINUTES: z.coerce.number().int().min(5).default(60),
+
   // Cache
   CACHE_ENABLED: z.coerce.boolean().default(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),

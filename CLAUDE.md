@@ -28,9 +28,14 @@ This dashboard MUST NOT generate code that starts, stops, restarts, or otherwise
 
 ### Git Workflow
 
-- **Never push directly to `main`.** All changes go through feature branches and pull requests.
-- Create feature branches from `main`: `feature/<issue#>-<short-description>`
-- CI runs on PRs: typecheck → lint → test (backend + frontend) → build. All must pass.
+This project uses a **two-tier branching model**: `feature/* → dev → main`.
+
+- **Never push directly to `main` or `dev`.** All changes go through feature branches and pull requests.
+- **`dev`** is the integration branch. All feature work targets `dev`.
+- **`main`** is the stable/release branch. Only `dev` merges into `main`.
+- Create feature branches from `dev`: `feature/<issue#>-<short-description>`
+- When a feature is complete, open a PR from `feature/*` → `dev`. CI must pass (typecheck → lint → test → build).
+- When `dev` is stable and ready for release, open a PR from `dev` → `main`. CI must pass. If all checks are green, the merge is approved.
 - Never commit secrets (`.env`, API keys, passwords, credentials).
 - Commit messages should be concise and describe the "why" not just the "what".
 

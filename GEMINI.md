@@ -27,9 +27,9 @@ AI-powered container monitoring dashboard that extends Portainer with real-time 
 
 This dashboard MUST NOT generate code that starts, stops, restarts, or otherwise mutates container state. Read-only access to Portainer only.
 
-### 3. Never Push Directly to `main`
+### 3. Never Push Directly to `main` or `dev`
 
-All changes go through feature branches and pull requests. Branch naming: `feature/<issue#>-<short-description>`.
+This project uses a **two-tier branching model**: `feature/* → dev → main`. All changes go through feature branches and pull requests. Branch from `dev`, not `main`. Branch naming: `feature/<issue#>-<short-description>`.
 
 ### 4. Never Commit Secrets
 
@@ -185,9 +185,20 @@ Purple (purple-500):  AI-generated insight, recommendation
 
 ## Git Workflow
 
-- **Never push directly to `main`.** All changes must go through feature branches and pull requests.
-- Create feature branches from `main` using descriptive names: `feature/<issue#>-<short-description>`.
-- CI runs on PRs: typecheck → lint → test (backend + frontend) → build. **All must pass.**
+This project uses a **two-tier branching model**: `feature/* → dev → main`.
+
+```
+main          ← stable/release (protected)
+ └── dev      ← integration branch (protected)
+      └── feature/<issue#>-<desc>  ← your work here
+```
+
+- **Never push directly to `main` or `dev`.** All changes go through feature branches and pull requests.
+- **`dev`** is the integration branch where all feature work lands first.
+- **`main`** is the stable/release branch. Only `dev` merges into `main`.
+- Create feature branches from `dev`: `feature/<issue#>-<short-description>`.
+- When a feature is complete, open a PR from `feature/*` → `dev`. CI must pass (typecheck → lint → test → build).
+- When `dev` is stable and ready for release, open a PR from `dev` → `main`. If all CI checks pass, the merge is approved.
 - Commit messages should be concise and describe the "why" not just the "what".
 - **PRs without passing tests will be automatically blocked. Do not create PRs without tests.**
 
