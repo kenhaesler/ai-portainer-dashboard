@@ -103,6 +103,9 @@ export function Header() {
           <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
             {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}K
           </kbd>
+          <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
+            /
+          </kbd>
         </button>
 
         {/* Theme toggle - pill style (Glass Light / Glass Dark) */}

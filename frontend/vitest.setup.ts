@@ -1,5 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 
+// Mock ResizeObserver for components that depend on it (e.g. cmdk)
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+// Mock scrollIntoView for jsdom (used by cmdk)
+Element.prototype.scrollIntoView = function () {};
+
 // Mock localStorage for tests
 const localStorageMock = (function () {
   let store: Record<string, string> = {};
