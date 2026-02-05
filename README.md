@@ -1,23 +1,36 @@
-# AI Portainer Dashboard
+# Container-Infrastructure
 
-An intelligent container management platform that extends Portainer with AI-powered monitoring, anomaly detection, and autonomous remediation.
+*Powered by AI*
+
+An intelligent container monitoring platform that extends Portainer with AI-powered insights, anomaly detection, and a modern glassmorphism UI.
 
 ## Features
 
 - **Multi-Endpoint Management** - Connect to multiple Portainer instances
-- **Container Operations** - Start, stop, restart containers with full visibility
 - **Real-time Monitoring** - CPU/memory metrics with anomaly detection
 - **AI Intelligence** - LLM-powered insights and chat assistant (Ollama)
 - **Automated Remediation** - AI-suggested fixes for detected issues
 - **Network Topology** - Visual container network diagrams
+- **Image Footprint** - Treemap and sunburst visualizations of image sizes
+- **Fleet Overview** - Bird's eye view of all endpoints and containers
+- **Modern UI** - Apple-inspired glassmorphism theme with light/dark modes
+
+> **Note**: This dashboard is **observer-only** - it provides visibility into your container infrastructure without the ability to start, stop, or restart containers.
+
+## Screenshots
+
+| Light Theme | Dark Theme |
+|-------------|------------|
+| Glassmorphism with soft gradients | Deep space aesthetic with glowing elements |
 
 ## Tech Stack
 
 | Layer | Technologies |
 |-------|-------------|
-| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query |
+| **Frontend** | React 19, TypeScript, Vite, Tailwind CSS v4, TanStack Query |
 | **Backend** | Fastify 5, TypeScript, SQLite, Socket.IO |
 | **AI** | Ollama (local LLM) |
+| **UI** | Radix UI, Recharts, cmdk, Lucide Icons |
 
 ## Quick Start
 
@@ -42,8 +55,14 @@ PORTAINER_API_KEY=ptr_your_token_here
 
 > **Note**: Use `host.docker.internal` instead of `localhost` when Portainer runs on your host machine. Inside Docker containers, `localhost` refers to the container itself, not the host.
 
-### 2. Start the development environment
+### 2. Start the application
 
+**Production:**
+```bash
+docker compose up -d
+```
+
+**Development:**
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
@@ -51,13 +70,33 @@ docker compose -f docker-compose.dev.yml up -d
 ### 3. Pull the LLM model (for AI features)
 
 ```bash
-docker compose -f docker-compose.dev.yml exec ollama ollama pull llama3.2
+docker compose exec ollama ollama pull llama3.2
 ```
 
 ### 4. Access the dashboard
 
-- **Dashboard**: http://localhost:5173
-- **Login**: `admin` / `changeme123`
+| Mode | URL |
+|------|-----|
+| Production | http://localhost:8080 |
+| Development | http://localhost:5173 |
+
+**Login**: `admin` / `changeme123`
+
+## Navigation
+
+| Section | Pages |
+|---------|-------|
+| **Overview** | Home, Workload Explorer, Fleet Overview, Stack Overview |
+| **Containers** | Container Health, Image Footprint, Network Topology |
+| **Intelligence** | AI Monitor, Metrics Dashboard, Remediation, Trace Explorer, LLM Assistant |
+| **Operations** | Edge Agent Logs, Settings |
+
+## UI Features
+
+- **Command Palette** - Press `Cmd+K` (Mac) or `Ctrl+K` (Windows/Linux) for quick navigation
+- **Collapsible Sidebar** - Click group headers to collapse/expand sections
+- **Theme Toggle** - Switch between Glass Light and Glass Dark themes
+- **Responsive Design** - Works on desktop and tablet devices
 
 ## Dummy Workload for Testing
 
@@ -83,8 +122,6 @@ A dummy workload is provided to test the dashboard with realistic containers.
 
 ### Deploy Workload to Portainer
 
-The workload can be deployed as a managed Portainer stack using the deploy script:
-
 ```bash
 # Deploy/start the workload stack
 ./scripts/deploy-workload.sh start
@@ -97,19 +134,9 @@ The workload can be deployed as a managed Portainer stack using the deploy scrip
 
 # Remove the stack completely
 ./scripts/deploy-workload.sh delete
-
-# Restart (stop + start)
-./scripts/deploy-workload.sh restart
 ```
 
 The script reads `PORTAINER_API_URL` and `PORTAINER_API_KEY` from your `.env` file.
-
-### Why use the script instead of docker-compose directly?
-
-Running `docker compose -f docker-compose.workload.yml up` creates containers that Portainer sees as "standalone". Using the deploy script creates a proper **Portainer Stack** that:
-- Appears in Portainer's Stacks UI
-- Can be managed from Portainer's web interface
-- Shows as a logical grouping in the dashboard
 
 ## Development
 
@@ -139,7 +166,8 @@ ai-portainer-dashboard/
 │   │   ├── pages/         # Page components
 │   │   ├── components/    # Reusable components
 │   │   ├── hooks/         # Custom React hooks
-│   │   └── stores/        # Zustand state
+│   │   ├── stores/        # Zustand state
+│   │   └── providers/     # Context providers
 │   └── Dockerfile
 ├── scripts/
 │   └── deploy-workload.sh # Workload deploy script
@@ -157,6 +185,8 @@ ai-portainer-dashboard/
 | `DASHBOARD_USERNAME` | Dashboard login username | `admin` |
 | `DASHBOARD_PASSWORD` | Dashboard login password | `changeme123` |
 | `OLLAMA_MODEL` | LLM model for AI features | `llama3.2` |
+| `MONITORING_ENABLED` | Enable background monitoring | `true` |
+| `METRICS_COLLECTION_ENABLED` | Enable metrics collection | `true` |
 
 See `.env.example` for all available options.
 
