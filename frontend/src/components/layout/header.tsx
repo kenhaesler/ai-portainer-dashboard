@@ -93,33 +93,33 @@ export function Header() {
         {/* Command palette trigger */}
         <button
           onClick={() => setCommandPaletteOpen(true)}
-          className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="flex items-center gap-2 rounded-xl bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
         >
           <Search className="h-4 w-4" />
           <span className="hidden sm:inline">Search...</span>
-          <kbd className="pointer-events-none hidden select-none rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs sm:inline-block">
-            {navigator.platform.includes('Mac') ? '\u2318' : 'Ctrl+'}K
+          <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
+            {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}K
           </kbd>
         </button>
 
         {/* Theme toggle - pill style */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="relative flex h-8 w-16 items-center rounded-full bg-muted p-1 transition-colors"
+          className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
           aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
         >
           <span
             className={cn(
-              'absolute h-6 w-6 rounded-full bg-background shadow-sm transition-all duration-200',
-              theme === 'dark' ? 'translate-x-8' : 'translate-x-0'
+              'absolute h-5 w-5 rounded-full bg-background shadow-sm transition-all duration-200',
+              theme === 'dark' ? 'left-[calc(100%-1.625rem)]' : 'left-1.5'
             )}
           />
           <Sun className={cn(
-            'relative z-10 h-4 w-4 transition-colors',
+            'relative z-10 h-3.5 w-3.5 transition-colors',
             theme === 'dark' ? 'text-muted-foreground' : 'text-amber-500'
           )} />
           <Moon className={cn(
-            'relative z-10 ml-auto h-4 w-4 transition-colors',
+            'relative z-10 h-3.5 w-3.5 transition-colors',
             theme === 'dark' ? 'text-blue-400' : 'text-muted-foreground'
           )} />
         </button>
@@ -128,7 +128,7 @@ export function Header() {
         <div ref={userMenuRef} className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
+            className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition-colors hover:bg-muted/50"
           >
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <User className="h-3.5 w-3.5" />
