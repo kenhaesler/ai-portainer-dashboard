@@ -66,6 +66,7 @@ export function DataTable<T>({
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
+                    style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                     className={cn(
                       'h-10 px-4 text-left align-middle font-medium text-muted-foreground',
                       header.column.getCanSort() && 'cursor-pointer select-none'
@@ -91,13 +92,17 @@ export function DataTable<T>({
                 <tr
                   key={row.id}
                   className={cn(
-                    'border-b transition-all duration-200 hover:bg-accent/50 hover:shadow-[inset_0_0_0_1px_hsl(var(--border))] hover:scale-[1.005]',
+                    'border-b transition-all duration-200 hover:bg-accent/50 hover:shadow-[inset_0_0_0_1px_hsl(var(--border))]',
                     onRowClick && 'cursor-pointer'
                   )}
                   onClick={() => onRowClick?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-4 py-3 align-middle">
+                    <td
+                      key={cell.id}
+                      style={{ width: cell.column.getSize() !== 150 ? cell.column.getSize() : undefined }}
+                      className="px-4 py-3 align-middle"
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

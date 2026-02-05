@@ -100,14 +100,15 @@ export default function WorkloadExplorerPage() {
     {
       accessorKey: 'name',
       header: 'Name',
+      size: 280,
       cell: ({ row, getValue }) => {
         const container = row.original;
         return (
           <button
             onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:scale-105 hover:shadow-sm"
+            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-colors duration-200 hover:bg-primary/20"
           >
-            {truncate(getValue<string>(), 40)}
+            {truncate(getValue<string>(), 45)}
           </button>
         );
       },
