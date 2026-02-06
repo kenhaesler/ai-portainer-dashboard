@@ -26,7 +26,8 @@ export function AppLayout() {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
-  const { theme, setTheme } = useThemeStore();
+  const { theme, setTheme, dashboardBackground } = useThemeStore();
+  const hasAnimatedBg = dashboardBackground !== 'none';
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
@@ -165,6 +166,7 @@ export function AppLayout() {
 
   return (
     <motion.div
+      data-animated-bg={hasAnimatedBg || undefined}
       className="relative flex h-screen overflow-hidden bg-background"
       initial={showEntrance ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}

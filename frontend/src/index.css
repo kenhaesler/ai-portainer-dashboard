@@ -453,7 +453,7 @@
    the Apple theme rules to override their !important backgrounds. */
 
 aside[data-animated-bg] {
-  background: color-mix(in srgb, var(--color-sidebar-background) 35%, transparent) !important;
+  background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
   backdrop-filter: blur(20px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
   border-right: none !important;
@@ -464,6 +464,44 @@ header[data-animated-bg] {
   background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
   backdrop-filter: blur(20px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+}
+
+/* Sidebar nav: transparent background + hidden scrollbar */
+aside[data-animated-bg] nav {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: none !important;
+}
+
+/* Content elements: more translucent when animated bg is active */
+[data-animated-bg] .bg-card,
+[data-animated-bg] .rounded-lg.border.bg-card {
+  background: color-mix(in srgb, var(--color-card) 45%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-border) 30%, transparent) !important;
+}
+
+[data-animated-bg] input,
+[data-animated-bg] textarea,
+[data-animated-bg] select {
+  background: color-mix(in srgb, var(--color-background) 50%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-border) 40%, transparent) !important;
+}
+
+[data-animated-bg] table {
+  background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
+}
+
+[data-animated-bg] .bg-background {
+  background: color-mix(in srgb, var(--color-background) 40%, transparent) !important;
+}
+
+aside nav {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+aside nav:hover {
+  scrollbar-color: color-mix(in srgb, var(--color-foreground) 20%, transparent) transparent;
 }
 
 /* ====== GLASS BUTTONS ====== */
@@ -718,7 +756,7 @@ header[data-animated-bg] {
 
 .apple-light {
   & header,
-  & nav {
+  & nav:not(aside nav) {
     background: rgba(255, 255, 255, 0.7) !important;
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -728,7 +766,7 @@ header[data-animated-bg] {
 
 .apple-dark {
   & header,
-  & nav {
+  & nav:not(aside nav) {
     background: rgba(15, 15, 25, 0.75) !important;
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
