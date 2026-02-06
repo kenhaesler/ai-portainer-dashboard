@@ -64,6 +64,11 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   SQLITE_PATH: z.string().default('./data/dashboard.db'),
 
+  // HTTP/2 (opt-in, requires TLS cert/key)
+  HTTP2_ENABLED: z.coerce.boolean().default(false),
+  TLS_CERT_PATH: z.string().optional(),
+  TLS_KEY_PATH: z.string().optional(),
+
   // Notifications — Teams
   TEAMS_WEBHOOK_URL: z.string().url().optional(),
   TEAMS_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
