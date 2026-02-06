@@ -28,6 +28,7 @@ const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
 const StatusPage = lazy(() => import('@/pages/status-page'));
 const Reports = lazy(() => import('@/pages/reports'));
 const LogViewer = lazy(() => import('@/pages/log-viewer'));
+const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
 
 function PageLoader() {
   return (
@@ -81,6 +82,8 @@ export const router = createBrowserRouter([
       { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
       { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
+      { path: 'investigations/:id', element: <LazyPage><InvestigationDetail /></LazyPage> },
+      { path: 'investigations/insight/:insightId', element: <LazyPage><InvestigationDetail /></LazyPage> },
       { path: 'backups', element: <LazyPage><Backups /></LazyPage> },
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
     ],
