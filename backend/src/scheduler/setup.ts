@@ -8,6 +8,8 @@ import { cleanupOldCaptures } from '../services/pcap-service.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
 import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.js';
 import { normalizeEndpoint } from '../services/portainer-normalizers.js';
+import { runStalenessChecks } from '../services/image-staleness.js';
+import { getImages } from '../services/portainer-client.js';
 
 const log = createChildLogger('scheduler');
 
@@ -112,6 +114,42 @@ async function runMonitoringWithErrorHandling(): Promise<void> {
   }
 }
 
+async function runImageStalenessCheck(): Promise<void> {
+  log.debug('Running image staleness check');
+  try {
+    const endpoints = await getEndpoints();
+    const allImages: Array<{ name: string; tags: string[]; registry: string; id: string }> = [];
+
+    for (const ep of endpoints) {
+      try {
+        const images = await getImages(ep.Id);
+        for (const img of images) {
+          const tags = img.RepoTags?.filter((t: string) => t !== '<none>:<none>') ?? [];
+          const firstTag = tags[0] || '<none>';
+          const parts = firstTag.split('/');
+          let registry = 'docker.io';
+          let name = firstTag;
+          if (parts.length > 1 && parts[0].includes('.')) {
+            registry = parts[0];
+            name = parts.slice(1).join('/');
+          } else if (parts.length === 1) {
+            name = `library/${parts[0]}`;
+          }
+          const displayName = name.split(':')[0];
+          allImages.push({ name: displayName, tags, registry, id: img.Id });
+        }
+      } catch {
+        // skip endpoint
+      }
+    }
+
+    const result = await runStalenessChecks(allImages);
+    log.info(result, 'Image staleness check completed');
+  } catch (err) {
+    log.error({ err }, 'Image staleness check failed');
+  }
+}
+
 async function runCleanup(): Promise<void> {
   try {
     const config = getConfig();
@@ -191,6 +229,19 @@ export function startScheduler(): void {
     intervals.push(kpiInterval);
     // Run once immediately to seed initial data
     runKpiSnapshotCollection().catch(() => {});
+  }
+
+  // Image staleness checks
+  if (config.IMAGE_STALENESS_CHECK_ENABLED) {
+    const stalenessIntervalMs = config.IMAGE_STALENESS_CHECK_INTERVAL_HOURS * 60 * 60 * 1000;
+    log.info(
+      { intervalHours: config.IMAGE_STALENESS_CHECK_INTERVAL_HOURS },
+      'Starting image staleness checker',
+    );
+    const stalenessInterval = setInterval(runImageStalenessCheck, stalenessIntervalMs);
+    intervals.push(stalenessInterval);
+    // Run once after a short delay to let the system warm up
+    setTimeout(() => { runImageStalenessCheck().catch(() => {}); }, 30_000);
   }
 
   // Cleanup old metrics once per day
