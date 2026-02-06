@@ -58,7 +58,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('operator')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const db = getDb();
@@ -96,7 +96,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       params: ActionIdParamsSchema,
       body: RejectBodySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('operator')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { reason } = (request.body as { reason?: string }) || {};
@@ -135,7 +135,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('operator')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const db = getDb();

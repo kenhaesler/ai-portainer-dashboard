@@ -1,13 +1,14 @@
 import { FastifyInstance } from 'fastify';
-import { getConfig } from '../config/index.js';
-import { signJwt, hashPassword, comparePassword } from '../utils/crypto.js';
+import { signJwt } from '../utils/crypto.js';
 import { createSession, getSession, invalidateSession, refreshSession } from '../services/session-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { authenticateUser, ensureDefaultAdmin } from '../services/user-store.js';
 import { LoginRequestSchema } from '../models/auth.js';
 import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
-  const config = getConfig();
+  // Ensure default admin exists on startup
+  await ensureDefaultAdmin();
 
   // Login
   fastify.post('/api/auth/login', {
@@ -23,7 +24,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     },
     config: {
       rateLimit: {
-        max: config.LOGIN_RATE_LIMIT,
+        max: 30,
         timeWindow: '1 minute',
       },
     },
@@ -35,34 +36,31 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     const { username, password } = parsed.data;
 
-    // Compare against configured credentials
-    if (username !== config.DASHBOARD_USERNAME) {
+    const user = await authenticateUser(username, password);
+    if (!user) {
       return reply.code(401).send({ error: 'Invalid credentials' });
     }
 
-    // For the configured password, compare directly (not hashed in env)
-    if (password !== config.DASHBOARD_PASSWORD) {
-      return reply.code(401).send({ error: 'Invalid credentials' });
-    }
-
-    const session = createSession(username, username);
+    const session = createSession(user.id, user.username);
     const token = await signJwt({
-      sub: username,
-      username,
+      sub: user.id,
+      username: user.username,
       sessionId: session.id,
+      role: user.role,
     });
 
     writeAuditLog({
-      user_id: username,
-      username,
+      user_id: user.id,
+      username: user.username,
       action: 'login',
+      details: { role: user.role },
       request_id: request.requestId,
       ip_address: request.ip,
     });
 
     return {
       token,
-      username,
+      username: user.username,
       expiresAt: session.expires_at,
     };
   });
@@ -82,6 +80,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         user_id: request.user.sub,
         username: request.user.username,
         action: 'logout',
+        details: { role: request.user.role },
         request_id: request.requestId,
         ip_address: request.ip,
       });
@@ -109,6 +108,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     return {
       username: session.username,
+      role: request.user.role,
       createdAt: session.created_at,
       expiresAt: session.expires_at,
     };
@@ -136,6 +136,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       sub: request.user.sub,
       username: request.user.username,
       sessionId: session.id,
+      role: request.user.role,
     });
 
     return {
