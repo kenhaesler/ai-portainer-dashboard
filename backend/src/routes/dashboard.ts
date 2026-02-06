@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
+import { getKpiHistory } from '../services/kpi-store.js';
 
 export async function dashboardRoutes(fastify: FastifyInstance) {
   fastify.get('/api/dashboard/summary', {
@@ -70,5 +71,24 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       recentContainers: recentContainers.slice(0, 20),
       timestamp: new Date().toISOString(),
     };
+  });
+
+  fastify.get('/api/dashboard/kpi-history', {
+    schema: {
+      tags: ['Dashboard'],
+      summary: 'Get KPI history for sparklines (last 24h)',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          hours: { type: 'number', default: 24 },
+        },
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { hours = 24 } = request.query as { hours?: number };
+    const snapshots = getKpiHistory(Math.min(hours, 168)); // Cap at 7 days
+    return { snapshots };
   });
 }
