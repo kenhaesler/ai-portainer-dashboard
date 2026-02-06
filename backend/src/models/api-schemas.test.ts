@@ -46,6 +46,7 @@ describe('api-schemas', () => {
         token: 'jwt.token.here',
         username: 'admin',
         expiresAt: '2025-01-01T00:00:00Z',
+        defaultLandingPage: '/',
       });
       expect(result.success).toBe(true);
     });

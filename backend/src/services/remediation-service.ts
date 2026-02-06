@@ -76,7 +76,7 @@ export function suggestAction(
         { actionId, actionType: pattern.actionType, insightId: insight.id },
         'Action suggested',
       );
-      broadcastNewAction(action);
+      broadcastNewAction(action as unknown as Record<string, unknown>);
 
       return { actionId, actionType: pattern.actionType };
     }
