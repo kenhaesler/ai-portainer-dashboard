@@ -1,14 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useAuth } from '@/providers/auth-provider';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 import { CommandPalette } from '@/components/layout/command-palette';
+import { KeyboardShortcutsOverlay } from '@/components/shared/keyboard-shortcuts-overlay';
 import { useUiStore } from '@/stores/ui-store';
+import { useThemeStore, themeOptions } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useEntrancePlayed } from '@/hooks/use-entrance-played';
+import { useKeyChord } from '@/hooks/use-key-chord';
+import type { ChordBinding } from '@/hooks/use-key-chord';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
 function getRouteDepth(pathname: string): number {
@@ -19,6 +23,8 @@ export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
+  const { theme, setTheme } = useThemeStore();
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
@@ -26,6 +32,7 @@ export function AppLayout() {
   const [direction, setDirection] = useState(1);
   const previousDepthRef = useRef(getRouteDepth(location.pathname));
   const { hasPlayed, markPlayed } = useEntrancePlayed();
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Skip entrance on click/keypress
   useEffect(() => {
@@ -45,99 +52,97 @@ export function AppLayout() {
     };
   }, [hasPlayed, markPlayed, reducedMotion]);
 
-  // Keyboard Shortcuts
+  // Vim-style g+key chord navigation
+  const chordBindings: ChordBinding[] = useMemo(
+    () => [
+      { keys: 'gh', action: () => navigate('/'), label: 'Go to Home' },
+      { keys: 'gw', action: () => navigate('/workloads'), label: 'Go to Workloads' },
+      { keys: 'gf', action: () => navigate('/fleet'), label: 'Go to Fleet' },
+      { keys: 'gl', action: () => navigate('/health'), label: 'Go to Health' },
+      { keys: 'gi', action: () => navigate('/images'), label: 'Go to Images' },
+      { keys: 'gn', action: () => navigate('/topology'), label: 'Go to Network Topology' },
+      { keys: 'ga', action: () => navigate('/ai-monitor'), label: 'Go to AI Monitor' },
+      { keys: 'gm', action: () => navigate('/metrics'), label: 'Go to Metrics' },
+      { keys: 'gr', action: () => navigate('/remediation'), label: 'Go to Remediation' },
+      { keys: 'ge', action: () => navigate('/traces'), label: 'Go to Trace Explorer' },
+      { keys: 'gx', action: () => navigate('/assistant'), label: 'Go to LLM Assistant' },
+      { keys: 'go', action: () => navigate('/edge-logs'), label: 'Go to Edge Logs' },
+      { keys: 'gs', action: () => navigate('/settings'), label: 'Go to Settings' },
+    ],
+    [navigate],
+  );
+
+  useKeyChord(chordBindings);
+
+  // Quick action: ? to toggle shortcuts overlay
+  const handleQuickKeys = useCallback(
+    (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      const isEditable =
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'SELECT' ||
+          el.isContentEditable);
+      if (isEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+
+      if (key === '?') {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+
+      // Don't fire quick actions when overlays are open
+      if (shortcutsOpen || commandPaletteOpen) return;
+
+      if (key === 'r') {
+        e.preventDefault();
+        // Dispatch a custom event that page components can listen for
+        window.dispatchEvent(new CustomEvent('keyboard:refresh'));
+        return;
+      }
+
+      if (key === 't') {
+        e.preventDefault();
+        const currentIdx = themeOptions.findIndex((o) => o.value === theme);
+        const nextIdx = (currentIdx + 1) % themeOptions.length;
+        setTheme(themeOptions[nextIdx].value);
+        return;
+      }
+
+      if (key === '[') {
+        e.preventDefault();
+        setSidebarCollapsed(true);
+        return;
+      }
+
+      if (key === ']') {
+        e.preventDefault();
+        setSidebarCollapsed(false);
+        return;
+      }
+    },
+    [shortcutsOpen, commandPaletteOpen, theme, setTheme, setSidebarCollapsed],
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleQuickKeys);
+    return () => window.removeEventListener('keydown', handleQuickKeys);
+  }, [handleQuickKeys]);
+
+  // Command palette: Cmd+K / Ctrl+K
   useKeyboardShortcut(
     [{ key: 'k', metaKey: true }, { key: 'k', ctrlKey: true }],
     () => {
       setCommandPaletteOpen(!commandPaletteOpen);
     },
-    [commandPaletteOpen]
+    [commandPaletteOpen],
   );
 
-  useKeyboardShortcut(
-    { key: 'h', ctrlKey: true, shiftKey: true },
-    () => { navigate('/'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'w', ctrlKey: true, shiftKey: true },
-    () => { navigate('/workloads'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'f', ctrlKey: true, shiftKey: true },
-    () => { navigate('/fleet'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 's', ctrlKey: true, shiftKey: true },
-    () => { navigate('/stacks'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'l', ctrlKey: true, shiftKey: true },
-    () => { navigate('/health'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'i', ctrlKey: true, shiftKey: true },
-    () => { navigate('/images'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 't', ctrlKey: true, shiftKey: true },
-    () => { navigate('/topology'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'a', ctrlKey: true, shiftKey: true },
-    () => { navigate('/ai-monitor'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'm', ctrlKey: true, shiftKey: true },
-    () => { navigate('/metrics'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'r', ctrlKey: true, shiftKey: true },
-    () => { navigate('/remediation'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'e', ctrlKey: true, shiftKey: true },
-    () => { navigate('/traces'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'x', ctrlKey: true, shiftKey: true },
-    () => { navigate('/assistant'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'g', ctrlKey: true, shiftKey: true },
-    () => { navigate('/edge-logs'); },
-    []
-  );
-
-  useKeyboardShortcut(
-    { key: 'S', ctrlKey: true, shiftKey: true },
-    () => { navigate('/settings'); },
-    []
-  );
-
+  // Page transition direction
   useEffect(() => {
     const currentDepth = getRouteDepth(location.pathname);
     if (navigationType === 'POP') {
@@ -239,6 +244,10 @@ export function AppLayout() {
       {/* Mobile bottom nav — visible only on mobile */}
       <MobileBottomNav />
       <CommandPalette />
+      <KeyboardShortcutsOverlay
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
     </motion.div>
   );
 }

@@ -14,15 +14,15 @@ export default defineConfig({
     port: 5273,
     proxy: {
       '/api': {
-        target: 'http://localhost:3051',
+        target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:3051',
+        target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:3051',
+        target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
         ws: true,
         changeOrigin: true,
       },

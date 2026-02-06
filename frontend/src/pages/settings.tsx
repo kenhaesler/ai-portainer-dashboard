@@ -22,6 +22,7 @@ import {
   Bell,
   Send,
   Webhook,
+  Globe,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
@@ -85,6 +86,13 @@ const DEFAULT_SETTINGS = {
     { key: 'elasticsearch.api_key', label: 'API Key', description: 'Elasticsearch API key for authentication (keep blank for no auth)', type: 'password', defaultValue: '' },
     { key: 'elasticsearch.index_pattern', label: 'Index Pattern', description: 'Index pattern for log searching (e.g., logs-* or filebeat-*)', type: 'string', defaultValue: 'logs-*' },
     { key: 'elasticsearch.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting', type: 'boolean', defaultValue: 'true' },
+  ],
+  statusPage: [
+    { key: 'status.page.enabled', label: 'Enable Status Page', description: 'Serve a public status page at /status (no authentication required)', type: 'boolean', defaultValue: 'false' },
+    { key: 'status.page.title', label: 'Page Title', description: 'Title displayed on the public status page', type: 'string', defaultValue: 'System Status' },
+    { key: 'status.page.description', label: 'Page Description', description: 'Optional description shown below the title', type: 'string', defaultValue: '' },
+    { key: 'status.page.show_incidents', label: 'Show Incidents', description: 'Display recent incidents on the status page', type: 'boolean', defaultValue: 'true' },
+    { key: 'status.page.refresh_interval', label: 'Auto-Refresh Interval', description: 'How often the status page auto-refreshes (seconds)', type: 'number', defaultValue: '30', min: 10, max: 300 },
   ],
 } as const;
 
@@ -727,6 +735,18 @@ export default function SettingsPage() {
         originalValues={originalValues}
         onChange={handleChange}
         requiresRestart
+        disabled={isSaving}
+      />
+
+      {/* Status Page Settings */}
+      <SettingsSection
+        title="Public Status Page"
+        icon={<Globe className="h-5 w-5" />}
+        category="statusPage"
+        settings={DEFAULT_SETTINGS.statusPage}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
         disabled={isSaving}
       />
 
