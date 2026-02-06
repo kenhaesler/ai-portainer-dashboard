@@ -1,20 +1,20 @@
 FROM node:22-alpine AS builder
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
 
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache dumb-init wget
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
+RUN apk add --no-cache dumb-init wget && \
+    addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
 
 WORKDIR /app
-COPY --from=builder /app/package.json ./
-RUN npm install --omit=dev
+COPY --from=builder /app/package.json /app/package-lock.json ./
+RUN npm ci --omit=dev
 COPY --from=builder /app/dist/ dist/
 COPY --from=builder /app/src/db/migrations/ dist/db/migrations/
 
