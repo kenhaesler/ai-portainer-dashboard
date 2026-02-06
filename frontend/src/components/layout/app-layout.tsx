@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 import { CommandPalette } from '@/components/layout/command-palette';
+import { ActivityFeed } from '@/components/shared/activity-feed';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
@@ -208,6 +209,7 @@ export function AppLayout() {
       {/* Mobile bottom nav — visible only on mobile */}
       <MobileBottomNav />
       <CommandPalette />
+      <ActivityFeed />
     </div>
   );
 }
