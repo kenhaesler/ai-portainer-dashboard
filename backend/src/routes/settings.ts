@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { SettingsQuerySchema, SettingKeyParamsSchema, SettingUpdateBodySchema, AuditLogQuerySchema } from '../models/api-schemas.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
@@ -25,12 +26,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       tags: ['Settings'],
       summary: 'Get all settings',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          category: { type: 'string' },
-        },
-      },
+      querystring: SettingsQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -49,19 +45,8 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       tags: ['Settings'],
       summary: 'Create or update a setting',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { key: { type: 'string' } },
-        required: ['key'],
-      },
-      body: {
-        type: 'object',
-        required: ['value'],
-        properties: {
-          value: { type: 'string' },
-          category: { type: 'string', default: 'general' },
-        },
-      },
+      params: SettingKeyParamsSchema,
+      body: SettingUpdateBodySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -96,11 +81,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       tags: ['Settings'],
       summary: 'Delete a setting',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { key: { type: 'string' } },
-        required: ['key'],
-      },
+      params: SettingKeyParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -116,15 +97,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       tags: ['Settings'],
       summary: 'Get audit log entries',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          action: { type: 'string' },
-          userId: { type: 'string' },
-          limit: { type: 'number', default: 100 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      querystring: AuditLogQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

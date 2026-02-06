@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { healthRoutes } from './health.js';
 
 // Mock dependencies
@@ -28,6 +29,8 @@ describe('Health Routes', () => {
 
   beforeAll(async () => {
     app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     await app.register(healthRoutes);
     await app.ready();
   });

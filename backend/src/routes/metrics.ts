@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
+import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
 
 function parseTimeRange(timeRange: string): { from: Date; to: Date } {
   const now = new Date();
@@ -29,24 +30,9 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       tags: ['Metrics'],
       summary: 'Get container metrics time series',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-          containerId: { type: 'string' },
-        },
-        required: ['endpointId', 'containerId'],
-      },
-      querystring: {
-        type: 'object',
-        properties: {
-          metricType: { type: 'string', enum: ['cpu', 'memory', 'memory_bytes'] },
-          timeRange: { type: 'string' },
-          metric_type: { type: 'string' },
-          from: { type: 'string' },
-          to: { type: 'string' },
-        },
-      },
+      params: ContainerParamsSchema,
+      querystring: MetricsQuerySchema,
+      response: { 200: MetricsResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -109,12 +95,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       tags: ['Metrics'],
       summary: 'Get recent anomaly detections',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          limit: { type: 'number', default: 50 },
-        },
-      },
+      querystring: AnomaliesQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

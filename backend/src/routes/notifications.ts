@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { sendTestNotification } from '../services/notification-service.js';
+import { NotificationHistoryQuerySchema, NotificationTestBodySchema } from '../models/api-schemas.js';
 
 export async function notificationRoutes(fastify: FastifyInstance) {
   // Get notification history
@@ -9,14 +10,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
       tags: ['Notifications'],
       summary: 'Get notification history',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          channel: { type: 'string', enum: ['teams', 'email'] },
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      querystring: NotificationHistoryQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -60,13 +54,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
       tags: ['Notifications'],
       summary: 'Send a test notification',
       security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        required: ['channel'],
-        properties: {
-          channel: { type: 'string', enum: ['teams', 'email'] },
-        },
-      },
+      body: NotificationTestBodySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

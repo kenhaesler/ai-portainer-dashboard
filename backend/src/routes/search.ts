@@ -3,6 +3,7 @@ import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint, normalizeStack } from '../services/portainer-normalizers.js';
 import { createChildLogger } from '../utils/logger.js';
+import { SearchQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('search-route');
 
@@ -145,14 +146,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
       tags: ['Search'],
       summary: 'Search containers, images, stacks, and container logs',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          query: { type: 'string' },
-          limit: { type: 'number', default: 8 },
-          logLimit: { type: 'number', default: 8 },
-        },
-      },
+      querystring: SearchQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

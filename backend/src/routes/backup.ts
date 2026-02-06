@@ -5,6 +5,7 @@ import { getConfig } from '../config/index.js';
 import { getDb } from '../db/sqlite.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import { createChildLogger } from '../utils/logger.js';
+import { FilenameParamsSchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('backup-route');
 
@@ -76,11 +77,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
       tags: ['Backup'],
       summary: 'Download a backup file',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { filename: { type: 'string' } },
-        required: ['filename'],
-      },
+      params: FilenameParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -104,11 +101,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
       tags: ['Backup'],
       summary: 'Delete a backup file',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { filename: { type: 'string' } },
-        required: ['filename'],
-      },
+      params: FilenameParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { getConfig } from '../config/index.js';
 import { getDb } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
+import { LogsSearchQuerySchema, LogsTestBodySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('logs-route');
 
@@ -83,17 +84,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
       tags: ['Logs'],
       summary: 'Search Elasticsearch/Kibana logs',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          query: { type: 'string' },
-          hostname: { type: 'string' },
-          level: { type: 'string' },
-          from: { type: 'string' },
-          to: { type: 'string' },
-          limit: { type: 'number', default: 100 },
-        },
-      },
+      querystring: LogsSearchQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -184,14 +175,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
       tags: ['Logs'],
       summary: 'Test Elasticsearch connection',
       security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        properties: {
-          endpoint: { type: 'string' },
-          apiKey: { type: 'string' },
-        },
-        required: ['endpoint'],
-      },
+      body: LogsTestBodySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

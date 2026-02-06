@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
+import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '../models/api-schemas.js';
 
 export async function monitoringRoutes(fastify: FastifyInstance) {
   fastify.get('/api/monitoring/insights', {
@@ -7,15 +8,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
       tags: ['Monitoring'],
       summary: 'Get monitoring insights',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          severity: { type: 'string', enum: ['critical', 'warning', 'info'] },
-          acknowledged: { type: 'boolean' },
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      querystring: InsightsQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -63,11 +56,8 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
       tags: ['Monitoring'],
       summary: 'Acknowledge an insight',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: InsightIdParamsSchema,
+      response: { 200: SuccessResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

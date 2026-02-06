@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { isDbHealthy } from '../db/sqlite.js';
 import { getConfig } from '../config/index.js';
+import { HealthResponseSchema, ReadinessResponseSchema } from '../models/api-schemas.js';
 
 export async function healthRoutes(fastify: FastifyInstance) {
   // Liveness probe
@@ -8,15 +9,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Health'],
       summary: 'Liveness check',
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            status: { type: 'string' },
-            timestamp: { type: 'string' },
-          },
-        },
-      },
+      response: { 200: HealthResponseSchema },
     },
   }, async () => {
     return {
@@ -30,23 +23,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Health'],
       summary: 'Readiness check - validates DB, Portainer, and Ollama connectivity',
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            status: { type: 'string' },
-            checks: {
-              type: 'object',
-              properties: {
-                database: { type: 'object', properties: { status: { type: 'string' } } },
-                portainer: { type: 'object', properties: { status: { type: 'string' }, url: { type: 'string' } } },
-                ollama: { type: 'object', properties: { status: { type: 'string' }, url: { type: 'string' } } },
-              },
-            },
-            timestamp: { type: 'string' },
-          },
-        },
-      },
+      response: { 200: ReadinessResponseSchema },
     },
   }, async () => {
     const config = getConfig();

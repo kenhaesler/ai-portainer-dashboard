@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeEndpoint } from '../services/portainer-normalizers.js';
+import { EndpointIdParamsSchema } from '../models/api-schemas.js';
 
 export async function endpointsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/endpoints', {
@@ -25,11 +26,7 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       tags: ['Endpoints'],
       summary: 'Get a specific endpoint',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'number' } },
-        required: ['id'],
-      },
+      params: EndpointIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

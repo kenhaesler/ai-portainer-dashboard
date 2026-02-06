@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeNetwork, normalizeEndpoint } from '../services/portainer-normalizers.js';
+import { EndpointIdQuerySchema } from '../models/api-schemas.js';
 
 export async function networksRoutes(fastify: FastifyInstance) {
   // List networks (optionally filtered by endpoint)
@@ -10,12 +11,7 @@ export async function networksRoutes(fastify: FastifyInstance) {
       tags: ['Networks'],
       summary: 'List networks across all endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: EndpointIdQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

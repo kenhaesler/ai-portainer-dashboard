@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { FastifyInstance } from 'fastify';
 import { StartCaptureRequestSchema, CaptureListQuerySchema } from '../models/pcap.js';
+import { ActionIdParamsSchema } from '../models/api-schemas.js';
 import {
   startCapture,
   stopCapture,
@@ -21,6 +22,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       tags: ['Packet Capture'],
       summary: 'Start a new packet capture',
       security: [{ bearerAuth: [] }],
+      body: StartCaptureRequestSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -63,15 +65,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       tags: ['Packet Capture'],
       summary: 'List packet captures',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          status: { type: 'string' },
-          containerId: { type: 'string' },
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      querystring: CaptureListQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -89,11 +83,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       tags: ['Packet Capture'],
       summary: 'Get capture details',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -113,11 +103,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       tags: ['Packet Capture'],
       summary: 'Stop an active capture',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -153,11 +139,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       tags: ['Packet Capture'],
       summary: 'Download capture PCAP file',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -183,11 +165,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       tags: ['Packet Capture'],
       summary: 'Delete a capture and its file',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

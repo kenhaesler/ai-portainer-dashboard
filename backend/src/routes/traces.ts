@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
+import { TracesQuerySchema, TraceIdParamsSchema } from '../models/api-schemas.js';
 
 export async function tracesRoutes(fastify: FastifyInstance) {
   // List traces
@@ -8,17 +9,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       tags: ['Traces'],
       summary: 'List traces',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          from: { type: 'string' },
-          to: { type: 'string' },
-          serviceName: { type: 'string' },
-          status: { type: 'string' },
-          minDuration: { type: 'number' },
-          limit: { type: 'number', default: 50 },
-        },
-      },
+      querystring: TracesQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -65,11 +56,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       tags: ['Traces'],
       summary: 'Get full trace with all spans',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { traceId: { type: 'string' } },
-        required: ['traceId'],
-      },
+      params: TraceIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
