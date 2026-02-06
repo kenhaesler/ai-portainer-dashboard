@@ -1,3 +1,4 @@
+import { useRef, useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -17,14 +18,13 @@ import {
   FileSearch,
   Radio,
   Settings,
-  ChevronLeft,
   ChevronRight,
   ChevronDown,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
 import { cn } from '@/lib/utils';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 interface NavItem {
   label: string;
@@ -78,6 +78,74 @@ const navigation: NavGroup[] = [
   },
 ];
 
+function AnimatedBadge({ count }: { count: number }) {
+  const prevCountRef = useRef(count);
+  const [animate, setAnimate] = useState(false);
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (count !== prevCountRef.current && count > 0) {
+      setAnimate(true);
+      const timer = setTimeout(() => setAnimate(false), 300);
+      prevCountRef.current = count;
+      return () => clearTimeout(timer);
+    }
+    prevCountRef.current = count;
+  }, [count]);
+
+  if (count <= 0) return null;
+
+  return (
+    <motion.span
+      className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground"
+      animate={
+        animate && !reducedMotion
+          ? { scale: [1, 1.3, 1] }
+          : { scale: 1 }
+      }
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      data-testid="sidebar-badge"
+    >
+      {count}
+    </motion.span>
+  );
+}
+
+function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null> }) {
+  const [showBottom, setShowBottom] = useState(false);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+
+    const check = () => {
+      const hasOverflow = el.scrollHeight > el.clientHeight;
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+      setShowBottom(hasOverflow && !atBottom);
+    };
+
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+
+    return () => {
+      el.removeEventListener('scroll', check);
+      ro.disconnect();
+    };
+  }, [navRef]);
+
+  if (!showBottom) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute bottom-12 left-0 right-0 h-8 bg-gradient-to-t from-sidebar-background/80 to-transparent"
+      aria-hidden="true"
+      data-testid="scroll-gradient"
+    />
+  );
+}
+
 export function Sidebar() {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -85,49 +153,80 @@ export function Sidebar() {
   const toggleGroup = useUiStore((s) => s.toggleGroup);
   const { data: pendingActions } = useRemediationActions('pending');
   const pendingCount = pendingActions?.length ?? 0;
+  const reducedMotion = useReducedMotion();
+  const navRef = useRef<HTMLElement>(null);
 
   return (
     <aside
       className={cn(
-        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-all duration-300',
+        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
         sidebarCollapsed ? 'w-14' : 'w-60'
       )}
     >
       {/* Brand */}
       <div className="flex h-14 items-center px-4">
         <div className="flex items-center gap-2 overflow-hidden">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+          <motion.div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
+            layout={!reducedMotion}
+            transition={
+              reducedMotion
+                ? { duration: 0 }
+                : { type: 'spring', stiffness: 300, damping: 25 }
+            }
+          >
             <Brain className="h-4 w-4" />
-          </div>
-          {!sidebarCollapsed && (
-            <div className="flex flex-col">
-              <span className="truncate text-sm font-semibold text-sidebar-foreground">
-                Container-Infrastructure
-              </span>
-              <span className="text-[10px] text-muted-foreground">powered by ai</span>
-            </div>
-          )}
+          </motion.div>
+          <AnimatePresence>
+            {!sidebarCollapsed && (
+              <motion.div
+                className="flex flex-col"
+                initial={reducedMotion ? false : { opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -8 }}
+                transition={
+                  reducedMotion
+                    ? { duration: 0 }
+                    : { duration: 0.15, ease: 'easeOut' }
+                }
+              >
+                <span className="truncate text-sm font-semibold text-sidebar-foreground">
+                  Container-Infrastructure
+                </span>
+                <span className="text-[10px] text-muted-foreground">powered by ai</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4">
-        {navigation.map((group) => {
+      <nav ref={navRef} className="relative flex-1 overflow-y-auto py-4">
+        {navigation.map((group, groupIndex) => {
           const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
           return (
             <div key={group.title} className="mb-2">
-              {!sidebarCollapsed && (
+              {/* Group header: full title when expanded, thin divider when sidebar collapsed */}
+              {sidebarCollapsed ? (
+                groupIndex > 0 ? (
+                  <div className="mx-3 my-2 h-px bg-border/50" role="separator" />
+                ) : null
+              ) : (
                 <button
                   onClick={() => toggleGroup(group.title)}
                   className="mb-1 flex w-full items-center justify-between px-4 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <span>{group.title}</span>
-                  <ChevronDown
-                    className={cn(
-                      'h-3 w-3 transition-transform duration-200',
-                      isGroupCollapsed && '-rotate-90'
-                    )}
-                  />
+                  <motion.span
+                    animate={{ rotate: isGroupCollapsed ? -90 : 0 }}
+                    transition={
+                      reducedMotion
+                        ? { duration: 0 }
+                        : { duration: 0.2, ease: 'easeOut' }
+                    }
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </motion.span>
                 </button>
               )}
               <div
@@ -144,9 +243,9 @@ export function Sidebar() {
                         end={item.to === '/'}
                         className={({ isActive }) =>
                           cn(
-                            'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-all duration-200',
+                            'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
                             isActive
-                              ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
+                              ? 'text-sidebar-accent-foreground'
                               : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
                             sidebarCollapsed && 'justify-center px-0'
                           )
@@ -160,23 +259,46 @@ export function Sidebar() {
                                 layoutId="sidebar-active-pill"
                                 data-testid="sidebar-active-indicator"
                                 className="absolute inset-0 -z-10 rounded-md bg-sidebar-accent shadow-sm"
-                                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                                transition={
+                                  reducedMotion
+                                    ? { duration: 0 }
+                                    : { type: 'spring', stiffness: 400, damping: 30 }
+                                }
                               />
                             )}
-                            <item.icon className="h-4 w-4 shrink-0" />
-                            {!sidebarCollapsed && (
-                              <>
-                                <span className="truncate">{item.label}</span>
-                                {(() => {
-                                  const badge = item.to === '/remediation' ? pendingCount : item.badge;
-                                  return badge != null && badge > 0 ? (
-                                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
-                                      {badge}
-                                    </span>
-                                  ) : null;
-                                })()}
-                              </>
-                            )}
+                            <motion.span
+                              className="shrink-0"
+                              layout={!reducedMotion}
+                              transition={
+                                reducedMotion
+                                  ? { duration: 0 }
+                                  : { type: 'spring', stiffness: 300, damping: 25 }
+                              }
+                            >
+                              <item.icon className="h-4 w-4" />
+                            </motion.span>
+                            <AnimatePresence>
+                              {!sidebarCollapsed && (
+                                <motion.span
+                                  className="flex flex-1 items-center gap-1 truncate"
+                                  initial={reducedMotion ? false : { opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  transition={
+                                    reducedMotion
+                                      ? { duration: 0 }
+                                      : { duration: 0.1, ease: 'easeOut' }
+                                  }
+                                >
+                                  <span className="truncate">{item.label}</span>
+                                  {item.to === '/remediation' ? (
+                                    <AnimatedBadge count={pendingCount} />
+                                  ) : item.badge != null && item.badge > 0 ? (
+                                    <AnimatedBadge count={item.badge} />
+                                  ) : null}
+                                </motion.span>
+                              )}
+                            </AnimatePresence>
                           </>
                         )}
                       </NavLink>
@@ -187,6 +309,7 @@ export function Sidebar() {
             </div>
           );
         })}
+        <ScrollGradient navRef={navRef} />
       </nav>
 
       {/* Collapse toggle */}
@@ -196,11 +319,16 @@ export function Sidebar() {
           className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {sidebarCollapsed ? (
+          <motion.span
+            animate={{ rotate: sidebarCollapsed ? 0 : 180 }}
+            transition={
+              reducedMotion
+                ? { duration: 0 }
+                : { type: 'spring', stiffness: 300, damping: 25 }
+            }
+          >
             <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
+          </motion.span>
         </button>
       </div>
     </aside>
