@@ -1,4 +1,5 @@
-import { Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Navigate, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useAuth } from '@/providers/auth-provider';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
@@ -6,12 +7,22 @@ import { CommandPalette } from '@/components/layout/command-palette';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+
+function getRouteDepth(pathname: string): number {
+  return pathname.split('/').filter(Boolean).length;
+}
 
 export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const reducedMotion = useReducedMotion();
+  const [direction, setDirection] = useState(1);
+  const previousDepthRef = useRef(getRouteDepth(location.pathname));
 
   // Keyboard Shortcuts
   useKeyboardShortcut(
@@ -134,6 +145,16 @@ export function AppLayout() {
     []
   );
 
+  useEffect(() => {
+    const currentDepth = getRouteDepth(location.pathname);
+    if (navigationType === 'POP') {
+      setDirection(-1);
+    } else {
+      setDirection(currentDepth >= previousDepthRef.current ? 1 : -1);
+    }
+    previousDepthRef.current = currentDepth;
+  }, [location.pathname, navigationType]);
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -149,7 +170,34 @@ export function AppLayout() {
       >
         <Header />
         <main className="flex-1 overflow-y-auto p-4">
-          <Outlet />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              className="h-full"
+              custom={direction}
+              initial={reducedMotion ? false : 'initial'}
+              animate="animate"
+              exit="exit"
+              variants={{
+                initial: (currentDirection: number) => ({
+                  opacity: 0,
+                  x: currentDirection > 0 ? 24 : -24,
+                }),
+                animate: {
+                  opacity: 1,
+                  x: 0,
+                  transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
+                },
+                exit: (currentDirection: number) => ({
+                  opacity: 0,
+                  x: currentDirection > 0 ? -18 : 18,
+                  transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
+                }),
+              }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
       <CommandPalette />

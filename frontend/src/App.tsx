@@ -6,6 +6,7 @@ import { AuthProvider } from './providers/auth-provider';
 import { SocketProvider } from './providers/socket-provider';
 import { SearchProvider } from './providers/search-provider';
 import { Toaster } from 'sonner';
+import { domAnimation, LazyMotion, MotionConfig } from 'framer-motion';
 
 export function App() {
   return (
@@ -14,7 +15,12 @@ export function App() {
         <AuthProvider>
           <SocketProvider>
             <SearchProvider>
-              <RouterProvider router={router} />
+              {/* Keep motion payload small by loading domAnimation features once */}
+              <LazyMotion features={domAnimation}>
+                <MotionConfig reducedMotion="user">
+                  <RouterProvider router={router} />
+                </MotionConfig>
+              </LazyMotion>
               <Toaster richColors position="top-right" />
             </SearchProvider>
           </SocketProvider>
