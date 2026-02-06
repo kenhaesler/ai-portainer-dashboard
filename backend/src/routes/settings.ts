@@ -48,7 +48,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       params: SettingKeyParamsSchema,
       body: SettingUpdateBodySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { key } = request.params as { key: string };
     const { value, category = 'general' } = request.body as { value: string; category?: string };
@@ -83,7 +83,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: SettingKeyParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { key } = request.params as { key: string };
     const db = getDb();

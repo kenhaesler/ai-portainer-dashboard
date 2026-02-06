@@ -17,6 +17,7 @@ import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
 import { notifyInsight } from './notification-service.js';
 import { emitEvent } from './event-bus.js';
+import { correlateInsights } from './incident-correlator.js';
 
 const log = createChildLogger('monitoring-service');
 
@@ -290,6 +291,26 @@ export async function runMonitoringCycle(): Promise<void> {
         }
       } catch (err) {
         log.warn({ insightId: insight.id, err }, 'Failed to insert insight');
+      }
+    }
+
+    // 8. Correlate insights into incidents (alert grouping)
+    if (allInsights.length > 0) {
+      try {
+        const storedInsights = allInsights.map((ins) => ({
+          ...ins,
+          is_acknowledged: 0,
+          created_at: new Date().toISOString(),
+        }));
+        const correlation = correlateInsights(storedInsights as Insight[]);
+        if (correlation.incidentsCreated > 0) {
+          log.info(
+            { incidentsCreated: correlation.incidentsCreated, insightsGrouped: correlation.insightsGrouped },
+            'Alert correlation completed',
+          );
+        }
+      } catch (err) {
+        log.warn({ err }, 'Alert correlation failed');
       }
     }
 

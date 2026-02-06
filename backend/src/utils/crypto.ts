@@ -12,6 +12,7 @@ export async function signJwt(payload: {
   sub: string;
   username: string;
   sessionId: string;
+  role?: string;
 }): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
@@ -23,7 +24,7 @@ export async function signJwt(payload: {
 export async function verifyJwt(token: string) {
   try {
     const { payload } = await jwtVerify(token, getSecretKey());
-    return payload as { sub: string; username: string; sessionId: string; exp: number; iat: number };
+    return payload as { sub: string; username: string; sessionId: string; role?: string; exp: number; iat: number };
   } catch {
     return null;
   }

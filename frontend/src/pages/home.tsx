@@ -18,6 +18,7 @@ import { EndpointStatusBar } from '@/components/charts/endpoint-status-bar';
 import { WorkloadDistribution } from '@/components/charts/workload-distribution';
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
+import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -109,7 +110,7 @@ export default function HomePage() {
 
   if (isError) {
     return (
-      <div className="space-y-6">
+      <MotionPage>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
@@ -129,12 +130,12 @@ export default function HomePage() {
             Try again
           </button>
         </div>
-      </div>
+      </MotionPage>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <MotionPage>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -157,39 +158,47 @@ export default function HomePage() {
           ))}
         </div>
       ) : data ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            label="Endpoints"
-            value={data.kpis.endpoints}
-            icon={<Server className="h-5 w-5" />}
-            trendValue={`${data.kpis.endpointsUp} up`}
-            trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
-          />
-          <KpiCard
-            label="Running Containers"
-            value={data.kpis.running}
-            icon={<Boxes className="h-5 w-5" />}
-            trendValue={`of ${data.kpis.total} total`}
-            trend="neutral"
-          />
-          <KpiCard
-            label="Stopped Containers"
-            value={data.kpis.stopped}
-            icon={<PackageOpen className="h-5 w-5" />}
-            trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
-            trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
-          />
-          <KpiCard
-            label="Stacks"
-            value={data.kpis.stacks}
-            icon={<Layers className="h-5 w-5" />}
-          />
-        </div>
+        <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" stagger={0.05}>
+          <MotionReveal>
+            <KpiCard
+              label="Endpoints"
+              value={data.kpis.endpoints}
+              icon={<Server className="h-5 w-5" />}
+              trendValue={`${data.kpis.endpointsUp} up`}
+              trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
+            />
+          </MotionReveal>
+          <MotionReveal>
+            <KpiCard
+              label="Running Containers"
+              value={data.kpis.running}
+              icon={<Boxes className="h-5 w-5" />}
+              trendValue={`of ${data.kpis.total} total`}
+              trend="neutral"
+            />
+          </MotionReveal>
+          <MotionReveal>
+            <KpiCard
+              label="Stopped Containers"
+              value={data.kpis.stopped}
+              icon={<PackageOpen className="h-5 w-5" />}
+              trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
+              trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
+            />
+          </MotionReveal>
+          <MotionReveal>
+            <KpiCard
+              label="Stacks"
+              value={data.kpis.stacks}
+              icon={<Layers className="h-5 w-5" />}
+            />
+          </MotionReveal>
+        </MotionStagger>
       ) : null}
 
       {/* Pinned Favorites */}
       {favoriteContainers.length > 0 && (
-        <div>
+        <MotionReveal>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
             Pinned Favorites
@@ -221,7 +230,7 @@ export default function HomePage() {
               </div>
             ))}
           </div>
-        </div>
+        </MotionReveal>
       )}
 
       {/* Charts */}
@@ -232,35 +241,41 @@ export default function HomePage() {
           ))}
         </div>
       ) : data ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
-            <ContainerStatePie
-              running={data.kpis.running}
-              stopped={data.kpis.stopped}
-              unhealthy={data.kpis.unhealthy}
-            />
-          </div>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-              Endpoint Status
-            </h3>
-            <EndpointStatusBar data={endpointBarData} />
-          </div>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-              Workload Distribution
-            </h3>
-            <WorkloadDistribution data={workloadData} />
-          </div>
-        </div>
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+          <MotionReveal>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
+              <ContainerStatePie
+                running={data.kpis.running}
+                stopped={data.kpis.stopped}
+                unhealthy={data.kpis.unhealthy}
+              />
+            </div>
+          </MotionReveal>
+          <MotionReveal>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Endpoint Status
+              </h3>
+              <EndpointStatusBar data={endpointBarData} />
+            </div>
+          </MotionReveal>
+          <MotionReveal>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Workload Distribution
+              </h3>
+              <WorkloadDistribution data={workloadData} />
+            </div>
+          </MotionReveal>
+        </MotionStagger>
       ) : null}
 
       {/* Recent Containers Table */}
       {isLoading ? (
         <SkeletonCard className="h-[400px]" />
       ) : data ? (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <MotionReveal className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="mb-4 text-sm font-medium text-muted-foreground">
             Recent Containers
           </h3>
@@ -271,8 +286,8 @@ export default function HomePage() {
             searchPlaceholder="Filter containers..."
             pageSize={10}
           />
-        </div>
+        </MotionReveal>
       ) : null}
-    </div>
+    </MotionPage>
   );
 }
