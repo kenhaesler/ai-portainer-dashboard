@@ -23,6 +23,7 @@ const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/pages/packet-capture'));
 const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
+const Reports = lazy(() => import('@/pages/reports'));
 
 function PageLoader() {
   return (
@@ -68,6 +69,7 @@ export const router = createBrowserRouter([
       { path: 'assistant', element: <LazyPage><LlmAssistant /></LazyPage> },
       { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
+      { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
     ],
   },
