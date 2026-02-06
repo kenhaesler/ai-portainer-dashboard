@@ -16,9 +16,9 @@ export const AnomalySparkline = memo(function AnomalySparkline({
   height = 30,
   className,
 }: AnomalySparklineProps) {
-  if (values.length < 2) return null;
-
   const { points, linePath, anomalySet } = useMemo(() => {
+    if (values.length < 2) return { points: [], linePath: '', anomalySet: new Set<number>() };
+
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = max - min || 1;
@@ -34,6 +34,8 @@ export const AnomalySparkline = memo(function AnomalySparkline({
 
     return { points: pts, linePath: path, anomalySet: new Set(anomalyIndices) };
   }, [values, anomalyIndices, width, height]);
+
+  if (values.length < 2) return null;
 
   return (
     <svg
