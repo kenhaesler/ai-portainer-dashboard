@@ -434,6 +434,14 @@ function InsightCard({
             {investigation && (
               <InvestigationSection investigation={investigation} />
             )}
+            <div className="flex justify-end">
+              <a
+                href={investigation ? `/investigations/${investigation.id}` : `/investigations/insight/${insight.id}`}
+                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+              >
+                View Investigation Details
+              </a>
+            </div>
 
             {!insight.is_acknowledged && (
               <div className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-900/20 p-3">

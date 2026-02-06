@@ -103,3 +103,19 @@ export function useInvestigations() {
     refetch: query.refetch,
   };
 }
+
+export function useInvestigationDetail(id: string | undefined) {
+  return useQuery<Investigation>({
+    queryKey: ['investigation', id],
+    queryFn: () => api.get<Investigation>(`/api/investigations/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useInvestigationByInsightId(insightId: string | undefined) {
+  return useQuery<Investigation>({
+    queryKey: ['investigation', 'by-insight', insightId],
+    queryFn: () => api.get<Investigation>(`/api/investigations/by-insight/${insightId}`),
+    enabled: Boolean(insightId),
+  });
+}
