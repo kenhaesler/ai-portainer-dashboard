@@ -85,15 +85,15 @@ npm run test:watch
 
 **Backend** (`backend/src/`): Fastify 5, TypeScript, SQLite (better-sqlite3 with WAL mode), Socket.IO.
 - `routes/` — REST API endpoints organized by feature (auth, containers, metrics, monitoring, etc.)
-- `services/` — Business logic: Portainer API client, anomaly detection (z-score), monitoring scheduler
+- `services/` — Business logic: Portainer API client, anomaly detection (z-score), monitoring scheduler, hybrid cache (Redis + in-memory fallback)
 - `sockets/` — Socket.IO namespaces: `/llm` (chat), `/monitoring` (real-time insights), `/remediation` (action suggestions)
 - `models/` — Zod schemas for validation + database query functions
 - `db/migrations/` — SQLite migrations (auto-run on startup via `getDb()`)
-- `utils/` — Crypto (JWT/bcrypt), logging (Pino), config, caching
+- `utils/` — Crypto (JWT/bcrypt), logging (Pino), shared helpers
 - `scheduler/` — Background jobs: metrics collection (60s), monitoring cycle (5min), daily cleanup
 
 **Frontend** (`frontend/src/`): React 19, TypeScript, Vite, Tailwind CSS v4.
-- `pages/` — Lazy-loaded page components (17 pages, all wrapped in Suspense)
+- `pages/` — Lazy-loaded page components (18 pages, all wrapped in Suspense)
 - `components/` — Organized by domain: `layout/`, `charts/`, `shared/`, `container/`, `network/`
 - `hooks/` — Data-fetching hooks wrapping TanStack React Query
 - `stores/` — Zustand stores for UI state (theme, sidebar, notifications, filters)
@@ -219,5 +219,6 @@ Copy `.env.example` to `.env`. Key variables:
 - `PORTAINER_API_URL` / `PORTAINER_API_KEY` — Required for Portainer connection
 - `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` — Login credentials
 - `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — LLM config (defaults: `http://ollama:11434`, `llama3.2`)
+- `REDIS_URL` / `REDIS_KEY_PREFIX` — Hybrid cache backend config (defaults: `redis://redis:6379`, `aidash:cache:`)
 - `JWT_SECRET` — Must be 32+ chars in production
 - See `.env.example` for the full list including OIDC, monitoring, caching, and rate-limit settings.
