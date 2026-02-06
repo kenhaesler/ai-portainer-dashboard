@@ -35,6 +35,8 @@ import { userRoutes } from './routes/users.js';
 import { incidentsRoutes } from './routes/incidents.js';
 import { statusPageRoutes } from './routes/status-page.js';
 import { llmRoutes } from './routes/llm.js';
+import { llmObservabilityRoutes } from './routes/llm-observability.js';
+import { forecastRoutes } from './routes/forecasts.js';
 import { correlationRoutes } from './routes/correlations.js';
 
 export async function buildApp() {
@@ -95,6 +97,8 @@ export async function buildApp() {
   await app.register(incidentsRoutes);
   await app.register(statusPageRoutes);
   await app.register(llmRoutes);
+  await app.register(llmObservabilityRoutes);
+  await app.register(forecastRoutes);
   await app.register(correlationRoutes);
 
   // Static files (production only)
