@@ -35,6 +35,7 @@ import { userRoutes } from './routes/users.js';
 import { incidentsRoutes } from './routes/incidents.js';
 import { statusPageRoutes } from './routes/status-page.js';
 import { llmRoutes } from './routes/llm.js';
+import { forecastRoutes } from './routes/forecasts.js';
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -94,6 +95,7 @@ export async function buildApp() {
   await app.register(incidentsRoutes);
   await app.register(statusPageRoutes);
   await app.register(llmRoutes);
+  await app.register(forecastRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);
