@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 
@@ -18,6 +18,10 @@ interface Insight {
   suggested_action: string | null;
   is_acknowledged: number;
   created_at: string;
+}
+
+interface AcknowledgeResponse {
+  success: boolean;
 }
 
 export function useMonitoring() {
@@ -73,6 +77,27 @@ export function useMonitoring() {
     });
   }, []);
 
+  const acknowledgeInsight = useMutation({
+    mutationFn: async (id: string) => {
+      return api.post<AcknowledgeResponse>(`/api/monitoring/insights/${id}/acknowledge`);
+    },
+    onMutate: async (id) => {
+      let previousInsights: Insight[] = [];
+      setInsights((prev) => {
+        previousInsights = prev;
+        return prev.map((insight) =>
+          insight.id === id ? { ...insight, is_acknowledged: 1 } : insight
+        );
+      });
+      return { previousInsights };
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previousInsights) {
+        setInsights(context.previousInsights);
+      }
+    },
+  });
+
   return {
     insights,
     isLoading: historyQuery.isLoading,
@@ -80,6 +105,10 @@ export function useMonitoring() {
     subscribedSeverities,
     subscribeSeverity,
     unsubscribeSeverity,
+    acknowledgeInsight: acknowledgeInsight.mutate,
+    acknowledgeError: acknowledgeInsight.error,
+    isAcknowledging: acknowledgeInsight.isPending,
+    acknowledgingInsightId: acknowledgeInsight.variables ?? null,
     refetch: historyQuery.refetch,
   };
 }
