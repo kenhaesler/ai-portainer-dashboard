@@ -17,6 +17,7 @@ const MetricsDashboard = lazy(() => import('@/pages/metrics-dashboard'));
 const Remediation = lazy(() => import('@/pages/remediation'));
 const TraceExplorer = lazy(() => import('@/pages/trace-explorer'));
 const LlmAssistant = lazy(() => import('@/pages/llm-assistant'));
+const LlmObservability = lazy(() => import('@/pages/llm-observability'));
 const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
 const Settings = lazy(() => import('@/pages/settings'));
 const StackOverview = lazy(() => import('@/pages/stack-overview'));
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
       { path: 'remediation', element: <LazyPage><Remediation /></LazyPage> },
       { path: 'traces', element: <LazyPage><TraceExplorer /></LazyPage> },
       { path: 'assistant', element: <LazyPage><LlmAssistant /></LazyPage> },
+      { path: 'llm-observability', element: <LazyPage><LlmObservability /></LazyPage> },
       { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
       { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
