@@ -50,7 +50,7 @@ describe('backup routes', () => {
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
-    app.decorateRequest('user', null);
+    app.decorateRequest('user', undefined);
     app.addHook('preHandler', async (request) => {
       request.user = {
         sub: 'user-1',

@@ -50,7 +50,7 @@ describe('userRoutes', () => {
   describe('GET /api/users', () => {
     it('should list users', async () => {
       mockListUsers.mockReturnValue([
-        { id: 'u1', username: 'admin', role: 'admin', created_at: '', updated_at: '' },
+        { id: 'u1', username: 'admin', role: 'admin', default_landing_page: '/', created_at: '', updated_at: '' },
       ]);
 
       const res = await app.inject({ method: 'GET', url: '/api/users' });
@@ -62,7 +62,7 @@ describe('userRoutes', () => {
   describe('POST /api/users', () => {
     it('should create a user', async () => {
       mockCreateUser.mockResolvedValue({
-        id: 'u2', username: 'newuser', role: 'viewer', created_at: '', updated_at: '',
+        id: 'u2', username: 'newuser', role: 'viewer', default_landing_page: '/', created_at: '', updated_at: '',
       });
 
       const res = await app.inject({
@@ -78,7 +78,7 @@ describe('userRoutes', () => {
   describe('PATCH /api/users/:id', () => {
     it('should update a user', async () => {
       mockUpdateUser.mockResolvedValue({
-        id: 'u1', username: 'admin', role: 'operator', created_at: '', updated_at: '',
+        id: 'u1', username: 'admin', role: 'operator', default_landing_page: '/', created_at: '', updated_at: '',
       });
 
       const res = await app.inject({
