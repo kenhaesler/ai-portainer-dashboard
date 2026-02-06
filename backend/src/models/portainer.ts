@@ -116,7 +116,7 @@ export const NetworkSchema = z.object({
     Config: z.array(z.object({
       Subnet: z.string().optional(),
       Gateway: z.string().optional(),
-    })).optional(),
+    })).nullable().optional(),
   }).optional(),
   Containers: z.record(z.object({
     Name: z.string().optional(),
