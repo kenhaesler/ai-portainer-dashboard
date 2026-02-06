@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { useEffect, useState } from 'react';
 
@@ -15,7 +16,7 @@ const COLORS = {
   paused: { main: '#9ca3af', light: '#d1d5db' },
 };
 
-export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: ContainerStatePieProps) {
+export const ContainerStatePie = memo(function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: ContainerStatePieProps) {
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -105,4 +106,4 @@ export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: C
       </div>
     </div>
   );
-}
+});

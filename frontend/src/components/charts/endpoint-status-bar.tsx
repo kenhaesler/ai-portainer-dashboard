@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface EndpointData {
@@ -31,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-export function EndpointStatusBar({ data }: EndpointStatusBarProps) {
+export const EndpointStatusBar = memo(function EndpointStatusBar({ data }: EndpointStatusBarProps) {
   if (!data.length) {
     return (
       <div className="flex h-[300px] items-center justify-center text-muted-foreground">
@@ -117,4 +118,4 @@ export function EndpointStatusBar({ data }: EndpointStatusBarProps) {
       </div>
     </div>
   );
-}
+});

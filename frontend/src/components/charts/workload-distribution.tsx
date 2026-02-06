@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface WorkloadData {
@@ -31,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-export function WorkloadDistribution({ data }: WorkloadDistributionProps) {
+export const WorkloadDistribution = memo(function WorkloadDistribution({ data }: WorkloadDistributionProps) {
   if (!data.length) {
     return (
       <div className="flex h-[300px] items-center justify-center text-muted-foreground">
@@ -110,4 +111,4 @@ export function WorkloadDistribution({ data }: WorkloadDistributionProps) {
       </div>
     </div>
   );
-}
+});
