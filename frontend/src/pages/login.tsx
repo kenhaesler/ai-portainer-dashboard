@@ -1,16 +1,96 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
+
+const PARTICLES = [
+  { left: "8%", delay: "0s", duration: "12s", size: "7px" },
+  { left: "18%", delay: "0.8s", duration: "15s", size: "9px" },
+  { left: "28%", delay: "0.4s", duration: "13s", size: "6px" },
+  { left: "39%", delay: "1.2s", duration: "14s", size: "8px" },
+  { left: "48%", delay: "0.2s", duration: "16s", size: "7px" },
+  { left: "57%", delay: "1.5s", duration: "12s", size: "8px" },
+  { left: "66%", delay: "0.6s", duration: "17s", size: "9px" },
+  { left: "75%", delay: "1.1s", duration: "11s", size: "6px" },
+  { left: "84%", delay: "0.9s", duration: "15s", size: "8px" },
+  { left: "92%", delay: "0.3s", duration: "13s", size: "7px" },
+];
+
+function usePrefersReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReducedMotion(mediaQuery.matches);
+    onChange();
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, []);
+
+  return reducedMotion;
+}
+
+function BrainLogo({ reducedMotion }: { reducedMotion: boolean }) {
+  const pathClass = reducedMotion ? "opacity-100" : "login-logo-path";
+
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      className="login-logo h-14 w-14"
+      role="img"
+      aria-label="AI brain logo"
+    >
+      <defs>
+        <linearGradient id="brainStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="oklch(72% 0.14 244)" />
+          <stop offset="100%" stopColor="oklch(78% 0.18 158)" />
+        </linearGradient>
+      </defs>
+      <path
+        className={pathClass}
+        style={{ "--path-delay": "0ms" } as CSSProperties}
+        d="M22 14c-6 0-10 5-10 11 0 2 1 4 2 6-1 2-2 3-2 6 0 6 4 11 10 11 2 4 6 6 10 6"
+        fill="none"
+        stroke="url(#brainStroke)"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <path
+        className={pathClass}
+        style={{ "--path-delay": "100ms" } as CSSProperties}
+        d="M42 14c6 0 10 5 10 11 0 2-1 4-2 6 1 2 2 3 2 6 0 6-4 11-10 11-2 4-6 6-10 6"
+        fill="none"
+        stroke="url(#brainStroke)"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <path
+        className={pathClass}
+        style={{ "--path-delay": "180ms" } as CSSProperties}
+        d="M24 24c3-4 13-4 16 0M22 32c4-3 16-3 20 0M24 40c5-2 11-2 16 0"
+        fill="none"
+        stroke="url(#brainStroke)"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { data: oidcStatus } = useOIDCStatus();
+  const reducedMotion = usePrefersReducedMotion();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
+
+  const stagedClass = useMemo(
+    () => (reducedMotion ? "" : "login-stage-in"),
+    [reducedMotion],
+  );
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -19,29 +99,74 @@ export default function LoginPage() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setIsLoading(true);
+    setSubmitState("loading");
 
     try {
       await login(username, password);
-      navigate("/", { replace: true });
+      setSubmitState("success");
+      const waitMs = reducedMotion ? 0 : 450;
+      window.setTimeout(() => {
+        navigate("/", { replace: true });
+      }, waitMs);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Invalid username or password"
       );
-    } finally {
-      setIsLoading(false);
+      setSubmitState("idle");
     }
   }
 
+  function getStagedStyle(delayMs: number): CSSProperties | undefined {
+    if (reducedMotion) {
+      return undefined;
+    }
+    return { animationDelay: `${delayMs}ms` };
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm rounded-lg border bg-card p-8 shadow-lg">
+    <div
+      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4"
+      data-reduced-motion={reducedMotion}
+    >
+      <div
+        className={`login-gradient-mesh ${reducedMotion ? "" : "login-gradient-mesh-animate"}`}
+        aria-hidden="true"
+        data-testid="login-gradient"
+      />
+
+      {!reducedMotion && (
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+          {PARTICLES.map((particle) => (
+            <span
+              key={`${particle.left}-${particle.delay}`}
+              className="login-particle"
+              style={
+                {
+                  left: particle.left,
+                  width: particle.size,
+                  height: particle.size,
+                  animationDelay: particle.delay,
+                  animationDuration: particle.duration,
+                } as CSSProperties
+              }
+            />
+          ))}
+        </div>
+      )}
+
+      <div className={`login-card z-10 w-full max-w-sm rounded-2xl border bg-card/85 p-8 shadow-2xl ${stagedClass}`}>
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Container-Infrastructure
-          </h1>
-          <p className="mt-1 text-xs text-muted-foreground">powered by ai</p>
-          <p className="mt-3 text-sm text-muted-foreground">
+          <div className={`mx-auto mb-3 grid place-items-center ${reducedMotion ? "" : "login-logo-shell"}`}>
+            <BrainLogo reducedMotion={reducedMotion} />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">Container-Infrastructure</h1>
+          <p className={`mt-1 text-xs uppercase tracking-[0.24em] text-muted-foreground ${reducedMotion ? "" : "login-typewriter"}`}>
+            Powered by AI
+          </p>
+          <p
+            className={`mt-3 text-sm text-muted-foreground ${stagedClass}`}
+            style={getStagedStyle(120)}
+          >
             Sign in to your account
           </p>
         </div>
@@ -51,21 +176,22 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => {
-                window.location.href = oidcStatus.authUrl!;
+                if (oidcStatus.authUrl) {
+                  window.location.href = oidcStatus.authUrl;
+                }
               }}
-              className="inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background/85 px-4 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${stagedClass}`}
+              style={getStagedStyle(160)}
             >
               Login with SSO
             </button>
 
-            <div className="relative my-4">
+            <div className={`relative my-4 ${stagedClass}`} style={getStagedStyle(210)}>
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">
-                  Or continue with credentials
-                </span>
+                <span className="bg-card px-2 text-muted-foreground">Or continue with credentials</span>
               </div>
             </div>
           </>
@@ -73,12 +199,12 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <div className="login-error-shake rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className={`space-y-2 ${stagedClass}`} style={getStagedStyle(260)}>
             <label
               htmlFor="username"
               className="text-sm font-medium leading-none"
@@ -93,11 +219,11 @@ export default function LoginPage() {
               placeholder="Enter your username"
               required
               autoComplete="username"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="login-input flex h-10 w-full rounded-md border border-input bg-background/85 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
             />
           </div>
 
-          <div className="space-y-2">
+          <div className={`space-y-2 ${stagedClass}`} style={getStagedStyle(310)}>
             <label
               htmlFor="password"
               className="text-sm font-medium leading-none"
@@ -112,16 +238,38 @@ export default function LoginPage() {
               placeholder="Enter your password"
               required
               autoComplete="current-password"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="login-input flex h-10 w-full rounded-md border border-input bg-background/85 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
             />
           </div>
 
           <button
             type="submit"
-            disabled={isLoading}
-            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+            disabled={submitState !== "idle"}
+            className={`login-submit relative inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-80 ${stagedClass}`}
+            style={getStagedStyle(360)}
           >
-            {isLoading ? "Signing in..." : "Sign in"}
+            <span className={`transition-opacity duration-150 ${submitState === "idle" ? "opacity-100" : "opacity-0"}`}>
+              Sign in
+            </span>
+            {submitState === "loading" && (
+              <span className="absolute inset-0 inline-flex items-center justify-center gap-2">
+                <span className="login-spinner" aria-hidden="true" />
+                <span>Signing in...</span>
+              </span>
+            )}
+            {submitState === "success" && (
+              <span className="absolute inset-0 inline-flex items-center justify-center">
+                Signed in
+              </span>
+            )}
+            {submitState === "success" && !reducedMotion && (
+              <span className="pointer-events-none absolute inset-0" aria-hidden="true">
+                <span className="login-burst login-burst-1" />
+                <span className="login-burst login-burst-2" />
+                <span className="login-burst login-burst-3" />
+                <span className="login-burst login-burst-4" />
+              </span>
+            )}
           </button>
         </form>
       </div>
