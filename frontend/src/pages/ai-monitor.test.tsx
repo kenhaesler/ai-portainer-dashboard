@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -30,6 +30,10 @@ vi.mock('@/hooks/use-monitoring', () => ({
     subscribedSeverities: new Set(['critical', 'warning', 'info']),
     subscribeSeverity: vi.fn(),
     unsubscribeSeverity: vi.fn(),
+    acknowledgeInsight: vi.fn(),
+    acknowledgeError: null,
+    isAcknowledging: false,
+    acknowledgingInsightId: null,
     refetch: vi.fn(),
   }),
 }));
@@ -73,6 +77,37 @@ function renderPage() {
   );
 }
 
+const baseInsights = [
+  {
+    id: 'insight-1',
+    endpoint_id: 1,
+    endpoint_name: 'local',
+    container_id: 'container-1',
+    container_name: 'api-1',
+    severity: 'warning' as const,
+    category: 'anomaly:cpu',
+    title: 'CPU trend spike',
+    description: 'CPU utilization increased quickly over 5 minutes.',
+    suggested_action: 'Inspect workload pressure.',
+    is_acknowledged: 0,
+    created_at: '2026-02-06T10:00:00.000Z',
+  },
+  {
+    id: 'insight-2',
+    endpoint_id: 1,
+    endpoint_name: 'local',
+    container_id: 'container-2',
+    container_name: 'worker-2',
+    severity: 'info' as const,
+    category: 'anomaly:memory',
+    title: 'Memory is stable',
+    description: 'No immediate action required.',
+    suggested_action: null,
+    is_acknowledged: 1,
+    created_at: '2026-02-06T10:01:00.000Z',
+  },
+];
+
 beforeEach(() => {
   vi.mocked(useCorrelatedAnomalies).mockReturnValue({
     data: undefined,
@@ -82,6 +117,20 @@ beforeEach(() => {
   vi.mocked(useIncidents).mockReturnValue({
     data: null,
   } as ReturnType<typeof useIncidents>);
+
+  vi.mocked(useMonitoring).mockReturnValue({
+    insights: [],
+    isLoading: false,
+    error: null,
+    subscribedSeverities: new Set(['critical', 'warning', 'info']),
+    subscribeSeverity: vi.fn(),
+    unsubscribeSeverity: vi.fn(),
+    acknowledgeInsight: vi.fn(),
+    acknowledgeError: null,
+    isAcknowledging: false,
+    acknowledgingInsightId: null,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useMonitoring>);
 });
 
 describe('AiMonitorPage', () => {
@@ -195,8 +244,12 @@ describe('AiMonitorPage', () => {
       subscribedSeverities: new Set(['critical', 'warning', 'info']),
       subscribeSeverity: vi.fn(),
       unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
       refetch: vi.fn(),
-    });
+    } as unknown as ReturnType<typeof useMonitoring>);
 
     renderPage();
 
@@ -226,8 +279,12 @@ describe('AiMonitorPage', () => {
       subscribedSeverities: new Set(['critical', 'warning', 'info']),
       subscribeSeverity: vi.fn(),
       unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
       refetch: vi.fn(),
-    });
+    } as unknown as ReturnType<typeof useMonitoring>);
 
     renderPage();
 
@@ -262,5 +319,73 @@ describe('AiMonitorPage', () => {
     expect(
       screen.getByText('Memory usage is elevated while CPU remains normal'),
     ).toBeTruthy();
+  });
+
+  it('acknowledges an unacknowledged insight from the insight card', () => {
+    const mockAcknowledgeInsight = vi.fn();
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: baseInsights,
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: mockAcknowledgeInsight,
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    fireEvent.click(screen.getByText('CPU trend spike'));
+    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+
+    expect(mockAcknowledgeInsight).toHaveBeenCalledWith('insight-1');
+  });
+
+  it('filters to only unacknowledged insights', () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: baseInsights,
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unacknowledged' }));
+
+    expect(screen.getByText('CPU trend spike')).toBeInTheDocument();
+    expect(screen.queryByText('Memory is stable')).not.toBeInTheDocument();
+  });
+
+  it('renders acknowledge error message when mutation fails', () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: baseInsights,
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: new Error('Failed to acknowledge insight'),
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+    fireEvent.click(screen.getByText('CPU trend spike'));
+
+    expect(screen.getByText('Failed to acknowledge insight')).toBeInTheDocument();
   });
 });

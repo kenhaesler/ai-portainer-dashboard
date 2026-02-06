@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
+import { Search, Download, WrapText, Activity, ArrowDown, Loader2, Save, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
@@ -18,6 +18,33 @@ const CONTAINER_COLORS = ['text-cyan-300', 'text-emerald-300', 'text-yellow-300'
 
 interface LogsResponse {
   logs: string;
+}
+
+interface SettingRow {
+  key: string;
+  value: string;
+}
+
+interface LogsConfigResponse {
+  configured: boolean;
+  endpoint: string | null;
+  indexPattern: string | null;
+}
+
+interface TestConnectionResponse {
+  success: boolean;
+  error?: string;
+  status?: string;
+  cluster_name?: string;
+  number_of_nodes?: number;
+}
+
+interface LogsSettingsFormState {
+  enabled: boolean;
+  endpoint: string;
+  apiKey: string;
+  indexPattern: string;
+  verifySsl: boolean;
 }
 
 function highlightLine(line: string, regex: RegExp | null): ReactNode {
@@ -55,15 +82,90 @@ export default function LogViewerPage() {
   const [lineWrap, setLineWrap] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [liveTail, setLiveTail] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<TestConnectionResponse | null>(null);
+  const [logsConfigStatus, setLogsConfigStatus] = useState<LogsConfigResponse | null>(null);
+  const [settingsForm, setSettingsForm] = useState<LogsSettingsFormState>({
+    enabled: false,
+    endpoint: '',
+    apiKey: '',
+    indexPattern: 'logs-*',
+    verifySsl: true,
+  });
 
   const { data: endpoints = [] } = useEndpoints();
   const { data: containers = [] } = useContainers(selectedEndpoint);
+
+  const endpointValidationError = useMemo(() => {
+    if (!settingsForm.endpoint.trim()) return 'Endpoint is required.';
+    try {
+      const parsed = new URL(settingsForm.endpoint);
+      if (!/^https?:$/.test(parsed.protocol)) {
+        return 'Endpoint must start with http:// or https://';
+      }
+      return null;
+    } catch {
+      return 'Enter a valid URL (for example: https://logs.internal:9200)';
+    }
+  }, [settingsForm.endpoint]);
 
   useEffect(() => {
     if (endpoints.length > 0 && !selectedEndpoint) {
       setSelectedEndpoint(endpoints[0].id);
     }
   }, [endpoints, selectedEndpoint]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadLogsSettings = async () => {
+      setSettingsLoading(true);
+      setSettingsError(null);
+      try {
+        const [settingsPayload, configPayload] = await Promise.all([
+          api.get<SettingRow[] | { settings?: SettingRow[] }>('/api/settings', {
+            params: { category: 'elasticsearch' },
+          }),
+          api.get<LogsConfigResponse>('/api/logs/config'),
+        ]);
+
+        if (!active) return;
+
+        const settingsRows = Array.isArray(settingsPayload)
+          ? settingsPayload
+          : settingsPayload.settings ?? [];
+        const byKey = settingsRows.reduce<Record<string, string>>((acc, row) => {
+          acc[row.key] = row.value;
+          return acc;
+        }, {});
+
+        setSettingsForm({
+          enabled: byKey['elasticsearch.enabled'] === 'true',
+          endpoint: byKey['elasticsearch.endpoint'] ?? configPayload.endpoint ?? '',
+          apiKey: byKey['elasticsearch.api_key'] ?? '',
+          indexPattern: byKey['elasticsearch.index_pattern'] ?? configPayload.indexPattern ?? 'logs-*',
+          verifySsl: byKey['elasticsearch.verify_ssl'] !== 'false',
+        });
+        setLogsConfigStatus(configPayload);
+      } catch (err) {
+        if (!active) return;
+        setSettingsError(err instanceof Error ? err.message : 'Failed to load log settings');
+      } finally {
+        if (active) {
+          setSettingsLoading(false);
+        }
+      }
+    };
+
+    void loadLogsSettings();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     setSelectedContainers([]);
@@ -161,12 +263,188 @@ export default function LogViewerPage() {
 
   const isLoading = containerQueries.some((q) => q.isLoading);
 
+  const updateSettingField = <K extends keyof LogsSettingsFormState>(key: K, value: LogsSettingsFormState[K]) => {
+    setSettingsForm((prev) => ({ ...prev, [key]: value }));
+    setSettingsSaved(false);
+  };
+
+  const saveLogSettings = async () => {
+    if (endpointValidationError) return;
+
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const updates: Array<[string, string]> = [
+        ['elasticsearch.enabled', String(settingsForm.enabled)],
+        ['elasticsearch.endpoint', settingsForm.endpoint.trim()],
+        ['elasticsearch.api_key', settingsForm.apiKey.trim()],
+        ['elasticsearch.index_pattern', settingsForm.indexPattern.trim() || 'logs-*'],
+        ['elasticsearch.verify_ssl', String(settingsForm.verifySsl)],
+      ];
+
+      for (const [key, value] of updates) {
+        await api.put(`/api/settings/${key}`, { value });
+      }
+
+      const configPayload = await api.get<LogsConfigResponse>('/api/logs/config');
+      setLogsConfigStatus(configPayload);
+      setSettingsSaved(true);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to save log settings');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const testConnection = async () => {
+    if (endpointValidationError) return;
+
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const result = await api.post<TestConnectionResponse>('/api/logs/test-connection', {
+        endpoint: settingsForm.endpoint.trim(),
+        apiKey: settingsForm.apiKey.trim() || undefined,
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Connection test failed',
+      });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Log Viewer</h1>
         <p className="text-muted-foreground">Live tail, regex search, level filtering, and multi-container aggregation.</p>
       </div>
+
+      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Logs Settings</h2>
+            <p className="text-sm text-muted-foreground">Configure Elasticsearch source and validate connection.</p>
+          </div>
+          {logsConfigStatus && (
+            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${logsConfigStatus.configured ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+              {logsConfigStatus.configured ? 'Configured' : 'Not configured'}
+            </span>
+          )}
+        </div>
+
+        {settingsLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading log settings...
+          </div>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">Elasticsearch Endpoint</span>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-background px-2"
+                value={settingsForm.endpoint}
+                onChange={(e) => updateSettingField('endpoint', e.target.value)}
+                placeholder="https://logs.internal:9200"
+              />
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">Index Pattern</span>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-background px-2"
+                value={settingsForm.indexPattern}
+                onChange={(e) => updateSettingField('indexPattern', e.target.value)}
+                placeholder="logs-*"
+              />
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block text-muted-foreground">API Key (optional)</span>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-background px-2"
+                type="password"
+                value={settingsForm.apiKey}
+                onChange={(e) => updateSettingField('apiKey', e.target.value)}
+                placeholder="Api key"
+              />
+            </label>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={settingsForm.enabled}
+                  onChange={(e) => updateSettingField('enabled', e.target.checked)}
+                />
+                Enable Elasticsearch logs
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={settingsForm.verifySsl}
+                  onChange={(e) => updateSettingField('verifySsl', e.target.checked)}
+                />
+                Verify SSL
+              </label>
+            </div>
+          </div>
+        )}
+
+        {endpointValidationError && !settingsLoading && (
+          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{endpointValidationError}</p>
+        )}
+
+        {settingsError && (
+          <p className="mt-2 text-xs text-destructive">{settingsError}</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={testConnection}
+            disabled={settingsLoading || settingsSaving || testLoading || !!endpointValidationError}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {testLoading ? 'Testing...' : 'Test Connection'}
+          </button>
+          <button
+            onClick={saveLogSettings}
+            disabled={settingsLoading || settingsSaving || !!endpointValidationError}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {settingsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Settings
+          </button>
+          {settingsSaved && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Saved
+            </span>
+          )}
+        </div>
+
+        {testResult && (
+          <div className={`mt-3 rounded-md border p-3 text-sm ${testResult.success ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300'}`}>
+            <div className="flex items-center gap-1">
+              {testResult.success ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+              <span className="font-medium">{testResult.success ? 'Connection successful' : 'Connection failed'}</span>
+            </div>
+            {!testResult.success && testResult.error && (
+              <p className="mt-1 text-xs">{testResult.error}</p>
+            )}
+            {testResult.success && (
+              <p className="mt-1 text-xs">
+                Cluster: {testResult.cluster_name ?? 'unknown'} | Status: {testResult.status ?? 'unknown'} | Nodes: {testResult.number_of_nodes ?? 'n/a'}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
 
       <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="grid gap-3 lg:grid-cols-4">

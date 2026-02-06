@@ -110,6 +110,7 @@ services:
     networks:
       - dashboard-net
 
+
 volumes:
   backend-data:
   ollama-data:

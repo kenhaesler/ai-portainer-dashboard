@@ -2,8 +2,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import LogViewerPage from './log-viewer';
 
+const mockGet = vi.fn().mockImplementation((path: string) => {
+  if (path === '/api/logs/config') {
+    return Promise.resolve({ configured: false, endpoint: null, indexPattern: null });
+  }
+  if (path === '/api/settings') {
+    return Promise.resolve([]);
+  }
+  return Promise.resolve({});
+});
+
 vi.mock('@tanstack/react-query', () => ({
   useQueries: () => [],
+}));
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    get: (...args: unknown[]) => mockGet(...args),
+    put: vi.fn(),
+    post: vi.fn(),
+  },
 }));
 
 vi.mock('@/hooks/use-endpoints', () => ({
@@ -22,6 +40,7 @@ describe('LogViewerPage', () => {
   it('renders page shell and controls', () => {
     render(<LogViewerPage />);
     expect(screen.getByText('Log Viewer')).toBeInTheDocument();
+    expect(screen.getByText('Logs Settings')).toBeInTheDocument();
     expect(screen.getByText('Regex Search')).toBeInTheDocument();
     expect(screen.getByText('Live Tail ON')).toBeInTheDocument();
     expect(screen.getByText('Select one or more containers to view aggregated logs.')).toBeInTheDocument();

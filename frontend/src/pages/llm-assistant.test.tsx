@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock modules before importing component
 vi.mock('@/hooks/use-llm-chat', () => ({
@@ -34,12 +35,14 @@ import LlmAssistantPage from './llm-assistant';
 import { useLlmChat } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 
-function renderPage() {
+function renderPage(initialEntry: string = '/assistant', state?: Record<string, unknown>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <LlmAssistantPage />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={[{ pathname: initialEntry, state }]}>
+      <QueryClientProvider client={qc}>
+        <LlmAssistantPage />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -127,6 +130,12 @@ describe('LlmAssistantPage', () => {
 
     renderPage();
     expect(screen.getByText('Stop generating')).toBeTruthy();
+  });
+
+  it('prefills input when opened from remediation context', () => {
+    renderPage('/assistant', { prefillPrompt: 'Explain this remediation action' });
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...') as HTMLInputElement;
+    expect(input.value).toBe('Explain this remediation action');
   });
 });
 

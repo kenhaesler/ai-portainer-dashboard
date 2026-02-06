@@ -49,6 +49,9 @@ interface InsightCardProps {
     created_at: string;
   };
   investigation?: Investigation;
+  onAcknowledge: (insightId: string) => void;
+  isAcknowledging: boolean;
+  acknowledgeErrorMessage?: string;
 }
 
 function SeverityBadge({ severity }: { severity: Severity }) {
@@ -521,7 +524,13 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
   );
 }
 
-function InsightCard({ insight, investigation }: InsightCardProps) {
+function InsightCard({
+  insight,
+  investigation,
+  onAcknowledge,
+  isAcknowledging,
+  acknowledgeErrorMessage,
+}: InsightCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const categoryIcon = {
@@ -620,6 +629,50 @@ function InsightCard({ insight, investigation }: InsightCardProps) {
             {investigation && (
               <InvestigationSection investigation={investigation} />
             )}
+            <div className="flex justify-end">
+              <a
+                href={investigation ? `/investigations/${investigation.id}` : `/investigations/insight/${insight.id}`}
+                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+              >
+                View Investigation Details
+              </a>
+            </div>
+
+            {!insight.is_acknowledged && (
+              <div className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-900/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    Mark this insight as acknowledged to reduce noise during triage.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onAcknowledge(insight.id)}
+                    disabled={isAcknowledging}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                      isAcknowledging
+                        ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                        : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50'
+                    )}
+                  >
+                    {isAcknowledging ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Acknowledging...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-3 w-3" />
+                        Acknowledge
+                      </>
+                    )}
+                  </button>
+                </div>
+                {acknowledgeErrorMessage && (
+                  <p className="mt-2 text-xs text-red-700 dark:text-red-300">{acknowledgeErrorMessage}</p>
+                )}
+              </div>
+            )}
 
             {(insight.endpoint_name || insight.container_name) && (
               <div>
@@ -671,6 +724,7 @@ function InsightCard({ insight, investigation }: InsightCardProps) {
 
 export default function AiMonitorPage() {
   const [severityFilter, setSeverityFilter] = useState<'all' | Severity>('all');
+  const [acknowledgementFilter, setAcknowledgementFilter] = useState<'all' | 'unacknowledged'>('all');
   const { interval, setInterval } = useAutoRefresh(30);
 
   const {
@@ -680,6 +734,9 @@ export default function AiMonitorPage() {
     subscribedSeverities,
     subscribeSeverity,
     unsubscribeSeverity,
+    acknowledgeInsight,
+    acknowledgeError,
+    acknowledgingInsightId,
     refetch,
   } = useMonitoring();
 
@@ -690,9 +747,16 @@ export default function AiMonitorPage() {
 
   // Filter insights by severity
   const filteredInsights = useMemo(() => {
-    if (severityFilter === 'all') return insights;
-    return insights.filter((i) => i.severity === severityFilter);
-  }, [insights, severityFilter]);
+    const bySeverity = severityFilter === 'all'
+      ? insights
+      : insights.filter((i) => i.severity === severityFilter);
+
+    if (acknowledgementFilter === 'unacknowledged') {
+      return bySeverity.filter((i) => !i.is_acknowledged);
+    }
+
+    return bySeverity;
+  }, [acknowledgementFilter, insights, severityFilter]);
 
   // Stats
   const stats = useMemo(() => ({
@@ -814,7 +878,7 @@ export default function AiMonitorPage() {
       </div>
 
       {/* Severity Filter Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto rounded-lg border bg-card p-1">
+      <div className="flex flex-wrap items-center gap-2 overflow-x-auto rounded-lg border bg-card p-1">
         <button
           onClick={() => setSeverityFilter('all')}
           className={cn(
@@ -872,6 +936,29 @@ export default function AiMonitorPage() {
             </button>
           );
         })}
+        <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
+        <button
+          onClick={() => setAcknowledgementFilter('all')}
+          className={cn(
+            'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+            acknowledgementFilter === 'all'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          )}
+        >
+          All Statuses
+        </button>
+        <button
+          onClick={() => setAcknowledgementFilter('unacknowledged')}
+          className={cn(
+            'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+            acknowledgementFilter === 'unacknowledged'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          )}
+        >
+          Unacknowledged
+        </button>
       </div>
 
       {/* Correlated Anomalies */}
@@ -933,9 +1020,11 @@ export default function AiMonitorPage() {
           <Activity className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-semibold">No insights</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            {severityFilter === 'all'
-              ? 'AI monitoring has not generated any insights yet. Check back soon.'
-              : `No ${severityFilter} insights found. Try a different filter.`}
+            {acknowledgementFilter === 'unacknowledged'
+              ? 'No unacknowledged insights match the current filters.'
+              : severityFilter === 'all'
+                ? 'AI monitoring has not generated any insights yet. Check back soon.'
+                : `No ${severityFilter} insights found. Try a different filter.`}
           </p>
           {!subscribedSeverities.has(severityFilter as Severity) && severityFilter !== 'all' && (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
@@ -950,6 +1039,9 @@ export default function AiMonitorPage() {
               key={insight.id}
               insight={insight}
               investigation={getInvestigationForInsight(insight.id)}
+              onAcknowledge={acknowledgeInsight}
+              isAcknowledging={acknowledgingInsightId === insight.id}
+              acknowledgeErrorMessage={acknowledgeError instanceof Error ? acknowledgeError.message : undefined}
             />
           ))}
         </div>

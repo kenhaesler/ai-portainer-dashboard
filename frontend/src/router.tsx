@@ -20,6 +20,7 @@ const LlmAssistant = lazy(() => import('@/pages/llm-assistant'));
 const LlmObservability = lazy(() => import('@/pages/llm-observability'));
 const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
 const Settings = lazy(() => import('@/pages/settings'));
+const Backups = lazy(() => import('@/pages/backups'));
 const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/pages/packet-capture'));
@@ -27,6 +28,9 @@ const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
 const StatusPage = lazy(() => import('@/pages/status-page'));
 const Reports = lazy(() => import('@/pages/reports'));
 const LogViewer = lazy(() => import('@/pages/log-viewer'));
+const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
+const Webhooks = lazy(() => import('@/pages/webhooks'));
+const Users = lazy(() => import('@/pages/users'));
 
 function PageLoader() {
   return (
@@ -80,6 +84,11 @@ export const router = createBrowserRouter([
       { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
       { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
+      { path: 'webhooks', element: <LazyPage><Webhooks /></LazyPage> },
+      { path: 'users', element: <LazyPage><Users /></LazyPage> },
+      { path: 'investigations/:id', element: <LazyPage><InvestigationDetail /></LazyPage> },
+      { path: 'investigations/insight/:insightId', element: <LazyPage><InvestigationDetail /></LazyPage> },
+      { path: 'backups', element: <LazyPage><Backups /></LazyPage> },
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
     ],
   },

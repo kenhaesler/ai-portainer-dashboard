@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+
+const mockUseForecasts = vi.fn();
 
 // Mock all hooks
 vi.mock('@/hooks/use-endpoints', () => ({
@@ -24,7 +26,7 @@ vi.mock('@/hooks/use-metrics', () => ({
 
 vi.mock('@/hooks/use-forecasts', () => ({
   useContainerForecast: vi.fn().mockReturnValue({ data: null }),
-  useForecasts: vi.fn().mockReturnValue({ data: [] }),
+  useForecasts: (...args: unknown[]) => mockUseForecasts(...args),
 }));
 
 vi.mock('@/hooks/use-auto-refresh', () => ({
@@ -68,6 +70,14 @@ function renderPage() {
 }
 
 describe('MetricsDashboardPage', () => {
+  beforeEach(() => {
+    mockUseForecasts.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    });
+  });
+
   it('renders the page title', () => {
     renderPage();
     expect(screen.getByText('Metrics Dashboard')).toBeTruthy();
@@ -82,5 +92,57 @@ describe('MetricsDashboardPage', () => {
     renderPage();
     const select = screen.getAllByRole('combobox')[0];
     expect(select).toBeTruthy();
+  });
+
+  it('renders forecast overview rows and risk badges', () => {
+    mockUseForecasts.mockReturnValue({
+      data: [
+        {
+          containerId: 'c-risk',
+          containerName: 'api-1',
+          metricType: 'cpu',
+          currentValue: 92,
+          trend: 'increasing',
+          slope: 1.1,
+          r_squared: 0.9,
+          forecast: [],
+          timeToThreshold: 1,
+          confidence: 'high',
+        },
+        {
+          containerId: 'c-stable',
+          containerName: 'worker-2',
+          metricType: 'memory',
+          currentValue: 48,
+          trend: 'stable',
+          slope: 0.1,
+          r_squared: 0.7,
+          forecast: [],
+          timeToThreshold: null,
+          confidence: 'medium',
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage();
+    expect(screen.getByText('Forecast Overview (Next 24h)')).toBeTruthy();
+    expect(screen.getByText('api-1')).toBeTruthy();
+    expect(screen.getByText('worker-2')).toBeTruthy();
+    expect(screen.getByText('Critical: 1')).toBeTruthy();
+    expect(screen.getByText('Healthy: 1')).toBeTruthy();
+  });
+
+  it('renders forecast overview error state', () => {
+    mockUseForecasts.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error('Forecast API unavailable'),
+    });
+
+    renderPage();
+    expect(screen.getByText('Failed to load forecast overview')).toBeTruthy();
+    expect(screen.getByText('Forecast API unavailable')).toBeTruthy();
   });
 });

@@ -15,6 +15,9 @@ import {
   MessageSquare,
   Activity,
   FileSearch,
+  Database,
+  Webhook,
+  Users,
   Settings,
   RefreshCw,
   Palette,
@@ -55,6 +58,9 @@ const pages: PageEntry[] = [
   { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
   { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
   { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
+  { label: 'Webhooks', to: '/webhooks', icon: Webhook },
+  { label: 'Users', to: '/users', icon: Users },
+  { label: 'Backups', to: '/backups', icon: Database },
   { label: 'Settings', to: '/settings', icon: Settings },
 ];
 
