@@ -23,6 +23,7 @@ const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/pages/packet-capture'));
 const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
+const StatusPage = lazy(() => import('@/pages/status-page'));
 
 function PageLoader() {
   return (
@@ -45,6 +46,11 @@ export const router = createBrowserRouter([
   {
     path: '/auth/callback',
     element: <LazyPage><AuthCallback /></LazyPage>,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/status',
+    element: <LazyPage><StatusPage /></LazyPage>,
     errorElement: <RouteErrorBoundary />,
   },
   {

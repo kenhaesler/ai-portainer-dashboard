@@ -31,6 +31,7 @@ import { pcapRoutes } from './routes/pcap.js';
 import { prometheusRoutes } from './routes/prometheus.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { incidentsRoutes } from './routes/incidents.js';
+import { statusPageRoutes } from './routes/status-page.js';
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -86,6 +87,7 @@ export async function buildApp() {
   await app.register(prometheusRoutes);
   await app.register(webhookRoutes);
   await app.register(incidentsRoutes);
+  await app.register(statusPageRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);
