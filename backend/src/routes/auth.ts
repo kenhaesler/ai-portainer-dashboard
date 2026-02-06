@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { signJwt } from '../utils/crypto.js';
 import { createSession, getSession, invalidateSession, refreshSession } from '../services/session-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-import { authenticateUser, ensureDefaultAdmin } from '../services/user-store.js';
+import { authenticateUser, ensureDefaultAdmin, getUserDefaultLandingPage } from '../services/user-store.js';
 import { LoginRequestSchema } from '../models/auth.js';
 import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
 
@@ -62,6 +62,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       token,
       username: user.username,
       expiresAt: session.expires_at,
+      defaultLandingPage: getUserDefaultLandingPage(user.id),
     };
   });
 

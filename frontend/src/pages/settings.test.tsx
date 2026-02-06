@@ -1,14 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { NotificationTestButtons } from './settings';
+import { DefaultLandingPagePreference } from './settings';
 
-const mockPost = vi.fn();
+const mockGet = vi.fn();
+const mockPatch = vi.fn();
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
-    post: (...args: unknown[]) => mockPost(...args),
+    get: (...args: unknown[]) => mockGet(...args),
+    patch: (...args: unknown[]) => mockPatch(...args),
   },
 }));
 
@@ -19,32 +21,38 @@ vi.mock('sonner', () => ({
   },
 }));
 
-describe('Settings notification test actions', () => {
+describe('DefaultLandingPagePreference', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGet.mockResolvedValue({ defaultLandingPage: '/workloads' });
+    mockPatch.mockResolvedValue({ defaultLandingPage: '/workloads' });
   });
 
-  it('shows success toast when API returns success true', async () => {
-    mockPost.mockResolvedValue({ success: true });
-
-    render(<NotificationTestButtons />);
-    fireEvent.click(screen.getByRole('button', { name: /test teams/i }));
+  it('loads and renders saved landing page preference', async () => {
+    render(<DefaultLandingPagePreference />);
 
     await waitFor(() => {
-      expect(mockSuccess).toHaveBeenCalledWith('Test teams notification sent successfully');
+      expect(mockGet).toHaveBeenCalledWith('/api/settings/preferences');
     });
-    expect(mockError).not.toHaveBeenCalled();
+
+    expect(screen.getByLabelText('Default Landing Page')).toHaveValue('/workloads');
   });
 
-  it('shows error toast when API returns success false', async () => {
-    mockPost.mockResolvedValue({ success: false, error: 'Webhook URL not configured' });
-
-    render(<NotificationTestButtons />);
-    fireEvent.click(screen.getByRole('button', { name: /test teams/i }));
+  it('saves updated landing page preference', async () => {
+    render(<DefaultLandingPagePreference />);
 
     await waitFor(() => {
-      expect(mockError).toHaveBeenCalledWith('Failed to send test teams notification: Webhook URL not configured');
+      expect(screen.getByLabelText('Default Landing Page')).toHaveValue('/workloads');
     });
-    expect(mockSuccess).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Default Landing Page'), {
+      target: { value: '/ai-monitor' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith('/api/settings/preferences', { defaultLandingPage: '/ai-monitor' });
+      expect(mockSuccess).toHaveBeenCalledWith('Default landing page updated');
+    });
   });
 });

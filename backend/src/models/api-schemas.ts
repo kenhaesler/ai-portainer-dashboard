@@ -20,6 +20,7 @@ export const LoginResponseSchema = z.object({
   token: z.string(),
   username: z.string(),
   expiresAt: z.string(),
+  defaultLandingPage: z.string(),
 });
 
 export const SessionResponseSchema = z.object({
@@ -213,6 +214,14 @@ export const SettingKeyParamsSchema = z.object({
 export const SettingUpdateBodySchema = z.object({
   value: z.string(),
   category: z.string().default('general'),
+});
+
+export const PreferencesResponseSchema = z.object({
+  defaultLandingPage: z.string(),
+});
+
+export const PreferencesUpdateBodySchema = z.object({
+  defaultLandingPage: z.string(),
 });
 
 export const AuditLogQuerySchema = z.object({

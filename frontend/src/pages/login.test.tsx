@@ -85,7 +85,7 @@ describe('LoginPage', () => {
   });
 
   it('shows loading state and delays navigation for success animation', async () => {
-    mockLogin.mockResolvedValue(undefined);
+    mockLogin.mockResolvedValue({ defaultLandingPage: '/ai-monitor' });
 
     render(
       <MemoryRouter>
@@ -104,7 +104,7 @@ describe('LoginPage', () => {
     });
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/ai-monitor', { replace: true });
     }, { timeout: 1200 });
   });
 });

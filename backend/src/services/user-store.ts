@@ -13,6 +13,7 @@ export interface User {
   username: string;
   password_hash: string;
   role: Role;
+  default_landing_page: string;
   created_at: string;
   updated_at: string;
 }
@@ -59,8 +60,8 @@ export async function createUser(username: string, password: string, role: Role)
   const id = crypto.randomUUID();
   const passwordHash = await hashPassword(password);
   db.prepare(`
-    INSERT INTO users (id, username, password_hash, role)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO users (id, username, password_hash, role, default_landing_page)
+    VALUES (?, ?, ?, ?, '/')
   `).run(id, username, passwordHash, role);
   const user = getUserById(id)!;
   return toSafe(user);
@@ -68,7 +69,7 @@ export async function createUser(username: string, password: string, role: Role)
 
 export async function updateUser(
   id: string,
-  updates: { username?: string; password?: string; role?: Role }
+  updates: { username?: string; password?: string; role?: Role; default_landing_page?: string }
 ): Promise<UserSafe | undefined> {
   const db = getDb();
   const existing = getUserById(id);
@@ -80,6 +81,7 @@ export async function updateUser(
   if (updates.username !== undefined) { sets.push('username = ?'); values.push(updates.username); }
   if (updates.password !== undefined) { sets.push('password_hash = ?'); values.push(await hashPassword(updates.password)); }
   if (updates.role !== undefined) { sets.push('role = ?'); values.push(updates.role); }
+  if (updates.default_landing_page !== undefined) { sets.push('default_landing_page = ?'); values.push(updates.default_landing_page); }
 
   if (sets.length === 0) return toSafe(existing);
 
@@ -101,6 +103,21 @@ export async function authenticateUser(username: string, password: string): Prom
   if (!user) return null;
   const valid = await comparePassword(password, user.password_hash);
   return valid ? user : null;
+}
+
+export function getUserDefaultLandingPage(userId: string): string {
+  const user = getUserById(userId);
+  return user?.default_landing_page || '/';
+}
+
+export function setUserDefaultLandingPage(userId: string, defaultLandingPage: string): boolean {
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE users
+    SET default_landing_page = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(defaultLandingPage, userId);
+  return result.changes > 0;
 }
 
 export async function ensureDefaultAdmin(): Promise<void> {

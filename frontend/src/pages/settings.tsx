@@ -96,6 +96,16 @@ const DEFAULT_SETTINGS = {
   ],
 } as const;
 
+const LANDING_PAGE_OPTIONS = [
+  { value: '/', label: 'Home' },
+  { value: '/workloads', label: 'Workload Explorer' },
+  { value: '/fleet', label: 'Fleet Overview' },
+  { value: '/ai-monitor', label: 'AI Monitor' },
+  { value: '/metrics', label: 'Metrics Dashboard' },
+  { value: '/remediation', label: 'Remediation' },
+  { value: '/assistant', label: 'LLM Assistant' },
+] as const;
+
 type SettingCategory = keyof typeof DEFAULT_SETTINGS;
 
 function ThemeIcon({ theme }: { theme: Theme }) {
@@ -320,6 +330,87 @@ export function NotificationTestButtons() {
           {testingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
           Test Email
         </button>
+      </div>
+    </div>
+  );
+}
+
+export function DefaultLandingPagePreference() {
+  const [value, setValue] = useState('/');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const data = await api.get<{ defaultLandingPage?: string }>('/api/settings/preferences');
+        if (!active) return;
+        const route = data.defaultLandingPage || '/';
+        const isValid = LANDING_PAGE_OPTIONS.some((option) => option.value === route);
+        setValue(isValid ? route : '/');
+      } catch {
+        if (!active) return;
+        setValue('/');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const savePreference = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/api/settings/preferences', { defaultLandingPage: value });
+      toast.success('Default landing page updated');
+    } catch (err) {
+      toast.error(`Failed to save default landing page: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-card p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Settings2 className="h-5 w-5" />
+        <h2 className="text-lg font-semibold">General</h2>
+      </div>
+      <div className="flex flex-col gap-2">
+        <label htmlFor="default-landing-page" className="text-sm font-medium">
+          Default Landing Page
+        </label>
+        <div className="flex items-center gap-3">
+          <select
+            id="default-landing-page"
+            value={value}
+            disabled={loading || saving}
+            onChange={(e) => setValue(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          >
+            {LANDING_PAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={savePreference}
+            disabled={loading || saving}
+            className="flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save
+          </button>
+        </div>
+        <p className="text-sm text-muted-foreground">Page shown after login. Fallback is Home if route becomes invalid.</p>
       </div>
     </div>
   );
@@ -587,6 +678,8 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      <DefaultLandingPagePreference />
 
       {/* Authentication Settings */}
       <SettingsSection
