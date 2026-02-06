@@ -12,10 +12,12 @@ import { insertInsight, getRecentInsights, type InsightInsert } from './insights
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { suggestAction } from './remediation-service.js';
 import { triggerInvestigation } from './investigation-service.js';
+import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
 import { notifyInsight } from './notification-service.js';
 import { emitEvent } from './event-bus.js';
+import { correlateInsights } from './incident-correlator.js';
 
 const log = createChildLogger('monitoring-service');
 
@@ -69,6 +71,14 @@ export async function runMonitoringCycle(): Promise<void> {
     const normalizedContainers = allContainers.map((c) =>
       normalizeContainer(c.raw, c.endpointId, c.endpointName),
     );
+
+    insertMonitoringSnapshot({
+      containersRunning: normalizedContainers.filter((c) => c.state === 'running').length,
+      containersStopped: normalizedContainers.filter((c) => c.state === 'stopped').length,
+      containersUnhealthy: endpoints.reduce((acc, endpoint) => acc + endpoint.containersUnhealthy, 0),
+      endpointsUp: endpoints.filter((endpoint) => endpoint.status === 'up').length,
+      endpointsDown: endpoints.filter((endpoint) => endpoint.status === 'down').length,
+    });
 
     // 2. Collect metrics for running containers
     const metricsToInsert: MetricInsert[] = [];
@@ -284,6 +294,26 @@ export async function runMonitoringCycle(): Promise<void> {
       }
     }
 
+    // 8. Correlate insights into incidents (alert grouping)
+    if (allInsights.length > 0) {
+      try {
+        const storedInsights = allInsights.map((ins) => ({
+          ...ins,
+          is_acknowledged: 0,
+          created_at: new Date().toISOString(),
+        }));
+        const correlation = correlateInsights(storedInsights as Insight[]);
+        if (correlation.incidentsCreated > 0) {
+          log.info(
+            { incidentsCreated: correlation.incidentsCreated, insightsGrouped: correlation.insightsGrouped },
+            'Alert correlation completed',
+          );
+        }
+      } catch (err) {
+        log.warn({ err }, 'Alert correlation failed');
+      }
+    }
+
     const duration = Date.now() - startTime;
     log.info(
       {
@@ -302,5 +332,11 @@ export async function runMonitoringCycle(): Promise<void> {
   } catch (err) {
     log.error({ err }, 'Monitoring cycle failed');
     throw err;
+  } finally {
+    try {
+      insertMonitoringCycle(Date.now() - startTime);
+    } catch (err) {
+      log.warn({ err }, 'Failed to persist monitoring cycle duration');
+    }
   }
 }

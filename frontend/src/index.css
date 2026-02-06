@@ -771,23 +771,334 @@
   animation: status-pulse 2s ease-in-out infinite;
 }
 
-/* ====== PAGE TRANSITION ANIMATIONS ====== */
-@keyframes page-fade-in {
+
+/* ============================================
+   CINEMATIC LOGIN EXPERIENCE
+   ============================================ */
+
+.login-gradient-mesh {
+  position: absolute;
+  inset: -30%;
+  z-index: 0;
+  background:
+    conic-gradient(from 90deg at 20% 20%, oklch(70% 0.14 240 / 0.3), transparent 35%),
+    conic-gradient(from 210deg at 80% 15%, oklch(72% 0.12 340 / 0.25), transparent 40%),
+    conic-gradient(from 330deg at 75% 85%, oklch(78% 0.12 165 / 0.25), transparent 35%),
+    radial-gradient(circle at 30% 70%, oklch(60% 0.08 250 / 0.25), transparent 40%),
+    radial-gradient(circle at 70% 30%, oklch(82% 0.08 110 / 0.2), transparent 40%);
+  filter: blur(56px);
+}
+
+.login-gradient-mesh-animate {
+  animation: login-mesh-shift 16s linear infinite;
+}
+
+.login-card {
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-color: color-mix(in oklab, var(--color-border) 70%, transparent);
+}
+
+.login-stage-in {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  filter: blur(6px);
+  animation: login-stage-in 520ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.login-logo-shell {
+  animation: login-logo-shell-in 380ms cubic-bezier(0.2, 0.75, 0.1, 1) 120ms both;
+}
+
+.login-logo {
+  overflow: visible;
+}
+
+.login-logo-path {
+  stroke-dasharray: 140;
+  stroke-dashoffset: 140;
+  animation: login-logo-draw 520ms ease forwards;
+  animation-delay: var(--path-delay, 0ms);
+}
+
+.login-logo-shell .login-logo {
+  animation: login-logo-pulse 2.8s ease-in-out 720ms infinite;
+}
+
+.login-typewriter {
+  margin-inline: auto;
+  width: 13.8ch;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid color-mix(in oklab, var(--color-foreground) 60%, transparent);
+  animation:
+    login-typewriter 1s steps(13, end) 260ms both,
+    login-cursor 900ms step-end infinite;
+}
+
+.login-particle {
+  position: absolute;
+  bottom: -1.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, oklch(68% 0.16 248 / 0.8), oklch(76% 0.18 165 / 0.8));
+  box-shadow: 0 0 12px oklch(72% 0.16 248 / 0.35);
+  animation-name: login-float-particle;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.login-input {
+  transition:
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    transform 200ms ease,
+    background-color 250ms ease;
+}
+
+.login-input:focus-visible {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--color-card), var(--color-card)) padding-box,
+    linear-gradient(115deg, oklch(72% 0.16 248), oklch(75% 0.18 165), oklch(76% 0.14 28)) border-box;
+  border: 1px solid transparent;
+  box-shadow:
+    0 0 0 3px oklch(72% 0.13 248 / 0.2),
+    0 8px 16px oklch(18% 0.03 265 / 0.18);
+  transform: scale(1.01);
+}
+
+.login-submit {
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.login-submit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    95deg,
+    transparent 0%,
+    color-mix(in oklab, #fff 65%, transparent) 45%,
+    transparent 100%
+  );
+  transition: transform 350ms ease;
+}
+
+.login-submit:hover::before {
+  transform: translateX(120%);
+}
+
+.login-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px color-mix(in oklab, var(--color-primary) 45%, transparent);
+}
+
+.login-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid color-mix(in oklab, var(--color-primary-foreground) 35%, transparent);
+  border-top-color: var(--color-primary-foreground);
+  animation: login-spin 600ms linear infinite;
+}
+
+.login-burst {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--color-primary-foreground) 80%, white);
+  opacity: 0;
+  animation: login-burst 420ms ease-out forwards;
+}
+
+.login-burst-1 {
+  left: 30%;
+  top: 50%;
+  animation-delay: 10ms;
+}
+
+.login-burst-2 {
+  left: 45%;
+  top: 25%;
+  animation-delay: 30ms;
+}
+
+.login-burst-3 {
+  left: 60%;
+  top: 60%;
+  animation-delay: 50ms;
+}
+
+.login-burst-4 {
+  left: 72%;
+  top: 35%;
+  animation-delay: 70ms;
+}
+
+.login-error-shake {
+  animation: login-error-shake 260ms ease;
+}
+
+@keyframes login-stage-in {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes login-logo-shell-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: scale(0.95) translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1) translateY(0);
   }
 }
 
-.animate-page-in {
-  animation: page-fade-in 0.3s ease-out;
+@keyframes login-logo-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
-/* Apply to main content area */
-main > div {
-  animation: page-fade-in 0.25s ease-out;
+@keyframes login-logo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 10px oklch(72% 0.14 248 / 0.35));
+  }
+}
+
+@keyframes login-typewriter {
+  from {
+    width: 0;
+  }
+  to {
+    width: 13.8ch;
+  }
+}
+
+@keyframes login-cursor {
+  50% {
+    border-right-color: transparent;
+  }
+}
+
+@keyframes login-float-particle {
+  from {
+    transform: translateY(0) scale(0.9);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-110vh) scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes login-burst {
+  0% {
+    transform: translate(0, 0) scale(0.7);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(18px, -12px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes login-error-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes login-mesh-shift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(56px) hue-rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-2%, 2%, 0) scale(1.04);
+    filter: blur(62px) hue-rotate(20deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(56px) hue-rotate(0deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    padding: 1.5rem;
+  }
+
+  .login-gradient-mesh {
+    inset: -45%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-gradient-mesh-animate,
+  .login-stage-in,
+  .login-logo-shell,
+  .login-logo-path,
+  .login-typewriter,
+  .login-particle,
+  .login-submit::before,
+  .login-spinner,
+  .login-burst,
+  .login-error-shake {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .login-typewriter {
+    border-right: 0;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .login-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }

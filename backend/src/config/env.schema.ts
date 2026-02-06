@@ -29,6 +29,8 @@ export const envSchema = z.object({
   METRICS_COLLECTION_ENABLED: z.coerce.boolean().default(true),
   METRICS_COLLECTION_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
   METRICS_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+  PROMETHEUS_METRICS_ENABLED: z.coerce.boolean().default(false),
+  PROMETHEUS_BEARER_TOKEN: z.string().optional(),
 
   // Anomaly Detection
   ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(2.5),
