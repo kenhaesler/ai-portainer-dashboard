@@ -168,12 +168,24 @@ This dashboard aims for a **state-of-the-art, premium visual experience** that c
 
 Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radius, and spacing tokens. Theme transitions should be smooth (300ms on color/background properties).
 
+### Dashboard Background (Animated)
+Configurable animated gradient mesh background with optional floating particles, stored in Zustand (`theme-store.ts`). Three modes: `none`, `gradient-mesh`, `gradient-mesh-particles`. Configured in Settings > Appearance.
+
+**Key files:**
+- `frontend/src/components/layout/dashboard-background.tsx` — Renders the `fixed inset-0 z-0` gradient mesh + particles
+- `frontend/src/stores/theme-store.ts` — `DashboardBackground` type, `dashboardBackgroundOptions`, store state
+- `frontend/src/index.css` — Glass override rules (search for `ANIMATED BACKGROUND`)
+
+**Glass override pattern:** When background is active, sidebar, header, activity feed, and content elements (cards, inputs, tables) become translucent. This uses `data-animated-bg` HTML attributes and CSS `color-mix(in srgb, var(...) 35%, transparent)` with `!important` to override Apple theme rules. The override rules **must** come AFTER Apple theme rules in `index.css` to win the specificity battle. Apple theme `& nav` rules exclude `aside nav` via `:not(aside nav)` to prevent double-background on the sidebar's inner nav element.
+
 ### Layout Patterns
 - **Bento grids** for dashboards — `auto-rows-[minmax(180px,1fr)]` with 1-4 column responsive grid
 - **Hero cards** span 2 columns for primary KPIs with animated counters
 - **Compact sparklines** in KPI cards for trend visualization
-- **Sidebar** — Collapsible (60px collapsed / 16rem expanded), glassmorphic background, 4 logical navigation groups
+- **Sidebar** — Collapsible (60px collapsed / 16rem expanded), glassmorphic background, 4 logical navigation groups, hidden scrollbar (thin on hover)
 - **Header** — Fixed top bar with breadcrumbs, command palette trigger (Ctrl+K), theme toggle, user menu
+- **Activity Feed** — Fixed bottom bar with real-time events, expandable (max-h-64), translucent with animated background
+- **Dashboard Background** — Optional `fixed inset-0 z-0` gradient mesh reusing login page CSS animations, configurable in settings
 
 ### Animation Standards
 - **Durations**: 150ms (micro-interactions), 250ms (state changes), 400ms (page transitions)
