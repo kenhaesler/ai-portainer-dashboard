@@ -76,4 +76,41 @@ describe('Sidebar', () => {
 
     expect(screen.getByTestId('sidebar-active-indicator')).toBeInTheDocument();
   });
+
+  it('renders all navigation groups', () => {
+    mockUseRemediationActions.mockReturnValue({
+      data: [],
+    } as any);
+
+    renderSidebar();
+
+    expect(screen.getByText('Overview')).toBeInTheDocument();
+    expect(screen.getByText('Containers')).toBeInTheDocument();
+    expect(screen.getByText('Intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Operations')).toBeInTheDocument();
+  });
+
+  it('renders collapse toggle button', () => {
+    mockUseRemediationActions.mockReturnValue({
+      data: [],
+    } as any);
+
+    renderSidebar();
+
+    expect(screen.getByLabelText('Collapse sidebar')).toBeInTheDocument();
+  });
+
+  it('renders animated badge with data-testid', () => {
+    mockUseRemediationActions.mockReturnValue({
+      data: [
+        { id: '1', type: 'restart', status: 'pending', containerId: 'c1', endpointId: 1, description: 'test', suggestedBy: 'ai', createdAt: '', updatedAt: '' },
+      ],
+    } as any);
+
+    renderSidebar();
+
+    const badge = screen.getByTestId('sidebar-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('1');
+  });
 });
