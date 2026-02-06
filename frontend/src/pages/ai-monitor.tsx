@@ -423,7 +423,7 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
 
   return (
     <div className={cn(
-      'rounded-lg border-2 bg-card transition-all',
+      'overflow-hidden rounded-lg border-2 bg-card transition-all',
       isActive
         ? incident.severity === 'critical'
           ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
@@ -542,7 +542,7 @@ function InsightCard({ insight, investigation }: InsightCardProps) {
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card transition-all',
+        'overflow-hidden rounded-lg border bg-card transition-all',
         expanded && 'ring-2 ring-primary/20'
       )}
     >
@@ -742,7 +742,7 @@ export default function AiMonitorPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -757,7 +757,7 @@ export default function AiMonitorPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards — click to toggle real-time alerts */}
       <div className="grid gap-4 md:grid-cols-4">
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between">
@@ -766,57 +766,51 @@ export default function AiMonitorPage() {
           </div>
           <p className="mt-2 text-3xl font-bold">{stats.total}</p>
         </div>
-        <div
-          className={cn(
-            'rounded-lg border p-4 cursor-pointer transition-all',
-            subscribedSeverities.has('critical')
-              ? 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500/20'
-              : 'bg-card opacity-60'
-          )}
-          onClick={() => handleSeverityToggle('critical')}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-red-800 dark:text-red-200">Critical</p>
-            <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-red-900 dark:text-red-100">
-            {stats.critical}
-          </p>
-        </div>
-        <div
-          className={cn(
-            'rounded-lg border p-4 cursor-pointer transition-all',
-            subscribedSeverities.has('warning')
-              ? 'bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-500/20'
-              : 'bg-card opacity-60'
-          )}
-          onClick={() => handleSeverityToggle('warning')}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Warnings</p>
-            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-amber-900 dark:text-amber-100">
-            {stats.warning}
-          </p>
-        </div>
-        <div
-          className={cn(
-            'rounded-lg border p-4 cursor-pointer transition-all',
-            subscribedSeverities.has('info')
-              ? 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20'
-              : 'bg-card opacity-60'
-          )}
-          onClick={() => handleSeverityToggle('info')}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Info</p>
-            <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-blue-900 dark:text-blue-100">
-            {stats.info}
-          </p>
-        </div>
+        {([
+          { severity: 'critical' as const, label: 'Critical', icon: AlertTriangle, count: stats.critical,
+            active: 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500/20',
+            text: 'text-red-800 dark:text-red-200', iconColor: 'text-red-600 dark:text-red-400',
+            countColor: 'text-red-900 dark:text-red-100', dotColor: 'bg-red-500' },
+          { severity: 'warning' as const, label: 'Warnings', icon: AlertCircle, count: stats.warning,
+            active: 'bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-500/20',
+            text: 'text-amber-800 dark:text-amber-200', iconColor: 'text-amber-600 dark:text-amber-400',
+            countColor: 'text-amber-900 dark:text-amber-100', dotColor: 'bg-amber-500' },
+          { severity: 'info' as const, label: 'Info', icon: Info, count: stats.info,
+            active: 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20',
+            text: 'text-blue-800 dark:text-blue-200', iconColor: 'text-blue-600 dark:text-blue-400',
+            countColor: 'text-blue-900 dark:text-blue-100', dotColor: 'bg-blue-500' },
+        ]).map((card) => {
+          const isSubscribed = subscribedSeverities.has(card.severity);
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.severity}
+              className={cn(
+                'rounded-lg border p-4 cursor-pointer transition-all',
+                isSubscribed ? card.active : 'bg-card opacity-60'
+              )}
+              onClick={() => handleSeverityToggle(card.severity)}
+              title={isSubscribed ? `Click to pause ${card.label.toLowerCase()} live alerts` : `Click to enable ${card.label.toLowerCase()} live alerts`}
+            >
+              <div className="flex items-center justify-between">
+                <p className={cn('text-sm font-medium', card.text)}>{card.label}</p>
+                <Icon className={cn('h-5 w-5', card.iconColor)} />
+              </div>
+              <p className={cn('mt-2 text-3xl font-bold', card.countColor)}>
+                {card.count}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className={cn(
+                  'h-2 w-2 rounded-full',
+                  isSubscribed ? card.dotColor + ' animate-pulse' : 'bg-muted-foreground/40'
+                )} />
+                <span className="text-xs text-muted-foreground">
+                  {isSubscribed ? 'Live alerts' : 'Paused'}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Severity Filter Tabs */}
