@@ -15,6 +15,7 @@ import { triggerInvestigation } from './investigation-service.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
 import { notifyInsight } from './notification-service.js';
+import { emitEvent } from './event-bus.js';
 
 const log = createChildLogger('monitoring-service');
 
@@ -238,6 +239,23 @@ export async function runMonitoringCycle(): Promise<void> {
 
         // Broadcast insight in real-time via Socket.IO
         broadcastInsight(insight as Insight);
+
+        // Emit event for webhooks
+        const eventType = insight.category === 'anomaly' ? 'anomaly.detected' : 'insight.created';
+        emitEvent({
+          type: eventType,
+          timestamp: new Date().toISOString(),
+          data: {
+            insightId: insight.id,
+            severity: insight.severity,
+            category: insight.category,
+            title: insight.title,
+            description: insight.description,
+            containerId: insight.container_id,
+            containerName: insight.container_name,
+            endpointId: insight.endpoint_id,
+          },
+        });
 
         // Send notification for critical/warning insights
         if (insight.severity === 'critical' || insight.severity === 'warning') {

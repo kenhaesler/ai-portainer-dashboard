@@ -5,6 +5,7 @@ import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
+import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
 
 const log = createChildLogger('scheduler');
 
@@ -122,6 +123,27 @@ export function startScheduler(): void {
     intervals.push(monitoringInterval);
   }
 
+  // Webhook retry processing
+  if (config.WEBHOOKS_ENABLED) {
+    startWebhookListener();
+    const retryIntervalMs = config.WEBHOOKS_RETRY_INTERVAL_SECONDS * 1000;
+    log.info(
+      { retryIntervalSeconds: config.WEBHOOKS_RETRY_INTERVAL_SECONDS },
+      'Starting webhook retry scheduler',
+    );
+    const webhookRetryInterval = setInterval(async () => {
+      try {
+        const processed = await processRetries();
+        if (processed > 0) {
+          log.info({ processed }, 'Webhook retries processed');
+        }
+      } catch (err) {
+        log.error({ err }, 'Webhook retry processing failed');
+      }
+    }, retryIntervalMs);
+    intervals.push(webhookRetryInterval);
+  }
+
   // Cleanup old metrics once per day
   const cleanupInterval = setInterval(runCleanup, 24 * 60 * 60 * 1000);
   intervals.push(cleanupInterval);
@@ -134,5 +156,6 @@ export function stopScheduler(): void {
     clearInterval(interval);
   }
   intervals.length = 0;
+  stopWebhookListener();
   log.info('Scheduler stopped');
 }
