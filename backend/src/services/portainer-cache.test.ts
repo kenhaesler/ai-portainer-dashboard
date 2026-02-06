@@ -9,8 +9,14 @@ const baseConfig = {
 function createMockRedisClient() {
   const store = new Map<string, string>();
 
+  const mockPipeline = {
+    set: vi.fn().mockReturnThis(),
+    exec: vi.fn(async () => []),
+  };
+
   return {
     isOpen: false,
+    _store: store,
     connect: vi.fn(async function connect(this: { isOpen: boolean }) {
       this.isOpen = true;
     }),
@@ -20,6 +26,10 @@ function createMockRedisClient() {
       store.set(key, value);
       return 'OK';
     }),
+    mGet: vi.fn(async (keys: string[]) =>
+      keys.map((k) => store.get(k) ?? null),
+    ),
+    multi: vi.fn(() => mockPipeline),
     del: vi.fn(async (keys: string | string[]) => {
       const list = Array.isArray(keys) ? keys : [keys];
       for (const key of list) {
@@ -116,5 +126,208 @@ describe('portainer-cache hybrid backend', () => {
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     await expect(cache.getStats()).resolves.toMatchObject({ backend: 'memory' });
+  });
+});
+
+describe('stampede prevention', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('deduplicates concurrent fetches for the same key', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, getInFlightCount } = await import('./portainer-cache.js');
+
+    let resolveOuter!: (v: string) => void;
+    const slowFetcher = vi.fn(() => new Promise<string>((r) => { resolveOuter = r; }));
+
+    // Launch 3 concurrent requests for the same key
+    const p1 = cachedFetch('slow:key', 30, slowFetcher);
+    const p2 = cachedFetch('slow:key', 30, slowFetcher);
+    const p3 = cachedFetch('slow:key', 30, slowFetcher);
+
+    // Only one in-flight promise should exist
+    expect(getInFlightCount()).toBe(1);
+
+    // Yield to microtask queue so the IIFE progresses past cache.get() to call the fetcher
+    await new Promise((r) => setTimeout(r, 0));
+    expect(slowFetcher).toHaveBeenCalledTimes(1);
+
+    resolveOuter('result');
+    const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+
+    expect(r1).toBe('result');
+    expect(r2).toBe('result');
+    expect(r3).toBe('result');
+    expect(getInFlightCount()).toBe(0);
+  });
+
+  it('does not deduplicate fetches for different keys', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch } = await import('./portainer-cache.js');
+    const fetcher1 = vi.fn().mockResolvedValue('a');
+    const fetcher2 = vi.fn().mockResolvedValue('b');
+
+    const [r1, r2] = await Promise.all([
+      cachedFetch('key:1', 30, fetcher1),
+      cachedFetch('key:2', 30, fetcher2),
+    ]);
+
+    expect(r1).toBe('a');
+    expect(r2).toBe('b');
+    expect(fetcher1).toHaveBeenCalledTimes(1);
+    expect(fetcher2).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('cachedFetchMany', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('fetches multiple entries in parallel', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchMany } = await import('./portainer-cache.js');
+
+    const results = await cachedFetchMany([
+      { key: 'batch:a', ttlSeconds: 60, fetcher: () => Promise.resolve('alpha') },
+      { key: 'batch:b', ttlSeconds: 60, fetcher: () => Promise.resolve('beta') },
+      { key: 'batch:c', ttlSeconds: 60, fetcher: () => Promise.resolve('gamma') },
+    ]);
+
+    expect(results).toEqual(['alpha', 'beta', 'gamma']);
+  });
+
+  it('skips cache when CACHE_ENABLED is false', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig, CACHE_ENABLED: false }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetchMany } = await import('./portainer-cache.js');
+    const fetcher = vi.fn().mockResolvedValue('val');
+
+    await cachedFetchMany([
+      { key: 'x', ttlSeconds: 60, fetcher },
+      { key: 'x', ttlSeconds: 60, fetcher },
+    ]);
+
+    // Both calls go through since cache is disabled
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('batch operations (getMany / setMany)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('getMany returns cached values from memory', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    await cache.set('k1', 'v1', 60);
+    await cache.set('k2', 'v2', 60);
+
+    const results = await cache.getMany<string>(['k1', 'k2', 'k3']);
+    expect(results).toEqual(['v1', 'v2', undefined]);
+  });
+
+  it('setMany stores multiple entries in memory', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    await cache.setMany([
+      { key: 'batch:1', data: 100, ttlSeconds: 60 },
+      { key: 'batch:2', data: 200, ttlSeconds: 60 },
+    ]);
+
+    expect(await cache.get<number>('batch:1')).toBe(100);
+    expect(await cache.get<number>('batch:2')).toBe(200);
+  });
+
+  it('getMany uses Redis mGet when available', async () => {
+    const redisClient = createMockRedisClient();
+    redisClient._store.set('aidash:cache:r1', JSON.stringify('redis-v1'));
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const results = await cache.getMany<string>(['r1', 'r2']);
+
+    expect(redisClient.mGet).toHaveBeenCalled();
+    expect(results).toEqual(['redis-v1', undefined]);
+  });
+
+  it('setMany uses Redis pipeline when available', async () => {
+    const execResults: unknown[] = [];
+    const mockPipeline = {
+      set: vi.fn().mockReturnThis(),
+      exec: vi.fn(async () => execResults),
+    };
+    const redisClient = {
+      ...createMockRedisClient(),
+      multi: vi.fn(() => mockPipeline),
+    };
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    await cache.setMany([
+      { key: 'p1', data: 'a', ttlSeconds: 60 },
+      { key: 'p2', data: 'b', ttlSeconds: 120 },
+    ]);
+
+    expect(redisClient.multi).toHaveBeenCalledTimes(1);
+    expect(mockPipeline.set).toHaveBeenCalledTimes(2);
+    expect(mockPipeline.exec).toHaveBeenCalledTimes(1);
   });
 });
