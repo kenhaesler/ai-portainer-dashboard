@@ -102,11 +102,11 @@ export default function LoginPage() {
     setSubmitState("loading");
 
     try {
-      await login(username, password);
+      const { defaultLandingPage } = await login(username, password);
       setSubmitState("success");
       const waitMs = reducedMotion ? 0 : 450;
       window.setTimeout(() => {
-        navigate("/", { replace: true });
+        navigate(defaultLandingPage || "/", { replace: true });
       }, waitMs);
     } catch (err) {
       setError(

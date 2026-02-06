@@ -1,7 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-import { SettingsQuerySchema, SettingKeyParamsSchema, SettingUpdateBodySchema, AuditLogQuerySchema } from '../models/api-schemas.js';
+import {
+  SettingsQuerySchema,
+  SettingKeyParamsSchema,
+  SettingUpdateBodySchema,
+  AuditLogQuerySchema,
+  PreferencesUpdateBodySchema,
+} from '../models/api-schemas.js';
+import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../services/user-store.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
@@ -9,6 +16,15 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 const REDACTED = '••••••••';
+const LANDING_PAGE_OPTIONS = new Set([
+  '/',
+  '/workloads',
+  '/fleet',
+  '/ai-monitor',
+  '/metrics',
+  '/remediation',
+  '/assistant',
+]);
 
 function redactSensitive(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
   return rows.map((row) => {
@@ -20,6 +36,43 @@ function redactSensitive(rows: Array<Record<string, unknown>>): Array<Record<str
 }
 
 export async function settingsRoutes(fastify: FastifyInstance) {
+  fastify.get('/api/settings/preferences', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Get current user preferences',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const userId = request.user?.sub;
+    return {
+      defaultLandingPage: userId ? getUserDefaultLandingPage(userId) : '/',
+    };
+  });
+
+  fastify.patch('/api/settings/preferences', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Update current user preferences',
+      security: [{ bearerAuth: [] }],
+      body: PreferencesUpdateBodySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const userId = request.user?.sub;
+    if (!userId) {
+      return reply.code(401).send({ error: 'Not authenticated' });
+    }
+
+    const { defaultLandingPage } = request.body as { defaultLandingPage: string };
+    if (!LANDING_PAGE_OPTIONS.has(defaultLandingPage)) {
+      return reply.code(400).send({ error: 'Invalid landing page route' });
+    }
+
+    setUserDefaultLandingPage(userId, defaultLandingPage);
+    return { defaultLandingPage };
+  });
+
   // Get all settings
   fastify.get('/api/settings', {
     schema: {

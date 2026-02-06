@@ -12,7 +12,7 @@ interface AuthContextType {
   username: string | null;
   token: string | null;
   role: UserRole;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<{ defaultLandingPage: string }>;
   loginWithToken: (token: string, username: string, role?: UserRole) => void;
   logout: () => Promise<void>;
 }
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (user: string, password: string) => {
-    const data = await api.post<{ token: string; username: string }>(
+    const data = await api.post<{ token: string; username: string; defaultLandingPage?: string }>(
       '/api/auth/login',
       { username: user, password }
     );
@@ -82,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole(userRole);
     storeAuth(data.token, data.username, userRole);
     api.setToken(data.token);
+    return { defaultLandingPage: data.defaultLandingPage || '/' };
   }, []);
 
   const loginWithToken = useCallback((newToken: string, newUsername: string, newRole?: UserRole) => {
