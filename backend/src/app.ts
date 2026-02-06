@@ -5,6 +5,7 @@ import rateLimitPlugin from './plugins/rate-limit.js';
 import swaggerPlugin from './plugins/swagger.js';
 import authPlugin from './plugins/auth.js';
 import socketIoPlugin from './plugins/socket-io.js';
+import compressPlugin from './plugins/compress.js';
 import staticPlugin from './plugins/static.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
@@ -61,6 +62,7 @@ export async function buildApp() {
 
   // Core plugins
   await app.register(requestContext);
+  await app.register(compressPlugin);
   await app.register(corsPlugin);
   await app.register(rateLimitPlugin);
   await app.register(swaggerPlugin);
