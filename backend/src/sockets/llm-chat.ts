@@ -286,7 +286,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
       } catch (err) {
         log.error({ err, userId }, 'LLM chat error');
         socket.emit('chat:error', {
-          error: err instanceof Error ? err.message : 'LLM unavailable',
+          message: err instanceof Error ? err.message : 'LLM unavailable',
         });
       } finally {
         abortController = null;

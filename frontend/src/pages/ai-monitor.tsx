@@ -3,6 +3,7 @@ import { useMonitoring } from '@/hooks/use-monitoring';
 import { useInvestigations, safeParseJson } from '@/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/hooks/use-investigations';
 import { useIncidents, useResolveIncident, type Incident } from '@/hooks/use-incidents';
+import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/hooks/use-correlated-anomalies';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
@@ -27,6 +28,7 @@ import {
   Brain,
   Layers,
   CheckCircle2,
+  Zap,
 } from 'lucide-react';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -83,6 +85,196 @@ function SeverityBadge({ severity }: { severity: Severity }) {
       <Icon className="h-3 w-3" />
       {config.label}
     </span>
+  );
+}
+
+function CorrelationTypeBadge({ type }: { type: string }) {
+  const config: Record<string, { icon: typeof Clock; label: string; className: string }> = {
+    temporal: {
+      icon: Clock,
+      label: 'Temporal',
+      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+    cascade: {
+      icon: Layers,
+      label: 'Cascade',
+      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    },
+    dedup: {
+      icon: Filter,
+      label: 'Dedup',
+      className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    },
+  };
+
+  const entry = config[type] ?? config.temporal;
+  const Icon = entry.icon;
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        entry.className,
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {entry.label}
+    </span>
+  );
+}
+
+function ConfidenceBadge({ confidence }: { confidence: 'high' | 'medium' | 'low' }) {
+  const config = {
+    high: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    low: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  }[confidence];
+
+  return (
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize', config)}>
+      {confidence} confidence
+    </span>
+  );
+}
+
+function CorrelationSeverityBadge({ severity }: { severity: 'low' | 'medium' | 'high' | 'critical' }) {
+  const config = {
+    critical: {
+      icon: AlertTriangle,
+      label: 'Critical',
+      className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    },
+    high: {
+      icon: AlertCircle,
+      label: 'High',
+      className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    },
+    medium: {
+      icon: AlertCircle,
+      label: 'Medium',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    },
+    low: {
+      icon: Info,
+      label: 'Low',
+      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+  }[severity];
+
+  const Icon = config.icon;
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+        config.className,
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </span>
+  );
+}
+
+function PatternBadge({ pattern }: { pattern: string }) {
+  const shortLabel = pattern.includes(':') ? pattern.split(':')[0].trim() : pattern;
+
+  const colorMap: Record<string, string> = {
+    'Resource Exhaustion': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    'Memory Leak Suspected': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    'CPU Spike': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  };
+
+  const colorClass = colorMap[shortLabel] ?? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium', colorClass)}>
+      <Zap className="h-3 w-3" />
+      {shortLabel}
+    </span>
+  );
+}
+
+function DetectionMethodBadge({ method }: { method: string }) {
+  const config: Record<string, { label: string; className: string }> = {
+    zscore: {
+      label: 'Z-Score',
+      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+    bollinger: {
+      label: 'Bollinger',
+      className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+    },
+    adaptive: {
+      label: 'Adaptive',
+      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    },
+  };
+  const entry = config[method] ?? config.zscore;
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', entry.className)}>
+      <Activity className="h-3 w-3" />
+      {entry.label}
+    </span>
+  );
+}
+
+function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
+  const patternDescription = anomaly.pattern?.includes(':')
+    ? anomaly.pattern.split(':').slice(1).join(':').trim()
+    : null;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-card p-4 transition-all',
+        anomaly.severity === 'critical' && 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10',
+        anomaly.severity === 'high' && 'border-orange-500/40 bg-orange-50/30 dark:bg-orange-900/10',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="font-mono text-sm font-medium truncate">{anomaly.containerName}</span>
+        </div>
+        <span className="text-lg font-bold tabular-nums flex-shrink-0" title="Composite score">
+          {anomaly.compositeScore.toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <CorrelationSeverityBadge severity={anomaly.severity} />
+        {anomaly.pattern && <PatternBadge pattern={anomaly.pattern} />}
+      </div>
+
+      {/* Per-metric z-score bars */}
+      <div className="space-y-1.5" data-testid="zscore-bars">
+        {anomaly.metrics.map((m) => {
+          const absZ = Math.abs(m.zScore);
+          const widthPct = Math.min((absZ / 5) * 100, 100);
+          const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
+
+          return (
+            <div key={m.type} className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-20 truncate font-mono">{m.type}</span>
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn('h-full rounded-full transition-all', barColor)}
+                  style={{ width: `${widthPct}%` }}
+                />
+              </div>
+              <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
+                {m.zScore.toFixed(1)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {patternDescription && (
+        <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
+      )}
+    </div>
   );
 }
 
@@ -234,7 +426,7 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
 
   return (
     <div className={cn(
-      'rounded-lg border-2 bg-card transition-all',
+      'overflow-hidden rounded-lg border-2 bg-card transition-all',
       isActive
         ? incident.severity === 'critical'
           ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
@@ -262,9 +454,7 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
                 )}>
                   {isActive ? 'Active Incident' : 'Resolved'}
                 </span>
-                <span className="text-xs text-muted-foreground capitalize">
-                  {incident.correlation_type} correlation
-                </span>
+                <CorrelationTypeBadge type={incident.correlation_type} />
                 <span className="text-xs text-muted-foreground">
                   {formatDate(incident.created_at)}
                 </span>
@@ -312,7 +502,7 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
           )}
 
           <div className="flex items-center gap-4 pt-2 border-t text-xs text-muted-foreground">
-            <span>Confidence: {incident.correlation_confidence}</span>
+            <ConfidenceBadge confidence={incident.correlation_confidence} />
             {incident.endpoint_name && <span>Endpoint: {incident.endpoint_name}</span>}
             <span>ID: {incident.id.slice(0, 8)}</span>
             {isActive && (
@@ -354,10 +544,14 @@ function InsightCard({
   const hasInvestigation = !!investigation;
   const isInvestigating = investigation && ['pending', 'gathering', 'analyzing'].includes(investigation.status);
 
+  const detectionMethod = insight.category === 'anomaly'
+    ? insight.description.match(/method:\s*(\w+)/)?.[1] ?? null
+    : null;
+
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card transition-all',
+        'overflow-hidden rounded-lg border bg-card transition-all',
         expanded && 'ring-2 ring-primary/20'
       )}
     >
@@ -373,6 +567,7 @@ function InsightCard({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <SeverityBadge severity={insight.severity} />
+                {detectionMethod && <DetectionMethodBadge method={detectionMethod} />}
                 {hasInvestigation && (
                   <InvestigationStatusBadge status={investigation.status} />
                 )}
@@ -548,6 +743,7 @@ export default function AiMonitorPage() {
   const { getInvestigationForInsight } = useInvestigations();
   const { data: incidentsData } = useIncidents('active');
   const resolveIncidentMutation = useResolveIncident();
+  const { data: correlatedAnomalies, isLoading: correlatedLoading } = useCorrelatedAnomalies();
 
   // Filter insights by severity
   const filteredInsights = useMemo(() => {
@@ -610,7 +806,7 @@ export default function AiMonitorPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -625,7 +821,7 @@ export default function AiMonitorPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards — click to toggle real-time alerts */}
       <div className="grid gap-4 md:grid-cols-4">
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between">
@@ -634,57 +830,51 @@ export default function AiMonitorPage() {
           </div>
           <p className="mt-2 text-3xl font-bold">{stats.total}</p>
         </div>
-        <div
-          className={cn(
-            'rounded-lg border p-4 cursor-pointer transition-all',
-            subscribedSeverities.has('critical')
-              ? 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500/20'
-              : 'bg-card opacity-60'
-          )}
-          onClick={() => handleSeverityToggle('critical')}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-red-800 dark:text-red-200">Critical</p>
-            <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-red-900 dark:text-red-100">
-            {stats.critical}
-          </p>
-        </div>
-        <div
-          className={cn(
-            'rounded-lg border p-4 cursor-pointer transition-all',
-            subscribedSeverities.has('warning')
-              ? 'bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-500/20'
-              : 'bg-card opacity-60'
-          )}
-          onClick={() => handleSeverityToggle('warning')}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Warnings</p>
-            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-amber-900 dark:text-amber-100">
-            {stats.warning}
-          </p>
-        </div>
-        <div
-          className={cn(
-            'rounded-lg border p-4 cursor-pointer transition-all',
-            subscribedSeverities.has('info')
-              ? 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20'
-              : 'bg-card opacity-60'
-          )}
-          onClick={() => handleSeverityToggle('info')}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Info</p>
-            <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <p className="mt-2 text-3xl font-bold text-blue-900 dark:text-blue-100">
-            {stats.info}
-          </p>
-        </div>
+        {([
+          { severity: 'critical' as const, label: 'Critical', icon: AlertTriangle, count: stats.critical,
+            active: 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500/20',
+            text: 'text-red-800 dark:text-red-200', iconColor: 'text-red-600 dark:text-red-400',
+            countColor: 'text-red-900 dark:text-red-100', dotColor: 'bg-red-500' },
+          { severity: 'warning' as const, label: 'Warnings', icon: AlertCircle, count: stats.warning,
+            active: 'bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-500/20',
+            text: 'text-amber-800 dark:text-amber-200', iconColor: 'text-amber-600 dark:text-amber-400',
+            countColor: 'text-amber-900 dark:text-amber-100', dotColor: 'bg-amber-500' },
+          { severity: 'info' as const, label: 'Info', icon: Info, count: stats.info,
+            active: 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20',
+            text: 'text-blue-800 dark:text-blue-200', iconColor: 'text-blue-600 dark:text-blue-400',
+            countColor: 'text-blue-900 dark:text-blue-100', dotColor: 'bg-blue-500' },
+        ]).map((card) => {
+          const isSubscribed = subscribedSeverities.has(card.severity);
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.severity}
+              className={cn(
+                'rounded-lg border p-4 cursor-pointer transition-all',
+                isSubscribed ? card.active : 'bg-card opacity-60'
+              )}
+              onClick={() => handleSeverityToggle(card.severity)}
+              title={isSubscribed ? `Click to pause ${card.label.toLowerCase()} live alerts` : `Click to enable ${card.label.toLowerCase()} live alerts`}
+            >
+              <div className="flex items-center justify-between">
+                <p className={cn('text-sm font-medium', card.text)}>{card.label}</p>
+                <Icon className={cn('h-5 w-5', card.iconColor)} />
+              </div>
+              <p className={cn('mt-2 text-3xl font-bold', card.countColor)}>
+                {card.count}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className={cn(
+                  'h-2 w-2 rounded-full',
+                  isSubscribed ? card.dotColor + ' animate-pulse' : 'bg-muted-foreground/40'
+                )} />
+                <span className="text-xs text-muted-foreground">
+                  {isSubscribed ? 'Live alerts' : 'Paused'}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Severity Filter Tabs */}
@@ -770,6 +960,35 @@ export default function AiMonitorPage() {
           Unacknowledged
         </button>
       </div>
+
+      {/* Correlated Anomalies */}
+      {(correlatedLoading || (correlatedAnomalies && correlatedAnomalies.length > 0)) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <h2 className="text-lg font-semibold">
+              Correlated Anomalies
+              {correlatedAnomalies && correlatedAnomalies.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({correlatedAnomalies.length})
+                </span>
+              )}
+            </h2>
+          </div>
+          {correlatedLoading ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <SkeletonCard className="h-[180px]" />
+              <SkeletonCard className="h-[180px]" />
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {correlatedAnomalies!.map((anomaly) => (
+                <CorrelatedAnomalyCard key={anomaly.containerId} anomaly={anomaly} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Active Incidents */}
       {incidentsData && incidentsData.incidents.length > 0 && (

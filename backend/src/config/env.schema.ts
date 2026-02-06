@@ -56,6 +56,8 @@ export const envSchema = z.object({
   // Cache
   CACHE_ENABLED: z.coerce.boolean().default(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
+  REDIS_URL: z.string().url().optional(),
+  REDIS_KEY_PREFIX: z.string().default('aidash:cache:'),
 
   // Server
   PORT: z.coerce.number().int().min(1).max(65535).default(3051),

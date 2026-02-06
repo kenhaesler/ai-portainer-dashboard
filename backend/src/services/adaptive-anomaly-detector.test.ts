@@ -64,6 +64,7 @@ describe('adaptive-anomaly-detector', () => {
       const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 75, 'zscore');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(true);
+      expect(result!.method).toBe('zscore');
     });
 
     it('detects normal values correctly', () => {
@@ -80,6 +81,7 @@ describe('adaptive-anomaly-detector', () => {
       const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 65, 'bollinger');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(true);
+      expect(result!.method).toBe('bollinger');
     });
 
     it('uses adaptive method with high variance', () => {
@@ -89,6 +91,7 @@ describe('adaptive-anomaly-detector', () => {
       const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 80, 'adaptive');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(false); // 1.5 < 3.75
+      expect(result!.method).toBe('adaptive');
     });
 
     it('handles zero standard deviation', () => {

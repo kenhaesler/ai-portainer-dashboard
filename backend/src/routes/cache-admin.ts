@@ -16,9 +16,11 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async () => {
+    const stats = await cache.getStats();
+    const entries = await cache.getEntries();
     return {
-      ...cache.getStats(),
-      entries: cache.getEntries(),
+      ...stats,
+      entries,
     };
   });
 
@@ -31,7 +33,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    cache.clear();
+    await cache.clear();
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -68,7 +70,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       });
     }
 
-    cache.invalidatePattern(resource);
+    await cache.invalidatePattern(resource);
 
     writeAuditLog({
       user_id: request.user?.sub,

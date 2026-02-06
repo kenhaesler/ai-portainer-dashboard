@@ -27,6 +27,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
+import { useThemeStore } from '@/stores/theme-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -149,7 +150,7 @@ function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null
 
   return (
     <div
-      className="pointer-events-none absolute bottom-12 left-0 right-0 h-8 bg-gradient-to-t from-sidebar-background/80 to-transparent"
+      className="pointer-events-none absolute bottom-12 left-0 right-0 h-8 bg-gradient-to-t from-sidebar-background/40 to-transparent"
       aria-hidden="true"
       data-testid="scroll-gradient"
     />
@@ -161,15 +162,18 @@ export function Sidebar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const collapsedGroups = useUiStore((s) => s.collapsedGroups);
   const toggleGroup = useUiStore((s) => s.toggleGroup);
+  const dashboardBackground = useThemeStore((s) => s.dashboardBackground);
   const { data: pendingActions } = useRemediationActions('pending');
   const pendingCount = pendingActions?.length ?? 0;
   const reducedMotion = useReducedMotion();
   const navRef = useRef<HTMLElement>(null);
+  const hasAnimatedBg = dashboardBackground !== 'none';
 
   return (
     <aside
+      data-animated-bg={hasAnimatedBg || undefined}
       className={cn(
-        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
         sidebarCollapsed ? 'w-14' : 'w-60'
       )}
     >
@@ -224,7 +228,7 @@ export function Sidebar() {
               ) : (
                 <button
                   onClick={() => toggleGroup(group.title)}
-                  className="mb-1 flex w-full items-center justify-between px-4 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                  className="mb-1 flex w-full items-center justify-between border-b border-border/20 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <span>{group.title}</span>
                   <motion.span
@@ -256,7 +260,7 @@ export function Sidebar() {
                             'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
                             isActive
                               ? 'text-sidebar-accent-foreground'
-                              : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+                              : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
                             sidebarCollapsed && 'justify-center px-0'
                           )
                         }
@@ -268,7 +272,7 @@ export function Sidebar() {
                               <motion.span
                                 layoutId="sidebar-active-pill"
                                 data-testid="sidebar-active-indicator"
-                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-accent shadow-sm"
+                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
                                 transition={
                                   reducedMotion
                                     ? { duration: 0 }

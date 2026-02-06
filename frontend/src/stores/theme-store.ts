@@ -12,6 +12,14 @@ export type Theme =
   | 'catppuccin-macchiato'
   | 'catppuccin-mocha';
 
+export type DashboardBackground = 'none' | 'gradient-mesh' | 'gradient-mesh-particles';
+
+export const dashboardBackgroundOptions: { value: DashboardBackground; label: string; description: string }[] = [
+  { value: 'none', label: 'None', description: 'Plain background' },
+  { value: 'gradient-mesh', label: 'Gradient Mesh', description: 'Animated gradient background' },
+  { value: 'gradient-mesh-particles', label: 'Mesh + Particles', description: 'Gradient with floating particles' },
+];
+
 export const themeOptions: { value: Theme; label: string; description: string }[] = [
   { value: 'system', label: 'System', description: 'Follow system preference' },
   { value: 'light', label: 'Light', description: 'Default light theme' },
@@ -27,6 +35,8 @@ export const themeOptions: { value: Theme; label: string; description: string }[
 interface ThemeState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  dashboardBackground: DashboardBackground;
+  setDashboardBackground: (bg: DashboardBackground) => void;
   resolvedTheme: () => 'dark' | 'light';
   themeClass: () => string;
 }
@@ -36,6 +46,8 @@ export const useThemeStore = create<ThemeState>()(
     (set, get) => ({
       theme: 'system',
       setTheme: (theme) => set({ theme }),
+      dashboardBackground: 'none',
+      setDashboardBackground: (dashboardBackground) => set({ dashboardBackground }),
       resolvedTheme: () => {
         const { theme } = get();
         if (theme === 'system') {

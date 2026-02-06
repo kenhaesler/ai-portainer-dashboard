@@ -41,6 +41,7 @@ export function detectAnomaly(
       is_anomalous: isAnomalous,
       threshold,
       timestamp: new Date().toISOString(),
+      method: 'zscore' as const,
     };
   }
 
@@ -65,5 +66,6 @@ export function detectAnomaly(
     is_anomalous: isAnomalous,
     threshold,
     timestamp: new Date().toISOString(),
+    method: 'zscore' as const,
   };
 }

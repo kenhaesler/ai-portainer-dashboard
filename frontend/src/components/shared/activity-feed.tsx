@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronUp, ChevronDown, AlertCircle, CheckCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { useActivityFeedStore, type ActivityEvent } from '@/stores/activity-feed-store';
 import { useSockets } from '@/providers/socket-provider';
+import { useThemeStore } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
 
 const severityIcons = {
@@ -47,6 +48,8 @@ function EventItem({ event }: { event: ActivityEvent }) {
 export function ActivityFeed() {
   const { events, collapsed, unreadCount, toggleCollapsed, clearAll, addEvent } = useActivityFeedStore();
   const { monitoringSocket, connected } = useSockets();
+  const dashboardBackground = useThemeStore((s) => s.dashboardBackground);
+  const hasAnimatedBg = dashboardBackground !== 'none';
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Subscribe to real-time monitoring events
@@ -104,7 +107,13 @@ export function ActivityFeed() {
   }, [events.length, collapsed]);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur-sm transition-all duration-200 hidden md:block">
+    <div
+      data-animated-bg={hasAnimatedBg || undefined}
+      className={cn(
+        "fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur-sm transition-all duration-200 hidden md:block",
+        hasAnimatedBg && "backdrop-blur-xl"
+      )}
+    >
       {/* Collapsed bar */}
       <button
         onClick={toggleCollapsed}
@@ -147,7 +156,7 @@ export function ActivityFeed() {
           </div>
           <div
             ref={scrollRef}
-            className="max-h-40 overflow-y-auto"
+            className="max-h-64 overflow-y-auto"
           >
             {events.length === 0 ? (
               <p className="px-4 py-3 text-center text-xs text-muted-foreground">

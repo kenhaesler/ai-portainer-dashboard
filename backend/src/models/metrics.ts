@@ -21,6 +21,7 @@ export const AnomalyDetectionSchema = z.object({
   is_anomalous: z.boolean(),
   threshold: z.number(),
   timestamp: z.string(),
+  method: z.enum(['zscore', 'bollinger', 'adaptive']).optional(),
 });
 
 export type Metric = z.infer<typeof MetricSchema>;

@@ -24,7 +24,7 @@ import {
   Webhook,
   Globe,
 } from 'lucide-react';
-import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
+import { useThemeStore, themeOptions, dashboardBackgroundOptions, type Theme, type DashboardBackground } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
@@ -646,7 +646,7 @@ export function DefaultLandingPagePreference() {
 }
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useThemeStore();
+  const { theme, setTheme, dashboardBackground, setDashboardBackground } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
   const { data: cacheStats } = useCacheStats();
@@ -905,6 +905,34 @@ export default function SettingsPage() {
               </div>
             </button>
           ))}
+        </div>
+
+        <div className="mt-6 border-t border-border pt-6">
+          <h3 className="text-sm font-medium mb-1">Dashboard Background</h3>
+          <p className="text-sm text-muted-foreground mb-3">
+            Add an animated gradient background to the dashboard, similar to the login page.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {dashboardBackgroundOptions.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setDashboardBackground(option.value)}
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg border text-left transition-colors',
+                  dashboardBackground === option.value
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                )}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{option.label}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {option.description}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
