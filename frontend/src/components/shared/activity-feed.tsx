@@ -147,7 +147,7 @@ export function ActivityFeed() {
           </div>
           <div
             ref={scrollRef}
-            className="max-h-40 overflow-y-auto"
+            className="max-h-64 overflow-y-auto"
           >
             {events.length === 0 ? (
               <p className="px-4 py-3 text-center text-xs text-muted-foreground">
