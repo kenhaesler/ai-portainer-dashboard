@@ -2,6 +2,10 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { EndpointIdQuerySchema } from '../models/api-schemas.js';
+import { getStalenessRecords, getStalenessSummary, runStalenessChecks } from '../services/image-staleness.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('route:images');
 
 export async function imagesRoutes(fastify: FastifyInstance) {
   fastify.get('/api/images', {
@@ -69,6 +73,61 @@ export async function imagesRoutes(fastify: FastifyInstance) {
     }
 
     return Array.from(seen.values());
+  });
+
+  // Image staleness endpoints
+  fastify.get('/api/images/staleness', {
+    schema: {
+      tags: ['Images'],
+      summary: 'Get image staleness check results',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    return {
+      records: getStalenessRecords(),
+      summary: getStalenessSummary(),
+    };
+  });
+
+  fastify.post('/api/images/staleness/check', {
+    schema: {
+      tags: ['Images'],
+      summary: 'Trigger image staleness check for all images',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    try {
+      const endpoints = await cachedFetch(
+        getCacheKey('endpoints'),
+        TTL.ENDPOINTS,
+        () => portainer.getEndpoints(),
+      );
+
+      const allImages: Array<{ name: string; tags: string[]; registry: string; id: string }> = [];
+      for (const ep of endpoints) {
+        try {
+          const images = await cachedFetch(
+            getCacheKey('images', ep.Id),
+            TTL.CONTAINERS,
+            () => portainer.getImages(ep.Id),
+          );
+          for (const img of images) {
+            const norm = normalizeImage(img, ep.Id);
+            allImages.push({ name: norm.name, tags: norm.tags, registry: norm.registry, id: norm.id });
+          }
+        } catch {
+          // skip endpoint
+        }
+      }
+
+      const result = await runStalenessChecks(allImages);
+      return { success: true, ...result };
+    } catch (err) {
+      log.error({ err }, 'Manual staleness check failed');
+      return { success: false, checked: 0, stale: 0 };
+    }
   });
 }
 

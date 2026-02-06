@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { HardDrive, Layers, Tag, AlertTriangle, X, Server } from 'lucide-react';
+import { HardDrive, Layers, Tag, AlertTriangle, X, Server, Clock, CheckCircle2, Loader2 } from 'lucide-react';
 import { useImages, type DockerImage } from '@/hooks/use-images';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useImageStaleness, useTriggerStalenessCheck } from '@/hooks/use-image-staleness';
 import { ImageTreemap } from '@/components/charts/image-treemap';
 import { ImageSunburst } from '@/components/charts/image-sunburst';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
@@ -20,6 +21,21 @@ export default function ImageFootprintPage() {
   const { data: images, isLoading, isError, error, refetch, isFetching } = useImages(selectedEndpoint);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('images', refetch);
   const { interval, setInterval } = useAutoRefresh(60);
+  const { data: stalenessData } = useImageStaleness();
+  const triggerCheck = useTriggerStalenessCheck();
+
+  // Build a lookup map: imageName -> staleness record
+  const stalenessMap = useMemo(() => {
+    const map = new Map<string, { isStale: boolean; lastChecked: string }>();
+    if (!stalenessData?.records) return map;
+    for (const rec of stalenessData.records) {
+      map.set(rec.image_name, {
+        isStale: rec.is_stale === 1,
+        lastChecked: rec.last_checked_at,
+      });
+    }
+    return map;
+  }, [stalenessData]);
 
   const stats = useMemo(() => {
     if (!images) return { totalSize: 0, imageCount: 0, registryCount: 0 };
@@ -137,6 +153,47 @@ export default function ImageFootprintPage() {
         )}
       </div>
 
+      {/* Staleness Summary */}
+      {stalenessData && stalenessData.summary.total > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Layers className="h-4 w-4" />
+              <span>Checked</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold">{stalenessData.summary.total}</p>
+          </div>
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-sm text-emerald-600">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Up to Date</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold text-emerald-600">{stalenessData.summary.upToDate}</p>
+          </div>
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-sm text-yellow-600">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Stale</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
+          </div>
+          <div className="flex items-center justify-center rounded-lg border bg-card p-4 shadow-sm">
+            <button
+              onClick={() => triggerCheck.mutate()}
+              disabled={triggerCheck.isPending}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {triggerCheck.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Clock className="h-4 w-4" />
+              )}
+              {triggerCheck.isPending ? 'Checking...' : 'Check Now'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -198,6 +255,7 @@ export default function ImageFootprintPage() {
                   <th className="pb-3 font-medium">Image</th>
                   <th className="pb-3 font-medium">Tags</th>
                   <th className="pb-3 font-medium">Size</th>
+                  <th className="pb-3 font-medium">Status</th>
                   <th className="pb-3 font-medium">Registry</th>
                   {!selectedEndpoint && <th className="pb-3 font-medium">Endpoint</th>}
                 </tr>
@@ -238,6 +296,21 @@ export default function ImageFootprintPage() {
                         </div>
                       </td>
                       <td className="py-3 font-mono text-sm">{formatBytes(image.size)}</td>
+                      <td className="py-3">
+                        {(() => {
+                          const staleness = stalenessMap.get(image.name);
+                          if (!staleness) return <span className="text-xs text-muted-foreground">Unchecked</span>;
+                          return staleness.isStale ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                              <AlertTriangle className="h-3 w-3" /> Update Available
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                              <CheckCircle2 className="h-3 w-3" /> Up to Date
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="py-3 text-sm text-muted-foreground">{image.registry}</td>
                       {!selectedEndpoint && (
                         <td className="py-3 text-sm text-muted-foreground">
