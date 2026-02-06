@@ -467,8 +467,8 @@ header[data-animated-bg] {
 /* ====== GLASS BUTTONS ====== */
 
 .apple-light {
-  & button,
-  & [role="button"] {
+  & button:not(aside button),
+  & [role="button"]:not(aside [role="button"]) {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
@@ -495,8 +495,8 @@ header[data-animated-bg] {
 }
 
 .apple-dark {
-  & button,
-  & [role="button"] {
+  & button:not(aside button),
+  & [role="button"]:not(aside [role="button"]) {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }

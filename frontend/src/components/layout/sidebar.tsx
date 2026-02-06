@@ -222,7 +222,7 @@ export function Sidebar() {
               ) : (
                 <button
                   onClick={() => toggleGroup(group.title)}
-                  className="mb-1 flex w-full items-center justify-between px-4 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                  className="mb-1 flex w-full items-center justify-between border-b border-border/20 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <span>{group.title}</span>
                   <motion.span
