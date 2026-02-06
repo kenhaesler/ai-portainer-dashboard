@@ -36,6 +36,7 @@ export const envSchema = z.object({
   ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(2.5),
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(30),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
+  ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
 
   // Investigation (Root Cause Analysis)
   INVESTIGATION_ENABLED: z.coerce.boolean().default(true),
