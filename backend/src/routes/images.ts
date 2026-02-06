@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { EndpointIdQuerySchema } from '../models/api-schemas.js';
 
 export async function imagesRoutes(fastify: FastifyInstance) {
   fastify.get('/api/images', {
@@ -8,12 +9,7 @@ export async function imagesRoutes(fastify: FastifyInstance) {
       tags: ['Images'],
       summary: 'List Docker images across all endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: EndpointIdQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

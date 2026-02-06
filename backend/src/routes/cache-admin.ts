@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { cache } from '../services/portainer-cache.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { CacheInvalidateQuerySchema } from '../models/api-schemas.js';
 
 const VALID_RESOURCES = ['endpoints', 'containers', 'images', 'networks', 'stacks'] as const;
 type CacheResource = (typeof VALID_RESOURCES)[number];
@@ -51,13 +52,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       tags: ['Cache Admin'],
       summary: 'Invalidate cache entries matching a resource pattern',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        required: ['resource'],
-        properties: {
-          resource: { type: 'string', enum: [...VALID_RESOURCES] },
-        },
-      },
+      querystring: CacheInvalidateQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

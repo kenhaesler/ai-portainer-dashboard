@@ -3,6 +3,7 @@ import { getDb } from '../db/sqlite.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import * as portainer from '../services/portainer-client.js';
 import { createChildLogger } from '../utils/logger.js';
+import { RemediationQuerySchema, ActionIdParamsSchema, RejectBodySchema, SuccessResponseSchema, ErrorResponseSchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('remediation-route');
 
@@ -13,14 +14,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'List remediation actions',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          status: { type: 'string' },
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      querystring: RemediationQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -62,11 +56,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'Approve a pending action',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -103,11 +93,8 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'Reject a pending action',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
+      body: RejectBodySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -146,11 +133,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'Execute an approved action',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { searchRoutes } from './search.js';
 
 vi.mock('../services/portainer-client.js', () => ({
@@ -30,6 +31,7 @@ describe('Search Routes', () => {
 
   beforeAll(async () => {
     app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(searchRoutes);
     await app.ready();

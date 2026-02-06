@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { cacheAdminRoutes } from './cache-admin.js';
 
 vi.mock('../services/portainer-cache.js', () => ({
@@ -26,6 +27,7 @@ describe('Cache Admin Routes', () => {
 
   beforeAll(async () => {
     app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(cacheAdminRoutes);
     await app.ready();

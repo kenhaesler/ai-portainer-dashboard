@@ -1,14 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode } from '../services/oidc.js';
 import { createSession, invalidateSession } from '../services/session-store.js';
 import { signJwt } from '../utils/crypto.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-
-const callbackSchema = z.object({
-  callbackUrl: z.string().url(),
-  state: z.string().min(1),
-});
+import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
 
 export async function oidcRoutes(fastify: FastifyInstance) {
   // Get OIDC status (public — no auth required)
@@ -17,15 +12,8 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       tags: ['Auth'],
       summary: 'Get OIDC SSO status and authorization URL',
       response: {
-        200: {
-          type: 'object',
-          properties: {
-            enabled: { type: 'boolean' },
-            authUrl: { type: 'string' },
-            state: { type: 'string' },
-          },
-        },
-        500: { type: 'object', properties: { error: { type: 'string' } } },
+        200: OidcStatusResponseSchema,
+        500: ErrorResponseSchema,
       },
     },
   }, async (_request, reply) => {
@@ -53,25 +41,11 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Auth'],
       summary: 'Exchange OIDC authorization code for a session token',
-      body: {
-        type: 'object',
-        required: ['callbackUrl', 'state'],
-        properties: {
-          callbackUrl: { type: 'string' },
-          state: { type: 'string' },
-        },
-      },
+      body: OidcCallbackBodySchema,
       response: {
-        200: {
-          type: 'object',
-          properties: {
-            token: { type: 'string' },
-            username: { type: 'string' },
-            expiresAt: { type: 'string' },
-          },
-        },
-        400: { type: 'object', properties: { error: { type: 'string' } } },
-        500: { type: 'object', properties: { error: { type: 'string' } } },
+        200: LoginResponseSchema,
+        400: ErrorResponseSchema,
+        500: ErrorResponseSchema,
       },
     },
     config: {
@@ -81,7 +55,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request, reply) => {
-    const parsed = callbackSchema.safeParse(request.body);
+    const parsed = OidcCallbackBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid callback parameters' });
     }
@@ -125,6 +99,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Auth'],
       summary: 'Logout OIDC session',
+      response: { 200: SuccessResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

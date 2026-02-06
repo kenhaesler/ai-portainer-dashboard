@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
+import { ContainerParamsSchema, ContainerLogsQuerySchema } from '../models/api-schemas.js';
 
 export async function containerLogsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/containers/:endpointId/:containerId/logs', {
@@ -7,23 +8,8 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       tags: ['Containers'],
       summary: 'Get container logs',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-          containerId: { type: 'string' },
-        },
-        required: ['endpointId', 'containerId'],
-      },
-      querystring: {
-        type: 'object',
-        properties: {
-          tail: { type: 'number', default: 100 },
-          since: { type: 'number' },
-          until: { type: 'number' },
-          timestamps: { type: 'boolean', default: true },
-        },
-      },
+      params: ContainerParamsSchema,
+      querystring: ContainerLogsQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

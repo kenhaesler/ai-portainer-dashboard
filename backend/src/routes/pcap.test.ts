@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { pcapRoutes } from './pcap.js';
 
 const mockStartCapture = vi.fn();
@@ -42,6 +43,7 @@ describe('PCAP Routes', () => {
 
   beforeAll(async () => {
     app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(pcapRoutes);
     await app.ready();

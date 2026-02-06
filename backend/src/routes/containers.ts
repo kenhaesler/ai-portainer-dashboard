@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '../services/portainer-normalizers.js';
+import { EndpointIdQuerySchema, ContainerParamsSchema } from '../models/api-schemas.js';
 
 export async function containersRoutes(fastify: FastifyInstance) {
   // List containers (optionally filtered by endpoint)
@@ -10,12 +11,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       tags: ['Containers'],
       summary: 'List containers across all endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: EndpointIdQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -56,14 +52,7 @@ export async function containersRoutes(fastify: FastifyInstance) {
       tags: ['Containers'],
       summary: 'Get container details',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-          containerId: { type: 'string' },
-        },
-        required: ['endpointId', 'containerId'],
-      },
+      params: ContainerParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

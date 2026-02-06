@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { notificationRoutes } from './notifications.js';
 
 const mockAll = vi.fn().mockReturnValue([]);
@@ -26,6 +27,7 @@ describe('Notification Routes', () => {
 
   beforeAll(async () => {
     app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(notificationRoutes);
     await app.ready();
