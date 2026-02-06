@@ -759,12 +759,16 @@ export default function AiMonitorPage() {
   }, [acknowledgementFilter, insights, severityFilter]);
 
   // Stats
-  const stats = useMemo(() => ({
-    total: insights.length,
-    critical: insights.filter((i) => i.severity === 'critical').length,
-    warning: insights.filter((i) => i.severity === 'warning').length,
-    info: insights.filter((i) => i.severity === 'info').length,
-  }), [insights]);
+  const stats = useMemo(() => {
+    const result = { total: 0, critical: 0, warning: 0, info: 0 };
+    for (const i of insights) {
+      result.total++;
+      if (i.severity === 'critical') result.critical++;
+      else if (i.severity === 'warning') result.warning++;
+      else if (i.severity === 'info') result.info++;
+    }
+    return result;
+  }, [insights]);
 
   const handleSeverityToggle = (severity: Severity) => {
     if (subscribedSeverities.has(severity)) {

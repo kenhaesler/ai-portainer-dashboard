@@ -195,6 +195,15 @@ export default function MetricsDashboardPage() {
     }));
   }, [memoryBytesMetrics]);
 
+  const cpuAnomalyIndices = useMemo(
+    () => cpuData.reduce<number[]>((acc, d, i) => { if (d.isAnomaly) acc.push(i); return acc; }, []),
+    [cpuData],
+  );
+  const memoryAnomalyIndices = useMemo(
+    () => memoryData.reduce<number[]>((acc, d, i) => { if (d.isAnomaly) acc.push(i); return acc; }, []),
+    [memoryData],
+  );
+
   // Calculate statistics
   const stats = useMemo(() => {
     const calcStats = (data: Array<{ value: number }>) => {
@@ -478,7 +487,7 @@ export default function MetricsDashboardPage() {
                 <p className="text-lg font-semibold">{stats.cpu.avg.toFixed(1)}%</p>
                 <AnomalySparkline
                   values={cpuData.map((d) => d.value)}
-                  anomalyIndices={cpuData.map((d, i) => d.isAnomaly ? i : -1).filter((i) => i >= 0)}
+                  anomalyIndices={cpuAnomalyIndices}
                   className="mt-2"
                 />
               </div>
@@ -487,7 +496,7 @@ export default function MetricsDashboardPage() {
                 <p className="text-lg font-semibold">{stats.memory.avg.toFixed(1)}%</p>
                 <AnomalySparkline
                   values={memoryData.map((d) => d.value)}
-                  anomalyIndices={memoryData.map((d, i) => d.isAnomaly ? i : -1).filter((i) => i >= 0)}
+                  anomalyIndices={memoryAnomalyIndices}
                   className="mt-2"
                 />
               </div>
