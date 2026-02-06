@@ -45,6 +45,8 @@ describe('Cache Admin Routes', () => {
     it('returns cache statistics and entries', async () => {
       mockCache.getStats.mockResolvedValue({
         size: 5,
+        l1Size: 5,
+        l2Size: 0,
         hits: 100,
         misses: 20,
         hitRate: '83.3%',
