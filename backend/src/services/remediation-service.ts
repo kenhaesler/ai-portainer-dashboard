@@ -8,6 +8,7 @@ import {
   type ActionInsert,
 } from './actions-store.js';
 import type { Insight } from '../models/monitoring.js';
+import { emitEvent } from './event-bus.js';
 
 const log = createChildLogger('remediation-service');
 
@@ -81,6 +82,7 @@ export function approveAction(actionId: string, username: string): boolean {
   const success = updateActionStatus(actionId, 'approved', { approved_by: username });
   if (success) {
     log.info({ actionId, approvedBy: username }, 'Action approved');
+    emitEvent({ type: 'remediation.approved', timestamp: new Date().toISOString(), data: { actionId, approvedBy: username } });
   }
   return success;
 }
@@ -96,6 +98,7 @@ export function rejectAction(
   });
   if (success) {
     log.info({ actionId, rejectedBy: username, reason }, 'Action rejected');
+    emitEvent({ type: 'remediation.rejected', timestamp: new Date().toISOString(), data: { actionId, rejectedBy: username, reason } });
   }
   return success;
 }
@@ -142,6 +145,7 @@ export async function executeAction(actionId: string): Promise<boolean> {
       { actionId, actionType: action.action_type, durationMs },
       'Action executed successfully',
     );
+    emitEvent({ type: 'remediation.completed', timestamp: new Date().toISOString(), data: { actionId, actionType: action.action_type, durationMs } });
     return true;
   } catch (err) {
     const durationMs = Date.now() - startTime;

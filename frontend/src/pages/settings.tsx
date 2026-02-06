@@ -21,6 +21,7 @@ import {
   EyeOff,
   Bell,
   Send,
+  Webhook,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, type Theme } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
@@ -72,6 +73,11 @@ const DEFAULT_SETTINGS = {
     { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL (e.g., http://localhost:5173/auth/callback)', type: 'string', defaultValue: '' },
     { key: 'oidc.scopes', label: 'Scopes', description: 'Space-separated OIDC scopes to request', type: 'string', defaultValue: 'openid profile email' },
     { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true' },
+  ],
+  webhooks: [
+    { key: 'webhooks.enabled', label: 'Enable Webhooks', description: 'Enable outbound webhook event delivery', type: 'boolean', defaultValue: 'false' },
+    { key: 'webhooks.max_retries', label: 'Max Retries', description: 'Maximum delivery attempts for failed webhooks', type: 'number', defaultValue: '5', min: 0, max: 10 },
+    { key: 'webhooks.retry_interval', label: 'Retry Interval', description: 'Seconds between webhook retry checks', type: 'number', defaultValue: '60', min: 10, max: 600 },
   ],
   elasticsearch: [
     { key: 'elasticsearch.enabled', label: 'Enable Elasticsearch', description: 'Enable Elasticsearch/Kibana integration for edge agent logs', type: 'boolean', defaultValue: 'false' },
@@ -374,6 +380,7 @@ export default function SettingsPage() {
       'notifications.smtp_user',
       'notifications.smtp_password',
       'notifications.email_recipients',
+      'webhooks.enabled',
     ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
@@ -622,6 +629,19 @@ export default function SettingsPage() {
 
       {/* Notification Test Buttons */}
       <NotificationTestButtons />
+
+      {/* Webhooks Settings */}
+      <SettingsSection
+        title="Webhooks"
+        icon={<Webhook className="h-5 w-5" />}
+        category="webhooks"
+        settings={DEFAULT_SETTINGS.webhooks}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        requiresRestart
+        disabled={isSaving}
+      />
 
       {/* Cache Settings */}
       <SettingsSection
