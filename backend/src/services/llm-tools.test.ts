@@ -1,0 +1,177 @@
+import { describe, it, expect } from 'vitest';
+import {
+  TOOL_DEFINITIONS,
+  parseToolCalls,
+  getToolSystemPrompt,
+  type ToolCallRequest,
+} from './llm-tools.js';
+
+describe('llm-tools', () => {
+  describe('TOOL_DEFINITIONS', () => {
+    it('should define exactly 6 tools', () => {
+      expect(TOOL_DEFINITIONS).toHaveLength(6);
+    });
+
+    it('should have unique tool names', () => {
+      const names = TOOL_DEFINITIONS.map((t) => t.name);
+      expect(new Set(names).size).toBe(names.length);
+    });
+
+    it('should include all expected tools', () => {
+      const names = TOOL_DEFINITIONS.map((t) => t.name);
+      expect(names).toContain('query_containers');
+      expect(names).toContain('get_container_metrics');
+      expect(names).toContain('list_insights');
+      expect(names).toContain('get_container_logs');
+      expect(names).toContain('list_anomalies');
+      expect(names).toContain('navigate_to');
+    });
+
+    it('should have valid parameter schemas', () => {
+      for (const tool of TOOL_DEFINITIONS) {
+        expect(tool.parameters.type).toBe('object');
+        expect(typeof tool.parameters.properties).toBe('object');
+        expect(tool.description).toBeTruthy();
+        expect(tool.name).toBeTruthy();
+      }
+    });
+
+    it('should mark required parameters correctly', () => {
+      const metricsToool = TOOL_DEFINITIONS.find((t) => t.name === 'get_container_metrics');
+      expect(metricsToool?.parameters.required).toContain('container_name');
+
+      const logsToolDef = TOOL_DEFINITIONS.find((t) => t.name === 'get_container_logs');
+      expect(logsToolDef?.parameters.required).toContain('container_name');
+
+      const navTool = TOOL_DEFINITIONS.find((t) => t.name === 'navigate_to');
+      expect(navTool?.parameters.required).toContain('page');
+    });
+  });
+
+  describe('getToolSystemPrompt', () => {
+    it('should return a non-empty string', () => {
+      const prompt = getToolSystemPrompt();
+      expect(prompt).toBeTruthy();
+      expect(typeof prompt).toBe('string');
+    });
+
+    it('should mention all tool names', () => {
+      const prompt = getToolSystemPrompt();
+      for (const tool of TOOL_DEFINITIONS) {
+        expect(prompt).toContain(tool.name);
+      }
+    });
+
+    it('should include tool_calls format instructions', () => {
+      const prompt = getToolSystemPrompt();
+      expect(prompt).toContain('tool_calls');
+      expect(prompt).toContain('tool_name');
+    });
+
+    it('should mention read-only constraint', () => {
+      const prompt = getToolSystemPrompt();
+      expect(prompt).toContain('read-only');
+    });
+  });
+
+  describe('parseToolCalls', () => {
+    it('should parse valid direct JSON tool calls', () => {
+      const input = '{"tool_calls": [{"tool": "query_containers", "arguments": {"state": "running"}}]}';
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('query_containers');
+      expect(result![0].arguments).toEqual({ state: 'running' });
+    });
+
+    it('should parse multiple tool calls', () => {
+      const input = JSON.stringify({
+        tool_calls: [
+          { tool: 'query_containers', arguments: { state: 'running' } },
+          { tool: 'list_insights', arguments: { severity: 'critical' } },
+        ],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(2);
+      expect(result![0].tool).toBe('query_containers');
+      expect(result![1].tool).toBe('list_insights');
+    });
+
+    it('should parse tool calls from markdown code blocks', () => {
+      const input = `Let me look that up for you.
+
+\`\`\`json
+{"tool_calls": [{"tool": "list_anomalies", "arguments": {"limit": "10"}}]}
+\`\`\``;
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('list_anomalies');
+    });
+
+    it('should parse tool calls from inline JSON', () => {
+      const input = 'I will query the containers: {"tool_calls": [{"tool": "query_containers", "arguments": {}}]}';
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('query_containers');
+    });
+
+    it('should return null for plain text responses', () => {
+      const input = 'Here is a list of your running containers:\n- web-app\n- database';
+      const result = parseToolCalls(input);
+      expect(result).toBeNull();
+    });
+
+    it('should return null for invalid JSON', () => {
+      const input = '{"tool_calls": [invalid json]}';
+      const result = parseToolCalls(input);
+      expect(result).toBeNull();
+    });
+
+    it('should reject unknown tool names', () => {
+      const input = '{"tool_calls": [{"tool": "delete_container", "arguments": {}}]}';
+      const result = parseToolCalls(input);
+      expect(result).toBeNull();
+    });
+
+    it('should filter out unknown tools but keep valid ones', () => {
+      const input = JSON.stringify({
+        tool_calls: [
+          { tool: 'query_containers', arguments: {} },
+          { tool: 'unknown_tool', arguments: {} },
+        ],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('query_containers');
+    });
+
+    it('should handle missing arguments gracefully', () => {
+      const input = '{"tool_calls": [{"tool": "query_containers"}]}';
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].arguments).toEqual({});
+    });
+
+    it('should return null for empty tool_calls array', () => {
+      const input = '{"tool_calls": []}';
+      const result = parseToolCalls(input);
+      expect(result).toBeNull();
+    });
+
+    it('should handle whitespace and newlines in JSON', () => {
+      const input = `{
+        "tool_calls": [
+          {
+            "tool": "navigate_to",
+            "arguments": {
+              "page": "ai-monitor"
+            }
+          }
+        ]
+      }`;
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('navigate_to');
+      expect(result![0].arguments).toEqual({ page: 'ai-monitor' });
+    });
+  });
+});
