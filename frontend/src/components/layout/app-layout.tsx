@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation, useNavigate, useNavigationType } from 'r
 import { useAuth } from '@/providers/auth-provider';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
+import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 import { CommandPalette } from '@/components/layout/command-palette';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
@@ -161,15 +162,19 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
+      {/* Sidebar — hidden on mobile */}
+      <div className="hidden md:block">
+        <Sidebar />
+      </div>
       <div
         className={cn(
           'flex flex-1 flex-col overflow-hidden transition-all duration-300',
-          sidebarCollapsed ? 'ml-[4.5rem]' : 'ml-[16rem]'
+          'md:ml-[4.5rem]',
+          !sidebarCollapsed && 'md:ml-[16rem]',
         )}
       >
         <Header />
-        <main className="flex-1 overflow-y-auto p-4">
+        <main className="flex-1 overflow-y-auto p-3 pb-20 md:p-4 md:pb-4">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
@@ -200,6 +205,8 @@ export function AppLayout() {
           </AnimatePresence>
         </main>
       </div>
+      {/* Mobile bottom nav — visible only on mobile */}
+      <MobileBottomNav />
       <CommandPalette />
     </div>
   );

@@ -30,11 +30,24 @@ services:
       - CACHE_ENABLED=${CACHE_ENABLED:-true}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-900}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     volumes:
       - backend-data:/app/data
     networks:
       - dashboard-net
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${BACKEND_CPU_LIMIT:-1.0}"
+          memory: "${BACKEND_MEM_LIMIT:-512M}"
+        reservations:
+          memory: 256M
 
   frontend:
     build:
@@ -42,12 +55,25 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     depends_on:
       backend:
         condition: service_healthy
     networks:
       - dashboard-net
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPU_LIMIT:-0.5}"
+          memory: "${FRONTEND_MEM_LIMIT:-256M}"
+        reservations:
+          memory: 128M
 
 volumes:
   backend-data:

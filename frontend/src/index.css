@@ -1102,3 +1102,26 @@
     -webkit-backdrop-filter: none;
   }
 }
+
+/* Mobile safe area insets for bottom nav */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Mobile responsive table scrolling */
+@media (max-width: 767px) {
+  .mobile-scroll-table {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+  }
+
+  .mobile-scroll-table table {
+    min-width: 600px;
+  }
+
+  /* Larger touch targets */
+  .mobile-touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

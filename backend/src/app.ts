@@ -30,6 +30,8 @@ import { cacheAdminRoutes } from './routes/cache-admin.js';
 import { pcapRoutes } from './routes/pcap.js';
 import { prometheusRoutes } from './routes/prometheus.js';
 import { webhookRoutes } from './routes/webhooks.js';
+import { reportsRoutes } from './routes/reports.js';
+import { userRoutes } from './routes/users.js';
 import { incidentsRoutes } from './routes/incidents.js';
 import { statusPageRoutes } from './routes/status-page.js';
 
@@ -86,6 +88,8 @@ export async function buildApp() {
   await app.register(pcapRoutes);
   await app.register(prometheusRoutes);
   await app.register(webhookRoutes);
+  await app.register(reportsRoutes);
+  await app.register(userRoutes);
   await app.register(incidentsRoutes);
   await app.register(statusPageRoutes);
 
