@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useMonitoring } from '@/hooks/use-monitoring';
 import { useInvestigations, safeParseJson } from '@/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/hooks/use-investigations';
+import { useIncidents, useResolveIncident, type Incident } from '@/hooks/use-incidents';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
@@ -24,6 +25,8 @@ import {
   XCircle,
   Clock,
   Brain,
+  Layers,
+  CheckCircle2,
 } from 'lucide-react';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -221,6 +224,113 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
   );
 }
 
+function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const containers: string[] = JSON.parse(incident.affected_containers || '[]');
+  const isActive = incident.status === 'active';
+
+  return (
+    <div className={cn(
+      'rounded-lg border-2 bg-card transition-all',
+      isActive
+        ? incident.severity === 'critical'
+          ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
+          : 'border-amber-500/40 bg-amber-50/30 dark:bg-amber-900/10'
+        : 'border-border opacity-60',
+      expanded && 'ring-2 ring-primary/20',
+    )}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-4 text-left transition-colors hover:bg-muted/20"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="mt-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 p-2">
+              <Layers className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <SeverityBadge severity={incident.severity} />
+                <span className={cn(
+                  'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  isActive
+                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                )}>
+                  {isActive ? 'Active Incident' : 'Resolved'}
+                </span>
+                <span className="text-xs text-muted-foreground capitalize">
+                  {incident.correlation_type} correlation
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {formatDate(incident.created_at)}
+                </span>
+              </div>
+              <h3 className="font-semibold text-base leading-snug mb-1">{incident.title}</h3>
+              {!expanded && incident.summary && (
+                <p className="text-sm text-muted-foreground line-clamp-2">{incident.summary}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs font-medium">
+              {incident.insight_count} alerts
+            </span>
+            {expanded ? (
+              <ChevronDown className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            ) : (
+              <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            )}
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t px-4 py-4 bg-muted/10 space-y-3">
+          {incident.summary && (
+            <div>
+              <h4 className="text-sm font-medium mb-1">Summary</h4>
+              <p className="text-sm text-muted-foreground">{incident.summary}</p>
+            </div>
+          )}
+
+          {containers.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-1.5">Affected Containers</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {containers.map((name) => (
+                  <span key={name} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-mono">
+                    <Box className="h-3 w-3 text-muted-foreground" />
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-4 pt-2 border-t text-xs text-muted-foreground">
+            <span>Confidence: {incident.correlation_confidence}</span>
+            {incident.endpoint_name && <span>Endpoint: {incident.endpoint_name}</span>}
+            <span>ID: {incident.id.slice(0, 8)}</span>
+            {isActive && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onResolve(incident.id);
+                }}
+                className="ml-auto inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Resolve
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InsightCard({ insight, investigation }: InsightCardProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -379,6 +489,8 @@ export default function AiMonitorPage() {
   } = useMonitoring();
 
   const { getInvestigationForInsight } = useInvestigations();
+  const { data: incidentsData } = useIncidents('active');
+  const resolveIncidentMutation = useResolveIncident();
 
   // Filter insights by severity
   const filteredInsights = useMemo(() => {
@@ -571,6 +683,28 @@ export default function AiMonitorPage() {
           );
         })}
       </div>
+
+      {/* Active Incidents */}
+      {incidentsData && incidentsData.incidents.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Layers className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <h2 className="text-lg font-semibold">
+              Active Incidents
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({incidentsData.counts.active} active)
+              </span>
+            </h2>
+          </div>
+          {incidentsData.incidents.map((incident) => (
+            <IncidentCard
+              key={incident.id}
+              incident={incident}
+              onResolve={(id) => resolveIncidentMutation.mutate(id)}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Insights Feed */}
       {isLoading ? (
