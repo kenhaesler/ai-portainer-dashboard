@@ -73,7 +73,7 @@ export function useLlmChat() {
   }, [llmSocket]);
 
   const sendMessage = useCallback(
-    (text: string, context?: ChatContext) => {
+    (text: string, context?: ChatContext, model?: string) => {
       if (!llmSocket || isStreaming) return;
 
       const userMessage: ChatMessage = {
@@ -85,7 +85,7 @@ export function useLlmChat() {
       };
 
       setMessages((prev) => [...prev, userMessage]);
-      llmSocket.emit('chat:message', { text, context });
+      llmSocket.emit('chat:message', { text, context, model });
     },
     [llmSocket, isStreaming]
   );

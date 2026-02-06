@@ -6,6 +6,8 @@ import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/m
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
+import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.js';
+import { normalizeEndpoint } from '../services/portainer-normalizers.js';
 
 const log = createChildLogger('scheduler');
 
@@ -74,6 +76,34 @@ async function runMetricsCollection(): Promise<void> {
   }
 }
 
+async function runKpiSnapshotCollection(): Promise<void> {
+  log.debug('Running KPI snapshot collection');
+  try {
+    const endpoints = await getEndpoints();
+    const normalized = endpoints.map(normalizeEndpoint);
+
+    const totals = normalized.reduce(
+      (acc, ep) => ({
+        endpoints: acc.endpoints + 1,
+        endpoints_up: acc.endpoints_up + (ep.status === 'up' ? 1 : 0),
+        endpoints_down: acc.endpoints_down + (ep.status === 'down' ? 1 : 0),
+        running: acc.running + ep.containersRunning,
+        stopped: acc.stopped + ep.containersStopped,
+        healthy: acc.healthy + ep.containersHealthy,
+        unhealthy: acc.unhealthy + ep.containersUnhealthy,
+        total: acc.total + ep.totalContainers,
+        stacks: acc.stacks + ep.stackCount,
+      }),
+      { endpoints: 0, endpoints_up: 0, endpoints_down: 0, running: 0, stopped: 0, healthy: 0, unhealthy: 0, total: 0, stacks: 0 },
+    );
+
+    insertKpiSnapshot(totals);
+    log.debug('KPI snapshot collected');
+  } catch (err) {
+    log.error({ err }, 'KPI snapshot collection failed');
+  }
+}
+
 async function runMonitoringWithErrorHandling(): Promise<void> {
   try {
     await runMonitoringCycle();
@@ -97,6 +127,15 @@ async function runCleanup(): Promise<void> {
     cleanupOldCaptures();
   } catch (err) {
     log.error({ err }, 'PCAP captures cleanup failed');
+  }
+
+  try {
+    const kpiDeleted = cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
+    if (kpiDeleted > 0) {
+      log.info({ deleted: kpiDeleted }, 'Old KPI snapshots cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'KPI snapshot cleanup failed');
   }
 }
 
@@ -142,6 +181,16 @@ export function startScheduler(): void {
       }
     }, retryIntervalMs);
     intervals.push(webhookRetryInterval);
+  }
+
+  // KPI snapshot collection every 5 minutes (for dashboard sparklines)
+  if (config.METRICS_COLLECTION_ENABLED) {
+    const kpiIntervalMs = 5 * 60 * 1000;
+    log.info('Starting KPI snapshot collection (every 5 minutes)');
+    const kpiInterval = setInterval(runKpiSnapshotCollection, kpiIntervalMs);
+    intervals.push(kpiInterval);
+    // Run once immediately to seed initial data
+    runKpiSnapshotCollection().catch(() => {});
   }
 
   // Cleanup old metrics once per day

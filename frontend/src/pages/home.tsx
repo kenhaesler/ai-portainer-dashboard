@@ -5,6 +5,7 @@ import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star } from 'lucide-
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useContainers } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useKpiHistory } from '@/hooks/use-kpi-history';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -27,6 +28,7 @@ export default function HomePage() {
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: allContainers } = useContainers();
+  const { data: kpiHistory } = useKpiHistory(24);
 
   const favoriteContainers = useMemo(() => {
     if (!allContainers || favoriteIds.length === 0) return [];
@@ -108,6 +110,44 @@ export default function HomePage() {
     }));
   }, [data?.endpoints]);
 
+  // Derive sparkline arrays from KPI history snapshots
+  const sparklines = useMemo(() => {
+    if (!kpiHistory || kpiHistory.length < 2) {
+      return { endpoints: [], running: [], stopped: [], stacks: [] };
+    }
+    return {
+      endpoints: kpiHistory.map((s) => s.endpoints),
+      running: kpiHistory.map((s) => s.running),
+      stopped: kpiHistory.map((s) => s.stopped),
+      stacks: kpiHistory.map((s) => s.stacks),
+    };
+  }, [kpiHistory]);
+
+  // Compute hover detail strings from history
+  const hoverDetails = useMemo(() => {
+    if (!kpiHistory || kpiHistory.length === 0) {
+      return { endpoints: undefined, running: undefined, stopped: undefined, stacks: undefined };
+    }
+    const latest = kpiHistory[kpiHistory.length - 1];
+    const oneHourAgo = kpiHistory.length > 12 ? kpiHistory[kpiHistory.length - 13] : kpiHistory[0];
+
+    function detail(key: 'endpoints' | 'running' | 'stopped' | 'stacks') {
+      const values = kpiHistory!.map((s) => s[key]);
+      const peak = Math.max(...values);
+      const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+      const delta = latest[key] - oneHourAgo[key];
+      const sign = delta >= 0 ? '+' : '';
+      return `Last hour: ${sign}${delta} | Peak: ${peak} | Avg: ${avg}`;
+    }
+
+    return {
+      endpoints: detail('endpoints'),
+      running: detail('running'),
+      stopped: detail('stopped'),
+      stacks: detail('stacks'),
+    };
+  }, [kpiHistory]);
+
   if (isError) {
     return (
       <MotionPage>
@@ -166,6 +206,9 @@ export default function HomePage() {
               icon={<Server className="h-5 w-5" />}
               trendValue={`${data.kpis.endpointsUp} up`}
               trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
+              sparklineData={sparklines.endpoints}
+              sparklineColor="var(--color-chart-1)"
+              hoverDetail={hoverDetails.endpoints}
             />
           </MotionReveal>
           <MotionReveal>
@@ -175,6 +218,9 @@ export default function HomePage() {
               icon={<Boxes className="h-5 w-5" />}
               trendValue={`of ${data.kpis.total} total`}
               trend="neutral"
+              sparklineData={sparklines.running}
+              sparklineColor="var(--color-chart-2)"
+              hoverDetail={hoverDetails.running}
             />
           </MotionReveal>
           <MotionReveal>
@@ -184,6 +230,9 @@ export default function HomePage() {
               icon={<PackageOpen className="h-5 w-5" />}
               trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
               trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
+              sparklineData={sparklines.stopped}
+              sparklineColor="var(--color-chart-3)"
+              hoverDetail={hoverDetails.stopped}
             />
           </MotionReveal>
           <MotionReveal>
@@ -191,6 +240,9 @@ export default function HomePage() {
               label="Stacks"
               value={data.kpis.stacks}
               icon={<Layers className="h-5 w-5" />}
+              sparklineData={sparklines.stacks}
+              sparklineColor="var(--color-chart-4)"
+              hoverDetail={hoverDetails.stacks}
             />
           </MotionReveal>
         </MotionStagger>

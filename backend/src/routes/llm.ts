@@ -194,6 +194,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
     const config = getConfig();
 
     try {
+      // If using custom API endpoint, try OpenAI-compatible /v1/models
       if (config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
         const baseUrl = new URL(config.OLLAMA_API_ENDPOINT);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
@@ -215,6 +216,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         }
       }
 
+      // Default: use Ollama SDK
       const ollama = new Ollama({ host: config.OLLAMA_BASE_URL });
       const response = await ollama.list();
       return {
@@ -227,6 +229,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       };
     } catch (err) {
       log.error({ err }, 'Failed to fetch models');
+      // Return at least the configured default
       return {
         models: [{ name: config.OLLAMA_MODEL }],
         default: config.OLLAMA_MODEL,

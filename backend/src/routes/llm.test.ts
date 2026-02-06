@@ -78,6 +78,23 @@ describe('LLM Routes', () => {
       expect(body.default).toBe('llama3.2');
     });
 
+    it('returns model size and modified date', async () => {
+      mockList.mockResolvedValue({
+        models: [
+          { name: 'llama3.2', size: 2_000_000_000, modified_at: '2024-01-01T00:00:00Z' },
+        ],
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/llm/models',
+      });
+
+      const body = res.json();
+      expect(body.models[0].size).toBe(2_000_000_000);
+      expect(body.models[0].modified).toBe('2024-01-01T00:00:00Z');
+    });
+
     it('falls back to default model on error', async () => {
       mockList.mockRejectedValue(new Error('Connection refused'));
 
