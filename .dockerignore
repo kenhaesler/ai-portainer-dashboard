@@ -1,0 +1,15 @@
+node_modules
+.git
+.github
+*.md
+!README.md
+.env
+.env.*
+*.log
+dist
+.vscode
+.idea
+coverage
+.nyc_output
+*.tsbuildinfo
+research-speed.md
