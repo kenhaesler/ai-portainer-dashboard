@@ -78,11 +78,14 @@ services:
     #       memory: 256M
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.6.5
+    restart: unless-stopped
     ports:
       - "11534:11434"
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 5

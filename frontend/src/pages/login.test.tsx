@@ -67,6 +67,8 @@ describe('LoginPage', () => {
 
     expect(screen.getByTestId('login-gradient')).toBeInTheDocument();
     expect(screen.getByText('Powered by AI')).toBeInTheDocument();
+    expect(screen.getByLabelText('Username')).toHaveValue('admin');
+    expect(screen.getByLabelText('Password')).toHaveValue('changeme123');
     expect(document.querySelectorAll('.login-particle')).toHaveLength(10);
     expect(screen.getByRole('img', { name: 'AI brain logo' })).toBeInTheDocument();
   });
