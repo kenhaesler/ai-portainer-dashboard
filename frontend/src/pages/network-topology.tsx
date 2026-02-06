@@ -49,6 +49,7 @@ export default function NetworkTopologyPage() {
       state: c.state as 'running' | 'stopped' | 'paused' | 'unknown',
       image: c.image,
       networks: c.networks,
+      labels: c.labels,
     }));
 
     const transformedNetworks = networks.map(n => ({
