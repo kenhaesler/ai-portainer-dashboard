@@ -308,3 +308,10 @@ export const NotificationTestBodySchema = z.object({
 export const CacheInvalidateQuerySchema = z.object({
   resource: z.enum(['endpoints', 'containers', 'images', 'networks', 'stacks']),
 });
+
+// ─── Reports schemas ───────────────────────────────────────────────
+export const ReportsQuerySchema = z.object({
+  timeRange: z.enum(['24h', '7d', '30d']).optional(),
+  endpointId: z.coerce.number().optional(),
+  containerId: z.string().optional(),
+});

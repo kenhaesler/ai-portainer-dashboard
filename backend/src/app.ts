@@ -30,6 +30,9 @@ import { cacheAdminRoutes } from './routes/cache-admin.js';
 import { pcapRoutes } from './routes/pcap.js';
 import { prometheusRoutes } from './routes/prometheus.js';
 import { webhookRoutes } from './routes/webhooks.js';
+import { reportsRoutes } from './routes/reports.js';
+import { userRoutes } from './routes/users.js';
+import { incidentsRoutes } from './routes/incidents.js';
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -84,6 +87,9 @@ export async function buildApp() {
   await app.register(pcapRoutes);
   await app.register(prometheusRoutes);
   await app.register(webhookRoutes);
+  await app.register(reportsRoutes);
+  await app.register(userRoutes);
+  await app.register(incidentsRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);

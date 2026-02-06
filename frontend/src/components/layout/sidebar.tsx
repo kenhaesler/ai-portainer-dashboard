@@ -13,6 +13,7 @@ import {
   Shield,
   GitBranch,
   MessageSquare,
+  FileBarChart,
   FileSearch,
   Radio,
   Settings,
@@ -23,6 +24,7 @@ import {
 import { useUiStore } from '@/stores/ui-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
 import { cn } from '@/lib/utils';
+import { motion } from 'framer-motion';
 
 interface NavItem {
   label: string;
@@ -63,6 +65,7 @@ const navigation: NavGroup[] = [
       { label: 'Remediation', to: '/remediation', icon: Shield },
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
+      { label: 'Reports', to: '/reports', icon: FileBarChart },
     ],
   },
   {
@@ -141,7 +144,7 @@ export function Sidebar() {
                         end={item.to === '/'}
                         className={({ isActive }) =>
                           cn(
-                            'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-all duration-200',
+                            'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-all duration-200',
                             isActive
                               ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
                               : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
@@ -150,8 +153,16 @@ export function Sidebar() {
                         }
                         title={sidebarCollapsed ? item.label : undefined}
                       >
-                        {() => (
+                        {({ isActive }) => (
                           <>
+                            {isActive && (
+                              <motion.span
+                                layoutId="sidebar-active-pill"
+                                data-testid="sidebar-active-indicator"
+                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-accent shadow-sm"
+                                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                              />
+                            )}
                             <item.icon className="h-4 w-4 shrink-0" />
                             {!sidebarCollapsed && (
                               <>
