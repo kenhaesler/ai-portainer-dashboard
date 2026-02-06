@@ -16,5 +16,6 @@ export function useStacks() {
   return useQuery<Stack[]>({
     queryKey: ['stacks'],
     queryFn: () => api.get<Stack[]>('/api/stacks'),
+    staleTime: 5 * 60 * 1000,
   });
 }

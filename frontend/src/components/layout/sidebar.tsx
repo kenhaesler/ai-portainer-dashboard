@@ -29,6 +29,7 @@ import {
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
+import { usePrefetch } from '@/hooks/use-prefetch';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
@@ -168,6 +169,17 @@ export function Sidebar() {
   const reducedMotion = useReducedMotion();
   const navRef = useRef<HTMLElement>(null);
   const hasAnimatedBg = dashboardBackground !== 'none';
+  const { prefetchContainers, prefetchEndpoints, prefetchDashboard, prefetchImages, prefetchStacks } = usePrefetch();
+
+  const prefetchMap: Record<string, (() => void) | undefined> = {
+    '/': prefetchDashboard,
+    '/workloads': prefetchContainers,
+    '/fleet': prefetchEndpoints,
+    '/stacks': prefetchStacks,
+    '/health': prefetchContainers,
+    '/comparison': prefetchContainers,
+    '/images': prefetchImages,
+  };
 
   return (
     <aside
@@ -265,6 +277,8 @@ export function Sidebar() {
                           )
                         }
                         title={sidebarCollapsed ? item.label : undefined}
+                        onMouseEnter={prefetchMap[item.to]}
+                        onFocus={prefetchMap[item.to]}
                       >
                         {({ isActive }) => (
                           <>

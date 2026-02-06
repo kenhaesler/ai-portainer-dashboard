@@ -21,5 +21,6 @@ export function useImages(endpointId?: number) {
         : '/api/images';
       return api.get<DockerImage[]>(path);
     },
+    staleTime: 5 * 60 * 1000,
   });
 }
