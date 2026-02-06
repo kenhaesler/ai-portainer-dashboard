@@ -8,6 +8,7 @@ import { setupRemediationNamespace } from './sockets/remediation.js';
 import { startScheduler, stopScheduler } from './scheduler/setup.js';
 import { setMonitoringNamespace } from './services/monitoring-service.js';
 import { setInvestigationNamespace } from './services/investigation-service.js';
+import { ensureModel } from './services/llm-client.js';
 
 const log = createChildLogger('server');
 
@@ -52,6 +53,9 @@ async function main() {
     await app.listen({ port: config.PORT, host: '0.0.0.0' });
     log.info({ port: config.PORT }, 'Server started');
     log.info('Socket.IO namespaces: /llm, /monitoring, /remediation');
+
+    // Pull configured Ollama model in the background (non-blocking)
+    ensureModel().catch(() => {});
   } catch (err) {
     log.fatal({ err }, 'Failed to start server');
     process.exit(1);

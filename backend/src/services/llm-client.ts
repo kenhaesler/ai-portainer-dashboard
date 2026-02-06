@@ -183,3 +183,29 @@ export async function isOllamaAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Ensure the configured model is available in Ollama, pulling it if needed.
+ * Called at backend startup so the LLM Assistant is ready without manual intervention.
+ */
+export async function ensureModel(): Promise<void> {
+  const config = getConfig();
+  const model = config.OLLAMA_MODEL;
+
+  try {
+    const ollama = getClient();
+    const { models } = await ollama.list();
+    const installed = models.some((m) => m.name === model || m.name.startsWith(`${model}:`));
+
+    if (installed) {
+      log.info({ model }, 'Ollama model already available');
+      return;
+    }
+
+    log.info({ model }, 'Pulling Ollama model (this may take a few minutes on first run)...');
+    await ollama.pull({ model });
+    log.info({ model }, 'Ollama model pulled successfully');
+  } catch (err) {
+    log.warn({ err, model }, 'Failed to ensure Ollama model — LLM features may be unavailable');
+  }
+}
