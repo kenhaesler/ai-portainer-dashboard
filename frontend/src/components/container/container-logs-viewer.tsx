@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, ScrollText, Clock, Search, AlertTriangle } from 'lucide-react';
 import { useContainerLogs } from '@/hooks/use-container-logs';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
@@ -22,6 +23,79 @@ function getLogLevel(line: string): LogLevel {
     return 'info';
   }
   return null;
+}
+
+const LOG_LINE_HEIGHT = 24;
+
+function VirtualizedContainerLogs({
+  logViewerRef,
+  displayLogs,
+  searchTerm,
+  autoScroll,
+  setAutoScroll,
+}: {
+  logViewerRef: React.RefObject<HTMLDivElement | null>;
+  displayLogs: string[];
+  searchTerm: string;
+  autoScroll: boolean;
+  setAutoScroll: (v: boolean) => void;
+}) {
+  const searchLower = searchTerm.toLowerCase();
+
+  const virtualizer = useVirtualizer({
+    count: displayLogs.length,
+    getScrollElement: () => logViewerRef.current,
+    estimateSize: () => LOG_LINE_HEIGHT,
+    overscan: 20,
+  });
+
+  useEffect(() => {
+    if (autoScroll && displayLogs.length > 0) {
+      virtualizer.scrollToIndex(displayLogs.length - 1, { align: 'end' });
+    }
+  }, [displayLogs.length, autoScroll, virtualizer]);
+
+  return (
+    <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
+      <div
+        ref={logViewerRef}
+        className="h-[600px] overflow-auto bg-slate-950 dark:bg-slate-950"
+      >
+        <div
+          style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}
+          className="text-sm font-mono"
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const line = displayLogs[virtualRow.index];
+            const isMatch = searchTerm && line.toLowerCase().includes(searchLower);
+            const logLevel = getLogLevel(line);
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className={`flex ${isMatch ? 'bg-yellow-500/30' : 'hover:bg-slate-800/50'} ${logLevel === 'error' ? 'text-red-400' : ''} ${logLevel === 'warn' ? 'text-yellow-400' : ''} ${logLevel === 'debug' ? 'text-slate-500' : ''} ${logLevel === 'info' || !logLevel ? 'text-slate-200' : ''}`}
+              >
+                <span className="select-none px-3 py-0.5 text-right text-slate-600 text-xs w-12 shrink-0">
+                  {virtualRow.index + 1}
+                </span>
+                <span className="px-3 py-0.5 whitespace-pre-wrap break-all leading-relaxed">
+                  {line}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface ContainerLogsViewerProps {
@@ -53,13 +127,6 @@ export function ContainerLogsViewer({
     tail: tailCount === -1 ? undefined : tailCount,
     timestamps: showTimestamps,
   });
-
-  // Auto-scroll effect
-  useEffect(() => {
-    if (autoScroll && logViewerRef.current) {
-      logViewerRef.current.scrollTop = logViewerRef.current.scrollHeight;
-    }
-  }, [logsData, autoScroll]);
 
   // Parse and filter logs
   const displayLogs = useMemo(() => {
@@ -211,40 +278,13 @@ export function ContainerLogsViewer({
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
-          <div
-            ref={logViewerRef}
-            className="h-[600px] overflow-auto bg-slate-950 dark:bg-slate-950"
-          >
-            <table className="w-full text-sm font-mono">
-              <tbody>
-                {displayLogs.map((line, index) => {
-                  const isMatch = searchTerm && line.toLowerCase().includes(searchTerm.toLowerCase());
-                  const logLevel = getLogLevel(line);
-                  return (
-                    <tr
-                      key={index}
-                      className={`
-                        ${isMatch ? 'bg-yellow-500/30' : 'hover:bg-slate-800/50'}
-                        ${logLevel === 'error' ? 'text-red-400' : ''}
-                        ${logLevel === 'warn' ? 'text-yellow-400' : ''}
-                        ${logLevel === 'debug' ? 'text-slate-500' : ''}
-                        ${logLevel === 'info' || !logLevel ? 'text-slate-200' : ''}
-                      `}
-                    >
-                      <td className="select-none px-3 py-0.5 text-right text-slate-600 text-xs w-12 align-top">
-                        {index + 1}
-                      </td>
-                      <td className="px-3 py-0.5 whitespace-pre-wrap break-all leading-relaxed">
-                        {line}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <VirtualizedContainerLogs
+          logViewerRef={logViewerRef}
+          displayLogs={displayLogs}
+          searchTerm={searchTerm}
+          autoScroll={autoScroll}
+          setAutoScroll={setAutoScroll}
+        />
       )}
     </div>
   );
