@@ -25,6 +25,7 @@ const PacketCapture = lazy(() => import('@/pages/packet-capture'));
 const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
 const StatusPage = lazy(() => import('@/pages/status-page'));
 const Reports = lazy(() => import('@/pages/reports'));
+const LogViewer = lazy(() => import('@/pages/log-viewer'));
 
 function PageLoader() {
   return (
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
       { path: 'traces', element: <LazyPage><TraceExplorer /></LazyPage> },
       { path: 'assistant', element: <LazyPage><LlmAssistant /></LazyPage> },
       { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
+      { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
       { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
