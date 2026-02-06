@@ -5,7 +5,7 @@ import {
   Ship,
   Layers,
   HeartPulse,
-  ScrollText,
+  GitCompareArrows,
   PackageOpen,
   Network,
   Brain,
@@ -50,6 +50,7 @@ const navigation: NavGroup[] = [
     title: 'Containers',
     items: [
       { label: 'Container Health', to: '/health', icon: HeartPulse },
+      { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
       { label: 'Image Footprint', to: '/images', icon: PackageOpen },
       { label: 'Network Topology', to: '/topology', icon: Network },
     ],
