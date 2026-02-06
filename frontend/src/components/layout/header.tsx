@@ -28,8 +28,9 @@ const routeLabels: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const { username, logout } = useAuth();
-  const { theme, setTheme } = useThemeStore();
+  const { theme, setTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const hasAnimatedBg = dashboardBackground !== 'none';
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +69,13 @@ export function Header() {
   }, []);
 
   return (
-    <header className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:px-4">
+    <header
+      className={cn(
+        'relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:px-4',
+        !hasAnimatedBg && 'bg-background/80'
+      )}
+      style={hasAnimatedBg ? { background: 'color-mix(in srgb, var(--color-background) 50%, transparent)' } : undefined}
+    >
       {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
         {breadcrumbs.map((crumb, index) => (

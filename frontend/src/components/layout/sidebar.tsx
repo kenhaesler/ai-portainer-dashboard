@@ -24,6 +24,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
+import { useThemeStore } from '@/stores/theme-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -155,17 +156,21 @@ export function Sidebar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const collapsedGroups = useUiStore((s) => s.collapsedGroups);
   const toggleGroup = useUiStore((s) => s.toggleGroup);
+  const dashboardBackground = useThemeStore((s) => s.dashboardBackground);
   const { data: pendingActions } = useRemediationActions('pending');
   const pendingCount = pendingActions?.length ?? 0;
   const reducedMotion = useReducedMotion();
   const navRef = useRef<HTMLElement>(null);
+  const hasAnimatedBg = dashboardBackground !== 'none';
 
   return (
     <aside
       className={cn(
-        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+        !hasAnimatedBg && 'bg-sidebar-background/80',
         sidebarCollapsed ? 'w-14' : 'w-60'
       )}
+      style={hasAnimatedBg ? { background: 'color-mix(in srgb, var(--color-sidebar-background) 50%, transparent)' } : undefined}
     >
       {/* Brand */}
       <div className="flex h-14 items-center px-4">
