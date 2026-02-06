@@ -12,6 +12,7 @@ import { insertInsight, getRecentInsights, type InsightInsert } from './insights
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { suggestAction } from './remediation-service.js';
 import { triggerInvestigation } from './investigation-service.js';
+import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
 import { notifyInsight } from './notification-service.js';
@@ -69,6 +70,14 @@ export async function runMonitoringCycle(): Promise<void> {
     const normalizedContainers = allContainers.map((c) =>
       normalizeContainer(c.raw, c.endpointId, c.endpointName),
     );
+
+    insertMonitoringSnapshot({
+      containersRunning: normalizedContainers.filter((c) => c.state === 'running').length,
+      containersStopped: normalizedContainers.filter((c) => c.state === 'stopped').length,
+      containersUnhealthy: endpoints.reduce((acc, endpoint) => acc + endpoint.containersUnhealthy, 0),
+      endpointsUp: endpoints.filter((endpoint) => endpoint.status === 'up').length,
+      endpointsDown: endpoints.filter((endpoint) => endpoint.status === 'down').length,
+    });
 
     // 2. Collect metrics for running containers
     const metricsToInsert: MetricInsert[] = [];
@@ -302,5 +311,11 @@ export async function runMonitoringCycle(): Promise<void> {
   } catch (err) {
     log.error({ err }, 'Monitoring cycle failed');
     throw err;
+  } finally {
+    try {
+      insertMonitoringCycle(Date.now() - startTime);
+    } catch (err) {
+      log.warn({ err }, 'Failed to persist monitoring cycle duration');
+    }
   }
 }
