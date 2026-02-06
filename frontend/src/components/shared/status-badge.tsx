@@ -3,7 +3,8 @@ import { cn } from '@/lib/utils';
 type Status = 'running' | 'stopped' | 'paused' | 'unhealthy' | 'healthy' | 'unknown' |
   'up' | 'down' | 'active' | 'inactive' |
   'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed' |
-  'critical' | 'warning' | 'info' | 'ok' | 'error';
+  'critical' | 'warning' | 'info' | 'ok' | 'error' |
+  'capturing' | 'processing';
 
 const statusColors: Record<string, string> = {
   running: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -27,6 +28,8 @@ const statusColors: Record<string, string> = {
   info: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
   ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
   error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  capturing: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  processing: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
 };
 
 const statusDotColors: Record<string, string> = {
@@ -51,10 +54,12 @@ const statusDotColors: Record<string, string> = {
   info: 'bg-blue-500',
   unknown: 'bg-gray-500',
   inactive: 'bg-gray-500',
+  capturing: 'bg-blue-500',
+  processing: 'bg-purple-500',
 };
 
 // Active statuses get a pulse animation
-const activeStatuses = ['running', 'healthy', 'up', 'active', 'executing', 'pending'];
+const activeStatuses = ['running', 'healthy', 'up', 'active', 'executing', 'pending', 'capturing'];
 
 interface StatusBadgeProps {
   status: Status | string;

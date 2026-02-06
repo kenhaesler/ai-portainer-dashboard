@@ -4,6 +4,7 @@ import { runMonitoringCycle } from '../services/monitoring-service.js';
 import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
+import { cleanupOldCaptures } from '../services/pcap-service.js';
 
 const log = createChildLogger('scheduler');
 
@@ -89,6 +90,12 @@ async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'Metrics cleanup failed');
+  }
+
+  try {
+    cleanupOldCaptures();
+  } catch (err) {
+    log.error({ err }, 'PCAP captures cleanup failed');
   }
 }
 
