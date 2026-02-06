@@ -13,6 +13,7 @@ import {
   Shield,
   GitBranch,
   MessageSquare,
+  FileBarChart,
   FileSearch,
   Radio,
   Settings,
@@ -63,6 +64,7 @@ const navigation: NavGroup[] = [
       { label: 'Remediation', to: '/remediation', icon: Shield },
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
+      { label: 'Reports', to: '/reports', icon: FileBarChart },
     ],
   },
   {
