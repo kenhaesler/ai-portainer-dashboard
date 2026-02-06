@@ -11,10 +11,15 @@ import {
   RefreshCw,
   ZoomIn,
   ZoomOut,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Timer,
 } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useContainerMetrics, useAnomalies } from '@/hooks/use-metrics';
+import { useContainerForecast, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
@@ -22,6 +27,16 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
+import { formatDate } from '@/lib/utils';
 
 const TIME_RANGES = [
   { value: '15m', label: '15 min' },
@@ -118,6 +133,10 @@ export default function MetricsDashboardPage() {
 
   // Fetch anomalies
   const { data: anomaliesData } = useAnomalies();
+
+  // Fetch capacity forecasts for selected container
+  const { data: cpuForecast } = useContainerForecast(selectedContainer ?? '', 'cpu');
+  const { data: memoryForecast } = useContainerForecast(selectedContainer ?? '', 'memory');
 
   // Process data for charts
   const cpuData = useMemo(() => {
@@ -433,6 +452,26 @@ export default function MetricsDashboardPage() {
             </div>
           )}
 
+          {/* Capacity Forecasts */}
+          {(cpuForecast || memoryForecast) && !('error' in (cpuForecast ?? {})) && !('error' in (memoryForecast ?? {})) && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-indigo-500" />
+                <h3 className="text-lg font-semibold">Capacity Forecasts</h3>
+                <span className="text-sm text-muted-foreground">(24h projection)</span>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2">
+                {cpuForecast && !('error' in cpuForecast) && (
+                  <ForecastCard forecast={cpuForecast} color="#3b82f6" label="CPU" unit="%" />
+                )}
+                {memoryForecast && !('error' in memoryForecast) && (
+                  <ForecastCard forecast={memoryForecast} color="#8b5cf6" label="Memory" unit="%" />
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Anomaly Summary */}
           {anomaliesData && (
             <div className="rounded-lg border bg-card p-6">
@@ -457,6 +496,162 @@ export default function MetricsDashboardPage() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function ForecastCard({
+  forecast,
+  color,
+  label,
+  unit,
+}: {
+  forecast: CapacityForecast;
+  color: string;
+  label: string;
+  unit: string;
+}) {
+  const TrendIcon =
+    forecast.trend === 'increasing'
+      ? TrendingUp
+      : forecast.trend === 'decreasing'
+        ? TrendingDown
+        : Minus;
+
+  const trendColor =
+    forecast.trend === 'increasing'
+      ? 'text-red-500'
+      : forecast.trend === 'decreasing'
+        ? 'text-emerald-500'
+        : 'text-muted-foreground';
+
+  const confidenceColor =
+    forecast.confidence === 'high'
+      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+      : forecast.confidence === 'medium'
+        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+        : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
+
+  const chartData = forecast.forecast.map((p) => ({
+    time: p.timestamp,
+    actual: p.isProjected ? undefined : Math.round(p.value * 10) / 10,
+    projected: p.isProjected ? Math.round(p.value * 10) / 10 : undefined,
+    value: Math.round(p.value * 10) / 10,
+    isProjected: p.isProjected,
+  }));
+
+  // Overlap: set the projected start point to match the last actual value
+  let lastActualIdx = -1;
+  for (let i = chartData.length - 1; i >= 0; i--) {
+    if (chartData[i].actual !== undefined) { lastActualIdx = i; break; }
+  }
+  if (lastActualIdx >= 0 && lastActualIdx + 1 < chartData.length) {
+    chartData[lastActualIdx].projected = chartData[lastActualIdx].actual;
+  }
+
+  // Split index where projection starts
+  const projectionStartIdx = chartData.findIndex((d) => d.isProjected);
+
+  return (
+    <div className="rounded-lg border bg-card p-5 shadow-sm">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
+          <span className="font-semibold">{label} Forecast</span>
+        </div>
+        <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', confidenceColor)}>
+          {forecast.confidence} confidence
+        </span>
+      </div>
+
+      {/* Stats row */}
+      <div className="flex items-center gap-4 mb-4 text-sm">
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">Current:</span>
+          <span className="font-semibold">{forecast.currentValue.toFixed(1)}{unit}</span>
+        </div>
+        <div className={cn('flex items-center gap-1', trendColor)}>
+          <TrendIcon className="h-4 w-4" />
+          <span className="capitalize font-medium">{forecast.trend}</span>
+        </div>
+        {forecast.timeToThreshold && (
+          <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+            <Timer className="h-4 w-4" />
+            <span className="font-medium">~{forecast.timeToThreshold}h to 90%</span>
+          </div>
+        )}
+      </div>
+
+      {/* Chart */}
+      <div className="h-[180px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <defs>
+              <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={color} stopOpacity={0.2} />
+                <stop offset="95%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id={`gradient-proj-${label}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={color} stopOpacity={0.1} />
+                <stop offset="95%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10 }}
+              tickFormatter={(v) => formatDate(v)}
+            />
+            <YAxis
+              tick={{ fontSize: 10 }}
+              domain={[0, 100]}
+              tickFormatter={(v) => `${v}%`}
+            />
+            <Tooltip
+              labelFormatter={(v) => formatDate(v as string)}
+              formatter={(value: number, name: string) => [
+                `${value}${unit}`,
+                name === 'projected' ? `${label} (projected)` : label,
+              ]}
+            />
+            <ReferenceLine y={90} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '90%', position: 'right', fontSize: 10, fill: '#ef4444' }} />
+            {projectionStartIdx > 0 && (
+              <ReferenceLine
+                x={chartData[projectionStartIdx]?.time}
+                stroke="#94a3b8"
+                strokeDasharray="3 3"
+                label={{ value: 'Now', position: 'top', fontSize: 10, fill: '#94a3b8' }}
+              />
+            )}
+            <Area
+              type="monotone"
+              dataKey="actual"
+              stroke={color}
+              strokeWidth={2}
+              fill={`url(#gradient-${label})`}
+              dot={false}
+              activeDot={{ r: 3 }}
+              connectNulls={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="projected"
+              stroke={color}
+              strokeWidth={2}
+              strokeDasharray="5 3"
+              fill={`url(#gradient-proj-${label})`}
+              dot={false}
+              activeDot={{ r: 3 }}
+              connectNulls={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* R² score */}
+      <p className="mt-2 text-xs text-muted-foreground text-right">
+        R² = {forecast.r_squared.toFixed(3)} | slope = {forecast.slope.toFixed(2)}/h
+      </p>
     </div>
   );
 }
