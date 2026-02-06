@@ -154,11 +154,12 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { action, userId, limit = 100, offset = 0 } = request.query as {
+    const { action, userId, limit = 100, offset = 0, cursor } = request.query as {
       action?: string;
       userId?: string;
       limit?: number;
       offset?: number;
+      cursor?: string;
     };
 
     const db = getDb();
@@ -168,13 +169,34 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     if (action) { conditions.push('action = ?'); params.push(action); }
     if (userId) { conditions.push('user_id = ?'); params.push(userId); }
 
+    // Cursor-based pagination: cursor is "created_at|id"
+    if (cursor) {
+      const [cursorDate, cursorId] = cursor.split('|');
+      conditions.push('(created_at < ? OR (created_at = ? AND id < ?))');
+      params.push(cursorDate, cursorDate, Number(cursorId));
+    }
+
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const entries = db.prepare(`
-      SELECT * FROM audit_log ${where}
-      ORDER BY created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, limit, offset);
+    // Fetch N+1 to determine hasMore
+    const fetchLimit = limit + 1;
+    const entries = cursor
+      ? db.prepare(`
+          SELECT * FROM audit_log ${where}
+          ORDER BY created_at DESC, id DESC LIMIT ?
+        `).all(...params, fetchLimit) as Array<Record<string, unknown>>
+      : db.prepare(`
+          SELECT * FROM audit_log ${where}
+          ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+        `).all(...params, fetchLimit, offset) as Array<Record<string, unknown>>;
 
-    return { entries, limit, offset };
+    const hasMore = entries.length > limit;
+    const items = hasMore ? entries.slice(0, limit) : entries;
+    const lastItem = items[items.length - 1];
+    const nextCursor = hasMore && lastItem
+      ? `${lastItem.created_at}|${lastItem.id}`
+      : null;
+
+    return { entries: items, limit, offset, nextCursor, hasMore };
   });
 }

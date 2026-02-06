@@ -162,6 +162,7 @@ export const InsightsQuerySchema = z.object({
   acknowledged: z.coerce.boolean().optional(),
   limit: z.coerce.number().default(50),
   offset: z.coerce.number().default(0),
+  cursor: z.string().optional(),
 });
 
 export const InsightIdParamsSchema = z.object({
@@ -229,6 +230,7 @@ export const AuditLogQuerySchema = z.object({
   userId: z.string().optional(),
   limit: z.coerce.number().default(100),
   offset: z.coerce.number().default(0),
+  cursor: z.string().optional(),
 });
 
 // ─── Logs schemas ───────────────────────────────────────────────────

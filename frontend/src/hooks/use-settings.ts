@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -102,5 +102,29 @@ export function useAuditLog(options?: AuditLogOptions) {
       '/api/settings/audit-log',
       { params: options as Record<string, string | number | boolean | undefined> }
     ),
+  });
+}
+
+interface AuditLogPage {
+  entries: AuditLogEntry[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
+export function useInfiniteAuditLog(options?: Omit<AuditLogOptions, 'page'>) {
+  return useInfiniteQuery<AuditLogPage>({
+    queryKey: ['settings', 'audit-log', 'infinite', options],
+    queryFn: ({ pageParam }) =>
+      api.get<AuditLogPage>('/api/settings/audit-log', {
+        params: {
+          ...options,
+          cursor: pageParam,
+          limit: options?.limit ?? 100,
+        } as Record<string, string | number | boolean | undefined>,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }

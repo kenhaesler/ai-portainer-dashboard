@@ -12,42 +12,73 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { severity, acknowledged, limit = 50, offset = 0 } = request.query as {
+    const { severity, acknowledged, limit = 50, offset = 0, cursor } = request.query as {
       severity?: string;
       acknowledged?: boolean;
       limit?: number;
       offset?: number;
+      cursor?: string;
     };
 
     const db = getDb();
-    const conditions: string[] = [];
-    const params: unknown[] = [];
+    const filterConditions: string[] = [];
+    const filterParams: unknown[] = [];
 
     if (severity) {
-      conditions.push('severity = ?');
-      params.push(severity);
+      filterConditions.push('severity = ?');
+      filterParams.push(severity);
     }
     if (acknowledged !== undefined) {
-      conditions.push('is_acknowledged = ?');
-      params.push(acknowledged ? 1 : 0);
+      filterConditions.push('is_acknowledged = ?');
+      filterParams.push(acknowledged ? 1 : 0);
+    }
+
+    const filterWhere = filterConditions.length > 0
+      ? `WHERE ${filterConditions.join(' AND ')}`
+      : '';
+
+    // Build full conditions including cursor
+    const conditions = [...filterConditions];
+    const params = [...filterParams];
+
+    if (cursor) {
+      const [cursorDate, cursorId] = cursor.split('|');
+      conditions.push('(created_at < ? OR (created_at = ? AND id < ?))');
+      params.push(cursorDate, cursorDate, cursorId);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const insights = db.prepare(`
-      SELECT * FROM insights ${where}
-      ORDER BY created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, limit, offset);
+    // Fetch N+1 to determine hasMore
+    const fetchLimit = limit + 1;
+    const insights = cursor
+      ? db.prepare(`
+          SELECT * FROM insights ${where}
+          ORDER BY created_at DESC, id DESC LIMIT ?
+        `).all(...params, fetchLimit) as Array<Record<string, unknown>>
+      : db.prepare(`
+          SELECT * FROM insights ${where}
+          ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+        `).all(...params, fetchLimit, offset) as Array<Record<string, unknown>>;
 
     const total = db.prepare(`
-      SELECT COUNT(*) as count FROM insights ${where}
-    `).get(...params) as { count: number };
+      SELECT COUNT(*) as count FROM insights ${filterWhere}
+    `).get(...filterParams) as { count: number };
+
+    const hasMore = insights.length > limit;
+    const items = hasMore ? insights.slice(0, limit) : insights;
+    const lastItem = items[items.length - 1];
+    const nextCursor = hasMore && lastItem
+      ? `${lastItem.created_at}|${lastItem.id}`
+      : null;
 
     return {
-      insights,
+      insights: items,
       total: total.count,
       limit,
       offset,
+      nextCursor,
+      hasMore,
     };
   });
 
