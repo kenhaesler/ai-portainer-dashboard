@@ -43,13 +43,14 @@ describe('Cache Admin Routes', () => {
 
   describe('GET /api/admin/cache/stats', () => {
     it('returns cache statistics and entries', async () => {
-      mockCache.getStats.mockReturnValue({
+      mockCache.getStats.mockResolvedValue({
         size: 5,
         hits: 100,
         misses: 20,
         hitRate: '83.3%',
+        backend: 'memory',
       });
-      mockCache.getEntries.mockReturnValue([
+      mockCache.getEntries.mockResolvedValue([
         { key: 'endpoints', expiresIn: 120 },
         { key: 'containers:1', expiresIn: 45 },
       ]);
@@ -66,6 +67,7 @@ describe('Cache Admin Routes', () => {
       expect(body.hits).toBe(100);
       expect(body.misses).toBe(20);
       expect(body.hitRate).toBe('83.3%');
+      expect(body.backend).toBe('memory');
       expect(body.entries).toHaveLength(2);
       expect(body.entries[0].key).toBe('endpoints');
     });
