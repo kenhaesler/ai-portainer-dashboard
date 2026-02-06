@@ -46,7 +46,29 @@ export async function imagesRoutes(fastify: FastifyInstance) {
       }),
     );
 
-    return allImages.flat();
+    // De-duplicate images by ID across endpoints
+    const seen = new Map<string, NormalizedImage>();
+    for (const img of allImages.flat()) {
+      const existing = seen.get(img.id);
+      if (!existing) {
+        seen.set(img.id, img);
+      } else {
+        // Keep the one with more tags, append endpoint info
+        if (img.tags.length > existing.tags.length) {
+          seen.set(img.id, {
+            ...img,
+            endpointName: `${existing.endpointName || `Endpoint ${existing.endpointId}`}, ${img.endpointName || `Endpoint ${img.endpointId}`}`,
+          });
+        } else {
+          seen.set(img.id, {
+            ...existing,
+            endpointName: `${existing.endpointName || `Endpoint ${existing.endpointId}`}, ${img.endpointName || `Endpoint ${img.endpointId}`}`,
+          });
+        }
+      }
+    }
+
+    return Array.from(seen.values());
   });
 }
 
