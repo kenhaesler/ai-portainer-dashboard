@@ -21,6 +21,10 @@ import {
   Layers,
   ScrollText,
   Clock,
+  Sparkles,
+  Loader2,
+  ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
@@ -28,6 +32,7 @@ import { cn } from '@/lib/utils';
 import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSearch } from '@/providers/search-provider';
+import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
 
 interface PageEntry {
   label: string;
@@ -51,15 +56,30 @@ const pages: PageEntry[] = [
   { label: 'Settings', to: '/settings', icon: Settings },
 ];
 
+/** Heuristic: detect if input looks like a natural language question rather than a name search */
+function isNaturalLanguageQuery(input: string): boolean {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed.length < 5) return false;
+  // Starts with question words
+  if (/^(what|which|how|show|list|find|are|is|why|where|who|when|compare|help|tell)\b/.test(trimmed)) return true;
+  // Ends with a question mark
+  if (trimmed.endsWith('?')) return true;
+  // Contains question-like phrases
+  if (/\b(using more than|greater than|less than|running|stopped|restarted|unhealthy|memory|cpu)\b/.test(trimmed)) return true;
+  return false;
+}
+
 export function CommandPalette() {
   const navigate = useNavigate();
   const open = useUiStore((s) => s.commandPaletteOpen);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const { theme, setTheme } = useThemeStore();
   const [query, setQuery] = useState('');
+  const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const debouncedQuery = useDebouncedValue(query, 250);
   const { data, isLoading } = useGlobalSearch(debouncedQuery, open);
   const { recent, addRecent } = useSearch();
+  const nlQuery = useNlQuery();
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -90,8 +110,32 @@ export function CommandPalette() {
   useEffect(() => {
     if (!open) {
       setQuery('');
+      setAiResult(null);
     }
   }, [open]);
+
+  const isNl = isNaturalLanguageQuery(query);
+
+  const handleAiQuery = useCallback(() => {
+    if (!query.trim() || nlQuery.isPending) return;
+    addRecent(query);
+    setAiResult(null);
+    nlQuery.mutate(query.trim(), {
+      onSuccess: (result) => {
+        if (result.action === 'navigate' && result.page) {
+          setAiResult(result);
+        } else {
+          setAiResult(result);
+        }
+      },
+      onError: () => {
+        setAiResult({
+          action: 'error',
+          text: 'AI queries are currently unavailable.',
+        });
+      },
+    });
+  }, [query, nlQuery, addRecent]);
 
   const navigateTo = (path: string) => {
     navigate(path);
@@ -154,16 +198,81 @@ export function CommandPalette() {
         >
           <div className="flex items-center border-b border-border px-3">
             <Command.Input
-              placeholder="Search containers, images, stacks, logs..."
+              placeholder="Search or ask a question about your infrastructure..."
               className={cn(
                 'flex h-12 w-full bg-transparent py-3 text-sm text-foreground outline-none',
                 'placeholder:text-muted-foreground'
               )}
               value={query}
-              onValueChange={setQuery}
+              onValueChange={(v) => { setQuery(v); setAiResult(null); }}
+              onKeyDown={(e: React.KeyboardEvent) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && isNl) {
+                  e.preventDefault();
+                  handleAiQuery();
+                }
+              }}
               autoFocus
             />
+            {isNl && query.trim().length >= 5 && (
+              <button
+                onClick={handleAiQuery}
+                disabled={nlQuery.isPending}
+                className="ml-2 flex-shrink-0 inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {nlQuery.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                Ask AI
+              </button>
+            )}
           </div>
+
+          {/* AI Result */}
+          {aiResult && (
+            <div className="border-b border-border px-3 py-3">
+              {aiResult.action === 'answer' && (
+                <div className="flex items-start gap-2.5">
+                  <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0 text-purple-500" />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium text-foreground">{aiResult.text}</p>
+                    {aiResult.description && (
+                      <p className="text-xs text-muted-foreground">{aiResult.description}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {aiResult.action === 'navigate' && aiResult.page && (
+                <button
+                  onClick={() => navigateTo(aiResult.page!)}
+                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                >
+                  <Sparkles className="h-4 w-4 flex-shrink-0 text-purple-500" />
+                  <div className="flex-1 text-left">
+                    <p className="font-medium">{aiResult.description || 'Go to page'}</p>
+                    <p className="text-xs text-muted-foreground">{aiResult.page}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+              {aiResult.action === 'error' && (
+                <div className="flex items-center gap-2.5 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{aiResult.text}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {nlQuery.isPending && (
+            <div className="border-b border-border px-3 py-3">
+              <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                <span>Asking AI about your infrastructure...</span>
+              </div>
+            </div>
+          )}
 
           <Command.List className="max-h-72 overflow-y-auto p-2">
             {query.trim().length < 2 ? (
@@ -185,6 +294,10 @@ export function CommandPalette() {
               <span className="flex items-center gap-1">
                 <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono">↵</kbd>
                 select
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono">⌘↵</kbd>
+                ask AI
               </span>
               <span className="flex items-center gap-1">
                 <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono">esc</kbd>
