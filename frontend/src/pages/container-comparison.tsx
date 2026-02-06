@@ -36,14 +36,17 @@ function ContainerSelector({
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
 
-  const selectedIds = new Set(selected.map((s) => s.containerId));
-  const filtered = containers.filter(
-    (c) =>
-      !selectedIds.has(c.id) &&
-      (c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.image.toLowerCase().includes(search.toLowerCase()) ||
-        c.endpointName.toLowerCase().includes(search.toLowerCase())),
-  );
+  const filtered = useMemo(() => {
+    const selectedIds = new Set(selected.map((s) => s.containerId));
+    const lowerSearch = search.toLowerCase();
+    return containers.filter(
+      (c) =>
+        !selectedIds.has(c.id) &&
+        (c.name.toLowerCase().includes(lowerSearch) ||
+          c.image.toLowerCase().includes(lowerSearch) ||
+          c.endpointName.toLowerCase().includes(lowerSearch)),
+    );
+  }, [containers, selected, search]);
 
   return (
     <div className="space-y-3">
