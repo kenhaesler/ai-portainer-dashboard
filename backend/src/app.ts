@@ -37,6 +37,7 @@ import { statusPageRoutes } from './routes/status-page.js';
 import { llmRoutes } from './routes/llm.js';
 import { llmObservabilityRoutes } from './routes/llm-observability.js';
 import { forecastRoutes } from './routes/forecasts.js';
+import { correlationRoutes } from './routes/correlations.js';
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -98,6 +99,7 @@ export async function buildApp() {
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
   await app.register(forecastRoutes);
+  await app.register(correlationRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);
