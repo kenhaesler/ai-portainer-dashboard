@@ -133,6 +133,13 @@ export const ImageSchema = z.object({
   Created: z.number().optional(),
 }).passthrough();
 
+// Pre-compiled array schemas (parsed once at module level for Zod internal caching)
+export const EndpointArraySchema = z.array(EndpointSchema);
+export const ContainerArraySchema = z.array(ContainerSchema);
+export const StackArraySchema = z.array(StackSchema);
+export const NetworkArraySchema = z.array(NetworkSchema);
+export const ImageArraySchema = z.array(ImageSchema);
+
 export type Endpoint = z.infer<typeof EndpointSchema>;
 export type Container = z.infer<typeof ContainerSchema>;
 export type Stack = z.infer<typeof StackSchema>;

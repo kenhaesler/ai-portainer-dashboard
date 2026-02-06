@@ -3,6 +3,8 @@ import { createChildLogger } from '../utils/logger.js';
 import {
   EndpointSchema, ContainerSchema, StackSchema,
   ContainerStatsSchema, NetworkSchema, ImageSchema,
+  EndpointArraySchema, ContainerArraySchema, StackArraySchema,
+  NetworkArraySchema, ImageArraySchema,
   type Endpoint, type Container, type Stack,
   type ContainerStats, type Network, type DockerImage,
 } from '../models/portainer.js';
@@ -101,7 +103,7 @@ async function portainerFetch<T>(
 // Endpoints
 export async function getEndpoints(): Promise<Endpoint[]> {
   const raw = await portainerFetch<unknown[]>('/api/endpoints');
-  return raw.map((e) => EndpointSchema.parse(e));
+  return EndpointArraySchema.parse(raw);
 }
 
 export async function getEndpoint(id: number): Promise<Endpoint> {
@@ -114,7 +116,7 @@ export async function getContainers(endpointId: number, all = true): Promise<Con
   const raw = await portainerFetch<unknown[]>(
     `/api/endpoints/${endpointId}/docker/containers/json?all=${all}`,
   );
-  return raw.map((c) => ContainerSchema.parse(c));
+  return ContainerArraySchema.parse(raw);
 }
 
 export async function getContainer(endpointId: number, containerId: string): Promise<Container> {
@@ -180,7 +182,7 @@ export async function getContainerStats(endpointId: number, containerId: string)
 // Stacks
 export async function getStacks(): Promise<Stack[]> {
   const raw = await portainerFetch<unknown[]>('/api/stacks');
-  return raw.map((s) => StackSchema.parse(s));
+  return StackArraySchema.parse(raw);
 }
 
 export async function getStack(id: number): Promise<Stack> {
@@ -193,7 +195,7 @@ export async function getNetworks(endpointId: number): Promise<Network[]> {
   const raw = await portainerFetch<unknown[]>(
     `/api/endpoints/${endpointId}/docker/networks`,
   );
-  return raw.map((n) => NetworkSchema.parse(n));
+  return NetworkArraySchema.parse(raw);
 }
 
 // Images
@@ -201,7 +203,7 @@ export async function getImages(endpointId: number): Promise<DockerImage[]> {
   const raw = await portainerFetch<unknown[]>(
     `/api/endpoints/${endpointId}/docker/images/json`,
   );
-  return raw.map((i) => ImageSchema.parse(i));
+  return ImageArraySchema.parse(raw);
 }
 
 // Exec (for packet capture and other read-only operations)
