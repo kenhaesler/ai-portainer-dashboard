@@ -75,6 +75,11 @@ export const envSchema = z.object({
   EMAIL_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
   EMAIL_RECIPIENTS: z.string().default(''),
 
+  // Webhooks
+  WEBHOOKS_ENABLED: z.coerce.boolean().default(false),
+  WEBHOOKS_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(5),
+  WEBHOOKS_RETRY_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
+
   // Rate Limiting
   LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(
     process.env.NODE_ENV === 'production' ? 5 : 30
