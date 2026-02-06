@@ -59,10 +59,10 @@ describe('portainer-cache hybrid backend', () => {
     await cachedFetch('containers:test', 30, fetcher);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    await expect(cache.getStats()).resolves.toMatchObject({ backend: 'memory' });
+    await expect(cache.getStats()).resolves.toMatchObject({ backend: 'memory-only' });
   });
 
-  it('uses Redis cache when configured and available', async () => {
+  it('uses multi-layer cache when Redis is configured', async () => {
     const redisClient = createMockRedisClient();
     const createClient = vi.fn(() => redisClient);
 
@@ -79,15 +79,50 @@ describe('portainer-cache hybrid backend', () => {
     const { cachedFetch, cache } = await import('./portainer-cache.js');
     const fetcher = vi.fn().mockResolvedValue({ ok: true });
 
+    // First call: L1 miss → L2 miss → fetch → write L1 + L2
     await cachedFetch('containers:test', 30, fetcher);
+    // Second call: L1 hit (populated from set) → skip L2
     await cachedFetch('containers:test', 30, fetcher);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(createClient).toHaveBeenCalledWith({ url: 'redis://redis:6379' });
     expect(redisClient.connect).toHaveBeenCalledTimes(1);
     expect(redisClient.set).toHaveBeenCalledTimes(1);
-    expect(redisClient.get).toHaveBeenCalledTimes(2);
-    await expect(cache.getStats()).resolves.toMatchObject({ backend: 'redis' });
+    // Only 1 Redis get (first call), second call hits L1
+    expect(redisClient.get).toHaveBeenCalledTimes(1);
+    await expect(cache.getStats()).resolves.toMatchObject({ backend: 'multi-layer' });
+  });
+
+  it('populates L1 on L2 hit', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Manually set in Redis only (simulating L1 miss, L2 hit)
+    const redisKey = 'aidash:cache:test-key';
+    await redisClient.connect.call(redisClient);
+    await redisClient.set(redisKey, JSON.stringify({ val: 42 }));
+
+    // First get: L1 miss → L2 hit → populates L1
+    const val1 = await cache.get('test-key');
+    expect(val1).toEqual({ val: 42 });
+    expect(redisClient.get).toHaveBeenCalledTimes(1);
+
+    // Second get: L1 hit → skips Redis
+    const val2 = await cache.get('test-key');
+    expect(val2).toEqual({ val: 42 });
+    // Redis.get should NOT have been called again
+    expect(redisClient.get).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to memory cache when Redis connection fails', async () => {
@@ -115,6 +150,31 @@ describe('portainer-cache hybrid backend', () => {
     await cachedFetch('containers:test', 30, fetcher);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    await expect(cache.getStats()).resolves.toMatchObject({ backend: 'memory' });
+    await expect(cache.getStats()).resolves.toMatchObject({ backend: 'memory-only' });
+  });
+
+  it('invalidate clears from both layers', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetch, cache } = await import('./portainer-cache.js');
+    const fetcher = vi.fn().mockResolvedValue({ data: 1 });
+
+    await cachedFetch('key1', 30, fetcher);
+    await cache.invalidate('key1');
+
+    // After invalidation, fetcher should be called again
+    await cachedFetch('key1', 30, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(redisClient.del).toHaveBeenCalled();
   });
 });

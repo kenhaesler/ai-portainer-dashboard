@@ -48,7 +48,7 @@ describe('Cache Admin Routes', () => {
         hits: 100,
         misses: 20,
         hitRate: '83.3%',
-        backend: 'memory',
+        backend: 'memory-only',
       });
       mockCache.getEntries.mockResolvedValue([
         { key: 'endpoints', expiresIn: 120 },
@@ -67,7 +67,7 @@ describe('Cache Admin Routes', () => {
       expect(body.hits).toBe(100);
       expect(body.misses).toBe(20);
       expect(body.hitRate).toBe('83.3%');
-      expect(body.backend).toBe('memory');
+      expect(body.backend).toBe('memory-only');
       expect(body.entries).toHaveLength(2);
       expect(body.entries[0].key).toBe('endpoints');
     });

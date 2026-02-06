@@ -81,6 +81,7 @@ class TtlCache {
 
 class HybridCache {
   private memory = new TtlCache();
+  private readonly l1TtlSeconds = 5; // Short L1 TTL for instant access
   private hits = 0;
   private misses = 0;
   private redisClient: RedisClient | null = null;
@@ -159,59 +160,67 @@ class HybridCache {
   }
 
   async get<T>(key: string): Promise<T | undefined> {
+    // L1: Check in-memory cache first (instant, no network)
+    const l1Value = this.memory.get<T>(key);
+    if (l1Value !== undefined) {
+      this.hits++;
+      return l1Value;
+    }
+
+    // L2: Check Redis
     const client = await this.ensureRedisClient();
     if (client) {
       try {
         const raw = await client.get(this.getRedisKey(key));
-        if (raw == null) {
-          this.misses++;
-          return undefined;
+        if (raw != null) {
+          const parsed = JSON.parse(raw) as T;
+          // Populate L1 on L2 hit for subsequent instant access
+          this.memory.set(key, parsed, this.l1TtlSeconds);
+          this.hits++;
+          return parsed;
         }
-        this.hits++;
-        return JSON.parse(raw) as T;
       } catch (err) {
         this.disableRedisTemporarily('redis-get-failed', err);
       }
     }
 
-    const value = this.memory.get<T>(key);
-    if (value === undefined) {
-      this.misses++;
-      return undefined;
-    }
-    this.hits++;
-    return value;
+    this.misses++;
+    return undefined;
   }
 
   async set<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
+    // Always write to L1 (short TTL for instant reads)
+    this.memory.set(key, data, Math.min(ttlSeconds, this.l1TtlSeconds));
+
+    // Write to L2 (Redis) with full TTL
     const client = await this.ensureRedisClient();
     if (client) {
       try {
         await client.set(this.getRedisKey(key), JSON.stringify(data), { EX: ttlSeconds });
-        return;
       } catch (err) {
         this.disableRedisTemporarily('redis-set-failed', err);
       }
     }
-
-    this.memory.set(key, data, ttlSeconds);
   }
 
   async invalidate(key: string): Promise<void> {
+    // Clear from both layers
+    this.memory.invalidate(key);
+
     const client = await this.ensureRedisClient();
     if (client) {
       try {
         await client.del(this.getRedisKey(key));
-        return;
       } catch (err) {
         this.disableRedisTemporarily('redis-invalidate-failed', err);
       }
     }
-
-    this.memory.invalidate(key);
   }
 
   async invalidatePattern(pattern: string): Promise<void> {
+    // Clear from both layers
+    this.memory.invalidatePattern(pattern);
+
     const client = await this.ensureRedisClient();
     if (client) {
       try {
@@ -220,13 +229,10 @@ class HybridCache {
         if (matched.length > 0) {
           await client.del(matched);
         }
-        return;
       } catch (err) {
         this.disableRedisTemporarily('redis-invalidate-pattern-failed', err);
       }
     }
-
-    this.memory.invalidatePattern(pattern);
   }
 
   async getEntries(): Promise<Array<{ key: string; expiresIn: number }>> {
@@ -254,6 +260,9 @@ class HybridCache {
   }
 
   async clear(): Promise<void> {
+    // Clear both layers
+    this.memory.clear();
+
     const client = await this.ensureRedisClient();
     if (client) {
       try {
@@ -261,32 +270,32 @@ class HybridCache {
         if (keys.length > 0) {
           await client.del(keys);
         }
-        log.info('Cache cleared');
-        return;
+        log.info('Cache cleared (all layers)');
       } catch (err) {
         this.disableRedisTemporarily('redis-clear-failed', err);
       }
     }
-
-    this.memory.clear();
   }
 
   async getStats() {
+    const memoryStats = this.memory.getStats();
     const client = await this.ensureRedisClient();
-    let size = this.memory.getStats().size;
-    let backend: 'redis' | 'memory' = 'memory';
+    let l2Size = 0;
+    let backend: 'multi-layer' | 'memory-only' = 'memory-only';
 
     if (client) {
       try {
-        size = (await this.redisKeys(client)).length;
-        backend = 'redis';
+        l2Size = (await this.redisKeys(client)).length;
+        backend = 'multi-layer';
       } catch (err) {
         this.disableRedisTemporarily('redis-stats-failed', err);
       }
     }
 
     return {
-      size,
+      size: backend === 'multi-layer' ? l2Size : memoryStats.size,
+      l1Size: memoryStats.size,
+      l2Size,
       hits: this.hits,
       misses: this.misses,
       hitRate: this.hits + this.misses > 0
