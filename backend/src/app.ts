@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { readFileSync } from 'node:fs';
 import requestContext from './plugins/request-context.js';
 import corsPlugin from './plugins/cors.js';
 import rateLimitPlugin from './plugins/rate-limit.js';
@@ -40,9 +41,28 @@ import { llmObservabilityRoutes } from './routes/llm-observability.js';
 import { forecastRoutes } from './routes/forecasts.js';
 import { correlationRoutes } from './routes/correlations.js';
 
+function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
+  const enabled = process.env.HTTP2_ENABLED === 'true';
+  const certPath = process.env.TLS_CERT_PATH;
+  const keyPath = process.env.TLS_KEY_PATH;
+
+  if (enabled && certPath && keyPath) {
+    return {
+      http2: true,
+      https: {
+        key: readFileSync(keyPath),
+        cert: readFileSync(certPath),
+        allowHTTP1: true,
+      },
+    };
+  }
+  return {};
+}
+
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
   const app = Fastify({
+    ...getHttp2Options(),
     logger: {
       level: process.env.LOG_LEVEL || 'info',
       ...(isDev && {
