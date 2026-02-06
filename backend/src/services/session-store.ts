@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getDb } from '../db/sqlite.js';
+import { prepareStmt } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('session-store');
@@ -15,12 +15,11 @@ export interface Session {
 }
 
 export function createSession(userId: string, username: string): Session {
-  const db = getDb();
   const id = uuidv4();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
 
-  db.prepare(`
+  prepareStmt(`
     INSERT INTO sessions (id, user_id, username, created_at, expires_at, last_active, is_valid)
     VALUES (?, ?, ?, ?, ?, ?, 1)
   `).run(id, userId, username, now, expiresAt, now);
@@ -39,24 +38,21 @@ export function createSession(userId: string, username: string): Session {
 }
 
 export function getSession(sessionId: string): Session | undefined {
-  const db = getDb();
-  return db.prepare(
+  return prepareStmt(
     'SELECT * FROM sessions WHERE id = ? AND is_valid = 1 AND expires_at > datetime(?)'
   ).get(sessionId, new Date().toISOString()) as Session | undefined;
 }
 
 export function invalidateSession(sessionId: string): void {
-  const db = getDb();
-  db.prepare('UPDATE sessions SET is_valid = 0 WHERE id = ?').run(sessionId);
+  prepareStmt('UPDATE sessions SET is_valid = 0 WHERE id = ?').run(sessionId);
   log.info({ sessionId }, 'Session invalidated');
 }
 
 export function refreshSession(sessionId: string): Session | undefined {
-  const db = getDb();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
-  db.prepare(`
+  prepareStmt(`
     UPDATE sessions SET expires_at = ?, last_active = ?
     WHERE id = ? AND is_valid = 1
   `).run(expiresAt, now, sessionId);
@@ -65,8 +61,7 @@ export function refreshSession(sessionId: string): Session | undefined {
 }
 
 export function cleanExpiredSessions(): number {
-  const db = getDb();
-  const result = db.prepare(
+  const result = prepareStmt(
     'DELETE FROM sessions WHERE expires_at < datetime(?) OR is_valid = 0'
   ).run(new Date().toISOString());
   return result.changes;

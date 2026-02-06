@@ -88,11 +88,30 @@ function runMigrations(database: Database.Database) {
   }
 }
 
+/**
+ * Cached prepared statement helper.
+ * Lazily prepares and caches statements by SQL string to avoid
+ * repeated parsing on hot paths. The cache is cleared when the DB is closed.
+ */
+const stmtCache = new Map<string, Database.Statement>();
+
+export function prepareStmt<BindParams extends unknown[] = unknown[]>(
+  sql: string,
+): Database.Statement<BindParams> {
+  let stmt = stmtCache.get(sql);
+  if (!stmt) {
+    stmt = getDb().prepare(sql);
+    stmtCache.set(sql, stmt);
+  }
+  return stmt as Database.Statement<BindParams>;
+}
+
 export function closeDb() {
   if (walCheckpointTimer) {
     clearInterval(walCheckpointTimer);
     walCheckpointTimer = null;
   }
+  stmtCache.clear();
   if (db) {
     db.close();
     db = null;

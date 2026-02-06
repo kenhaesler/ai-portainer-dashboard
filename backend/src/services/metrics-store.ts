@@ -1,4 +1,4 @@
-import { getDb } from '../db/sqlite.js';
+import { getDb, prepareStmt } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Metric } from '../models/metrics.js';
 
@@ -16,7 +16,7 @@ export function insertMetrics(metrics: MetricInsert[]): void {
   if (metrics.length === 0) return;
 
   const db = getDb();
-  const stmt = db.prepare(`
+  const stmt = prepareStmt(`
     INSERT INTO metrics (endpoint_id, container_id, container_name, metric_type, value, timestamp)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
   `);
@@ -43,15 +43,12 @@ export function getMetrics(
   from: string,
   to: string,
 ): Metric[] {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT * FROM metrics
-       WHERE container_id = ? AND metric_type = ?
-         AND timestamp >= ? AND timestamp <= ?
-       ORDER BY timestamp ASC`,
-    )
-    .all(containerId, metricType, from, to) as Metric[];
+  return prepareStmt(
+    `SELECT * FROM metrics
+     WHERE container_id = ? AND metric_type = ?
+       AND timestamp >= ? AND timestamp <= ?
+     ORDER BY timestamp ASC`,
+  ).all(containerId, metricType, from, to) as Metric[];
 }
 
 export interface MovingAverageResult {
@@ -65,20 +62,17 @@ export function getMovingAverage(
   metricType: string,
   windowSize: number,
 ): MovingAverageResult | null {
-  const db = getDb();
-  const result = db
-    .prepare(
-      `SELECT
-         AVG(value) as mean,
-         COUNT(*) as sample_count
-       FROM (
-         SELECT value FROM metrics
-         WHERE container_id = ? AND metric_type = ?
-         ORDER BY timestamp DESC
-         LIMIT ?
-       )`,
-    )
-    .get(containerId, metricType, windowSize) as {
+  const result = prepareStmt(
+    `SELECT
+       AVG(value) as mean,
+       COUNT(*) as sample_count
+     FROM (
+       SELECT value FROM metrics
+       WHERE container_id = ? AND metric_type = ?
+       ORDER BY timestamp DESC
+       LIMIT ?
+     )`,
+  ).get(containerId, metricType, windowSize) as {
     mean: number | null;
     sample_count: number;
   } | undefined;
@@ -88,18 +82,16 @@ export function getMovingAverage(
   }
 
   // Calculate standard deviation in a separate query for accuracy
-  const stdResult = db
-    .prepare(
-      `SELECT
-         AVG((value - ?) * (value - ?)) as variance
-       FROM (
-         SELECT value FROM metrics
-         WHERE container_id = ? AND metric_type = ?
-         ORDER BY timestamp DESC
-         LIMIT ?
-       )`,
-    )
-    .get(result.mean, result.mean, containerId, metricType, windowSize) as {
+  const stdResult = prepareStmt(
+    `SELECT
+       AVG((value - ?) * (value - ?)) as variance
+     FROM (
+       SELECT value FROM metrics
+       WHERE container_id = ? AND metric_type = ?
+       ORDER BY timestamp DESC
+       LIMIT ?
+     )`,
+  ).get(result.mean, result.mean, containerId, metricType, windowSize) as {
     variance: number | null;
   } | undefined;
 
@@ -114,13 +106,10 @@ export function getMovingAverage(
 }
 
 export function cleanOldMetrics(retentionDays: number): number {
-  const db = getDb();
-  const result = db
-    .prepare(
-      `DELETE FROM metrics
-       WHERE timestamp < datetime('now', ? || ' days')`,
-    )
-    .run(`-${retentionDays}`);
+  const result = prepareStmt(
+    `DELETE FROM metrics
+     WHERE timestamp < datetime('now', ? || ' days')`,
+  ).run(`-${retentionDays}`);
 
   log.info({ deleted: result.changes, retentionDays }, 'Old metrics cleaned');
   return result.changes;
@@ -129,18 +118,15 @@ export function cleanOldMetrics(retentionDays: number): number {
 export function getLatestMetrics(
   containerId: string,
 ): Record<string, number> {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT metric_type, value FROM metrics
-       WHERE container_id = ?
-         AND timestamp = (
-           SELECT MAX(timestamp) FROM metrics m2
-           WHERE m2.container_id = metrics.container_id
-             AND m2.metric_type = metrics.metric_type
-         )`,
-    )
-    .all(containerId) as Array<{ metric_type: string; value: number }>;
+  const rows = prepareStmt(
+    `SELECT metric_type, value FROM metrics
+     WHERE container_id = ?
+       AND timestamp = (
+         SELECT MAX(timestamp) FROM metrics m2
+         WHERE m2.container_id = metrics.container_id
+           AND m2.metric_type = metrics.metric_type
+       )`,
+  ).all(containerId) as Array<{ metric_type: string; value: number }>;
 
   const result: Record<string, number> = {};
   for (const row of rows) {
