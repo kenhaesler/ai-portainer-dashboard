@@ -6,11 +6,11 @@ This file provides guidance to AI coding assistants working with this repository
 
 AI-powered container monitoring dashboard that extends Portainer with real-time insights, anomaly detection, and an LLM chat assistant. This is an **observer-only** dashboard — it does not start, stop, or restart containers. Monorepo with npm workspaces: `backend/` (Fastify 5 + SQLite) and `frontend/` (React 19 + Vite).
 
-## Mandatory Rules — Read First
+## Mandatory Rules
 
-### 1. Testing Is Required — No Exceptions
+### Testing Is Required — No Exceptions
 
-**Every code change MUST include tests before it can be merged to `main`.** This is enforced by CI and is non-negotiable.
+**Every code change MUST include tests before it can be merged to `main`.**
 
 - All new features MUST have corresponding unit and/or integration tests
 - All bug fixes MUST have a regression test proving the fix
@@ -21,75 +21,91 @@ AI-powered container monitoring dashboard that extends Portainer with real-time 
 - Backend tests: `backend/src/**/*.test.ts` — Frontend tests: `frontend/src/**/*.test.{ts,tsx}`
 - Both workspaces use Vitest. Frontend tests use jsdom environment with `@testing-library/react`
 - **Test before committing. Test before pushing. Test before creating a PR.**
-- **DO NOT create pull requests without passing tests. CI will reject them.**
 
-### 2. Observer-Only Constraint
+### Observer-Only Constraint
 
 This dashboard MUST NOT generate code that starts, stops, restarts, or otherwise mutates container state. Read-only access to Portainer only.
 
-### 3. Never Push Directly to `main` or `dev`
+### Git Workflow
 
-This project uses a **two-tier branching model**: `feature/* → dev → main`. All changes go through feature branches and pull requests. Branch from `dev`, not `main`. Branch naming: `feature/<issue#>-<short-description>`.
+This project uses a **two-tier branching model**: `feature/* → dev → main`.
 
-### 4. Never Commit Secrets
-
-No `.env` files, API keys, passwords, or credentials in commits.
+- **Never push directly to `main` or `dev`.** All changes go through feature branches and pull requests.
+- **`dev`** is the integration branch. All feature work targets `dev`.
+- **`main`** is the stable/release branch. Only `dev` merges into `main`.
+- Create feature branches from `dev`: `feature/<issue#>-<short-description>`
+- When a feature is complete, open a PR from `feature/*` → `dev`. CI must pass (typecheck → lint → test → build).
+- When `dev` is stable and ready for release, open a PR from `dev` → `main`. CI must pass. If all checks are green, the merge is approved.
+- Never commit secrets (`.env`, API keys, passwords, credentials).
+- Commit messages should be concise and describe the "why" not just the "what".
 
 ## Build & Development Commands
 
 ```bash
-npm install                # Install all dependencies (both workspaces)
-npm run dev                # Development (runs backend + frontend concurrently)
-npm run build              # Build everything
-npm run lint               # Lint
-npm run typecheck          # Type check
-npm test                   # Run all tests
-npm run test -w backend    # Tests for backend only
-npm run test -w frontend   # Tests for frontend only
-npm run test:watch         # Watch mode
+# Install all dependencies (both workspaces)
+npm install
 
-# Single test file
+# Development (runs both backend and frontend concurrently)
+npm run dev
+
+# Or via Docker (preferred — includes Ollama for AI features)
+docker compose -f docker-compose.dev.yml up -d
+
+# Build everything
+npm run build
+
+# Lint
+npm run lint
+
+# Type check
+npm run typecheck
+
+# Run all tests
+npm test
+
+# Run tests for a single workspace
+npm run test -w backend
+npm run test -w frontend
+
+# Run a single test file
 npx vitest run src/utils/crypto.test.ts --config backend/vitest.config.ts
 npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 
-# Docker development (preferred — includes Ollama)
-docker compose -f docker-compose.dev.yml up -d
+# Watch mode
+npm run test:watch
 ```
+
+## Local Runtime Dependencies
+
+- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend, frontend, and Ollama run as containers.
+- **Ollama** — LLM backend for AI features. Runs in the dev compose stack on port 11434. Pull the model with: `docker compose -f docker-compose.dev.yml exec ollama ollama pull llama3.2`
+- When running outside Docker (`npm run dev`), ensure Ollama is available at `OLLAMA_BASE_URL` (default `http://localhost:11434`) and Portainer at `PORTAINER_API_URL`.
 
 ## Architecture
 
-### Backend (`backend/src/`)
-Fastify 5, TypeScript, SQLite (better-sqlite3 with WAL mode), Socket.IO.
+**Backend** (`backend/src/`): Fastify 5, TypeScript, SQLite (better-sqlite3 with WAL mode), Socket.IO.
+- `routes/` — REST API endpoints organized by feature (auth, containers, metrics, monitoring, etc.)
+- `services/` — Business logic: Portainer API client, anomaly detection (z-score), monitoring scheduler
+- `sockets/` — Socket.IO namespaces: `/llm` (chat), `/monitoring` (real-time insights), `/remediation` (action suggestions)
+- `models/` — Zod schemas for validation + database query functions
+- `db/migrations/` — SQLite migrations (auto-run on startup via `getDb()`)
+- `utils/` — Crypto (JWT/bcrypt), logging (Pino), config, caching
+- `scheduler/` — Background jobs: metrics collection (60s), monitoring cycle (5min), daily cleanup
 
-| Directory | Purpose |
-|-----------|---------|
-| `routes/` | REST API endpoints organized by feature (auth, containers, metrics, monitoring, etc.) |
-| `services/` | Business logic: Portainer API client, anomaly detection (z-score), monitoring scheduler |
-| `sockets/` | Socket.IO namespaces: `/llm` (chat), `/monitoring` (real-time insights), `/remediation` (action suggestions) |
-| `models/` | Zod schemas for validation + database query functions |
-| `db/migrations/` | SQLite migrations (auto-run on startup via `getDb()`) |
-| `utils/` | Crypto (JWT/bcrypt), logging (Pino), config, caching |
-| `scheduler/` | Background jobs: metrics collection (60s), monitoring cycle (5min), daily cleanup |
+**Frontend** (`frontend/src/`): React 19, TypeScript, Vite, Tailwind CSS v4.
+- `pages/` — Lazy-loaded page components (17 pages, all wrapped in Suspense)
+- `components/` — Organized by domain: `layout/`, `charts/`, `shared/`, `container/`, `network/`
+- `hooks/` — Data-fetching hooks wrapping TanStack React Query
+- `stores/` — Zustand stores for UI state (theme, sidebar, notifications, filters)
+- `providers/` — Context providers for auth, theme, Socket.IO, React Query
+- `lib/api.ts` — Singleton API client with auto-refresh on 401
 
-### Frontend (`frontend/src/`)
-React 19, TypeScript, Vite, Tailwind CSS v4.
-
-| Directory | Purpose |
-|-----------|---------|
-| `pages/` | Lazy-loaded page components (17 pages, all wrapped in Suspense) |
-| `components/` | Organized by domain: `layout/`, `charts/`, `shared/`, `container/`, `network/` |
-| `hooks/` | Data-fetching hooks wrapping TanStack React Query |
-| `stores/` | Zustand stores for UI state (theme, sidebar, notifications, filters) |
-| `providers/` | Context providers for auth, theme, Socket.IO, React Query |
-| `lib/api.ts` | Singleton API client with auto-refresh on 401 |
-
-### Key Patterns
-
-- **Server state**: TanStack React Query. **UI state**: Zustand.
+**Key patterns:**
+- Server state: TanStack React Query. UI state: Zustand.
 - All Portainer API responses validated with Zod schemas.
 - Path alias `@/*` maps to `./src/*` in both workspaces.
 - Custom error class `PortainerError` with retry logic and exponential backoff.
-- Frontend proxy: Vite dev server proxies `/api` to `localhost:3001` and `/socket.io` to WebSocket.
+- Frontend proxy: Vite dev server proxies `/api` → `localhost:3001` and `/socket.io` → WebSocket.
 - Provider hierarchy: ThemeProvider > QueryProvider > AuthProvider > SocketProvider > RouterProvider
 
 ## Security Requirements
@@ -150,11 +166,13 @@ This dashboard aims for a **state-of-the-art, premium visual experience** that c
 - Apple Light/Dark (glassmorphism with backdrop blur + gradient mesh backgrounds)
 - Catppuccin Latte/Frappe/Macchiato/Mocha (warm pastel palette family)
 
+Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radius, and spacing tokens. Theme transitions should be smooth (300ms on color/background properties).
+
 ### Layout Patterns
 - **Bento grids** for dashboards — `auto-rows-[minmax(180px,1fr)]` with 1-4 column responsive grid
 - **Hero cards** span 2 columns for primary KPIs with animated counters
 - **Compact sparklines** in KPI cards for trend visualization
-- **Sidebar** — Collapsible (60px collapsed / 16rem expanded), glassmorphic background, 4 navigation groups
+- **Sidebar** — Collapsible (60px collapsed / 16rem expanded), glassmorphic background, 4 logical navigation groups
 - **Header** — Fixed top bar with breadcrumbs, command palette trigger (Ctrl+K), theme toggle, user menu
 
 ### Animation Standards
@@ -182,25 +200,6 @@ Purple (purple-500):  AI-generated insight, recommendation
 - **Test coverage required** — See "Mandatory Rules" section above. This is non-negotiable.
 - ESLint config is in each workspace's `eslint.config.js`. TypeScript strict mode is on in both.
 - Do not add unnecessary abstractions, over-engineer, or add features beyond what is requested.
-
-## Git Workflow
-
-This project uses a **two-tier branching model**: `feature/* → dev → main`.
-
-```
-main          ← stable/release (protected)
- └── dev      ← integration branch (protected)
-      └── feature/<issue#>-<desc>  ← your work here
-```
-
-- **Never push directly to `main` or `dev`.** All changes go through feature branches and pull requests.
-- **`dev`** is the integration branch where all feature work lands first.
-- **`main`** is the stable/release branch. Only `dev` merges into `main`.
-- Create feature branches from `dev`: `feature/<issue#>-<short-description>`.
-- When a feature is complete, open a PR from `feature/*` → `dev`. CI must pass (typecheck → lint → test → build).
-- When `dev` is stable and ready for release, open a PR from `dev` → `main`. If all CI checks pass, the merge is approved.
-- Commit messages should be concise and describe the "why" not just the "what".
-- **PRs without passing tests will be automatically blocked. Do not create PRs without tests.**
 
 ## Environment Configuration
 
