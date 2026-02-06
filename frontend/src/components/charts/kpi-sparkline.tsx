@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
 interface KpiSparklineProps {
@@ -14,7 +14,7 @@ interface KpiSparklineProps {
  * Tiny SVG sparkline with smooth bezier curve and gradient fill.
  * Designed for inline use in KPI cards (60×20px default).
  */
-export function KpiSparkline({
+export const KpiSparkline = memo(function KpiSparkline({
   values,
   width = 60,
   height = 20,
@@ -74,4 +74,4 @@ export function KpiSparkline({
       <path d={linePath} fill="none" stroke={strokeColor} strokeWidth={1.5} strokeLinecap="round" />
     </svg>
   );
-}
+});
