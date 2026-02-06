@@ -460,7 +460,8 @@ aside[data-animated-bg] {
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08) !important;
 }
 
-header[data-animated-bg] {
+header[data-animated-bg],
+div[data-animated-bg].fixed.bottom-0 {
   background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
   backdrop-filter: blur(20px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
