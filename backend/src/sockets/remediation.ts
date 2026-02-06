@@ -3,8 +3,10 @@ import { getDb } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('socket:remediation');
+let remediationNamespace: Namespace | null = null;
 
 export function setupRemediationNamespace(ns: Namespace) {
+  remediationNamespace = ns;
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
     log.info({ userId }, 'Remediation client connected');
@@ -36,12 +38,12 @@ export function setupRemediationNamespace(ns: Namespace) {
   });
 }
 
-// Call this when action status changes
-export function broadcastActionUpdate(ns: Namespace, action: Record<string, unknown>) {
-  ns.emit('actions:updated', action);
+export function broadcastActionUpdate(action: Record<string, unknown>) {
+  if (!remediationNamespace) return;
+  remediationNamespace.emit('actions:updated', action);
 }
 
-// Call this when new action is suggested
-export function broadcastNewAction(ns: Namespace, action: Record<string, unknown>) {
-  ns.emit('actions:new', action);
+export function broadcastNewAction(action: Record<string, unknown>) {
+  if (!remediationNamespace) return;
+  remediationNamespace.emit('actions:new', action);
 }

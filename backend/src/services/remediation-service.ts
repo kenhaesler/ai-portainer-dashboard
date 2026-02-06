@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createChildLogger } from '../utils/logger.js';
-import { restartContainer } from './portainer-client.js';
+import { restartContainer, startContainer, stopContainer } from './portainer-client.js';
 import {
   insertAction,
   getAction,
@@ -9,6 +9,7 @@ import {
 } from './actions-store.js';
 import type { Insight } from '../models/monitoring.js';
 import { emitEvent } from './event-bus.js';
+import { broadcastNewAction } from '../sockets/remediation.js';
 
 const log = createChildLogger('remediation-service');
 
@@ -24,8 +25,8 @@ const ACTION_PATTERNS: Array<{
   },
   {
     keywords: /oom|out\s*of\s*memory|memory\s*limit/i,
-    actionType: 'RESTART_CONTAINER',
-    rationale: 'Container hit memory limit (OOM). Restart to clear memory usage.',
+    actionType: 'STOP_CONTAINER',
+    rationale: 'Container hit memory limit (OOM). Stop it to prevent repeated crashes while investigating.',
   },
   {
     keywords: /restart\s*(loop|count|crash)/i,
@@ -34,8 +35,13 @@ const ACTION_PATTERNS: Array<{
   },
   {
     keywords: /high\s*cpu|cpu\s*spike|runaway\s*process/i,
-    actionType: 'RESTART_CONTAINER',
-    rationale: 'High CPU usage detected. Restarting may resolve runaway processes.',
+    actionType: 'STOP_CONTAINER',
+    rationale: 'High CPU usage detected. Stop the container to mitigate impact while you investigate.',
+  },
+  {
+    keywords: /stopped|exited|not\s*running/i,
+    actionType: 'START_CONTAINER',
+    rationale: 'Container appears stopped. Starting it may restore service availability.',
   },
 ];
 
@@ -70,6 +76,7 @@ export function suggestAction(
         { actionId, actionType: pattern.actionType, insightId: insight.id },
         'Action suggested',
       );
+      broadcastNewAction(action);
 
       return { actionId, actionType: pattern.actionType };
     }
@@ -130,6 +137,12 @@ export async function executeAction(actionId: string): Promise<boolean> {
     switch (action.action_type) {
       case 'RESTART_CONTAINER':
         await restartContainer(action.endpoint_id, action.container_id);
+        break;
+      case 'STOP_CONTAINER':
+        await stopContainer(action.endpoint_id, action.container_id);
+        break;
+      case 'START_CONTAINER':
+        await startContainer(action.endpoint_id, action.container_id);
         break;
       default:
         throw new Error(`Unknown action type: ${action.action_type}`);

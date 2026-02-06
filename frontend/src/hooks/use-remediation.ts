@@ -8,7 +8,7 @@ interface RemediationAction {
   status: 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
   containerId: string;
   endpointId: number;
-  description: string;
+  rationale: string;
   suggestedBy: string;
   createdAt: string;
   updatedAt: string;
@@ -40,6 +40,13 @@ export function useApproveAction() {
       });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      if (error.message.toLowerCase().includes('already')) {
+        toast.error('Action state changed', {
+          description: `${error.message} The list has been refreshed.`,
+        });
+        return;
+      }
       toast.error('Failed to approve action', {
         description: error.message,
       });
@@ -61,6 +68,13 @@ export function useRejectAction() {
       });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      if (error.message.toLowerCase().includes('already')) {
+        toast.error('Action state changed', {
+          description: `${error.message} The list has been refreshed.`,
+        });
+        return;
+      }
       toast.error('Failed to reject action', {
         description: error.message,
       });
@@ -82,6 +96,13 @@ export function useExecuteAction() {
       });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      if (error.message.toLowerCase().includes('already')) {
+        toast.error('Action state changed', {
+          description: `${error.message} The list has been refreshed.`,
+        });
+        return;
+      }
       toast.error('Failed to execute action', {
         description: error.message,
       });
