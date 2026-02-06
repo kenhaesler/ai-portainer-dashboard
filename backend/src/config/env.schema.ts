@@ -43,7 +43,7 @@ export const envSchema = z.object({
   INVESTIGATION_METRICS_WINDOW_MINUTES: z.coerce.number().int().min(5).default(60),
 
   // Packet Capture (PCAP)
-  PCAP_ENABLED: z.coerce.boolean().default(false),
+  PCAP_ENABLED: z.coerce.boolean().default(true),
   PCAP_MAX_DURATION_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
   PCAP_MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(500).default(50),
   PCAP_MAX_CONCURRENT: z.coerce.number().int().min(1).max(10).default(2),
