@@ -66,4 +66,14 @@ describe('Sidebar', () => {
     const badges = document.querySelectorAll('.bg-destructive');
     expect(badges).toHaveLength(0);
   });
+
+  it('renders sliding active indicator on current route item', () => {
+    mockUseRemediationActions.mockReturnValue({
+      data: [],
+    } as any);
+
+    renderSidebar();
+
+    expect(screen.getByTestId('sidebar-active-indicator')).toBeInTheDocument();
+  });
 });
