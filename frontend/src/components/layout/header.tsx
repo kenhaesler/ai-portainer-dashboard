@@ -5,6 +5,7 @@ import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useState, useRef, useEffect } from 'react';
+import { ConnectionOrb } from '@/components/shared/connection-orb';
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',
@@ -134,6 +135,9 @@ export function Header() {
             </button>
           );
         })()}
+
+        {/* Connection status orb */}
+        <ConnectionOrb />
 
         {/* User menu */}
         <div ref={userMenuRef} className="relative">

@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 import { CommandPalette } from '@/components/layout/command-palette';
+import { ActivityFeed } from '@/components/shared/activity-feed';
 import { KeyboardShortcutsOverlay } from '@/components/shared/keyboard-shortcuts-overlay';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore, themeOptions } from '@/stores/theme-store';
@@ -244,6 +245,7 @@ export function AppLayout() {
       {/* Mobile bottom nav — visible only on mobile */}
       <MobileBottomNav />
       <CommandPalette />
+      <ActivityFeed />
       <KeyboardShortcutsOverlay
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
