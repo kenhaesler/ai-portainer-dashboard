@@ -192,6 +192,30 @@ function PatternBadge({ pattern }: { pattern: string }) {
   );
 }
 
+function DetectionMethodBadge({ method }: { method: string }) {
+  const config: Record<string, { label: string; className: string }> = {
+    zscore: {
+      label: 'Z-Score',
+      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    },
+    bollinger: {
+      label: 'Bollinger',
+      className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+    },
+    adaptive: {
+      label: 'Adaptive',
+      className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    },
+  };
+  const entry = config[method] ?? config.zscore;
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', entry.className)}>
+      <Activity className="h-3 w-3" />
+      {entry.label}
+    </span>
+  );
+}
+
 function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
   const patternDescription = anomaly.pattern?.includes(':')
     ? anomaly.pattern.split(':').slice(1).join(':').trim()
@@ -511,6 +535,10 @@ function InsightCard({ insight, investigation }: InsightCardProps) {
   const hasInvestigation = !!investigation;
   const isInvestigating = investigation && ['pending', 'gathering', 'analyzing'].includes(investigation.status);
 
+  const detectionMethod = insight.category === 'anomaly'
+    ? insight.description.match(/method:\s*(\w+)/)?.[1] ?? null
+    : null;
+
   return (
     <div
       className={cn(
@@ -530,6 +558,7 @@ function InsightCard({ insight, investigation }: InsightCardProps) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <SeverityBadge severity={insight.severity} />
+                {detectionMethod && <DetectionMethodBadge method={detectionMethod} />}
                 {hasInvestigation && (
                   <InvestigationStatusBadge status={investigation.status} />
                 )}

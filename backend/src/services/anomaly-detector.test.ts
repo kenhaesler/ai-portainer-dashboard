@@ -69,6 +69,7 @@ describe('anomaly-detector', () => {
       expect(result?.mean).toBe(50);
       expect(result?.std_dev).toBe(10);
       expect(result?.threshold).toBe(2.5);
+      expect(result?.method).toBe('zscore');
     });
 
     it('should not detect anomaly when z-score is within threshold', () => {

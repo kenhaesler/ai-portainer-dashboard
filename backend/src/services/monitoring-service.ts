@@ -7,7 +7,7 @@ import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.j
 import { scanContainer } from './security-scanner.js';
 import { collectMetrics } from './metrics-collector.js';
 import { insertMetrics, type MetricInsert } from './metrics-store.js';
-import { detectAnomaly } from './anomaly-detector.js';
+import { detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
 import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { suggestAction } from './remediation-service.js';
@@ -150,6 +150,7 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     // 4. Run anomaly detection on recent metrics
+    const config = getConfig();
     const anomalyInsights: InsightInsert[] = [];
     for (const container of runningContainers) {
       const containerName =
@@ -161,7 +162,7 @@ export async function runMonitoringCycle(): Promise<void> {
         );
         if (!metric) continue;
 
-        const anomaly = detectAnomaly(container.raw.Id, containerName, metricType, metric.value);
+        const anomaly = detectAnomalyAdaptive(container.raw.Id, containerName, metricType, metric.value, config.ANOMALY_DETECTION_METHOD);
         if (anomaly?.is_anomalous) {
           anomalyInsights.push({
             id: uuidv4(),
@@ -174,7 +175,8 @@ export async function runMonitoringCycle(): Promise<void> {
             title: `Anomalous ${metricType} usage on "${containerName}"`,
             description:
               `Current ${metricType}: ${anomaly.current_value.toFixed(1)}% ` +
-              `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}). ` +
+              `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}, ` +
+              `method: ${anomaly.method ?? 'zscore'}). ` +
               `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
             suggested_action: metricType === 'memory'
               ? 'Check for memory leaks or increase memory limit'

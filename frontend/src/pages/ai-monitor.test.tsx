@@ -57,6 +57,7 @@ vi.mock('@/hooks/use-correlated-anomalies', () => ({
   }),
 }));
 
+import { useMonitoring } from '@/hooks/use-monitoring';
 import { useIncidents } from '@/hooks/use-incidents';
 import { useCorrelatedAnomalies } from '@/hooks/use-correlated-anomalies';
 import AiMonitorPage from './ai-monitor';
@@ -168,6 +169,71 @@ describe('AiMonitorPage', () => {
     // Should show "Temporal" badge text, not "temporal correlation" plain text
     expect(screen.getByText('Temporal')).toBeTruthy();
     expect(screen.queryByText('temporal correlation')).toBeNull();
+  });
+
+  it('shows detection method badge on anomaly insight', () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [
+        {
+          id: 'ins-1',
+          endpoint_id: 1,
+          endpoint_name: 'prod',
+          container_id: 'c1',
+          container_name: 'web',
+          severity: 'warning' as const,
+          category: 'anomaly',
+          title: 'Anomalous cpu usage on "web"',
+          description:
+            'Current cpu: 92.0% (mean: 40.0%, z-score: 3.20, method: adaptive). This is 3.2 standard deviations from the moving average.',
+          suggested_action: 'Check for runaway processes',
+          is_acknowledged: 0,
+          created_at: '2025-01-15T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Adaptive')).toBeTruthy();
+  });
+
+  it('hides detection method badge on non-anomaly insight', () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [
+        {
+          id: 'ins-2',
+          endpoint_id: 1,
+          endpoint_name: 'prod',
+          container_id: 'c1',
+          container_name: 'web',
+          severity: 'warning' as const,
+          category: 'security:privilege',
+          title: 'Container running as root',
+          description: 'Container is running with elevated privileges.',
+          suggested_action: null,
+          is_acknowledged: 0,
+          created_at: '2025-01-15T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.queryByText('Z-Score')).toBeNull();
+    expect(screen.queryByText('Bollinger')).toBeNull();
+    expect(screen.queryByText('Adaptive')).toBeNull();
   });
 
   it('renders pattern badge with correct short label extracted from full pattern string', () => {

@@ -117,6 +117,7 @@ export function detectAnomalyAdaptive(
     is_anomalous: isAnomalous,
     threshold,
     timestamp: new Date().toISOString(),
+    method: selectedMethod,
   };
 }
 
