@@ -68,6 +68,7 @@ export function AppLayout() {
       { keys: 'ge', action: () => navigate('/traces'), label: 'Go to Trace Explorer' },
       { keys: 'gx', action: () => navigate('/assistant'), label: 'Go to LLM Assistant' },
       { keys: 'go', action: () => navigate('/edge-logs'), label: 'Go to Edge Logs' },
+      { keys: 'gv', action: () => navigate('/logs'), label: 'Go to Log Viewer' },
       { keys: 'gs', action: () => navigate('/settings'), label: 'Go to Settings' },
     ],
     [navigate],
