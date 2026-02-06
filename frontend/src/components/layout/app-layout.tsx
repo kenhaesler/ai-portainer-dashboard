@@ -7,6 +7,7 @@ import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
 import { CommandPalette } from '@/components/layout/command-palette';
 import { ActivityFeed } from '@/components/shared/activity-feed';
 import { KeyboardShortcutsOverlay } from '@/components/shared/keyboard-shortcuts-overlay';
+import { DashboardBackground } from '@/components/layout/dashboard-background';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore, themeOptions } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
@@ -164,11 +165,12 @@ export function AppLayout() {
 
   return (
     <motion.div
-      className="flex h-screen overflow-hidden bg-background"
+      className="relative flex h-screen overflow-hidden bg-background"
       initial={showEntrance ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
       transition={{ duration: showEntrance ? 0.3 : 0 }}
     >
+      <DashboardBackground />
       {/* Sidebar — hidden on mobile, spring entrance from left */}
       <motion.div
         className="hidden md:block"
