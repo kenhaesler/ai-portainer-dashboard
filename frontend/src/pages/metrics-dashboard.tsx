@@ -138,6 +138,10 @@ export default function MetricsDashboardPage() {
   const { data: cpuForecast } = useContainerForecast(selectedContainer ?? '', 'cpu');
   const { data: memoryForecast } = useContainerForecast(selectedContainer ?? '', 'memory');
 
+  const hasForecastData =
+    (cpuForecast && !('error' in cpuForecast)) ||
+    (memoryForecast && !('error' in memoryForecast));
+
   // Process data for charts
   const cpuData = useMemo(() => {
     if (!cpuMetrics?.data) return [];
@@ -453,14 +457,14 @@ export default function MetricsDashboardPage() {
           )}
 
           {/* Capacity Forecasts */}
-          {(cpuForecast || memoryForecast) && !('error' in (cpuForecast ?? {})) && !('error' in (memoryForecast ?? {})) && (
-            <div className="space-y-6">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-indigo-500" />
-                <h3 className="text-lg font-semibold">Capacity Forecasts</h3>
-                <span className="text-sm text-muted-foreground">(24h projection)</span>
-              </div>
+          <div className="space-y-6">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-indigo-500" />
+              <h3 className="text-lg font-semibold">Capacity Forecasts</h3>
+              <span className="text-sm text-muted-foreground">(24h projection)</span>
+            </div>
 
+            {hasForecastData ? (
               <div className="grid gap-6 lg:grid-cols-2">
                 {cpuForecast && !('error' in cpuForecast) && (
                   <ForecastCard forecast={cpuForecast} color="#3b82f6" label="CPU" unit="%" />
@@ -469,8 +473,21 @@ export default function MetricsDashboardPage() {
                   <ForecastCard forecast={memoryForecast} color="#8b5cf6" label="Memory" unit="%" />
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center">
+                <Clock className="mx-auto h-10 w-10 text-muted-foreground" />
+                <h4 className="mt-3 font-semibold">Collecting Metrics Data</h4>
+                <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
+                  Capacity forecasts require at least <span className="font-medium text-foreground">5 minutes</span> of
+                  metrics history. For higher confidence predictions, keep the container running
+                  for <span className="font-medium text-foreground">20+ minutes</span>.
+                </p>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Metrics are collected every 60 seconds. The longer the container runs, the more accurate the forecast.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Anomaly Summary */}
           {anomaliesData && (
