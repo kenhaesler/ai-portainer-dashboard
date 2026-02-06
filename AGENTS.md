@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants working with this repository
 
 ## Project Overview
 
-AI-powered container monitoring dashboard that extends Portainer with real-time insights, anomaly detection, and an LLM chat assistant. This is an **observer-only** dashboard — it does not start, stop, or restart containers. Monorepo with npm workspaces: `backend/` (Fastify 5 + SQLite) and `frontend/` (React 19 + Vite).
+AI-powered container monitoring dashboard that extends Portainer with real-time insights, anomaly detection, and an LLM chat assistant. This is an **observer-first** dashboard — visibility comes first, but some actions can be triggered through an explicit approval workflow (e.g., remediation execution). Monorepo with npm workspaces: `backend/` (Fastify 5 + SQLite) and `frontend/` (React 19 + Vite).
 
 ## Mandatory Rules — Read First
 
@@ -23,9 +23,9 @@ AI-powered container monitoring dashboard that extends Portainer with real-time 
 - **Test before committing. Test before pushing. Test before creating a PR.**
 - **DO NOT create pull requests without passing tests. CI will reject them.**
 
-### 2. Observer-Only Constraint
+### 2. Observer-First Constraint
 
-This dashboard MUST NOT generate code that starts, stops, restarts, or otherwise mutates container state. Read-only access to Portainer only.
+This dashboard is primarily read-only, but it may trigger specific, explicitly approved actions via the remediation workflow. Do not add new container-mutating actions without an explicit request, and ensure all actions remain gated, auditable, and opt-in.
 
 ### 3. Never Push Directly to `main` or `dev`
 
@@ -76,7 +76,7 @@ React 19, TypeScript, Vite, Tailwind CSS v4.
 
 | Directory | Purpose |
 |-----------|---------|
-| `pages/` | Lazy-loaded page components (17 pages, all wrapped in Suspense) |
+| `pages/` | Lazy-loaded page components (18 pages, all wrapped in Suspense) |
 | `components/` | Organized by domain: `layout/`, `charts/`, `shared/`, `container/`, `network/` |
 | `hooks/` | Data-fetching hooks wrapping TanStack React Query |
 | `stores/` | Zustand stores for UI state (theme, sidebar, notifications, filters) |

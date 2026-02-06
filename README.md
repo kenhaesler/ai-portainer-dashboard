@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Observer-only** — This dashboard provides deep visibility into your container infrastructure without the ability to start, stop, or restart containers.
+> **Observer-first** — This dashboard focuses on deep visibility into your container infrastructure. Some actions can be triggered through an explicit approval workflow (e.g., remediation execution).
 
 ---
 
@@ -27,6 +27,33 @@
 
 ## Architecture
 
+### Architecture Map (Route → Service/Data)
+
+Backend request flow is organized by route modules, with most Portainer-facing routes using the Portainer client + cache/normalizers. Monitoring and metrics read/write directly to SQLite.
+
+| Route Area | Primary Routes | Service/Data Dependencies |
+|---|---|---|
+| Auth | `/api/auth/*` | `services/session-store.ts`, `services/audit-logger.ts` |
+| OIDC | `/api/auth/oidc/*` | `services/oidc.ts`, `services/session-store.ts`, `services/audit-logger.ts` |
+| Dashboard | `/api/dashboard/summary` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Endpoints | `/api/endpoints*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Containers | `/api/containers*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Container Logs | `/api/containers/:eid/:cid/logs` | `services/portainer-client.ts` |
+| Images | `/api/images*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Networks | `/api/networks*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Stacks | `/api/stacks*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Search | `/api/search` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
+| Metrics | `/api/metrics*` | SQLite via `db/sqlite.ts` |
+| Monitoring | `/api/monitoring/*` | SQLite via `db/sqlite.ts` |
+| Remediation | `/api/remediation/*` | `services/portainer-client.ts`, `services/audit-logger.ts`, SQLite |
+| Settings | `/api/settings*` | SQLite via `db/sqlite.ts`, `services/audit-logger.ts` |
+| Logs | `/api/logs/*` | `services/notification-service.ts` (test), optional external log backend |
+| Traces | `/api/traces*` | SQLite via `db/sqlite.ts` |
+| Investigations | `/api/investigations*` | `services/investigation-store.ts` (SQLite) |
+| Backup | `/api/backup*` | `services/audit-logger.ts`, filesystem |
+| Cache Admin | `/api/admin/cache/*` | `services/portainer-cache.ts`, `services/audit-logger.ts` |
+| PCAP | `/api/pcap/*` | `services/pcap-service.ts`, `services/audit-logger.ts` |
+
 ```mermaid
 graph TB
     subgraph External["External Services"]
@@ -37,14 +64,14 @@ graph TB
 
     subgraph Frontend["Frontend — React 19 + Vite 6 :5173"]
         direction TB
-        Router["React Router v7<br/><i>16 lazy-loaded pages</i>"]
+        Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
 
         subgraph Pages["Pages"]
             direction LR
             P1["Home<br/>Fleet Overview<br/>Workload Explorer<br/>Stack Overview"]
             P2["Container Detail<br/>Container Health<br/>Image Footprint<br/>Network Topology"]
             P3["AI Monitor<br/>Metrics Dashboard<br/>Remediation<br/>Trace Explorer"]
-            P4["LLM Assistant<br/>Edge Logs<br/>Settings"]
+            P4["LLM Assistant<br/>Edge Logs<br/>Packet Capture<br/>Settings"]
         end
 
         subgraph FState["State Management"]
@@ -278,7 +305,7 @@ Default credentials: `admin` / `changeme123`
 | **Overview** | Home, Workload Explorer, Fleet Overview, Stack Overview | High-level infrastructure visibility |
 | **Containers** | Container Health, Image Footprint, Network Topology | Container-level inspection and analysis |
 | **Intelligence** | AI Monitor, Metrics Dashboard, Remediation, Trace Explorer, LLM Assistant | AI-powered monitoring and interaction |
-| **Operations** | Edge Agent Logs, Settings | Operational tools and configuration |
+| **Operations** | Edge Agent Logs, Packet Capture, Settings | Operational tools and configuration |
 
 ### UI Features
 
@@ -394,14 +421,14 @@ ai-portainer-dashboard/
 │       └── plugins/                # Fastify plugins
 ├── frontend/                       # React SPA
 │   └── src/
-│       ├── pages/                  # 16 lazy-loaded page components
+│       ├── pages/                  # 18 lazy-loaded page components
 │       ├── components/
 │       │   ├── layout/             #   App layout, header, sidebar, command palette
 │       │   ├── charts/             #   Metrics, pie, bar, sparkline, treemap, sunburst
 │       │   ├── container/          #   Container overview, metrics, logs viewers
 │       │   ├── network/            #   XYFlow topology graph & nodes
 │       │   └── shared/             #   Data table, KPI cards, badges, skeletons
-│       ├── hooks/                  # TanStack React Query hooks (17 hooks)
+│       ├── hooks/                  # TanStack React Query hooks (25 hooks)
 │       ├── stores/                 # Zustand stores (theme, UI, notifications, filters)
 │       ├── providers/              # Auth, Socket.IO, Theme, React Query providers
 │       └── lib/                    # API client, socket manager, CSV export
