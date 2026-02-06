@@ -271,6 +271,68 @@ class HybridCache {
     this.memory.clear();
   }
 
+  /**
+   * Batch get: fetches multiple keys in a single Redis pipeline round-trip.
+   * Falls back to sequential in-memory gets when Redis is unavailable.
+   */
+  async getMany<T>(keys: string[]): Promise<Array<T | undefined>> {
+    if (keys.length === 0) return [];
+
+    const client = await this.ensureRedisClient();
+    if (client) {
+      try {
+        const redisKeys = keys.map((k) => this.getRedisKey(k));
+        const results = await client.mGet(redisKeys);
+        return results.map((raw) => {
+          if (raw == null) {
+            this.misses++;
+            return undefined;
+          }
+          this.hits++;
+          return JSON.parse(raw) as T;
+        });
+      } catch (err) {
+        this.disableRedisTemporarily('redis-mget-failed', err);
+      }
+    }
+
+    return keys.map((key) => {
+      const value = this.memory.get<T>(key);
+      if (value === undefined) {
+        this.misses++;
+        return undefined;
+      }
+      this.hits++;
+      return value;
+    });
+  }
+
+  /**
+   * Batch set: stores multiple key-value pairs using Redis pipeline.
+   * Falls back to sequential in-memory sets when Redis is unavailable.
+   */
+  async setMany<T>(entries: Array<{ key: string; data: T; ttlSeconds: number }>): Promise<void> {
+    if (entries.length === 0) return;
+
+    const client = await this.ensureRedisClient();
+    if (client) {
+      try {
+        const pipeline = client.multi();
+        for (const entry of entries) {
+          pipeline.set(this.getRedisKey(entry.key), JSON.stringify(entry.data), { EX: entry.ttlSeconds });
+        }
+        await pipeline.exec();
+        return;
+      } catch (err) {
+        this.disableRedisTemporarily('redis-mset-failed', err);
+      }
+    }
+
+    for (const entry of entries) {
+      this.memory.set(entry.key, entry.data, entry.ttlSeconds);
+    }
+  }
+
   async getStats() {
     const client = await this.ensureRedisClient();
     let size = this.memory.getStats().size;
@@ -313,6 +375,13 @@ export function getCacheKey(resource: string, ...args: (string | number)[]): str
   return [resource, ...args].join(':');
 }
 
+/**
+ * In-flight promise map for stampede prevention.
+ * When multiple callers request the same key simultaneously,
+ * only one fetcher runs and the rest share its promise.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
 export async function cachedFetch<T>(
   key: string,
   ttlSeconds: number,
@@ -323,12 +392,47 @@ export async function cachedFetch<T>(
     return fetcher();
   }
 
-  const cached = await cache.get<T>(key);
-  if (cached !== undefined) {
-    return cached;
+  // Stampede prevention: check in-flight BEFORE async cache lookup
+  // so that synchronous concurrent calls share the same promise.
+  const existing = inFlight.get(key);
+  if (existing) {
+    return existing as Promise<T>;
   }
 
-  const data = await fetcher();
-  await cache.set(key, data, ttlSeconds);
-  return data;
+  const promise = (async () => {
+    const cached = await cache.get<T>(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const data = await fetcher();
+    await cache.set(key, data, ttlSeconds);
+    return data;
+  })();
+
+  inFlight.set(key, promise);
+  promise.finally(() => {
+    inFlight.delete(key);
+  });
+
+  return promise;
+}
+
+/**
+ * Batch fetch multiple keys in a single round-trip.
+ * Uses Redis pipeline when available, falls back to parallel in-memory gets.
+ */
+export async function cachedFetchMany<T>(
+  entries: Array<{ key: string; ttlSeconds: number; fetcher: () => Promise<T> }>,
+): Promise<T[]> {
+  const config = getConfig();
+  if (!config.CACHE_ENABLED) {
+    return Promise.all(entries.map((e) => e.fetcher()));
+  }
+  return Promise.all(entries.map((e) => cachedFetch(e.key, e.ttlSeconds, e.fetcher)));
+}
+
+/** Expose inFlight map size for testing/monitoring */
+export function getInFlightCount(): number {
+  return inFlight.size;
 }
