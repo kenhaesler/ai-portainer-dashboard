@@ -1,0 +1,282 @@
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import Fastify, { FastifyInstance } from 'fastify';
+import { pcapRoutes } from './pcap.js';
+
+const mockStartCapture = vi.fn();
+const mockStopCapture = vi.fn();
+const mockGetCaptureById = vi.fn();
+const mockListCaptures = vi.fn();
+const mockDeleteCaptureById = vi.fn();
+const mockGetCaptureFilePath = vi.fn();
+
+vi.mock('../services/pcap-service.js', () => ({
+  startCapture: (...args: unknown[]) => mockStartCapture(...args),
+  stopCapture: (...args: unknown[]) => mockStopCapture(...args),
+  getCaptureById: (...args: unknown[]) => mockGetCaptureById(...args),
+  listCaptures: (...args: unknown[]) => mockListCaptures(...args),
+  deleteCaptureById: (...args: unknown[]) => mockDeleteCaptureById(...args),
+  getCaptureFilePath: (...args: unknown[]) => mockGetCaptureFilePath(...args),
+}));
+
+vi.mock('../services/audit-logger.js', () => ({
+  writeAuditLog: vi.fn(),
+}));
+
+vi.mock('../utils/logger.js', () => ({
+  createChildLogger: () => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  }),
+}));
+
+vi.mock('fs', () => ({
+  default: {
+    createReadStream: vi.fn().mockReturnValue('mock-stream'),
+  },
+}));
+
+describe('PCAP Routes', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.decorate('authenticate', async () => undefined);
+    await app.register(pcapRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('POST /api/pcap/captures', () => {
+    it('should start a capture with valid input', async () => {
+      mockStartCapture.mockResolvedValue({
+        id: 'capture-1',
+        status: 'capturing',
+        endpoint_id: 1,
+        container_id: 'abc123',
+        container_name: 'web',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          endpointId: 1,
+          containerId: 'abc123',
+          containerName: 'web',
+          filter: 'port 80',
+          durationSeconds: 60,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.id).toBe('capture-1');
+      expect(body.status).toBe('capturing');
+      expect(mockStartCapture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpointId: 1,
+          containerId: 'abc123',
+          containerName: 'web',
+          filter: 'port 80',
+          durationSeconds: 60,
+        }),
+      );
+    });
+
+    it('should reject invalid BPF filter', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          endpointId: 1,
+          containerId: 'abc123',
+          containerName: 'web',
+          filter: 'port 80; rm -rf /',
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mockStartCapture).not.toHaveBeenCalled();
+    });
+
+    it('should reject missing required fields', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: { endpointId: 1 },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should return 400 when service throws', async () => {
+      mockStartCapture.mockRejectedValue(new Error('PCAP not enabled'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          endpointId: 1,
+          containerId: 'abc123',
+          containerName: 'web',
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('PCAP not enabled');
+    });
+  });
+
+  describe('GET /api/pcap/captures', () => {
+    it('should return list of captures', async () => {
+      mockListCaptures.mockReturnValue([
+        { id: 'c1', status: 'complete' },
+        { id: 'c2', status: 'capturing' },
+      ]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.captures).toHaveLength(2);
+    });
+
+    it('should pass status filter', async () => {
+      mockListCaptures.mockReturnValue([]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/pcap/captures?status=complete',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockListCaptures).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'complete' }),
+      );
+    });
+  });
+
+  describe('GET /api/pcap/captures/:id', () => {
+    it('should return a capture', async () => {
+      mockGetCaptureById.mockReturnValue({ id: 'c1', status: 'complete' });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/pcap/captures/c1',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.id).toBe('c1');
+    });
+
+    it('should return 404 for non-existent capture', async () => {
+      mockGetCaptureById.mockReturnValue(undefined);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/pcap/captures/not-found',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('POST /api/pcap/captures/:id/stop', () => {
+    it('should stop a capture', async () => {
+      mockStopCapture.mockResolvedValue({
+        id: 'c1',
+        status: 'stopped',
+        container_id: 'abc',
+        container_name: 'web',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/stop',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.status).toBe('stopped');
+    });
+
+    it('should return 400 when stop fails', async () => {
+      mockStopCapture.mockRejectedValue(new Error('Cannot stop'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/stop',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
+
+  describe('GET /api/pcap/captures/:id/download', () => {
+    it('should return 404 when file not found', async () => {
+      mockGetCaptureFilePath.mockReturnValue(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/pcap/captures/c1/download',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('DELETE /api/pcap/captures/:id', () => {
+    it('should delete a capture', async () => {
+      mockGetCaptureById.mockReturnValue({ id: 'c1', container_id: 'abc', container_name: 'web' });
+      mockDeleteCaptureById.mockReturnValue(undefined);
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/pcap/captures/c1',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.success).toBe(true);
+    });
+
+    it('should return 400 when delete fails', async () => {
+      mockGetCaptureById.mockReturnValue(undefined);
+      mockDeleteCaptureById.mockImplementation(() => { throw new Error('Not found'); });
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/pcap/captures/c1',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
+});

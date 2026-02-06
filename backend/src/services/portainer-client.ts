@@ -203,3 +203,78 @@ export async function getImages(endpointId: number): Promise<DockerImage[]> {
   );
   return raw.map((i) => ImageSchema.parse(i));
 }
+
+// Exec (for packet capture and other read-only operations)
+export async function createExec(
+  endpointId: number,
+  containerId: string,
+  cmd: string[],
+): Promise<{ Id: string }> {
+  return portainerFetch<{ Id: string }>(
+    `/api/endpoints/${endpointId}/docker/containers/${containerId}/exec`,
+    {
+      method: 'POST',
+      body: {
+        AttachStdin: false,
+        AttachStdout: false,
+        AttachStderr: false,
+        Detach: true,
+        Tty: false,
+        Cmd: cmd,
+      },
+    },
+  );
+}
+
+export async function startExec(endpointId: number, execId: string): Promise<void> {
+  const config = getConfig();
+  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/exec/${execId}/start`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (config.PORTAINER_API_KEY) {
+    headers['X-API-Key'] = config.PORTAINER_API_KEY;
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ Detach: true, Tty: false }),
+  });
+
+  if (!res.ok) {
+    throw new PortainerError(`Exec start failed: ${res.status}`, classifyError(res.status), res.status);
+  }
+}
+
+export async function inspectExec(
+  endpointId: number,
+  execId: string,
+): Promise<{ Running: boolean; ExitCode: number; Pid: number }> {
+  return portainerFetch<{ Running: boolean; ExitCode: number; Pid: number }>(
+    `/api/endpoints/${endpointId}/docker/exec/${execId}/json`,
+  );
+}
+
+export async function getArchive(
+  endpointId: number,
+  containerId: string,
+  containerPath: string,
+): Promise<Buffer> {
+  const config = getConfig();
+  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/containers/${containerId}/archive?path=${encodeURIComponent(containerPath)}`;
+
+  const headers: Record<string, string> = {};
+  if (config.PORTAINER_API_KEY) {
+    headers['X-API-Key'] = config.PORTAINER_API_KEY;
+  }
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new PortainerError(`Archive fetch failed: ${res.status}`, classifyError(res.status), res.status);
+  }
+
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}

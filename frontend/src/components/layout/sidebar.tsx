@@ -14,6 +14,7 @@ import {
   GitBranch,
   MessageSquare,
   FileSearch,
+  Radio,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -67,6 +68,7 @@ const navigation: NavGroup[] = [
     title: 'Operations',
     items: [
       { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
+      { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
       { label: 'Settings', to: '/settings', icon: Settings },
     ],
   },
