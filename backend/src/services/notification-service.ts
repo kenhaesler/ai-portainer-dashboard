@@ -69,8 +69,56 @@ function isChannelEnabled(channel: 'teams' | 'email'): boolean {
 
 function validateWebhookUrl(url: string): boolean {
   if (!z.string().url().safeParse(url).success) return false;
-  if (!url.startsWith('https://')) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'https:') return false;
+  if (!parsed.hostname.endsWith('.webhook.office.com')) return false;
+  if (!parsed.pathname || parsed.pathname === '/') return false;
   return true;
+}
+
+function isPrivateOrLocalHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized === 'localhost' || normalized.endsWith('.local')) return true;
+  if (normalized === '::1') return true;
+
+  // IPv4 private and loopback ranges
+  if (/^127\./.test(normalized)) return true;
+  if (/^10\./.test(normalized)) return true;
+  if (/^192\.168\./.test(normalized)) return true;
+  if (/^169\.254\./.test(normalized)) return true;
+  if (/^0\./.test(normalized)) return true;
+  const match172 = normalized.match(/^172\.(\d{1,3})\./);
+  if (match172) {
+    const secondOctet = Number(match172[1]);
+    if (secondOctet >= 16 && secondOctet <= 31) return true;
+  }
+
+  return false;
+}
+
+function getSafeSmtpHost(): string | undefined {
+  const configHost = getConfig().SMTP_HOST;
+  if (!configHost) return undefined;
+
+  const dbHost = getSettingValue('notifications.smtp_host');
+  if (dbHost && dbHost !== configHost) {
+    log.warn('Ignoring settings SMTP host override for SSRF protection');
+  }
+
+  if (isPrivateOrLocalHost(configHost)) {
+    log.warn('Configured SMTP host is private/local and has been blocked');
+    return undefined;
+  }
+
+  return configHost;
 }
 
 function getTeamsWebhookUrl(): string | undefined {
@@ -87,11 +135,11 @@ function getTeamsWebhookUrl(): string | undefined {
 function getSmtpConfig() {
   const config = getConfig();
   return {
-    host: getSettingValue('notifications.smtp_host') || config.SMTP_HOST,
-    port: Number(getSettingValue('notifications.smtp_port')) || config.SMTP_PORT,
+    host: getSafeSmtpHost(),
+    port: config.SMTP_PORT,
     secure: config.SMTP_SECURE,
-    user: getSettingValue('notifications.smtp_user') || config.SMTP_USER,
-    password: getSettingValue('notifications.smtp_password') || config.SMTP_PASSWORD,
+    user: config.SMTP_USER,
+    password: config.SMTP_PASSWORD,
     from: config.SMTP_FROM,
     recipients: getSettingValue('notifications.email_recipients') || config.EMAIL_RECIPIENTS,
   };
