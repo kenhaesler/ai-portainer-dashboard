@@ -44,6 +44,7 @@ export function useSettings(category?: string) {
       const params: Record<string, string | undefined> = { category };
       return api.get<Setting[]>('/api/settings', { params });
     },
+    staleTime: 5 * 60 * 1000,
   });
 }
 

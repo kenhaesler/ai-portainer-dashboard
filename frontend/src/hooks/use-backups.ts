@@ -24,6 +24,7 @@ export function useBackups() {
   return useQuery<BackupListResponse>({
     queryKey: backupQueryKey,
     queryFn: () => api.get<BackupListResponse>('/api/backup'),
+    staleTime: 60 * 1000,
   });
 }
 
