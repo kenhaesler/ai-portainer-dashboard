@@ -1,4 +1,4 @@
-import { getDb } from '../db/sqlite.js';
+import { getDb, prepareStmt } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('audit');
@@ -16,8 +16,7 @@ export interface AuditEntry {
 
 export function writeAuditLog(entry: AuditEntry): void {
   try {
-    const db = getDb();
-    db.prepare(`
+    prepareStmt(`
       INSERT INTO audit_log (user_id, username, action, target_type, target_id, details, request_id, ip_address)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
