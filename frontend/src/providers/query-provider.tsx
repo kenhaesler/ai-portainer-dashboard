@@ -10,6 +10,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
             staleTime: 30 * 1000,
             gcTime: 10 * 60 * 1000,
             retry: 2,
+            retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
             refetchOnWindowFocus: true,
             refetchOnReconnect: 'always',
             placeholderData: keepPreviousData,

@@ -3,6 +3,9 @@ import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { getKpiHistory } from '../services/kpi-store.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('route:dashboard');
 
 export async function dashboardRoutes(fastify: FastifyInstance) {
   fastify.get('/api/dashboard/summary', {
@@ -12,12 +15,22 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
-    const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
-      TTL.ENDPOINTS,
-      () => portainer.getEndpoints(),
-    );
+  }, async (_request, reply) => {
+    let endpoints;
+    try {
+      endpoints = await cachedFetch(
+        getCacheKey('endpoints'),
+        TTL.ENDPOINTS,
+        () => portainer.getEndpoints(),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err }, 'Failed to fetch endpoints from Portainer');
+      return reply.code(502).send({
+        error: 'Unable to connect to Portainer',
+        details: msg,
+      });
+    }
 
     const normalized = endpoints.map(normalizeEndpoint);
 
@@ -48,7 +61,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     // Get recent containers from first few endpoints
     const recentContainers = [];
-    for (const ep of normalized.filter((e) => e.status === 'up').slice(0, 5)) {
+    const errors: string[] = [];
+    const upEndpoints = normalized.filter((e) => e.status === 'up').slice(0, 5);
+    for (const ep of upEndpoints) {
       try {
         const containers = await cachedFetch(
           getCacheKey('containers', ep.id),
@@ -57,9 +72,18 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         );
         const norm = containers.map((c) => normalizeContainer(c, ep.id, ep.name));
         recentContainers.push(...norm);
-      } catch {
-        // Skip endpoints that fail
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        log.warn({ endpointId: ep.id, endpointName: ep.name, err }, 'Failed to fetch containers for endpoint');
+        errors.push(`${ep.name}: ${msg}`);
       }
+    }
+
+    if (upEndpoints.length > 0 && recentContainers.length === 0 && errors.length > 0) {
+      return reply.code(502).send({
+        error: 'Failed to fetch containers from Portainer',
+        details: errors,
+      });
     }
 
     // Sort by created time, take latest 20

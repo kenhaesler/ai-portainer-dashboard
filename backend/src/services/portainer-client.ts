@@ -1,3 +1,4 @@
+import { Agent } from 'undici';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import {
@@ -10,6 +11,16 @@ import {
 } from '../models/portainer.js';
 
 const log = createChildLogger('portainer-client');
+
+let unsafeDispatcher: Agent | undefined;
+function getDispatcher(): Agent | undefined {
+  const config = getConfig();
+  if (config.PORTAINER_VERIFY_SSL) return undefined;
+  if (!unsafeDispatcher) {
+    unsafeDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  }
+  return unsafeDispatcher;
+}
 
 type ErrorKind = 'network' | 'auth' | 'rate-limit' | 'server' | 'unknown';
 
@@ -65,7 +76,8 @@ async function portainerFetch<T>(
         headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
-      });
+        dispatcher: getDispatcher(),
+      } as RequestInit);
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -166,7 +178,7 @@ export async function getContainerLogs(
     headers['X-API-Key'] = config.PORTAINER_API_KEY;
   }
 
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, { headers, dispatcher: getDispatcher() } as RequestInit);
   if (!res.ok) throw new PortainerError(`Log fetch failed: ${res.status}`, classifyError(res.status), res.status);
   return res.text();
 }
@@ -243,7 +255,8 @@ export async function startExec(endpointId: number, execId: string): Promise<voi
     method: 'POST',
     headers,
     body: JSON.stringify({ Detach: true, Tty: false }),
-  });
+    dispatcher: getDispatcher(),
+  } as RequestInit);
 
   if (!res.ok) {
     throw new PortainerError(`Exec start failed: ${res.status}`, classifyError(res.status), res.status);
@@ -272,7 +285,7 @@ export async function getArchive(
     headers['X-API-Key'] = config.PORTAINER_API_KEY;
   }
 
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, { headers, dispatcher: getDispatcher() } as RequestInit);
   if (!res.ok) {
     throw new PortainerError(`Archive fetch failed: ${res.status}`, classifyError(res.status), res.status);
   }

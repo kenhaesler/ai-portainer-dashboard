@@ -1,5 +1,14 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+function describeHttpError(status: number): string {
+  switch (status) {
+    case 502: return 'Portainer connection failed';
+    case 503: return 'Service temporarily unavailable';
+    case 504: return 'Gateway timeout — Portainer did not respond';
+    default: return `HTTP ${status}`;
+  }
+}
+
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
 }
@@ -41,10 +50,26 @@ class ApiClient {
     }
 
     const url = this.buildUrl(path, params);
-    const response = await fetch(url, {
-      ...fetchOptions,
-      headers,
-    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...fetchOptions,
+        headers,
+        signal: fetchOptions.signal ?? controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('Request timed out — server did not respond');
+      }
+      throw new Error('Network error — check your connection');
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (response.status === 401) {
       this.token = null;
@@ -54,7 +79,8 @@ class ApiClient {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error(body.error || `HTTP ${response.status}`);
+      const fallback = describeHttpError(response.status);
+      throw new Error(body.error || fallback);
     }
 
     return response.json();
