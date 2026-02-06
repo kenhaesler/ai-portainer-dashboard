@@ -165,12 +165,11 @@ export function Sidebar() {
 
   return (
     <aside
+      data-animated-bg={hasAnimatedBg || undefined}
       className={cn(
-        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
-        !hasAnimatedBg && 'bg-sidebar-background/80',
+        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
         sidebarCollapsed ? 'w-14' : 'w-60'
       )}
-      style={hasAnimatedBg ? { background: 'color-mix(in srgb, var(--color-sidebar-background) 50%, transparent)' } : undefined}
     >
       {/* Brand */}
       <div className="flex h-14 items-center px-4">
@@ -255,7 +254,7 @@ export function Sidebar() {
                             'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
                             isActive
                               ? 'text-sidebar-accent-foreground'
-                              : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+                              : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
                             sidebarCollapsed && 'justify-center px-0'
                           )
                         }
@@ -267,7 +266,7 @@ export function Sidebar() {
                               <motion.span
                                 layoutId="sidebar-active-pill"
                                 data-testid="sidebar-active-indicator"
-                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-accent shadow-sm"
+                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
                                 transition={
                                   reducedMotion
                                     ? { duration: 0 }

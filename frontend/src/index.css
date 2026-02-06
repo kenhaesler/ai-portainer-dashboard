@@ -447,6 +447,23 @@
   }
 }
 
+/* ====== ANIMATED BACKGROUND — GLASS OVERRIDE ====== */
+/* When the dashboard gradient background is active, make sidebar and
+   header more translucent so the mesh shows through. Must come AFTER
+   the Apple theme rules to override their !important backgrounds. */
+
+aside[data-animated-bg] {
+  background: color-mix(in srgb, var(--color-sidebar-background) 35%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+}
+
+header[data-animated-bg] {
+  background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+}
+
 /* ====== GLASS BUTTONS ====== */
 
 .apple-light {
