@@ -15,6 +15,22 @@ async function socketIoPlugin(fastify: FastifyInstance) {
       credentials: true,
     },
     transports: ['websocket', 'polling'],
+    // Enable per-message deflate for WebSocket compression
+    perMessageDeflate: {
+      threshold: 256, // Only compress messages > 256 bytes
+      zlibDeflateOptions: { level: 4 }, // Balance speed vs compression
+    },
+    // Prefer WebSocket — skip polling upgrade delay
+    allowUpgrades: true,
+    upgradeTimeout: 10_000,
+    // Connection tuning
+    pingInterval: 25_000,
+    pingTimeout: 20_000,
+    maxHttpBufferSize: 1e6, // 1MB max message size
+    // Enable connection state recovery for seamless reconnects
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    },
   });
 
   // JWT auth middleware
