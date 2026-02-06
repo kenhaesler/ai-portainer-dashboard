@@ -22,6 +22,7 @@ const Settings = lazy(() => import('@/pages/settings'));
 const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/pages/packet-capture'));
+const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
 
 function PageLoader() {
   return (
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
       { path: 'stacks', element: <LazyPage><StackOverview /></LazyPage> },
       { path: 'containers/:endpointId/:containerId', element: <LazyPage><ContainerDetail /></LazyPage> },
       { path: 'health', element: <LazyPage><ContainerHealth /></LazyPage> },
+      { path: 'comparison', element: <LazyPage><ContainerComparison /></LazyPage> },
       { path: 'images', element: <LazyPage><ImageFootprint /></LazyPage> },
       { path: 'topology', element: <LazyPage><NetworkTopology /></LazyPage> },
       { path: 'ai-monitor', element: <LazyPage><AiMonitor /></LazyPage> },
