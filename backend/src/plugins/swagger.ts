@@ -11,7 +11,7 @@ async function swaggerPlugin(fastify: FastifyInstance) {
         description: 'Intelligent container operations platform API',
         version: '2.0.0',
       },
-      servers: [{ url: 'http://localhost:3001' }],
+      servers: [{ url: 'http://localhost:3051' }],
       components: {
         securitySchemes: {
           bearerAuth: {

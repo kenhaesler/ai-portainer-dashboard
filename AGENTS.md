@@ -89,7 +89,7 @@ React 19, TypeScript, Vite, Tailwind CSS v4.
 - All Portainer API responses validated with Zod schemas.
 - Path alias `@/*` maps to `./src/*` in both workspaces.
 - Custom error class `PortainerError` with retry logic and exponential backoff.
-- Frontend proxy: Vite dev server proxies `/api` to `localhost:3001` and `/socket.io` to WebSocket.
+- Frontend proxy: Vite dev server proxies `/api` to `localhost:3051` and `/socket.io` to WebSocket.
 - Provider hierarchy: ThemeProvider > QueryProvider > AuthProvider > SocketProvider > RouterProvider
 
 ## Security Requirements

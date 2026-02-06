@@ -105,7 +105,7 @@ npm run test:watch
 - All Portainer API responses validated with Zod schemas.
 - Path alias `@/*` maps to `./src/*` in both workspaces.
 - Custom error class `PortainerError` with retry logic and exponential backoff.
-- Frontend proxy: Vite dev server proxies `/api` → `localhost:3001` and `/socket.io` → WebSocket.
+- Frontend proxy: Vite dev server proxies `/api` → `localhost:3051` and `/socket.io` → WebSocket.
 - Provider hierarchy: ThemeProvider > QueryProvider > AuthProvider > SocketProvider > RouterProvider
 
 ## Security Requirements

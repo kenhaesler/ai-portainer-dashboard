@@ -47,7 +47,7 @@ export const envSchema = z.object({
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
 
   // Server
-  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3051),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   SQLITE_PATH: z.string().default('./data/dashboard.db'),
 

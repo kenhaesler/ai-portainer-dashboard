@@ -2,6 +2,22 @@ import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 
+const SENSITIVE_KEYS = new Set([
+  'notifications.smtp_password',
+  'notifications.teams_webhook_url',
+]);
+
+const REDACTED = '••••••••';
+
+function redactSensitive(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return rows.map((row) => {
+    if (typeof row.key === 'string' && SENSITIVE_KEYS.has(row.key) && row.value) {
+      return { ...row, value: REDACTED };
+    }
+    return row;
+  });
+}
+
 export async function settingsRoutes(fastify: FastifyInstance) {
   // Get all settings
   fastify.get('/api/settings', {
@@ -21,10 +37,10 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     const { category } = request.query as { category?: string };
     const db = getDb();
 
-    if (category) {
-      return db.prepare('SELECT * FROM settings WHERE category = ?').all(category);
-    }
-    return db.prepare('SELECT * FROM settings').all();
+    const rows = category
+      ? db.prepare('SELECT * FROM settings WHERE category = ?').all(category) as Array<Record<string, unknown>>
+      : db.prepare('SELECT * FROM settings').all() as Array<Record<string, unknown>>;
+    return redactSensitive(rows);
   });
 
   // Set a setting
@@ -70,7 +86,8 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
-    return { success: true, key, value };
+    const responseValue = SENSITIVE_KEYS.has(key) ? REDACTED : value;
+    return { success: true, key, value: responseValue };
   });
 
   // Delete a setting

@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { z } from 'zod';
 import { getDb } from '../db/sqlite.js';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -66,11 +67,21 @@ function isChannelEnabled(channel: 'teams' | 'email'): boolean {
   return config.EMAIL_NOTIFICATIONS_ENABLED;
 }
 
+function validateWebhookUrl(url: string): boolean {
+  if (!z.string().url().safeParse(url).success) return false;
+  if (!url.startsWith('https://')) return false;
+  return true;
+}
+
 function getTeamsWebhookUrl(): string | undefined {
   const dbValue = getSettingValue('notifications.teams_webhook_url');
-  if (dbValue) return dbValue;
-  const config = getConfig();
-  return config.TEAMS_WEBHOOK_URL;
+  const webhookUrl = dbValue || getConfig().TEAMS_WEBHOOK_URL;
+  if (!webhookUrl) return undefined;
+  if (!validateWebhookUrl(webhookUrl)) {
+    log.warn('Teams webhook URL must be a valid HTTPS URL');
+    return undefined;
+  }
+  return webhookUrl;
 }
 
 function getSmtpConfig() {
@@ -157,6 +168,15 @@ export function buildTeamsCard(payload: NotificationPayload): TeamsAdaptiveCard 
   };
 }
 
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function buildEmailHtml(payload: NotificationPayload): string {
   const severityColors: Record<string, string> = {
     critical: '#ef4444',
@@ -165,6 +185,10 @@ export function buildEmailHtml(payload: NotificationPayload): string {
   };
   const color = severityColors[payload.severity] || '#6b7280';
   const timestamp = new Date().toISOString();
+  const title = escapeHtml(payload.title);
+  const body = escapeHtml(payload.body);
+  const containerName = payload.containerName ? escapeHtml(payload.containerName) : '';
+  const severity = escapeHtml(payload.severity.toUpperCase());
 
   return `
 <!DOCTYPE html>
@@ -172,12 +196,12 @@ export function buildEmailHtml(payload: NotificationPayload): string {
 <head><meta charset="utf-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="border-left: 4px solid ${color}; padding: 16px; background: #f9fafb; border-radius: 4px;">
-    <h2 style="margin: 0 0 8px 0; color: ${color};">${payload.title}</h2>
-    <p style="margin: 0 0 16px 0; color: #374151;">${payload.body}</p>
+    <h2 style="margin: 0 0 8px 0; color: ${color};">${title}</h2>
+    <p style="margin: 0 0 16px 0; color: #374151;">${body}</p>
     <table style="font-size: 14px; color: #6b7280;">
-      ${payload.containerName ? `<tr><td style="padding: 2px 12px 2px 0; font-weight: 600;">Container</td><td>${payload.containerName}</td></tr>` : ''}
+      ${containerName ? `<tr><td style="padding: 2px 12px 2px 0; font-weight: 600;">Container</td><td>${containerName}</td></tr>` : ''}
       ${payload.endpointId ? `<tr><td style="padding: 2px 12px 2px 0; font-weight: 600;">Endpoint</td><td>${payload.endpointId}</td></tr>` : ''}
-      <tr><td style="padding: 2px 12px 2px 0; font-weight: 600;">Severity</td><td>${payload.severity.toUpperCase()}</td></tr>
+      <tr><td style="padding: 2px 12px 2px 0; font-weight: 600;">Severity</td><td>${severity}</td></tr>
       <tr><td style="padding: 2px 12px 2px 0; font-weight: 600;">Time</td><td>${timestamp}</td></tr>
     </table>
   </div>
@@ -279,10 +303,12 @@ export async function notifyInsight(insight: Insight): Promise<void> {
   };
 
   const errors: string[] = [];
+  let successCount = 0;
 
   if (isChannelEnabled('teams')) {
     try {
       await sendTeamsNotification(payload);
+      successCount++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`teams: ${msg}`);
@@ -294,6 +320,7 @@ export async function notifyInsight(insight: Insight): Promise<void> {
   if (isChannelEnabled('email')) {
     try {
       await sendEmailNotification(payload);
+      successCount++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`email: ${msg}`);
@@ -302,8 +329,8 @@ export async function notifyInsight(insight: Insight): Promise<void> {
     }
   }
 
-  // Record rate limit only if at least one channel was attempted
-  if (isChannelEnabled('teams') || isChannelEnabled('email')) {
+  // Only record cooldown if at least one notification was delivered
+  if (successCount > 0) {
     recordSent(insight.container_id, eventType);
   }
 }

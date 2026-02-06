@@ -25,6 +25,7 @@ import { imagesRoutes } from './routes/images.js';
 import { networksRoutes } from './routes/networks.js';
 import { investigationRoutes } from './routes/investigations.js';
 import { searchRoutes } from './routes/search.js';
+import { notificationRoutes } from './routes/notifications.js';
 import { cacheAdminRoutes } from './routes/cache-admin.js';
 
 export async function buildApp() {
@@ -75,6 +76,7 @@ export async function buildApp() {
   await app.register(networksRoutes);
   await app.register(investigationRoutes);
   await app.register(searchRoutes);
+  await app.register(notificationRoutes);
   await app.register(cacheAdminRoutes);
 
   // Static files (production only)

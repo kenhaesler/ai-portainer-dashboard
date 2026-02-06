@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   buildTeamsCard,
   buildEmailHtml,
+  escapeHtml,
   sendTeamsNotification,
   sendEmailNotification,
   notifyInsight,
@@ -470,6 +471,136 @@ describe('notification-service', () => {
       mockFetch.mockClear();
       await notifyInsight({ ...insight, id: 'test-4' });
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('escapeHtml', () => {
+    it('should escape HTML special characters', () => {
+      expect(escapeHtml('<script>alert("xss")</script>')).toBe(
+        '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;',
+      );
+    });
+
+    it('should escape ampersands and single quotes', () => {
+      expect(escapeHtml("Tom & Jerry's")).toBe('Tom &amp; Jerry&#39;s');
+    });
+
+    it('should return plain text unchanged', () => {
+      expect(escapeHtml('Hello World')).toBe('Hello World');
+    });
+  });
+
+  describe('buildEmailHtml - XSS prevention', () => {
+    it('should escape HTML in title and body', () => {
+      const html = buildEmailHtml({
+        title: '<img src=x onerror=alert(1)>',
+        body: '<script>steal()</script>',
+        severity: 'info',
+        eventType: 'test',
+      });
+
+      expect(html).not.toContain('<img');
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('&lt;img');
+      expect(html).toContain('&lt;script&gt;');
+    });
+
+    it('should escape HTML in container name', () => {
+      const html = buildEmailHtml({
+        title: 'Alert',
+        body: 'test',
+        severity: 'info',
+        containerName: '<b>evil</b>',
+        eventType: 'test',
+      });
+
+      expect(html).not.toContain('<b>evil</b>');
+      expect(html).toContain('&lt;b&gt;evil&lt;/b&gt;');
+    });
+  });
+
+  describe('SSRF prevention - webhook URL validation', () => {
+    it('should reject HTTP (non-HTTPS) webhook URLs', async () => {
+      mockGetConfig.mockReturnValue({
+        TEAMS_WEBHOOK_URL: 'http://169.254.169.254/latest/meta-data/',
+        TEAMS_NOTIFICATIONS_ENABLED: true,
+        EMAIL_NOTIFICATIONS_ENABLED: false,
+      });
+
+      await expect(
+        sendTeamsNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Teams webhook URL not configured');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject invalid webhook URLs', async () => {
+      mockGetConfig.mockReturnValue({
+        TEAMS_WEBHOOK_URL: 'not-a-url',
+        TEAMS_NOTIFICATIONS_ENABLED: true,
+        EMAIL_NOTIFICATIONS_ENABLED: false,
+      });
+
+      await expect(
+        sendTeamsNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Teams webhook URL not configured');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rate limiting - failure handling', () => {
+    it('should NOT record cooldown when all notifications fail', async () => {
+      mockGetConfig.mockReturnValue({
+        TEAMS_WEBHOOK_URL: 'https://teams.example.com/webhook',
+        TEAMS_NOTIFICATIONS_ENABLED: true,
+        EMAIL_NOTIFICATIONS_ENABLED: false,
+        SMTP_HOST: undefined,
+        SMTP_PORT: 587,
+        SMTP_SECURE: true,
+        SMTP_USER: undefined,
+        SMTP_PASSWORD: undefined,
+        SMTP_FROM: 'test@example.com',
+        EMAIL_RECIPIENTS: '',
+      });
+
+      // Make Teams notification fail
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('Server Error'),
+      });
+
+      const insight: Insight = {
+        id: 'fail-test',
+        endpoint_id: 1,
+        endpoint_name: 'local',
+        container_id: 'fail-container',
+        container_name: 'web-app',
+        severity: 'critical',
+        category: 'anomaly',
+        title: 'CPU Spike',
+        description: 'CPU at 99%',
+        suggested_action: null,
+        is_acknowledged: 0,
+        created_at: new Date().toISOString(),
+      };
+
+      await notifyInsight(insight);
+
+      // Cooldown should NOT be recorded since the notification failed
+      const map = _getCooldownMap();
+      expect(map.has('fail-container:anomaly')).toBe(false);
     });
   });
 
