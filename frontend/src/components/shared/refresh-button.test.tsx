@@ -19,29 +19,29 @@ describe('RefreshButton', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('should be disabled when isLoading is true', () => {
+  it('should show Updating text when isLoading is true', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} isLoading={true} />);
 
     const button = screen.getByRole('button');
-    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent('Updating...');
   });
 
-  it('should not be disabled when isLoading is false', () => {
+  it('should show Refresh text when isLoading is false', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} isLoading={false} />);
 
     const button = screen.getByRole('button');
-    expect(button).not.toBeDisabled();
+    expect(button).toHaveTextContent('Refresh');
   });
 
-  it('should not call onClick when disabled', () => {
+  it('should still be clickable when loading (optimistic)', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} isLoading={true} />);
 
     fireEvent.click(screen.getByRole('button'));
 
-    expect(onClick).not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('should apply spin animation to icon when loading', () => {
@@ -68,12 +68,12 @@ describe('RefreshButton', () => {
     expect(button).toHaveClass('custom-class');
   });
 
-  it('should render with opacity when disabled', () => {
+  it('should render with relative class for loading indicator', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} isLoading={true} />);
 
     const button = screen.getByRole('button');
-    expect(button).toHaveClass('disabled:opacity-50');
+    expect(button).toHaveClass('relative');
   });
 
   it('should handle multiple clicks when not loading', () => {
@@ -138,7 +138,7 @@ describe('RefreshButton', () => {
       expect(onClick).not.toHaveBeenCalled();
     });
 
-    it('should disable both buttons when loading', () => {
+    it('should show Updating text in split mode when loading', () => {
       const onClick = vi.fn();
       const onForceRefresh = vi.fn();
       render(
@@ -146,8 +146,7 @@ describe('RefreshButton', () => {
       );
 
       const buttons = screen.getAllByRole('button');
-      expect(buttons[0]).toBeDisabled();
-      expect(buttons[1]).toBeDisabled();
+      expect(buttons[0]).toHaveTextContent('Updating...');
     });
 
     it('should still call onClick on first button in split mode', () => {
