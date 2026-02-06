@@ -80,6 +80,10 @@ export const envSchema = z.object({
   WEBHOOKS_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(5),
   WEBHOOKS_RETRY_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
 
+  // Image Staleness
+  IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
+  IMAGE_STALENESS_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
+
   // Rate Limiting
   LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(
     process.env.NODE_ENV === 'production' ? 5 : 30
