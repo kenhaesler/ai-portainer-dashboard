@@ -13,6 +13,7 @@ import {
   Shield,
   GitBranch,
   MessageSquare,
+  Activity,
   FileSearch,
   Settings,
   RefreshCw,
@@ -52,6 +53,7 @@ const pages: PageEntry[] = [
   { label: 'Remediation', to: '/remediation', icon: Shield },
   { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
   { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
+  { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
   { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
   { label: 'Settings', to: '/settings', icon: Settings },
 ];
