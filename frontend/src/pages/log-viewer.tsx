@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueries } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Download, WrapText, Activity, ArrowDown, Loader2, Save, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
-import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel } from '@/lib/log-viewer';
+import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
 const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
@@ -68,6 +69,109 @@ function highlightLine(line: string, regex: RegExp | null): ReactNode {
   });
   if (cursor < line.length) parts.push(line.slice(cursor));
   return parts;
+}
+
+const LOG_ROW_HEIGHT = 28;
+
+function VirtualizedLogView({
+  scrollRef,
+  filteredEntries,
+  isLoading,
+  autoScroll,
+  setAutoScroll,
+  lineWrap,
+  regex,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  filteredEntries: ParsedLogEntry[];
+  isLoading: boolean;
+  autoScroll: boolean;
+  setAutoScroll: (v: boolean) => void;
+  lineWrap: boolean;
+  regex: RegExp | null;
+}) {
+  const virtualizer = useVirtualizer({
+    count: filteredEntries.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => LOG_ROW_HEIGHT,
+    overscan: 20,
+  });
+
+  // Auto-scroll to bottom when new entries arrive
+  useEffect(() => {
+    if (autoScroll && filteredEntries.length > 0) {
+      virtualizer.scrollToIndex(filteredEntries.length - 1, { align: 'end' });
+    }
+  }, [filteredEntries.length, autoScroll, virtualizer]);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 16;
+      if (!nearBottom && autoScroll) setAutoScroll(false);
+      if (nearBottom && !autoScroll) setAutoScroll(true);
+    },
+    [autoScroll, setAutoScroll],
+  );
+
+  return (
+    <section className="relative overflow-hidden rounded-xl border bg-slate-950">
+      {!autoScroll && (
+        <button
+          onClick={() => {
+            setAutoScroll(true);
+            virtualizer.scrollToIndex(filteredEntries.length - 1, { align: 'end' });
+          }}
+          className="absolute bottom-3 right-3 z-10 rounded-full border border-border bg-background px-3 py-1 text-xs"
+        >
+          <ArrowDown className="mr-1 inline h-3 w-3" />
+          Jump To Bottom
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        className="h-[640px] overflow-auto font-mono text-sm"
+        onScroll={handleScroll}
+      >
+        {isLoading && <div className="p-3 text-slate-200">Loading logs...</div>}
+        {!isLoading && filteredEntries.length === 0 && (
+          <div className="p-3 text-slate-200">Select one or more containers to view aggregated logs.</div>
+        )}
+
+        {filteredEntries.length > 0 && (
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const entry = filteredEntries[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className={`grid grid-cols-[170px_180px_70px_1fr] gap-3 border-b border-slate-800/70 px-3 py-1 text-slate-100 ${lineWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'}`}
+                >
+                  <span className="text-slate-500">{toLocalTimestamp(entry.timestamp)}</span>
+                  <span className={CONTAINER_COLORS[virtualRow.index % CONTAINER_COLORS.length]}>
+                    [{entry.containerName}]
+                  </span>
+                  <span className={entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-amber-400' : entry.level === 'debug' ? 'text-sky-300' : 'text-emerald-300'}>
+                    {entry.level.toUpperCase()}
+                  </span>
+                  <span>{highlightLine(entry.raw, regex)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 export default function LogViewerPage() {
@@ -233,11 +337,6 @@ export default function LogViewerPage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  useEffect(() => {
-    if (!autoScroll || !scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [filteredEntries, autoScroll]);
 
   const toggleContainer = (containerId: string) => {
     setSelectedContainers((prev) => (
@@ -540,53 +639,15 @@ export default function LogViewerPage() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden rounded-xl border bg-slate-950">
-        {!autoScroll && (
-          <button
-            onClick={() => {
-              setAutoScroll(true);
-              if (scrollRef.current) {
-                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-              }
-            }}
-            className="absolute bottom-3 right-3 z-10 rounded-full border border-border bg-background px-3 py-1 text-xs"
-          >
-            <ArrowDown className="mr-1 inline h-3 w-3" />
-            Jump To Bottom
-          </button>
-        )}
-        <div
-          ref={scrollRef}
-          className="h-[640px] overflow-auto font-mono text-sm"
-          onScroll={(e) => {
-            const target = e.currentTarget;
-            const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 16;
-            if (!nearBottom && autoScroll) setAutoScroll(false);
-            if (nearBottom && !autoScroll) setAutoScroll(true);
-          }}
-        >
-          {isLoading && <div className="p-3 text-slate-200">Loading logs...</div>}
-          {!isLoading && filteredEntries.length === 0 && (
-            <div className="p-3 text-slate-200">Select one or more containers to view aggregated logs.</div>
-          )}
-
-          {filteredEntries.map((entry, index) => (
-            <div
-              key={`${entry.id}-${index}`}
-              className={`grid grid-cols-[170px_180px_70px_1fr] gap-3 border-b border-slate-800/70 px-3 py-1 text-slate-100 ${lineWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'}`}
-            >
-              <span className="text-slate-500">{toLocalTimestamp(entry.timestamp)}</span>
-              <span className={CONTAINER_COLORS[index % CONTAINER_COLORS.length]}>
-                [{entry.containerName}]
-              </span>
-              <span className={entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-amber-400' : entry.level === 'debug' ? 'text-sky-300' : 'text-emerald-300'}>
-                {entry.level.toUpperCase()}
-              </span>
-              <span>{highlightLine(entry.raw, regex)}</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      <VirtualizedLogView
+        scrollRef={scrollRef}
+        filteredEntries={filteredEntries}
+        isLoading={isLoading}
+        autoScroll={autoScroll}
+        setAutoScroll={setAutoScroll}
+        lineWrap={lineWrap}
+        regex={regex}
+      />
     </div>
   );
 }
