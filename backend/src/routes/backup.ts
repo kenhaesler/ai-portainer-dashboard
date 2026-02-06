@@ -96,6 +96,43 @@ export async function backupRoutes(fastify: FastifyInstance) {
   });
 
   // Delete backup
+  fastify.post('/api/backup/:filename/restore', {
+    schema: {
+      tags: ['Backup'],
+      summary: 'Restore database from backup file',
+      security: [{ bearerAuth: [] }],
+      params: FilenameParamsSchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const { filename } = request.params as { filename: string };
+    const config = getConfig();
+    const db = getDb();
+    const backupDir = getBackupDir();
+    const filePath = path.join(backupDir, filename);
+
+    if (!fs.existsSync(filePath)) {
+      return reply.code(404).send({ error: 'Backup not found' });
+    }
+
+    // Flush WAL to reduce restore corruption risk.
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    fs.copyFileSync(filePath, config.SQLITE_PATH);
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'backup.restore',
+      details: { filename },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    log.warn({ filename }, 'Backup restored. Application restart recommended');
+    return { success: true, message: 'Backup restored. Please restart the application.' };
+  });
+
+  // Delete backup
   fastify.delete('/api/backup/:filename', {
     schema: {
       tags: ['Backup'],

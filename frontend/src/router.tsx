@@ -20,6 +20,7 @@ const LlmAssistant = lazy(() => import('@/pages/llm-assistant'));
 const LlmObservability = lazy(() => import('@/pages/llm-observability'));
 const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
 const Settings = lazy(() => import('@/pages/settings'));
+const Backups = lazy(() => import('@/pages/backups'));
 const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/pages/packet-capture'));
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
       { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
       { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
+      { path: 'backups', element: <LazyPage><Backups /></LazyPage> },
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
     ],
   },
