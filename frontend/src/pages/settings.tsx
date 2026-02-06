@@ -278,7 +278,7 @@ function SettingsSection({
   );
 }
 
-function NotificationTestButtons() {
+export function NotificationTestButtons() {
   const [testingTeams, setTestingTeams] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
 
@@ -286,8 +286,12 @@ function NotificationTestButtons() {
     const setTesting = channel === 'teams' ? setTestingTeams : setTestingEmail;
     setTesting(true);
     try {
-      await api.post('/api/notifications/test', { channel });
-      toast.success(`Test ${channel} notification sent successfully`);
+      const result = await api.post<{ success: boolean; error?: string }>('/api/notifications/test', { channel });
+      if (result.success) {
+        toast.success(`Test ${channel} notification sent successfully`);
+      } else {
+        toast.error(`Failed to send test ${channel} notification: ${result.error || 'Unknown error'}`);
+      }
     } catch (err) {
       toast.error(`Failed to send test ${channel} notification: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {

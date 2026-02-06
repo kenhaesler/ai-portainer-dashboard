@@ -25,7 +25,7 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 const mockGetConfig = vi.fn().mockReturnValue({
-  TEAMS_WEBHOOK_URL: 'https://teams.example.com/webhook',
+  TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
   TEAMS_NOTIFICATIONS_ENABLED: false,
   SMTP_HOST: 'smtp.example.com',
   SMTP_PORT: 587,
@@ -77,7 +77,7 @@ describe('notification-service', () => {
     // Default: settings not found in DB -> fall back to env config
     mockDbGet.mockReturnValue(undefined);
     mockGetConfig.mockReturnValue({
-      TEAMS_WEBHOOK_URL: 'https://teams.example.com/webhook',
+      TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
       TEAMS_NOTIFICATIONS_ENABLED: false,
       SMTP_HOST: 'smtp.example.com',
       SMTP_PORT: 587,
@@ -228,7 +228,7 @@ describe('notification-service', () => {
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://teams.example.com/webhook',
+        'https://contoso.webhook.office.com/webhookb2/incoming',
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -397,7 +397,7 @@ describe('notification-service', () => {
 
     it('should send Teams notification when enabled for security insight', async () => {
       mockGetConfig.mockReturnValue({
-        TEAMS_WEBHOOK_URL: 'https://teams.example.com/webhook',
+        TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
         SMTP_HOST: undefined,
@@ -434,7 +434,7 @@ describe('notification-service', () => {
 
     it('should rate-limit duplicate notifications for the same container', async () => {
       mockGetConfig.mockReturnValue({
-        TEAMS_WEBHOOK_URL: 'https://teams.example.com/webhook',
+        TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
         SMTP_HOST: undefined,
@@ -557,12 +557,57 @@ describe('notification-service', () => {
 
       expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    it('should reject non-office webhook domains', async () => {
+      mockGetConfig.mockReturnValue({
+        TEAMS_WEBHOOK_URL: 'https://example.com/webhook',
+        TEAMS_NOTIFICATIONS_ENABLED: true,
+        EMAIL_NOTIFICATIONS_ENABLED: false,
+      });
+
+      await expect(
+        sendTeamsNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Teams webhook URL not configured');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SSRF prevention - SMTP host validation', () => {
+    it('should reject private SMTP hosts from environment', async () => {
+      mockGetConfig.mockReturnValue({
+        TEAMS_WEBHOOK_URL: undefined,
+        TEAMS_NOTIFICATIONS_ENABLED: false,
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: 587,
+        SMTP_SECURE: true,
+        SMTP_USER: 'user@example.com',
+        SMTP_PASSWORD: 'password',
+        SMTP_FROM: 'AI Dashboard <noreply@example.com>',
+        EMAIL_NOTIFICATIONS_ENABLED: true,
+        EMAIL_RECIPIENTS: 'admin@example.com',
+      });
+
+      await expect(
+        sendEmailNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('SMTP host not configured');
+    });
   });
 
   describe('rate limiting - failure handling', () => {
     it('should NOT record cooldown when all notifications fail', async () => {
       mockGetConfig.mockReturnValue({
-        TEAMS_WEBHOOK_URL: 'https://teams.example.com/webhook',
+        TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
         SMTP_HOST: undefined,

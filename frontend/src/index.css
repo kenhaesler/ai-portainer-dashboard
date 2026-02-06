@@ -1125,3 +1125,17 @@
     min-width: 44px;
   }
 }
+
+/* Keyboard-first focus ring — gradient border replaces browser default */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-ring);
+  border-radius: inherit;
+}
+
+/* Table row keyboard selection highlight */
+tr.keyboard-selected {
+  background-color: var(--color-accent) !important;
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}

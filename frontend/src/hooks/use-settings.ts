@@ -50,20 +50,47 @@ export function useSettings(category?: string) {
 export function useUpdateSetting() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, UpdateSettingParams>({
+  return useMutation<void, Error, UpdateSettingParams, { previousSettings: unknown }>({
     mutationFn: async ({ key, value }) => {
       await api.put(`/api/settings/${key}`, { value });
     },
-    onSuccess: (_data, { key }) => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('Setting updated', {
-        description: `Setting "${key}" has been updated successfully.`,
+    onMutate: async ({ key, value }) => {
+      // Cancel outgoing refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['settings'] });
+
+      // Snapshot current value for rollback
+      const previousSettings = queryClient.getQueryData(['settings']);
+
+      // Optimistically update the cache
+      queryClient.setQueriesData<Setting[]>(
+        { queryKey: ['settings'] },
+        (old) => {
+          if (!old) return old;
+          return old.map((s) =>
+            s.key === key ? { ...s, value, updatedAt: new Date().toISOString() } : s,
+          );
+        },
+      );
+
+      // Show instant success toast
+      toast.success('Setting saved', {
+        description: `"${key}" updated.`,
       });
+
+      return { previousSettings };
     },
-    onError: (error, { key }) => {
-      toast.error(`Failed to update setting "${key}"`, {
+    onError: (error, { key }, context) => {
+      // Rollback to previous value
+      if (context?.previousSettings) {
+        queryClient.setQueryData(['settings'], context.previousSettings);
+      }
+      toast.error(`Failed to save "${key}"`, {
         description: error.message,
       });
+    },
+    onSettled: () => {
+      // Refetch to ensure server state is in sync
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
   });
 }
