@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -8,6 +9,8 @@ import { useLlmModels } from '@/hooks/use-llm-models';
 import 'highlight.js/styles/tokyo-night-dark.css';
 
 export default function LlmAssistantPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -15,6 +18,13 @@ export default function LlmAssistantPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isStreaming, currentResponse, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
   const { data: modelsData } = useLlmModels();
+
+  useEffect(() => {
+    const state = location.state as { prefillPrompt?: string } | null;
+    if (!state?.prefillPrompt) return;
+    setInput(state.prefillPrompt);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   // Set default model when models load
   useEffect(() => {

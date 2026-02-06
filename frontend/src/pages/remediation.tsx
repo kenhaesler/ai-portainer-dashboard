@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Shield,
@@ -14,6 +16,7 @@ import {
   Server,
   RefreshCw,
   Filter,
+  MessageSquare,
 } from 'lucide-react';
 import {
   useRemediationActions,
@@ -26,6 +29,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useSockets } from '@/providers/socket-provider';
 import { cn, formatDate } from '@/lib/utils';
 
 type ActionStatus = 'all' | 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
@@ -46,6 +50,29 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   START_CONTAINER: 'Start Container',
   SCALE_UP: 'Scale Up',
   SCALE_DOWN: 'Scale Down',
+};
+
+type ActionRecord = {
+  id: string;
+  type?: string;
+  action_type?: string;
+  status: string;
+  container_id?: string;
+  containerId?: string;
+  container_name?: string;
+  containerName?: string;
+  endpoint_id?: number;
+  endpointId?: number;
+  rationale?: string;
+  description?: string;
+  suggested_by?: string;
+  suggestedBy?: string;
+  created_at?: string;
+  createdAt?: string;
+  approved_by?: string;
+  approvedBy?: string;
+  execution_result?: string;
+  result?: string;
 };
 
 interface ConfirmDialogProps {
@@ -108,28 +135,11 @@ function ConfirmDialog({
 }
 
 interface ActionRowProps {
-  action: {
-    id: string;
-    type?: string;
-    action_type?: string;
-    status: string;
-    container_id?: string;
-    containerId?: string;
-    endpoint_id?: number;
-    endpointId?: number;
-    description: string;
-    suggested_by?: string;
-    suggestedBy?: string;
-    created_at?: string;
-    createdAt?: string;
-    approved_by?: string;
-    approvedBy?: string;
-    execution_result?: string;
-    result?: string;
-  };
+  action: ActionRecord;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onExecute: (id: string) => void;
+  onDiscuss: (action: ActionRecord) => void;
   isApproving: boolean;
   isRejecting: boolean;
   isExecuting: boolean;
@@ -140,6 +150,7 @@ function ActionRow({
   onApprove,
   onReject,
   onExecute,
+  onDiscuss,
   isApproving,
   isRejecting,
   isExecuting,
@@ -148,6 +159,7 @@ function ActionRow({
   const containerId = action.container_id || action.containerId || '';
   const createdAt = action.created_at || action.createdAt || '';
   const suggestedBy = action.suggested_by || action.suggestedBy || 'AI Monitor';
+  const rationale = action.rationale || action.description || 'No rationale provided';
 
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
@@ -182,8 +194,20 @@ function ActionRow({
           {createdAt ? formatDate(createdAt) : '-'}
         </span>
       </td>
+      <td className="p-4 max-w-sm">
+        <p className="text-xs text-muted-foreground line-clamp-3" title={rationale}>
+          {rationale}
+        </p>
+      </td>
       <td className="p-4">
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => onDiscuss(action)}
+            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
+          >
+            <MessageSquare className="h-3 w-3" />
+            Discuss with AI
+          </button>
           {action.status === 'pending' && (
             <>
               <button
@@ -257,6 +281,9 @@ function ActionRow({
 }
 
 export default function RemediationPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { remediationSocket } = useSockets();
   const [statusFilter, setStatusFilter] = useState<ActionStatus>('all');
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
@@ -283,6 +310,19 @@ export default function RemediationPage() {
     // Handle both array and object response formats
     return Array.isArray(actionsData) ? actionsData : (actionsData as any).actions || [];
   }, [actionsData]);
+
+  useEffect(() => {
+    if (!remediationSocket) return;
+    const refreshActions = () => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+    };
+    remediationSocket.on('actions:new', refreshActions);
+    remediationSocket.on('actions:updated', refreshActions);
+    return () => {
+      remediationSocket.off('actions:new', refreshActions);
+      remediationSocket.off('actions:updated', refreshActions);
+    };
+  }, [queryClient, remediationSocket]);
 
   // Stats
   const stats = useMemo(() => {
@@ -320,6 +360,32 @@ export default function RemediationPage() {
         },
       });
     }
+  };
+
+  const handleDiscuss = (action: ActionRecord) => {
+    const actionType = action.action_type || action.type || 'UNKNOWN_ACTION';
+    const prompt = [
+      'I need guidance on this remediation action before approval.',
+      `Action: ${ACTION_TYPE_LABELS[actionType] || actionType}`,
+      `Container ID: ${action.container_id || action.containerId || 'unknown'}`,
+      `Container Name: ${action.container_name || action.containerName || 'unknown'}`,
+      `Endpoint ID: ${action.endpoint_id || action.endpointId || 'unknown'}`,
+      `Status: ${action.status}`,
+      `AI Rationale: ${action.rationale || action.description || 'none provided'}`,
+      '',
+      'Please explain:',
+      '1) Why this action is appropriate',
+      '2) Safer alternatives and tradeoffs',
+      '3) What quick checks I should run first',
+    ].join('\n');
+
+    navigate('/assistant', {
+      state: {
+        prefillPrompt: prompt,
+        source: 'remediation',
+        actionId: action.id,
+      },
+    });
   };
 
   // Error state
@@ -451,6 +517,7 @@ export default function RemediationPage() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Suggested By</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">AI Rationale</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -462,6 +529,7 @@ export default function RemediationPage() {
                     onApprove={handleApprove}
                     onReject={handleReject}
                     onExecute={handleExecuteClick}
+                    onDiscuss={handleDiscuss}
                     isApproving={approveAction.isPending && approveAction.variables === action.id}
                     isRejecting={rejectAction.isPending && rejectAction.variables === action.id}
                     isExecuting={executeAction.isPending && executeAction.variables === action.id}
