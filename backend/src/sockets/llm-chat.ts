@@ -174,8 +174,9 @@ export function setupLlmNamespace(ns: Namespace) {
 
     let abortController: AbortController | null = null;
 
-    socket.on('chat:message', async (data: { text: string; context?: any }) => {
+    socket.on('chat:message', async (data: { text: string; context?: any; model?: string }) => {
       const config = getConfig();
+      const selectedModel = data.model || config.OLLAMA_MODEL;
 
       // Get or create session history
       if (!sessions.has(socket.id)) {
@@ -217,7 +218,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
               ...getAuthHeaders(),
             },
             body: JSON.stringify({
-              model: config.OLLAMA_MODEL,
+              model: selectedModel,
               messages,
               stream: true,
             }),
@@ -260,7 +261,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           // Use Ollama SDK for local/unauthenticated access
           const ollama = new Ollama({ host: config.OLLAMA_BASE_URL });
           const response = await ollama.chat({
-            model: config.OLLAMA_MODEL,
+            model: selectedModel,
             messages,
             stream: true,
           });

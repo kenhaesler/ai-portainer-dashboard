@@ -1,17 +1,27 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat } from '@/hooks/use-llm-chat';
+import { useLlmModels } from '@/hooks/use-llm-models';
 import 'highlight.js/styles/tokyo-night-dark.css';
 
 export default function LlmAssistantPage() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isStreaming, currentResponse, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
+  const { data: modelsData } = useLlmModels();
+
+  // Set default model when models load
+  useEffect(() => {
+    if (modelsData?.default && !selectedModel) {
+      setSelectedModel(modelsData.default);
+    }
+  }, [modelsData, selectedModel]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -28,15 +38,23 @@ export default function LlmAssistantPage() {
     }
   }, [isStreaming]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Restore input focus when streaming ends
+  useEffect(() => {
+    if (!isStreaming && !isSending) {
+      // Small delay to ensure disabled state is cleared before focusing
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, isSending]);
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming || isSending) return;
 
     setIsSending(true);
-    sendMessage(input.trim());
+    sendMessage(input.trim(), undefined, selectedModel || undefined);
     setInput('');
-    inputRef.current?.focus();
-  };
+  }, [input, isStreaming, isSending, sendMessage, selectedModel]);
 
   const handleClear = () => {
     if (window.confirm('Clear all chat history?')) {
@@ -61,14 +79,34 @@ export default function LlmAssistantPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={handleClear}
-          disabled={messages.length === 0}
-          className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-all hover:bg-accent hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Trash2 className="h-4 w-4" />
-          Clear History
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Model Selector */}
+          {modelsData && modelsData.models.length > 0 && (
+            <div className="relative">
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={isStreaming || isSending}
+                className="appearance-none rounded-lg border border-input bg-background pl-3 pr-8 py-2 text-sm font-medium shadow-sm transition-all hover:bg-accent hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {modelsData.models.map((model) => (
+                  <option key={model.name} value={model.name}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+          )}
+          <button
+            onClick={handleClear}
+            disabled={messages.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-all hover:bg-accent hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear History
+          </button>
+        </div>
       </div>
 
       {/* Chat Container */}
@@ -257,7 +295,40 @@ function MessageBubble({ message }: MessageBubbleProps) {
   );
 }
 
+/**
+ * Post-process raw LLM output to normalize inconsistent markdown.
+ * Local models often produce malformed markdown that breaks rendering.
+ */
+function normalizeMarkdown(raw: string): string {
+  let text = raw;
+
+  // Fix code blocks: normalize ```language to have a newline after the opening fence
+  text = text.replace(/```(\w+)([^\n])/g, '```$1\n$2');
+
+  // Fix unclosed code fences — count triple backticks, if odd close the last one
+  const fenceCount = (text.match(/```/g) || []).length;
+  if (fenceCount % 2 !== 0) {
+    text += '\n```';
+  }
+
+  // Fix headers: ensure space after # (e.g., "#Title" → "# Title")
+  text = text.replace(/^(#{1,6})([^\s#])/gm, '$1 $2');
+
+  // Fix list items: ensure space after bullet markers (e.g., "-item" → "- item")
+  text = text.replace(/^(\s*[-*+])([^\s])/gm, '$1 $2');
+
+  // Fix numbered lists (e.g., "1.item" → "1. item")
+  text = text.replace(/^(\s*\d+\.)([^\s])/gm, '$1 $2');
+
+  // Normalize excessive blank lines (more than 2 consecutive → 2)
+  text = text.replace(/\n{4,}/g, '\n\n\n');
+
+  return text;
+}
+
 function MarkdownContent({ content }: { content: string }) {
+  const normalizedContent = normalizeMarkdown(content);
+
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-pre:bg-zinc-900 prose-pre:shadow-lg prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-li:text-[13px] prose-td:text-[13px] prose-th:text-xs">
       <ReactMarkdown
@@ -308,7 +379,7 @@ function MarkdownContent({ content }: { content: string }) {
           },
         }}
       >
-        {content}
+        {normalizedContent}
       </ReactMarkdown>
     </div>
   );
