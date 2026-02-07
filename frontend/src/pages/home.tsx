@@ -246,14 +246,20 @@ export default function HomePage() {
             />
           </MotionReveal>
           <MotionReveal>
-            <KpiCard
-              label="Security Findings"
-              value={data.security.flagged}
-              icon={<ShieldAlert className="h-5 w-5" />}
-              trendValue={`${data.security.ignored} ignored`}
-              trend={data.security.flagged > 0 ? 'down' : 'up'}
+            <button
+              type="button"
               onClick={() => navigate('/security/audit')}
-            />
+              className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+            >
+              <KpiCard
+                label="Security Findings"
+                value={data.security.flagged}
+                icon={<ShieldAlert className="h-5 w-5" />}
+                trendValue={`${data.security.ignored} ignored`}
+                trend={data.security.flagged > 0 ? 'down' : 'up'}
+                className="cursor-pointer"
+              />
+            </button>
           </MotionReveal>
         </MotionStagger>
       ) : null}
