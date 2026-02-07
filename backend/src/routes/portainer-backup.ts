@@ -25,7 +25,7 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
       summary: 'Create a Portainer server backup',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     try {
       const body = CreateBackupBodySchema.parse(request.body ?? {});
@@ -57,7 +57,7 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
       summary: 'List available Portainer backups',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
     const backups = listPortainerBackups();
     return { backups };
@@ -71,7 +71,7 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: PortainerBackupFilenameParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
 
@@ -100,7 +100,7 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: PortainerBackupFilenameParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
 
