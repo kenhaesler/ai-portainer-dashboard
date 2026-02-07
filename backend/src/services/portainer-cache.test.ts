@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const baseConfig = {
   CACHE_ENABLED: true,
-  REDIS_URL: undefined,
+  REDIS_URL: undefined as string | undefined,
+  REDIS_PASSWORD: undefined as string | undefined,
   REDIS_KEY_PREFIX: 'aidash:cache:',
 };
 
@@ -422,5 +423,52 @@ describe('batch operations (getMany / setMany)', () => {
     expect(redisClient.multi).toHaveBeenCalledTimes(1);
     expect(mockPipeline.set).toHaveBeenCalledTimes(2);
     expect(mockPipeline.exec).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Redis authentication (requirepass)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('injects REDIS_PASSWORD into the connection URL', async () => {
+    const redisClient = createMockRedisClient();
+    const createClient = vi.fn(() => redisClient);
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+        REDIS_PASSWORD: 's3cret',
+      }),
+    }));
+    vi.doMock('redis', () => ({ createClient }));
+
+    const { cache } = await import('./portainer-cache.js');
+    await cache.get('trigger-connect');
+
+    expect(createClient).toHaveBeenCalledWith({
+      url: 'redis://:s3cret@redis:6379',
+    });
+  });
+
+  it('uses plain URL when REDIS_PASSWORD is not set', async () => {
+    const redisClient = createMockRedisClient();
+    const createClient = vi.fn(() => redisClient);
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({ createClient }));
+
+    const { cache } = await import('./portainer-cache.js');
+    await cache.get('trigger-connect');
+
+    expect(createClient).toHaveBeenCalledWith({
+      url: 'redis://redis:6379',
+    });
   });
 });
