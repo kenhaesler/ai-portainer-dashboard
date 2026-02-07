@@ -12,8 +12,6 @@ vi.mock('@/lib/api', () => ({
           totalTokens: 25000,
           avgLatencyMs: 800,
           errorRate: 1.5,
-          avgFeedbackScore: 3.8,
-          feedbackCount: 10,
           modelBreakdown: [],
         });
       }
@@ -21,7 +19,6 @@ vi.mock('@/lib/api', () => ({
         { id: 1, trace_id: 'tr-1', model: 'llama3.2', total_tokens: 500 },
       ]);
     }),
-    post: vi.fn().mockResolvedValue({ success: true }),
   },
 }));
 

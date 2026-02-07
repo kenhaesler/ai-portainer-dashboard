@@ -335,6 +335,14 @@ export const LlmTestConnectionBodySchema = z.object({
   ollamaUrl: z.string().optional(),
 });
 
+export const LlmTracesQuerySchema = z.object({
+  limit: z.coerce.number().optional().default(50),
+});
+
+export const LlmStatsQuerySchema = z.object({
+  hours: z.coerce.number().optional().default(24),
+});
+
 // ─── Reports schemas ───────────────────────────────────────────────
 export const ReportsQuerySchema = z.object({
   timeRange: z.enum(['24h', '7d', '30d']).optional(),

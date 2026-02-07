@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export interface LlmTrace {
@@ -13,8 +13,6 @@ export interface LlmTrace {
   status: string;
   user_query: string | null;
   response_preview: string | null;
-  feedback_score: number | null;
-  feedback_text: string | null;
   created_at: string;
 }
 
@@ -23,8 +21,6 @@ export interface LlmStats {
   totalTokens: number;
   avgLatencyMs: number;
   errorRate: number;
-  avgFeedbackScore: number | null;
-  feedbackCount: number;
   modelBreakdown: Array<{ model: string; count: number; tokens: number }>;
 }
 
@@ -41,17 +37,5 @@ export function useLlmStats(hours: number = 24) {
     queryKey: ['llm-stats', hours],
     queryFn: () => api.get<LlmStats>(`/api/llm/stats?hours=${hours}`),
     staleTime: 60 * 1000,
-  });
-}
-
-export function useSubmitFeedback() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: { traceId: string; score: number; text?: string }) =>
-      api.post('/api/llm/feedback', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['llm-traces'] });
-      queryClient.invalidateQueries({ queryKey: ['llm-stats'] });
-    },
   });
 }

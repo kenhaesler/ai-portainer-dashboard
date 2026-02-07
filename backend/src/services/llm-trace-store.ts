@@ -28,8 +28,6 @@ export interface LlmTrace {
   status: string;
   user_query: string | null;
   response_preview: string | null;
-  feedback_score: number | null;
-  feedback_text: string | null;
   created_at: string;
 }
 
@@ -38,8 +36,6 @@ export interface LlmStats {
   totalTokens: number;
   avgLatencyMs: number;
   errorRate: number;
-  avgFeedbackScore: number | null;
-  feedbackCount: number;
   modelBreakdown: Array<{ model: string; count: number; tokens: number }>;
 }
 
@@ -70,14 +66,6 @@ export function getRecentTraces(limit: number = 50): LlmTrace[] {
   `).all(limit) as LlmTrace[];
 }
 
-export function updateFeedback(traceId: string, score: number, text?: string): boolean {
-  const db = getDb();
-  const result = db.prepare(`
-    UPDATE llm_traces SET feedback_score = ?, feedback_text = ? WHERE trace_id = ?
-  `).run(score, text ?? null, traceId);
-  return result.changes > 0;
-}
-
 export function getLlmStats(hoursBack: number = 24): LlmStats {
   const db = getDb();
 
@@ -86,9 +74,7 @@ export function getLlmStats(hoursBack: number = 24): LlmStats {
       COUNT(*) as total_queries,
       COALESCE(SUM(total_tokens), 0) as total_tokens,
       COALESCE(AVG(latency_ms), 0) as avg_latency_ms,
-      COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 0) as error_rate,
-      AVG(CASE WHEN feedback_score IS NOT NULL THEN feedback_score END) as avg_feedback_score,
-      COUNT(feedback_score) as feedback_count
+      COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 0) as error_rate
     FROM llm_traces
     WHERE created_at >= datetime('now', ? || ' hours')
   `).get(`-${hoursBack}`) as {
@@ -96,8 +82,6 @@ export function getLlmStats(hoursBack: number = 24): LlmStats {
     total_tokens: number;
     avg_latency_ms: number;
     error_rate: number;
-    avg_feedback_score: number | null;
-    feedback_count: number;
   };
 
   const modelBreakdown = db.prepare(`
@@ -113,8 +97,6 @@ export function getLlmStats(hoursBack: number = 24): LlmStats {
     totalTokens: summary.total_tokens,
     avgLatencyMs: Math.round(summary.avg_latency_ms),
     errorRate: Math.round(summary.error_rate * 100) / 100,
-    avgFeedbackScore: summary.avg_feedback_score ? Math.round(summary.avg_feedback_score * 10) / 10 : null,
-    feedbackCount: summary.feedback_count,
     modelBreakdown,
   };
 }
