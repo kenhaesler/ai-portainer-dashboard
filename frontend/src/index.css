@@ -366,6 +366,186 @@
     --color-chart-5: #fffb96;
   }
 
+  /* Nordic Frost (light, crisp blue-grays) */
+  .nordic-frost {
+    --color-background: #eef3f8;
+    --color-foreground: #1f2a37;
+    --color-card: #f6f9fc;
+    --color-card-foreground: #1f2a37;
+    --color-popover: #f6f9fc;
+    --color-popover-foreground: #1f2a37;
+    --color-primary: #2f6fed;
+    --color-primary-foreground: #f8fbff;
+    --color-secondary: #dde6f1;
+    --color-secondary-foreground: #1f2a37;
+    --color-muted: #d4deea;
+    --color-muted-foreground: #5a6b7d;
+    --color-accent: #10a4d8;
+    --color-accent-foreground: #f8fbff;
+    --color-destructive: #d94f5c;
+    --color-destructive-foreground: #f8fbff;
+    --color-border: #ccd8e6;
+    --color-input: #d7e2ee;
+    --color-ring: #2f6fed;
+    --color-sidebar-background: #e8eff7;
+    --color-sidebar-foreground: #1f2a37;
+    --color-sidebar-primary: #2f6fed;
+    --color-sidebar-primary-foreground: #f8fbff;
+    --color-sidebar-accent: #dce7f4;
+    --color-sidebar-accent-foreground: #1f2a37;
+    --color-sidebar-border: #ccd8e6;
+    --color-sidebar-ring: #10a4d8;
+    --color-chart-1: #2f6fed;
+    --color-chart-2: #10a4d8;
+    --color-chart-3: #26b37e;
+    --color-chart-4: #f29d38;
+    --color-chart-5: #a855f7;
+  }
+
+  /* Sandstone Dusk (light, warm editorial) */
+  .sandstone-dusk {
+    --color-background: #f8f2e8;
+    --color-foreground: #3d3229;
+    --color-card: #fff8ef;
+    --color-card-foreground: #3d3229;
+    --color-popover: #fff8ef;
+    --color-popover-foreground: #3d3229;
+    --color-primary: #b4682d;
+    --color-primary-foreground: #fff8ef;
+    --color-secondary: #eadcc8;
+    --color-secondary-foreground: #3d3229;
+    --color-muted: #e2d2be;
+    --color-muted-foreground: #7a6554;
+    --color-accent: #6b8e7a;
+    --color-accent-foreground: #fff8ef;
+    --color-destructive: #c1504d;
+    --color-destructive-foreground: #fff8ef;
+    --color-border: #dbc9b3;
+    --color-input: #e6d6c2;
+    --color-ring: #b4682d;
+    --color-sidebar-background: #f1e4d2;
+    --color-sidebar-foreground: #3d3229;
+    --color-sidebar-primary: #b4682d;
+    --color-sidebar-primary-foreground: #fff8ef;
+    --color-sidebar-accent: #e5d5bf;
+    --color-sidebar-accent-foreground: #3d3229;
+    --color-sidebar-border: #d7c3aa;
+    --color-sidebar-ring: #6b8e7a;
+    --color-chart-1: #b4682d;
+    --color-chart-2: #6b8e7a;
+    --color-chart-3: #c88f46;
+    --color-chart-4: #d16b5a;
+    --color-chart-5: #7f6bd1;
+  }
+
+  /* Obsidian Ink (dark, deep blue-black) */
+  .obsidian-ink {
+    --color-background: #0c111b;
+    --color-foreground: #dce7ff;
+    --color-card: #131b2b;
+    --color-card-foreground: #dce7ff;
+    --color-popover: #131b2b;
+    --color-popover-foreground: #dce7ff;
+    --color-primary: #6ea8fe;
+    --color-primary-foreground: #0b1220;
+    --color-secondary: #1a253a;
+    --color-secondary-foreground: #dce7ff;
+    --color-muted: #22304a;
+    --color-muted-foreground: #8fa4c9;
+    --color-accent: #5ed0ff;
+    --color-accent-foreground: #0b1220;
+    --color-destructive: #ff6f7a;
+    --color-destructive-foreground: #0b1220;
+    --color-border: #24344f;
+    --color-input: #1f2d46;
+    --color-ring: #6ea8fe;
+    --color-sidebar-background: #0a1019;
+    --color-sidebar-foreground: #dce7ff;
+    --color-sidebar-primary: #6ea8fe;
+    --color-sidebar-primary-foreground: #0b1220;
+    --color-sidebar-accent: #1a253a;
+    --color-sidebar-accent-foreground: #dce7ff;
+    --color-sidebar-border: #23324c;
+    --color-sidebar-ring: #5ed0ff;
+    --color-chart-1: #6ea8fe;
+    --color-chart-2: #5ed0ff;
+    --color-chart-3: #3fd39a;
+    --color-chart-4: #ffb347;
+    --color-chart-5: #c084fc;
+  }
+
+  /* Forest Night (dark, botanical + mint glow) */
+  .forest-night {
+    --color-background: #0e1613;
+    --color-foreground: #d6f5e6;
+    --color-card: #14201b;
+    --color-card-foreground: #d6f5e6;
+    --color-popover: #14201b;
+    --color-popover-foreground: #d6f5e6;
+    --color-primary: #35c98c;
+    --color-primary-foreground: #08130e;
+    --color-secondary: #1c2a24;
+    --color-secondary-foreground: #d6f5e6;
+    --color-muted: #263730;
+    --color-muted-foreground: #8cb9a4;
+    --color-accent: #5be3b2;
+    --color-accent-foreground: #08130e;
+    --color-destructive: #f07474;
+    --color-destructive-foreground: #08130e;
+    --color-border: #294137;
+    --color-input: #20352d;
+    --color-ring: #35c98c;
+    --color-sidebar-background: #0b140f;
+    --color-sidebar-foreground: #d6f5e6;
+    --color-sidebar-primary: #35c98c;
+    --color-sidebar-primary-foreground: #08130e;
+    --color-sidebar-accent: #1a2a23;
+    --color-sidebar-accent-foreground: #d6f5e6;
+    --color-sidebar-border: #264036;
+    --color-sidebar-ring: #5be3b2;
+    --color-chart-1: #35c98c;
+    --color-chart-2: #5be3b2;
+    --color-chart-3: #70d6ff;
+    --color-chart-4: #f4b860;
+    --color-chart-5: #d08cff;
+  }
+
+  /* Hyperpop Chaos (wild neon pair with Mesh Chaos) */
+  .hyperpop-chaos {
+    --color-background: #130620;
+    --color-foreground: #ffeefe;
+    --color-card: #220b38;
+    --color-card-foreground: #ffeefe;
+    --color-popover: #220b38;
+    --color-popover-foreground: #ffeefe;
+    --color-primary: #00f6ff;
+    --color-primary-foreground: #160520;
+    --color-secondary: #32104f;
+    --color-secondary-foreground: #ffeefe;
+    --color-muted: #43166b;
+    --color-muted-foreground: #d8a7f7;
+    --color-accent: #ff3cac;
+    --color-accent-foreground: #160520;
+    --color-destructive: #ff576b;
+    --color-destructive-foreground: #160520;
+    --color-border: #542183;
+    --color-input: #3c155f;
+    --color-ring: #00f6ff;
+    --color-sidebar-background: #0d0418;
+    --color-sidebar-foreground: #ffeefe;
+    --color-sidebar-primary: #00f6ff;
+    --color-sidebar-primary-foreground: #160520;
+    --color-sidebar-accent: #32104f;
+    --color-sidebar-accent-foreground: #ffeefe;
+    --color-sidebar-border: #4c1c79;
+    --color-sidebar-ring: #ff3cac;
+    --color-chart-1: #00f6ff;
+    --color-chart-2: #ff3cac;
+    --color-chart-3: #b5ff00;
+    --color-chart-4: #ff8a00;
+    --color-chart-5: #8a5dff;
+  }
+
   /* ================================================
      APPLE GLASSMORPHISM LIGHT THEME
      Modern frosted glass UI with gradient backgrounds
@@ -593,6 +773,14 @@ div[data-animated-bg].fixed.bottom-0 {
   background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
   backdrop-filter: blur(20px) saturate(150%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+  border: none !important;
+}
+
+/* Keep breadcrumb/nav inside the top bar from adding a second opaque layer. */
+header[data-animated-bg] nav:not(aside nav) {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   border: none !important;
 }
 
@@ -883,9 +1071,9 @@ aside nav:hover {
   & header,
   & nav:not(aside nav) {
     background: rgba(255, 255, 255, 0.7) !important;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5) !important;
   }
 }
 
@@ -893,9 +1081,9 @@ aside nav:hover {
   & header,
   & nav:not(aside nav) {
     background: rgba(15, 15, 25, 0.75) !important;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(148, 163, 184, 0.08) !important;
   }
 }
 
@@ -971,6 +1159,105 @@ aside nav:hover {
     radial-gradient(circle at 30% 70%, oklch(60% 0.08 250 / 0.25), transparent 40%),
     radial-gradient(circle at 70% 30%, oklch(82% 0.08 110 / 0.2), transparent 40%);
   filter: blur(56px);
+}
+
+.login-gradient-mesh.mesh-classic {
+  background:
+    conic-gradient(from 90deg at 20% 20%, oklch(70% 0.14 240 / 0.3), transparent 35%),
+    conic-gradient(from 210deg at 80% 15%, oklch(72% 0.12 340 / 0.25), transparent 40%),
+    conic-gradient(from 330deg at 75% 85%, oklch(78% 0.12 165 / 0.25), transparent 35%),
+    radial-gradient(circle at 30% 70%, oklch(60% 0.08 250 / 0.25), transparent 40%),
+    radial-gradient(circle at 70% 30%, oklch(82% 0.08 110 / 0.2), transparent 40%);
+}
+
+.login-gradient-mesh.mesh-aurora {
+  background:
+    conic-gradient(from 120deg at 16% 18%, oklch(74% 0.16 205 / 0.34), transparent 35%),
+    conic-gradient(from 240deg at 84% 20%, oklch(70% 0.15 300 / 0.3), transparent 40%),
+    conic-gradient(from 350deg at 72% 82%, oklch(78% 0.13 160 / 0.26), transparent 36%),
+    radial-gradient(circle at 28% 74%, oklch(62% 0.1 220 / 0.25), transparent 42%),
+    radial-gradient(circle at 74% 34%, oklch(84% 0.08 120 / 0.18), transparent 42%);
+}
+
+.login-gradient-mesh.mesh-ocean {
+  background:
+    conic-gradient(from 95deg at 18% 16%, oklch(72% 0.14 240 / 0.34), transparent 36%),
+    conic-gradient(from 205deg at 82% 18%, oklch(69% 0.12 215 / 0.3), transparent 40%),
+    conic-gradient(from 320deg at 76% 82%, oklch(76% 0.11 180 / 0.24), transparent 38%),
+    radial-gradient(circle at 24% 76%, oklch(58% 0.08 255 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 30%, oklch(80% 0.08 195 / 0.2), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-sunset {
+  background:
+    conic-gradient(from 102deg at 18% 18%, oklch(78% 0.16 70 / 0.32), transparent 36%),
+    conic-gradient(from 218deg at 84% 18%, oklch(72% 0.17 20 / 0.3), transparent 40%),
+    conic-gradient(from 338deg at 72% 84%, oklch(74% 0.13 338 / 0.24), transparent 36%),
+    radial-gradient(circle at 28% 74%, oklch(62% 0.1 35 / 0.24), transparent 42%),
+    radial-gradient(circle at 74% 30%, oklch(84% 0.07 95 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-nebula {
+  background:
+    conic-gradient(from 88deg at 20% 18%, oklch(66% 0.17 285 / 0.34), transparent 36%),
+    conic-gradient(from 210deg at 82% 20%, oklch(63% 0.16 250 / 0.3), transparent 40%),
+    conic-gradient(from 332deg at 76% 84%, oklch(71% 0.13 320 / 0.24), transparent 36%),
+    radial-gradient(circle at 26% 76%, oklch(56% 0.1 270 / 0.24), transparent 44%),
+    radial-gradient(circle at 76% 32%, oklch(78% 0.08 300 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-emerald {
+  background:
+    conic-gradient(from 94deg at 20% 16%, oklch(74% 0.14 165 / 0.34), transparent 36%),
+    conic-gradient(from 214deg at 82% 20%, oklch(70% 0.13 190 / 0.3), transparent 40%),
+    conic-gradient(from 334deg at 74% 82%, oklch(77% 0.1 145 / 0.24), transparent 36%),
+    radial-gradient(circle at 28% 74%, oklch(58% 0.08 170 / 0.24), transparent 44%),
+    radial-gradient(circle at 74% 30%, oklch(82% 0.07 125 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-glacier {
+  background:
+    conic-gradient(from 90deg at 18% 16%, oklch(80% 0.1 235 / 0.34), transparent 36%),
+    conic-gradient(from 210deg at 84% 18%, oklch(76% 0.11 210 / 0.3), transparent 40%),
+    conic-gradient(from 332deg at 74% 84%, oklch(84% 0.08 180 / 0.24), transparent 36%),
+    radial-gradient(circle at 24% 74%, oklch(66% 0.07 255 / 0.24), transparent 44%),
+    radial-gradient(circle at 76% 30%, oklch(88% 0.06 150 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-emberstorm {
+  background:
+    conic-gradient(from 102deg at 18% 18%, oklch(74% 0.18 50 / 0.34), transparent 36%),
+    conic-gradient(from 228deg at 84% 18%, oklch(68% 0.2 28 / 0.3), transparent 40%),
+    conic-gradient(from 338deg at 74% 82%, oklch(64% 0.14 12 / 0.24), transparent 36%),
+    radial-gradient(circle at 26% 74%, oklch(58% 0.12 22 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 32%, oklch(82% 0.08 70 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-noctis {
+  background:
+    conic-gradient(from 88deg at 18% 16%, oklch(58% 0.08 260 / 0.34), transparent 36%),
+    conic-gradient(from 212deg at 82% 20%, oklch(54% 0.09 230 / 0.3), transparent 40%),
+    conic-gradient(from 330deg at 76% 84%, oklch(62% 0.08 285 / 0.24), transparent 36%),
+    radial-gradient(circle at 24% 76%, oklch(48% 0.06 248 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 30%, oklch(68% 0.06 210 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-cotton-candy {
+  background:
+    conic-gradient(from 96deg at 18% 16%, oklch(84% 0.14 340 / 0.34), transparent 36%),
+    conic-gradient(from 212deg at 84% 18%, oklch(82% 0.12 210 / 0.3), transparent 40%),
+    conic-gradient(from 334deg at 74% 84%, oklch(86% 0.1 305 / 0.24), transparent 36%),
+    radial-gradient(circle at 24% 74%, oklch(74% 0.1 320 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 30%, oklch(88% 0.08 180 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-chaos {
+  background:
+    conic-gradient(from 70deg at 14% 18%, oklch(78% 0.28 200 / 0.38), transparent 34%),
+    conic-gradient(from 190deg at 86% 16%, oklch(72% 0.32 345 / 0.36), transparent 38%),
+    conic-gradient(from 310deg at 78% 84%, oklch(80% 0.28 130 / 0.34), transparent 36%),
+    radial-gradient(circle at 24% 78%, oklch(66% 0.24 30 / 0.3), transparent 42%),
+    radial-gradient(circle at 76% 28%, oklch(84% 0.22 280 / 0.26), transparent 42%);
 }
 
 .login-gradient-mesh-animate {

@@ -5,6 +5,11 @@ export type Theme =
   | 'system'
   | 'apple-light'
   | 'apple-dark'
+  | 'nordic-frost'
+  | 'sandstone-dusk'
+  | 'obsidian-ink'
+  | 'forest-night'
+  | 'hyperpop-chaos'
   | 'retro-70s'
   | 'retro-arcade'
   | 'retro-terminal'
@@ -18,6 +23,16 @@ export type DashboardBackground =
   | 'none'
   | 'gradient-mesh'
   | 'gradient-mesh-particles'
+  | 'mesh-aurora'
+  | 'mesh-ocean'
+  | 'mesh-sunset'
+  | 'mesh-nebula'
+  | 'mesh-emerald'
+  | 'mesh-glacier'
+  | 'mesh-emberstorm'
+  | 'mesh-noctis'
+  | 'mesh-cotton-candy'
+  | 'mesh-chaos'
   | 'retro-70s'
   | 'retro-arcade'
   | 'retro-terminal'
@@ -25,8 +40,18 @@ export type DashboardBackground =
 
 export const dashboardBackgroundOptions: { value: DashboardBackground; label: string; description: string }[] = [
   { value: 'none', label: 'None', description: 'Plain background' },
-  { value: 'gradient-mesh', label: 'Gradient Mesh', description: 'Animated gradient background' },
-  { value: 'gradient-mesh-particles', label: 'Mesh + Particles', description: 'Gradient with floating particles' },
+  { value: 'gradient-mesh', label: 'Mesh Classic', description: 'Balanced animated gradient mesh' },
+  { value: 'gradient-mesh-particles', label: 'Mesh + Particles', description: 'Classic mesh with floating particles' },
+  { value: 'mesh-aurora', label: 'Mesh Aurora', description: 'Teal-violet cinematic glow' },
+  { value: 'mesh-ocean', label: 'Mesh Ocean', description: 'Blue-cyan depth with cool contrast' },
+  { value: 'mesh-sunset', label: 'Mesh Sunset', description: 'Amber-rose warm premium blend' },
+  { value: 'mesh-nebula', label: 'Mesh Nebula', description: 'Indigo-magenta cosmic gradient' },
+  { value: 'mesh-emerald', label: 'Mesh Emerald', description: 'Green-mint glass-friendly tone' },
+  { value: 'mesh-glacier', label: 'Mesh Glacier', description: 'Icy blues with crisp highlights' },
+  { value: 'mesh-emberstorm', label: 'Mesh Emberstorm', description: 'Molten orange-red storm energy' },
+  { value: 'mesh-noctis', label: 'Mesh Noctis', description: 'Dark steel blue cinematic depth' },
+  { value: 'mesh-cotton-candy', label: 'Mesh Cotton Candy', description: 'Playful pink-cyan dreamy blend' },
+  { value: 'mesh-chaos', label: 'Mesh Chaos', description: 'Wild neon spectrum (go crazy mode)' },
   { value: 'retro-70s', label: 'Retro 70s', description: 'Warm flowing wave stripes' },
   { value: 'retro-arcade', label: 'Retro Arcade', description: 'Neon grid on dark purple' },
   { value: 'retro-terminal', label: 'Retro Terminal', description: 'Green phosphor CRT scanlines' },
@@ -37,6 +62,11 @@ export const themeOptions: { value: Theme; label: string; description: string }[
   { value: 'system', label: 'System', description: 'Follow system preference' },
   { value: 'apple-light', label: 'Glass Light', description: 'Futuristic frosted glass with gradients' },
   { value: 'apple-dark', label: 'Glass Dark', description: 'Deep space glassmorphism aesthetic' },
+  { value: 'nordic-frost', label: 'Nordic Frost', description: 'Cool airy light theme with icy accents' },
+  { value: 'sandstone-dusk', label: 'Sandstone Dusk', description: 'Warm editorial light palette' },
+  { value: 'obsidian-ink', label: 'Obsidian Ink', description: 'Deep ink dark theme with cobalt accents' },
+  { value: 'forest-night', label: 'Forest Night', description: 'Dark botanical palette with mint glow' },
+  { value: 'hyperpop-chaos', label: 'Hyperpop Chaos', description: 'Maximal neon chaos (wild mode)' },
   { value: 'retro-70s', label: 'Retro 70s', description: 'Warm cream, gold, teal & coral' },
   { value: 'retro-arcade', label: 'Retro Arcade', description: 'Dark neon magenta & cyan' },
   { value: 'retro-terminal', label: 'Retro Terminal', description: 'Green phosphor on black' },
@@ -48,6 +78,8 @@ export const themeOptions: { value: Theme; label: string; description: string }[
 ];
 
 export const DEFAULT_TOGGLE_THEMES: [Theme, Theme] = ['apple-light', 'apple-dark'];
+export const DEFAULT_THEME: Theme = 'apple-light';
+export const DEFAULT_DASHBOARD_BACKGROUND: DashboardBackground = 'gradient-mesh-particles';
 
 interface ThemeState {
   theme: Theme;
@@ -64,7 +96,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: 'system',
+      theme: DEFAULT_THEME,
       setTheme: (theme) => set({ theme }),
       toggleThemes: DEFAULT_TOGGLE_THEMES,
       setToggleThemes: (toggleThemes) => set({ toggleThemes }),
@@ -73,7 +105,7 @@ export const useThemeStore = create<ThemeState>()(
         const next = theme === toggleThemes[0] ? toggleThemes[1] : toggleThemes[0];
         set({ theme: next });
       },
-      dashboardBackground: 'none',
+      dashboardBackground: DEFAULT_DASHBOARD_BACKGROUND,
       setDashboardBackground: (dashboardBackground) => set({ dashboardBackground }),
       resolvedTheme: () => {
         const { theme } = get();
@@ -82,7 +114,13 @@ export const useThemeStore = create<ThemeState>()(
             ? 'dark'
             : 'light';
         }
-        if (theme === 'catppuccin-latte' || theme === 'apple-light' || theme === 'retro-70s') {
+        if (
+          theme === 'catppuccin-latte' ||
+          theme === 'apple-light' ||
+          theme === 'retro-70s' ||
+          theme === 'nordic-frost' ||
+          theme === 'sandstone-dusk'
+        ) {
           return 'light';
         }
         return 'dark';
