@@ -11,6 +11,7 @@ import {
 } from '../services/webhook-service.js';
 import { emitEvent } from '../services/event-bus.js';
 import { onEvent, type WebhookEvent } from '../services/event-bus.js';
+import { validateOutboundWebhookUrl } from '../utils/network-security.js';
 
 const VALID_EVENT_TYPES = [
   'insight.created',
@@ -81,6 +82,10 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ error: `Invalid event type: ${evt}` });
       }
     }
+    const urlValidationError = validateOutboundWebhookUrl(body.url);
+    if (urlValidationError) {
+      return reply.status(400).send({ error: urlValidationError });
+    }
 
     const webhook = createWebhook(body);
     return reply.status(201).send(sanitizeWebhook(webhook));
@@ -146,6 +151,12 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         if (!VALID_EVENT_TYPES.includes(evt) && !evt.endsWith('.*')) {
           return reply.status(400).send({ error: `Invalid event type: ${evt}` });
         }
+      }
+    }
+    if (body.url) {
+      const urlValidationError = validateOutboundWebhookUrl(body.url);
+      if (urlValidationError) {
+        return reply.status(400).send({ error: urlValidationError });
       }
     }
 
@@ -221,6 +232,10 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const webhook = getWebhookById(id);
     if (!webhook) return reply.status(404).send({ error: 'Webhook not found' });
+    const urlValidationError = validateOutboundWebhookUrl(webhook.url);
+    if (urlValidationError) {
+      return reply.status(400).send({ error: urlValidationError });
+    }
 
     const testPayload = JSON.stringify({
       type: 'webhook.test',
