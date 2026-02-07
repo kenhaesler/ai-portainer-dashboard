@@ -190,9 +190,14 @@ services:
   # Memory stress: constant ~100MB allocation against 256MB limit
   # Triggers: memory anomaly detection after baseline established
   memory-hog:
-    image: progrium/stress
+    image: alpine:latest
     container_name: memory-hog
-    command: --vm 1 --vm-bytes 100M --vm-hang 0
+    command: >
+      sh -c "
+      echo '[memory-hog] Allocating ~100MB...';
+      dd if=/dev/zero bs=1M count=100 of=/dev/shm/memfill 2>/dev/null;
+      echo '[memory-hog] Holding allocation';
+      while true; do sleep 30; done"
     mem_limit: 256m
     labels:
       app.tier: "test"
@@ -386,23 +391,12 @@ services:
   app-gateway:
     image: nginx:alpine
     container_name: app-gateway
-    command: >
-      sh -c "
-      cat > /etc/nginx/conf.d/default.conf << 'NGINX'
-      server {
-        listen 80;
-        location / {
-          return 200 'gateway ok\n';
-          add_header Content-Type text/plain;
-        }
-        location /api {
-          proxy_pass http://app-api:8000;
-          proxy_connect_timeout 2s;
-          proxy_read_timeout 5s;
-        }
-      }
-      NGINX
-      nginx -g 'daemon off;'"
+    command:
+      - sh
+      - -c
+      - |
+        printf 'server {\n  listen 80;\n  location / {\n    return 200 "gateway ok\\n";\n    add_header Content-Type text/plain;\n  }\n  location /api {\n    proxy_pass http://app-api:8000;\n    proxy_connect_timeout 2s;\n    proxy_read_timeout 5s;\n  }\n}\n' > /etc/nginx/conf.d/default.conf
+        nginx -g 'daemon off;'
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
       interval: 30s
