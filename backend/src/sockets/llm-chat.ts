@@ -8,8 +8,11 @@ import { getEffectiveLlmConfig } from '../services/settings-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
+import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 
 const log = createChildLogger('socket:llm');
+
+const MAX_TOOL_ITERATIONS = 3;
 
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
@@ -170,6 +173,81 @@ Use markdown formatting for clarity. For code blocks, use proper language tags.`
   }
 }
 
+// Stream an LLM call and collect the full response
+async function streamLlmCall(
+  llmConfig: ReturnType<typeof getEffectiveLlmConfig>,
+  selectedModel: string,
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  let fullResponse = '';
+
+  if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+    const response = await fetch(llmConfig.customEndpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(llmConfig.customEndpointToken),
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages,
+        stream: true,
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    while (true) {
+      if (signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+
+      for (const line of lines) {
+        try {
+          const json = JSON.parse(line);
+          const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
+          if (text) {
+            fullResponse += text;
+            onChunk(text);
+          }
+        } catch {
+          // Skip invalid JSON lines
+        }
+      }
+    }
+  } else {
+    const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+    const response = await ollama.chat({
+      model: selectedModel,
+      messages,
+      stream: true,
+    });
+
+    for await (const chunk of response) {
+      if (signal?.aborted) break;
+      const text = chunk.message?.content || '';
+      fullResponse += text;
+      onChunk(text);
+    }
+  }
+
+  return fullResponse;
+}
+
 export function setupLlmNamespace(ns: Namespace) {
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
@@ -189,11 +267,14 @@ export function setupLlmNamespace(ns: Namespace) {
 
       // Build infrastructure context
       const infrastructureContext = await buildInfrastructureContext();
+      const toolPrompt = getToolSystemPrompt();
 
-      // Build system prompt with infrastructure context
+      // Build system prompt with infrastructure context and tool definitions
       const systemPrompt = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
 
 ${infrastructureContext}
+
+${toolPrompt}
 
 ${data.context ? `\n## Additional Context\n${JSON.stringify(data.context, null, 2)}` : ''}
 
@@ -201,96 +282,108 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
 
       history.push({ role: 'user', content: data.text });
 
-      const messages = [
-        { role: 'system' as const, content: systemPrompt },
-        ...history.slice(-20), // Keep last 20 messages
-      ];
-
       const startTime = Date.now();
 
       try {
         abortController = new AbortController();
         socket.emit('chat:start');
 
-        let fullResponse = '';
+        let messages: ChatMessage[] = [
+          { role: 'system', content: systemPrompt },
+          ...history.slice(-20),
+        ];
 
-        // Use authenticated fetch if custom endpoint is enabled and configured
-        if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
-          const response = await fetch(llmConfig.customEndpointUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...getAuthHeaders(llmConfig.customEndpointToken),
-            },
-            body: JSON.stringify({
-              model: selectedModel,
-              messages,
-              stream: true,
-            }),
-            signal: abortController.signal,
-          });
+        let finalResponse = '';
+        let toolIteration = 0;
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
+        // Tool calling loop: stream response, check for tool calls, execute, repeat
+        while (toolIteration < MAX_TOOL_ITERATIONS) {
+          let iterationResponse = '';
 
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error('Response body is not readable');
-          }
-
-          const decoder = new TextDecoder();
-          while (true) {
-            if (abortController?.signal.aborted) break;
-
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n').filter((line) => line.trim() !== '');
-
-            for (const line of lines) {
-              try {
-                const json = JSON.parse(line);
-                const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
-                if (text) {
-                  fullResponse += text;
-                  socket.emit('chat:chunk', text);
-                }
-              } catch {
-                // Skip invalid JSON lines
-              }
-            }
-          }
-        } else {
-          // Use Ollama SDK for local/unauthenticated access
-          const ollama = new Ollama({ host: llmConfig.ollamaUrl });
-          const response = await ollama.chat({
-            model: selectedModel,
+          iterationResponse = await streamLlmCall(
+            llmConfig,
+            selectedModel,
             messages,
-            stream: true,
+            (text) => {
+              // Only stream chunks to client on the final iteration (when no tool calls)
+              // We buffer during tool-calling iterations and emit tool_call events instead
+              if (toolIteration === 0) {
+                socket.emit('chat:chunk', text);
+              }
+            },
+            abortController.signal,
+          );
+
+          if (abortController.signal.aborted) break;
+
+          // Check if the response contains tool calls
+          const toolCalls = parseToolCalls(iterationResponse);
+
+          if (!toolCalls) {
+            // No tool calls — this is the final response
+            if (toolIteration > 0) {
+              // We need to stream this final response to the client
+              // since we didn't stream during tool iterations
+              socket.emit('chat:chunk', iterationResponse);
+            }
+            finalResponse = iterationResponse;
+            break;
+          }
+
+          // Execute tool calls
+          log.debug({ userId, tools: toolCalls.map(t => t.tool), iteration: toolIteration }, 'Executing tool calls');
+          socket.emit('chat:tool_call', {
+            tools: toolCalls.map(t => t.tool),
+            status: 'executing',
           });
 
-          for await (const chunk of response) {
-            if (abortController?.signal.aborted) break;
-            const text = chunk.message?.content || '';
-            fullResponse += text;
-            socket.emit('chat:chunk', text);
+          const results = await executeToolCalls(toolCalls);
+
+          socket.emit('chat:tool_call', {
+            tools: toolCalls.map(t => t.tool),
+            status: 'complete',
+            results: results.map(r => ({
+              tool: r.tool,
+              success: r.success,
+              error: r.error,
+            })),
+          });
+
+          // If this was the first iteration, we already streamed tool-call JSON to the client.
+          // Clear the streamed content so the frontend knows to replace it with the final response.
+          if (toolIteration === 0) {
+            socket.emit('chat:tool_response_pending');
           }
+
+          // Add assistant's tool request and tool results to messages for next iteration
+          messages = [
+            ...messages,
+            { role: 'assistant', content: iterationResponse },
+            {
+              role: 'system',
+              content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
+            },
+          ];
+
+          toolIteration++;
         }
 
-        history.push({ role: 'assistant', content: fullResponse });
+        if (!finalResponse && toolIteration >= MAX_TOOL_ITERATIONS) {
+          finalResponse = 'I was unable to complete the request within the allowed number of tool calls. Please try a more specific question.';
+          socket.emit('chat:chunk', finalResponse);
+        }
 
-        // Emit with correct format: { id, content }
+        history.push({ role: 'assistant', content: finalResponse });
+
         socket.emit('chat:end', {
           id: randomUUID(),
-          content: fullResponse
+          content: finalResponse,
         });
 
         // Record LLM trace
         const latencyMs = Date.now() - startTime;
         const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
-        const completionTokens = estimateTokens(fullResponse);
+        const completionTokens = estimateTokens(finalResponse);
         try {
           insertLlmTrace({
             trace_id: randomUUID(),
@@ -302,13 +395,13 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
             latency_ms: latencyMs,
             status: 'success',
             user_query: data.text.slice(0, 500),
-            response_preview: fullResponse.slice(0, 500),
+            response_preview: finalResponse.slice(0, 500),
           });
         } catch (traceErr) {
           log.warn({ err: traceErr }, 'Failed to record LLM trace');
         }
 
-        log.debug({ userId, messageLength: data.text.length, responseLength: fullResponse.length }, 'LLM chat completed');
+        log.debug({ userId, messageLength: data.text.length, responseLength: finalResponse.length, toolIterations: toolIteration }, 'LLM chat completed');
       } catch (err) {
         log.error({ err, userId }, 'LLM chat error');
         socket.emit('chat:error', {
@@ -356,4 +449,13 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
       log.info({ userId }, 'LLM client disconnected');
     });
   });
+}
+
+function formatToolResults(results: ToolCallResult[]): string {
+  return results.map((r) => {
+    if (!r.success) {
+      return `### ${r.tool} (FAILED)\nError: ${r.error}`;
+    }
+    return `### ${r.tool}\n\`\`\`json\n${JSON.stringify(r.data, null, 2)}\n\`\`\``;
+  }).join('\n\n');
 }
