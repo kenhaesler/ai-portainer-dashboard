@@ -52,6 +52,7 @@ export const InvestigationSchema = z.object({
   confidence_score: z.number().nullable(),
   analysis_duration_ms: z.number().nullable(),
   llm_model: z.string().nullable(),
+  ai_summary: z.string().nullable(),
   error_message: z.string().nullable(),
   created_at: z.string(),
   completed_at: z.string().nullable(),

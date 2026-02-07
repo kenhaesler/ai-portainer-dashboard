@@ -26,6 +26,7 @@ export interface Investigation {
   confidence_score: number | null;
   analysis_duration_ms: number | null;
   llm_model: string | null;
+  ai_summary: string | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
