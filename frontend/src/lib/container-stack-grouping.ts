@@ -1,6 +1,8 @@
 import type { Container } from '@/hooks/use-containers';
 import type { SelectOptionGroup } from '@/components/shared/themed-select';
 
+export const NO_STACK_LABEL = 'No Stack';
+
 const STACK_LABEL_KEYS = [
   'com.docker.compose.project',
   'com.docker.stack.namespace',
@@ -96,20 +98,18 @@ export function buildStackGroupedContainerOptions(
   const grouped = new Map<string, Array<{ value: string; label: string }>>();
 
   for (const container of containers) {
-    const stackName = inferStackFromKnownStacks(container.name, knownStackNames)
-      ?? inferStackName(container)
-      ?? 'No Stack';
+    const stackName = resolveContainerStackName(container, knownStackNames) ?? NO_STACK_LABEL;
     const existing = grouped.get(stackName) ?? [];
     existing.push({ value: container.id, label: container.name });
     grouped.set(stackName, existing);
   }
 
   const stackGroups: SelectOptionGroup[] = [];
-  const noStackGroup: SelectOptionGroup = { label: 'No Stack', options: [] };
+  const noStackGroup: SelectOptionGroup = { label: NO_STACK_LABEL, options: [] };
 
   for (const [stackName, options] of grouped.entries()) {
     const group: SelectOptionGroup = { label: stackName, options: options.sort(byLabel) };
-    if (stackName === 'No Stack') {
+    if (stackName === NO_STACK_LABEL) {
       noStackGroup.options = group.options;
     } else {
       stackGroups.push(group);
@@ -121,4 +121,11 @@ export function buildStackGroupedContainerOptions(
     stackGroups.push(noStackGroup);
   }
   return stackGroups;
+}
+
+export function resolveContainerStackName(
+  container: Pick<Container, 'name' | 'labels'>,
+  knownStackNames: string[] = [],
+): string | null {
+  return inferStackFromKnownStacks(container.name, knownStackNames) ?? inferStackName(container);
 }
