@@ -67,6 +67,18 @@ describe('Forecast Routes', () => {
     expect(body[0].timeToThreshold).toBe(6);
   });
 
+  it('clamps overview limit to safe maximum', async () => {
+    mockGetCapacityForecasts.mockReturnValue([]);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts?limit=999',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetCapacityForecasts).toHaveBeenCalledWith(50);
+  });
+
   it('GET /api/forecasts/:containerId returns single forecast', async () => {
     mockGenerateForecast.mockReturnValue({
       containerId: 'abc123',

@@ -580,9 +580,9 @@ export default function MetricsDashboardPage() {
                 This can happen when:
               </p>
               <ul className="mt-3 text-sm text-muted-foreground space-y-1 max-w-md mx-auto text-left list-disc list-inside">
-                <li>The container was recently started and metrics collection hasn't run yet (runs every 60 seconds)</li>
+                <li>The container was recently started and metrics collection hasn&apos;t run yet (runs every 60 seconds)</li>
                 <li>The container is stopped or paused</li>
-                <li>The selected time range doesn't overlap with when the container was running</li>
+                <li>The selected time range doesn&apos;t overlap with when the container was running</li>
               </ul>
               <p className="mt-4 text-xs text-muted-foreground">
                 Try selecting a wider time range or wait for the next collection cycle.

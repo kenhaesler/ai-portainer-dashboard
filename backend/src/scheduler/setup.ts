@@ -238,7 +238,7 @@ export function startScheduler(): void {
       metricsIntervalMs,
     );
     intervals.push(metricsInterval);
-    // Run once immediately to seed initial data
+    // Run one collection immediately so dashboards don't wait for first interval tick.
     runWithTraceContext({ source: 'scheduler' }, runMetricsCollection).catch(() => {});
   }
 

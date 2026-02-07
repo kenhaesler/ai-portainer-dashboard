@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockPrepare = vi.fn();
+
 vi.mock('../db/sqlite.js', () => {
-  const mockPrepare = vi.fn();
   return {
     getDb: vi.fn(() => ({ prepare: mockPrepare })),
-    __mockPrepare: mockPrepare,
   };
 });
 
@@ -17,13 +17,12 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
-import { linearRegression, getCapacityForecasts, lookupContainerName, resetForecastCache } from './capacity-forecaster.js';
-import { getDb } from '../db/sqlite.js';
-
-// Helper to access the mock
-function getMockPrepare() {
-  return (getDb() as unknown as { prepare: ReturnType<typeof vi.fn> }).prepare;
-}
+import {
+  getCapacityForecasts,
+  linearRegression,
+  lookupContainerName,
+  resetForecastCache,
+} from './capacity-forecaster.js';
 
 describe('capacity-forecaster', () => {
   beforeEach(() => {
@@ -33,7 +32,6 @@ describe('capacity-forecaster', () => {
 
   describe('lookupContainerName', () => {
     it('returns container name from metrics table', () => {
-      const mockPrepare = getMockPrepare();
       mockPrepare.mockReturnValue({
         get: vi.fn().mockReturnValue({ container_name: 'web-server' }),
       });
@@ -46,7 +44,6 @@ describe('capacity-forecaster', () => {
     });
 
     it('returns empty string when container not found', () => {
-      const mockPrepare = getMockPrepare();
       mockPrepare.mockReturnValue({
         get: vi.fn().mockReturnValue(undefined),
       });
@@ -57,52 +54,44 @@ describe('capacity-forecaster', () => {
   });
 
   describe('getCapacityForecasts', () => {
-    it('queries per metric type and returns forecasts', () => {
-      const mockPrepare = getMockPrepare();
-      const now = new Date();
-      const makeTimestamp = (minutesAgo: number) =>
-        new Date(now.getTime() - minutesAgo * 60 * 1000).toISOString();
+    it('loads metrics in a single batched query for selected containers', () => {
+      const containers = [{ container_id: 'c1', container_name: 'web' }];
+      const metrics = [
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:00:00.000Z', value: 10 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:05:00.000Z', value: 20 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:10:00.000Z', value: 30 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:15:00.000Z', value: 40 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:20:00.000Z', value: 50 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:00:00.000Z', value: 30 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:05:00.000Z', value: 35 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:10:00.000Z', value: 40 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:15:00.000Z', value: 45 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:20:00.000Z', value: 50 },
+      ];
 
-      // First call: the overview query (returns rows per container+metric)
-      const overviewAll = vi.fn().mockReturnValue([
-        { container_id: 'c1', container_name: 'web', metric_type: 'cpu' },
-        { container_id: 'c1', container_name: 'web', metric_type: 'memory' },
-      ]);
-      // Subsequent calls: getRecentMetrics for each (container, metricType)
-      const metricsAll = vi.fn().mockReturnValue(
-        Array.from({ length: 6 }, (_, i) => ({
-          timestamp: makeTimestamp(6 - i),
-          value: 40 + i * 2,
-        })),
-      );
-
-      let callCount = 0;
-      mockPrepare.mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) return { all: overviewAll };
-        return { all: metricsAll };
-      });
+      const allMock = vi.fn()
+        .mockReturnValueOnce(containers)
+        .mockReturnValueOnce(metrics);
+      mockPrepare.mockReturnValue({ all: allMock });
 
       const result = getCapacityForecasts(10);
 
-      // The overview query should filter by metric_type IN ('cpu', 'memory')
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining("metric_type IN ('cpu', 'memory')"),
-      );
-      // Should GROUP BY container_id, metric_type
-      expect(mockPrepare).toHaveBeenCalledWith(
-        expect.stringContaining('GROUP BY container_id, metric_type'),
-      );
-      // Should produce forecasts (one per row returned)
-      expect(result.length).toBeGreaterThan(0);
+      expect(mockPrepare).toHaveBeenCalledTimes(2);
+      expect(mockPrepare.mock.calls[1][0]).toContain('container_id IN');
+      expect(allMock.mock.calls[0]).toEqual(['-6', 20]);
+      expect(allMock.mock.calls[1]).toEqual(['-6', 'c1']);
+      expect(result).toHaveLength(2);
+      expect(result.map((f) => f.metricType).sort()).toEqual(['cpu', 'memory']);
     });
 
-    it('returns empty array when no containers have enough per-type data', () => {
-      const mockPrepare = getMockPrepare();
-      mockPrepare.mockReturnValue({ all: vi.fn().mockReturnValue([]) });
+    it('returns empty array when no containers have recent metrics', () => {
+      const allMock = vi.fn().mockReturnValue([]);
+      mockPrepare.mockReturnValue({ all: allMock });
 
       const result = getCapacityForecasts(10);
+
       expect(result).toEqual([]);
+      expect(mockPrepare).toHaveBeenCalledTimes(1);
     });
   });
 

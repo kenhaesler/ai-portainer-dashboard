@@ -94,7 +94,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
           name={label}
           stroke={color}
           strokeWidth={2}
-          dot={false}
+          dot={decimated.length <= 1 ? { r: 4, fill: color, stroke: color } : false}
           activeDot={{ r: 4 }}
           isAnimationActive={false}
         />
