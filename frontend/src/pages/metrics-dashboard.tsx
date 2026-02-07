@@ -204,24 +204,40 @@ export default function MetricsDashboardPage() {
     (cpuForecast && !('error' in cpuForecast)) ||
     (memoryForecast && !('error' in memoryForecast));
 
-  // Process data for charts
+  // Pre-filter explanations by metric type for reuse
+  const cpuExplanations = useMemo(
+    () => explanationsData?.explanations?.filter(e => e.title.toLowerCase().includes('cpu')) ?? [],
+    [explanationsData],
+  );
+  const memoryExplanations = useMemo(
+    () => explanationsData?.explanations?.filter(e => e.title.toLowerCase().includes('memory')) ?? [],
+    [explanationsData],
+  );
+
+  // Helper: check if a timestamp has a matching backend anomaly insight (within 5-min window)
+  const hasMatchingInsight = (timestamp: string, insights: typeof cpuExplanations) => {
+    const t = new Date(timestamp).getTime();
+    return insights.some(e => Math.abs(new Date(e.timestamp).getTime() - t) < 5 * 60 * 1000);
+  };
+
+  // Process data for charts — anomaly dots driven by backend insights, not hardcoded threshold
   const cpuData = useMemo(() => {
     if (!cpuMetrics?.data) return [];
     return cpuMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value,
-      isAnomaly: d.value > 80,
+      isAnomaly: hasMatchingInsight(d.timestamp, cpuExplanations),
     }));
-  }, [cpuMetrics]);
+  }, [cpuMetrics, cpuExplanations]);
 
   const memoryData = useMemo(() => {
     if (!memoryMetrics?.data) return [];
     return memoryMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value,
-      isAnomaly: d.value > 80,
+      isAnomaly: hasMatchingInsight(d.timestamp, memoryExplanations),
     }));
-  }, [memoryMetrics]);
+  }, [memoryMetrics, memoryExplanations]);
 
   const memoryBytesData = useMemo(() => {
     if (!memoryBytesMetrics?.data) return [];
@@ -527,9 +543,7 @@ export default function MetricsDashboardPage() {
                   color="#3b82f6"
                   unit="%"
                   height={300 * zoomLevel}
-                  anomalyExplanations={explanationsData?.explanations?.filter(
-                    (e) => e.title.toLowerCase().includes('cpu'),
-                  )}
+                  anomalyExplanations={cpuExplanations}
                 />
                 {cpuError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
@@ -561,9 +575,7 @@ export default function MetricsDashboardPage() {
                   color="#8b5cf6"
                   unit="%"
                   height={300 * zoomLevel}
-                  anomalyExplanations={explanationsData?.explanations?.filter(
-                    (e) => e.title.toLowerCase().includes('memory'),
-                  )}
+                  anomalyExplanations={memoryExplanations}
                 />
                 {memoryError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
