@@ -140,6 +140,25 @@ describe('LlmAssistantPage', () => {
     const input = screen.getByPlaceholderText('Ask about your infrastructure...') as HTMLInputElement;
     expect(input.value).toBe('Explain this remediation action');
   });
+
+  it('sends suggested question immediately when clicked', () => {
+    const sendMessage = vi.fn();
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage,
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Show me all running containers' }));
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith('Show me all running containers', undefined, 'llama3.2');
+  });
 });
 
 describe('normalizeMarkdown', () => {
