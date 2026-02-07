@@ -60,7 +60,25 @@ async function runMigrations(db: pg.Pool): Promise<void> {
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
     log.info({ migration: file }, 'Applying TimescaleDB migration');
 
-    await db.query(sql);
+    // Split on semicolons at statement boundaries and execute each individually.
+    // CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous) cannot run
+    // inside a transaction block, so we must avoid multi-statement queries
+    // (which pg implicitly wraps in BEGIN/COMMIT).
+    const statements = sql
+      .split(/;\s*\n/)
+      .map((s) => s.trim())
+      .filter((s) => {
+        // Keep chunks that contain at least one non-comment, non-empty line
+        return s.split('\n').some((line) => {
+          const t = line.trim();
+          return t.length > 0 && !t.startsWith('--');
+        });
+      });
+
+    for (const stmt of statements) {
+      await db.query(stmt.endsWith(';') ? stmt : stmt + ';');
+    }
+
     await db.query('INSERT INTO _ts_migrations (name) VALUES ($1)', [file]);
 
     log.info({ migration: file }, 'TimescaleDB migration applied');
