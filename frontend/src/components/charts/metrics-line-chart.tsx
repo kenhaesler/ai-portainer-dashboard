@@ -143,6 +143,8 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   const handleAnomalyClick = useCallback(
     (point: MetricPoint) => {
       const explanation = findExplanation(point.timestamp, anomalyExplanations);
+      // Only open panel if there's a real backend insight to show
+      if (!explanation) return;
       setSelectedAnomaly((prev) =>
         prev?.point.timestamp === point.timestamp ? null : { point, explanation },
       );
@@ -260,12 +262,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
             <p className="mt-3 text-sm text-muted-foreground">
               {selectedAnomaly.explanation.description}
             </p>
-          ) : (
-            <p className="mt-3 text-sm text-muted-foreground">
-              High value detected. The monitoring service has not flagged this as a statistical anomaly yet.
-              Anomalies are detected when values deviate significantly from the container&apos;s historical average.
-            </p>
-          )}
+          ) : null}
 
           {selectedAnomaly.explanation?.suggestedAction && (
             <div className="mt-3 flex items-start gap-2">

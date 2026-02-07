@@ -88,7 +88,7 @@ describe('MetricsLineChart', () => {
     expect(screen.getByText('critical')).toBeInTheDocument();
   });
 
-  it('shows fallback message when no explanation matches', () => {
+  it('does not open panel when no explanation matches', () => {
     render(
       <MetricsLineChart
         data={baseData}
@@ -101,9 +101,8 @@ describe('MetricsLineChart', () => {
     const circle = document.querySelector('circle');
     fireEvent.click(circle!);
 
-    expect(
-      screen.getByText(/High value detected\. The monitoring service has not flagged this/),
-    ).toBeInTheDocument();
+    // Panel should not open — no backend insight to show
+    expect(screen.queryByText('Anomaly Detected')).not.toBeInTheDocument();
   });
 
   it('toggles explanation card off when clicking same dot again', () => {
