@@ -19,6 +19,7 @@ import {
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
+import { useStacks } from '@/hooks/use-stacks';
 import { useContainerMetrics, useAnomalies } from '@/hooks/use-metrics';
 import { useContainerForecast, useForecasts, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -111,15 +112,22 @@ export default function MetricsDashboardPage() {
 
   // Fetch containers
   const { data: allContainers, isLoading: containersLoading, refetch, isFetching } = useContainers();
+  const { data: stacks } = useStacks();
 
   // Filter containers by selected endpoint
   const containers = useMemo(() => {
     if (!allContainers || !selectedEndpoint) return [];
     return allContainers.filter((c) => c.endpointId === selectedEndpoint);
   }, [allContainers, selectedEndpoint]);
+  const stackNamesForEndpoint = useMemo(() => {
+    if (!selectedEndpoint || !stacks) return [];
+    return stacks
+      .filter((stack) => stack.endpointId === selectedEndpoint)
+      .map((stack) => stack.name);
+  }, [selectedEndpoint, stacks]);
   const groupedContainerOptions = useMemo(
-    () => buildStackGroupedContainerOptions(containers),
-    [containers],
+    () => buildStackGroupedContainerOptions(containers, stackNamesForEndpoint),
+    [containers, stackNamesForEndpoint],
   );
 
   // Get selected container details

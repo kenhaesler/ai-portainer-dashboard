@@ -50,17 +50,39 @@ function inferStackName(container: Pick<Container, 'name' | 'labels'>): string |
   return null;
 }
 
+function inferStackFromKnownStacks(containerName: string, knownStackNames: string[]): string | null {
+  const normalizedContainerName = containerName.toLowerCase();
+  const sortedByLength = [...knownStackNames].sort((a, b) => b.length - a.length);
+
+  for (const stackName of sortedByLength) {
+    const normalizedStackName = stackName.toLowerCase();
+    if (
+      normalizedContainerName === normalizedStackName
+      || normalizedContainerName.startsWith(`${normalizedStackName}-`)
+      || normalizedContainerName.startsWith(`${normalizedStackName}_`)
+      || normalizedContainerName.startsWith(`${normalizedStackName}.`)
+    ) {
+      return stackName;
+    }
+  }
+
+  return null;
+}
+
 function byLabel(a: { label: string }, b: { label: string }) {
   return a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true });
 }
 
 export function buildStackGroupedContainerOptions(
   containers: Array<Pick<Container, 'id' | 'name' | 'labels'>>,
+  knownStackNames: string[] = [],
 ): SelectOptionGroup[] {
   const grouped = new Map<string, Array<{ value: string; label: string }>>();
 
   for (const container of containers) {
-    const stackName = inferStackName(container) ?? 'No Stack';
+    const stackName = inferStackFromKnownStacks(container.name, knownStackNames)
+      ?? inferStackName(container)
+      ?? 'No Stack';
     const existing = grouped.get(stackName) ?? [];
     existing.push({ value: container.id, label: container.name });
     grouped.set(stackName, existing);

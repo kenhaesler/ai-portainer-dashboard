@@ -32,6 +32,12 @@ vi.mock('@/hooks/use-containers', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-stacks', () => ({
+  useStacks: vi.fn().mockReturnValue({
+    data: [{ id: 1, name: 'alpha', endpointId: 1, type: 1, status: 'active', envCount: 0 }],
+  }),
+}));
+
 vi.mock('@/hooks/use-pcap', () => ({
   useCaptures: vi.fn().mockReturnValue({
     data: { captures: [] },

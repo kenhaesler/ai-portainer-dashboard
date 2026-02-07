@@ -38,6 +38,12 @@ vi.mock('@/hooks/use-containers', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-stacks', () => ({
+  useStacks: vi.fn().mockReturnValue({
+    data: [{ id: 1, name: 'alpha', endpointId: 1, type: 1, status: 'active', envCount: 0 }],
+  }),
+}));
+
 vi.mock('@/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),

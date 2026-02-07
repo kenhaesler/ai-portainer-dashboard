@@ -12,6 +12,7 @@ import {
 import { StatusBadge } from '@/components/shared/status-badge';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
+import { useStacks } from '@/hooks/use-stacks';
 import {
   useCaptures,
   useStartCapture,
@@ -60,6 +61,7 @@ export default function PacketCapture() {
 
   const { data: endpoints } = useEndpoints();
   const { data: containers } = useContainers(selectedEndpoint);
+  const { data: stacks } = useStacks();
   const { data: capturesData, refetch } = useCaptures({ status: statusFilter });
   const startCapture = useStartCapture();
   const stopCapture = useStopCapture();
@@ -70,9 +72,15 @@ export default function PacketCapture() {
     (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
   );
   const runningContainers = containers?.filter((c) => c.state === 'running') ?? [];
+  const stackNamesForEndpoint = useMemo(() => {
+    if (!selectedEndpoint || !stacks) return [];
+    return stacks
+      .filter((stack) => stack.endpointId === selectedEndpoint)
+      .map((stack) => stack.name);
+  }, [selectedEndpoint, stacks]);
   const groupedContainerOptions = useMemo(
-    () => buildStackGroupedContainerOptions(runningContainers),
-    [runningContainers],
+    () => buildStackGroupedContainerOptions(runningContainers, stackNamesForEndpoint),
+    [runningContainers, stackNamesForEndpoint],
   );
 
   const handleStartCapture = () => {
