@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Cpu, HardDrive } from 'lucide-react';
 import { useContainerMetrics } from '@/hooks/use-metrics';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 
 interface ContainerMetricsViewerProps {
@@ -42,21 +43,20 @@ export function ContainerMetricsViewer({
       {/* Time Range Selector */}
       {showTimeRangeSelector && (
         <div className="flex items-center gap-2">
-          <label htmlFor="time-range" className="text-sm font-medium">
+          <label className="text-sm font-medium">
             Time Range
           </label>
-          <select
-            id="time-range"
+          <ThemedSelect
             value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="15m">Last 15 minutes</option>
-            <option value="1h">Last 1 hour</option>
-            <option value="6h">Last 6 hours</option>
-            <option value="24h">Last 24 hours</option>
-            <option value="7d">Last 7 days</option>
-          </select>
+            onValueChange={(val) => setTimeRange(val)}
+            options={[
+              { value: '15m', label: 'Last 15 minutes' },
+              { value: '1h', label: 'Last 1 hour' },
+              { value: '6h', label: 'Last 6 hours' },
+              { value: '24h', label: 'Last 24 hours' },
+              { value: '7d', label: 'Last 7 days' },
+            ]}
+          />
         </div>
       )}
 

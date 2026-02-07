@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw } from 'lucide-react';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import {
   useCreateWebhook,
   useDeleteWebhook,
@@ -186,15 +187,15 @@ export default function WebhooksPage() {
         <section className="rounded-lg border bg-card p-4 lg:col-span-3">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <label className="text-sm text-muted-foreground">Filter</label>
-            <select
+            <ThemedSelect
               value={filter}
-              onChange={(e) => setFilter(e.target.value as 'all' | 'enabled' | 'disabled')}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="all">All</option>
-              <option value="enabled">Enabled</option>
-              <option value="disabled">Disabled</option>
-            </select>
+              onValueChange={(val) => setFilter(val as 'all' | 'enabled' | 'disabled')}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'enabled', label: 'Enabled' },
+                { value: 'disabled', label: 'Disabled' },
+              ]}
+            />
             <button
               type="button"
               onClick={() => webhooksQuery.refetch()}

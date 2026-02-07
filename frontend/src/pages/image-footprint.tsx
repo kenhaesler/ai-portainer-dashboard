@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { HardDrive, Layers, Tag, AlertTriangle, X, Server, Clock, CheckCircle2, Loader2 } from 'lucide-react';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { useImages, type DockerImage } from '@/hooks/use-images';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -118,18 +119,17 @@ export default function ImageFootprintPage() {
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <Server className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={selectedEndpoint ?? ''}
-            onChange={(e) => setSelectedEndpoint(e.target.value ? Number(e.target.value) : undefined)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">All Endpoints</option>
-            {endpoints?.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.name}
-              </option>
-            ))}
-          </select>
+          <ThemedSelect
+            value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+            onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+            options={[
+              { value: '__all__', label: 'All Endpoints' },
+              ...(endpoints?.map((ep) => ({
+                value: String(ep.id),
+                label: ep.name,
+              })) ?? []),
+            ]}
+          />
         </div>
 
         {!isLoading && images && (

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, ScrollText, Clock, Search, AlertTriangle } from 'lucide-react';
 import { useContainerLogs } from '@/hooks/use-container-logs';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 
 export type TailCount = 100 | 500 | 1000 | -1;
@@ -181,20 +182,19 @@ export function ContainerLogsViewer({
         <div className="flex items-center gap-4 flex-wrap">
           {/* Tail Count Selector */}
           <div className="flex items-center gap-2">
-            <label htmlFor="tail-select" className="text-sm font-medium">
+            <label className="text-sm font-medium">
               Tail
             </label>
-            <select
-              id="tail-select"
-              value={tailCount}
-              onChange={(e) => setTailCount(Number(e.target.value) as TailCount)}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value={100}>100 lines</option>
-              <option value={500}>500 lines</option>
-              <option value={1000}>1000 lines</option>
-              <option value={-1}>All lines</option>
-            </select>
+            <ThemedSelect
+              value={String(tailCount)}
+              onValueChange={(val) => setTailCount(Number(val) as TailCount)}
+              options={[
+                { value: '100', label: '100 lines' },
+                { value: '500', label: '500 lines' },
+                { value: '1000', label: '1000 lines' },
+                { value: '-1', label: 'All lines' },
+              ]}
+            />
           </div>
 
           {/* Search Input */}

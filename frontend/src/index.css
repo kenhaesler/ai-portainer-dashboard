@@ -363,7 +363,6 @@
   & button,
   & a,
   & input,
-  & select,
   & textarea,
   & [role="button"],
   & .bg-card,
@@ -477,8 +476,7 @@ aside[data-animated-bg] nav {
 }
 
 [data-animated-bg] input,
-[data-animated-bg] textarea,
-[data-animated-bg] select {
+[data-animated-bg] textarea {
   background: color-mix(in srgb, var(--color-background) 50%, transparent) !important;
   border-color: color-mix(in srgb, var(--color-border) 40%, transparent) !important;
 }
@@ -561,8 +559,7 @@ aside nav:hover {
 
 .apple-light {
   & input,
-  & textarea,
-  & select {
+  & textarea {
     background: rgba(255, 255, 255, 0.7) !important;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -571,8 +568,7 @@ aside nav:hover {
   }
 
   & input:focus,
-  & textarea:focus,
-  & select:focus {
+  & textarea:focus {
     background: rgba(255, 255, 255, 0.9) !important;
     border-color: rgba(99, 102, 241, 0.5) !important;
     box-shadow:
@@ -583,8 +579,7 @@ aside nav:hover {
 
 .apple-dark {
   & input,
-  & textarea,
-  & select {
+  & textarea {
     background: rgba(30, 32, 48, 0.6) !important;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -593,8 +588,7 @@ aside nav:hover {
   }
 
   & input:focus,
-  & textarea:focus,
-  & select:focus {
+  & textarea:focus {
     background: rgba(40, 42, 60, 0.8) !important;
     border-color: rgba(129, 140, 248, 0.5) !important;
     box-shadow:

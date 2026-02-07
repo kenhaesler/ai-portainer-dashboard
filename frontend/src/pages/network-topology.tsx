@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useNetworks, type Network } from '@/hooks/use-networks';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -116,19 +117,18 @@ export default function NetworkTopologyPage() {
           <label htmlFor="endpoint-select" className="text-sm font-medium">
             Endpoint
           </label>
-          <select
+          <ThemedSelect
             id="endpoint-select"
-            value={selectedEndpoint ?? ''}
-            onChange={(e) => setSelectedEndpoint(e.target.value ? Number(e.target.value) : undefined)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="">All endpoints</option>
-            {endpoints?.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.name} (ID: {ep.id})
-              </option>
-            ))}
-          </select>
+            value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+            onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+            options={[
+              { value: '__all__', label: 'All endpoints' },
+              ...(endpoints?.map((ep) => ({
+                value: String(ep.id),
+                label: `${ep.name} (ID: ${ep.id})`,
+              })) ?? []),
+            ]}
+          />
         </div>
 
         {containers && networks && (
