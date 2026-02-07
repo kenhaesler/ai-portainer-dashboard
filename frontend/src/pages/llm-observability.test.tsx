@@ -25,6 +25,8 @@ const mockStats = {
   totalTokens: 58300,
   avgLatencyMs: 1250,
   errorRate: 0.03,
+  avgFeedbackScore: 4.2,
+  feedbackCount: 37,
   modelBreakdown: [
     { model: 'llama3.2', count: 120, tokens: 48000 },
     { model: 'mistral', count: 22, tokens: 10300 },
@@ -127,6 +129,39 @@ describe('LlmObservabilityPage', () => {
     expect(screen.getByText('llama3.2')).toBeTruthy();
     expect(screen.getByText('mistral')).toBeTruthy();
   });
+
+  it('renders feedback summary with score', () => {
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: mockStats,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmStats>);
+
+    renderPage();
+    expect(screen.getByText('Feedback Summary')).toBeTruthy();
+    expect(screen.getByText('4.2')).toBeTruthy();
+    expect(screen.getByText('/ 5')).toBeTruthy();
+  });
+
+  it('renders when stats payload is missing model breakdown', () => {
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: {
+        totalQueries: 10,
+        totalTokens: 1200,
+        avgLatencyMs: 700,
+        errorRate: 0,
+        avgFeedbackScore: null,
+        feedbackCount: 0,
+      } as unknown as ReturnType<typeof useLlmStats>['data'],
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmStats>);
+
+    renderPage();
+    expect(screen.getByText('Model Breakdown')).toBeTruthy();
+    expect(screen.getByText('No model data available.')).toBeTruthy();
+  });
+
 
   it('renders traces table with data', () => {
     vi.mocked(useLlmStats).mockReturnValue({
