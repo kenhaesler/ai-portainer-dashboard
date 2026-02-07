@@ -26,4 +26,23 @@ describe('buildStackGroupedContainerOptions', () => {
     expect(result[1].options.map((option) => option.label)).toEqual(['worker']);
     expect(result[2].options.map((option) => option.label)).toEqual(['standalone']);
   });
+
+  it('infers stack names from compose/swarm metadata when project labels are missing', () => {
+    const result = buildStackGroupedContainerOptions([
+      {
+        id: '1',
+        name: 'payments-api-1',
+        labels: { 'com.docker.compose.service': 'api' },
+      },
+      {
+        id: '2',
+        name: 'worker.1.abcd123',
+        labels: { 'com.docker.swarm.service.name': 'observability_worker' },
+      },
+    ]);
+
+    expect(result.map((group) => group.label)).toEqual(['observability', 'payments']);
+    expect(result[0].options[0].label).toBe('worker.1.abcd123');
+    expect(result[1].options[0].label).toBe('payments-api-1');
+  });
 });

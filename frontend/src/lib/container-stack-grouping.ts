@@ -15,6 +15,41 @@ function getStackName(container: Pick<Container, 'labels'>): string | null {
   return null;
 }
 
+function inferStackFromServiceName(containerName: string, serviceName: string): string | null {
+  const escapedServiceName = serviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const composeDashPattern = new RegExp(`^(.*)-${escapedServiceName}-\\d+$`);
+  const composeDashMatch = containerName.match(composeDashPattern);
+  if (composeDashMatch?.[1]) {
+    return composeDashMatch[1];
+  }
+
+  const swarmUnderscorePattern = new RegExp(`^(.*)_${escapedServiceName}\\.`);
+  const swarmUnderscoreMatch = containerName.match(swarmUnderscorePattern);
+  if (swarmUnderscoreMatch?.[1]) {
+    return swarmUnderscoreMatch[1];
+  }
+
+  return null;
+}
+
+function inferStackName(container: Pick<Container, 'name' | 'labels'>): string | null {
+  const explicit = getStackName(container);
+  if (explicit) return explicit;
+
+  const swarmServiceName = container.labels['com.docker.swarm.service.name']?.trim();
+  if (swarmServiceName?.includes('_')) {
+    return swarmServiceName.split('_')[0];
+  }
+
+  const composeServiceName = container.labels['com.docker.compose.service']?.trim();
+  if (composeServiceName) {
+    return inferStackFromServiceName(container.name, composeServiceName);
+  }
+
+  return null;
+}
+
 function byLabel(a: { label: string }, b: { label: string }) {
   return a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true });
 }
@@ -25,7 +60,7 @@ export function buildStackGroupedContainerOptions(
   const grouped = new Map<string, Array<{ value: string; label: string }>>();
 
   for (const container of containers) {
-    const stackName = getStackName(container) ?? 'No Stack';
+    const stackName = inferStackName(container) ?? 'No Stack';
     const existing = grouped.get(stackName) ?? [];
     existing.push({ value: container.id, label: container.name });
     grouped.set(stackName, existing);
