@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useThemeStore } from './theme-store';
+import { useThemeStore, DEFAULT_ENABLED_THEMES } from './theme-store';
 
 describe('useThemeStore - dashboardBackground', () => {
   beforeEach(() => {
@@ -66,4 +66,56 @@ describe('useThemeStore - retro themes', () => {
       expect(useThemeStore.getState().resolvedTheme()).toBe('dark');
     }
   );
+});
+
+describe('useThemeStore - enabledThemes & cycleTheme', () => {
+  beforeEach(() => {
+    useThemeStore.setState({
+      theme: 'apple-light',
+      enabledThemes: [...DEFAULT_ENABLED_THEMES],
+    });
+  });
+
+  it('defaults to DEFAULT_ENABLED_THEMES', () => {
+    expect(useThemeStore.getState().enabledThemes).toEqual(DEFAULT_ENABLED_THEMES);
+  });
+
+  it('toggleEnabledTheme adds a theme', () => {
+    useThemeStore.getState().toggleEnabledTheme('dark');
+    expect(useThemeStore.getState().enabledThemes).toContain('dark');
+  });
+
+  it('toggleEnabledTheme removes a theme', () => {
+    useThemeStore.getState().toggleEnabledTheme('apple-light');
+    expect(useThemeStore.getState().enabledThemes).not.toContain('apple-light');
+  });
+
+  it('does not remove the last enabled theme', () => {
+    useThemeStore.setState({ enabledThemes: ['apple-dark'] });
+    useThemeStore.getState().toggleEnabledTheme('apple-dark');
+    expect(useThemeStore.getState().enabledThemes).toEqual(['apple-dark']);
+  });
+
+  it('cycleTheme advances to the next enabled theme', () => {
+    useThemeStore.setState({ theme: 'apple-light', enabledThemes: ['apple-light', 'apple-dark'] });
+    useThemeStore.getState().cycleTheme();
+    expect(useThemeStore.getState().theme).toBe('apple-dark');
+  });
+
+  it('cycleTheme wraps around to the first enabled theme', () => {
+    useThemeStore.setState({ theme: 'apple-dark', enabledThemes: ['apple-light', 'apple-dark'] });
+    useThemeStore.getState().cycleTheme();
+    expect(useThemeStore.getState().theme).toBe('apple-light');
+  });
+
+  it('cycleTheme picks the first enabled theme when current is not in the list', () => {
+    useThemeStore.setState({ theme: 'dark', enabledThemes: ['apple-light', 'apple-dark'] });
+    useThemeStore.getState().cycleTheme();
+    expect(useThemeStore.getState().theme).toBe('apple-light');
+  });
+
+  it('setEnabledThemes replaces the list', () => {
+    useThemeStore.getState().setEnabledThemes(['dark', 'light']);
+    expect(useThemeStore.getState().enabledThemes).toEqual(['dark', 'light']);
+  });
 });

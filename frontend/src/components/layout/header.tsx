@@ -1,7 +1,7 @@
 import { useLocation, Link } from 'react-router-dom';
-import { Sun, Moon, Search, LogOut, User, Keyboard } from 'lucide-react';
+import { Sun, Moon, Search, LogOut, User, Keyboard, Palette } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
-import { useThemeStore } from '@/stores/theme-store';
+import { useThemeStore, themeOptions } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useState, useRef, useEffect } from 'react';
@@ -28,7 +28,7 @@ const routeLabels: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const { username, logout } = useAuth();
-  const { theme, setTheme, dashboardBackground } = useThemeStore();
+  const { theme, cycleTheme, enabledThemes, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -113,29 +113,18 @@ export function Header() {
           </kbd>
         </button>
 
-        {/* Theme toggle - pill style (Glass Light / Glass Dark) */}
-        {(() => {
-          const isDark = theme === 'dark' || theme === 'apple-dark' || theme.includes('mocha') || theme.includes('macchiato') || theme.includes('frappe');
+        {/* Theme cycle button — cycles through enabled themes */}
+        {enabledThemes.length > 1 && (() => {
+          const currentLabel = themeOptions.find((o) => o.value === theme)?.label ?? theme;
           return (
             <button
-              onClick={() => setTheme(isDark ? 'apple-light' : 'apple-dark')}
-              className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
-              aria-label={`Switch to ${isDark ? 'Glass Light' : 'Glass Dark'} theme`}
+              onClick={cycleTheme}
+              className="flex h-8 items-center gap-1.5 rounded-full bg-muted px-3 text-sm font-medium transition-colors hover:bg-muted/80"
+              aria-label={`Current theme: ${currentLabel}. Click to cycle to next theme.`}
+              title={currentLabel}
             >
-              <span
-                className={cn(
-                  'absolute h-5 w-5 rounded-full bg-background shadow-sm transition-all duration-200',
-                  isDark ? 'left-[calc(100%-1.625rem)]' : 'left-1.5'
-                )}
-              />
-              <Sun className={cn(
-                'relative z-10 h-3.5 w-3.5 transition-colors',
-                isDark ? 'text-muted-foreground' : 'text-amber-500'
-              )} />
-              <Moon className={cn(
-                'relative z-10 h-3.5 w-3.5 transition-colors',
-                isDark ? 'text-blue-400' : 'text-muted-foreground'
-              )} />
+              <Palette className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="hidden sm:inline max-w-[8rem] truncate">{currentLabel}</span>
             </button>
           );
         })()}
