@@ -126,8 +126,10 @@ describe('LlmObservabilityPage', () => {
 
     renderPage();
     expect(screen.getByText('Model Breakdown')).toBeTruthy();
+    expect(screen.getByText('Share')).toBeTruthy();
     expect(screen.getByText('llama3.2')).toBeTruthy();
     expect(screen.getByText('mistral')).toBeTruthy();
+    expect(screen.getByLabelText('llama3.2 share')).toBeTruthy();
   });
 
   it('renders feedback summary with score', () => {
@@ -141,6 +143,27 @@ describe('LlmObservabilityPage', () => {
     expect(screen.getByText('Feedback Summary')).toBeTruthy();
     expect(screen.getByText('4.2')).toBeTruthy();
     expect(screen.getByText('/ 5')).toBeTruthy();
+    expect(screen.getByText('Quality Signal')).toBeTruthy();
+    expect(screen.getByText('Good')).toBeTruthy();
+    expect(screen.getByText('Confidence')).toBeTruthy();
+    expect(screen.getByText('High')).toBeTruthy();
+  });
+
+  it('shows low-confidence guidance when rating sample is small', () => {
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: {
+        ...mockStats,
+        avgFeedbackScore: 3.2,
+        feedbackCount: 4,
+      },
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmStats>);
+
+    renderPage();
+    expect(screen.getByText('Mixed')).toBeTruthy();
+    expect(screen.getByText('Low')).toBeTruthy();
+    expect(screen.getByText('Collect more ratings for stronger confidence in quality trends.')).toBeTruthy();
   });
 
   it('renders when stats payload is missing model breakdown', () => {
