@@ -8,10 +8,17 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
+export interface SelectOptionGroup {
+  label: string;
+  options: SelectOption[];
+}
+
+type SelectEntry = SelectOption | SelectOptionGroup;
+
 interface ThemedSelectProps {
   value: string;
   onValueChange: (value: string) => void;
-  options: SelectOption[];
+  options: SelectEntry[];
   placeholder?: string;
   disabled?: boolean;
   className?: string;
@@ -27,6 +34,29 @@ export function ThemedSelect({
   className,
   id,
 }: ThemedSelectProps) {
+  const isGroup = (entry: SelectEntry): entry is SelectOptionGroup => 'options' in entry;
+
+  const renderOption = (opt: SelectOption, inset = false) => (
+    <SelectPrimitive.Item
+      key={opt.value}
+      value={opt.value}
+      disabled={opt.disabled}
+      className={cn(
+        'relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none',
+        'focus:bg-accent focus:text-accent-foreground',
+        'data-disabled:pointer-events-none data-disabled:opacity-50',
+        inset && 'pl-10',
+      )}
+    >
+      <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+        <SelectPrimitive.ItemIndicator>
+          <Check className="h-4 w-4" />
+        </SelectPrimitive.ItemIndicator>
+      </span>
+      <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
+    </SelectPrimitive.Item>
+  );
+
   return (
     <SelectPrimitive.Root value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectPrimitive.Trigger
@@ -59,25 +89,21 @@ export function ThemedSelect({
           )}
         >
           <SelectPrimitive.Viewport className="p-1">
-            {options.map((opt) => (
-              <SelectPrimitive.Item
-                key={opt.value}
-                value={opt.value}
-                disabled={opt.disabled}
-                className={cn(
-                  'relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none',
-                  'focus:bg-accent focus:text-accent-foreground',
-                  'data-disabled:pointer-events-none data-disabled:opacity-50',
-                )}
-              >
-                <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-                  <SelectPrimitive.ItemIndicator>
-                    <Check className="h-4 w-4" />
-                  </SelectPrimitive.ItemIndicator>
-                </span>
-                <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
-              </SelectPrimitive.Item>
-            ))}
+            {options.map((entry, index) => {
+              if (!isGroup(entry)) {
+                return renderOption(entry);
+              }
+
+              return (
+                <SelectPrimitive.Group key={`${entry.label}-${index}`}>
+                  {index > 0 && <SelectPrimitive.Separator className="my-2 h-px bg-border" />}
+                  <SelectPrimitive.Label className="mx-1 mb-1 rounded-sm border border-border/70 bg-muted/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/90 shadow-xs">
+                    {entry.label}
+                  </SelectPrimitive.Label>
+                  {entry.options.map((opt) => renderOption(opt, true))}
+                </SelectPrimitive.Group>
+              );
+            })}
           </SelectPrimitive.Viewport>
         </SelectPrimitive.Content>
       </SelectPrimitive.Portal>

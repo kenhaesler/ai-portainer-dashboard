@@ -19,6 +19,7 @@ import {
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
+import { useStacks } from '@/hooks/use-stacks';
 import { useContainerMetrics, useAnomalies } from '@/hooks/use-metrics';
 import { useContainerForecast, useForecasts, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -28,6 +29,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
+import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
 import {
   AreaChart,
   Area,
@@ -100,6 +102,7 @@ function getForecastRiskScore(forecast: CapacityForecast): number {
 
 export default function MetricsDashboardPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | null>(null);
+  const [selectedStack, setSelectedStack] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState('1h');
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -110,12 +113,38 @@ export default function MetricsDashboardPage() {
 
   // Fetch containers
   const { data: allContainers, isLoading: containersLoading, refetch, isFetching } = useContainers();
+  const { data: stacks } = useStacks();
 
   // Filter containers by selected endpoint
   const containers = useMemo(() => {
     if (!allContainers || !selectedEndpoint) return [];
     return allContainers.filter((c) => c.endpointId === selectedEndpoint);
   }, [allContainers, selectedEndpoint]);
+  const stackNamesForEndpoint = useMemo(() => {
+    if (!selectedEndpoint || !stacks) return [];
+    return stacks
+      .filter((stack) => stack.endpointId === selectedEndpoint)
+      .map((stack) => stack.name);
+  }, [selectedEndpoint, stacks]);
+  const stackOptions = useMemo(() => {
+    const stackSet = new Set<string>(stackNamesForEndpoint);
+    for (const container of containers) {
+      const resolvedStack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
+      stackSet.add(resolvedStack);
+    }
+    return [...stackSet].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+  }, [containers, stackNamesForEndpoint]);
+  const filteredContainers = useMemo(() => {
+    if (!selectedStack) return containers;
+    return containers.filter((container) => {
+      const resolvedStack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
+      return resolvedStack === selectedStack;
+    });
+  }, [containers, selectedStack, stackNamesForEndpoint]);
+  const groupedContainerOptions = useMemo(
+    () => buildStackGroupedContainerOptions(filteredContainers, stackNamesForEndpoint),
+    [filteredContainers, stackNamesForEndpoint],
+  );
 
   // Get selected container details
   const selectedContainerData = useMemo(() => {
@@ -243,6 +272,7 @@ export default function MetricsDashboardPage() {
   // Handle endpoint change
   const handleEndpointChange = (endpointId: number) => {
     setSelectedEndpoint(endpointId);
+    setSelectedStack(null);
     setSelectedContainer(null);
   };
 
@@ -298,16 +328,38 @@ export default function MetricsDashboardPage() {
         <div className="flex items-center gap-2">
           <Box className="h-4 w-4 text-muted-foreground" />
           <ThemedSelect
+            value={selectedStack ?? '__all__'}
+            onValueChange={(val) => {
+              if (val === '__all__') {
+                setSelectedStack(null);
+              } else {
+                setSelectedStack(val);
+              }
+              setSelectedContainer(null);
+            }}
+            placeholder="All stacks"
+            disabled={!selectedEndpoint || containersLoading}
+            options={[
+              { value: '__all__', label: 'All stacks' },
+              ...stackOptions.map((stackName) => ({
+                value: stackName,
+                label: stackName,
+              })),
+            ]}
+          />
+        </div>
+
+        {/* Container Selector */}
+        <div className="flex items-center gap-2">
+          <Box className="h-4 w-4 text-muted-foreground" />
+          <ThemedSelect
             value={selectedContainer ?? '__placeholder__'}
             onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
             placeholder="Select container..."
             disabled={!selectedEndpoint || containersLoading}
             options={[
               { value: '__placeholder__', label: 'Select container...', disabled: true },
-              ...containers.map((c) => ({
-                value: c.id,
-                label: c.name,
-              })),
+              ...groupedContainerOptions,
             ]}
           />
         </div>
