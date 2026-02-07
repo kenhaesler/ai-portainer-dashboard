@@ -102,7 +102,7 @@ describe('MetricsLineChart', () => {
     fireEvent.click(circle!);
 
     expect(
-      screen.getByText('Value exceeded threshold. No AI explanation available for this anomaly.'),
+      screen.getByText(/High value detected\. The monitoring service has not flagged this/),
     ).toBeInTheDocument();
   });
 

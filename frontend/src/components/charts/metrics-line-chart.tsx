@@ -262,7 +262,8 @@ export const MetricsLineChart = memo(function MetricsLineChart({
             </p>
           ) : (
             <p className="mt-3 text-sm text-muted-foreground">
-              Value exceeded threshold. No AI explanation available for this anomaly.
+              High value detected. The monitoring service has not flagged this as a statistical anomaly yet.
+              Anomalies are detected when values deviate significantly from the container&apos;s historical average.
             </p>
           )}
 

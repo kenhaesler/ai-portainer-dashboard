@@ -214,30 +214,24 @@ export default function MetricsDashboardPage() {
     [explanationsData],
   );
 
-  // Helper: check if a timestamp has a matching backend anomaly insight (within 5-min window)
-  const hasMatchingInsight = (timestamp: string, insights: typeof cpuExplanations) => {
-    const t = new Date(timestamp).getTime();
-    return insights.some(e => Math.abs(new Date(e.timestamp).getTime() - t) < 5 * 60 * 1000);
-  };
-
-  // Process data for charts — anomaly dots driven by backend insights, not hardcoded threshold
+  // Process data for charts
   const cpuData = useMemo(() => {
     if (!cpuMetrics?.data) return [];
     return cpuMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value,
-      isAnomaly: hasMatchingInsight(d.timestamp, cpuExplanations),
+      isAnomaly: d.value > 80,
     }));
-  }, [cpuMetrics, cpuExplanations]);
+  }, [cpuMetrics]);
 
   const memoryData = useMemo(() => {
     if (!memoryMetrics?.data) return [];
     return memoryMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value,
-      isAnomaly: hasMatchingInsight(d.timestamp, memoryExplanations),
+      isAnomaly: d.value > 80,
     }));
-  }, [memoryMetrics, memoryExplanations]);
+  }, [memoryMetrics]);
 
   const memoryBytesData = useMemo(() => {
     if (!memoryBytesMetrics?.data) return [];
