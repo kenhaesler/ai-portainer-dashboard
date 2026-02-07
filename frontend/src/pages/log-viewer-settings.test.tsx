@@ -1,87 +1,104 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ElasticsearchSettingsSection } from './settings';
 
 const mockGet = vi.fn();
-const mockPut = vi.fn();
 const mockPost = vi.fn();
-
-vi.mock('@tanstack/react-query', () => ({
-  useQueries: () => [],
-}));
 
 vi.mock('@/lib/api', () => ({
   api: {
     get: (...args: unknown[]) => mockGet(...args),
-    put: (...args: unknown[]) => mockPut(...args),
     post: (...args: unknown[]) => mockPost(...args),
+    patch: vi.fn(),
   },
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
-  useEndpoints: () => ({ data: [{ id: 1, name: 'Local Docker' }] }),
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
-  useContainers: () => ({ data: [{ id: 'c1', name: 'api', endpointId: 1 }] }),
-}));
+const defaultValues: Record<string, string> = {
+  'elasticsearch.enabled': 'true',
+  'elasticsearch.endpoint': 'https://logs.example:9200',
+  'elasticsearch.api_key': 'abc123',
+  'elasticsearch.index_pattern': 'logs-*',
+  'elasticsearch.verify_ssl': 'true',
+};
 
-import LogViewerPage from './log-viewer';
+describe('ElasticsearchSettingsSection', () => {
+  let onChange: Mock;
 
-describe('LogViewerPage logs settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    onChange = vi.fn();
 
     mockGet.mockImplementation((path: string) => {
-      if (path === '/api/settings') {
-        return Promise.resolve([
-          { key: 'elasticsearch.enabled', value: 'true' },
-          { key: 'elasticsearch.endpoint', value: 'https://logs.example:9200' },
-          { key: 'elasticsearch.api_key', value: 'abc123' },
-          { key: 'elasticsearch.index_pattern', value: 'logs-*' },
-          { key: 'elasticsearch.verify_ssl', value: 'true' },
-        ]);
-      }
       if (path === '/api/logs/config') {
         return Promise.resolve({ configured: true, endpoint: 'https://logs.example:9200', indexPattern: 'logs-*' });
       }
       return Promise.resolve({});
     });
 
-    mockPut.mockResolvedValue({});
     mockPost.mockResolvedValue({ success: true, cluster_name: 'logs-cluster', status: 'green', number_of_nodes: 3 });
   });
 
-  it('saves logs settings and tests connection', async () => {
-    render(<LogViewerPage />);
+  it('tests connection with settings payload including verifySsl', async () => {
+    render(
+      <ElasticsearchSettingsSection
+        values={defaultValues}
+        originalValues={defaultValues}
+        onChange={onChange}
+      />,
+    );
 
-    const endpointInput = await screen.findByPlaceholderText('https://logs.internal:9200');
-    fireEvent.change(endpointInput, { target: { value: 'https://logs.internal:9200' } });
-
-    fireEvent.click(screen.getByText('Test Connection'));
+    fireEvent.click(await screen.findByRole('button', { name: /test connection/i }));
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith('/api/logs/test-connection', {
-        endpoint: 'https://logs.internal:9200',
+        endpoint: 'https://logs.example:9200',
         apiKey: 'abc123',
+        verifySsl: true,
       });
       expect(screen.getByText('Connection successful')).toBeInTheDocument();
     });
-
-    fireEvent.click(screen.getByText('Save Settings'));
-
-    await waitFor(() => {
-      expect(mockPut).toHaveBeenCalled();
-      expect(screen.getByText('Saved')).toBeInTheDocument();
-    });
   });
 
-  it('shows validation message for invalid endpoint', async () => {
-    render(<LogViewerPage />);
+  it('shows validation message for invalid endpoint and disables test button', async () => {
+    const values = {
+      ...defaultValues,
+      'elasticsearch.endpoint': 'not-a-url',
+    };
 
-    const endpointInput = await screen.findByPlaceholderText('https://logs.internal:9200');
-    fireEvent.change(endpointInput, { target: { value: 'not-a-url' } });
+    render(
+      <ElasticsearchSettingsSection
+        values={values}
+        originalValues={values}
+        onChange={onChange}
+      />,
+    );
 
+    await screen.findByText('Elasticsearch / Kibana');
     expect(screen.getByText('Enter a valid URL (for example: https://logs.internal:9200)')).toBeInTheDocument();
-    expect(screen.getByText('Test Connection')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled();
+  });
+
+  it('toggles enable switch through onChange', async () => {
+    render(
+      <ElasticsearchSettingsSection
+        values={defaultValues}
+        originalValues={defaultValues}
+        onChange={onChange}
+      />,
+    );
+
+    await screen.findByText('Elasticsearch / Kibana');
+    const toggle = screen.getByRole('button', { name: 'Toggle Elasticsearch logs' });
+    fireEvent.click(toggle);
+
+    expect(onChange).toHaveBeenCalledWith('elasticsearch.enabled', 'false');
   });
 });
