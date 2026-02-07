@@ -161,6 +161,24 @@ describe('webhookRoutes', () => {
       expect(res.statusCode).toBe(403);
       expect(res.json()).toEqual({ error: 'Insufficient permissions' });
     });
+
+    it('should reject private network webhook URLs', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/webhooks',
+        payload: {
+          name: 'Private Hook',
+          url: 'http://127.0.0.1:8080/hook',
+          events: ['*'],
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({
+        error: 'Webhook URL cannot target private or loopback IP ranges',
+      });
+      expect(mockCreateWebhook).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /api/webhooks/:id', () => {
@@ -233,6 +251,18 @@ describe('webhookRoutes', () => {
       });
       expect(res.statusCode).toBe(403);
       expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+    });
+
+    it('should reject invalid URL updates', async () => {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/webhooks/wh-1',
+        payload: { url: 'file:///etc/passwd' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'Webhook URL must use http:// or https://' });
+      expect(mockUpdateWebhook).not.toHaveBeenCalled();
     });
   });
 
