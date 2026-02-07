@@ -12,6 +12,11 @@ import { ensureModel } from './services/llm-client.js';
 
 const log = createChildLogger('server');
 
+// Safety net: log unhandled rejections instead of crashing the process
+process.on('unhandledRejection', (reason) => {
+  log.error({ err: reason }, 'Unhandled promise rejection (process kept alive)');
+});
+
 async function main() {
   const config = getConfig();
   const app = await buildApp();

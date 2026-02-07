@@ -391,7 +391,7 @@ export function getCacheKey(resource: string, ...args: (string | number)[]): str
  */
 const inFlight = new Map<string, Promise<unknown>>();
 
-export async function cachedFetch<T>(
+export function cachedFetch<T>(
   key: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
@@ -408,21 +408,37 @@ export async function cachedFetch<T>(
     return existing as Promise<T>;
   }
 
-  const promise = (async () => {
-    const cached = await cache.get<T>(key);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const data = await fetcher();
-    await cache.set(key, data, ttlSeconds);
-    return data;
-  })();
+  // Use explicit resolve/reject to share a single promise across callers
+  // while preventing unhandled rejections when no caller is awaiting.
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
 
   inFlight.set(key, promise);
   promise.finally(() => {
     inFlight.delete(key);
   });
+
+  // Run the fetch in a self-contained async block.
+  // All errors are caught and forwarded explicitly via reject(),
+  // preventing unhandled promise rejections from crashing the process.
+  (async () => {
+    try {
+      const cached = await cache.get<T>(key);
+      if (cached !== undefined) {
+        resolve(cached);
+        return;
+      }
+      const data = await fetcher();
+      await cache.set(key, data, ttlSeconds);
+      resolve(data);
+    } catch (err) {
+      reject(err);
+    }
+  })();
 
   return promise;
 }
