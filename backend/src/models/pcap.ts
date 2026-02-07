@@ -34,7 +34,7 @@ export const CaptureSchema = z.object({
 export type Capture = z.infer<typeof CaptureSchema>;
 
 // BPF filter regex: only allow safe characters (prevents shell injection)
-const BPF_FILTER_REGEX = /^[a-zA-Z0-9\s.:()/\-!=<>&|]+$/;
+const BPF_FILTER_REGEX = /^[a-zA-Z0-9\s.:()/\-!=<>]+$/;
 
 export const StartCaptureRequestSchema = z.object({
   endpointId: z.number().int().positive(),
