@@ -67,4 +67,19 @@ describe('buildStackGroupedContainerOptions', () => {
     expect(result[0].options[0].label).toBe('alpha-api-1');
     expect(result[1].options[0].label).toBe('beta_worker.1.abc123');
   });
+
+  it('infers compose stack from container name even without labels', () => {
+    const result = buildStackGroupedContainerOptions([
+      { id: '1', name: 'ai-portainer-dashboard-frontend-1', labels: {} },
+      { id: '2', name: 'ai-portainer-dashboard-backend-1', labels: {} },
+      { id: '3', name: 'net-client', labels: {} },
+    ]);
+
+    expect(result.map((group) => group.label)).toEqual(['ai-portainer-dashboard', 'No Stack']);
+    expect(result[0].options.map((option) => option.label)).toEqual([
+      'ai-portainer-dashboard-backend-1',
+      'ai-portainer-dashboard-frontend-1',
+    ]);
+    expect(result[1].options.map((option) => option.label)).toEqual(['net-client']);
+  });
 });

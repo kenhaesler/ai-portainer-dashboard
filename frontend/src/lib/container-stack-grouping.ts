@@ -33,6 +33,22 @@ function inferStackFromServiceName(containerName: string, serviceName: string): 
   return null;
 }
 
+function inferStackFromContainerName(containerName: string): string | null {
+  // Docker Compose default: <project>-<service>-<index>
+  const composeMatch = containerName.match(/^(.*)-[^-]+-\d+$/);
+  if (composeMatch?.[1]) {
+    return composeMatch[1];
+  }
+
+  // Swarm-like task naming: <stack>_<service>.<replica>.<taskId>
+  const swarmMatch = containerName.match(/^(.*)_[^.]+\.\d+\./);
+  if (swarmMatch?.[1]) {
+    return swarmMatch[1];
+  }
+
+  return null;
+}
+
 function inferStackName(container: Pick<Container, 'name' | 'labels'>): string | null {
   const explicit = getStackName(container);
   if (explicit) return explicit;
@@ -47,7 +63,7 @@ function inferStackName(container: Pick<Container, 'name' | 'labels'>): string |
     return inferStackFromServiceName(container.name, composeServiceName);
   }
 
-  return null;
+  return inferStackFromContainerName(container.name);
 }
 
 function inferStackFromKnownStacks(containerName: string, knownStackNames: string[]): string | null {

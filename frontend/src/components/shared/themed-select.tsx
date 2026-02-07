@@ -97,7 +97,7 @@ export function ThemedSelect({
               return (
                 <SelectPrimitive.Group key={`${entry.label}-${index}`}>
                   {index > 0 && <SelectPrimitive.Separator className="my-1 h-px bg-border/60" />}
-                  <SelectPrimitive.Label className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <SelectPrimitive.Label className="mx-1 mb-1 rounded-sm bg-muted/60 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/85">
                     {entry.label}
                   </SelectPrimitive.Label>
                   {entry.options.map((opt) => renderOption(opt, true))}
