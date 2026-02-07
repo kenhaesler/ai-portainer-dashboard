@@ -95,4 +95,31 @@ describe('backup routes', () => {
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: 'Backup not found' });
   });
+
+  it('rejects traversal attempts on download endpoint', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/backup/..%2F..%2Fetc%2Fpasswd',
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects traversal attempts on restore endpoint', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/backup/..%2F..%2Fetc%2Fpasswd/restore',
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects traversal attempts on delete endpoint', async () => {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/backup/..%2F..%2Fetc%2Fpasswd',
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
 });
