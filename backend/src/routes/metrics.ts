@@ -235,13 +235,21 @@ Anomalous readings (>80%): ${anomalyCount.count}
 Time range: ${timeRange}
 Endpoint ID: ${endpointId}`;
 
-    // Hijack response to bypass Fastify compression/serialization for SSE
+    // Hijack response to bypass Fastify compression/serialization for SSE.
+    // reply.hijack() also bypasses @fastify/cors, so add CORS headers manually.
+    // The preflight OPTIONS is handled normally by @fastify/cors, so if we reach
+    // here the origin was already validated.
+    const origin = request.headers.origin;
     reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
+      ...(origin ? {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Credentials': 'true',
+      } : {}),
     });
 
     try {
