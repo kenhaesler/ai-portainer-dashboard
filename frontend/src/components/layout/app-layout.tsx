@@ -9,6 +9,7 @@ import { ActivityFeed } from '@/components/shared/activity-feed';
 import { KeyboardShortcutsOverlay } from '@/components/shared/keyboard-shortcuts-overlay';
 import { DashboardBackground } from '@/components/layout/dashboard-background';
 import { useUiStore } from '@/stores/ui-store';
+import { useActivityFeedStore } from '@/stores/activity-feed-store';
 import { useThemeStore, themeOptions } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
@@ -21,9 +22,14 @@ function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
 }
 
+export function getDesktopMainPaddingClass(activityFeedCollapsed: boolean): 'md:pb-20' | 'md:pb-96' {
+  return activityFeedCollapsed ? 'md:pb-20' : 'md:pb-96';
+}
+
 export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const activityFeedCollapsed = useActivityFeedStore((s) => s.collapsed);
   const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const { theme, setTheme, dashboardBackground } = useThemeStore();
@@ -188,7 +194,7 @@ export function AppLayout() {
       </motion.div>
       <div
         className={cn(
-          'flex flex-1 flex-col overflow-hidden transition-all duration-300',
+          'relative z-10 flex flex-1 flex-col overflow-hidden transition-all duration-300',
           'md:ml-[4.5rem]',
           !sidebarCollapsed && 'md:ml-[16rem]',
         )}
@@ -208,7 +214,10 @@ export function AppLayout() {
 
         {/* Main content — fades in from bottom */}
         <motion.main
-          className="flex-1 overflow-y-auto p-3 pb-20 md:p-4 md:pb-4"
+          className={cn(
+            'flex-1 overflow-y-auto p-3 pb-28 md:p-4',
+            getDesktopMainPaddingClass(activityFeedCollapsed),
+          )}
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           transition={

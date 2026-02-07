@@ -51,15 +51,14 @@ export const themeOptions: { value: Theme; label: string; description: string }[
   { value: 'catppuccin-mocha', label: 'Catppuccin Mocha', description: 'Darkest pastel theme' },
 ];
 
-export const DEFAULT_ENABLED_THEMES: Theme[] = ['apple-light', 'apple-dark'];
+export const DEFAULT_TOGGLE_THEMES: [Theme, Theme] = ['apple-light', 'apple-dark'];
 
 interface ThemeState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-  enabledThemes: Theme[];
-  setEnabledThemes: (themes: Theme[]) => void;
-  toggleEnabledTheme: (theme: Theme) => void;
-  cycleTheme: () => void;
+  toggleThemes: [Theme, Theme];
+  setToggleThemes: (themes: [Theme, Theme]) => void;
+  toggleTheme: () => void;
   dashboardBackground: DashboardBackground;
   setDashboardBackground: (bg: DashboardBackground) => void;
   resolvedTheme: () => 'dark' | 'light';
@@ -71,25 +70,12 @@ export const useThemeStore = create<ThemeState>()(
     (set, get) => ({
       theme: 'system',
       setTheme: (theme) => set({ theme }),
-      enabledThemes: DEFAULT_ENABLED_THEMES as Theme[],
-      setEnabledThemes: (enabledThemes) => set({ enabledThemes }),
-      toggleEnabledTheme: (theme) => {
-        const { enabledThemes } = get();
-        if (enabledThemes.includes(theme)) {
-          // Don't allow removing the last enabled theme
-          if (enabledThemes.length > 1) {
-            set({ enabledThemes: enabledThemes.filter((t) => t !== theme) });
-          }
-        } else {
-          set({ enabledThemes: [...enabledThemes, theme] });
-        }
-      },
-      cycleTheme: () => {
-        const { theme, enabledThemes } = get();
-        if (enabledThemes.length === 0) return;
-        const currentIndex = enabledThemes.indexOf(theme);
-        const nextIndex = (currentIndex + 1) % enabledThemes.length;
-        set({ theme: enabledThemes[nextIndex] });
+      toggleThemes: DEFAULT_TOGGLE_THEMES,
+      setToggleThemes: (toggleThemes) => set({ toggleThemes }),
+      toggleTheme: () => {
+        const { theme, toggleThemes } = get();
+        const next = theme === toggleThemes[0] ? toggleThemes[1] : toggleThemes[0];
+        set({ theme: next });
       },
       dashboardBackground: 'none',
       setDashboardBackground: (dashboardBackground) => set({ dashboardBackground }),

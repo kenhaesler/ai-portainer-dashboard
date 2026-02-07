@@ -1310,39 +1310,23 @@ aside nav:hover {
   overflow: hidden;
 }
 
-/* --- 70s: warm flowing wave stripes --- */
+/* --- 70s: warm ambient color washes --- */
 .retro-70s-bg { background: #f4edd8; }
 
 .retro-70s-top {
   position: absolute;
   inset: 0;
-  background: repeating-radial-gradient(
-    ellipse 140% 100% at -20% 30%,
-    #c8a35c 0px, #c8a35c 20px,
-    #f0e6cf 20px, #f0e6cf 36px,
-    #8aafa3 36px, #8aafa3 56px,
-    #f0e6cf 56px, #f0e6cf 72px,
-    #cf8a72 72px, #cf8a72 92px,
-    #f0e6cf 92px, #f0e6cf 112px
-  );
-  mask-image: linear-gradient(180deg, black 0%, black 25%, transparent 55%);
-  -webkit-mask-image: linear-gradient(180deg, black 0%, black 25%, transparent 55%);
+  background:
+    radial-gradient(ellipse 70% 60% at 10% 15%, rgba(200, 163, 92, 0.35) 0%, transparent 100%),
+    radial-gradient(ellipse 50% 50% at 80% 10%, rgba(138, 175, 163, 0.3) 0%, transparent 100%);
 }
 
 .retro-70s-bottom {
   position: absolute;
   inset: 0;
-  background: repeating-radial-gradient(
-    ellipse 140% 100% at 120% 70%,
-    #cf8a72 0px, #cf8a72 20px,
-    #f0e6cf 20px, #f0e6cf 36px,
-    #c8a35c 36px, #c8a35c 56px,
-    #f0e6cf 56px, #f0e6cf 72px,
-    #8aafa3 72px, #8aafa3 92px,
-    #f0e6cf 92px, #f0e6cf 112px
-  );
-  mask-image: linear-gradient(0deg, black 0%, black 25%, transparent 55%);
-  -webkit-mask-image: linear-gradient(0deg, black 0%, black 25%, transparent 55%);
+  background:
+    radial-gradient(ellipse 60% 55% at 85% 85%, rgba(207, 138, 114, 0.35) 0%, transparent 100%),
+    radial-gradient(ellipse 45% 45% at 25% 90%, rgba(200, 163, 92, 0.25) 0%, transparent 100%);
 }
 
 /* --- Arcade: neon grid on dark --- */
@@ -1452,6 +1436,10 @@ aside nav:hover {
 /* Mobile safe area insets for bottom nav */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pb-safe-comfort {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
 }
 
 /* Mobile responsive table scrolling */

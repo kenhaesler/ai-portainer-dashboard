@@ -134,7 +134,7 @@ export function MobileBottomNav() {
 
       {/* Bottom Navigation Bar */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t bg-background/95 backdrop-blur-xl pb-safe md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t bg-background/95 backdrop-blur-xl pb-safe-comfort md:hidden"
         role="navigation"
         aria-label="Mobile navigation"
       >

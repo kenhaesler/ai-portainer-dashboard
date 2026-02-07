@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DefaultLandingPagePreference, LlmSettingsSection } from './settings';
+import { DefaultLandingPagePreference, LlmSettingsSection, getRedisSystemInfo } from './settings';
 
 const mockGet = vi.fn();
 const mockPatch = vi.fn();
@@ -215,5 +215,39 @@ describe('LlmSettingsSection', () => {
     );
 
     expect(screen.getByText('Requires restart')).toBeInTheDocument();
+  });
+});
+
+describe('getRedisSystemInfo', () => {
+  it('returns unknown state when cache stats are unavailable', () => {
+    expect(getRedisSystemInfo()).toEqual({
+      status: 'Unknown',
+      details: 'Cache stats unavailable',
+      keys: 'N/A',
+    });
+  });
+
+  it('returns active Redis state when multi-layer cache backend is enabled', () => {
+    expect(getRedisSystemInfo({
+      backend: 'multi-layer',
+      l1Size: 2,
+      l2Size: 9,
+    })).toEqual({
+      status: 'Active',
+      details: 'Using Redis + in-memory cache',
+      keys: '9',
+    });
+  });
+
+  it('returns inactive Redis state when backend falls back to memory-only', () => {
+    expect(getRedisSystemInfo({
+      backend: 'memory-only',
+      l1Size: 7,
+      l2Size: 0,
+    })).toEqual({
+      status: 'Inactive (Memory fallback)',
+      details: 'Using in-memory cache only',
+      keys: 'N/A',
+    });
   });
 });
