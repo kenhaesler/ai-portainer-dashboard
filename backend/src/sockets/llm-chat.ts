@@ -5,10 +5,16 @@ import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { getEffectiveLlmConfig } from '../services/settings-store.js';
+import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
 
 const log = createChildLogger('socket:llm');
+
+/** Rough token estimate: ~4 chars per token for English text */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
 
 function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
@@ -200,6 +206,8 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         ...history.slice(-20), // Keep last 20 messages
       ];
 
+      const startTime = Date.now();
+
       try {
         abortController = new AbortController();
         socket.emit('chat:start');
@@ -279,12 +287,51 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           content: fullResponse
         });
 
+        // Record LLM trace
+        const latencyMs = Date.now() - startTime;
+        const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
+        const completionTokens = estimateTokens(fullResponse);
+        try {
+          insertLlmTrace({
+            trace_id: randomUUID(),
+            session_id: socket.id,
+            model: selectedModel,
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+            latency_ms: latencyMs,
+            status: 'success',
+            user_query: data.text.slice(0, 500),
+            response_preview: fullResponse.slice(0, 500),
+          });
+        } catch (traceErr) {
+          log.warn({ err: traceErr }, 'Failed to record LLM trace');
+        }
+
         log.debug({ userId, messageLength: data.text.length, responseLength: fullResponse.length }, 'LLM chat completed');
       } catch (err) {
         log.error({ err, userId }, 'LLM chat error');
         socket.emit('chat:error', {
           message: err instanceof Error ? err.message : 'LLM unavailable',
         });
+
+        // Record error trace
+        try {
+          insertLlmTrace({
+            trace_id: randomUUID(),
+            session_id: socket.id,
+            model: selectedModel,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            latency_ms: Date.now() - startTime,
+            status: 'error',
+            user_query: data.text.slice(0, 500),
+            response_preview: err instanceof Error ? err.message.slice(0, 500) : 'Unknown error',
+          });
+        } catch (traceErr) {
+          log.warn({ err: traceErr }, 'Failed to record LLM error trace');
+        }
       } finally {
         abortController = null;
       }

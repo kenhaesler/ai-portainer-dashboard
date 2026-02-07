@@ -1,10 +1,17 @@
 import { Ollama } from 'ollama';
+import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
+import { insertLlmTrace } from './llm-trace-store.js';
 import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normalizers.js';
 import type { Insight } from '../models/monitoring.js';
 
 const log = createChildLogger('llm-client');
+
+/** Rough token estimate: ~4 chars per token for English text */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
 
 function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
@@ -30,11 +37,15 @@ export async function chatStream(
   onChunk: (chunk: string) => void,
 ): Promise<string> {
   const llmConfig = getEffectiveLlmConfig();
+  const startTime = Date.now();
 
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...messages,
   ];
+
+  // Extract user query from the last user message (for trace recording)
+  const userQuery = [...messages].reverse().find((m) => m.role === 'user')?.content;
 
   let fullResponse = '';
 
@@ -102,9 +113,46 @@ export async function chatStream(
       }
     }
 
+    const latencyMs = Date.now() - startTime;
+    const promptTokens = estimateTokens(fullMessages.map((m) => m.content).join(''));
+    const completionTokens = estimateTokens(fullResponse);
+
+    try {
+      insertLlmTrace({
+        trace_id: randomUUID(),
+        model: llmConfig.model,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: promptTokens + completionTokens,
+        latency_ms: latencyMs,
+        status: 'success',
+        user_query: userQuery?.slice(0, 500),
+        response_preview: fullResponse.slice(0, 500),
+      });
+    } catch (traceErr) {
+      log.warn({ err: traceErr }, 'Failed to record LLM trace');
+    }
+
     log.debug({ model: llmConfig.model, responseLength: fullResponse.length }, 'Chat stream completed');
     return fullResponse;
   } catch (err) {
+    const latencyMs = Date.now() - startTime;
+    try {
+      insertLlmTrace({
+        trace_id: randomUUID(),
+        model: llmConfig.model,
+        prompt_tokens: estimateTokens(fullMessages.map((m) => m.content).join('')),
+        completion_tokens: 0,
+        total_tokens: estimateTokens(fullMessages.map((m) => m.content).join('')),
+        latency_ms: latencyMs,
+        status: 'error',
+        user_query: userQuery?.slice(0, 500),
+        response_preview: err instanceof Error ? err.message.slice(0, 500) : 'Unknown error',
+      });
+    } catch (traceErr) {
+      log.warn({ err: traceErr }, 'Failed to record LLM error trace');
+    }
+
     log.error({ err }, 'Ollama chat stream failed');
     throw err;
   }

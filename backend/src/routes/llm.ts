@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { Ollama } from 'ollama';
+import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
 import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { getEffectiveLlmConfig } from '../services/settings-store.js';
+import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('route:llm');
@@ -36,6 +38,11 @@ For inline answers (simple factual questions):
 
 INFRASTRUCTURE CONTEXT:
 `;
+
+/** Rough token estimate: ~4 chars per token for English text */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
 
 function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
@@ -96,6 +103,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
   }, async (request) => {
     const llmConfig = getEffectiveLlmConfig();
     const { query } = request.body;
+    const startTime = Date.now();
 
     try {
       const infraContext = await getInfrastructureSummary();
@@ -140,6 +148,26 @@ export async function llmRoutes(fastify: FastifyInstance) {
         fullResponse = response.message?.content || '';
       }
 
+      // Record success trace
+      const latencyMs = Date.now() - startTime;
+      const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
+      const completionTokens = estimateTokens(fullResponse);
+      try {
+        insertLlmTrace({
+          trace_id: randomUUID(),
+          model: llmConfig.model,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+          latency_ms: latencyMs,
+          status: 'success',
+          user_query: query.slice(0, 500),
+          response_preview: fullResponse.slice(0, 500),
+        });
+      } catch (traceErr) {
+        log.warn({ err: traceErr }, 'Failed to record LLM trace');
+      }
+
       // Parse the LLM response as JSON
       const parsed = JSON.parse(fullResponse.trim());
 
@@ -167,6 +195,23 @@ export async function llmRoutes(fastify: FastifyInstance) {
         description: 'Raw LLM response',
       };
     } catch (err) {
+      // Record error trace
+      try {
+        insertLlmTrace({
+          trace_id: randomUUID(),
+          model: llmConfig.model,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+          latency_ms: Date.now() - startTime,
+          status: 'error',
+          user_query: query.slice(0, 500),
+          response_preview: err instanceof Error ? err.message.slice(0, 500) : 'Unknown error',
+        });
+      } catch (traceErr) {
+        log.warn({ err: traceErr }, 'Failed to record LLM error trace');
+      }
+
       log.error({ err, query }, 'LLM query failed');
       return {
         action: 'error',

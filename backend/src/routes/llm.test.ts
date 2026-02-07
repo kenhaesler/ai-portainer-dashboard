@@ -15,6 +15,12 @@ vi.mock('../services/settings-store.js', () => ({
   getSetting: vi.fn().mockReturnValue(undefined),
 }));
 
+// Mock llm-trace-store
+const mockInsertLlmTrace = vi.fn();
+vi.mock('../services/llm-trace-store.js', () => ({
+  insertLlmTrace: (...args: unknown[]) => mockInsertLlmTrace(...args),
+}));
+
 // Mock Ollama
 const mockChat = vi.fn();
 const mockList = vi.fn();
@@ -237,6 +243,43 @@ describe('LLM Routes', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.action).toBe('error');
+    });
+
+    it('records a success trace after successful query', async () => {
+      mockChat.mockResolvedValue({
+        message: { content: JSON.stringify({ action: 'answer', text: 'hello', description: 'test' }) },
+      });
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'test query for tracing' },
+      });
+
+      expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
+      const trace = mockInsertLlmTrace.mock.calls[0][0];
+      expect(trace.model).toBe('llama3.2');
+      expect(trace.status).toBe('success');
+      expect(trace.user_query).toBe('test query for tracing');
+      expect(trace.latency_ms).toBeGreaterThanOrEqual(0);
+      expect(trace.prompt_tokens).toBeGreaterThan(0);
+      expect(trace.trace_id).toBeDefined();
+    });
+
+    it('records an error trace on LLM failure', async () => {
+      mockChat.mockRejectedValue(new Error('Connection refused'));
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'failing query' },
+      });
+
+      expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
+      const trace = mockInsertLlmTrace.mock.calls[0][0];
+      expect(trace.status).toBe('error');
+      expect(trace.user_query).toBe('failing query');
+      expect(trace.response_preview).toContain('Connection refused');
     });
 
     it('validates query minimum length', async () => {
