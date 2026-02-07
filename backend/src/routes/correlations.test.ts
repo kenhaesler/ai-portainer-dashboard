@@ -29,7 +29,7 @@ describe('Correlation Routes', () => {
   });
 
   it('GET /api/anomalies/correlated returns correlated anomalies', async () => {
-    mockDetectCorrelated.mockReturnValue([
+    mockDetectCorrelated.mockResolvedValue([
       {
         containerId: 'abc',
         containerName: 'web',
@@ -57,7 +57,7 @@ describe('Correlation Routes', () => {
   });
 
   it('returns empty array when no correlated anomalies', async () => {
-    mockDetectCorrelated.mockReturnValue([]);
+    mockDetectCorrelated.mockResolvedValue([]);
 
     const res = await app.inject({
       method: 'GET',

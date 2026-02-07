@@ -16,7 +16,7 @@ const modelCache = new Map<string, CachedModel>();
 
 const MIN_TRAINING_SAMPLES = 50;
 
-export function getOrTrainModel(containerId: string): IsolationForest | null {
+export async function getOrTrainModel(containerId: string): Promise<IsolationForest | null> {
   const config = getConfig();
   const now = Date.now();
   const retrainIntervalMs = config.ISOLATION_FOREST_RETRAIN_INTERVAL * 60 * 60 * 1000;
@@ -31,8 +31,8 @@ export function getOrTrainModel(containerId: string): IsolationForest | null {
   const to = new Date().toISOString();
   const from = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const cpuMetrics = getMetrics(containerId, 'cpu', from, to);
-  const memoryMetrics = getMetrics(containerId, 'memory', from, to);
+  const cpuMetrics = await getMetrics(containerId, 'cpu', from, to);
+  const memoryMetrics = await getMetrics(containerId, 'memory', from, to);
 
   if (cpuMetrics.length < MIN_TRAINING_SAMPLES || memoryMetrics.length < MIN_TRAINING_SAMPLES) {
     log.debug(
@@ -67,15 +67,15 @@ export function getOrTrainModel(containerId: string): IsolationForest | null {
   return forest;
 }
 
-export function detectAnomalyIsolationForest(
+export async function detectAnomalyIsolationForest(
   containerId: string,
   containerName: string,
   metricType: string,
   currentValue: number,
   cpuValue: number,
   memoryValue: number,
-): AnomalyDetection | null {
-  const forest = getOrTrainModel(containerId);
+): Promise<AnomalyDetection | null> {
+  const forest = await getOrTrainModel(containerId);
   if (!forest) return null;
 
   const score = forest.anomalyScore([cpuValue, memoryValue]);

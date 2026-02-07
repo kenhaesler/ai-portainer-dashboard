@@ -8,6 +8,10 @@ vi.mock('../db/sqlite.js', () => ({
   isDbHealthy: vi.fn(),
 }));
 
+vi.mock('../db/timescale.js', () => ({
+  isMetricsDbHealthy: vi.fn(),
+}));
+
 vi.mock('../config/index.js', () => ({
   getConfig: () => ({
     PORTAINER_API_URL: 'http://localhost:9000',
@@ -18,7 +22,9 @@ vi.mock('../config/index.js', () => ({
 
 // Get mocked functions
 import { isDbHealthy } from '../db/sqlite.js';
+import { isMetricsDbHealthy } from '../db/timescale.js';
 const mockIsDbHealthy = vi.mocked(isDbHealthy);
+const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -71,6 +77,7 @@ describe('Health Routes', () => {
   describe('GET /health/ready', () => {
     it('should return healthy when all checks pass', async () => {
       mockIsDbHealthy.mockReturnValue(true);
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
 
       const response = await app.inject({
@@ -88,6 +95,7 @@ describe('Health Routes', () => {
 
     it('should return unhealthy when database fails', async () => {
       mockIsDbHealthy.mockReturnValue(false);
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
 
       const response = await app.inject({
@@ -150,6 +158,7 @@ describe('Health Routes', () => {
 
     it('should include URLs in check responses', async () => {
       mockIsDbHealthy.mockReturnValue(true);
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
 
       const response = await app.inject({
@@ -164,6 +173,7 @@ describe('Health Routes', () => {
 
     it('should include timestamp in response', async () => {
       mockIsDbHealthy.mockReturnValue(true);
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
 
       const response = await app.inject({
@@ -179,6 +189,7 @@ describe('Health Routes', () => {
 
     it('should handle all services unhealthy', async () => {
       mockIsDbHealthy.mockReturnValue(false);
+      mockIsMetricsDbHealthy.mockResolvedValue(false);
       mockFetch.mockRejectedValue(new Error('Network error'));
 
       const response = await app.inject({

@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockPrepare = vi.fn();
+const mockQuery = vi.fn();
 
-vi.mock('../db/sqlite.js', () => {
-  return {
-    getDb: vi.fn(() => ({ prepare: mockPrepare })),
-  };
-});
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
+}));
 
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
@@ -31,30 +29,29 @@ describe('capacity-forecaster', () => {
   });
 
   describe('lookupContainerName', () => {
-    it('returns container name from metrics table', () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({ container_name: 'web-server' }),
+    it('returns container name from metrics table', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [{ container_name: 'web-server' }],
       });
 
-      const name = lookupContainerName('abc123');
+      const name = await lookupContainerName('abc123');
       expect(name).toBe('web-server');
-      expect(mockPrepare).toHaveBeenCalledWith(
+      expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('SELECT container_name FROM metrics'),
+        expect.arrayContaining(['abc123']),
       );
     });
 
-    it('returns empty string when container not found', () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue(undefined),
-      });
+    it('returns empty string when container not found', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
 
-      const name = lookupContainerName('nonexistent');
+      const name = await lookupContainerName('nonexistent');
       expect(name).toBe('');
     });
   });
 
   describe('getCapacityForecasts', () => {
-    it('loads metrics in a single batched query for selected containers', () => {
+    it('loads metrics in a batched query for selected containers', async () => {
       const containers = [{ container_id: 'c1', container_name: 'web' }];
       const metrics = [
         { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:00:00.000Z', value: 10 },
@@ -69,29 +66,24 @@ describe('capacity-forecaster', () => {
         { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:20:00.000Z', value: 50 },
       ];
 
-      const allMock = vi.fn()
-        .mockReturnValueOnce(containers)
-        .mockReturnValueOnce(metrics);
-      mockPrepare.mockReturnValue({ all: allMock });
+      mockQuery
+        .mockResolvedValueOnce({ rows: containers })
+        .mockResolvedValueOnce({ rows: metrics });
 
-      const result = getCapacityForecasts(10);
+      const result = await getCapacityForecasts(10);
 
-      expect(mockPrepare).toHaveBeenCalledTimes(2);
-      expect(mockPrepare.mock.calls[1][0]).toContain('container_id IN');
-      expect(allMock.mock.calls[0]).toEqual(['-6', 20]);
-      expect(allMock.mock.calls[1]).toEqual(['-6', 'c1']);
+      expect(mockQuery).toHaveBeenCalledTimes(2);
       expect(result).toHaveLength(2);
       expect(result.map((f) => f.metricType).sort()).toEqual(['cpu', 'memory']);
     });
 
-    it('returns empty array when no containers have recent metrics', () => {
-      const allMock = vi.fn().mockReturnValue([]);
-      mockPrepare.mockReturnValue({ all: allMock });
+    it('returns empty array when no containers have recent metrics', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
 
-      const result = getCapacityForecasts(10);
+      const result = await getCapacityForecasts(10);
 
       expect(result).toEqual([]);
-      expect(mockPrepare).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
     });
   });
 

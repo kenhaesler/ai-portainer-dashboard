@@ -28,7 +28,7 @@ export async function forecastRoutes(fastify: FastifyInstance) {
     const { limit } = request.query as z.infer<typeof ForecastsQuerySchema>;
     const safeLimit = Math.max(1, Math.min(50, Math.floor(limit ?? 10)));
     const startedAt = Date.now();
-    const forecasts = getCapacityForecasts(safeLimit);
+    const forecasts = await getCapacityForecasts(safeLimit);
     request.log.info({
       limit: safeLimit,
       forecastCount: forecasts.length,
@@ -49,8 +49,8 @@ export async function forecastRoutes(fastify: FastifyInstance) {
   }, async (request) => {
     const { containerId } = request.params as z.infer<typeof ForecastParamsSchema>;
     const { metric, hours } = request.query as z.infer<typeof ForecastDetailQuerySchema>;
-    const containerName = lookupContainerName(containerId);
-    const forecast = generateForecast(
+    const containerName = await lookupContainerName(containerId);
+    const forecast = await generateForecast(
       containerId,
       containerName,
       metric,
