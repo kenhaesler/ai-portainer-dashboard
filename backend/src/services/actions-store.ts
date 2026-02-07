@@ -20,24 +20,45 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   executing: ['completed', 'failed'],
 };
 
-export function insertAction(action: ActionInsert): void {
+export function insertAction(action: ActionInsert): boolean {
   const db = getDb();
-  db.prepare(`
-    INSERT INTO actions (
-      id, insight_id, endpoint_id, container_id, container_name,
-      action_type, rationale, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
-  `).run(
-    action.id,
-    action.insight_id,
-    action.endpoint_id,
-    action.container_id,
-    action.container_name,
-    action.action_type,
-    action.rationale,
-  );
+  try {
+    const result = db.prepare(`
+      INSERT INTO actions (
+        id, insight_id, endpoint_id, container_id, container_name,
+        action_type, rationale, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+    `).run(
+      action.id,
+      action.insight_id,
+      action.endpoint_id,
+      action.container_id,
+      action.container_name,
+      action.action_type,
+      action.rationale,
+    );
 
-  log.info({ actionId: action.id, actionType: action.action_type }, 'Action created');
+    if (result.changes > 0) {
+      log.info({ actionId: action.id, actionType: action.action_type }, 'Action created');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    const isUniqueViolation = (
+      typeof err === 'object'
+      && err !== null
+      && 'code' in err
+      && (err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+    );
+    if (isUniqueViolation) {
+      log.debug(
+        { containerId: action.container_id, actionType: action.action_type },
+        'Skipped duplicate pending action at insert time',
+      );
+      return false;
+    }
+    throw err;
+  }
 }
 
 export interface GetActionsOptions {

@@ -28,6 +28,8 @@ import { suggestAction } from './remediation-service.js';
 describe('remediation-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockInsertAction.mockReturnValue(true);
+    mockHasPendingAction.mockReturnValue(false);
   });
 
   it('maps OOM insights to STOP_CONTAINER and broadcasts', () => {
@@ -81,6 +83,25 @@ describe('remediation-service', () => {
     expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
     expect(mockHasPendingAction).toHaveBeenCalledWith('container-2', 'RESTART_CONTAINER');
     expect(mockInsertAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not broadcast when insert is rejected by unique constraint', () => {
+    mockHasPendingAction.mockReturnValue(false);
+    mockInsertAction.mockReturnValue(false);
+
+    const result = suggestAction({
+      id: 'insight-5',
+      title: 'OOM detected',
+      description: 'out of memory',
+      suggested_action: '',
+      container_id: 'container-3',
+      container_name: 'worker',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).toBeNull();
+    expect(mockInsertAction).toHaveBeenCalledTimes(1);
+    expect(mockBroadcastNewAction).not.toHaveBeenCalled();
   });
 
   it('allows different action types for same container', () => {
