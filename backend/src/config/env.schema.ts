@@ -4,7 +4,7 @@ export const envSchema = z.object({
   // Auth
   DASHBOARD_USERNAME: z.string().min(1).default('admin'),
   DASHBOARD_PASSWORD: z.string().min(8).default('changeme123'),
-  JWT_SECRET: z.string().min(32).default('dev-secret-change-in-production-must-be-at-least-32-chars'),
+  JWT_SECRET: z.string().min(32),
 
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
