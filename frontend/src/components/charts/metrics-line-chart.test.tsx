@@ -49,6 +49,12 @@ const mockExplanations: AnomalyExplanation[] = [
   },
 ];
 
+/** Click the first anomaly dot via its data-testid */
+function clickAnomalyDot() {
+  const dot = screen.getByTestId('anomaly-dot');
+  fireEvent.click(dot);
+}
+
 describe('MetricsLineChart', () => {
   it('renders "No metrics data" when data is empty', () => {
     render(<MetricsLineChart data={[]} label="CPU" />);
@@ -76,10 +82,7 @@ describe('MetricsLineChart', () => {
       />,
     );
 
-    // Click the anomaly dot (rendered as a circle via ClickableAnomalyDot)
-    const circle = document.querySelector('circle');
-    expect(circle).toBeTruthy();
-    fireEvent.click(circle!);
+    clickAnomalyDot();
 
     // Should show the explanation card
     expect(screen.getByText('CPU anomaly detected')).toBeInTheDocument();
@@ -98,8 +101,7 @@ describe('MetricsLineChart', () => {
       />,
     );
 
-    const circle = document.querySelector('circle');
-    fireEvent.click(circle!);
+    clickAnomalyDot();
 
     expect(screen.getByText(/Value exceeded the 80% warning threshold/)).toBeInTheDocument();
     expect(screen.getByText('warning')).toBeInTheDocument();
@@ -115,12 +117,11 @@ describe('MetricsLineChart', () => {
       />,
     );
 
-    const circle = document.querySelector('circle');
-    fireEvent.click(circle!);
+    clickAnomalyDot();
     expect(screen.getByText('CPU anomaly detected')).toBeInTheDocument();
 
     // Click again to dismiss
-    fireEvent.click(circle!);
+    clickAnomalyDot();
     expect(screen.queryByText('CPU anomaly detected')).not.toBeInTheDocument();
   });
 
@@ -134,8 +135,7 @@ describe('MetricsLineChart', () => {
       />,
     );
 
-    const circle = document.querySelector('circle');
-    fireEvent.click(circle!);
+    clickAnomalyDot();
     expect(screen.getByText('CPU anomaly detected')).toBeInTheDocument();
 
     // Click the X button
@@ -162,8 +162,7 @@ describe('MetricsLineChart', () => {
       />,
     );
 
-    const circle = document.querySelector('circle');
-    fireEvent.click(circle!);
+    clickAnomalyDot();
 
     expect(screen.getByText('CPU at 92% with high z-score')).toBeInTheDocument();
   });
