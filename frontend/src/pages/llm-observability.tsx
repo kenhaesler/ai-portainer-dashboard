@@ -126,6 +126,7 @@ export default function LlmObservabilityPage() {
 
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useLlmStats(timeRange);
   const { data: traces, isLoading: tracesLoading, refetch: refetchTraces } = useLlmTraces(50);
+  const modelBreakdown = stats?.modelBreakdown ?? [];
 
   const handleRefresh = () => {
     refetchStats();
@@ -208,7 +209,7 @@ export default function LlmObservabilityPage() {
           {/* Model Breakdown */}
           <div className="rounded-lg border bg-card p-6">
             <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
-            {stats.modelBreakdown.length === 0 ? (
+            {modelBreakdown.length === 0 ? (
               <p className="text-sm text-muted-foreground">No model data available.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -221,7 +222,7 @@ export default function LlmObservabilityPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {stats.modelBreakdown.map((model) => (
+                    {modelBreakdown.map((model) => (
                       <tr key={model.model} className="border-b last:border-0">
                         <td className="py-2 font-mono text-xs">{model.model}</td>
                         <td className="py-2 text-right">{model.count.toLocaleString()}</td>

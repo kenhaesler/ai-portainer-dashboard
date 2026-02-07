@@ -28,10 +28,47 @@ export interface LlmStats {
   modelBreakdown: Array<{ model: string; count: number; tokens: number }>;
 }
 
+function asNumber(value: unknown, fallback: number = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeLlmStats(payload: unknown): LlmStats {
+  const raw = (payload && typeof payload === 'object') ? payload as Record<string, unknown> : {};
+  const modelBreakdownRaw = raw.modelBreakdown;
+  const modelBreakdown = Array.isArray(modelBreakdownRaw)
+    ? modelBreakdownRaw.map((entry) => {
+      const item = (entry && typeof entry === 'object') ? entry as Record<string, unknown> : {};
+      return {
+        model: typeof item.model === 'string' ? item.model : 'unknown',
+        count: asNumber(item.count),
+        tokens: asNumber(item.tokens),
+      };
+    })
+    : [];
+
+  return {
+    totalQueries: asNumber(raw.totalQueries),
+    totalTokens: asNumber(raw.totalTokens),
+    avgLatencyMs: asNumber(raw.avgLatencyMs),
+    errorRate: asNumber(raw.errorRate),
+    avgFeedbackScore: asNullableNumber(raw.avgFeedbackScore),
+    feedbackCount: asNumber(raw.feedbackCount),
+    modelBreakdown,
+  };
+}
+
+function normalizeLlmTraces(payload: unknown): LlmTrace[] {
+  return Array.isArray(payload) ? payload as LlmTrace[] : [];
+}
+
 export function useLlmTraces(limit: number = 50) {
   return useQuery<LlmTrace[]>({
     queryKey: ['llm-traces', limit],
-    queryFn: () => api.get<LlmTrace[]>(`/api/llm/traces?limit=${limit}`),
+    queryFn: async () => normalizeLlmTraces(await api.get<unknown>(`/api/llm/traces?limit=${limit}`)),
     staleTime: 30 * 1000,
   });
 }
@@ -39,7 +76,7 @@ export function useLlmTraces(limit: number = 50) {
 export function useLlmStats(hours: number = 24) {
   return useQuery<LlmStats>({
     queryKey: ['llm-stats', hours],
-    queryFn: () => api.get<LlmStats>(`/api/llm/stats?hours=${hours}`),
+    queryFn: async () => normalizeLlmStats(await api.get<unknown>(`/api/llm/stats?hours=${hours}`)),
     staleTime: 60 * 1000,
   });
 }

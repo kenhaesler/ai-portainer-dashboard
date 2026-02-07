@@ -25,6 +25,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+import { api } from '@/lib/api';
 import { useLlmStats, useLlmTraces } from './use-llm-observability';
 
 function createWrapper() {
@@ -39,6 +40,20 @@ describe('useLlmStats', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.totalQueries).toBe(50);
     expect(result.current.data?.avgLatencyMs).toBe(800);
+  });
+
+  it('normalizes partial stats payload without crashing', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      totalQueries: 12,
+      totalTokens: 900,
+      // modelBreakdown intentionally missing
+    });
+
+    const { result } = renderHook(() => useLlmStats(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.totalQueries).toBe(12);
+    expect(result.current.data?.modelBreakdown).toEqual([]);
+    expect(result.current.data?.errorRate).toBe(0);
   });
 });
 
