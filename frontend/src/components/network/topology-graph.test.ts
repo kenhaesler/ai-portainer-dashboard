@@ -9,6 +9,8 @@ import {
   hasUnhealthyContainers,
   getStackTraffic,
   sortStacks,
+  getHandleForAngle,
+  getBestHandles,
   type ContainerData,
   type NetworkData,
 } from './topology-graph';
@@ -428,5 +430,95 @@ describe('sortStacks', () => {
     );
     // sick first, then busy, then quiet, Standalone last
     expect(sorted).toEqual(['sick-stack', 'healthy-busy', 'healthy-quiet', 'Standalone']);
+  });
+});
+
+// --- getHandleForAngle ---
+describe('getHandleForAngle', () => {
+  it('returns "right" for angle 0 (pointing right)', () => {
+    expect(getHandleForAngle(0)).toBe('right');
+  });
+
+  it('returns "bottom" for angle π/2 (pointing down)', () => {
+    expect(getHandleForAngle(Math.PI / 2)).toBe('bottom');
+  });
+
+  it('returns "left" for angle π (pointing left)', () => {
+    expect(getHandleForAngle(Math.PI)).toBe('left');
+  });
+
+  it('returns "top" for angle 3π/2 (pointing up)', () => {
+    expect(getHandleForAngle((3 * Math.PI) / 2)).toBe('top');
+  });
+
+  it('returns "right" for small negative angle', () => {
+    expect(getHandleForAngle(-0.1)).toBe('right');
+  });
+
+  it('returns "right" for angle just below π/4', () => {
+    expect(getHandleForAngle(Math.PI / 4 - 0.01)).toBe('right');
+  });
+
+  it('returns "bottom" for angle exactly π/4', () => {
+    expect(getHandleForAngle(Math.PI / 4)).toBe('bottom');
+  });
+
+  it('returns "left" for angle just past 3π/4', () => {
+    expect(getHandleForAngle((3 * Math.PI) / 4 + 0.01)).toBe('left');
+  });
+
+  it('returns "top" for angle just past 5π/4', () => {
+    expect(getHandleForAngle((5 * Math.PI) / 4 + 0.01)).toBe('top');
+  });
+
+  it('returns "right" for angle just past 7π/4', () => {
+    expect(getHandleForAngle((7 * Math.PI) / 4 + 0.01)).toBe('right');
+  });
+
+  it('normalizes angles > 2π', () => {
+    expect(getHandleForAngle(2 * Math.PI + Math.PI / 2)).toBe('bottom');
+  });
+
+  it('normalizes large negative angles', () => {
+    expect(getHandleForAngle(-Math.PI)).toBe('left');
+  });
+});
+
+// --- getBestHandles ---
+describe('getBestHandles', () => {
+  it('returns right/left when target is to the right', () => {
+    const result = getBestHandles({ x: 0, y: 0 }, { x: 100, y: 0 });
+    expect(result.sourceHandle).toBe('right');
+    expect(result.targetHandle).toBe('left');
+  });
+
+  it('returns left/right when target is to the left', () => {
+    const result = getBestHandles({ x: 100, y: 0 }, { x: 0, y: 0 });
+    expect(result.sourceHandle).toBe('left');
+    expect(result.targetHandle).toBe('right');
+  });
+
+  it('returns bottom/top when target is below', () => {
+    const result = getBestHandles({ x: 0, y: 0 }, { x: 0, y: 100 });
+    expect(result.sourceHandle).toBe('bottom');
+    expect(result.targetHandle).toBe('top');
+  });
+
+  it('returns top/bottom when target is above', () => {
+    const result = getBestHandles({ x: 0, y: 100 }, { x: 0, y: 0 });
+    expect(result.sourceHandle).toBe('top');
+    expect(result.targetHandle).toBe('bottom');
+  });
+
+  it('returns right/left for diagonal down-right', () => {
+    const result = getBestHandles({ x: 0, y: 0 }, { x: 100, y: 30 });
+    expect(result.sourceHandle).toBe('right');
+    expect(result.targetHandle).toBe('left');
+  });
+
+  it('returns bottom/top for steep diagonal down-right', () => {
+    const result = getBestHandles({ x: 0, y: 0 }, { x: 30, y: 100 });
+    expect(result.sourceHandle).toBe('bottom');
+    expect(result.targetHandle).toBe('top');
   });
 });

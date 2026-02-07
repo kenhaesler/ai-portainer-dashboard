@@ -227,7 +227,7 @@ export function AppLayout() {
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
-              className="h-full"
+              className="h-auto"
               custom={direction}
               initial={reducedMotion ? false : 'initial'}
               animate="animate"

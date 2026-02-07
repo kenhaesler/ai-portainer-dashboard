@@ -7,7 +7,8 @@ export function NetworkNode({ data }: NodeProps) {
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <Handle type="target" position={Position.Top} className="!bg-gray-400" />
+      <Handle id="top" type="target" position={Position.Top} className="!bg-gray-400" />
+      <Handle id="right" type="target" position={Position.Right} className="!bg-gray-400" />
       <div
         className="h-12 w-12 rotate-45 border-2 border-blue-500 bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"
         title={`${label} (${driver})`}
@@ -25,7 +26,8 @@ export function NetworkNode({ data }: NodeProps) {
       {subnet && (
         <div className="text-[10px] text-muted-foreground">{subnet}</div>
       )}
-      <Handle type="source" position={Position.Bottom} className="!bg-gray-400" />
+      <Handle id="bottom" type="target" position={Position.Bottom} className="!bg-gray-400" />
+      <Handle id="left" type="target" position={Position.Left} className="!bg-gray-400" />
     </div>
   );
 }
