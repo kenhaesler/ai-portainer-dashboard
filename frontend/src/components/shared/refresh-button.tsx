@@ -25,7 +25,7 @@ export function RefreshButton({ onClick, isLoading, className, onForceRefresh }:
   }
 
   return (
-    <div className={cn('inline-flex h-9 items-center gap-0.5 rounded-full border border-input bg-background p-0.5', className)}>
+    <div className={cn('inline-flex h-10 items-center gap-1 rounded-full border border-input bg-background p-1', className)}>
       <button
         onClick={onClick}
         className="inline-flex h-8 items-center gap-2 rounded-full px-4 text-sm font-medium hover:bg-accent"

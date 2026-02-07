@@ -21,7 +21,7 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
   const isActive = interval > 0;
 
   return (
-    <div className={cn('inline-flex h-9 items-center gap-0.5 rounded-full border border-input bg-background p-0.5', className)}>
+    <div className={cn('inline-flex h-10 items-center gap-1 rounded-full border border-input bg-background p-1', className)}>
       {INTERVALS.map((opt) => {
         const isSelected = interval === opt.value;
         const isOff = opt.value === 0;
@@ -51,7 +51,7 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
         );
       })}
       {isActive && (
-        <span className="ml-1 mr-2 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="ml-1 mr-1.5 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
       )}
     </div>
   );
