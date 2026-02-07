@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRole } from '@/hooks/use-users';
 import { formatDate } from '@/lib/utils';
 
@@ -120,16 +121,16 @@ export default function UsersPage() {
               placeholder="Search username..."
               className="h-8 rounded-md border border-input bg-background px-2 text-sm"
             />
-            <select
+            <ThemedSelect
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as 'all' | UserRole)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="all">All Roles</option>
-              <option value="admin">Admin</option>
-              <option value="operator">Operator</option>
-              <option value="viewer">Viewer</option>
-            </select>
+              onValueChange={(val) => setRoleFilter(val as 'all' | UserRole)}
+              options={[
+                { value: 'all', label: 'All Roles' },
+                { value: 'admin', label: 'Admin' },
+                { value: 'operator', label: 'Operator' },
+                { value: 'viewer', label: 'Viewer' },
+              ]}
+            />
           </div>
 
           {usersQuery.isLoading ? (
@@ -223,18 +224,19 @@ export default function UsersPage() {
               />
             </label>
 
-            <label className="block">
+            <div className="block">
               <span className="mb-1 block text-muted-foreground">Role</span>
-              <select
+              <ThemedSelect
                 value={form.role}
-                onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as UserRole }))}
-                className="h-9 w-full rounded-md border border-input bg-background px-2"
-              >
-                <option value="admin">Admin</option>
-                <option value="operator">Operator</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </label>
+                onValueChange={(val) => setForm((prev) => ({ ...prev, role: val as UserRole }))}
+                options={[
+                  { value: 'admin', label: 'Admin' },
+                  { value: 'operator', label: 'Operator' },
+                  { value: 'viewer', label: 'Viewer' },
+                ]}
+                className="w-full"
+              />
+            </div>
 
             {errorMessage && <p className="text-xs text-destructive">{errorMessage}</p>}
 

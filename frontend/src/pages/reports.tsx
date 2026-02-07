@@ -20,6 +20,7 @@ import { useEndpoints } from '@/hooks/use-endpoints';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
+import { ThemedSelect } from '@/components/shared/themed-select';
 
 const TIME_RANGES = [
   { value: '24h', label: '24 Hours' },
@@ -195,18 +196,15 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-4">
         <div className="flex items-center gap-2">
           <Server className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={selectedEndpoint ?? ''}
-            onChange={(e) => setSelectedEndpoint(e.target.value ? Number(e.target.value) : undefined)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All endpoints</option>
-            {endpoints?.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.name}
-              </option>
-            ))}
-          </select>
+          <ThemedSelect
+            value={selectedEndpoint != null ? String(selectedEndpoint) : '__all__'}
+            onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+            options={[
+              { value: '__all__', label: 'All endpoints' },
+              ...(endpoints?.map((ep) => ({ value: String(ep.id), label: ep.name })) ?? []),
+            ]}
+            className="text-sm"
+          />
         </div>
 
         <div className="flex items-center gap-2">

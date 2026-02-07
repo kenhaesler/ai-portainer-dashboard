@@ -12,7 +12,6 @@ import {
   Filter,
   Layers,
   Timer,
-  Tag,
 } from 'lucide-react';
 import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/hooks/use-traces';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -22,6 +21,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn, formatDate } from '@/lib/utils';
+import { ThemedSelect } from '@/components/shared/themed-select';
 
 function formatDuration(ms: number): string {
   if (ms < 1) return '<1ms';
@@ -426,16 +426,15 @@ export default function TraceExplorerPage() {
 
         <div className="flex items-center gap-2">
           <Server className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={serviceFilter}
-            onChange={(e) => setServiceFilter(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All services</option>
-            {services.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          <ThemedSelect
+            value={serviceFilter || '__all__'}
+            onValueChange={(val) => setServiceFilter(val === '__all__' ? '' : val)}
+            options={[
+              { value: '__all__', label: 'All services' },
+              ...services.map((s) => ({ value: s, label: s })),
+            ]}
+            className="text-sm"
+          />
         </div>
 
         <div className="flex items-center gap-2">

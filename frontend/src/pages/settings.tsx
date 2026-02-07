@@ -32,6 +32,7 @@ import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { useLlmModels, useLlmTestConnection } from '@/hooks/use-llm-models';
 import type { LlmModel } from '@/hooks/use-llm-models';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn, formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -434,23 +435,22 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           </div>
 
           {models.length > 0 ? (
-            <select
+            <ThemedSelect
               id="llm-model-select"
               value={selectedModel}
-              onChange={(e) => onChange('llm.model', e.target.value)}
+              onValueChange={(val) => onChange('llm.model', val)}
               disabled={disabled}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-            >
-              {models.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.name}{m.size ? ` (${formatBytes(m.size)})` : ''}
-                </option>
-              ))}
-              {/* Include current value if not in the models list */}
-              {selectedModel && !models.some((m) => m.name === selectedModel) && (
-                <option value={selectedModel}>{selectedModel}</option>
-              )}
-            </select>
+              options={[
+                ...models.map((m) => ({
+                  value: m.name,
+                  label: `${m.name}${m.size ? ` (${formatBytes(m.size)})` : ''}`,
+                })),
+                ...(selectedModel && !models.some((m) => m.name === selectedModel)
+                  ? [{ value: selectedModel, label: selectedModel }]
+                  : []),
+              ]}
+              className="w-full"
+            />
           ) : (
             <input
               id="llm-model-select"
@@ -751,50 +751,47 @@ export function NotificationHistoryPanel() {
       <div className="border-b p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <label htmlFor="history-channel-filter" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Channel
             </label>
-            <select
-              id="history-channel-filter"
+            <ThemedSelect
               value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value as ChannelFilter)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-            >
-              <option value="all">All</option>
-              <option value="teams">Teams</option>
-              <option value="email">Email</option>
-            </select>
+              onValueChange={(val) => setChannelFilter(val as ChannelFilter)}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'teams', label: 'Teams' },
+                { value: 'email', label: 'Email' },
+              ]}
+            />
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="history-status-filter" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Status
             </label>
-            <select
-              id="history-status-filter"
+            <ThemedSelect
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-            >
-              <option value="all">All</option>
-              <option value="sent">Sent</option>
-              <option value="failed">Failed</option>
-            </select>
+              onValueChange={(val) => setStatusFilter(val as StatusFilter)}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'sent', label: 'Sent' },
+                { value: 'failed', label: 'Failed' },
+              ]}
+            />
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="history-date-range-filter" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Date Range
             </label>
-            <select
-              id="history-date-range-filter"
+            <ThemedSelect
               value={dateRangeFilter}
-              onChange={(e) => setDateRangeFilter(e.target.value as DateRangeFilter)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-            >
-              <option value="24h">Last 24 Hours</option>
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-              <option value="all">All Time</option>
-            </select>
+              onValueChange={(val) => setDateRangeFilter(val as DateRangeFilter)}
+              options={[
+                { value: '24h', label: 'Last 24 Hours' },
+                { value: '7d', label: 'Last 7 Days' },
+                { value: '30d', label: 'Last 30 Days' },
+                { value: 'all', label: 'All Time' },
+              ]}
+            />
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-700 dark:text-emerald-400">Sent: {sentCount}</span>
@@ -930,19 +927,16 @@ export function DefaultLandingPagePreference() {
           Default Landing Page
         </label>
         <div className="flex items-center gap-3">
-          <select
+          <ThemedSelect
             id="default-landing-page"
             value={value}
             disabled={loading || saving}
-            onChange={(e) => setValue(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          >
-            {LANDING_PAGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            onValueChange={(val) => setValue(val)}
+            options={LANDING_PAGE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+          />
           <button
             onClick={savePreference}
             disabled={loading || saving}

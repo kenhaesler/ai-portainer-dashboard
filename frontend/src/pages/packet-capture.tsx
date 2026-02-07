@@ -22,6 +22,7 @@ import {
 } from '@/hooks/use-pcap';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { ThemedSelect } from '@/components/shared/themed-select';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -117,41 +118,37 @@ export default function PacketCapture() {
           {/* Endpoint */}
           <div>
             <label className="mb-1 block text-sm font-medium">Endpoint</label>
-            <select
-              value={selectedEndpoint ?? ''}
-              onChange={(e) => {
-                const val = e.target.value ? Number(e.target.value) : undefined;
-                setSelectedEndpoint(val);
+            <ThemedSelect
+              value={selectedEndpoint != null ? String(selectedEndpoint) : '__all__'}
+              onValueChange={(val) => {
+                const resolved = val === '__all__' ? undefined : Number(val);
+                setSelectedEndpoint(resolved);
                 setSelectedContainer('');
                 setSelectedContainerName('');
               }}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            >
-              <option value="">Select endpoint...</option>
-              {endpoints?.map((ep) => (
-                <option key={ep.id} value={ep.id}>
-                  {ep.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Select endpoint..."
+              options={[
+                { value: '__all__', label: 'Select endpoint...' },
+                ...(endpoints?.map((ep) => ({ value: String(ep.id), label: ep.name })) ?? []),
+              ]}
+              className="w-full text-sm"
+            />
           </div>
 
           {/* Container */}
           <div>
             <label className="mb-1 block text-sm font-medium">Container</label>
-            <select
-              value={selectedContainer}
-              onChange={(e) => handleContainerChange(e.target.value)}
+            <ThemedSelect
+              value={selectedContainer || '__all__'}
+              onValueChange={(val) => handleContainerChange(val === '__all__' ? '' : val)}
               disabled={!selectedEndpoint}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-50"
-            >
-              <option value="">Select container...</option>
-              {runningContainers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Select container..."
+              options={[
+                { value: '__all__', label: 'Select container...' },
+                ...runningContainers.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              className="w-full text-sm"
+            />
           </div>
 
           {/* BPF Filter */}

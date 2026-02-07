@@ -6,6 +6,7 @@ import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
+import { ThemedSelect } from '@/components/shared/themed-select';
 
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
 const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
@@ -549,15 +550,15 @@ export default function LogViewerPage() {
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Endpoint</span>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-background px-2"
-              value={selectedEndpoint ?? ''}
-              onChange={(e) => setSelectedEndpoint(Number(e.target.value))}
-            >
-              {endpoints.map((endpoint) => (
-                <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
-              ))}
-            </select>
+            <ThemedSelect
+              className="h-9 w-full"
+              value={selectedEndpoint != null ? String(selectedEndpoint) : '__all__'}
+              onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+              placeholder="Select endpoint..."
+              options={[
+                ...endpoints.map((endpoint) => ({ value: String(endpoint.id), label: endpoint.name })),
+              ]}
+            />
           </label>
 
           <label className="text-sm lg:col-span-2">
@@ -576,15 +577,12 @@ export default function LogViewerPage() {
 
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Level</span>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-background px-2"
+            <ThemedSelect
+              className="h-9 w-full"
               value={level}
-              onChange={(e) => setLevel(e.target.value as LogLevel | 'all')}
-            >
-              {LEVEL_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+              onValueChange={(val) => setLevel(val as LogLevel | 'all')}
+              options={LEVEL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            />
           </label>
         </div>
 
@@ -620,17 +618,14 @@ export default function LogViewerPage() {
             <Download className="mr-1 inline h-4 w-4" />
             Export .json
           </button>
-          <label className="ml-auto text-sm">
+          <label className="ml-auto inline-flex items-center text-sm">
             <span className="mr-2 text-muted-foreground">Buffer</span>
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2"
-              value={bufferSize}
-              onChange={(e) => setBufferSize(Number(e.target.value))}
-            >
-              {BUFFER_OPTIONS.map((size) => (
-                <option key={size} value={size}>{size}</option>
-              ))}
-            </select>
+            <ThemedSelect
+              className="h-8"
+              value={String(bufferSize)}
+              onValueChange={(val) => setBufferSize(Number(val))}
+              options={BUFFER_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
+            />
           </label>
         </div>
 

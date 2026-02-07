@@ -26,6 +26,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn, formatDate } from '@/lib/utils';
+import { ThemedSelect } from '@/components/shared/themed-select';
 
 // Log levels with colors
 const LOG_LEVELS = [
@@ -389,51 +390,41 @@ export default function EdgeAgentLogsPage() {
           {/* Time Range */}
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <select
+            <ThemedSelect
               value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              {TIME_RANGES.map((range) => (
-                <option key={range.value} value={range.value}>
-                  {range.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(val) => setTimeRange(val)}
+              options={TIME_RANGES.map((range) => ({ value: range.value, label: range.label }))}
+              className="h-10 text-sm"
+            />
           </div>
 
           {/* Level Filter */}
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
-            <select
-              value={levelFilter}
-              onChange={(e) => setLevelFilter(e.target.value)}
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              {LOG_LEVELS.map((level) => (
-                <option key={level.value} value={level.value}>
-                  {level.label}
-                </option>
-              ))}
-            </select>
+            <ThemedSelect
+              value={levelFilter || '__all__'}
+              onValueChange={(val) => setLevelFilter(val === '__all__' ? '' : val)}
+              options={LOG_LEVELS.map((level) => ({
+                value: level.value || '__all__',
+                label: level.label,
+              }))}
+              className="h-10 text-sm"
+            />
           </div>
 
           {/* Hostname Filter */}
           {hostnames.length > 0 && (
             <div className="flex items-center gap-2">
               <Server className="h-4 w-4 text-muted-foreground" />
-              <select
-                value={hostnameFilter}
-                onChange={(e) => setHostnameFilter(e.target.value)}
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">All Hosts</option>
-                {hostnames.map((host) => (
-                  <option key={host} value={host}>
-                    {host}
-                  </option>
-                ))}
-              </select>
+              <ThemedSelect
+                value={hostnameFilter || '__all__'}
+                onValueChange={(val) => setHostnameFilter(val === '__all__' ? '' : val)}
+                options={[
+                  { value: '__all__', label: 'All Hosts' },
+                  ...hostnames.map((host) => ({ value: host, label: host })),
+                ]}
+                className="h-10 text-sm"
+              />
             </div>
           )}
 

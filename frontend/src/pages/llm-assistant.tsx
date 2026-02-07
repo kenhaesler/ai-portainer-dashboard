@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, ChevronDown } from 'lucide-react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat } from '@/hooks/use-llm-chat';
@@ -92,21 +93,15 @@ export default function LlmAssistantPage() {
         <div className="flex items-center gap-3">
           {/* Model Selector */}
           {modelsData && modelsData.models.length > 0 && (
-            <div className="relative">
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={isStreaming || isSending}
-                className="appearance-none rounded-lg border border-input bg-background pl-3 pr-8 py-2 text-sm font-medium shadow-sm transition-all hover:bg-accent hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {modelsData.models.map((model) => (
-                  <option key={model.name} value={model.name}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </div>
+            <ThemedSelect
+              value={selectedModel}
+              onValueChange={(val) => setSelectedModel(val)}
+              disabled={isStreaming || isSending}
+              options={modelsData.models.map((model) => ({
+                value: model.name,
+                label: model.name,
+              }))}
+            />
           )}
           <button
             onClick={handleClear}

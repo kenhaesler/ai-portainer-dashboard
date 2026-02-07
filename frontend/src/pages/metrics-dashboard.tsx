@@ -16,6 +16,7 @@ import {
   Minus,
   Timer,
 } from 'lucide-react';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useContainerMetrics, useAnomalies } from '@/hooks/use-metrics';
@@ -278,37 +279,37 @@ export default function MetricsDashboardPage() {
         {/* Endpoint Selector */}
         <div className="flex items-center gap-2">
           <Server className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={selectedEndpoint ?? ''}
-            onChange={(e) => handleEndpointChange(Number(e.target.value))}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+          <ThemedSelect
+            value={selectedEndpoint !== null ? String(selectedEndpoint) : '__placeholder__'}
+            onValueChange={(val) => val !== '__placeholder__' && handleEndpointChange(Number(val))}
+            placeholder="Select endpoint..."
             disabled={endpointsLoading}
-          >
-            <option value="">Select endpoint...</option>
-            {endpoints?.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '__placeholder__', label: 'Select endpoint...', disabled: true },
+              ...(endpoints?.map((ep) => ({
+                value: String(ep.id),
+                label: ep.name,
+              })) ?? []),
+            ]}
+          />
         </div>
 
         {/* Container Selector */}
         <div className="flex items-center gap-2">
           <Box className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={selectedContainer ?? ''}
-            onChange={(e) => setSelectedContainer(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+          <ThemedSelect
+            value={selectedContainer ?? '__placeholder__'}
+            onValueChange={(val) => val !== '__placeholder__' && setSelectedContainer(val)}
+            placeholder="Select container..."
             disabled={!selectedEndpoint || containersLoading}
-          >
-            <option value="">Select container...</option>
-            {containers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '__placeholder__', label: 'Select container...', disabled: true },
+              ...containers.map((c) => ({
+                value: c.id,
+                label: c.name,
+              })),
+            ]}
+          />
         </div>
 
         {/* Time Range Selector */}
