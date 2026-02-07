@@ -320,6 +320,21 @@ export const CacheInvalidateQuerySchema = z.object({
   resource: z.enum(['endpoints', 'containers', 'images', 'networks', 'stacks']),
 });
 
+// ─── LLM schemas ───────────────────────────────────────────────────
+export const LlmQueryBodySchema = z.object({
+  query: z.string().min(2),
+});
+
+export const LlmModelsQuerySchema = z.object({
+  host: z.string().optional(),
+});
+
+export const LlmTestConnectionBodySchema = z.object({
+  url: z.string().optional(),
+  token: z.string().optional(),
+  ollamaUrl: z.string().optional(),
+});
+
 // ─── Reports schemas ───────────────────────────────────────────────
 export const ReportsQuerySchema = z.object({
   timeRange: z.enum(['24h', '7d', '30d']).optional(),

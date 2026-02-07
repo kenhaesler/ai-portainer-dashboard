@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmRoutes } from './llm.js';
 
 // Mock config
@@ -52,6 +53,7 @@ describe('LLM Routes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(llmRoutes);
     await app.ready();
@@ -107,6 +109,80 @@ describe('LLM Routes', () => {
       const body = res.json();
       expect(body.models).toHaveLength(1);
       expect(body.models[0].name).toBe('llama3.2');
+    });
+  });
+
+  describe('POST /api/llm/test-connection', () => {
+    it('returns ok with models when Ollama connection succeeds', async () => {
+      mockList.mockResolvedValue({
+        models: [
+          { name: 'llama3.2', size: 2_000_000_000, modified_at: '2024-01-01T00:00:00Z' },
+          { name: 'mistral', size: 4_000_000_000, modified_at: '2024-03-01T00:00:00Z' },
+        ],
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.models).toHaveLength(2);
+      expect(body.models).toContain('llama3.2');
+      expect(body.models).toContain('mistral');
+    });
+
+    it('returns error when Ollama connection fails', async () => {
+      mockList.mockRejectedValue(new Error('Connection refused'));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(false);
+      expect(body.error).toBe('Connection refused');
+    });
+
+    it('accepts empty object body gracefully', async () => {
+      mockList.mockResolvedValue({ models: [] });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.models).toEqual([]);
+    });
+
+    it('uses ollamaUrl when provided', async () => {
+      const { Ollama } = await import('ollama');
+      mockList.mockResolvedValue({
+        models: [{ name: 'gemma2', size: 5_000_000_000, modified_at: '2024-04-01T00:00:00Z' }],
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: { ollamaUrl: 'http://custom-ollama:11434' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.models).toContain('gemma2');
+      // Verify Ollama was instantiated with the custom host
+      expect(Ollama).toHaveBeenCalledWith({ host: 'http://custom-ollama:11434' });
     });
   });
 
