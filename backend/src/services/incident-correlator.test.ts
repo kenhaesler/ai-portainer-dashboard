@@ -109,11 +109,11 @@ describe('incident-correlator', () => {
       expect(call.affected_containers).toContain('db');
     });
 
-    it('should create cascade incident for multiple containers on same endpoint', async () => {
+    it('should create cascade incident for multiple containers with distinct metric types', async () => {
       const insights = [
-        makeInsight({ container_id: 'c1', container_name: 'web', endpoint_id: 1 }),
-        makeInsight({ container_id: 'c2', container_name: 'api', endpoint_id: 1 }),
-        makeInsight({ container_id: 'c3', container_name: 'db', endpoint_id: 1 }),
+        makeInsight({ container_id: 'c1', container_name: 'web', endpoint_id: 1, title: 'Anomalous cpu usage on "web"' }),
+        makeInsight({ container_id: 'c2', container_name: 'api', endpoint_id: 1, title: 'Anomalous memory usage on "api"' }),
+        makeInsight({ container_id: 'c3', container_name: 'db', endpoint_id: 1, title: 'Anomalous cpu usage on "db"' }),
       ];
 
       const result = await correlateInsights(insights);
@@ -126,10 +126,23 @@ describe('incident-correlator', () => {
       expect(call.insight_count).toBe(3);
     });
 
+    it('should NOT create cascade when all containers have same metric type', async () => {
+      const insights = [
+        makeInsight({ container_id: 'c1', container_name: 'web', endpoint_id: 1, title: 'Anomalous cpu usage on "web"' }),
+        makeInsight({ container_id: 'c2', container_name: 'api', endpoint_id: 1, title: 'Anomalous cpu usage on "api"' }),
+        makeInsight({ container_id: 'c3', container_name: 'db', endpoint_id: 1, title: 'Anomalous cpu usage on "db"' }),
+      ];
+
+      const result = await correlateInsights(insights);
+      // No cascade created — same metric type on all containers
+      expect(result.incidentsCreated).toBe(0);
+      expect(result.insightsUngrouped).toBe(3);
+    });
+
     it('should use highest severity from group', async () => {
       const insights = [
-        makeInsight({ container_id: 'c1', severity: 'warning', endpoint_id: 1 }),
-        makeInsight({ container_id: 'c2', severity: 'critical', endpoint_id: 1 }),
+        makeInsight({ container_id: 'c1', severity: 'warning', endpoint_id: 1, title: 'Anomalous cpu usage on "a"' }),
+        makeInsight({ container_id: 'c2', severity: 'critical', endpoint_id: 1, title: 'Anomalous memory usage on "b"' }),
       ];
 
       await correlateInsights(insights);
@@ -139,9 +152,9 @@ describe('incident-correlator', () => {
 
     it('should set high confidence for cascade with 3+ insights', async () => {
       const insights = [
-        makeInsight({ container_id: 'c1', container_name: 'a', endpoint_id: 1 }),
-        makeInsight({ container_id: 'c2', container_name: 'b', endpoint_id: 1 }),
-        makeInsight({ container_id: 'c3', container_name: 'c', endpoint_id: 1 }),
+        makeInsight({ container_id: 'c1', container_name: 'a', endpoint_id: 1, title: 'Anomalous cpu usage on "a"' }),
+        makeInsight({ container_id: 'c2', container_name: 'b', endpoint_id: 1, title: 'Anomalous memory usage on "b"' }),
+        makeInsight({ container_id: 'c3', container_name: 'c', endpoint_id: 1, title: 'Anomalous network_rx usage on "c"' }),
       ];
 
       await correlateInsights(insights);
@@ -185,8 +198,8 @@ describe('incident-correlator', () => {
 
     it('should generate meaningful titles for cascade incidents', async () => {
       const insights = [
-        makeInsight({ container_id: 'c1', container_name: 'web', endpoint_id: 1, endpoint_name: 'production' }),
-        makeInsight({ container_id: 'c2', container_name: 'api', endpoint_id: 1, endpoint_name: 'production' }),
+        makeInsight({ container_id: 'c1', container_name: 'web', endpoint_id: 1, endpoint_name: 'production', title: 'Anomalous cpu usage on "web"' }),
+        makeInsight({ container_id: 'c2', container_name: 'api', endpoint_id: 1, endpoint_name: 'production', title: 'Anomalous memory usage on "api"' }),
       ];
 
       await correlateInsights(insights);

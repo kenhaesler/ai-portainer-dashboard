@@ -33,10 +33,11 @@ export const envSchema = z.object({
   PROMETHEUS_BEARER_TOKEN: z.string().optional(),
 
   // Anomaly Detection
-  ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(2.5),
+  ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(3.0),
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(30),
-  ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
+  ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(30),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
+  ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(15),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
