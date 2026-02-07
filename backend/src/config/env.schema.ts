@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 export const envSchema = z.object({
   // Auth
-  DASHBOARD_USERNAME: z.string().min(1).default('admin'),
-  DASHBOARD_PASSWORD: z.string().min(8).default('changeme123'),
+  DASHBOARD_USERNAME: z.string().min(1),
+  DASHBOARD_PASSWORD: z.string().min(12),
   JWT_SECRET: z.string().min(32),
 
   // Portainer
