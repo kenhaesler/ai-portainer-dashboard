@@ -1,6 +1,7 @@
 import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
 import { createClient } from 'redis';
+import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('portainer-cache');
 type RedisClient = ReturnType<typeof createClient>;
@@ -167,40 +168,44 @@ class HybridCache {
       return l1Value;
     }
 
-    // L2: Check Redis
-    const client = await this.ensureRedisClient();
-    if (client) {
-      try {
-        const raw = await client.get(this.getRedisKey(key));
-        if (raw != null) {
-          const parsed = JSON.parse(raw) as T;
-          // Populate L1 on L2 hit for subsequent instant access
-          this.memory.set(key, parsed, this.l1TtlSeconds);
-          this.hits++;
-          return parsed;
+    // L2: Check Redis (traced)
+    return withSpan('cache.get', 'redis-cache', 'internal', async () => {
+      const client = await this.ensureRedisClient();
+      if (client) {
+        try {
+          const raw = await client.get(this.getRedisKey(key));
+          if (raw != null) {
+            const parsed = JSON.parse(raw) as T;
+            // Populate L1 on L2 hit for subsequent instant access
+            this.memory.set(key, parsed, this.l1TtlSeconds);
+            this.hits++;
+            return parsed;
+          }
+        } catch (err) {
+          this.disableRedisTemporarily('redis-get-failed', err);
         }
-      } catch (err) {
-        this.disableRedisTemporarily('redis-get-failed', err);
       }
-    }
 
-    this.misses++;
-    return undefined;
+      this.misses++;
+      return undefined;
+    });
   }
 
   async set<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
     // Always write to L1 (short TTL for instant reads)
     this.memory.set(key, data, Math.min(ttlSeconds, this.l1TtlSeconds));
 
-    // Write to L2 (Redis) with full TTL
-    const client = await this.ensureRedisClient();
-    if (client) {
-      try {
-        await client.set(this.getRedisKey(key), JSON.stringify(data), { EX: ttlSeconds });
-      } catch (err) {
-        this.disableRedisTemporarily('redis-set-failed', err);
+    // Write to L2 (Redis) with full TTL (traced)
+    await withSpan('cache.set', 'redis-cache', 'internal', async () => {
+      const client = await this.ensureRedisClient();
+      if (client) {
+        try {
+          await client.set(this.getRedisKey(key), JSON.stringify(data), { EX: ttlSeconds });
+        } catch (err) {
+          this.disableRedisTemporarily('redis-set-failed', err);
+        }
       }
-    }
+    });
   }
 
   async invalidate(key: string): Promise<void> {

@@ -4,6 +4,7 @@ import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.j
 import { getDb } from '../db/sqlite.js';
 import { getTraces, getTrace, getTraceSummary } from './trace-store.js';
 import { createChildLogger } from '../utils/logger.js';
+import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('llm-tools');
 
@@ -653,22 +654,29 @@ const executors: Record<string, (args: Record<string, unknown>) => Promise<ToolC
 export async function executeToolCalls(
   calls: ToolCallRequest[],
 ): Promise<ToolCallResult[]> {
-  const results: ToolCallResult[] = [];
-  for (const call of calls) {
-    const executor = executors[call.tool];
-    if (!executor) {
-      results.push({ tool: call.tool, success: false, error: `Unknown tool: ${call.tool}` });
-      continue;
+  return withSpan('llm-tools.execute', 'llm-tool-executor', 'internal', async () => {
+    const results: ToolCallResult[] = [];
+    for (const call of calls) {
+      const executor = executors[call.tool];
+      if (!executor) {
+        results.push({ tool: call.tool, success: false, error: `Unknown tool: ${call.tool}` });
+        continue;
+      }
+      try {
+        const result = await withSpan(
+          `llm-tool.${call.tool}`,
+          `llm-tool-${call.tool}`,
+          'internal',
+          () => Promise.resolve(executor(call.arguments)),
+        );
+        results.push(result);
+      } catch (err) {
+        log.error({ err, tool: call.tool }, 'Tool execution failed');
+        results.push({ tool: call.tool, success: false, error: 'Tool execution failed unexpectedly' });
+      }
     }
-    try {
-      const result = await executor(call.arguments);
-      results.push(result);
-    } catch (err) {
-      log.error({ err, tool: call.tool }, 'Tool execution failed');
-      results.push({ tool: call.tool, success: false, error: 'Tool execution failed unexpectedly' });
-    }
-  }
-  return results;
+    return results;
+  });
 }
 
 // ─── Response Parsing ──────────────────────────────────────────────────

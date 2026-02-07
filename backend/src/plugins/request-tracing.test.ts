@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import requestTracing from './request-tracing.js';
 
 const mockInsertSpan = vi.fn();
@@ -9,16 +8,10 @@ vi.mock('../services/trace-store.js', () => ({
   insertSpan: (...args: unknown[]) => mockInsertSpan(...args),
 }));
 
-// Minimal request-context stub that sets requestId
-const fakeRequestContext = fp(
-  async (fastify: FastifyInstance) => {
-    fastify.addHook('onRequest', async (request, reply) => {
-      request.requestId = 'test-request-id';
-      reply.header('X-Request-ID', request.requestId);
-    });
-  },
-  { name: 'request-context' },
-);
+vi.mock('../services/trace-context.js', () => ({
+  runWithTraceContext: (_ctx: unknown, fn: () => unknown) => fn(),
+  getCurrentTraceContext: () => undefined,
+}));
 
 describe('request-tracing plugin', () => {
   let app: FastifyInstance;
@@ -26,7 +19,6 @@ describe('request-tracing plugin', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
-    await app.register(fakeRequestContext);
     await app.register(requestTracing);
     app.get('/api/containers', async () => ({ ok: true }));
     app.get('/api/health', async () => ({ status: 'ok' }));
@@ -46,8 +38,8 @@ describe('request-tracing plugin', () => {
 
     expect(mockInsertSpan).toHaveBeenCalledOnce();
     const span = mockInsertSpan.mock.calls[0][0];
-    expect(span.id).toBe('test-request-id');
-    expect(span.trace_id).toBe('test-request-id');
+    expect(span.id).toBeTruthy();
+    expect(span.trace_id).toBeTruthy();
     expect(span.parent_span_id).toBeNull();
     expect(span.name).toBe('GET /api/containers');
     expect(span.kind).toBe('server');
@@ -56,10 +48,25 @@ describe('request-tracing plugin', () => {
     expect(span.duration_ms).toBeGreaterThanOrEqual(0);
     expect(span.start_time).toBeTruthy();
     expect(span.end_time).toBeTruthy();
+    expect(span.trace_source).toBe('http');
 
     const attrs = JSON.parse(span.attributes);
     expect(attrs.method).toBe('GET');
     expect(attrs.statusCode).toBe(200);
+  });
+
+  it('assigns requestId and sets X-Request-ID header', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+    expect(res.headers['x-request-id']).toBeTruthy();
+  });
+
+  it('uses provided x-request-id header', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers',
+      headers: { 'x-request-id': 'custom-id-123' },
+    });
+    expect(res.headers['x-request-id']).toBe('custom-id-123');
   });
 
   it('skips health check endpoint', async () => {

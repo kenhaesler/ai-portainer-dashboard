@@ -2,9 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   Search,
   GitBranch,
-  Clock,
   AlertTriangle,
-  CheckCircle2,
   XCircle,
   ChevronRight,
   Activity,

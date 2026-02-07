@@ -216,6 +216,7 @@ export function getTraceSummary(
   totalTraces: number;
   avgDuration: number;
   errorRate: number;
+  services: number;
 } {
   const db = getDb();
   const conditions: string[] = [];
@@ -239,7 +240,8 @@ export function getTraceSummary(
          COUNT(DISTINCT trace_id) as totalTraces,
          AVG(duration_ms) as avgDuration,
          CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) /
-           NULLIF(COUNT(*), 0) as errorRate
+           NULLIF(COUNT(*), 0) as errorRate,
+         COUNT(DISTINCT service_name) as services
        FROM spans
        ${where}`,
     )
@@ -247,11 +249,13 @@ export function getTraceSummary(
     totalTraces: number;
     avgDuration: number | null;
     errorRate: number | null;
+    services: number;
   };
 
   return {
     totalTraces: result.totalTraces ?? 0,
     avgDuration: Math.round((result.avgDuration ?? 0) * 100) / 100,
     errorRate: Math.round((result.errorRate ?? 0) * 10000) / 10000,
+    services: result.services ?? 0,
   };
 }

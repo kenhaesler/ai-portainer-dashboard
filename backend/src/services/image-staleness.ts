@@ -1,5 +1,6 @@
 import { getDb } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
+import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('image-staleness');
 
@@ -31,6 +32,15 @@ export interface StalenessCheckResult {
  * Returns the digest string or null if the check fails.
  */
 export async function checkDockerHubDigest(
+  imageName: string,
+  tag: string,
+): Promise<string | null> {
+  return withSpan('dockerhub.manifest', 'docker-hub', 'client', () =>
+    checkDockerHubDigestInner(imageName, tag),
+  );
+}
+
+async function checkDockerHubDigestInner(
   imageName: string,
   tag: string,
 ): Promise<string | null> {

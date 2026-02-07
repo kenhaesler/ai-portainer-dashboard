@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
+import { v4 as uuidv4 } from 'uuid';
 import { insertSpan } from '../services/trace-store.js';
+import { runWithTraceContext, getCurrentTraceContext } from '../services/trace-context.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('request-tracing');
@@ -8,7 +10,14 @@ const log = createChildLogger('request-tracing');
 const EXCLUDED_PREFIXES = ['/api/health', '/socket.io', '/assets/', '/favicon'];
 
 async function requestTracingPlugin(fastify: FastifyInstance) {
-  fastify.addHook('onRequest', async (request) => {
+  // Merged from request-context: assign requestId and set up logging context
+  fastify.addHook('onRequest', async (request, reply) => {
+    const requestId = (request.headers['x-request-id'] as string) || uuidv4();
+    request.requestId = requestId;
+    reply.header('X-Request-ID', requestId);
+    request.log = request.log.child({ requestId });
+
+    // Start trace context for this request
     (request as unknown as Record<string, number>).__traceStart = Date.now();
   });
 
@@ -28,10 +37,16 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
     const startTime = new Date(startMs).toISOString();
     const endTime = new Date(endMs).toISOString();
 
+    // Use trace context if available (set by the route handler wrapper),
+    // otherwise fall back to requestId
+    const ctx = getCurrentTraceContext();
+    const traceId = ctx?.traceId ?? request.requestId ?? request.id;
+    const spanId = ctx?.spanId ?? request.requestId ?? request.id;
+
     try {
       insertSpan({
-        id: request.requestId ?? request.id,
-        trace_id: request.requestId ?? request.id,
+        id: spanId,
+        trace_id: traceId,
         parent_span_id: null,
         name: `${request.method} ${url}`,
         kind: 'server',
@@ -46,14 +61,36 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
           statusCode: reply.statusCode,
           contentLength: reply.getHeader('content-length') ?? null,
         }),
+        trace_source: 'http',
       });
     } catch (err) {
       log.warn({ err }, 'Failed to insert request span');
     }
   });
+
+  // Wrap route handlers with trace context so downstream withSpan() calls
+  // can attach child spans to this request's trace
+  fastify.addHook('onRoute', (routeOptions) => {
+    const originalHandler = routeOptions.handler;
+
+    routeOptions.handler = async function (this: FastifyInstance, request, reply) {
+      const traceId = request.requestId ?? request.id;
+      const spanId = traceId; // Root span ID matches trace ID
+
+      return runWithTraceContext(
+        { traceId, spanId, source: 'http' },
+        () => (originalHandler as (...args: unknown[]) => unknown).call(this, request, reply),
+      );
+    };
+  });
 }
 
 export default fp(requestTracingPlugin, {
   name: 'request-tracing',
-  dependencies: ['request-context'],
 });
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    requestId: string;
+  }
+}

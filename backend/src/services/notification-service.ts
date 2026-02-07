@@ -4,6 +4,7 @@ import { getDb } from '../db/sqlite.js';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Insight } from '../models/monitoring.js';
+import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('notification-service');
 
@@ -259,6 +260,12 @@ export function buildEmailHtml(payload: NotificationPayload): string {
 }
 
 export async function sendTeamsNotification(payload: NotificationPayload): Promise<void> {
+  return withSpan('teams.notify', 'teams-notification', 'client', () =>
+    sendTeamsNotificationInner(payload),
+  );
+}
+
+async function sendTeamsNotificationInner(payload: NotificationPayload): Promise<void> {
   const webhookUrl = getTeamsWebhookUrl();
   if (!webhookUrl) {
     throw new Error('Teams webhook URL not configured');
@@ -282,6 +289,12 @@ export async function sendTeamsNotification(payload: NotificationPayload): Promi
 }
 
 export async function sendEmailNotification(payload: NotificationPayload): Promise<void> {
+  return withSpan('email.send', 'email-notification', 'client', () =>
+    sendEmailNotificationInner(payload),
+  );
+}
+
+async function sendEmailNotificationInner(payload: NotificationPayload): Promise<void> {
   const smtp = getSmtpConfig();
   if (!smtp.host) {
     throw new Error('SMTP host not configured');

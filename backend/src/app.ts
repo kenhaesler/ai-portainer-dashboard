@@ -1,6 +1,5 @@
 import Fastify from 'fastify';
 import { readFileSync } from 'node:fs';
-import requestContext from './plugins/request-context.js';
 import requestTracing from './plugins/request-tracing.js';
 import corsPlugin from './plugins/cors.js';
 import rateLimitPlugin from './plugins/rate-limit.js';
@@ -84,7 +83,6 @@ export async function buildApp() {
   });
 
   // Core plugins
-  await app.register(requestContext);
   await app.register(requestTracing);
   await app.register(compressPlugin);
   await app.register(corsPlugin);
