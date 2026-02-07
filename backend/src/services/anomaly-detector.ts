@@ -5,18 +5,18 @@ import type { AnomalyDetection } from '../models/metrics.js';
 
 const log = createChildLogger('anomaly-detector');
 
-export function detectAnomaly(
+export async function detectAnomaly(
   containerId: string,
   containerName: string,
   metricType: string,
   currentValue: number,
-): AnomalyDetection | null {
+): Promise<AnomalyDetection | null> {
   const config = getConfig();
   const threshold = config.ANOMALY_ZSCORE_THRESHOLD;
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
 
-  const stats = getMovingAverage(containerId, metricType, windowSize);
+  const stats = await getMovingAverage(containerId, metricType, windowSize);
 
   if (!stats || stats.sample_count < minSamples) {
     log.debug(

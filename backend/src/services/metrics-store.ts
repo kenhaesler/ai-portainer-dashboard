@@ -1,4 +1,4 @@
-import { getDb, prepareStmt } from '../db/sqlite.js';
+import { getMetricsDb } from '../db/timescale.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Metric } from '../models/metrics.js';
 
@@ -12,43 +12,54 @@ export interface MetricInsert {
   value: number;
 }
 
-export function insertMetrics(metrics: MetricInsert[]): void {
+export async function insertMetrics(metrics: MetricInsert[]): Promise<void> {
   if (metrics.length === 0) return;
 
-  const db = getDb();
-  const stmt = prepareStmt(`
-    INSERT INTO metrics (endpoint_id, container_id, container_name, metric_type, value, timestamp)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `);
+  const db = await getMetricsDb();
 
-  const insertMany = db.transaction((rows: MetricInsert[]) => {
-    for (const row of rows) {
-      stmt.run(
-        row.endpoint_id,
-        row.container_id,
-        row.container_name,
-        row.metric_type,
-        row.value,
-      );
-    }
-  });
+  // Batch insert using unnest arrays for performance
+  const endpointIds: number[] = [];
+  const containerIds: string[] = [];
+  const containerNames: string[] = [];
+  const metricTypes: string[] = [];
+  const values: number[] = [];
 
-  insertMany(metrics);
+  for (const m of metrics) {
+    endpointIds.push(m.endpoint_id);
+    containerIds.push(m.container_id);
+    containerNames.push(m.container_name);
+    metricTypes.push(m.metric_type);
+    values.push(m.value);
+  }
+
+  await db.query(
+    `INSERT INTO metrics (endpoint_id, container_id, container_name, metric_type, value, timestamp)
+     SELECT * FROM unnest(
+       $1::int[], $2::text[], $3::text[], $4::text[], $5::double precision[],
+       array_fill(NOW(), ARRAY[$6::int])::timestamptz[]
+     )`,
+    [endpointIds, containerIds, containerNames, metricTypes, values, metrics.length],
+  );
+
   log.debug({ count: metrics.length }, 'Metrics inserted');
 }
 
-export function getMetrics(
+export async function getMetrics(
   containerId: string,
   metricType: string,
   from: string,
   to: string,
-): Metric[] {
-  return prepareStmt(
-    `SELECT * FROM metrics
-     WHERE container_id = ? AND metric_type = ?
-       AND timestamp >= ? AND timestamp <= ?
+): Promise<Metric[]> {
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT endpoint_id, container_id, container_name, metric_type, value, timestamp
+     FROM metrics
+     WHERE container_id = $1 AND metric_type = $2
+       AND timestamp >= $3 AND timestamp <= $4
      ORDER BY timestamp ASC`,
-  ).all(containerId, metricType, from, to) as Metric[];
+    [containerId, metricType, from, to],
+  );
+  return rows as Metric[];
 }
 
 export interface MovingAverageResult {
@@ -57,76 +68,63 @@ export interface MovingAverageResult {
   sample_count: number;
 }
 
-export function getMovingAverage(
+export async function getMovingAverage(
   containerId: string,
   metricType: string,
   windowSize: number,
-): MovingAverageResult | null {
-  const result = prepareStmt(
+): Promise<MovingAverageResult | null> {
+  const db = await getMetricsDb();
+
+  const { rows } = await db.query(
     `SELECT
        AVG(value) as mean,
-       COUNT(*) as sample_count
+       STDDEV_POP(value) as std_dev,
+       COUNT(*)::int as sample_count
      FROM (
        SELECT value FROM metrics
-       WHERE container_id = ? AND metric_type = ?
+       WHERE container_id = $1 AND metric_type = $2
        ORDER BY timestamp DESC
-       LIMIT ?
-     )`,
-  ).get(containerId, metricType, windowSize) as {
-    mean: number | null;
-    sample_count: number;
-  } | undefined;
+       LIMIT $3
+     ) sub`,
+    [containerId, metricType, windowSize],
+  );
 
+  const result = rows[0];
   if (!result || result.sample_count === 0 || result.mean === null) {
     return null;
   }
 
-  // Calculate standard deviation in a separate query for accuracy
-  const stdResult = prepareStmt(
-    `SELECT
-       AVG((value - ?) * (value - ?)) as variance
-     FROM (
-       SELECT value FROM metrics
-       WHERE container_id = ? AND metric_type = ?
-       ORDER BY timestamp DESC
-       LIMIT ?
-     )`,
-  ).get(result.mean, result.mean, containerId, metricType, windowSize) as {
-    variance: number | null;
-  } | undefined;
-
-  const variance = stdResult?.variance ?? 0;
-  const stdDev = Math.sqrt(Math.max(0, variance));
-
   return {
-    mean: result.mean,
-    std_dev: stdDev,
+    mean: Number(result.mean),
+    std_dev: Number(result.std_dev ?? 0),
     sample_count: result.sample_count,
   };
 }
 
-export function cleanOldMetrics(retentionDays: number): number {
-  const result = prepareStmt(
-    `DELETE FROM metrics
-     WHERE timestamp < datetime('now', ? || ' days')`,
-  ).run(`-${retentionDays}`);
+export async function cleanOldMetrics(retentionDays: number): Promise<number> {
+  // TimescaleDB retention is handled by policies, but this provides manual cleanup
+  const db = await getMetricsDb();
+  const { rowCount } = await db.query(
+    `DELETE FROM metrics WHERE timestamp < NOW() - $1 * INTERVAL '1 day'`,
+    [retentionDays],
+  );
 
-  log.info({ deleted: result.changes, retentionDays }, 'Old metrics cleaned');
-  return result.changes;
+  const deleted = rowCount ?? 0;
+  log.info({ deleted, retentionDays }, 'Old metrics cleaned');
+  return deleted;
 }
 
-export function getLatestMetrics(
+export async function getLatestMetrics(
   containerId: string,
-): Record<string, number> {
-  const rows = prepareStmt(
-    `SELECT metric_type, value FROM metrics
-     WHERE container_id = ?
-       AND timestamp = (
-         SELECT MAX(timestamp) FROM metrics m2
-         WHERE m2.container_id = metrics.container_id
-           AND m2.metric_type = metrics.metric_type
-       )`,
-  ).all(containerId) as Array<{ metric_type: string; value: number }>;
+): Promise<Record<string, number>> {
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT DISTINCT ON (metric_type) metric_type, value
+     FROM metrics
+     WHERE container_id = $1
+     ORDER BY metric_type, timestamp DESC`,
+    [containerId],
+  );
 
   const result: Record<string, number> = {};
   for (const row of rows) {
@@ -140,22 +138,19 @@ export interface NetworkRate {
   txBytesPerSec: number;
 }
 
-export function getNetworkRates(
+export async function getNetworkRates(
   endpointId: number,
-): Record<string, NetworkRate> {
-  const rows = getDb().prepare(`
-    SELECT container_id, metric_type, value, timestamp
-    FROM metrics
-    WHERE endpoint_id = ?
-      AND metric_type IN ('network_rx_bytes', 'network_tx_bytes')
-      AND timestamp > datetime('now', '-5 minutes')
-    ORDER BY container_id, metric_type, timestamp DESC
-  `).all(endpointId) as Array<{
-    container_id: string;
-    metric_type: string;
-    value: number;
-    timestamp: string;
-  }>;
+): Promise<Record<string, NetworkRate>> {
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT container_id, metric_type, value, timestamp
+     FROM metrics
+     WHERE endpoint_id = $1
+       AND metric_type IN ('network_rx_bytes', 'network_tx_bytes')
+       AND timestamp > NOW() - INTERVAL '5 minutes'
+     ORDER BY container_id, metric_type, timestamp DESC`,
+    [endpointId],
+  );
 
   // Group by container_id + metric_type, keep only first 2 entries (latest)
   const grouped = new Map<string, Array<{ value: number; timestamp: string }>>();

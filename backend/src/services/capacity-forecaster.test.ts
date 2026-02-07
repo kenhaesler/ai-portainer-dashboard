@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../db/sqlite.js', () => {
-  const mockPrepare = vi.fn();
-  return {
-    getDb: vi.fn(() => ({ prepare: mockPrepare })),
-    __mockPrepare: mockPrepare,
-  };
-});
+const mockQuery = vi.fn();
+
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
+}));
 
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
@@ -17,11 +15,76 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
-import { linearRegression } from './capacity-forecaster.js';
+import {
+  getCapacityForecasts,
+  linearRegression,
+  lookupContainerName,
+  resetForecastCache,
+} from './capacity-forecaster.js';
 
 describe('capacity-forecaster', () => {
   beforeEach(() => {
+    resetForecastCache();
     vi.clearAllMocks();
+  });
+
+  describe('lookupContainerName', () => {
+    it('returns container name from metrics table', async () => {
+      mockQuery.mockResolvedValue({
+        rows: [{ container_name: 'web-server' }],
+      });
+
+      const name = await lookupContainerName('abc123');
+      expect(name).toBe('web-server');
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT container_name FROM metrics'),
+        expect.arrayContaining(['abc123']),
+      );
+    });
+
+    it('returns empty string when container not found', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      const name = await lookupContainerName('nonexistent');
+      expect(name).toBe('');
+    });
+  });
+
+  describe('getCapacityForecasts', () => {
+    it('loads metrics in a batched query for selected containers', async () => {
+      const containers = [{ container_id: 'c1', container_name: 'web' }];
+      const metrics = [
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:00:00.000Z', value: 10 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:05:00.000Z', value: 20 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:10:00.000Z', value: 30 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:15:00.000Z', value: 40 },
+        { container_id: 'c1', metric_type: 'cpu', timestamp: '2026-02-07T00:20:00.000Z', value: 50 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:00:00.000Z', value: 30 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:05:00.000Z', value: 35 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:10:00.000Z', value: 40 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:15:00.000Z', value: 45 },
+        { container_id: 'c1', metric_type: 'memory', timestamp: '2026-02-07T00:20:00.000Z', value: 50 },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: containers })
+        .mockResolvedValueOnce({ rows: metrics });
+
+      const result = await getCapacityForecasts(10);
+
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(2);
+      expect(result.map((f) => f.metricType).sort()).toEqual(['cpu', 'memory']);
+    });
+
+    it('returns empty array when no containers have recent metrics', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      const result = await getCapacityForecasts(10);
+
+      expect(result).toEqual([]);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('linearRegression', () => {

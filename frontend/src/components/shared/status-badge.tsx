@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 
 type Status = 'running' | 'stopped' | 'paused' | 'unhealthy' | 'healthy' | 'unknown' |
   'up' | 'down' | 'active' | 'inactive' |
-  'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed' |
+  'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed' | 'succeeded' |
   'critical' | 'warning' | 'info' | 'ok' | 'error' |
   'capturing' | 'processing';
 
@@ -22,6 +22,7 @@ const statusColors: Record<string, string> = {
   rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   executing: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
   completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  succeeded: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
   failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
   warning: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
@@ -38,6 +39,7 @@ const statusDotColors: Record<string, string> = {
   up: 'bg-emerald-500',
   active: 'bg-emerald-500',
   completed: 'bg-emerald-500',
+  succeeded: 'bg-emerald-500',
   ok: 'bg-emerald-500',
   stopped: 'bg-red-500',
   down: 'bg-red-500',

@@ -19,6 +19,8 @@ const log = createChildLogger('scheduler');
 
 const intervals: NodeJS.Timeout[] = [];
 
+const METRICS_CONCURRENCY = 6;
+
 async function runMetricsCollection(): Promise<void> {
   log.debug('Running metrics collection cycle');
 
@@ -31,12 +33,24 @@ async function runMetricsCollection(): Promise<void> {
         const containers = await getContainers(ep.Id);
         const running = containers.filter((c) => c.State === 'running');
 
-        for (const container of running) {
-          try {
-            const stats = await collectMetrics(ep.Id, container.Id);
-            const containerName =
-              container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+        // Collect stats in parallel batches to avoid ~1.3s per container sequentially
+        for (let i = 0; i < running.length; i += METRICS_CONCURRENCY) {
+          const batch = running.slice(i, i + METRICS_CONCURRENCY);
+          const results = await Promise.allSettled(
+            batch.map(async (container) => {
+              const stats = await collectMetrics(ep.Id, container.Id);
+              const containerName =
+                container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+              return { stats, container, containerName };
+            }),
+          );
 
+          for (const result of results) {
+            if (result.status === 'rejected') {
+              log.warn({ err: result.reason }, 'Failed to collect metrics for container');
+              continue;
+            }
+            const { stats, container, containerName } = result.value;
             metricsToInsert.push(
               {
                 endpoint_id: ep.Id,
@@ -74,11 +88,6 @@ async function runMetricsCollection(): Promise<void> {
                 value: stats.networkTxBytes,
               },
             );
-          } catch (err) {
-            log.warn(
-              { containerId: container.Id, err },
-              'Failed to collect metrics for container',
-            );
           }
         }
       } catch (err) {
@@ -87,7 +96,7 @@ async function runMetricsCollection(): Promise<void> {
     }
 
     if (metricsToInsert.length > 0) {
-      insertMetrics(metricsToInsert);
+      await insertMetrics(metricsToInsert);
     }
 
     log.debug({ metricsCount: metricsToInsert.length }, 'Metrics collection cycle completed');
@@ -117,7 +126,7 @@ async function runKpiSnapshotCollection(): Promise<void> {
       { endpoints: 0, endpoints_up: 0, endpoints_down: 0, running: 0, stopped: 0, healthy: 0, unhealthy: 0, total: 0, stacks: 0 },
     );
 
-    insertKpiSnapshot(totals);
+    await insertKpiSnapshot(totals);
     log.debug('KPI snapshot collected');
   } catch (err) {
     log.error({ err }, 'KPI snapshot collection failed');
@@ -191,7 +200,7 @@ async function runPortainerBackupSchedule(): Promise<void> {
 async function runCleanup(): Promise<void> {
   try {
     const config = getConfig();
-    const deleted = cleanOldMetrics(config.METRICS_RETENTION_DAYS);
+    const deleted = await cleanOldMetrics(config.METRICS_RETENTION_DAYS);
     if (deleted > 0) {
       log.info({ deleted }, 'Old metrics cleaned up');
     }
@@ -206,7 +215,7 @@ async function runCleanup(): Promise<void> {
   }
 
   try {
-    const kpiDeleted = cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
+    const kpiDeleted = await cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
     if (kpiDeleted > 0) {
       log.info({ deleted: kpiDeleted }, 'Old KPI snapshots cleaned up');
     }
@@ -229,6 +238,8 @@ export function startScheduler(): void {
       metricsIntervalMs,
     );
     intervals.push(metricsInterval);
+    // Run one collection immediately so dashboards don't wait for first interval tick.
+    runWithTraceContext({ source: 'scheduler' }, runMetricsCollection).catch(() => {});
   }
 
   if (config.MONITORING_ENABLED) {

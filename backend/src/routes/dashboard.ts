@@ -125,7 +125,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     const safeHours = Number.isFinite(hours) ? Math.max(1, Math.min(hours, 168)) : 24;
 
     try {
-      const snapshots = getKpiHistory(safeHours); // Cap at 7 days
+      const snapshots = await getKpiHistory(safeHours); // Cap at 7 days
       return { snapshots };
     } catch (err) {
       log.error({ err }, 'Failed to fetch KPI history');

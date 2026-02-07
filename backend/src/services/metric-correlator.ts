@@ -1,4 +1,4 @@
-import { getDb } from '../db/sqlite.js';
+import { getMetricsDb } from '../db/timescale.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metric-correlator');
@@ -110,59 +110,56 @@ export function scoreSeverity(compositeScore: number): 'low' | 'medium' | 'high'
 /**
  * Get recent metric snapshots for a container with z-scores.
  */
-function getMetricSnapshots(containerId: string, windowSize: number): MetricSnapshot[] {
-  const db = getDb();
+async function getMetricSnapshots(containerId: string, windowSize: number): Promise<MetricSnapshot[]> {
+  const db = await getMetricsDb();
 
-  const metricTypes = db.prepare(`
-    SELECT DISTINCT metric_type FROM metrics
-    WHERE container_id = ? AND timestamp >= datetime('now', '-1 hour')
-  `).all(containerId) as Array<{ metric_type: string }>;
+  const { rows: metricTypes } = await db.query(
+    `SELECT DISTINCT metric_type FROM metrics
+     WHERE container_id = $1 AND timestamp >= NOW() - INTERVAL '1 hour'`,
+    [containerId],
+  );
 
   const snapshots: MetricSnapshot[] = [];
 
-  for (const { metric_type } of metricTypes) {
-    const stats = db.prepare(`
-      SELECT
+  for (const { metric_type } of metricTypes as Array<{ metric_type: string }>) {
+    const { rows: statsRows } = await db.query(
+      `SELECT
         AVG(value) as mean,
-        COUNT(*) as sample_count
+        STDDEV_POP(value) as std_dev,
+        COUNT(*)::int as sample_count
       FROM (
         SELECT value FROM metrics
-        WHERE container_id = ? AND metric_type = ?
+        WHERE container_id = $1 AND metric_type = $2
         ORDER BY timestamp DESC
-        LIMIT ?
-      )
-    `).get(containerId, metric_type, windowSize) as { mean: number | null; sample_count: number } | undefined;
+        LIMIT $3
+      ) sub`,
+      [containerId, metric_type, windowSize],
+    );
 
+    const stats = statsRows[0];
     if (!stats || stats.sample_count < 5 || stats.mean === null) continue;
 
-    const stdResult = db.prepare(`
-      SELECT AVG((value - ?) * (value - ?)) as variance
-      FROM (
-        SELECT value FROM metrics
-        WHERE container_id = ? AND metric_type = ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-      )
-    `).get(stats.mean, stats.mean, containerId, metric_type, windowSize) as { variance: number | null } | undefined;
-
-    const stdDev = Math.sqrt(Math.max(0, stdResult?.variance ?? 0));
+    const mean = Number(stats.mean);
+    const stdDev = Number(stats.std_dev ?? 0);
 
     // Get latest value
-    const latest = db.prepare(`
-      SELECT value FROM metrics
-      WHERE container_id = ? AND metric_type = ?
-      ORDER BY timestamp DESC
-      LIMIT 1
-    `).get(containerId, metric_type) as { value: number } | undefined;
+    const { rows: latestRows } = await db.query(
+      `SELECT value FROM metrics
+       WHERE container_id = $1 AND metric_type = $2
+       ORDER BY timestamp DESC
+       LIMIT 1`,
+      [containerId, metric_type],
+    );
 
+    const latest = latestRows[0];
     if (!latest) continue;
 
-    const zScore = stdDev > 0 ? (latest.value - stats.mean) / stdDev : 0;
+    const zScore = stdDev > 0 ? (latest.value - mean) / stdDev : 0;
 
     snapshots.push({
       metric_type,
       value: latest.value,
-      mean: stats.mean,
+      mean,
       std_dev: stdDev,
       z_score: Math.round(zScore * 100) / 100,
     });
@@ -174,25 +171,25 @@ function getMetricSnapshots(containerId: string, windowSize: number): MetricSnap
 /**
  * Detect correlated anomalies across multiple metrics for all active containers.
  */
-export function detectCorrelatedAnomalies(
+export async function detectCorrelatedAnomalies(
   windowSize: number = 30,
   minCompositeScore: number = 2,
-): CorrelatedAnomaly[] {
-  const db = getDb();
+): Promise<CorrelatedAnomaly[]> {
+  const db = await getMetricsDb();
 
   // Get containers with recent metrics
-  const containers = db.prepare(`
-    SELECT DISTINCT container_id, container_name
-    FROM metrics
-    WHERE timestamp >= datetime('now', '-1 hour')
-    GROUP BY container_id
-    HAVING COUNT(DISTINCT metric_type) >= 2
-  `).all() as Array<{ container_id: string; container_name: string }>;
+  const { rows: containers } = await db.query(
+    `SELECT DISTINCT container_id, container_name
+     FROM metrics
+     WHERE timestamp >= NOW() - INTERVAL '1 hour'
+     GROUP BY container_id, container_name
+     HAVING COUNT(DISTINCT metric_type) >= 2`,
+  );
 
   const results: CorrelatedAnomaly[] = [];
 
-  for (const container of containers) {
-    const snapshots = getMetricSnapshots(container.container_id, windowSize);
+  for (const container of containers as Array<{ container_id: string; container_name: string }>) {
+    const snapshots = await getMetricSnapshots(container.container_id, windowSize);
 
     if (snapshots.length < 2) continue;
 

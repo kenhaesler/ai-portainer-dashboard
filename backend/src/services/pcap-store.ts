@@ -136,7 +136,7 @@ export function cleanOldCaptures(retentionDays: number): number {
     .prepare(`
       DELETE FROM pcap_captures
       WHERE created_at < datetime('now', ? || ' days')
-        AND status IN ('complete', 'failed', 'stopped')
+        AND status IN ('complete', 'failed', 'succeeded')
     `)
     .run(`-${retentionDays}`);
 

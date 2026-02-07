@@ -2,6 +2,7 @@ import * as portainer from './portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.js';
 import { getDb } from '../db/sqlite.js';
+import { getMetricsDb } from '../db/timescale.js';
 import { getTraces, getTrace, getTraceSummary } from './trace-store.js';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
@@ -350,13 +351,14 @@ async function executeGetContainerMetrics(
       from.setHours(from.getHours() - 1);
     }
 
-    const db = getDb();
-    const metrics = db.prepare(`
-      SELECT timestamp, value FROM metrics
-      WHERE container_id = ? AND metric_type = ? AND timestamp >= datetime(?)
-      ORDER BY timestamp ASC
-      LIMIT 500
-    `).all(match.id, metricType, from.toISOString()) as Array<{ timestamp: string; value: number }>;
+    const pool = await getMetricsDb();
+    const { rows: metrics } = await pool.query<{ timestamp: string; value: number }>(
+      `SELECT timestamp::text, value FROM metrics
+       WHERE container_id = $1 AND metric_type = $2 AND timestamp >= $3
+       ORDER BY timestamp ASC
+       LIMIT 500`,
+      [match.id, metricType, from.toISOString()],
+    );
 
     // Compute summary stats
     const values = metrics.map((m) => m.value);
@@ -472,20 +474,21 @@ async function executeListAnomalies(
 ): Promise<ToolCallResult> {
   try {
     const limit = Math.min(parseInt(String(args.limit || '20'), 10) || 20, 50);
-    const db = getDb();
+    const pool = await getMetricsDb();
 
-    const anomalies = db.prepare(`
-      SELECT m1.container_id, m1.metric_type, m1.value, m1.timestamp,
+    const { rows: anomalies } = await pool.query(
+      `SELECT m1.container_id, m1.metric_type, m1.value, m1.timestamp::text,
         (SELECT AVG(value) FROM metrics m2
          WHERE m2.container_id = m1.container_id
          AND m2.metric_type = m1.metric_type
-         AND m2.timestamp > datetime(m1.timestamp, '-1 hour')
+         AND m2.timestamp > m1.timestamp - INTERVAL '1 hour'
         ) as avg_value
       FROM metrics m1
-      WHERE m1.timestamp > datetime('now', '-24 hours')
+      WHERE m1.timestamp > NOW() - INTERVAL '24 hours'
       ORDER BY m1.timestamp DESC
-      LIMIT ?
-    `).all(limit) as Array<Record<string, unknown>>;
+      LIMIT $1`,
+      [limit],
+    );
 
     return {
       tool: 'list_anomalies',

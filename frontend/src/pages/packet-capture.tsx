@@ -46,7 +46,7 @@ const STATUS_TABS = [
   { label: 'All', value: undefined },
   { label: 'Active', value: 'capturing' },
   { label: 'Complete', value: 'complete' },
-  { label: 'Stopped', value: 'stopped' },
+  { label: 'Succeeded', value: 'succeeded' },
   { label: 'Failed', value: 'failed' },
 ] as const;
 
@@ -392,7 +392,7 @@ function CaptureRow({
   onDownload: () => void;
 }) {
   const isActive = capture.status === 'capturing' || capture.status === 'pending' || capture.status === 'processing';
-  const hasFile = capture.capture_file && (capture.status === 'complete' || capture.status === 'stopped');
+  const hasFile = capture.capture_file && (capture.status === 'complete' || capture.status === 'succeeded');
 
   return (
     <tr className="hover:bg-muted/30">

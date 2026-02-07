@@ -1,4 +1,4 @@
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
@@ -96,7 +96,8 @@ async function portainerFetchInner<T>(
 ): Promise<T> {
   const config = getConfig();
   const { method = 'GET', body, timeout = 15000, retries = 3 } = options;
-  const url = `${config.PORTAINER_API_URL}${path}`;
+  const base = config.PORTAINER_API_URL.replace(/\/+$/, '');
+  const url = `${base}${path}`;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -110,13 +111,13 @@ async function portainerFetchInner<T>(
         headers['X-API-Key'] = config.PORTAINER_API_KEY;
       }
 
-      const res = await fetch(url, {
+      const res = await undiciFetch(url, {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
         dispatcher: getDispatcher(),
-      } as RequestInit);
+      });
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -142,8 +143,10 @@ async function portainerFetchInner<T>(
         await sleep(delay);
         continue;
       }
+      const cause = err instanceof Error && 'cause' in err ? (err.cause as Error)?.message : '';
+      const msg = err instanceof Error ? err.message : 'Network error';
       throw new PortainerError(
-        err instanceof Error ? err.message : 'Network error',
+        cause ? `${msg}: ${cause}` : msg,
         'network',
       );
     }
@@ -224,7 +227,7 @@ export async function getContainerLogs(
     headers['X-API-Key'] = config.PORTAINER_API_KEY;
   }
 
-  const res = await fetch(url, { headers, dispatcher: getDispatcher() } as RequestInit);
+  const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
   if (!res.ok) throw new PortainerError(`Log fetch failed: ${res.status}`, classifyError(res.status), res.status);
   return res.text();
 }
@@ -269,6 +272,7 @@ export async function createExec(
   endpointId: number,
   containerId: string,
   cmd: string[],
+  options?: { user?: string; privileged?: boolean },
 ): Promise<{ Id: string }> {
   return portainerFetch<{ Id: string }>(
     `/api/endpoints/${endpointId}/docker/containers/${containerId}/exec`,
@@ -281,6 +285,8 @@ export async function createExec(
         Detach: true,
         Tty: false,
         Cmd: cmd,
+        ...(options?.user && { User: options.user }),
+        ...(options?.privileged && { Privileged: options.privileged }),
       },
     },
   );
@@ -297,15 +303,16 @@ export async function startExec(endpointId: number, execId: string): Promise<voi
     headers['X-API-Key'] = config.PORTAINER_API_KEY;
   }
 
-  const res = await fetch(url, {
+  const res = await undiciFetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ Detach: true, Tty: false }),
     dispatcher: getDispatcher(),
-  } as RequestInit);
+  });
 
   if (!res.ok) {
-    throw new PortainerError(`Exec start failed: ${res.status}`, classifyError(res.status), res.status);
+    const body = await res.text().catch(() => '');
+    throw new PortainerError(`Exec start failed: ${res.status} ${body}`.trim(), classifyError(res.status), res.status);
   }
 }
 
@@ -331,7 +338,7 @@ export async function getArchive(
     headers['X-API-Key'] = config.PORTAINER_API_KEY;
   }
 
-  const res = await fetch(url, { headers, dispatcher: getDispatcher() } as RequestInit);
+  const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
   if (!res.ok) {
     throw new PortainerError(`Archive fetch failed: ${res.status}`, classifyError(res.status), res.status);
   }

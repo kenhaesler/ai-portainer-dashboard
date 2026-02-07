@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getMetricsDb } from '../db/timescale.js';
 import { ReportsQuerySchema } from '../models/api-schemas.js';
 
 interface AggRow {
@@ -13,22 +13,13 @@ interface AggRow {
   sample_count: number;
 }
 
-function timeRangeToSql(timeRange: string): string {
+function timeRangeToInterval(timeRange: string): string {
   switch (timeRange) {
-    case '24h': return "-1 day";
-    case '7d': return "-7 days";
-    case '30d': return "-30 days";
-    default: return "-1 day";
+    case '24h': return '1 day';
+    case '7d': return '7 days';
+    case '30d': return '30 days';
+    default: return '1 day';
   }
-}
-
-function computePercentile(sortedValues: number[], p: number): number {
-  if (sortedValues.length === 0) return 0;
-  const idx = (p / 100) * (sortedValues.length - 1);
-  const lower = Math.floor(idx);
-  const upper = Math.ceil(idx);
-  if (lower === upper) return sortedValues[lower];
-  return sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * (idx - lower);
 }
 
 export async function reportsRoutes(fastify: FastifyInstance) {
@@ -49,26 +40,29 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     };
     const timeRange = tr || '24h';
 
-    const db = getDb();
-    const sqlRange = timeRangeToSql(timeRange);
+    const db = await getMetricsDb();
+    const interval = timeRangeToInterval(timeRange);
 
-    const conditions = ["timestamp >= datetime('now', ?)"];
-    const params: unknown[] = [sqlRange];
+    const conditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
+    const params: unknown[] = [];
+    let paramIdx = 1;
 
     if (endpointId) {
-      conditions.push('endpoint_id = ?');
+      conditions.push(`endpoint_id = $${paramIdx}`);
       params.push(endpointId);
+      paramIdx++;
     }
     if (containerId) {
-      conditions.push('container_id = ?');
+      conditions.push(`container_id = $${paramIdx}`);
       params.push(containerId);
+      paramIdx++;
     }
 
     const where = conditions.join(' AND ');
 
     // Aggregate stats per container per metric type
-    const rows = db.prepare(`
-      SELECT
+    const { rows } = await db.query(
+      `SELECT
         container_id,
         container_name,
         endpoint_id,
@@ -76,14 +70,15 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         AVG(value) as avg_value,
         MIN(value) as min_value,
         MAX(value) as max_value,
-        COUNT(*) as sample_count
+        COUNT(*)::int as sample_count
       FROM metrics
       WHERE ${where}
-      GROUP BY container_id, metric_type
-      ORDER BY container_name, metric_type
-    `).all(...params) as AggRow[];
+      GROUP BY container_id, container_name, endpoint_id, metric_type
+      ORDER BY container_name, metric_type`,
+      params,
+    );
 
-    // Compute percentiles per container per metric type
+    // Compute percentiles per container per metric type using PostgreSQL
     const containersMap = new Map<string, {
       container_id: string;
       container_name: string;
@@ -93,7 +88,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       memory_bytes: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
     }>();
 
-    for (const row of rows) {
+    for (const row of rows as AggRow[]) {
       if (!containersMap.has(row.container_id)) {
         containersMap.set(row.container_id, {
           container_id: row.container_id,
@@ -105,29 +100,37 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // Get raw values for percentile computation
-      const rawValues = db.prepare(`
-        SELECT value FROM metrics
-        WHERE container_id = ? AND metric_type = ? AND ${conditions[0]}
-        ${endpointId ? 'AND endpoint_id = ?' : ''}
-        ORDER BY value ASC
-      `).all(
-        row.container_id,
-        row.metric_type,
-        sqlRange,
-        ...(endpointId ? [endpointId] : [])
-      ) as Array<{ value: number }>;
+      // Use PostgreSQL percentile_cont for efficient percentile calculation
+      const pConditions = [`container_id = $1`, `metric_type = $2`, `timestamp >= NOW() - INTERVAL '${interval}'`];
+      const pParams: unknown[] = [row.container_id, row.metric_type];
+      let pIdx = 3;
+      if (endpointId) {
+        pConditions.push(`endpoint_id = $${pIdx}`);
+        pParams.push(endpointId);
+        pIdx++;
+      }
 
-      const sorted = rawValues.map(v => v.value);
+      const pWhere = pConditions.join(' AND ');
+      const { rows: pRows } = await db.query(
+        `SELECT
+          percentile_cont(0.50) WITHIN GROUP (ORDER BY value) as p50,
+          percentile_cont(0.95) WITHIN GROUP (ORDER BY value) as p95,
+          percentile_cont(0.99) WITHIN GROUP (ORDER BY value) as p99
+        FROM metrics
+        WHERE ${pWhere}`,
+        pParams,
+      );
+
+      const pResult = pRows[0] ?? { p50: 0, p95: 0, p99: 0 };
 
       const entry = containersMap.get(row.container_id)!;
       const stats = {
-        avg: Math.round(row.avg_value * 100) / 100,
-        min: Math.round(row.min_value * 100) / 100,
-        max: Math.round(row.max_value * 100) / 100,
-        p50: Math.round(computePercentile(sorted, 50) * 100) / 100,
-        p95: Math.round(computePercentile(sorted, 95) * 100) / 100,
-        p99: Math.round(computePercentile(sorted, 99) * 100) / 100,
+        avg: Math.round(Number(row.avg_value) * 100) / 100,
+        min: Math.round(Number(row.min_value) * 100) / 100,
+        max: Math.round(Number(row.max_value) * 100) / 100,
+        p50: Math.round(Number(pResult.p50) * 100) / 100,
+        p95: Math.round(Number(pResult.p95) * 100) / 100,
+        p99: Math.round(Number(pResult.p99) * 100) / 100,
         samples: row.sample_count,
       };
 
@@ -201,44 +204,41 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     };
     const timeRange = tr || '24h';
 
-    const db = getDb();
-    const sqlRange = timeRangeToSql(timeRange);
+    const db = await getMetricsDb();
+    const interval = timeRangeToInterval(timeRange);
 
-    const conditions = ["timestamp >= datetime('now', ?)"];
-    const params: unknown[] = [sqlRange];
+    const conditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
+    const params: unknown[] = [];
+    let paramIdx = 1;
 
     if (endpointId) {
-      conditions.push('endpoint_id = ?');
+      conditions.push(`endpoint_id = $${paramIdx}`);
       params.push(endpointId);
+      paramIdx++;
     }
     if (containerId) {
-      conditions.push('container_id = ?');
+      conditions.push(`container_id = $${paramIdx}`);
       params.push(containerId);
+      paramIdx++;
     }
 
     const where = conditions.join(' AND ');
 
-    // Hourly aggregation
-    const rows = db.prepare(`
-      SELECT
-        strftime('%Y-%m-%dT%H:00:00', timestamp) as hour,
+    // Hourly aggregation using date_trunc
+    const { rows } = await db.query(
+      `SELECT
+        date_trunc('hour', timestamp) as hour,
         metric_type,
         AVG(value) as avg_value,
         MAX(value) as max_value,
         MIN(value) as min_value,
-        COUNT(*) as sample_count
+        COUNT(*)::int as sample_count
       FROM metrics
       WHERE ${where}
       GROUP BY hour, metric_type
-      ORDER BY hour ASC
-    `).all(...params) as Array<{
-      hour: string;
-      metric_type: string;
-      avg_value: number;
-      max_value: number;
-      min_value: number;
-      sample_count: number;
-    }>;
+      ORDER BY hour ASC`,
+      params,
+    );
 
     // Group by metric type
     const trends: Record<string, Array<{
@@ -249,12 +249,19 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       samples: number;
     }>> = { cpu: [], memory: [], memory_bytes: [] };
 
-    for (const row of rows) {
+    for (const row of rows as Array<{
+      hour: string;
+      metric_type: string;
+      avg_value: number;
+      max_value: number;
+      min_value: number;
+      sample_count: number;
+    }>) {
       const entry = {
         hour: row.hour,
-        avg: Math.round(row.avg_value * 100) / 100,
-        max: Math.round(row.max_value * 100) / 100,
-        min: Math.round(row.min_value * 100) / 100,
+        avg: Math.round(Number(row.avg_value) * 100) / 100,
+        max: Math.round(Number(row.max_value) * 100) / 100,
+        min: Math.round(Number(row.min_value) * 100) / 100,
         samples: row.sample_count,
       };
       if (trends[row.metric_type]) {
