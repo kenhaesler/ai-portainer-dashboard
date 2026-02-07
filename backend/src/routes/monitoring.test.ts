@@ -147,3 +147,120 @@ describe('monitoring insights cursor pagination', () => {
     expect(response.json()).toEqual({ success: true });
   });
 });
+
+describe('GET /api/monitoring/insights/container/:containerId', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(monitoringRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns anomaly explanations for a container', async () => {
+    mockAll.mockReturnValueOnce([
+      {
+        id: 'a1',
+        severity: 'critical',
+        category: 'anomaly',
+        title: 'CPU anomaly detected',
+        description: 'CPU at 95%\n\nAI Analysis: CPU spiked due to burst traffic.',
+        suggested_action: 'Consider scaling up',
+        created_at: '2025-01-01T14:32:00Z',
+      },
+    ]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights/container/abc123?timeRange=1h',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.explanations).toHaveLength(1);
+    expect(body.explanations[0].id).toBe('a1');
+    expect(body.explanations[0].description).toBe('CPU at 95%');
+    expect(body.explanations[0].aiExplanation).toBe('CPU spiked due to burst traffic.');
+    expect(body.explanations[0].suggestedAction).toBe('Consider scaling up');
+    expect(body.explanations[0].timestamp).toBe('2025-01-01T14:32:00Z');
+  });
+
+  it('returns null aiExplanation when no AI analysis in description', async () => {
+    mockAll.mockReturnValueOnce([
+      {
+        id: 'a2',
+        severity: 'warning',
+        category: 'anomaly',
+        title: 'Memory anomaly detected',
+        description: 'Memory at 85% (z-score: 3.2)',
+        suggested_action: null,
+        created_at: '2025-01-01T14:35:00Z',
+      },
+    ]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights/container/abc123?timeRange=1h',
+    });
+
+    const body = response.json();
+    expect(body.explanations[0].aiExplanation).toBeNull();
+    expect(body.explanations[0].description).toBe('Memory at 85% (z-score: 3.2)');
+  });
+
+  it('returns empty explanations when no insights exist', async () => {
+    mockAll.mockReturnValueOnce([]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights/container/no-such-container',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.explanations).toEqual([]);
+  });
+
+  it('passes timeRange as interval to the query', async () => {
+    mockAll.mockReturnValueOnce([]);
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights/container/abc123?timeRange=24h',
+    });
+
+    expect(mockAll).toHaveBeenCalled();
+    const args = mockAll.mock.calls[0];
+    // Third param should be the interval
+    expect(args).toContain('-24 hours');
+  });
+
+  it('defaults to 1h time range', async () => {
+    mockAll.mockReturnValueOnce([]);
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights/container/abc123',
+    });
+
+    expect(mockAll).toHaveBeenCalled();
+    const args = mockAll.mock.calls[0];
+    expect(args).toContain('-1 hours');
+  });
+});

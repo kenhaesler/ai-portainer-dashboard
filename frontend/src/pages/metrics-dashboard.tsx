@@ -20,7 +20,7 @@ import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useStacks } from '@/hooks/use-stacks';
-import { useContainerMetrics, useAnomalies } from '@/hooks/use-metrics';
+import { useContainerMetrics, useAnomalies, useAnomalyExplanations } from '@/hooks/use-metrics';
 import { useContainerForecast, useForecasts, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
@@ -188,6 +188,12 @@ export default function MetricsDashboardPage() {
 
   // Fetch anomalies
   const { data: anomaliesData } = useAnomalies();
+
+  // Fetch anomaly explanations for selected container
+  const { data: explanationsData } = useAnomalyExplanations(
+    selectedContainer ?? undefined,
+    timeRange,
+  );
 
   // Fetch capacity forecasts for selected container
   const forecastOverviewQuery = useForecasts(20);
@@ -521,6 +527,9 @@ export default function MetricsDashboardPage() {
                     label="CPU Usage"
                     color="#3b82f6"
                     unit="%"
+                    anomalyExplanations={explanationsData?.explanations?.filter(
+                      (e) => e.title.toLowerCase().includes('cpu'),
+                    )}
                   />
                 </div>
                 {cpuError && (
@@ -553,6 +562,9 @@ export default function MetricsDashboardPage() {
                     label="Memory Usage"
                     color="#8b5cf6"
                     unit="%"
+                    anomalyExplanations={explanationsData?.explanations?.filter(
+                      (e) => e.title.toLowerCase().includes('memory'),
+                    )}
                   />
                 </div>
                 {memoryError && (

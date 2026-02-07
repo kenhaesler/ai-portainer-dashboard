@@ -89,6 +89,82 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
     };
   });
 
+  fastify.get('/api/monitoring/insights/container/:containerId', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Get anomaly explanations for a specific container',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { containerId } = request.params as { containerId: string };
+    const { timeRange = '1h', metricType } = request.query as {
+      timeRange?: string;
+      metricType?: string;
+    };
+
+    const db = getDb();
+
+    // Parse timeRange into an SQLite-compatible interval
+    let interval = '-1 hours';
+    const match = timeRange.match(/^(\d+)([mhd])$/);
+    if (match) {
+      const value = parseInt(match[1], 10);
+      const unit = match[2];
+      switch (unit) {
+        case 'm': interval = `-${value} minutes`; break;
+        case 'h': interval = `-${value} hours`; break;
+        case 'd': interval = `-${value} days`; break;
+      }
+    }
+
+    const conditions = [
+      '(container_id = ? OR container_id LIKE ?)',
+      "category IN ('anomaly', 'predictive')",
+      "created_at >= datetime('now', ?)",
+    ];
+    const params: unknown[] = [containerId, `${containerId}%`, interval];
+
+    if (metricType) {
+      conditions.push('title LIKE ?');
+      params.push(`%${metricType}%`);
+    }
+
+    const where = conditions.join(' AND ');
+    const rows = db.prepare(`
+      SELECT id, severity, category, title, description, suggested_action, created_at
+      FROM insights
+      WHERE ${where}
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(...params) as Array<{
+      id: string;
+      severity: string;
+      category: string;
+      title: string;
+      description: string;
+      suggested_action: string | null;
+      created_at: string;
+    }>;
+
+    // Parse out AI Analysis from description field
+    const explanations = rows.map((row) => {
+      const aiSplit = row.description.split('\n\nAI Analysis: ');
+      return {
+        id: row.id,
+        severity: row.severity,
+        category: row.category,
+        title: row.title,
+        description: aiSplit[0],
+        aiExplanation: aiSplit.length > 1 ? aiSplit[1] : null,
+        suggestedAction: row.suggested_action,
+        timestamp: row.created_at,
+      };
+    });
+
+    return { explanations };
+  });
+
   fastify.post('/api/monitoring/insights/:id/acknowledge', {
     schema: {
       tags: ['Monitoring'],
