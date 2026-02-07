@@ -770,18 +770,60 @@ function repairTruncatedToolCallJson(raw: string): string | null {
 function validateToolCalls(calls: unknown[]): ToolCallRequest[] | null {
   const valid: ToolCallRequest[] = [];
   for (const call of calls) {
+    if (typeof call !== 'object' || call === null) continue;
+    const candidate = call as Record<string, unknown>;
+
+    // Some models return a wrapper call:
+    // {"tool":"tool_calls","arguments":{"tool_calls":[...]}}
     if (
-      typeof call === 'object' &&
-      call !== null &&
-      'tool' in call &&
-      typeof (call as ToolCallRequest).tool === 'string' &&
-      executors[(call as ToolCallRequest).tool]
+      candidate.tool === 'tool_calls' &&
+      typeof candidate.arguments === 'object' &&
+      candidate.arguments !== null &&
+      'tool_calls' in (candidate.arguments as Record<string, unknown>)
     ) {
-      valid.push({
-        tool: (call as ToolCallRequest).tool,
-        arguments: (call as ToolCallRequest).arguments || {},
-      });
+      const nested = (candidate.arguments as Record<string, unknown>).tool_calls;
+      if (Array.isArray(nested)) {
+        const nestedValid = validateToolCalls(nested);
+        if (nestedValid) valid.push(...nestedValid);
+      }
+      continue;
     }
+
+    let toolName: string | null = null;
+    let rawArgs: unknown = {};
+
+    if (typeof candidate.tool === 'string') {
+      toolName = candidate.tool;
+      rawArgs = candidate.arguments ?? {};
+    } else if (
+      typeof candidate.function === 'object' &&
+      candidate.function !== null
+    ) {
+      const fn = candidate.function as Record<string, unknown>;
+      if (typeof fn.name === 'string') {
+        toolName = fn.name;
+        rawArgs = fn.arguments ?? {};
+      }
+    }
+
+    if (!toolName || !executors[toolName]) continue;
+
+    if (typeof rawArgs === 'string') {
+      try {
+        rawArgs = JSON.parse(rawArgs);
+      } catch {
+        rawArgs = {};
+      }
+    }
+
+    if (!rawArgs || typeof rawArgs !== 'object') {
+      rawArgs = {};
+    }
+
+    valid.push({
+      tool: toolName,
+      arguments: rawArgs as Record<string, unknown>,
+    });
   }
   return valid.length > 0 ? valid : null;
 }

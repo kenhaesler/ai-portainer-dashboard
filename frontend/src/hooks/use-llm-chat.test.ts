@@ -118,6 +118,22 @@ describe('useLlmChat', () => {
     expect(result.current.messages[0].content).toBe('Full response');
   });
 
+  it('should avoid blank assistant message when chat:end content is empty', () => {
+    const { result } = renderHook(() => useLlmChat());
+
+    act(() => {
+      eventHandlers['chat:start']?.();
+    });
+
+    act(() => {
+      eventHandlers['chat:end']?.({ id: 'msg-empty', content: '' });
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].role).toBe('system');
+    expect(result.current.messages[0].content).toContain('empty response');
+  });
+
   it('should handle chat:error event', () => {
     const { result } = renderHook(() => useLlmChat());
 

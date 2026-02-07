@@ -108,6 +108,36 @@ describe('llm-tools', () => {
       expect(result![1].tool).toBe('list_insights');
     });
 
+    it('should unwrap nested tool_calls wrapper format', () => {
+      const input = JSON.stringify({
+        tool_calls: [
+          {
+            tool: 'tool_calls',
+            arguments: {
+              tool_calls: [
+                {
+                  tool: 'list_insights',
+                  arguments: {
+                    severity: 'critical',
+                    limit: 10,
+                    acknowledged: 'false',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('list_insights');
+      expect(result![0].arguments).toEqual({
+        severity: 'critical',
+        limit: 10,
+        acknowledged: 'false',
+      });
+    });
+
     it('should parse tool calls from markdown code blocks', () => {
       const input = `Let me look that up for you.
 
@@ -203,6 +233,23 @@ describe('llm-tools', () => {
       const result = parseToolCalls(input);
       expect(result).toHaveLength(1);
       expect(result![0].tool).toBe('get_trace_stats');
+    });
+
+    it('should parse function-style tool calls with string arguments', () => {
+      const input = JSON.stringify({
+        tool_calls: [
+          {
+            function: {
+              name: 'list_anomalies',
+              arguments: '{"limit":"5"}',
+            },
+          },
+        ],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('list_anomalies');
+      expect(result![0].arguments).toEqual({ limit: '5' });
     });
 
     it('should handle whitespace and newlines in JSON', () => {

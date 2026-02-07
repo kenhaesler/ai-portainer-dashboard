@@ -257,6 +257,122 @@ async function streamLlmCall(
   return fullResponse;
 }
 
+async function streamOllamaRawCall(
+  llmConfig: ReturnType<typeof getEffectiveLlmConfig>,
+  selectedModel: string,
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const baseUrl = llmConfig.ollamaUrl.replace(/\/$/, '');
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: selectedModel,
+      messages,
+      stream: true,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Response body is not readable');
+  }
+
+  const decoder = new TextDecoder();
+  let fullResponse = '';
+  let buffer = '';
+
+  while (true) {
+    if (signal?.aborted) break;
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      try {
+        const json = JSON.parse(line);
+        const text = json?.message?.content || '';
+        if (text) {
+          fullResponse += text;
+          onChunk(text);
+          continue;
+        }
+        const toolCallJson = normalizeToolCallsFromOllama(json);
+        if (toolCallJson) {
+          fullResponse += toolCallJson;
+          onChunk(toolCallJson);
+        }
+      } catch {
+        // Skip malformed NDJSON fragments.
+      }
+    }
+  }
+
+  // Flush any final buffered line.
+  const remaining = buffer.trim();
+  if (remaining) {
+    try {
+      const json = JSON.parse(remaining);
+      const text = json?.message?.content || '';
+      if (text) {
+        fullResponse += text;
+        onChunk(text);
+      } else {
+        const toolCallJson = normalizeToolCallsFromOllama(json);
+        if (toolCallJson) {
+          fullResponse += toolCallJson;
+          onChunk(toolCallJson);
+        }
+      }
+    } catch {
+      // Ignore trailing partial JSON.
+    }
+  }
+
+  return fullResponse;
+}
+
+function normalizeToolCallsFromOllama(json: any): string | null {
+  const calls = json?.message?.tool_calls;
+  if (!Array.isArray(calls) || calls.length === 0) return null;
+
+  const normalized = calls
+    .map((call: any) => {
+      const tool = call?.function?.name || call?.tool || call?.name;
+      if (!tool || typeof tool !== 'string') return null;
+
+      let args = call?.function?.arguments ?? call?.arguments ?? {};
+      if (typeof args === 'string') {
+        try {
+          args = JSON.parse(args);
+        } catch {
+          args = {};
+        }
+      }
+      if (!args || typeof args !== 'object') {
+        args = {};
+      }
+
+      return { tool, arguments: args };
+    })
+    .filter(Boolean);
+
+  if (normalized.length === 0) return null;
+  return JSON.stringify({ tool_calls: normalized });
+}
+
 export function setupLlmNamespace(ns: Namespace) {
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
@@ -302,6 +418,8 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           ...history.slice(-20),
         ];
         let toolsEnabled = true;
+        let plainRetryAttempted = false;
+        let lastToolResults: ToolCallResult[] = [];
 
         let finalResponse = '';
         let toolIteration = 0;
@@ -326,14 +444,29 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           } catch (streamErr) {
             if (toolsEnabled && isRecoverableToolCallParseError(streamErr)) {
               log.warn({ err: streamErr, userId }, 'LLM tool-call parse failed; retrying without tool mode');
-              toolsEnabled = false;
-              messages = [
-                { role: 'system', content: systemPromptWithoutTools },
-                ...history.slice(-20),
-              ];
-              continue;
+              if (!llmConfig.customEnabled) {
+                iterationResponse = await streamOllamaRawCall(
+                  llmConfig,
+                  selectedModel,
+                  messages,
+                  (text) => {
+                    socket.emit('chat:chunk', text);
+                  },
+                  abortController.signal,
+                );
+                // Continue regular flow: parse tool calls or finalize natural response.
+              } else {
+                toolsEnabled = false;
+                messages = [
+                  { role: 'system', content: systemPromptWithoutTools },
+                  ...history.slice(-20),
+                ];
+                continue;
+              }
             }
-            throw streamErr;
+            else {
+              throw streamErr;
+            }
           }
 
           if (abortController.signal.aborted) break;
@@ -342,6 +475,15 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           const toolCalls = toolsEnabled ? parseToolCalls(iterationResponse) : null;
 
           if (!toolCalls) {
+            if (!iterationResponse.trim() && !plainRetryAttempted) {
+              plainRetryAttempted = true;
+              toolsEnabled = false;
+              messages = [
+                { role: 'system', content: systemPromptWithoutTools },
+                ...history.slice(-20),
+              ];
+              continue;
+            }
             // No tool calls — this is the final response (already streamed above)
             finalResponse = iterationResponse;
             break;
@@ -358,6 +500,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           });
 
           const results = await executeToolCalls(toolCalls);
+          lastToolResults = results;
 
           socket.emit('chat:tool_call', {
             tools: toolCalls.map(t => t.tool),
@@ -385,6 +528,13 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         if (!finalResponse && toolIteration >= MAX_TOOL_ITERATIONS) {
           finalResponse = 'I was unable to complete the request within the allowed number of tool calls. Please try a more specific question.';
           socket.emit('chat:chunk', finalResponse);
+        }
+        if (!finalResponse.trim()) {
+          if (lastToolResults.length > 0) {
+            finalResponse = `I could not generate a complete natural-language summary, but I retrieved live results:\n\n${formatToolResults(lastToolResults)}`;
+          } else {
+            finalResponse = 'I could not generate a complete response for that request. Please try again.';
+          }
         }
 
         history.push({ role: 'assistant', content: finalResponse });
