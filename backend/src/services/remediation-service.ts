@@ -1,9 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createChildLogger } from '../utils/logger.js';
-import { restartContainer, startContainer, stopContainer } from './portainer-client.js';
 import {
   insertAction,
-  getAction,
   updateActionStatus,
   hasPendingAction,
   type ActionInsert,
@@ -117,71 +115,4 @@ export function rejectAction(
     emitEvent({ type: 'remediation.rejected', timestamp: new Date().toISOString(), data: { actionId, rejectedBy: username, reason } });
   }
   return success;
-}
-
-export async function executeAction(actionId: string): Promise<boolean> {
-  const action = getAction(actionId);
-  if (!action) {
-    log.warn({ actionId }, 'Cannot execute: action not found');
-    return false;
-  }
-
-  if (action.status !== 'approved') {
-    log.warn(
-      { actionId, status: action.status },
-      'Cannot execute: action is not in approved status',
-    );
-    return false;
-  }
-
-  // Transition to executing
-  const transitioned = updateActionStatus(actionId, 'executing');
-  if (!transitioned) {
-    return false;
-  }
-
-  const startTime = Date.now();
-
-  try {
-    switch (action.action_type) {
-      case 'RESTART_CONTAINER':
-        await restartContainer(action.endpoint_id, action.container_id);
-        break;
-      case 'STOP_CONTAINER':
-        await stopContainer(action.endpoint_id, action.container_id);
-        break;
-      case 'START_CONTAINER':
-        await startContainer(action.endpoint_id, action.container_id);
-        break;
-      default:
-        throw new Error(`Unknown action type: ${action.action_type}`);
-    }
-
-    const durationMs = Date.now() - startTime;
-    updateActionStatus(actionId, 'completed', {
-      execution_result: `${action.action_type} executed successfully`,
-      execution_duration_ms: durationMs,
-    });
-
-    log.info(
-      { actionId, actionType: action.action_type, durationMs },
-      'Action executed successfully',
-    );
-    emitEvent({ type: 'remediation.completed', timestamp: new Date().toISOString(), data: { actionId, actionType: action.action_type, durationMs } });
-    return true;
-  } catch (err) {
-    const durationMs = Date.now() - startTime;
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-
-    updateActionStatus(actionId, 'failed', {
-      execution_result: `Failed: ${errorMessage}`,
-      execution_duration_ms: durationMs,
-    });
-
-    log.error(
-      { actionId, actionType: action.action_type, err },
-      'Action execution failed',
-    );
-    return false;
-  }
 }
