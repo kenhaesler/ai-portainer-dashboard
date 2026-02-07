@@ -49,6 +49,7 @@ import { cn, formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 
 // Default settings definitions
 const DEFAULT_SETTINGS = {
@@ -1183,6 +1184,7 @@ function PortainerBackupManagement() {
 }
 
 export default function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
@@ -1195,6 +1197,17 @@ export default function SettingsPage() {
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState<'general' | 'portainer-backup'>(
+    searchParams.get('tab') === 'portainer-backup' ? 'portainer-backup' : 'general'
+  );
+
+  useEffect(() => {
+    const requestedTab =
+      searchParams.get('tab') === 'portainer-backup' ? 'portainer-backup' : 'general';
+    setActiveTab((currentTab) =>
+      currentTab === requestedTab ? currentTab : requestedTab
+    );
+  }, [searchParams]);
 
   // Initialize values from API data
   useEffect(() => {
@@ -1307,6 +1320,21 @@ export default function SettingsPage() {
     setSaveSuccess(false);
   };
 
+  const handleTabChange = (tab: string) => {
+    if (tab !== 'general' && tab !== 'portainer-backup') return;
+
+    setActiveTab(tab);
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (tab === 'general') {
+        next.delete('tab');
+      } else {
+        next.set('tab', tab);
+      }
+      return next;
+    }, { replace: true });
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -1409,7 +1437,7 @@ export default function SettingsPage() {
       )}
 
       {/* Tabs */}
-      <Tabs.Root defaultValue="general" className="space-y-6">
+      <Tabs.Root value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <Tabs.List className="flex items-center gap-1 border-b">
           <Tabs.Trigger
             value="general"

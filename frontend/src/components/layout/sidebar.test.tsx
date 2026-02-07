@@ -92,6 +92,8 @@ describe('Sidebar', () => {
     expect(screen.getByText('Containers')).toBeInTheDocument();
     expect(screen.getByText('Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Operations')).toBeInTheDocument();
+    expect(screen.queryByText('Backups')).not.toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
   it('renders collapse toggle button', () => {

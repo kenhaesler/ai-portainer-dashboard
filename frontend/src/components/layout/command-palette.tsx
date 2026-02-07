@@ -15,7 +15,6 @@ import {
   MessageSquare,
   Activity,
   FileSearch,
-  Database,
   Webhook,
   Users,
   Settings,
@@ -60,7 +59,6 @@ const pages: PageEntry[] = [
   { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
   { label: 'Webhooks', to: '/webhooks', icon: Webhook },
   { label: 'Users', to: '/users', icon: Users },
-  { label: 'Backups', to: '/backups', icon: Database },
   { label: 'Settings', to: '/settings', icon: Settings },
 ];
 
