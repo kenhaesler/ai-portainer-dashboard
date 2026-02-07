@@ -55,6 +55,20 @@ async function runMetricsCollection(): Promise<void> {
                 metric_type: 'memory_bytes',
                 value: stats.memoryBytes,
               },
+              {
+                endpoint_id: ep.Id,
+                container_id: container.Id,
+                container_name: containerName,
+                metric_type: 'network_rx_bytes',
+                value: stats.networkRxBytes,
+              },
+              {
+                endpoint_id: ep.Id,
+                container_id: container.Id,
+                container_name: containerName,
+                metric_type: 'network_tx_bytes',
+                value: stats.networkTxBytes,
+              },
             );
           } catch (err) {
             log.warn(

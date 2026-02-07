@@ -8,7 +8,7 @@ export interface MetricInsert {
   endpoint_id: number;
   container_id: string;
   container_name: string;
-  metric_type: 'cpu' | 'memory' | 'memory_bytes';
+  metric_type: 'cpu' | 'memory' | 'memory_bytes' | 'network_rx_bytes' | 'network_tx_bytes';
   value: number;
 }
 
@@ -133,4 +133,68 @@ export function getLatestMetrics(
     result[row.metric_type] = row.value;
   }
   return result;
+}
+
+export interface NetworkRate {
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+}
+
+export function getNetworkRates(
+  endpointId: number,
+): Record<string, NetworkRate> {
+  const rows = getDb().prepare(`
+    SELECT container_id, metric_type, value, timestamp
+    FROM metrics
+    WHERE endpoint_id = ?
+      AND metric_type IN ('network_rx_bytes', 'network_tx_bytes')
+      AND timestamp > datetime('now', '-5 minutes')
+    ORDER BY container_id, metric_type, timestamp DESC
+  `).all(endpointId) as Array<{
+    container_id: string;
+    metric_type: string;
+    value: number;
+    timestamp: string;
+  }>;
+
+  // Group by container_id + metric_type, keep only first 2 entries (latest)
+  const grouped = new Map<string, Array<{ value: number; timestamp: string }>>();
+  for (const row of rows) {
+    const key = `${row.container_id}:${row.metric_type}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    const entries = grouped.get(key)!;
+    if (entries.length < 2) {
+      entries.push({ value: row.value, timestamp: row.timestamp });
+    }
+  }
+
+  // Compute rates per container
+  const rates: Record<string, NetworkRate> = {};
+
+  for (const [key, entries] of grouped) {
+    if (entries.length < 2) continue;
+
+    const [containerId, metricType] = key.split(':');
+    const timeDiff = (new Date(entries[0].timestamp).getTime() - new Date(entries[1].timestamp).getTime()) / 1000;
+    if (timeDiff <= 0) continue;
+
+    const byteDiff = entries[0].value - entries[1].value;
+    if (byteDiff < 0) continue;
+
+    const rate = byteDiff / timeDiff;
+
+    if (!rates[containerId]) {
+      rates[containerId] = { rxBytesPerSec: 0, txBytesPerSec: 0 };
+    }
+
+    if (metricType === 'network_rx_bytes') {
+      rates[containerId].rxBytesPerSec = Math.round(rate * 100) / 100;
+    } else {
+      rates[containerId].txBytesPerSec = Math.round(rate * 100) / 100;
+    }
+  }
+
+  return rates;
 }

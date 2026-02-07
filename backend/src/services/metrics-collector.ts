@@ -7,6 +7,8 @@ export interface CollectedMetrics {
   cpu: number;
   memory: number;
   memoryBytes: number;
+  networkRxBytes: number;
+  networkTxBytes: number;
 }
 
 export async function collectMetrics(
@@ -43,12 +45,22 @@ export async function collectMetrics(
     memoryPercent = (memoryBytes / memoryLimit) * 100;
   }
 
+  // Network I/O: sum all interfaces
+  let networkRxBytes = 0;
+  let networkTxBytes = 0;
+  if (stats.networks) {
+    for (const iface of Object.values(stats.networks)) {
+      networkRxBytes += iface.rx_bytes ?? 0;
+      networkTxBytes += iface.tx_bytes ?? 0;
+    }
+  }
+
   // Clamp values to valid ranges
   cpuPercent = Math.max(0, Math.min(cpuPercent, 100 * numCpus));
   memoryPercent = Math.max(0, Math.min(memoryPercent, 100));
 
   log.debug(
-    { containerId, cpuPercent, memoryPercent, memoryBytes },
+    { containerId, cpuPercent, memoryPercent, memoryBytes, networkRxBytes, networkTxBytes },
     'Metrics collected',
   );
 
@@ -56,5 +68,7 @@ export async function collectMetrics(
     cpu: Math.round(cpuPercent * 100) / 100,
     memory: Math.round(memoryPercent * 100) / 100,
     memoryBytes: Math.max(0, memoryBytes),
+    networkRxBytes,
+    networkTxBytes,
   };
 }
