@@ -36,6 +36,29 @@ class PortainerError extends Error {
   }
 }
 
+const SENSITIVE_LABEL_KEYS = new Set([
+  'com.docker.compose.project.config_files',
+]);
+
+function looksLikeHostPath(value: string): boolean {
+  return /^(\/|~\/|[A-Za-z]:[\\/])/.test(value);
+}
+
+export function sanitizeContainerLabels(labels: Record<string, string>): Record<string, string> {
+  const sanitized: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(labels)) {
+    const shouldRedact =
+      SENSITIVE_LABEL_KEYS.has(key) ||
+      key.startsWith('desktop.docker.io/binds/') ||
+      looksLikeHostPath(value);
+
+    sanitized[key] = shouldRedact ? '[REDACTED]' : value;
+  }
+
+  return sanitized;
+}
+
 function classifyError(status: number): ErrorKind {
   if (status === 401 || status === 403) return 'auth';
   if (status === 429) return 'rate-limit';
@@ -144,14 +167,21 @@ export async function getContainers(endpointId: number, all = true): Promise<Con
   const raw = await portainerFetch<unknown[]>(
     `/api/endpoints/${endpointId}/docker/containers/json?all=${all}`,
   );
-  return ContainerArraySchema.parse(raw);
+  return ContainerArraySchema.parse(raw).map((container) => ({
+    ...container,
+    Labels: sanitizeContainerLabels(container.Labels ?? {}),
+  }));
 }
 
 export async function getContainer(endpointId: number, containerId: string): Promise<Container> {
   const raw = await portainerFetch<unknown>(
     `/api/endpoints/${endpointId}/docker/containers/${containerId}/json`,
   );
-  return ContainerSchema.parse(raw);
+  const container = ContainerSchema.parse(raw);
+  return {
+    ...container,
+    Labels: sanitizeContainerLabels(container.Labels ?? {}),
+  };
 }
 
 export async function startContainer(endpointId: number, containerId: string): Promise<void> {
