@@ -161,75 +161,79 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   const gradientId = `color-${label.replace(/[^a-zA-Z0-9]/g, '')}`;
 
   return (
-    <div>
-      <ResponsiveContainer width="100%" height={height}>
-        <AreaChart data={decimated} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.4}/>
-              <stop offset="95%" stopColor={color} stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <XAxis
-            dataKey="timestamp"
-            tick={{ fontSize: 11 }}
-            stroke="hsl(var(--muted-foreground))"
-            tickFormatter={(v) => formatDate(v)}
-          />
-          <YAxis
-            tick={{ fontSize: 11 }}
-            stroke="hsl(var(--muted-foreground))"
-            tickFormatter={(v) => `${v}${unit}`}
-          />
-          <Tooltip
-            content={<CustomTooltip unit={unit} name={label} />}
-          />
-          <Legend />
-          <Area
-            type="monotone"
-            dataKey="value"
-            name={label}
-            stroke={color}
-            strokeWidth={2}
-            fillOpacity={1}
-            fill={`url(#${gradientId})`}
-            dot={false}
-            activeDot={{ r: 4, strokeWidth: 2 }}
-            isAnimationActive
-          />
-          {anomalies.map((a, i) => (
-            <ReferenceDot
-              key={i}
-              x={a.timestamp}
-              y={a.value}
-              r={6}
-              fill="hsl(var(--destructive))"
-              stroke="hsl(var(--destructive-foreground))"
-              strokeWidth={1.5}
-              shape={<ClickableAnomalyDot onClick={() => handleAnomalyClick(a)} />}
+    <div className="flex gap-3">
+      {/* Chart — shrinks when explanation panel is open */}
+      <div className={cn('min-w-0 transition-all', selectedAnomaly ? 'flex-[3]' : 'flex-1')}>
+        <ResponsiveContainer width="100%" height={height}>
+          <AreaChart data={decimated} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={color} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={color} stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="timestamp"
+              tick={{ fontSize: 11 }}
+              stroke="hsl(var(--muted-foreground))"
+              tickFormatter={(v) => formatDate(v)}
             />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
+            <YAxis
+              tick={{ fontSize: 11 }}
+              stroke="hsl(var(--muted-foreground))"
+              tickFormatter={(v) => `${v}${unit}`}
+            />
+            <Tooltip
+              content={<CustomTooltip unit={unit} name={label} />}
+            />
+            <Legend />
+            <Area
+              type="monotone"
+              dataKey="value"
+              name={label}
+              stroke={color}
+              strokeWidth={2}
+              fillOpacity={1}
+              fill={`url(#${gradientId})`}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 2 }}
+              isAnimationActive
+            />
+            {anomalies.map((a, i) => (
+              <ReferenceDot
+                key={i}
+                x={a.timestamp}
+                y={a.value}
+                r={6}
+                fill="hsl(var(--destructive))"
+                stroke="hsl(var(--destructive-foreground))"
+                strokeWidth={1.5}
+                shape={<ClickableAnomalyDot onClick={() => handleAnomalyClick(a)} />}
+              />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
 
-      {/* Inline anomaly explanation card */}
+      {/* Anomaly explanation panel — slides in from the right */}
       {selectedAnomaly && (
         <div
           className={cn(
-            'mt-3 rounded-lg border p-4 transition-all',
+            'flex-1 rounded-lg border p-4 overflow-y-auto',
             selectedAnomaly.explanation?.aiExplanation
               ? 'bg-card'
               : 'bg-muted/50',
           )}
+          style={{ maxHeight: height }}
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <AlertTriangle className={cn(
                 'h-4 w-4 shrink-0',
                 severityColor[selectedAnomaly.explanation?.severity ?? 'warning'],
               )} />
-              <div>
-                <p className="text-sm font-medium">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">
                   {selectedAnomaly.explanation?.title ?? 'Anomaly Detected'}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -239,7 +243,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
             </div>
             <button
               onClick={() => setSelectedAnomaly(null)}
-              className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+              className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted"
             >
               <X className="h-4 w-4" />
             </button>
