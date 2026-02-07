@@ -134,7 +134,7 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     if (metricsToInsert.length > 0) {
-      insertMetrics(metricsToInsert);
+      await insertMetrics(metricsToInsert);
     }
 
     // 3. Run security scan on all containers
@@ -174,7 +174,7 @@ export async function runMonitoringCycle(): Promise<void> {
         );
         if (!metric) continue;
 
-        const anomaly = detectAnomalyAdaptive(container.raw.Id, containerName, metricType, metric.value, config.ANOMALY_DETECTION_METHOD);
+        const anomaly = await detectAnomalyAdaptive(container.raw.Id, containerName, metricType, metric.value, config.ANOMALY_DETECTION_METHOD);
         if (anomaly?.is_anomalous) {
           // Cooldown check: skip if this container+metric was recently flagged
           const cooldownKey = `${container.raw.Id}:${metricType}`;
@@ -230,7 +230,7 @@ export async function runMonitoringCycle(): Promise<void> {
 
         for (const metricType of ['cpu', 'memory'] as const) {
           const value = metricType === 'cpu' ? cpuMetric.value : memMetric.value;
-          const ifAnomaly = detectAnomalyIsolationForest(
+          const ifAnomaly = await detectAnomalyIsolationForest(
             container.raw.Id, containerName, metricType, value,
             cpuMetric.value, memMetric.value,
           );
@@ -263,7 +263,7 @@ export async function runMonitoringCycle(): Promise<void> {
     const predictiveInsights: InsightInsert[] = [];
     if (config.PREDICTIVE_ALERTING_ENABLED) {
       try {
-        const forecasts = getCapacityForecasts(20);
+        const forecasts = await getCapacityForecasts(20);
         for (const forecast of forecasts) {
           if (
             forecast.trend === 'increasing' &&

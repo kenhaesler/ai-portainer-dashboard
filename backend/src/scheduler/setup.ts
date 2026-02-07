@@ -96,7 +96,7 @@ async function runMetricsCollection(): Promise<void> {
     }
 
     if (metricsToInsert.length > 0) {
-      insertMetrics(metricsToInsert);
+      await insertMetrics(metricsToInsert);
     }
 
     log.debug({ metricsCount: metricsToInsert.length }, 'Metrics collection cycle completed');
@@ -126,7 +126,7 @@ async function runKpiSnapshotCollection(): Promise<void> {
       { endpoints: 0, endpoints_up: 0, endpoints_down: 0, running: 0, stopped: 0, healthy: 0, unhealthy: 0, total: 0, stacks: 0 },
     );
 
-    insertKpiSnapshot(totals);
+    await insertKpiSnapshot(totals);
     log.debug('KPI snapshot collected');
   } catch (err) {
     log.error({ err }, 'KPI snapshot collection failed');
@@ -200,7 +200,7 @@ async function runPortainerBackupSchedule(): Promise<void> {
 async function runCleanup(): Promise<void> {
   try {
     const config = getConfig();
-    const deleted = cleanOldMetrics(config.METRICS_RETENTION_DAYS);
+    const deleted = await cleanOldMetrics(config.METRICS_RETENTION_DAYS);
     if (deleted > 0) {
       log.info({ deleted }, 'Old metrics cleaned up');
     }
@@ -215,7 +215,7 @@ async function runCleanup(): Promise<void> {
   }
 
   try {
-    const kpiDeleted = cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
+    const kpiDeleted = await cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
     if (kpiDeleted > 0) {
       log.info({ deleted: kpiDeleted }, 'Old KPI snapshots cleaned up');
     }

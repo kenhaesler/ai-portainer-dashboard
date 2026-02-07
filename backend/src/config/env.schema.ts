@@ -96,6 +96,14 @@ export const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
   REDIS_KEY_PREFIX: z.string().default('aidash:cache:'),
 
+  // TimescaleDB (metrics + KPI storage)
+  TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
+  TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
+  METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+  METRICS_ROLLUP_5MIN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+  METRICS_ROLLUP_1HOUR_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
+  METRICS_ROLLUP_1DAY_RETENTION_DAYS: z.coerce.number().int().min(1).default(365),
+
   // Server
   PORT: z.coerce.number().int().min(1).max(65535).default(3051),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),

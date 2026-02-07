@@ -40,7 +40,7 @@ describe('Forecast Routes', () => {
   });
 
   it('GET /api/forecasts returns forecast list', async () => {
-    mockGetCapacityForecasts.mockReturnValue([
+    mockGetCapacityForecasts.mockResolvedValue([
       {
         containerId: 'abc123',
         containerName: 'web-server',
@@ -68,7 +68,7 @@ describe('Forecast Routes', () => {
   });
 
   it('clamps overview limit to safe maximum', async () => {
-    mockGetCapacityForecasts.mockReturnValue([]);
+    mockGetCapacityForecasts.mockResolvedValue([]);
 
     const res = await app.inject({
       method: 'GET',
@@ -80,7 +80,7 @@ describe('Forecast Routes', () => {
   });
 
   it('GET /api/forecasts/:containerId returns single forecast', async () => {
-    mockGenerateForecast.mockReturnValue({
+    mockGenerateForecast.mockResolvedValue({
       containerId: 'abc123',
       containerName: 'web',
       metricType: 'cpu',
@@ -104,8 +104,8 @@ describe('Forecast Routes', () => {
   });
 
   it('looks up container name for per-container forecast', async () => {
-    mockLookupContainerName.mockReturnValue('my-container');
-    mockGenerateForecast.mockReturnValue({
+    mockLookupContainerName.mockResolvedValue('my-container');
+    mockGenerateForecast.mockResolvedValue({
       containerId: 'abc123',
       containerName: 'my-container',
       metricType: 'cpu',
@@ -136,7 +136,7 @@ describe('Forecast Routes', () => {
   });
 
   it('returns error when insufficient data', async () => {
-    mockGenerateForecast.mockReturnValue(null);
+    mockGenerateForecast.mockResolvedValue(null);
 
     const res = await app.inject({
       method: 'GET',

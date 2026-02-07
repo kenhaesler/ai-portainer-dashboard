@@ -39,18 +39,18 @@ export function calculateBollingerBands(
  * - High variance → use wider z-score threshold (avoid false positives)
  * - Time-of-day aware → adjusts baseline based on hour patterns (future)
  */
-export function detectAnomalyAdaptive(
+export async function detectAnomalyAdaptive(
   containerId: string,
   containerName: string,
   metricType: string,
   currentValue: number,
   method?: DetectionMethod,
-): AnomalyDetection | null {
+): Promise<AnomalyDetection | null> {
   const config = getConfig();
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
 
-  const stats = getMovingAverage(containerId, metricType, windowSize);
+  const stats = await getMovingAverage(containerId, metricType, windowSize);
 
   if (!stats || stats.sample_count < minSamples) {
     log.debug(

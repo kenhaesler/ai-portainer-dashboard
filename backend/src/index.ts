@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { getConfig } from './config/index.js';
 import { getDb, closeDb } from './db/sqlite.js';
+import { getMetricsDb, closeMetricsDb } from './db/timescale.js';
 import { createChildLogger } from './utils/logger.js';
 import { setupLlmNamespace } from './sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './sockets/monitoring.js';
@@ -21,8 +22,9 @@ async function main() {
   const config = getConfig();
   const app = await buildApp();
 
-  // Initialize database (runs migrations)
+  // Initialize databases (runs migrations)
   getDb();
+  await getMetricsDb();
 
   // Setup Socket.IO namespaces
   setupLlmNamespace(app.ioNamespaces.llm);
@@ -43,6 +45,7 @@ async function main() {
       stopScheduler();
       await app.close();
       closeDb();
+      await closeMetricsDb();
       log.info('Graceful shutdown complete');
       process.exit(0);
     } catch (err) {

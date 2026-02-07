@@ -1,0 +1,109 @@
+import pg from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { getConfig } from '../config/index.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const log = createChildLogger('timescale');
+
+let pool: pg.Pool | null = null;
+
+export async function getMetricsDb(): Promise<pg.Pool> {
+  if (!pool) {
+    const config = getConfig();
+
+    pool = new pg.Pool({
+      connectionString: config.TIMESCALE_URL,
+      max: config.TIMESCALE_MAX_CONNECTIONS,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+    });
+
+    pool.on('error', (err) => {
+      log.error({ err }, 'Unexpected TimescaleDB pool error');
+    });
+
+    log.info('TimescaleDB pool created');
+    await runMigrations(pool);
+    await applyRetentionPolicies(pool, config);
+  }
+  return pool;
+}
+
+async function runMigrations(db: pg.Pool): Promise<void> {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS _ts_migrations (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  const migrationsDir = path.join(__dirname, 'timescale-migrations');
+  if (!fs.existsSync(migrationsDir)) {
+    log.info('No timescale-migrations directory found, skipping');
+    return;
+  }
+
+  const files = fs.readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  const { rows } = await db.query('SELECT name FROM _ts_migrations');
+  const applied = new Set(rows.map((row: { name: string }) => row.name));
+
+  for (const file of files) {
+    if (applied.has(file)) continue;
+
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+    log.info({ migration: file }, 'Applying TimescaleDB migration');
+
+    await db.query(sql);
+    await db.query('INSERT INTO _ts_migrations (name) VALUES ($1)', [file]);
+
+    log.info({ migration: file }, 'TimescaleDB migration applied');
+  }
+}
+
+async function applyRetentionPolicies(
+  db: pg.Pool,
+  config: ReturnType<typeof getConfig>,
+): Promise<void> {
+  const policies = [
+    { table: 'metrics', days: config.METRICS_RAW_RETENTION_DAYS },
+    { table: 'kpi_snapshots', days: config.METRICS_RAW_RETENTION_DAYS },
+  ];
+
+  for (const { table, days } of policies) {
+    try {
+      // Remove existing policy first (if any), then add the configured one
+      await db.query(`SELECT remove_retention_policy('${table}', if_exists => true)`);
+      await db.query(
+        `SELECT add_retention_policy('${table}', INTERVAL '${days} days', if_not_exists => true)`,
+      );
+      log.info({ table, retentionDays: days }, 'Retention policy applied');
+    } catch (err) {
+      log.warn({ err, table }, 'Failed to apply retention policy (table may not exist yet)');
+    }
+  }
+}
+
+export async function closeMetricsDb(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    log.info('TimescaleDB pool closed');
+  }
+}
+
+export async function isMetricsDbHealthy(): Promise<boolean> {
+  try {
+    const db = await getMetricsDb();
+    const { rows } = await db.query('SELECT 1 as ok');
+    return rows[0]?.ok === 1;
+  } catch {
+    return false;
+  }
+}

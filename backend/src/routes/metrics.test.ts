@@ -3,20 +3,27 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { metricsRoutes } from './metrics.js';
 
-const mockAll = vi.fn((..._args: unknown[]): unknown[] => []);
-const mockPrepare = vi.fn((_sql: string) => ({ all: mockAll }));
+const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: mockPrepare,
-  })),
-  prepareStmt: vi.fn(() => ({
-    all: vi.fn(() => []),
-  })),
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
 vi.mock('../services/metrics-store.js', () => ({
   getNetworkRates: vi.fn(),
+}));
+
+vi.mock('../services/metrics-rollup-selector.js', () => ({
+  selectRollupTable: vi.fn().mockReturnValue({
+    table: 'metrics',
+    timestampCol: 'timestamp',
+    valueCol: 'value',
+    isRollup: false,
+  }),
+}));
+
+vi.mock('../services/lttb-decimator.js', () => ({
+  decimateLTTB: vi.fn((data: unknown[]) => data),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -54,15 +61,17 @@ describe('metrics routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAll.mockReturnValue([]);
+    mockQuery.mockResolvedValue({ rows: [] });
   });
 
   describe('GET /api/metrics/:endpointId/:containerId', () => {
     it('should return metrics data with correct response shape', async () => {
-      mockAll.mockReturnValue([
-        { timestamp: '2024-01-01T00:00:00Z', value: 45.2 },
-        { timestamp: '2024-01-01T00:01:00Z', value: 47.8 },
-      ]);
+      mockQuery.mockResolvedValue({
+        rows: [
+          { timestamp: '2024-01-01T00:00:00Z', value: 45.2 },
+          { timestamp: '2024-01-01T00:01:00Z', value: 47.8 },
+        ],
+      });
 
       const response = await app.inject({
         method: 'GET',
@@ -85,15 +94,14 @@ describe('metrics routes', () => {
         url: '/api/metrics/5/abc123?metricType=cpu',
       });
 
-      expect(mockPrepare).toHaveBeenCalled();
-      const sql = mockPrepare.mock.calls[0][0] as string;
-      expect(sql).toContain('endpoint_id = ?');
-      expect(sql).toContain('container_id = ?');
-      expect(sql).toContain('container_id LIKE ?');
+      expect(mockQuery).toHaveBeenCalled();
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('endpoint_id = $1');
+      expect(sql).toContain('container_id = $2');
+      expect(sql).toContain('container_id LIKE $3');
 
-      // Verify params: endpointId, containerId, containerId%, metricType, timestamp
-      const params = mockAll.mock.calls[0];
-      expect(params[0]).toBe(5);       // endpoint_id
+      const params = mockQuery.mock.calls[0][1] as unknown[];
+      expect(params[0]).toBe(5);        // endpoint_id
       expect(params[1]).toBe('abc123'); // exact container_id
       expect(params[2]).toBe('abc123%'); // prefix match
       expect(params[3]).toBe('cpu');    // metric_type
@@ -105,9 +113,9 @@ describe('metrics routes', () => {
         url: '/api/metrics/1/abc123?metricType=memory',
       });
 
-      const sql = mockPrepare.mock.calls[0][0] as string;
-      expect(sql).toContain('metric_type = ?');
-      const params = mockAll.mock.calls[0];
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toContain('metric_type =');
+      const params = mockQuery.mock.calls[0][1] as unknown[];
       expect(params[3]).toBe('memory');
     });
 
@@ -117,18 +125,18 @@ describe('metrics routes', () => {
         url: '/api/metrics/1/abc123?timeRange=1h',
       });
 
-      const params = mockAll.mock.calls[0];
-      // Without metricType: endpointId, containerId, containerId%, timestamp
+      const params = mockQuery.mock.calls[0][1] as unknown[];
+      // Without metricType: endpointId, containerId, containerId%, timestamp_from, timestamp_to
       expect(params[0]).toBe(1);
       expect(params[1]).toBe('abc123');
       expect(params[2]).toBe('abc123%');
-      // Fourth param should be the timestamp (ISO string), not a metric type
+      // Fourth param should be a timestamp (ISO string), not a metric type
       expect(typeof params[3]).toBe('string');
-      expect((params[3] as string).includes('T')).toBe(true); // ISO date
+      expect((params[3] as string).includes('T')).toBe(true);
     });
 
     it('should return empty data array when no metrics exist', async () => {
-      mockAll.mockReturnValue([]);
+      mockQuery.mockResolvedValue({ rows: [] });
 
       const response = await app.inject({
         method: 'GET',
@@ -146,11 +154,7 @@ describe('metrics routes', () => {
         url: '/api/metrics/1/abc123?timeRange=30m',
       });
 
-      expect(response200()).toBe(true);
-
-      function response200() {
-        return mockPrepare.mock.calls.length > 0;
-      }
+      expect(mockQuery).toHaveBeenCalled();
     });
 
     it('should support metric_type as alias for metricType', async () => {
@@ -159,13 +163,12 @@ describe('metrics routes', () => {
         url: '/api/metrics/1/abc123?metric_type=memory_bytes',
       });
 
-      const params = mockAll.mock.calls[0];
-      // metric_type should appear in params
+      const params = mockQuery.mock.calls[0][1] as unknown[];
       expect(params).toContain('memory_bytes');
     });
 
     it('should default metricType to cpu in response when not provided', async () => {
-      mockAll.mockReturnValue([]);
+      mockQuery.mockResolvedValue({ rows: [] });
 
       const response = await app.inject({
         method: 'GET',
@@ -177,7 +180,7 @@ describe('metrics routes', () => {
     });
 
     it('should default timeRange to 1h when not provided', async () => {
-      mockAll.mockReturnValue([]);
+      mockQuery.mockResolvedValue({ rows: [] });
 
       const response = await app.inject({
         method: 'GET',
@@ -191,7 +194,7 @@ describe('metrics routes', () => {
 
   describe('GET /api/metrics/network-rates/:endpointId', () => {
     it('should return rates for an endpoint', async () => {
-      mockGetNetworkRates.mockReturnValue({
+      mockGetNetworkRates.mockResolvedValue({
         'container-abc': { rxBytesPerSec: 1024, txBytesPerSec: 512 },
         'container-def': { rxBytesPerSec: 0, txBytesPerSec: 0 },
       });
@@ -211,7 +214,7 @@ describe('metrics routes', () => {
     });
 
     it('should return empty rates when no data', async () => {
-      mockGetNetworkRates.mockReturnValue({});
+      mockGetNetworkRates.mockResolvedValue({});
 
       const response = await app.inject({
         method: 'GET',
@@ -225,7 +228,7 @@ describe('metrics routes', () => {
     });
 
     it('should parse endpointId as number', async () => {
-      mockGetNetworkRates.mockReturnValue({});
+      mockGetNetworkRates.mockResolvedValue({});
 
       await app.inject({
         method: 'GET',
