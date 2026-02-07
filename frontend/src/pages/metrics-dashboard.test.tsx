@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
 const mockUseForecasts = vi.fn();
+const mockUseNetworkRates = vi.fn();
 
 // Mock all hooks
 vi.mock('@/hooks/use-endpoints', () => ({
@@ -16,29 +17,72 @@ vi.mock('@/hooks/use-containers', () => ({
       {
         id: 'c1',
         name: 'api-1',
+        image: 'nginx:latest',
+        state: 'running',
+        status: 'Up',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: { 'com.docker.compose.project': 'alpha' },
+        networks: ['frontend'],
       },
       {
         id: 'c2',
         name: 'worker-1',
+        image: 'nginx:latest',
+        state: 'running',
+        status: 'Up',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: { 'com.docker.compose.project': 'alpha' },
+        networks: ['frontend', 'jobs'],
       },
       {
         id: 'c4',
         name: 'beta-api-1',
+        image: 'nginx:latest',
+        state: 'running',
+        status: 'Up',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: { 'com.docker.compose.project': 'beta' },
+        networks: ['beta-net'],
       },
       {
         id: 'c3',
         name: 'standalone-1',
+        image: 'nginx:latest',
+        state: 'stopped',
+        status: 'Exited',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: {},
+        networks: ['standalone-net'],
       },
     ],
     isLoading: false,
+    refetch: vi.fn(),
+    isFetching: false,
+  }),
+}));
+
+vi.mock('@/hooks/use-networks', () => ({
+  useNetworks: vi.fn().mockReturnValue({
+    data: [
+      { id: 'n1', name: 'frontend', endpointId: 1, endpointName: 'local', containers: ['c1', 'c2'] },
+      { id: 'n2', name: 'jobs', endpointId: 1, endpointName: 'local', containers: ['c2'] },
+      { id: 'n3', name: 'beta-net', endpointId: 1, endpointName: 'local', containers: ['c4'] },
+      { id: 'n4', name: 'standalone-net', endpointId: 1, endpointName: 'local', containers: ['c3'] },
+    ],
+    isLoading: false,
+    isError: false,
     refetch: vi.fn(),
     isFetching: false,
   }),
@@ -56,6 +100,7 @@ vi.mock('@/hooks/use-stacks', () => ({
 vi.mock('@/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),
+  useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
 }));
 
 vi.mock('@/hooks/use-forecasts', () => ({
@@ -90,6 +135,28 @@ vi.mock('@/components/charts/anomaly-sparkline', () => ({
   AnomalySparkline: () => <div data-testid="sparkline" />,
 }));
 
+vi.mock('@/components/metrics/ai-metrics-summary', () => ({
+  AiMetricsSummary: () => <div data-testid="ai-metrics-summary" />,
+}));
+
+vi.mock('@/components/network/topology-graph', () => ({
+  TopologyGraph: ({
+    containers,
+    networks,
+    onNodeClick,
+  }: {
+    containers: Array<{ id: string }>;
+    networks: Array<{ id: string }>;
+    onNodeClick?: (nodeId: string) => void;
+  }) => (
+    <div data-testid="topology-graph" data-containers={containers.length} data-networks={networks.length}>
+      <button type="button" onClick={() => onNodeClick?.('container-c2')}>
+        Simulate graph container click
+      </button>
+    </div>
+  ),
+}));
+
 import MetricsDashboardPage from './metrics-dashboard';
 
 function renderPage() {
@@ -110,6 +177,14 @@ describe('MetricsDashboardPage', () => {
       isLoading: false,
       error: null,
     });
+    mockUseNetworkRates.mockReturnValue({
+      data: {
+        rates: {
+          c1: { rxBytesPerSec: 1024, txBytesPerSec: 2048 },
+          c2: { rxBytesPerSec: 4096, txBytesPerSec: 512 },
+        },
+      },
+    });
   });
 
   it('renders the page title', () => {
@@ -126,6 +201,16 @@ describe('MetricsDashboardPage', () => {
     renderPage();
     const select = screen.getAllByRole('combobox')[0];
     expect(select).toBeTruthy();
+  });
+
+  it('renders network context card once an endpoint is selected', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    expect(screen.getByText('Network Context')).toBeInTheDocument();
+    expect(screen.getByText('Select a container to view its network neighborhood')).toBeInTheDocument();
   });
 
   it('groups container selector options by stack with a No Stack group', () => {
@@ -165,6 +250,48 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
+  });
+
+  it('switches network scope and updates graph payload', () => {
+    renderPage();
+
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Endpoint' }));
+    const graph = screen.getByTestId('topology-graph');
+    expect(graph.getAttribute('data-containers')).toBe('4');
+    expect(graph.getAttribute('data-networks')).toBe('4');
+
+    const stackSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.click(stackSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stack' }));
+
+    const stackGraph = screen.getByTestId('topology-graph');
+    expect(stackGraph.getAttribute('data-containers')).toBe('2');
+    expect(stackGraph.getAttribute('data-networks')).toBe('2');
+  });
+
+  it('syncs container selection when graph container is clicked', () => {
+    renderPage();
+
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    const stackSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.click(stackSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph container click' }));
+
+    expect(screen.getAllByRole('combobox')[2]).toHaveTextContent('worker-1');
   });
 
   it('renders forecast overview rows and risk badges', () => {
