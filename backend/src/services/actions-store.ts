@@ -69,6 +69,18 @@ export function getActions(options: GetActionsOptions = {}): Action[] {
     .all(...params, limit, offset) as Action[];
 }
 
+export function hasPendingAction(containerId: string, actionType: string): boolean {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT 1 FROM actions
+       WHERE container_id = ? AND action_type = ? AND status = 'pending'
+       LIMIT 1`,
+    )
+    .get(containerId, actionType);
+  return row !== undefined;
+}
+
 export function getAction(id: string): Action | undefined {
   const db = getDb();
   return db
