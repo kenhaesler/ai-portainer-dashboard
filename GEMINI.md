@@ -23,9 +23,9 @@ AI-powered container monitoring dashboard that extends Portainer with real-time 
 - **Test before committing. Test before pushing. Test before creating a PR.**
 - **DO NOT create pull requests without passing tests. CI will reject them.**
 
-### 2. Observer-Only Constraint
+### 2. Observer-First Constraint
 
-This dashboard MUST NOT generate code that starts, stops, restarts, or otherwise mutates container state. Read-only access to Portainer only.
+This dashboard is primarily read-only, but it may trigger specific, explicitly approved actions via the remediation workflow. Do not add new container-mutating actions without an explicit request, and ensure all actions remain gated, auditable, and opt-in.
 
 ### 3. Never Push Directly to `main` or `dev`
 
@@ -55,6 +55,12 @@ npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 # Docker development (preferred)
 docker compose -f docker-compose.dev.yml up -d
 ```
+
+## Local Runtime Dependencies
+
+- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend and frontend run as containers.
+- **Ollama** — LLM backend for AI features. Must be running externally (not bundled in Docker Compose). The default `OLLAMA_BASE_URL` is `http://host.docker.internal:11434`, which connects to Ollama running on the host machine.
+- When running outside Docker (`npm run dev`), ensure Ollama is available at `OLLAMA_BASE_URL` (default `http://localhost:11434`) and Portainer at `PORTAINER_API_URL`.
 
 ## Architecture
 
@@ -225,3 +231,212 @@ Copy `.env.example` to `.env`. Key variables:
 - `REDIS_URL` / `REDIS_KEY_PREFIX` — Hybrid cache backend config (defaults: `redis://redis:6379`, `aidash:cache:`)
 - `JWT_SECRET` — Must be 32+ chars in production
 - See `.env.example` for the full list including OIDC, monitoring, caching, and rate-limit settings.
+
+---
+
+## Creating GitHub Issues
+
+This project uses specific issue formats. When asked to create issues, follow these templates exactly.
+
+### Available Labels
+
+| Label | Use When |
+|-------|----------|
+| `enhancement` | New feature or improvement |
+| `bug` | Something is broken |
+| `UI` | Involves frontend/visual changes |
+| `security` | Security-related issue |
+| `needs-refinement` | Requires more research or design before implementation |
+| `needs-discussion` | Needs team discussion before committing to approach |
+| `documentation` | Docs-only change |
+
+### CLI Commands
+
+```bash
+# Feature issue
+gh issue create \
+  --title "Feature: <Short Descriptive Title>" \
+  --label "enhancement" \
+  --label "needs-refinement" \
+  --body "$(cat <<'EOF'
+<body here>
+EOF
+)"
+
+# Bug issue
+gh issue create \
+  --title "<Descriptive problem summary>" \
+  --label "bug" \
+  --body "$(cat <<'EOF'
+<body here>
+EOF
+)"
+```
+
+---
+
+### Feature Issue Template
+
+**Title format:** `Feature: <Descriptive Name>`
+
+**Labels:** Always `enhancement`. Add `needs-refinement` if research/design questions remain. Add `needs-discussion` if the approach is experimental or controversial. Add `UI` if it involves frontend/visual work.
+
+**Body structure (follow this order exactly):**
+
+```markdown
+## Problem Statement
+
+<1-2 paragraphs explaining WHY this feature is needed. Describe the current gap
+or pain point. Use concrete examples of what users can't do today. Reference
+competitor tools or industry standards if relevant.>
+
+## Proposed Solution
+
+<Overview paragraph of the approach.>
+
+### <Sub-section for each major component>
+
+<Use TABLES for feature lists, shortcuts, patterns, or any structured data:>
+
+| Feature | Description |
+|---------|-------------|
+| **Feature name** | What it does |
+
+<Use ASCII ART MOCKUPS for UI features:>
+
+```
+┌─ Component Name ─────────────────────────────────────┐
+│ [UI mockup showing layout and key elements]           │
+│                                                       │
+│ Show data flow, user interactions, visual layout      │
+└───────────────────────────────────────────────────────┘
+```
+
+<Use CODE BLOCKS for algorithms, formulas, or config examples.>
+
+## Use Cases
+
+1. **Use case name**: Concrete scenario with specific container/service names
+2. **Use case name**: Another scenario showing different value
+3. **Use case name**: Edge case or advanced usage
+
+## Acceptance Criteria
+
+- [ ] <Specific, testable requirement>
+- [ ] <Another requirement — be precise about behavior>
+- [ ] <Include both backend AND frontend criteria>
+- [ ] <Include test requirements>
+- [ ] <Include theme/design consistency for UI features>
+
+## Technical Considerations
+
+- <Architecture: which files/modules are affected>
+- <Dependencies: new libraries or existing ones to extend>
+- <Performance: complexity, caching, real-time needs>
+- <Storage: database changes, new tables or fields>
+- <Observer-only: confirm read-only access if relevant>
+- <Integration: how it connects to existing features>
+
+**Effort Estimate:** 🟢 Small | 🟡 Medium | 🟠 Large | 🔴 Very Large
+**Impact Estimate:** 🟢 Low | 🟡 High | 🔴 Very High
+**Priority Score:** X.X/10
+
+> **Needs Refinement**: <Open questions, research needed, or decisions
+> required before implementation. Only include when labeled `needs-refinement`.>
+```
+
+**Feature content rules:**
+1. Problem Statement must explain the "why" — not just "we should add X" but "users can't do Y, causing Z"
+2. Use **tables** for structured data (features, shortcuts, patterns)
+3. Use **ASCII mockups** for any UI feature — show the layout
+4. Acceptance criteria must be **checkbox items**, each specific and testable
+5. Technical considerations must **reference actual files** in this codebase
+6. Priority scores use X.X/10 scale based on effort vs. impact
+7. Reference related issues with `#number`
+
+---
+
+### Bug Issue Template
+
+**Title format:** Descriptive problem statement (NO "Bug:" prefix). State what's wrong clearly.
+
+**Labels:** Always `bug`. Add `UI` for visual bugs. Add `security` for security issues. Add `enhancement` if the fix also improves behavior.
+
+**Body structure (follow this order exactly):**
+
+```markdown
+## Summary
+
+<1-2 sentences describing the bug concisely.>
+
+## Root Cause
+
+<If known, explain WHY the bug happens. Reference specific files and line numbers:>
+
+In `path/to/file.ts` line XX:
+
+```typescript
+// Show the problematic code
+```
+
+<Explain what this code does wrong.>
+
+## Issues
+
+<If there are MULTIPLE related bugs, number them:>
+
+### 1. <First bug>
+<Description with file references and code snippets>
+
+### 2. <Second bug>
+<Description with file references and code snippets>
+
+<If it's a SINGLE bug, skip numbered sub-sections — just use Summary + Root Cause.>
+
+## Steps to Reproduce
+
+1. <Specific step>
+2. <Specific step>
+3. Observe: <what you see>
+
+## Expected Behavior
+
+<What should happen instead.>
+
+## Actual Behavior
+
+<What actually happens. Include error messages or logs if relevant.>
+
+## Fix Approach
+
+<If the fix is known, outline the steps:>
+
+1. <Step — reference specific files>
+2. <Step>
+3. <Step>
+
+## Relevant Files
+
+- `path/to/file.ts` — What's in this file and why it matters (line XX)
+- `path/to/another.ts` — Why this file is relevant
+```
+
+**Bug content rules:**
+1. Always include **file paths** where the bug exists
+2. Include **line numbers** when possible
+3. Show **problematic code** in fenced code blocks with language annotation
+4. Explain the **root cause** (why), not just symptoms (what)
+5. Fix approach is optional but encouraged when the solution is clear
+6. Steps to reproduce must be **numbered** and specific
+
+---
+
+### General Issue Rules
+
+1. Use **GitHub-flavored markdown** — headers, tables, code blocks, checkboxes, blockquotes
+2. Reference existing issues with `#number` when related
+3. Reference **actual file paths** in the codebase — do not invent paths
+4. Respect the **observer-only constraint** — never propose features that mutate container state
+5. Be **specific** — every issue must have enough detail for someone to start implementation
+6. **One concern per issue** — unless bugs are tightly related (same page/component)
+7. **No duplicates** — check existing issues with `gh issue list --state open` before creating

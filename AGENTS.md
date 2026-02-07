@@ -56,6 +56,12 @@ npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 docker compose -f docker-compose.dev.yml up -d
 ```
 
+## Local Runtime Dependencies
+
+- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend and frontend run as containers.
+- **Ollama** — LLM backend for AI features. Must be running externally (not bundled in Docker Compose). The default `OLLAMA_BASE_URL` is `http://host.docker.internal:11434`, which connects to Ollama running on the host machine.
+- When running outside Docker (`npm run dev`), ensure Ollama is available at `OLLAMA_BASE_URL` (default `http://localhost:11434`) and Portainer at `PORTAINER_API_URL`.
+
 ## Architecture
 
 ### Backend (`backend/src/`)
