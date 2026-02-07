@@ -6,6 +6,7 @@ const ALL_THEME_CLASSES = [
   'dark',
   'apple-light',
   'apple-dark',
+  'retro',
   'catppuccin-latte',
   'catppuccin-frappe',
   'catppuccin-macchiato',

@@ -1200,7 +1200,7 @@ aside nav:hover {
 }
 
 /* ============================================
-   RETRO BACKGROUND (70s warm curved stripes)
+   RETRO BACKGROUND (70s flowing wave bands)
    ============================================ */
 
 .retro-bg {
@@ -1210,36 +1210,38 @@ aside nav:hover {
   overflow: hidden;
 }
 
+/* Upper wave arcs sweeping from the left */
 .retro-stripes-tl {
   position: absolute;
   inset: 0;
   background: repeating-radial-gradient(
-    circle at 0% 0%,
-    #c8a35c 0px, #c8a35c 22px,
-    #f0e6cf 22px, #f0e6cf 40px,
-    #8aafa3 40px, #8aafa3 62px,
-    #f0e6cf 62px, #f0e6cf 80px,
-    #cf8a72 80px, #cf8a72 102px,
-    #f0e6cf 102px, #f0e6cf 124px
+    ellipse 140% 100% at -20% 30%,
+    #c8a35c 0px, #c8a35c 20px,
+    #f0e6cf 20px, #f0e6cf 36px,
+    #8aafa3 36px, #8aafa3 56px,
+    #f0e6cf 56px, #f0e6cf 72px,
+    #cf8a72 72px, #cf8a72 92px,
+    #f0e6cf 92px, #f0e6cf 112px
   );
-  mask-image: linear-gradient(135deg, black 0%, black 30%, transparent 55%);
-  -webkit-mask-image: linear-gradient(135deg, black 0%, black 30%, transparent 55%);
+  mask-image: linear-gradient(180deg, black 0%, black 25%, transparent 55%);
+  -webkit-mask-image: linear-gradient(180deg, black 0%, black 25%, transparent 55%);
 }
 
+/* Lower wave arcs sweeping from the right */
 .retro-stripes-br {
   position: absolute;
   inset: 0;
   background: repeating-radial-gradient(
-    circle at 100% 100%,
-    #cf8a72 0px, #cf8a72 22px,
-    #f0e6cf 22px, #f0e6cf 40px,
-    #c8a35c 40px, #c8a35c 62px,
-    #f0e6cf 62px, #f0e6cf 80px,
-    #8aafa3 80px, #8aafa3 102px,
-    #f0e6cf 102px, #f0e6cf 124px
+    ellipse 140% 100% at 120% 70%,
+    #cf8a72 0px, #cf8a72 20px,
+    #f0e6cf 20px, #f0e6cf 36px,
+    #c8a35c 36px, #c8a35c 56px,
+    #f0e6cf 56px, #f0e6cf 72px,
+    #8aafa3 72px, #8aafa3 92px,
+    #f0e6cf 92px, #f0e6cf 112px
   );
-  mask-image: linear-gradient(315deg, black 0%, black 30%, transparent 55%);
-  -webkit-mask-image: linear-gradient(315deg, black 0%, black 30%, transparent 55%);
+  mask-image: linear-gradient(0deg, black 0%, black 25%, transparent 55%);
+  -webkit-mask-image: linear-gradient(0deg, black 0%, black 25%, transparent 55%);
 }
 
 /* Mobile safe area insets for bottom nav */
