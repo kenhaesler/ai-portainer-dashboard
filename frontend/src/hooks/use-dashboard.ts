@@ -50,6 +50,11 @@ export interface NormalizedContainer {
 
 export interface DashboardSummary {
   kpis: DashboardKpis;
+  security: {
+    totalAudited: number;
+    flagged: number;
+    ignored: number;
+  };
   endpoints: NormalizedEndpoint[];
   recentContainers: NormalizedContainer[];
   timestamp: string;

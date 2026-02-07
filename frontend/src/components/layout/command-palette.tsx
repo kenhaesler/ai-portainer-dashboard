@@ -56,6 +56,7 @@ const pages: PageEntry[] = [
   { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
   { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
   { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
+  { label: 'Security Audit', to: '/security/audit', icon: Shield },
   { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
   { label: 'Webhooks', to: '/webhooks', icon: Webhook },
   { label: 'Users', to: '/users', icon: Users },

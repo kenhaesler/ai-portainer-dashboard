@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star } from 'lucide-react';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useContainers } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -243,6 +243,16 @@ export default function HomePage() {
               sparklineData={sparklines.stacks}
               sparklineColor="var(--color-chart-4)"
               hoverDetail={hoverDetails.stacks}
+            />
+          </MotionReveal>
+          <MotionReveal>
+            <KpiCard
+              label="Security Findings"
+              value={data.security.flagged}
+              icon={<ShieldAlert className="h-5 w-5" />}
+              trendValue={`${data.security.ignored} ignored`}
+              trend={data.security.flagged > 0 ? 'down' : 'up'}
+              onClick={() => navigate('/security/audit')}
             />
           </MotionReveal>
         </MotionStagger>

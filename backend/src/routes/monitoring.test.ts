@@ -25,6 +25,7 @@ describe('monitoring insights cursor pagination', () => {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
     app.decorateRequest('user', undefined);
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
