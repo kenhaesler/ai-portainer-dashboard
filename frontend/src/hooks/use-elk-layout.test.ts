@@ -16,17 +16,31 @@ import { useElkLayout, type ElkLayoutNode, type ElkLayoutEdge } from './use-elk-
 
 beforeEach(() => {
   mockLayout.mockReset();
-  // Default: position children at index * 200
-  mockLayout.mockImplementation(
-    async (graph: { children?: Array<{ id: string; width: number; height: number }> }) => ({
+  // Default: position root children at index * 200, auto-size compound nodes
+  mockLayout.mockImplementation(async (graph: any) => {
+    const processChildren = (children: any[], startX = 0, startY = 0): any[] =>
+      children.map((child: any, i: number) => {
+        const result: any = {
+          ...child,
+          x: startX + i * 200,
+          y: startY + i * 150,
+        };
+        if (child.children?.length) {
+          result.children = processChildren(child.children, 20, 35);
+          // Simulate auto-sizing compound node from children
+          const maxX = Math.max(...result.children.map((c: any) => (c.x ?? 0) + (c.width ?? 100)));
+          const maxY = Math.max(...result.children.map((c: any) => (c.y ?? 0) + (c.height ?? 80)));
+          result.width = maxX + 20;
+          result.height = maxY + 15;
+        }
+        return result;
+      });
+
+    return {
       ...graph,
-      children: (graph.children ?? []).map((child, i) => ({
-        ...child,
-        x: i * 200,
-        y: i * 150,
-      })),
-    }),
-  );
+      children: processChildren(graph.children ?? []),
+    };
+  });
 });
 
 describe('useElkLayout', () => {
@@ -37,7 +51,7 @@ describe('useElkLayout', () => {
     expect(mockLayout).not.toHaveBeenCalled();
   });
 
-  it('returns positions for each input node', async () => {
+  it('returns positions for flat nodes', async () => {
     const nodes: ElkLayoutNode[] = [
       { id: 'stack-A', width: 400, height: 300 },
       { id: 'stack-B', width: 400, height: 300 },
@@ -58,7 +72,7 @@ describe('useElkLayout', () => {
     expect(result.current.has('net-ext')).toBe(true);
   });
 
-  it('returns numeric x and y for each node', async () => {
+  it('returns LayoutPosition with numeric x, y, width, height', async () => {
     const nodes: ElkLayoutNode[] = [{ id: 'stack-A', width: 400, height: 300 }];
 
     const { result } = renderHook(() => useElkLayout({ nodes, edges: [] }));
@@ -70,6 +84,8 @@ describe('useElkLayout', () => {
     const pos = result.current.get('stack-A')!;
     expect(typeof pos.x).toBe('number');
     expect(typeof pos.y).toBe('number');
+    expect(typeof pos.width).toBe('number');
+    expect(typeof pos.height).toBe('number');
   });
 
   it('produces deterministic positions for the same input', async () => {
@@ -88,7 +104,7 @@ describe('useElkLayout', () => {
     expect(r1.current.get('stack-B')).toEqual(r2.current.get('stack-B'));
   });
 
-  it('passes nodes with width/height and edges in elkjs format', async () => {
+  it('passes leaf nodes with width/height and edges in elkjs format', async () => {
     const nodes: ElkLayoutNode[] = [
       { id: 'stack-A', width: 400, height: 300 },
       { id: 'net-1', width: 120, height: 80 },
@@ -127,5 +143,98 @@ describe('useElkLayout', () => {
     rerender();
 
     expect(mockLayout).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns positions for compound nodes and their children', async () => {
+    const nodes: ElkLayoutNode[] = [
+      {
+        id: 'group-A',
+        width: 0,
+        height: 0,
+        children: [
+          { id: 'child-1', width: 120, height: 80 },
+          { id: 'child-2', width: 120, height: 80 },
+        ],
+        edges: [{ id: 'e-1', source: 'child-1', target: 'child-2' }],
+        layoutOptions: { 'elk.algorithm': 'layered' },
+      },
+      { id: 'net-ext', width: 120, height: 80 },
+    ];
+    const edges: ElkLayoutEdge[] = [
+      { id: 'e-cross', source: 'child-1', target: 'net-ext' },
+    ];
+
+    const { result } = renderHook(() => useElkLayout({ nodes, edges }));
+
+    await waitFor(() => {
+      // 4 total: group-A, child-1, child-2, net-ext
+      expect(result.current.size).toBe(4);
+    });
+
+    // Group auto-sized (width/height > 0 from children)
+    const groupPos = result.current.get('group-A')!;
+    expect(groupPos.width).toBeGreaterThan(0);
+    expect(groupPos.height).toBeGreaterThan(0);
+
+    // Children have positions
+    expect(result.current.has('child-1')).toBe(true);
+    expect(result.current.has('child-2')).toBe(true);
+    expect(result.current.has('net-ext')).toBe(true);
+  });
+
+  it('omits width/height for compound nodes (width=0) when calling elkjs', async () => {
+    const nodes: ElkLayoutNode[] = [
+      {
+        id: 'group-A',
+        width: 0,
+        height: 0,
+        children: [{ id: 'child-1', width: 100, height: 50 }],
+      },
+    ];
+
+    renderHook(() => useElkLayout({ nodes, edges: [] }));
+
+    await waitFor(() => {
+      expect(mockLayout).toHaveBeenCalledTimes(1);
+    });
+
+    const graphArg = mockLayout.mock.calls[0][0];
+    const groupNode = graphArg.children[0];
+    // Compound node should NOT have width/height set (auto-sizing)
+    expect(groupNode.width).toBeUndefined();
+    expect(groupNode.height).toBeUndefined();
+    // But should have children
+    expect(groupNode.children).toHaveLength(1);
+    expect(groupNode.children[0]).toEqual({ id: 'child-1', width: 100, height: 50 });
+  });
+
+  it('passes intra-group edges at the group level in elkjs format', async () => {
+    const nodes: ElkLayoutNode[] = [
+      {
+        id: 'group-A',
+        width: 0,
+        height: 0,
+        children: [
+          { id: 'c1', width: 100, height: 50 },
+          { id: 'n1', width: 100, height: 50 },
+        ],
+        edges: [{ id: 'e-c1-n1', source: 'c1', target: 'n1' }],
+      },
+    ];
+
+    renderHook(() => useElkLayout({ nodes, edges: [] }));
+
+    await waitFor(() => {
+      expect(mockLayout).toHaveBeenCalledTimes(1);
+    });
+
+    const graphArg = mockLayout.mock.calls[0][0];
+    const groupNode = graphArg.children[0];
+    expect(groupNode.edges).toHaveLength(1);
+    expect(groupNode.edges[0]).toEqual({
+      id: 'e-c1-n1',
+      sources: ['c1'],
+      targets: ['n1'],
+    });
   });
 });
