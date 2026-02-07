@@ -12,16 +12,9 @@ const PARTICLES = [
   { left: '92%', delay: '1.1s', duration: '15s', size: '7px' },
 ];
 
-export function DashboardBackground() {
-  const bg = useThemeStore((s) => s.dashboardBackground) as DashboardBg;
-  const reducedMotion = useReducedMotion();
-
-  if (bg === 'none') return null;
-
-  const showParticles = bg === 'gradient-mesh-particles' && !reducedMotion;
-
+function GradientMeshBackground({ reducedMotion, showParticles }: { reducedMotion: boolean | null; showParticles: boolean }) {
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+    <>
       <div
         className={`login-gradient-mesh opacity-60 ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
         data-testid="dashboard-gradient"
@@ -45,6 +38,34 @@ export function DashboardBackground() {
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+function RetroBackground() {
+  return (
+    <div className="retro-bg" data-testid="retro-bg">
+      <div className="retro-stripes-tl" />
+      <div className="retro-stripes-br" />
+    </div>
+  );
+}
+
+export function DashboardBackground() {
+  const bg = useThemeStore((s) => s.dashboardBackground) as DashboardBg;
+  const reducedMotion = useReducedMotion();
+
+  if (bg === 'none') return null;
+
+  const showParticles = bg === 'gradient-mesh-particles' && !reducedMotion;
+  const isGradientMesh = bg === 'gradient-mesh' || bg === 'gradient-mesh-particles';
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+      {isGradientMesh && (
+        <GradientMeshBackground reducedMotion={reducedMotion} showParticles={showParticles} />
+      )}
+      {bg === 'retro' && <RetroBackground />}
     </div>
   );
 }

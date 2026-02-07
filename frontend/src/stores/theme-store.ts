@@ -7,17 +7,23 @@ export type Theme =
   | 'dark'
   | 'apple-light'
   | 'apple-dark'
+  | 'retro'
   | 'catppuccin-latte'
   | 'catppuccin-frappe'
   | 'catppuccin-macchiato'
   | 'catppuccin-mocha';
 
-export type DashboardBackground = 'none' | 'gradient-mesh' | 'gradient-mesh-particles';
+export type DashboardBackground =
+  | 'none'
+  | 'gradient-mesh'
+  | 'gradient-mesh-particles'
+  | 'retro';
 
 export const dashboardBackgroundOptions: { value: DashboardBackground; label: string; description: string }[] = [
   { value: 'none', label: 'None', description: 'Plain background' },
   { value: 'gradient-mesh', label: 'Gradient Mesh', description: 'Animated gradient background' },
   { value: 'gradient-mesh-particles', label: 'Mesh + Particles', description: 'Gradient with floating particles' },
+  { value: 'retro', label: 'Retro', description: 'Warm 70s curved stripes from corners' },
 ];
 
 export const themeOptions: { value: Theme; label: string; description: string }[] = [
@@ -26,6 +32,7 @@ export const themeOptions: { value: Theme; label: string; description: string }[
   { value: 'dark', label: 'Dark', description: 'Default dark theme' },
   { value: 'apple-light', label: 'Glass Light', description: 'Futuristic frosted glass with gradients' },
   { value: 'apple-dark', label: 'Glass Dark', description: 'Deep space glassmorphism aesthetic' },
+  { value: 'retro', label: 'Retro', description: 'Warm 70s cream, gold, teal & coral' },
   { value: 'catppuccin-latte', label: 'Catppuccin Latte', description: 'Warm light pastel theme' },
   { value: 'catppuccin-frappe', label: 'Catppuccin Frappé', description: 'Medium dark pastel theme' },
   { value: 'catppuccin-macchiato', label: 'Catppuccin Macchiato', description: 'Darker pastel theme' },
@@ -55,7 +62,7 @@ export const useThemeStore = create<ThemeState>()(
             ? 'dark'
             : 'light';
         }
-        if (theme === 'light' || theme === 'catppuccin-latte' || theme === 'apple-light') {
+        if (theme === 'light' || theme === 'catppuccin-latte' || theme === 'apple-light' || theme === 'retro') {
           return 'light';
         }
         return 'dark';

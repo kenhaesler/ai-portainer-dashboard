@@ -63,4 +63,23 @@ describe('DashboardBackground', () => {
     const gradient = screen.getByTestId('dashboard-gradient');
     expect(gradient.className).toContain('opacity-60');
   });
+
+  it('renders retro background with corner stripes', () => {
+    useThemeStore.setState({ dashboardBackground: 'retro' });
+    render(<DashboardBackground />);
+    expect(screen.getByTestId('retro-bg')).toBeInTheDocument();
+  });
+
+  it('retro background contains top-left and bottom-right stripe arcs', () => {
+    useThemeStore.setState({ dashboardBackground: 'retro' });
+    const { container } = render(<DashboardBackground />);
+    expect(container.querySelector('.retro-stripes-tl')).toBeInTheDocument();
+    expect(container.querySelector('.retro-stripes-br')).toBeInTheDocument();
+  });
+
+  it('does not render gradient mesh when retro background is selected', () => {
+    useThemeStore.setState({ dashboardBackground: 'retro' });
+    render(<DashboardBackground />);
+    expect(screen.queryByTestId('dashboard-gradient')).not.toBeInTheDocument();
+  });
 });
