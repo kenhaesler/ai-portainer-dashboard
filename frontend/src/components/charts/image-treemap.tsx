@@ -17,12 +17,43 @@ const COLORS = [
   '#14b8a6', '#a855f7', '#f43f5e', '#22c55e', '#eab308',
 ];
 
+interface LabelStyle {
+  fill: string;
+  stroke: string;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const normalized = hex.replace('#', '').trim();
+  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return null;
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+export function getLabelStyleForFill(fill: string): LabelStyle {
+  const rgb = hexToRgb(fill);
+  if (!rgb) {
+    return { fill: '#ffffff', stroke: 'rgba(15, 23, 42, 0.85)' };
+  }
+
+  // WCAG relative luminance approximation for contrast-aware text color.
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  if (luminance > 0.62) {
+    return { fill: '#0f172a', stroke: 'rgba(255, 255, 255, 0.8)' };
+  }
+
+  return { fill: '#ffffff', stroke: 'rgba(15, 23, 42, 0.85)' };
+}
+
 function CustomContent(props: any) {
   const { x, y, width, height, index, name, size } = props;
 
   // Always render the colored rect — no invisible blank cells
   const fill = COLORS[index % COLORS.length];
   const opacity = 0.6 + Math.min((size || 0) / 1e9, 1) * 0.4;
+  const labelStyle = getLabelStyleForFill(fill);
 
   return (
     <g>
@@ -43,7 +74,10 @@ function CustomContent(props: any) {
           y={y + height / 2 - (height > 36 ? 6 : 0)}
           textAnchor="middle"
           dominantBaseline="central"
-          fill="#fff"
+          fill={labelStyle.fill}
+          stroke={labelStyle.stroke}
+          strokeWidth={0.8}
+          paintOrder="stroke"
           fontSize={Math.min(11, width / 8)}
         >
           {name?.length > Math.floor(width / 7)
@@ -57,7 +91,10 @@ function CustomContent(props: any) {
           x={x + width / 2}
           y={y + height / 2 + 10}
           textAnchor="middle"
-          fill="#fff"
+          fill={labelStyle.fill}
+          stroke={labelStyle.stroke}
+          strokeWidth={0.7}
+          paintOrder="stroke"
           fontSize={10}
           opacity={0.8}
         >

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ImageTreemap } from './image-treemap';
+import { ImageTreemap, getLabelStyleForFill } from './image-treemap';
 
 describe('ImageTreemap', () => {
   it('should show empty state when no data', () => {
@@ -16,5 +16,15 @@ describe('ImageTreemap', () => {
 
     render(<ImageTreemap data={data} />);
     expect(screen.queryByText('No image data')).not.toBeInTheDocument();
+  });
+
+  it('uses dark text for bright treemap cell colors', () => {
+    const style = getLabelStyleForFill('#f59e0b');
+    expect(style.fill).toBe('#0f172a');
+  });
+
+  it('uses white text for dark treemap cell colors', () => {
+    const style = getLabelStyleForFill('#3b82f6');
+    expect(style.fill).toBe('#ffffff');
   });
 });
