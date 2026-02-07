@@ -521,17 +521,16 @@ export default function MetricsDashboardPage() {
                     Export CSV
                   </button>
                 </div>
-                <div style={{ height: 300 * zoomLevel }}>
-                  <MetricsLineChart
-                    data={cpuData}
-                    label="CPU Usage"
-                    color="#3b82f6"
-                    unit="%"
-                    anomalyExplanations={explanationsData?.explanations?.filter(
-                      (e) => e.title.toLowerCase().includes('cpu'),
-                    )}
-                  />
-                </div>
+                <MetricsLineChart
+                  data={cpuData}
+                  label="CPU Usage"
+                  color="#3b82f6"
+                  unit="%"
+                  height={300 * zoomLevel}
+                  anomalyExplanations={explanationsData?.explanations?.filter(
+                    (e) => e.title.toLowerCase().includes('cpu'),
+                  )}
+                />
                 {cpuError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -556,17 +555,16 @@ export default function MetricsDashboardPage() {
                     Export CSV
                   </button>
                 </div>
-                <div style={{ height: 300 * zoomLevel }}>
-                  <MetricsLineChart
-                    data={memoryData}
-                    label="Memory Usage"
-                    color="#8b5cf6"
-                    unit="%"
-                    anomalyExplanations={explanationsData?.explanations?.filter(
-                      (e) => e.title.toLowerCase().includes('memory'),
-                    )}
-                  />
-                </div>
+                <MetricsLineChart
+                  data={memoryData}
+                  label="Memory Usage"
+                  color="#8b5cf6"
+                  unit="%"
+                  height={300 * zoomLevel}
+                  anomalyExplanations={explanationsData?.explanations?.filter(
+                    (e) => e.title.toLowerCase().includes('memory'),
+                  )}
+                />
                 {memoryError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -594,14 +592,13 @@ export default function MetricsDashboardPage() {
                     Export CSV
                   </button>
                 </div>
-                <div style={{ height: 300 * zoomLevel }}>
-                  <MetricsLineChart
-                    data={memoryBytesData}
-                    label="Memory"
-                    color="#06b6d4"
-                    unit=" MB"
-                  />
-                </div>
+                <MetricsLineChart
+                  data={memoryBytesData}
+                  label="Memory"
+                  color="#06b6d4"
+                  unit=" MB"
+                  height={300 * zoomLevel}
+                />
               </div>
             </div>
           )}

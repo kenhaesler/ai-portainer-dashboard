@@ -16,6 +16,7 @@ interface MetricsLineChartProps {
   label: string;
   color?: string;
   unit?: string;
+  height?: number;
   anomalyThreshold?: number;
   anomalyExplanations?: AnomalyExplanation[];
 }
@@ -129,6 +130,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   label,
   color = 'hsl(var(--primary))',
   unit = '%',
+  height = 300,
   anomalyExplanations = [],
 }: MetricsLineChartProps) {
   const decimated = useMemo(() => decimateData(data, MAX_CHART_POINTS), [data]);
@@ -160,7 +162,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={height}>
         <AreaChart data={decimated} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
