@@ -209,17 +209,16 @@ describe('portainer-backup routes', () => {
     });
 
     it('returns 400 for path traversal attempt', async () => {
-      mockGetPortainerBackupPath.mockImplementationOnce(() => {
-        throw new Error('Invalid backup filename: path traversal detected');
-      });
-
       const response = await app.inject({
         method: 'GET',
         url: '/api/portainer-backup/..%2F..%2Fetc%2Fpasswd',
       });
 
       expect(response.statusCode).toBe(400);
-      expect(response.json()).toEqual({ error: 'Invalid filename' });
+      expect(response.json()).toMatchObject({
+        error: 'Bad Request',
+        message: expect.stringContaining('filename must be a .tar.gz file'),
+      });
     });
   });
 

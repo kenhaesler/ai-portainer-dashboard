@@ -205,6 +205,12 @@ export const FilenameParamsSchema = z.object({
     .regex(/^[A-Za-z0-9._-]+\.db$/, 'filename must be a .db file without path separators'),
 });
 
+export const PortainerBackupFilenameParamsSchema = z.object({
+  filename: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]+\.tar\.gz$/, 'filename must be a .tar.gz file without path separators'),
+});
+
 // ─── Settings schemas ───────────────────────────────────────────────
 export const SettingsQuerySchema = z.object({
   category: z.string().optional(),
