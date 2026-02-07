@@ -42,22 +42,27 @@ export function buildTcpdumpCommand(
   durationSeconds?: number,
   maxPackets?: number,
 ): string[] {
-  const cmd = ['tcpdump', '-i', 'any', '-w', `/tmp/capture_${captureId}.pcap`];
+  // Build the tcpdump args portion
+  let tcpdumpArgs = `-i any -w /tmp/capture_${captureId}.pcap -U`;
 
   if (maxPackets) {
-    cmd.push('-c', String(maxPackets));
+    tcpdumpArgs += ` -c ${maxPackets}`;
   }
-
-  // tcpdump doesn't have a native duration flag — use timeout wrapper
-  // However, the duration is enforced by our polling + stop mechanism
-  // We add -U for packet-buffered output so partial captures have data
-  cmd.push('-U');
 
   if (filter) {
-    cmd.push(...filter.split(' '));
+    tcpdumpArgs += ` ${filter}`;
   }
 
-  return cmd;
+  // Wrap in sh -c to auto-install tcpdump if missing.
+  // Tries common package managers (apk for Alpine, apt for Debian/Ubuntu, yum for RHEL/CentOS).
+  const install = 'command -v tcpdump >/dev/null 2>&1 || ' +
+    'apk add --no-cache tcpdump 2>/dev/null || ' +
+    '(apt-get update -qq && apt-get install -y -qq tcpdump) 2>/dev/null || ' +
+    'yum install -y tcpdump 2>/dev/null || ' +
+    '{ echo "Failed to install tcpdump" >&2; exit 1; }';
+  const script = `${install} && exec tcpdump ${tcpdumpArgs}`;
+
+  return ['sh', '-c', script];
 }
 
 export function extractFromTar(tarBuffer: Buffer): Buffer | null {
@@ -113,8 +118,8 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
     // Build tcpdump command
     const cmd = buildTcpdumpCommand(captureId, params.filter, duration, params.maxPackets);
 
-    // Create and start exec
-    const exec = await createExec(params.endpointId, params.containerId, cmd);
+    // Create and start exec (root required for NET_RAW capability)
+    const exec = await createExec(params.endpointId, params.containerId, cmd, { user: 'root' });
     await startExec(params.endpointId, exec.Id);
 
     // Update status to capturing
@@ -253,10 +258,10 @@ async function stopCaptureInternal(
   containerId: string,
 ): Promise<void> {
   try {
-    // Send pkill to stop tcpdump
+    // Send pkill to stop tcpdump (root to match the capture process)
     const killExec = await createExec(endpointId, containerId, [
       'pkill', '-f', `capture_${captureId}`,
-    ]);
+    ], { user: 'root' });
     await startExec(endpointId, killExec.Id);
 
     // Wait a moment for tcpdump to flush
@@ -265,13 +270,13 @@ async function stopCaptureInternal(
     // Try to download the partial capture
     await downloadAndProcessCapture(captureId, endpointId, containerId);
 
-    // If it completed, override status to 'stopped' to indicate manual stop
+    // If it completed, override status to 'succeeded' to indicate manual stop
     const capture = getCapture(captureId);
     if (capture && capture.status === 'complete') {
-      updateCaptureStatus(captureId, 'stopped');
+      updateCaptureStatus(captureId, 'succeeded');
     }
   } catch (err) {
-    updateCaptureStatus(captureId, 'stopped', {
+    updateCaptureStatus(captureId, 'succeeded', {
       error_message: 'Stopped (partial data may be unavailable)',
       completed_at: new Date().toISOString(),
     });
@@ -367,7 +372,7 @@ export function cleanupOldCaptures(): void {
   // Get captures that will be cleaned — query the files before deleting DB records
   const oldCaptures = getCaptures({ status: 'complete' })
     .concat(getCaptures({ status: 'failed' }))
-    .concat(getCaptures({ status: 'stopped' }))
+    .concat(getCaptures({ status: 'succeeded' }))
     .filter((c) => {
       if (!c.created_at) return false;
       const createdAt = new Date(c.created_at).getTime();

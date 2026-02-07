@@ -6,7 +6,7 @@ export const CaptureStatusSchema = z.enum([
   'processing',
   'complete',
   'failed',
-  'stopped',
+  'succeeded',
 ]);
 
 export type CaptureStatus = z.infer<typeof CaptureStatusSchema>;
