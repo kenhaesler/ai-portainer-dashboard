@@ -38,9 +38,9 @@ vi.mock('@/hooks/use-users', () => ({
   useDeleteUser: () => ({ mutateAsync: (...args: unknown[]) => mockDeleteUser(...args), isPending: false }),
 }));
 
-import UsersPage from './users';
+import { UsersPanel } from './users';
 
-describe('UsersPage', () => {
+describe('UsersPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
@@ -49,12 +49,12 @@ describe('UsersPage', () => {
 
   it('shows admin-only warning for non-admin users', () => {
     mockUseAuth.mockReturnValue({ role: 'viewer' });
-    render(<UsersPage />);
+    render(<UsersPanel />);
     expect(screen.getByText('Admin Access Required')).toBeInTheDocument();
   });
 
   it('creates a new user account', async () => {
-    render(<UsersPage />);
+    render(<UsersPanel />);
 
     fireEvent.change(screen.getByPlaceholderText('ops-bot'), { target: { value: 'support-user' } });
     fireEvent.change(screen.getByPlaceholderText('Minimum 8 characters'), { target: { value: 'password123' } });
@@ -80,7 +80,7 @@ describe('UsersPage', () => {
   });
 
   it('deactivates and deletes existing users', async () => {
-    render(<UsersPage />);
+    render(<UsersPanel />);
 
     const adminRow = screen
       .getAllByRole('row')

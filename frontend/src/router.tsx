@@ -29,8 +29,6 @@ const StatusPage = lazy(() => import('@/pages/status-page'));
 const Reports = lazy(() => import('@/pages/reports'));
 const LogViewer = lazy(() => import('@/pages/log-viewer'));
 const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
-const Webhooks = lazy(() => import('@/pages/webhooks'));
-const Users = lazy(() => import('@/pages/users'));
 
 function PageLoader() {
   return (
@@ -84,8 +82,8 @@ export const router = createBrowserRouter([
       { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
       { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
-      { path: 'webhooks', element: <LazyPage><Webhooks /></LazyPage> },
-      { path: 'users', element: <LazyPage><Users /></LazyPage> },
+      { path: 'webhooks', element: <Navigate to="/settings?tab=webhooks" replace /> },
+      { path: 'users', element: <Navigate to="/settings?tab=users" replace /> },
       { path: 'investigations/:id', element: <LazyPage><InvestigationDetail /></LazyPage> },
       { path: 'investigations/insight/:insightId', element: <LazyPage><InvestigationDetail /></LazyPage> },
       { path: 'backups', element: <LazyPage><Backups /></LazyPage> },
