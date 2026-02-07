@@ -217,9 +217,9 @@ export function Sidebar() {
                 }
               >
                 <span className="truncate text-sm font-semibold text-sidebar-foreground">
-                  Container-Infrastructure
+                  Docker Insights
                 </span>
-                <span className="text-[10px] text-muted-foreground">powered by ai</span>
+                <span className="text-[10px] text-muted-foreground">powered by AI</span>
               </motion.div>
             )}
           </AnimatePresence>

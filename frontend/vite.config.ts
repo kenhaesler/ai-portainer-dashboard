@@ -45,8 +45,8 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'AI Portainer Dashboard',
-        short_name: 'AI Dashboard',
+        name: 'Docker Insights powered by AI',
+        short_name: 'Docker Insights',
         description: 'AI-powered container monitoring dashboard',
         theme_color: '#0f172a',
         background_color: '#0f172a',

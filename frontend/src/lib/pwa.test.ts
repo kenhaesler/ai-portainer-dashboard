@@ -29,7 +29,7 @@ describe('PWA configuration', () => {
   });
 
   it('includes PWA manifest with app name', () => {
-    expect(viteConfig).toContain("'AI Portainer Dashboard'");
+    expect(viteConfig).toContain("'Docker Insights powered by AI'");
     expect(viteConfig).toContain("display: 'standalone'");
   });
 });

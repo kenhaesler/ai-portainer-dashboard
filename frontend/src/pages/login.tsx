@@ -159,9 +159,9 @@ export default function LoginPage() {
           <div className={`mx-auto mb-3 grid place-items-center ${reducedMotion ? "" : "login-logo-shell"}`}>
             <BrainLogo reducedMotion={reducedMotion} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Container-Infrastructure</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Docker Insights</h1>
           <p className={`mt-1 text-xs uppercase tracking-[0.24em] text-muted-foreground ${reducedMotion ? "" : "login-typewriter"}`}>
-            Powered by AI
+            powered by AI
           </p>
           <p
             className={`mt-3 text-sm text-muted-foreground ${stagedClass}`}
