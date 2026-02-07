@@ -30,7 +30,8 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import socketIoPlugin from './socket-io.js';
-import { authenticateSocketToken } from './socket-io.js';
+import { authenticateSocketToken, verifyTransportRequest } from './socket-io.js';
+import { IncomingMessage } from 'http';
 
 describe('socket-io plugin', () => {
   let app: FastifyInstance;
@@ -98,5 +99,58 @@ describe('socket-io plugin', () => {
   it('authenticateSocketToken returns user for active valid session', async () => {
     const user = await authenticateSocketToken('token');
     expect(user).toEqual({ sub: 'u1', username: 'test', sessionId: 's1' });
+  });
+});
+
+describe('verifyTransportRequest (Engine.IO allowRequest)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockVerifyJwt.mockResolvedValue({ sub: 'u1', username: 'test', sessionId: 's1' });
+    mockGetSession.mockReturnValue({
+      id: 's1',
+      user_id: 'u1',
+      username: 'test',
+      created_at: '2026-02-07T10:00:00.000Z',
+      expires_at: '2026-02-07T11:00:00.000Z',
+      last_active: '2026-02-07T10:30:00.000Z',
+      is_valid: 1,
+    });
+  });
+
+  function fakeReq(url: string): IncomingMessage {
+    return { url } as IncomingMessage;
+  }
+
+  it('rejects requests without a token query parameter', async () => {
+    const cb = vi.fn();
+    await verifyTransportRequest(fakeReq('/socket.io/?EIO=4&transport=polling'), cb);
+    expect(cb).toHaveBeenCalledWith('Authentication required', false);
+  });
+
+  it('rejects requests with an invalid/expired token', async () => {
+    mockVerifyJwt.mockResolvedValue(null);
+    const cb = vi.fn();
+    await verifyTransportRequest(fakeReq('/socket.io/?EIO=4&transport=polling&token=bad'), cb);
+    expect(cb).toHaveBeenCalledWith('Invalid or expired token', false);
+  });
+
+  it('rejects requests with a revoked session', async () => {
+    mockGetSession.mockReturnValue(undefined);
+    const cb = vi.fn();
+    await verifyTransportRequest(fakeReq('/socket.io/?EIO=4&transport=polling&token=valid'), cb);
+    expect(cb).toHaveBeenCalledWith('Session invalid or revoked', false);
+  });
+
+  it('rejects requests with mismatched identity', async () => {
+    mockVerifyJwt.mockResolvedValue({ sub: 'u2', username: 'other', sessionId: 's1' });
+    const cb = vi.fn();
+    await verifyTransportRequest(fakeReq('/socket.io/?EIO=4&transport=polling&token=valid'), cb);
+    expect(cb).toHaveBeenCalledWith('Session invalid or revoked', false);
+  });
+
+  it('accepts requests with a valid token and active session', async () => {
+    const cb = vi.fn();
+    await verifyTransportRequest(fakeReq('/socket.io/?EIO=4&transport=polling&token=valid'), cb);
+    expect(cb).toHaveBeenCalledWith(null, true);
   });
 });

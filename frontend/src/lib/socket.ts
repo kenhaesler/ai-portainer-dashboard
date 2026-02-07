@@ -9,6 +9,7 @@ export function getSocket(token: string): Socket {
 
   mainSocket = io(SOCKET_URL, {
     auth: { token },
+    query: { token },
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 10,
@@ -24,6 +25,7 @@ export function getNamespaceSocket(
 ): Socket {
   return io(`${SOCKET_URL}/${namespace}`, {
     auth: { token },
+    query: { token },
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 10,
