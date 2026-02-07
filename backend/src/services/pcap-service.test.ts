@@ -67,33 +67,31 @@ describe('pcap-service', () => {
   });
 
   describe('buildTcpdumpCommand', () => {
-    it('should build basic tcpdump command', () => {
+    it('should build sh -c wrapper with tcpdump', () => {
       const cmd = buildTcpdumpCommand('test-id-123');
-      expect(cmd).toContain('tcpdump');
-      expect(cmd).toContain('-i');
-      expect(cmd).toContain('any');
-      expect(cmd).toContain('-w');
-      expect(cmd).toContain('/tmp/capture_test-id-123.pcap');
-      expect(cmd).toContain('-U');
+      expect(cmd[0]).toBe('sh');
+      expect(cmd[1]).toBe('-c');
+      const script = cmd[2];
+      expect(script).toContain('command -v tcpdump');
+      expect(script).toContain('apk add');
+      expect(script).toContain('apt-get');
+      expect(script).toContain('exec tcpdump -i any -w /tmp/capture_test-id-123.pcap -U');
     });
 
     it('should include filter in command', () => {
       const cmd = buildTcpdumpCommand('test-id', 'port 80');
-      expect(cmd).toContain('port');
-      expect(cmd).toContain('80');
+      expect(cmd[2]).toContain('port 80');
     });
 
     it('should include max packets flag', () => {
       const cmd = buildTcpdumpCommand('test-id', undefined, undefined, 1000);
-      expect(cmd).toContain('-c');
-      expect(cmd).toContain('1000');
+      expect(cmd[2]).toContain('-c 1000');
     });
 
     it('should combine all options', () => {
       const cmd = buildTcpdumpCommand('test-id', 'tcp', 60, 500);
-      expect(cmd).toContain('-c');
-      expect(cmd).toContain('500');
-      expect(cmd).toContain('tcp');
+      expect(cmd[2]).toContain('-c 500');
+      expect(cmd[2]).toContain('tcp');
     });
   });
 
@@ -203,7 +201,7 @@ describe('pcap-service', () => {
           duration_seconds: 60,
         }),
       );
-      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc123', expect.arrayContaining(['tcpdump']));
+      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc123', expect.arrayContaining(['sh', '-c']), { user: 'root' });
       expect(mockStartExec).toHaveBeenCalledWith(1, 'exec-123');
       expect(mockUpdateCaptureStatus).toHaveBeenCalledWith(
         expect.any(String),
@@ -267,15 +265,15 @@ describe('pcap-service', () => {
       mockGetCapture
         .mockReturnValueOnce({ id: 'x', status: 'capturing', endpoint_id: 1, container_id: 'abc' })
         .mockReturnValueOnce({ id: 'x', status: 'complete', endpoint_id: 1, container_id: 'abc' })
-        .mockReturnValueOnce({ id: 'x', status: 'stopped', endpoint_id: 1, container_id: 'abc' });
+        .mockReturnValueOnce({ id: 'x', status: 'succeeded', endpoint_id: 1, container_id: 'abc' });
       mockCreateExec.mockResolvedValue({ Id: 'kill-exec' });
       mockStartExec.mockResolvedValue(undefined);
       mockGetArchive.mockRejectedValue(new Error('no file'));
 
       const result = await stopCapture('x');
 
-      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc', ['pkill', '-f', 'capture_x']);
-      expect(result.status).toBe('stopped');
+      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc', ['pkill', '-f', 'capture_x'], { user: 'root' });
+      expect(result.status).toBe('succeeded');
     });
   });
 
