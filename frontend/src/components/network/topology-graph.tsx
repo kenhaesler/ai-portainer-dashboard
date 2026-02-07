@@ -14,10 +14,10 @@ import { ContainerNode } from './container-node';
 import { NetworkNode } from './network-node';
 import { StackGroupNode } from './stack-group-node';
 import {
-  useGroupForceLayout,
-  type GroupForceNode,
-  type GroupForceLink,
-} from '@/hooks/use-group-force-layout';
+  useElkLayout,
+  type ElkLayoutNode,
+  type ElkLayoutEdge,
+} from '@/hooks/use-elk-layout';
 
 export interface ContainerData {
   id: string;
@@ -197,7 +197,8 @@ const CONTAINERS_PER_ROW = 4;
 const INLINE_NET_SPACING_X = 140;
 const INLINE_NET_ROW_HEIGHT = 90;
 const INLINE_NETS_PER_ROW = 4;
-const EXTERNAL_NET_RADIUS = 60;
+const EXTERNAL_NET_WIDTH = 120;
+const EXTERNAL_NET_HEIGHT = 80;
 
 export function getEdgeStyle(
   containerId: string,
@@ -342,24 +343,23 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
     return { blueprints, externalNets, inlineNetsByStack, netToStacks };
   }, [containers, networks, networkRates]);
 
-  // Phase 2: Build force-layout input — group nodes + external net nodes + links
-  const { forceNodes, forceLinks } = useMemo(() => {
-    const forceNodes: GroupForceNode[] = [];
-    const forceLinks: GroupForceLink[] = [];
-    const linkSet = new Set<string>();
+  // Phase 2: Build elk-layout input — group nodes + external net nodes + edges
+  const { elkNodes, elkEdges } = useMemo(() => {
+    const elkNodes: ElkLayoutNode[] = [];
+    const elkEdges: ElkLayoutEdge[] = [];
+    const edgeSet = new Set<string>();
 
-    // Groups as force nodes
+    // Groups as elk nodes (use actual dimensions)
     for (const bp of blueprints) {
-      const radius = Math.sqrt(bp.groupWidth ** 2 + bp.groupHeight ** 2) / 2;
-      forceNodes.push({ id: bp.groupId, x: 0, y: 0, radius });
+      elkNodes.push({ id: bp.groupId, width: bp.groupWidth, height: bp.groupHeight });
     }
 
-    // External networks as force nodes
+    // External networks as elk nodes
     for (const net of externalNets) {
-      forceNodes.push({ id: `net-${net.id}`, x: 0, y: 0, radius: EXTERNAL_NET_RADIUS });
+      elkNodes.push({ id: `net-${net.id}`, width: EXTERNAL_NET_WIDTH, height: EXTERNAL_NET_HEIGHT });
     }
 
-    // Links: external net ↔ groups that use it
+    // Edges: external net ↔ groups that use it
     for (const net of externalNets) {
       const netNodeId = `net-${net.id}`;
       const stacks = netToStacks.get(net.name);
@@ -367,18 +367,18 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
       for (const stackName of stacks) {
         const groupId = `stack-${stackName}`;
         const key = `${netNodeId}--${groupId}`;
-        if (!linkSet.has(key)) {
-          linkSet.add(key);
-          forceLinks.push({ id: key, source: netNodeId, target: groupId });
+        if (!edgeSet.has(key)) {
+          edgeSet.add(key);
+          elkEdges.push({ id: key, source: netNodeId, target: groupId });
         }
       }
     }
 
-    return { forceNodes, forceLinks };
+    return { elkNodes, elkEdges };
   }, [blueprints, externalNets, netToStacks]);
 
-  // Phase 3: Run force simulation to get group positions
-  const groupPositions = useGroupForceLayout({ nodes: forceNodes, links: forceLinks });
+  // Phase 3: Run elkjs layout to get group positions (deterministic)
+  const groupPositions = useElkLayout({ nodes: elkNodes, edges: elkEdges });
 
   // Phase 4: Assemble final React Flow nodes and edges using force-computed positions
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
