@@ -26,6 +26,11 @@ vi.mock('../services/lttb-decimator.js', () => ({
   decimateLTTB: vi.fn((data: unknown[]) => data),
 }));
 
+vi.mock('../services/llm-client.js', () => ({
+  chatStream: vi.fn(),
+  isOllamaAvailable: vi.fn(),
+}));
+
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
     info: vi.fn(),
@@ -36,7 +41,10 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import { getNetworkRates } from '../services/metrics-store.js';
+import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);
+const mockChatStream = vi.mocked(chatStream);
+const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
 
 function buildApp() {
   const app = Fastify();
@@ -236,6 +244,79 @@ describe('metrics routes', () => {
       });
 
       expect(mockGetNetworkRates).toHaveBeenCalledWith(42);
+    });
+  });
+
+  describe('GET /api/metrics/:endpointId/:containerId/ai-summary', () => {
+    it('should return 503 when LLM is unavailable', async () => {
+      mockIsOllamaAvailable.mockResolvedValue(false);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/container-abc/ai-summary',
+      });
+
+      expect(response.statusCode).toBe(503);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('LLM service unavailable');
+    });
+
+    it('should stream SSE response when LLM is available', async () => {
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockImplementation(async (_msgs, _sys, onChunk) => {
+        onChunk('CPU is stable.');
+        return 'CPU is stable.';
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/container-abc/ai-summary?timeRange=1h',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toBe('text/event-stream');
+      expect(response.body).toContain('data: ');
+      expect(response.body).toContain('"chunk"');
+      expect(response.body).toContain('"done":true');
+    });
+
+    it('should pass correct time range to metrics query', async () => {
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockImplementation(async (_msgs, _sys, onChunk) => {
+        onChunk('All good.');
+        return 'All good.';
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/2/container-xyz/ai-summary?timeRange=24h',
+      });
+
+      expect(response.statusCode).toBe(200);
+      // Verify chatStream was called with prompt containing "24h"
+      expect(mockChatStream).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('24h'),
+          }),
+        ]),
+        expect.any(String),
+        expect.any(Function),
+      );
+    });
+
+    it('should handle chatStream errors gracefully', async () => {
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockRejectedValue(new Error('Ollama timeout'));
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/container-abc/ai-summary',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('"error"');
     });
   });
 });

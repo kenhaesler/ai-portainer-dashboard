@@ -28,6 +28,7 @@ import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { AiMetricsSummary } from '@/components/metrics/ai-metrics-summary';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
 import {
@@ -465,6 +466,13 @@ export default function MetricsDashboardPage() {
               </div>
             </div>
           )}
+
+          {/* AI Summary */}
+          <AiMetricsSummary
+            endpointId={selectedEndpoint ?? undefined}
+            containerId={selectedContainer ?? undefined}
+            timeRange={timeRange}
+          />
 
           {/* Charts */}
           {metricsLoading ? (
