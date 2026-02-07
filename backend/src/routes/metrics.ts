@@ -4,6 +4,7 @@ import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, Anoma
 import { getNetworkRates } from '../services/metrics-store.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
+import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metrics-routes');
@@ -157,5 +158,105 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     const { endpointId } = request.params as { endpointId: string };
     const rates = await getNetworkRates(Number(endpointId));
     return { rates };
+  });
+
+  // AI-powered metrics summary (SSE streaming)
+  fastify.get('/api/metrics/:endpointId/:containerId/ai-summary', {
+    schema: {
+      tags: ['Metrics'],
+      summary: 'Get AI-generated natural language summary of container metrics',
+      security: [{ bearerAuth: [] }],
+      params: ContainerParamsSchema,
+      querystring: MetricsQuerySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const { endpointId, containerId } = request.params as { endpointId: number; containerId: string };
+    const query = request.query as { timeRange?: string };
+    const timeRange = query.timeRange || '1h';
+
+    // Check LLM availability
+    const available = await isOllamaAvailable();
+    if (!available) {
+      return reply.code(503).send({ error: 'LLM service unavailable' });
+    }
+
+    // Gather metrics data for prompt
+    const db = await getMetricsDb();
+    const { from } = parseTimeRange(timeRange);
+
+    const { rows: metricsRows } = await db.query<{
+      metric_type: string;
+      avg_value: number;
+      min_value: number;
+      max_value: number;
+      sample_count: number;
+    }>(`
+      SELECT metric_type,
+        AVG(value) as avg_value,
+        MIN(value) as min_value,
+        MAX(value) as max_value,
+        COUNT(*) as sample_count
+      FROM metrics
+      WHERE container_id = $1 AND timestamp >= $2
+      GROUP BY metric_type
+    `, [containerId, from.toISOString()]);
+
+    // Get container name
+    const { rows: nameRows } = await db.query<{ container_name: string }>(`
+      SELECT DISTINCT container_name FROM metrics
+      WHERE container_id = $1 LIMIT 1
+    `, [containerId]);
+
+    const containerName = nameRows[0]?.container_name || containerId.slice(0, 12);
+
+    // Build metrics context
+    const metricsContext = metricsRows.map(r => {
+      const unit = r.metric_type === 'memory_bytes' ? ' MB' : '%';
+      const divisor = r.metric_type === 'memory_bytes' ? 1024 * 1024 : 1;
+      return `- ${r.metric_type}: avg=${(r.avg_value / divisor).toFixed(1)}${unit}, min=${(r.min_value / divisor).toFixed(1)}${unit}, max=${(r.max_value / divisor).toFixed(1)}${unit} (${r.sample_count} samples)`;
+    }).join('\n');
+
+    // Check for anomalies (values > 80% for cpu/memory)
+    const { rows: anomalyRows } = await db.query<{ count: string }>(`
+      SELECT COUNT(*) as count FROM metrics
+      WHERE container_id = $1 AND timestamp >= $2
+        AND metric_type IN ('cpu', 'memory') AND value > 80
+    `, [containerId, from.toISOString()]);
+    const anomalyCount = { count: Number(anomalyRows[0]?.count ?? 0) };
+
+    const systemPrompt = `You are a concise infrastructure analyst. Given container metrics data, write a 2-4 sentence natural language summary. Focus on what matters: is the container healthy? Any trends or concerns? Keep it conversational and actionable. Do NOT use markdown formatting, bullet points, or headers — just plain sentences.`;
+
+    const userPrompt = `Summarize the metrics for container "${containerName}" over the last ${timeRange}:
+
+${metricsContext || 'No metrics data available for this time range.'}
+
+Anomalous readings (>80%): ${anomalyCount.count}
+Time range: ${timeRange}
+Endpoint ID: ${endpointId}`;
+
+    // Stream response via SSE
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    try {
+      await chatStream(
+        [{ role: 'user', content: userPrompt }],
+        systemPrompt,
+        (chunk: string) => {
+          reply.raw.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+        },
+      );
+      reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    } catch (err) {
+      log.error({ err, containerId }, 'AI summary stream failed');
+      reply.raw.write(`data: ${JSON.stringify({ error: 'AI summary generation failed' })}\n\n`);
+    }
+
+    reply.raw.end();
   });
 }
