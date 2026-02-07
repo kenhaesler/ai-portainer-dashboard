@@ -21,6 +21,14 @@ import { correlateInsights } from './incident-correlator.js';
 
 const log = createChildLogger('monitoring-service');
 
+// Per-container+metric cooldown tracker: key = `${containerId}:${metricType}`, value = timestamp (ms)
+const anomalyCooldowns = new Map<string, number>();
+
+/** Clear all cooldown entries (used in tests). */
+export function resetAnomalyCooldowns(): void {
+  anomalyCooldowns.clear();
+}
+
 let monitoringNamespace: Namespace | null = null;
 
 export function setMonitoringNamespace(ns: Namespace): void {
@@ -164,6 +172,19 @@ export async function runMonitoringCycle(): Promise<void> {
 
         const anomaly = detectAnomalyAdaptive(container.raw.Id, containerName, metricType, metric.value, config.ANOMALY_DETECTION_METHOD);
         if (anomaly?.is_anomalous) {
+          // Cooldown check: skip if this container+metric was recently flagged
+          const cooldownKey = `${container.raw.Id}:${metricType}`;
+          const cooldownMs = config.ANOMALY_COOLDOWN_MINUTES * 60_000;
+          const lastAlerted = anomalyCooldowns.get(cooldownKey);
+          if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) {
+            log.debug(
+              { containerId: container.raw.Id, metricType, cooldownMinutes: config.ANOMALY_COOLDOWN_MINUTES },
+              'Anomaly suppressed by cooldown',
+            );
+            continue;
+          }
+          anomalyCooldowns.set(cooldownKey, Date.now());
+
           anomalyInsights.push({
             id: uuidv4(),
             endpoint_id: container.endpointId,
