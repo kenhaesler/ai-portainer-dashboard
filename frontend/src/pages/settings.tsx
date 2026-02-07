@@ -32,7 +32,16 @@ import {
   Archive,
   Users,
 } from 'lucide-react';
-import { useThemeStore, themeOptions, dashboardBackgroundOptions, type Theme, type DashboardBackground } from '@/stores/theme-store';
+import {
+  useThemeStore,
+  themeOptions,
+  dashboardBackgroundOptions,
+  DEFAULT_THEME,
+  DEFAULT_DASHBOARD_BACKGROUND,
+  DEFAULT_TOGGLE_THEMES,
+  type Theme,
+  type DashboardBackground,
+} from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { useLlmModels, useLlmTestConnection } from '@/hooks/use-llm-models';
@@ -167,8 +176,9 @@ export function getRedisSystemInfo(cacheStats?: CacheStatsSummary) {
 
 function ThemeIcon({ theme }: { theme: Theme }) {
   if (theme === 'system') return <Monitor className="h-4 w-4" />;
-  if (theme === 'apple-light') return <Sun className="h-4 w-4" />;
+  if (theme === 'apple-light' || theme === 'nordic-frost' || theme === 'sandstone-dusk') return <Sun className="h-4 w-4" />;
   if (theme === 'apple-dark') return <Sparkles className="h-4 w-4" />;
+  if (theme === 'hyperpop-chaos') return <Sparkles className="h-4 w-4" />;
   if (theme.startsWith('catppuccin')) return <Palette className="h-4 w-4" />;
   return <Moon className="h-4 w-4" />;
 }
@@ -1549,6 +1559,18 @@ export default function SettingsPage() {
     ? (searchParams.get('tab') as SettingsTab)
     : 'general';
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+  const isRecommendedLookActive =
+    theme === DEFAULT_THEME &&
+    dashboardBackground === DEFAULT_DASHBOARD_BACKGROUND &&
+    toggleThemes[0] === DEFAULT_TOGGLE_THEMES[0] &&
+    toggleThemes[1] === DEFAULT_TOGGLE_THEMES[1];
+
+  const applyRecommendedLook = useCallback(() => {
+    setTheme(DEFAULT_THEME);
+    setDashboardBackground(DEFAULT_DASHBOARD_BACKGROUND);
+    setToggleThemes([...DEFAULT_TOGGLE_THEMES]);
+    toast.success('Applied recommended appearance preset');
+  }, [setDashboardBackground, setTheme, setToggleThemes]);
 
   useEffect(() => {
     const raw = searchParams.get('tab');
@@ -1860,6 +1882,21 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground mb-4">
           Choose your preferred color theme for the dashboard.
         </p>
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <div>
+            <p className="text-sm font-medium">Recommended Look</p>
+            <p className="text-xs text-muted-foreground">
+              Glass Light + Mesh Particles with Light/Dark glass toggle.
+            </p>
+          </div>
+          <button
+            onClick={applyRecommendedLook}
+            disabled={isRecommendedLookActive}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isRecommendedLookActive ? 'Applied' : 'Apply'}
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {themeOptions.map((option) => (

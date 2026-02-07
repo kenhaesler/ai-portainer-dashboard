@@ -12,11 +12,34 @@ const PARTICLES = [
   { left: '92%', delay: '1.1s', duration: '15s', size: '7px' },
 ];
 
-function GradientMeshBackground({ reducedMotion, showParticles }: { reducedMotion: boolean | null; showParticles: boolean }) {
+const MESH_CLASS_BY_BACKGROUND: Partial<Record<DashboardBg, string>> = {
+  'gradient-mesh': 'mesh-classic',
+  'gradient-mesh-particles': 'mesh-classic',
+  'mesh-aurora': 'mesh-aurora',
+  'mesh-ocean': 'mesh-ocean',
+  'mesh-sunset': 'mesh-sunset',
+  'mesh-nebula': 'mesh-nebula',
+  'mesh-emerald': 'mesh-emerald',
+  'mesh-glacier': 'mesh-glacier',
+  'mesh-emberstorm': 'mesh-emberstorm',
+  'mesh-noctis': 'mesh-noctis',
+  'mesh-cotton-candy': 'mesh-cotton-candy',
+  'mesh-chaos': 'mesh-chaos',
+};
+
+function GradientMeshBackground({
+  reducedMotion,
+  showParticles,
+  meshClass,
+}: {
+  reducedMotion: boolean | null;
+  showParticles: boolean;
+  meshClass: string;
+}) {
   return (
     <>
       <div
-        className={`login-gradient-mesh opacity-60 ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
+        className={`login-gradient-mesh ${meshClass} opacity-60 ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
         data-testid="dashboard-gradient"
       />
       {showParticles && (
@@ -80,12 +103,17 @@ export function DashboardBackground() {
   if (bg === 'none') return null;
 
   const showParticles = bg === 'gradient-mesh-particles' && !reducedMotion;
-  const isGradientMesh = bg === 'gradient-mesh' || bg === 'gradient-mesh-particles';
+  const meshClass = MESH_CLASS_BY_BACKGROUND[bg];
+  const isGradientMesh = Boolean(meshClass);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
       {isGradientMesh && (
-        <GradientMeshBackground reducedMotion={reducedMotion} showParticles={showParticles} />
+        <GradientMeshBackground
+          reducedMotion={reducedMotion}
+          showParticles={showParticles}
+          meshClass={meshClass as string}
+        />
       )}
       {bg === 'retro-70s' && <Retro70sBackground />}
       {bg === 'retro-arcade' && <RetroArcadeBackground />}

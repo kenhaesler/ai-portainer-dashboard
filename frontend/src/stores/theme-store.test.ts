@@ -32,6 +32,26 @@ describe('useThemeStore - dashboardBackground', () => {
     }
   );
 
+  it.each([
+    'mesh-aurora',
+    'mesh-ocean',
+    'mesh-sunset',
+    'mesh-nebula',
+    'mesh-emerald',
+    'mesh-glacier',
+    'mesh-emberstorm',
+    'mesh-noctis',
+    'mesh-cotton-candy',
+    'mesh-chaos',
+  ] as const)(
+    'sets dashboard background to "%s"',
+    (bg) => {
+      const { setDashboardBackground } = useThemeStore.getState();
+      setDashboardBackground(bg);
+      expect(useThemeStore.getState().dashboardBackground).toBe(bg);
+    }
+  );
+
   it('can toggle back to "none"', () => {
     const { setDashboardBackground } = useThemeStore.getState();
     setDashboardBackground('retro-arcade');
@@ -60,6 +80,32 @@ describe('useThemeStore - retro themes', () => {
   });
 
   it.each(['retro-arcade', 'retro-terminal', 'retro-vaporwave'] as const)(
+    'resolves "%s" as dark theme',
+    (theme) => {
+      useThemeStore.setState({ theme });
+      expect(useThemeStore.getState().resolvedTheme()).toBe('dark');
+    }
+  );
+});
+
+describe('useThemeStore - additional themes', () => {
+  it.each(['nordic-frost', 'sandstone-dusk', 'obsidian-ink', 'forest-night', 'hyperpop-chaos'] as const)(
+    'sets theme to "%s"',
+    (theme) => {
+      useThemeStore.getState().setTheme(theme);
+      expect(useThemeStore.getState().theme).toBe(theme);
+    }
+  );
+
+  it.each(['nordic-frost', 'sandstone-dusk'] as const)(
+    'resolves "%s" as light theme',
+    (theme) => {
+      useThemeStore.setState({ theme });
+      expect(useThemeStore.getState().resolvedTheme()).toBe('light');
+    }
+  );
+
+  it.each(['obsidian-ink', 'forest-night', 'hyperpop-chaos'] as const)(
     'resolves "%s" as dark theme',
     (theme) => {
       useThemeStore.setState({ theme });

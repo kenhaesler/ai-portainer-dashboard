@@ -35,6 +35,27 @@ describe('DashboardBackground', () => {
     expect(container.querySelectorAll('.login-particle')).toHaveLength(0);
   });
 
+  it.each([
+    'mesh-aurora',
+    'mesh-ocean',
+    'mesh-sunset',
+    'mesh-nebula',
+    'mesh-emerald',
+    'mesh-glacier',
+    'mesh-emberstorm',
+    'mesh-noctis',
+    'mesh-cotton-candy',
+    'mesh-chaos',
+  ] as const)(
+    'renders gradient mesh variant for "%s" without particles',
+    (bg) => {
+      useThemeStore.setState({ dashboardBackground: bg });
+      const { container } = render(<DashboardBackground />);
+      expect(screen.getByTestId('dashboard-gradient')).toBeInTheDocument();
+      expect(container.querySelectorAll('.login-particle')).toHaveLength(0);
+    }
+  );
+
   it('renders gradient mesh and particles when background is "gradient-mesh-particles"', () => {
     useThemeStore.setState({ dashboardBackground: 'gradient-mesh-particles' });
     render(<DashboardBackground />);

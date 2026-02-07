@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
+import { AreaChart, Area, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
 import { formatDate } from '@/lib/utils';
 
 interface MetricPoint {
@@ -54,10 +54,26 @@ function decimateData(data: MetricPoint[], maxPoints: number): MetricPoint[] {
   return result;
 }
 
+const CustomTooltip = ({ active, payload, label, unit, name }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-lg border border-white/20 bg-background/60 p-2 shadow-lg backdrop-blur-sm">
+        <p className="label text-sm text-foreground">{`${formatDate(label)}`}</p>
+        <p className="intro text-sm text-foreground">{`${name}: ${payload[0].value.toFixed(1)}${unit}`}</p>
+        {payload[0].payload.isAnomaly && (
+          <p className="text-sm font-bold text-red-500">Anomaly Detected</p>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
+
 export const MetricsLineChart = memo(function MetricsLineChart({
   data,
   label,
-  color = '#3b82f6',
+  color = 'hsl(var(--primary))',
   unit = '%',
 }: MetricsLineChartProps) {
   const decimated = useMemo(() => decimateData(data, MAX_CHART_POINTS), [data]);
@@ -71,32 +87,43 @@ export const MetricsLineChart = memo(function MetricsLineChart({
     );
   }
 
+  const gradientId = `color-${label.replace(/[^a-zA-Z0-9]/g, '')}`;
+
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={decimated} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+      <AreaChart data={decimated} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={color} stopOpacity={0.4}/>
+            <stop offset="95%" stopColor={color} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
         <XAxis
           dataKey="timestamp"
           tick={{ fontSize: 11 }}
+          stroke="hsl(var(--muted-foreground))"
           tickFormatter={(v) => formatDate(v)}
         />
         <YAxis
           tick={{ fontSize: 11 }}
+          stroke="hsl(var(--muted-foreground))"
           tickFormatter={(v) => `${v}${unit}`}
         />
         <Tooltip
-          labelFormatter={(v) => formatDate(v as string)}
-          formatter={(value: number) => [`${value.toFixed(1)}${unit}`, label]}
+          content={<CustomTooltip unit={unit} name={label} />}
         />
         <Legend />
-        <Line
+        <Area
           type="monotone"
           dataKey="value"
           name={label}
           stroke={color}
           strokeWidth={2}
+          fillOpacity={1}
+          fill={`url(#${gradientId})`}
           dot={false}
-          activeDot={{ r: 4 }}
-          isAnimationActive={false}
+          activeDot={{ r: 4, strokeWidth: 2 }}
+          isAnimationActive
         />
         {anomalies.map((a, i) => (
           <ReferenceDot
@@ -104,11 +131,12 @@ export const MetricsLineChart = memo(function MetricsLineChart({
             x={a.timestamp}
             y={a.value}
             r={5}
-            fill="#ef4444"
-            stroke="#ef4444"
+            fill="hsl(var(--destructive))"
+            stroke="hsl(var(--destructive-foreground))"
+            strokeWidth={1}
           />
         ))}
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
 });
