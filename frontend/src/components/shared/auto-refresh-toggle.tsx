@@ -21,8 +21,8 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
   const isActive = interval > 0;
 
   return (
-    <div className={cn('inline-flex items-center rounded-md border border-input bg-background p-0.5', className)}>
-      {INTERVALS.map((opt, i) => {
+    <div className={cn('inline-flex h-10 items-center gap-1 rounded-full border border-input bg-background p-1', className)}>
+      {INTERVALS.map((opt) => {
         const isSelected = interval === opt.value;
         const isOff = opt.value === 0;
         return (
@@ -30,10 +30,7 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
             key={opt.value}
             onClick={() => onIntervalChange(opt.value)}
             className={cn(
-              'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors',
-              i === 0 && 'rounded-l-[3px]',
-              i === INTERVALS.length - 1 && 'rounded-r-[3px]',
-              i > 0 && i < INTERVALS.length - 1 && 'rounded-none',
+              'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors',
               isSelected
                 ? isOff
                   ? 'bg-muted text-foreground'
@@ -54,7 +51,7 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
         );
       })}
       {isActive && (
-        <span className="ml-0.5 mr-1 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="ml-1 mr-1.5 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
       )}
     </div>
   );
