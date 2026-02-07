@@ -296,6 +296,36 @@ docker compose exec ollama ollama pull llama3.2
 
 Default credentials: `admin` / `changeme123`
 
+### 5. Add MCP to Claude Code (Kali MCP service)
+
+The dev and local compose stacks include a `kali-mcp` service exposed at `http://127.0.0.1:8787/mcp`.
+
+1. Configure command policy in `.env`:
+
+```ini
+# Restrictive allowlist (recommended)
+KALI_MCP_ALLOWED_COMMANDS=whoami,id,uname,ip,df,free,ps,ss,ls,cat
+
+# Or allow everything (high risk)
+# KALI_MCP_ALLOWED_COMMANDS=all
+```
+
+2. Start (or restart) the stack:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+3. Register MCP in Claude Code:
+
+```bash
+claude mcp add --transport http kali-lab http://127.0.0.1:8787/mcp
+claude mcp list
+claude mcp get kali-lab
+```
+
+4. In Claude Code, run `/mcp` if the server requires interactive auth.
+
 ---
 
 ## Navigation
