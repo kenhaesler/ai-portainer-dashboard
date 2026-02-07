@@ -461,10 +461,44 @@
    GLASSMORPHISM UI - FUTURISTIC DESIGN SYSTEM
    ============================================ */
 
+@property --glass-mesh-drift-x {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --glass-mesh-drift-y {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes apple-mesh-drift {
+  0% {
+    --glass-mesh-drift-x: -4px;
+    --glass-mesh-drift-y: -6px;
+  }
+  50% {
+    --glass-mesh-drift-x: 4px;
+    --glass-mesh-drift-y: 6px;
+  }
+  100% {
+    --glass-mesh-drift-x: -4px;
+    --glass-mesh-drift-y: -6px;
+  }
+}
+
 /* ====== GRADIENT MESH BACKGROUNDS ====== */
 
 /* Light theme - soft pastel gradient mesh */
 .apple-light {
+  --glass-bg-shift-x: 0px;
+  --glass-bg-shift-y: 0px;
+  --glass-card-shift-x: 0px;
+  --glass-card-shift-y: 0px;
+  --glass-header-blur: 20px;
+  --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  --glass-noise-opacity: 0.04;
   background:
     radial-gradient(ellipse at 0% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
     radial-gradient(ellipse at 100% 0%, rgba(236, 72, 153, 0.12) 0%, transparent 50%),
@@ -472,11 +506,21 @@
     radial-gradient(ellipse at 0% 100%, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
     linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
   background-attachment: fixed;
+  background-position: calc(50% + var(--glass-bg-shift-x) + var(--glass-mesh-drift-x))
+    calc(50% + var(--glass-bg-shift-y) + var(--glass-mesh-drift-y));
   min-height: 100vh;
+  animation: apple-mesh-drift 24s ease-in-out infinite;
 }
 
 /* Dark theme - deep space gradient with subtle aurora */
 .apple-dark {
+  --glass-bg-shift-x: 0px;
+  --glass-bg-shift-y: 0px;
+  --glass-card-shift-x: 0px;
+  --glass-card-shift-y: 0px;
+  --glass-header-blur: 20px;
+  --glass-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  --glass-noise-opacity: 0.035;
   background:
     radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.2) 0%, transparent 40%),
     radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
@@ -484,7 +528,17 @@
     radial-gradient(ellipse at 20% 80%, rgba(236, 72, 153, 0.1) 0%, transparent 40%),
     linear-gradient(180deg, #0f0f1a 0%, #0a0a12 50%, #050508 100%);
   background-attachment: fixed;
+  background-position: calc(50% + var(--glass-bg-shift-x) + var(--glass-mesh-drift-x))
+    calc(50% + var(--glass-bg-shift-y) + var(--glass-mesh-drift-y));
   min-height: 100vh;
+  animation: apple-mesh-drift 26s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apple-light,
+  .apple-dark {
+    animation: none;
+  }
 }
 
 /* ====== GLOBAL TRANSITIONS ====== */
@@ -517,6 +571,9 @@
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.5) !important;
+    contain: paint;
+    transform: translate3d(var(--glass-card-shift-x, 0px), var(--glass-card-shift-y, 0px), 0);
+    will-change: transform;
     box-shadow:
       0 8px 32px rgba(99, 102, 241, 0.08),
       0 4px 16px rgba(0, 0, 0, 0.04),
@@ -529,7 +586,11 @@
       0 12px 40px rgba(99, 102, 241, 0.12),
       0 8px 24px rgba(0, 0, 0, 0.06),
       inset 0 1px 0 rgba(255, 255, 255, 0.9);
-    transform: translateY(-2px);
+    transform: translate3d(
+      var(--glass-card-shift-x, 0px),
+      calc(var(--glass-card-shift-y, 0px) - 2px),
+      0
+    );
   }
 }
 
@@ -537,10 +598,13 @@
 .apple-dark {
   & .bg-card,
   & .rounded-lg.border.bg-card {
-    background: rgba(30, 32, 48, 0.5) !important;
+    background: rgba(30, 32, 48, 0.6) !important;
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(148, 163, 184, 0.12) !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    contain: paint;
+    transform: translate3d(var(--glass-card-shift-x, 0px), var(--glass-card-shift-y, 0px), 0);
+    will-change: transform;
     box-shadow:
       0 8px 32px rgba(0, 0, 0, 0.3),
       0 4px 16px rgba(99, 102, 241, 0.05),
@@ -549,12 +613,16 @@
 
   & .bg-card:hover {
     background: rgba(40, 42, 60, 0.6) !important;
-    border-color: rgba(129, 140, 248, 0.2) !important;
+    border-color: rgba(129, 140, 248, 0.24) !important;
     box-shadow:
       0 16px 48px rgba(0, 0, 0, 0.4),
       0 8px 24px rgba(129, 140, 248, 0.08),
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    transform: translateY(-2px);
+    transform: translate3d(
+      var(--glass-card-shift-x, 0px),
+      calc(var(--glass-card-shift-y, 0px) - 2px),
+      0
+    );
   }
 }
 
@@ -564,10 +632,11 @@
   & [data-sidebar],
   & .bg-sidebar-background,
   & aside {
-    background: rgba(255, 255, 255, 0.7) !important;
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border-right: 1px solid rgba(255, 255, 255, 0.5) !important;
+    background: rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(30px) saturate(170%);
+    -webkit-backdrop-filter: blur(30px) saturate(170%);
+    border-right: 1px solid rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 20px 50px rgba(99, 102, 241, 0.12);
   }
 }
 
@@ -575,11 +644,72 @@
   & [data-sidebar],
   & .bg-sidebar-background,
   & aside {
-    background: rgba(15, 15, 25, 0.75) !important;
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border-right: 1px solid rgba(148, 163, 184, 0.08) !important;
+    background: rgba(15, 15, 25, 0.5) !important;
+    backdrop-filter: blur(30px) saturate(170%);
+    -webkit-backdrop-filter: blur(30px) saturate(170%);
+    border-right: 1px solid rgba(148, 163, 184, 0.18) !important;
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
   }
+}
+
+/* ====== NOISE TEXTURE OVERLAY ====== */
+
+.apple-light :where(
+  .bg-card,
+  .rounded-lg.border.bg-card,
+  header,
+  nav:not(aside nav),
+  [data-sidebar],
+  .bg-sidebar-background,
+  aside,
+  .bg-popover,
+  [data-radix-popper-content-wrapper] > div
+),
+.apple-dark :where(
+  .bg-card,
+  .rounded-lg.border.bg-card,
+  header,
+  nav:not(aside nav),
+  [data-sidebar],
+  .bg-sidebar-background,
+  aside,
+  .bg-popover,
+  [data-radix-popper-content-wrapper] > div
+) {
+  position: relative;
+  overflow: hidden;
+}
+
+.apple-light :where(
+  .bg-card,
+  .rounded-lg.border.bg-card,
+  header,
+  nav:not(aside nav),
+  [data-sidebar],
+  .bg-sidebar-background,
+  aside,
+  .bg-popover,
+  [data-radix-popper-content-wrapper] > div
+)::after,
+.apple-dark :where(
+  .bg-card,
+  .rounded-lg.border.bg-card,
+  header,
+  nav:not(aside nav),
+  [data-sidebar],
+  .bg-sidebar-background,
+  aside,
+  .bg-popover,
+  [data-radix-popper-content-wrapper] > div
+)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--glass-noise);
+  background-size: 160px 160px;
+  opacity: var(--glass-noise-opacity);
+  mix-blend-mode: soft-light;
+  pointer-events: none;
 }
 
 /* ====== ANIMATED BACKGROUND — GLASS OVERRIDE ====== */
@@ -738,10 +868,10 @@ aside nav:hover {
 .apple-light {
   & .bg-popover,
   & [data-radix-popper-content-wrapper] > div {
-    background: rgba(255, 255, 255, 0.85) !important;
-    backdrop-filter: blur(24px) saturate(200%);
-    -webkit-backdrop-filter: blur(24px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+    backdrop-filter: blur(10px) saturate(160%);
+    -webkit-backdrop-filter: blur(10px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.65) !important;
     box-shadow:
       0 24px 48px rgba(0, 0, 0, 0.12),
       0 12px 24px rgba(99, 102, 241, 0.08);
@@ -751,10 +881,10 @@ aside nav:hover {
 .apple-dark {
   & .bg-popover,
   & [data-radix-popper-content-wrapper] > div {
-    background: rgba(20, 22, 35, 0.85) !important;
-    backdrop-filter: blur(24px) saturate(200%);
-    -webkit-backdrop-filter: blur(24px) saturate(200%);
-    border: 1px solid rgba(148, 163, 184, 0.12) !important;
+    background: rgba(20, 22, 35, 0.8) !important;
+    backdrop-filter: blur(10px) saturate(160%);
+    -webkit-backdrop-filter: blur(10px) saturate(160%);
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
     box-shadow:
       0 24px 48px rgba(0, 0, 0, 0.5),
       0 12px 24px rgba(129, 140, 248, 0.05);
@@ -882,20 +1012,50 @@ aside nav:hover {
 .apple-light {
   & header,
   & nav:not(aside nav) {
-    background: rgba(255, 255, 255, 0.7) !important;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+    background: rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(var(--glass-header-blur, 20px)) saturate(170%);
+    -webkit-backdrop-filter: blur(var(--glass-header-blur, 20px)) saturate(170%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.1);
   }
 }
 
 .apple-dark {
   & header,
   & nav:not(aside nav) {
-    background: rgba(15, 15, 25, 0.75) !important;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
+    background: rgba(15, 15, 25, 0.5) !important;
+    backdrop-filter: blur(var(--glass-header-blur, 20px)) saturate(170%);
+    -webkit-backdrop-filter: blur(var(--glass-header-blur, 20px)) saturate(170%);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .apple-light :where(
+    .bg-card,
+    .rounded-lg.border.bg-card,
+    header,
+    nav:not(aside nav),
+    [data-sidebar],
+    .bg-sidebar-background,
+    aside,
+    .bg-popover,
+    [data-radix-popper-content-wrapper] > div
+  ),
+  .apple-dark :where(
+    .bg-card,
+    .rounded-lg.border.bg-card,
+    header,
+    nav:not(aside nav),
+    [data-sidebar],
+    .bg-sidebar-background,
+    aside,
+    .bg-popover,
+    [data-radix-popper-content-wrapper] > div
+  ) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 }
 

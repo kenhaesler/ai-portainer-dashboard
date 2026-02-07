@@ -26,7 +26,15 @@ export default function LlmAssistantPage() {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { messages, isStreaming, currentResponse, activeToolCalls, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
+  const {
+    messages,
+    isStreaming,
+    currentResponse,
+    activeToolCalls = [],
+    sendMessage,
+    cancelGeneration,
+    clearHistory,
+  } = useLlmChat();
   const { data: modelsData } = useLlmModels();
 
   useEffect(() => {

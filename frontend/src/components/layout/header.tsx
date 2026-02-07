@@ -4,7 +4,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import { ConnectionOrb } from '@/components/shared/connection-orb';
 
 const routeLabels: Record<string, string> = {
@@ -33,6 +33,8 @@ export function Header() {
   const hasAnimatedBg = dashboardBackground !== 'none';
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const [headerBlur, setHeaderBlur] = useState(20);
+  const isAppleTheme = theme === 'apple-light' || theme === 'apple-dark';
 
   // Check if the current route is a container detail page
   const containerDetailMatch = location.pathname.match(/^\/containers\/(\d+)\/([a-f0-9]+)$/);
@@ -68,9 +70,29 @@ export function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isAppleTheme) {
+      setHeaderBlur(20);
+      return;
+    }
+
+    const updateBlur = () => {
+      const minBlur = 20;
+      const maxBlur = 25;
+      const scrollAmount = Math.min(window.scrollY, 200);
+      const nextBlur = minBlur + (scrollAmount / 200) * (maxBlur - minBlur);
+      setHeaderBlur(nextBlur);
+    };
+
+    updateBlur();
+    window.addEventListener('scroll', updateBlur, { passive: true });
+    return () => window.removeEventListener('scroll', updateBlur);
+  }, [isAppleTheme]);
+
   return (
     <header
       data-animated-bg={hasAnimatedBg || undefined}
+      style={{ '--glass-header-blur': `${headerBlur}px` } as CSSProperties}
       className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
     >
       {/* Breadcrumbs */}

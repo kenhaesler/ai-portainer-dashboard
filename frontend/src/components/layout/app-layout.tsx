@@ -15,6 +15,7 @@ import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useEntrancePlayed } from '@/hooks/use-entrance-played';
 import { useKeyChord } from '@/hooks/use-key-chord';
 import type { ChordBinding } from '@/hooks/use-key-chord';
+import { useGlassParallax } from '@/hooks/use-glass-parallax';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
 function getRouteDepth(pathname: string): number {
@@ -40,6 +41,9 @@ export function AppLayout() {
   const previousDepthRef = useRef(getRouteDepth(location.pathname));
   const { hasPlayed, markPlayed } = useEntrancePlayed();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const isAppleTheme = theme === 'apple-light' || theme === 'apple-dark';
+
+  useGlassParallax(isAppleTheme);
 
   // Skip entrance on click/keypress
   useEffect(() => {
