@@ -39,6 +39,32 @@ For inline answers (simple factual questions):
 INFRASTRUCTURE CONTEXT:
 `;
 
+const PROMPT_INJECTION_PATTERNS = [
+  /system prompt/i,
+  /initial instructions/i,
+  /repeat (the )?(prompt|instructions)/i,
+  /ignore (all |the )?(previous|prior|system) instructions/i,
+  /developer message/i,
+];
+
+function isPromptInjectionAttempt(query: string): boolean {
+  return PROMPT_INJECTION_PATTERNS.some((pattern) => pattern.test(query));
+}
+
+function sanitizeLlmOutput(text: string): string {
+  const normalized = text.toLowerCase();
+  const leaksSystemPrompt =
+    normalized.includes('you are a dashboard query interpreter') ||
+    normalized.includes('available pages and their routes') ||
+    normalized.includes('infrastructure context');
+
+  if (leaksSystemPrompt) {
+    return 'I cannot provide internal system instructions. Ask about dashboard data or navigation.';
+  }
+
+  return text;
+}
+
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -104,6 +130,14 @@ export async function llmRoutes(fastify: FastifyInstance) {
     const llmConfig = getEffectiveLlmConfig();
     const { query } = request.body;
     const startTime = Date.now();
+
+    if (isPromptInjectionAttempt(query)) {
+      return {
+        action: 'answer',
+        text: 'I cannot provide internal system instructions. Ask about dashboard data or navigation.',
+        description: 'Prompt-injection guardrail',
+      };
+    }
 
     try {
       const infraContext = await getInfrastructureSummary();
@@ -183,7 +217,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       if (parsed.action === 'answer' && typeof parsed.text === 'string') {
         return {
           action: 'answer',
-          text: parsed.text,
+          text: sanitizeLlmOutput(parsed.text),
           description: parsed.description || '',
         };
       }
@@ -191,7 +225,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       // Fallback: treat as answer
       return {
         action: 'answer',
-        text: fullResponse,
+        text: sanitizeLlmOutput(fullResponse),
         description: 'Raw LLM response',
       };
     } catch (err) {
