@@ -13,6 +13,10 @@ async function swaggerPlugin(fastify: FastifyInstance) {
   fastify.setValidatorCompiler(validatorCompiler);
   fastify.setSerializerCompiler(serializerCompiler);
 
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+
   await fastify.register(swagger, {
     openapi: {
       info: {
