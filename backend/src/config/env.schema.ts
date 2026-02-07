@@ -12,7 +12,7 @@ export const envSchema = z.object({
   PORTAINER_VERIFY_SSL: z.coerce.boolean().default(true),
 
   // Ollama
-  OLLAMA_BASE_URL: z.string().url().default('http://ollama:11434'),
+  OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),
   OLLAMA_MODEL: z.string().default('llama3.2'),
   OLLAMA_API_ENDPOINT: z.string().url().optional(), // OpenAI-compatible endpoint (e.g., OpenWebUI)
   OLLAMA_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth

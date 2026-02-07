@@ -292,4 +292,80 @@ describe('useLlmChat', () => {
     });
     expect(result.current.messages[0].context).toEqual(context);
   });
+
+  it('should preserve final response after tool call clear-and-restream cycle', () => {
+    // Regression test: "Show me all running containers" bug
+    // The full flow: stream tool JSON → clear → re-stream final response → finalize
+    const { result } = renderHook(() => useLlmChat());
+
+    // 1. Chat starts
+    act(() => {
+      eventHandlers['chat:start']?.();
+    });
+    expect(result.current.isStreaming).toBe(true);
+
+    // 2. Iteration 0: LLM streams tool-call JSON
+    act(() => {
+      eventHandlers['chat:chunk']?.('{"tool_calls": [{"tool": "query_containers"}]}');
+    });
+    expect(result.current.currentResponse).toBe('{"tool_calls": [{"tool": "query_containers"}]}');
+
+    // 3. Backend detects tool calls and clears streamed content
+    act(() => {
+      eventHandlers['chat:tool_response_pending']?.();
+    });
+    expect(result.current.currentResponse).toBe('');
+
+    // 4. Tool execution events
+    act(() => {
+      eventHandlers['chat:tool_call']?.({
+        tools: ['query_containers'],
+        status: 'executing',
+      });
+    });
+    act(() => {
+      eventHandlers['chat:tool_call']?.({
+        tools: ['query_containers'],
+        status: 'complete',
+        results: [{ tool: 'query_containers', success: true }],
+      });
+    });
+    expect(result.current.activeToolCalls).toHaveLength(2);
+
+    // 5. Iteration 1: LLM streams the final natural language response
+    act(() => {
+      eventHandlers['chat:chunk']?.('Here are your ');
+    });
+    act(() => {
+      eventHandlers['chat:chunk']?.('running containers...');
+    });
+    expect(result.current.currentResponse).toBe('Here are your running containers...');
+
+    // 6. Chat ends — message finalized with content and tool calls
+    act(() => {
+      eventHandlers['chat:end']?.({ id: 'msg-1', content: 'Here are your running containers...' });
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(result.current.currentResponse).toBe('');
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].content).toBe('Here are your running containers...');
+    expect(result.current.messages[0].toolCalls).toHaveLength(2);
+  });
+
+  it('should not re-subscribe listeners when tool call events fire', () => {
+    renderHook(() => useLlmChat());
+    const initialOnCount = mockOn.mock.calls.length;
+
+    // Fire a tool_call event — should NOT cause listener re-subscription
+    act(() => {
+      eventHandlers['chat:tool_call']?.({
+        tools: ['query_containers'],
+        status: 'executing',
+      });
+    });
+
+    // Listener count should not increase (no re-subscription)
+    expect(mockOn.mock.calls.length).toBe(initialOnCount);
+  });
 });

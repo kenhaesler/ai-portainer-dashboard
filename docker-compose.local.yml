@@ -34,7 +34,7 @@ services:
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://portainer:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
       - PORTAINER_VERIFY_SSL=${PORTAINER_VERIFY_SSL:-false}
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - MONITORING_ENABLED=${MONITORING_ENABLED:-true}
       - MONITORING_INTERVAL_MINUTES=${MONITORING_INTERVAL_MINUTES:-5}
@@ -49,7 +49,6 @@ services:
       - backend-data:/app/data
     depends_on:
       - portainer
-      - ollama
       - redis
     networks:
       - dashboard-net
@@ -70,16 +69,6 @@ services:
       - ./frontend/index.html:/app/index.html
     depends_on:
       - backend
-    networks:
-      - dashboard-net
-
-  # Ollama for AI features
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
     networks:
       - dashboard-net
 
@@ -112,7 +101,6 @@ services:
 volumes:
   portainer-data:
   backend-data:
-  ollama-data:
 
 networks:
   dashboard-net:

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSockets } from '@/providers/socket-provider';
 
 interface ChatMessage {
@@ -35,6 +35,10 @@ export function useLlmChat() {
   const [currentResponse, setCurrentResponse] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEvent[]>([]);
 
+  // Use a ref to track tool calls so that socket listeners don't need to be
+  // torn down and re-subscribed every time a tool_call event fires.
+  const toolCallsRef = useRef<ToolCallEvent[]>([]);
+
   useEffect(() => {
     if (!llmSocket) return;
 
@@ -42,6 +46,7 @@ export function useLlmChat() {
       setIsStreaming(true);
       setCurrentResponse('');
       setActiveToolCalls([]);
+      toolCallsRef.current = [];
     };
 
     const handleChatChunk = (chunk: string) => {
@@ -50,22 +55,25 @@ export function useLlmChat() {
 
     const handleChatEnd = (data: { id: string; content: string }) => {
       setIsStreaming(false);
+      const snapshotToolCalls = toolCallsRef.current;
       const assistantMessage: ChatMessage = {
         id: data.id,
         role: 'assistant',
         content: data.content,
         timestamp: new Date().toISOString(),
-        toolCalls: activeToolCalls.length > 0 ? [...activeToolCalls] : undefined,
+        toolCalls: snapshotToolCalls.length > 0 ? [...snapshotToolCalls] : undefined,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setCurrentResponse('');
       setActiveToolCalls([]);
+      toolCallsRef.current = [];
     };
 
     const handleChatError = (error: { message: string }) => {
       setIsStreaming(false);
       setCurrentResponse('');
       setActiveToolCalls([]);
+      toolCallsRef.current = [];
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'system',
@@ -76,12 +84,13 @@ export function useLlmChat() {
     };
 
     const handleToolCall = (event: ToolCallEvent) => {
+      toolCallsRef.current = [...toolCallsRef.current, event];
       setActiveToolCalls((prev) => [...prev, event]);
     };
 
     const handleToolResponsePending = () => {
-      // The LLM produced a tool call on the first iteration — clear the streamed
-      // tool-call JSON so the final natural language response replaces it
+      // The LLM produced a tool call — clear the streamed tool-call JSON
+      // so the next iteration's natural language response replaces it
       setCurrentResponse('');
     };
 
@@ -100,7 +109,7 @@ export function useLlmChat() {
       llmSocket.off('chat:tool_call', handleToolCall);
       llmSocket.off('chat:tool_response_pending', handleToolResponsePending);
     };
-  }, [llmSocket, activeToolCalls]);
+  }, [llmSocket]);
 
   const sendMessage = useCallback(
     (text: string, context?: ChatContext, model?: string) => {

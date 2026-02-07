@@ -52,7 +52,7 @@ npm run test:watch         # Watch mode
 npx vitest run src/utils/crypto.test.ts --config backend/vitest.config.ts
 npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 
-# Docker development (preferred — includes Ollama)
+# Docker development (preferred)
 docker compose -f docker-compose.dev.yml up -d
 ```
 
@@ -221,7 +221,7 @@ main          ← stable/release (protected)
 Copy `.env.example` to `.env`. Key variables:
 - `PORTAINER_API_URL` / `PORTAINER_API_KEY` — Required for Portainer connection
 - `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` — Login credentials
-- `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — LLM config (defaults: `http://ollama:11434`, `llama3.2`)
+- `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — LLM config (defaults: `http://host.docker.internal:11434`, `llama3.2`)
 - `REDIS_URL` / `REDIS_KEY_PREFIX` — Hybrid cache backend config (defaults: `redis://redis:6379`, `aidash:cache:`)
 - `JWT_SECRET` — Must be 32+ chars in production
 - See `.env.example` for the full list including OIDC, monitoring, caching, and rate-limit settings.

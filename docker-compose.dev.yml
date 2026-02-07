@@ -19,7 +19,7 @@ services:
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
       - PORTAINER_VERIFY_SSL=${PORTAINER_VERIFY_SSL:-false}
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - MONITORING_ENABLED=${MONITORING_ENABLED:-true}
       - MONITORING_INTERVAL_MINUTES=${MONITORING_INTERVAL_MINUTES:-5}
@@ -39,8 +39,6 @@ services:
       - ./backend/src:/app/src
       - backend-data:/app/data
     depends_on:
-      ollama:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -81,31 +79,6 @@ services:
     #       cpus: '0.5'
     #       memory: 256M
 
-  ollama:
-    image: ollama/ollama:0.6.5
-    restart: unless-stopped
-    ports:
-      - "11534:11434"
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    volumes:
-      - ollama-data:/root/.ollama
-    networks:
-      - dashboard-net
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: '2.0'
-    #       memory: 4G
-    #     reservations:
-    #       memory: 2G
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -134,7 +107,6 @@ services:
 
 volumes:
   backend-data:
-  ollama-data:
 
 networks:
   dashboard-net:

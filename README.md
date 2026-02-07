@@ -281,10 +281,13 @@ npm install
 npm run dev
 ```
 
-### 3. Pull the LLM model (for AI features)
+### 3. Start Ollama externally (for AI features)
+
+Ollama is not bundled in the Docker Compose stack. Install and run it on your host machine:
 
 ```bash
-docker compose exec ollama ollama pull llama3.2
+ollama pull llama3.2
+ollama serve
 ```
 
 ### 4. Access the dashboard
@@ -490,7 +493,7 @@ ai-portainer-dashboard/
 ├── scripts/
 │   └── deploy-workload.sh          # Test workload deployment script
 ├── docker-compose.yml              # Production (Nginx + Node)
-├── docker-compose.dev.yml          # Development (hot-reload + Ollama)
+├── docker-compose.dev.yml          # Development (hot-reload)
 ├── workloads/                       # Multi-stack test workload compose files
 │   ├── data-services.yml            #   Postgres, Redis, RabbitMQ
 │   ├── web-platform.yml             #   Web tier + API gateway + cron
@@ -523,7 +526,7 @@ ai-portainer-dashboard/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OLLAMA_BASE_URL` | Ollama server URL | `http://ollama:11434` |
+| `OLLAMA_BASE_URL` | Ollama server URL | `http://host.docker.internal:11434` |
 | `OLLAMA_MODEL` | LLM model name | `llama3.2` |
 | `OLLAMA_API_ENDPOINT` | Custom chat completions endpoint (OpenWebUI) | *(optional)* |
 | `OLLAMA_BEARER_TOKEN` | Auth token or `user:pass` for Basic auth | *(optional)* |
@@ -575,7 +578,7 @@ npm install
 # Development (hot-reload for both workspaces)
 npm run dev
 
-# Or via Docker (includes Ollama for AI features)
+# Or via Docker (preferred)
 docker compose -f docker-compose.dev.yml up -d
 
 # Build everything
