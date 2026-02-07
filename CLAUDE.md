@@ -48,7 +48,7 @@ npm install
 # Development (runs both backend and frontend concurrently)
 npm run dev
 
-# Or via Docker (preferred — includes Ollama for AI features)
+# Or via Docker (preferred)
 docker compose -f docker-compose.dev.yml up -d
 
 # Build everything
@@ -77,8 +77,8 @@ npm run test:watch
 
 ## Local Runtime Dependencies
 
-- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend, frontend, and Ollama run as containers.
-- **Ollama** — LLM backend for AI features. Runs in the dev compose stack on port 11434. Pull the model with: `docker compose -f docker-compose.dev.yml exec ollama ollama pull llama3.2`
+- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend and frontend run as containers.
+- **Ollama** — LLM backend for AI features. Must be running externally (not bundled in Docker Compose). The default `OLLAMA_BASE_URL` is `http://host.docker.internal:11434`, which connects to Ollama running on the host machine.
 - When running outside Docker (`npm run dev`), ensure Ollama is available at `OLLAMA_BASE_URL` (default `http://localhost:11434`) and Portainer at `PORTAINER_API_URL`.
 
 ## Architecture
@@ -218,7 +218,7 @@ Purple (purple-500):  AI-generated insight, recommendation
 Copy `.env.example` to `.env`. Key variables:
 - `PORTAINER_API_URL` / `PORTAINER_API_KEY` — Required for Portainer connection
 - `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` — Login credentials
-- `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — LLM config (defaults: `http://ollama:11434`, `llama3.2`)
+- `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — LLM config (defaults: `http://host.docker.internal:11434`, `llama3.2`)
 - `REDIS_URL` / `REDIS_KEY_PREFIX` — Hybrid cache backend config (defaults: `redis://redis:6379`, `aidash:cache:`)
 - `JWT_SECRET` — Must be 32+ chars in production
 - See `.env.example` for the full list including OIDC, monitoring, caching, and rate-limit settings.

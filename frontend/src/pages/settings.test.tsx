@@ -73,7 +73,7 @@ describe('LlmSettingsSection', () => {
   const defaultValues: Record<string, string> = {
     'llm.model': 'llama3.2',
     'llm.temperature': '0.7',
-    'llm.ollama_url': 'http://ollama:11434',
+    'llm.ollama_url': 'http://host.docker.internal:11434',
     'llm.max_tokens': '2048',
     'llm.custom_endpoint_enabled': 'false',
     'llm.custom_endpoint_url': '',

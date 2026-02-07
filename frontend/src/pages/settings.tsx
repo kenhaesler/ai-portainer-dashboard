@@ -81,7 +81,7 @@ const DEFAULT_SETTINGS = {
   llm: [
     { key: 'llm.model', label: 'LLM Model', description: 'Model to use for AI features', type: 'string', defaultValue: 'llama3.2' },
     { key: 'llm.temperature', label: 'Temperature', description: 'Creativity of LLM responses (0-1)', type: 'number', defaultValue: '0.7', min: 0, max: 1, step: 0.1 },
-    { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://ollama:11434' },
+    { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://host.docker.internal:11434' },
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '2048', min: 256, max: 8192 },
     { key: 'llm.custom_endpoint_enabled', label: 'Custom Endpoint Enabled', description: 'Use a custom OpenAI-compatible API endpoint', type: 'boolean', defaultValue: 'false' },
     { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'OpenAI-compatible chat completions URL', type: 'string', defaultValue: '' },
@@ -331,7 +331,7 @@ interface LlmSettingsSectionProps {
 }
 
 export function LlmSettingsSection({ values, originalValues, onChange, disabled }: LlmSettingsSectionProps) {
-  const ollamaUrl = values['llm.ollama_url'] || 'http://ollama:11434';
+  const ollamaUrl = values['llm.ollama_url'] || 'http://host.docker.internal:11434';
   const selectedModel = values['llm.model'] || 'llama3.2';
   const temperature = values['llm.temperature'] || '0.7';
   const maxTokens = values['llm.max_tokens'] || '2048';
