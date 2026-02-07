@@ -20,6 +20,7 @@ const routeLabels: Record<string, string> = {
   '/remediation': 'Remediation',
   '/traces': 'Trace Explorer',
   '/assistant': 'LLM Assistant',
+  '/security/audit': 'Security Audit',
   '/edge-logs': 'Edge Agent Logs',
   '/settings': 'Settings',
 };

@@ -1,6 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '../models/api-schemas.js';
+import {
+  getSecurityAudit,
+  getSecurityAuditIgnoreList,
+  setSecurityAuditIgnoreList,
+  DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
+  SECURITY_AUDIT_IGNORE_KEY,
+} from '../services/security-audit.js';
 
 export async function monitoringRoutes(fastify: FastifyInstance) {
   fastify.get('/api/monitoring/insights', {
@@ -96,5 +103,69 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
     const db = getDb();
     db.prepare('UPDATE insights SET is_acknowledged = 1 WHERE id = ?').run(id);
     return { success: true };
+  });
+
+  fastify.get('/api/security/audit', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Get capability security audit for all endpoints',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    const entries = await getSecurityAudit();
+    return { entries };
+  });
+
+  fastify.get('/api/security/audit/:endpointId', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Get capability security audit for one endpoint',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { endpointId } = request.params as { endpointId: string };
+    const parsedEndpointId = Number(endpointId);
+    const entries = await getSecurityAudit(parsedEndpointId);
+    return { entries };
+  });
+
+  fastify.get('/api/security/ignore-list', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Get security audit ignore list',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    return {
+      key: SECURITY_AUDIT_IGNORE_KEY,
+      category: 'security',
+      defaults: DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
+      patterns: getSecurityAuditIgnoreList(),
+    };
+  });
+
+  fastify.put('/api/security/ignore-list', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Update security audit ignore list',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const body = request.body as { patterns?: unknown };
+    const patterns = Array.isArray(body?.patterns)
+      ? body.patterns.filter((value): value is string => typeof value === 'string')
+      : [];
+
+    const saved = setSecurityAuditIgnoreList(patterns);
+    return {
+      success: true,
+      key: SECURITY_AUDIT_IGNORE_KEY,
+      category: 'security',
+      patterns: saved,
+    };
   });
 }

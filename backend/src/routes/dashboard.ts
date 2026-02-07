@@ -4,6 +4,7 @@ import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { getKpiHistory } from '../services/kpi-store.js';
 import { createChildLogger } from '../utils/logger.js';
+import { buildSecurityAuditSummary, getSecurityAudit } from '../services/security-audit.js';
 
 const log = createChildLogger('route:dashboard');
 
@@ -89,8 +90,17 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     // Sort by created time, take latest 20
     recentContainers.sort((a, b) => b.created - a.created);
 
+    let security = { totalAudited: 0, flagged: 0, ignored: 0 };
+    try {
+      const auditEntries = await getSecurityAudit();
+      security = buildSecurityAuditSummary(auditEntries);
+    } catch (err) {
+      log.warn({ err }, 'Failed to fetch security audit summary');
+    }
+
     return {
       kpis: totals,
+      security,
       endpoints: normalized,
       recentContainers: recentContainers.slice(0, 20),
       timestamp: new Date().toISOString(),
