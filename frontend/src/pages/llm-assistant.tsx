@@ -76,6 +76,14 @@ export default function LlmAssistantPage() {
     setInput('');
   }, [input, isStreaming, isSending, sendMessage, selectedModel]);
 
+  const handleSuggestedQuestionClick = useCallback((suggestion: string) => {
+    if (isStreaming || isSending) return;
+
+    setIsSending(true);
+    sendMessage(suggestion, undefined, selectedModel || undefined);
+    setInput('');
+  }, [isStreaming, isSending, sendMessage, selectedModel]);
+
   const handleClear = () => {
     if (window.confirm('Clear all chat history?')) {
       clearHistory();
@@ -149,8 +157,9 @@ export default function LlmAssistantPage() {
                   ].map((suggestion, i) => (
                     <button
                       key={i}
-                      onClick={() => setInput(suggestion)}
-                      className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-left hover:bg-accent hover:border-border transition-colors"
+                      onClick={() => handleSuggestedQuestionClick(suggestion)}
+                      disabled={isStreaming || isSending}
+                      className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-left hover:bg-accent hover:border-border transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {suggestion}
                     </button>
