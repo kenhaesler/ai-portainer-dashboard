@@ -31,12 +31,9 @@ export interface LayoutPosition {
 const elk = new ELK();
 
 const ROOT_LAYOUT_OPTIONS: Record<string, string> = {
-  'elk.algorithm': 'layered',
-  'elk.direction': 'RIGHT',
-  'elk.spacing.nodeNode': '50',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-  'elk.edgeRouting': 'ORTHOGONAL',
-  'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+  'elk.algorithm': 'stress',
+  'elk.stress.desiredEdgeLength': '200',
+  'elk.spacing.nodeNode': '80',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
 };
 

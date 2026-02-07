@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -18,6 +18,7 @@ import {
   type ElkLayoutNode,
   type ElkLayoutEdge,
 } from '@/hooks/use-elk-layout';
+import { useForceSimulation } from '@/hooks/use-force-simulation';
 
 export interface ContainerData {
   id: string;
@@ -188,18 +189,17 @@ const nodeTypes = {
 };
 
 // Node dimensions for elkjs layout
-const CONTAINER_W = 120;
-const CONTAINER_H = 80;
-const NETWORK_W = 120;
-const NETWORK_H = 80;
+const CONTAINER_W = 140;
+const CONTAINER_H = 90;
+const NETWORK_W = 140;
+const NETWORK_H = 90;
 
 // Layout options for within-group arrangement (elkjs compound graph)
 const GROUP_LAYOUT_OPTIONS: Record<string, string> = {
-  'elk.algorithm': 'layered',
-  'elk.direction': 'DOWN',
-  'elk.spacing.nodeNode': '25',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '30',
-  'elk.padding': '[top=35, left=20, bottom=15, right=20]',
+  'elk.algorithm': 'stress',
+  'elk.stress.desiredEdgeLength': '200',
+  'elk.spacing.nodeNode': '100',
+  'elk.padding': '[top=50, left=40, bottom=30, right=40]',
 };
 
 export function getEdgeStyle(
@@ -469,6 +469,115 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
     setEdges(initialEdges);
   }, [initialEdges, setEdges]);
 
+  // --- Force simulation: top-level nodes push each other when dragged ---
+
+  // Build simulation input from elkjs top-level node positions
+  const simNodes = useMemo(() => {
+    const result: Array<{ id: string; x: number; y: number; width: number; height: number }> = [];
+    for (const bp of blueprints) {
+      const pos = layoutPositions.get(bp.groupId);
+      if (!pos) continue;
+      result.push({
+        id: bp.groupId,
+        x: pos.x,
+        y: pos.y,
+        width: pos.width ?? 200,
+        height: pos.height ?? 150,
+      });
+    }
+    for (const net of externalNets) {
+      const pos = layoutPositions.get(`net-${net.id}`);
+      if (!pos) continue;
+      result.push({
+        id: `net-${net.id}`,
+        x: pos.x,
+        y: pos.y,
+        width: NETWORK_W,
+        height: NETWORK_H,
+      });
+    }
+    return result;
+  }, [blueprints, externalNets, layoutPositions]);
+
+  // Build top-level links (group ↔ external net) for force simulation
+  const simLinks = useMemo(() => {
+    const links: Array<{ id: string; source: string; target: string }> = [];
+    const seen = new Set<string>();
+    for (const bp of blueprints) {
+      for (const container of bp.containers) {
+        for (const netName of container.networks) {
+          const extNet = externalNets.find((n) => n.name === netName);
+          if (!extNet) continue;
+          const key = `${bp.groupId}--net-${extNet.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          links.push({ id: key, source: bp.groupId, target: `net-${extNet.id}` });
+        }
+      }
+    }
+    return links;
+  }, [blueprints, externalNets]);
+
+  // Track which node IDs are children of which group, for moving children with groups
+  const childToGroupRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    const map = new Map<string, string>();
+    for (const bp of blueprints) {
+      for (const c of bp.containers) map.set(`container-${c.id}`, bp.groupId);
+      for (const n of bp.inlineNets) map.set(`net-${n.id}`, bp.groupId);
+    }
+    childToGroupRef.current = map;
+  }, [blueprints]);
+
+  // On simulation tick: update top-level node positions; children follow via React Flow parentId
+  const handleSimTick = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => {
+        const newPos = positions.get(node.id);
+        if (newPos) {
+          // Top-level node (group or external net) — apply simulation position
+          return { ...node, position: { x: newPos.x, y: newPos.y } };
+        }
+        return node;
+      }),
+    );
+  }, [setNodes]);
+
+  const { onNodeDragStart, onNodeDrag, onNodeDragStop } = useForceSimulation({
+    nodes: simNodes,
+    links: simLinks,
+    onTick: handleSimTick,
+  });
+
+  // Wrap drag handlers to translate React Flow events into our hook's API
+  const handleDragStart = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      // Only top-level nodes participate in simulation (groups + external nets)
+      const groupId = childToGroupRef.current.get(node.id);
+      if (groupId) return; // child node — let React Flow handle normally (constrained to parent)
+      onNodeDragStart(event, node.id);
+    },
+    [onNodeDragStart],
+  );
+
+  const handleDrag = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      const groupId = childToGroupRef.current.get(node.id);
+      if (groupId) return;
+      onNodeDrag(event, node.id, node.position);
+    },
+    [onNodeDrag],
+  );
+
+  const handleDragStop = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      const groupId = childToGroupRef.current.get(node.id);
+      if (groupId) return;
+      onNodeDragStop(event, node.id);
+    },
+    [onNodeDragStop],
+  );
+
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     if (onNodeClick) {
       onNodeClick(node.id);
@@ -491,6 +600,9 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDragStart={handleDragStart}
+        onNodeDrag={handleDrag}
+        onNodeDragStop={handleDragStop}
         nodeTypes={nodeTypes}
         fitView
         attributionPosition="bottom-left"
