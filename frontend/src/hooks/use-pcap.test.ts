@@ -123,7 +123,7 @@ describe('use-pcap', () => {
 
   describe('useStopCapture', () => {
     it('should call POST to stop capture', async () => {
-      mockApi.post.mockResolvedValue({ id: 'c1', status: 'stopped' });
+      mockApi.post.mockResolvedValue({ id: 'c1', status: 'succeeded' });
 
       const { result } = renderHook(() => useStopCapture(), {
         wrapper: createWrapper(),

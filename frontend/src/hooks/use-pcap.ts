@@ -7,7 +7,7 @@ export interface Capture {
   endpoint_id: number;
   container_id: string;
   container_name: string;
-  status: 'pending' | 'capturing' | 'processing' | 'complete' | 'failed' | 'stopped';
+  status: 'pending' | 'capturing' | 'processing' | 'complete' | 'failed' | 'succeeded';
   filter: string | null;
   duration_seconds: number | null;
   max_packets: number | null;

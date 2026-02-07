@@ -209,7 +209,7 @@ describe('PCAP Routes', () => {
     it('should stop a capture', async () => {
       mockStopCapture.mockResolvedValue({
         id: 'c1',
-        status: 'stopped',
+        status: 'succeeded',
         container_id: 'abc',
         container_name: 'web',
       });
@@ -222,7 +222,7 @@ describe('PCAP Routes', () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.status).toBe('stopped');
+      expect(body.status).toBe('succeeded');
     });
 
     it('should return 400 when stop fails', async () => {

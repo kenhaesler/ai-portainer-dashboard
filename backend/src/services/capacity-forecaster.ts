@@ -3,6 +3,15 @@ import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('capacity-forecaster');
 
+// In-memory cache for forecast overview (heavy query that blocks the event loop)
+let forecastCache: { data: CapacityForecast[]; limit: number; timestamp: number } | null = null;
+const FORECAST_CACHE_TTL_MS = 120_000; // 2 minutes
+
+/** Reset forecast cache (for testing). */
+export function resetForecastCache(): void {
+  forecastCache = null;
+}
+
 export interface ForecastPoint {
   timestamp: string;
   value: number;
@@ -59,6 +68,17 @@ export function linearRegression(
   const rSquared = ssTot === 0 ? 0 : 1 - ssRes / ssTot;
 
   return { slope, intercept, rSquared: Math.max(0, rSquared) };
+}
+
+/**
+ * Look up a container's name from the metrics table.
+ */
+export function lookupContainerName(containerId: string): string {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT container_name FROM metrics WHERE container_id = ? LIMIT 1`,
+  ).get(containerId) as { container_name: string } | undefined;
+  return row?.container_name ?? '';
 }
 
 /**
@@ -180,19 +200,27 @@ export function generateForecast(
 
 /**
  * Get top containers with concerning capacity trends.
+ * Results are cached for 2 minutes to avoid blocking the event loop
+ * with many synchronous SQLite queries.
  */
 export function getCapacityForecasts(
   limit: number = 10,
 ): CapacityForecast[] {
+  const now = Date.now();
+  if (forecastCache && forecastCache.limit >= limit && (now - forecastCache.timestamp) < FORECAST_CACHE_TTL_MS) {
+    return forecastCache.data.slice(0, limit);
+  }
+
   const db = getDb();
   const hoursBack = 6;
   const maxPointsPerSeries = 180;
 
-  // Get unique container IDs with recent metrics
+  // Get containers that have at least 5 data points per metric type
   const containers = db.prepare(`
-    SELECT DISTINCT container_id, container_name
+    SELECT container_id, container_name
     FROM metrics
     WHERE timestamp >= datetime('now', ? || ' hours')
+      AND metric_type IN ('cpu', 'memory')
     GROUP BY container_id
     HAVING COUNT(*) >= 5
     ORDER BY container_name ASC
@@ -252,7 +280,7 @@ export function getCapacityForecasts(
   }
 
   // Sort: increasing trends first, then by time to threshold
-  return forecasts
+  const sorted = forecasts
     .sort((a, b) => {
       if (a.trend === 'increasing' && b.trend !== 'increasing') return -1;
       if (a.trend !== 'increasing' && b.trend === 'increasing') return 1;
@@ -260,6 +288,8 @@ export function getCapacityForecasts(
       if (a.timeToThreshold) return -1;
       if (b.timeToThreshold) return 1;
       return 0;
-    })
-    .slice(0, limit);
+    });
+
+  forecastCache = { data: sorted, limit, timestamp: now };
+  return sorted.slice(0, limit);
 }
