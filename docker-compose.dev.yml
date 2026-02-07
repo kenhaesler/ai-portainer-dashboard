@@ -118,6 +118,20 @@ services:
     networks:
       - dashboard-net
 
+  kali-mcp:
+    build:
+      context: ./tools/kali-mcp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8787:8000"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-all}
+    networks:
+      - dashboard-net
+
 volumes:
   backend-data:
   ollama-data:
