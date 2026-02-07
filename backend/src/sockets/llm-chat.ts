@@ -296,7 +296,10 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         let finalResponse = '';
         let toolIteration = 0;
 
-        // Tool calling loop: stream response, check for tool calls, execute, repeat
+        // Tool calling loop: stream response, check for tool calls, execute, repeat.
+        // Every iteration streams chunks to the client. If tool calls are detected,
+        // we emit chat:tool_response_pending to clear the streamed tool-call JSON,
+        // then the next iteration streams the follow-up response progressively.
         while (toolIteration < MAX_TOOL_ITERATIONS) {
           let iterationResponse = '';
 
@@ -305,11 +308,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
             selectedModel,
             messages,
             (text) => {
-              // Only stream chunks to client on the final iteration (when no tool calls)
-              // We buffer during tool-calling iterations and emit tool_call events instead
-              if (toolIteration === 0) {
-                socket.emit('chat:chunk', text);
-              }
+              socket.emit('chat:chunk', text);
             },
             abortController.signal,
           );
@@ -320,15 +319,13 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           const toolCalls = parseToolCalls(iterationResponse);
 
           if (!toolCalls) {
-            // No tool calls — this is the final response
-            if (toolIteration > 0) {
-              // We need to stream this final response to the client
-              // since we didn't stream during tool iterations
-              socket.emit('chat:chunk', iterationResponse);
-            }
+            // No tool calls — this is the final response (already streamed above)
             finalResponse = iterationResponse;
             break;
           }
+
+          // Tool calls detected — clear the streamed tool-call JSON from the frontend
+          socket.emit('chat:tool_response_pending');
 
           // Execute tool calls
           log.debug({ userId, tools: toolCalls.map(t => t.tool), iteration: toolIteration }, 'Executing tool calls');
@@ -348,12 +345,6 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
               error: r.error,
             })),
           });
-
-          // If this was the first iteration, we already streamed tool-call JSON to the client.
-          // Clear the streamed content so the frontend knows to replace it with the final response.
-          if (toolIteration === 0) {
-            socket.emit('chat:tool_response_pending');
-          }
 
           // Add assistant's tool request and tool results to messages for next iteration
           messages = [
