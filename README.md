@@ -354,6 +354,36 @@ Notes:
 - If `KALI_MCP_ALLOWED_COMMANDS` is not `all`, include required commands (`curl`, `ss`, `jq`, etc.) in the allowlist.
 - From inside the Kali container, use `host.docker.internal` to reach host-published app ports.
 
+### Claude prompt examples (copy/paste)
+
+```text
+Use kali-lab MCP and run these smoke tests:
+1) run_allowed("curl -i http://host.docker.internal:3051/health")
+2) run_allowed("curl -I http://host.docker.internal:5273")
+3) run_allowed("curl -s http://host.docker.internal:3051/api/auth/session")
+4) run_allowed("ss -tulpen")
+Then summarize status codes, failures, and likely root cause.
+```
+
+```text
+Use kali-lab MCP for login flow test:
+1) run_allowed("curl -i -X POST http://host.docker.internal:3051/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"changeme123\"}'")
+2) If token/cookie returned, call:
+   run_allowed("curl -i http://host.docker.internal:3051/api/auth/session -H 'Authorization: Bearer <TOKEN>'")
+Report whether auth works end-to-end.
+```
+
+```text
+Use kali-lab MCP for regression check after fix:
+- run_allowed("curl -i http://host.docker.internal:3051/health")
+- run_allowed("curl -i http://host.docker.internal:3051/api/containers")
+- run_allowed("curl -I http://host.docker.internal:5273")
+Compare with expected outcomes:
+- /health = 200
+- frontend HEAD = 200/304
+- API should not return 5xx
+Return pass/fail checklist.
+```
 ---
 
 ## Navigation
