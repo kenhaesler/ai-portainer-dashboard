@@ -78,7 +78,15 @@ export function suggestAction(
         rationale: pattern.rationale,
       };
 
-      insertAction(action);
+      const inserted = insertAction(action);
+      if (!inserted) {
+        log.debug(
+          { containerId: insight.container_id, actionType: pattern.actionType },
+          'Skipped duplicate pending action due to unique constraint',
+        );
+        return null;
+      }
+
       log.info(
         { actionId, actionType: pattern.actionType, insightId: insight.id },
         'Action suggested',
