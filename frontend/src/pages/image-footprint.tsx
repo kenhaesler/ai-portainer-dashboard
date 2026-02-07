@@ -252,7 +252,7 @@ export default function ImageFootprintPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b text-left text-sm text-muted-foreground">
-                  <th className="pb-3 font-medium">Image</th>
+                  <th className="pb-3 pl-2 pr-3 font-medium">Image</th>
                   <th className="pb-3 font-medium">Tags</th>
                   <th className="pb-3 font-medium">Size</th>
                   <th className="pb-3 font-medium">Status</th>
@@ -272,7 +272,7 @@ export default function ImageFootprintPage() {
                       )}
                       onClick={() => setSelectedImage(image)}
                     >
-                      <td className="py-3">
+                      <td className="py-3 pl-2 pr-3">
                         <span className="font-medium">{image.name}</span>
                       </td>
                       <td className="py-3">
