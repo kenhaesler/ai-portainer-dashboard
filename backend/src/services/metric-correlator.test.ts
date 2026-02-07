@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../db/sqlite.js', () => {
-  const mockDb = { prepare: vi.fn() };
-  return { getDb: vi.fn(() => mockDb) };
-});
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+}));
 
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({

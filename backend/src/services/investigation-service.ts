@@ -247,9 +247,9 @@ async function gatherEvidence(insight: Insight): Promise<{
           const snapshots: MetricSnapshot[] = [];
 
           for (const metricType of ['cpu', 'memory']) {
-            const avg = getMovingAverage(insight.container_id!, metricType, 30);
+            const avg = await getMovingAverage(insight.container_id!, metricType, 30);
             if (avg) {
-              const recent = getMetrics(
+              const recent = await getMetrics(
                 insight.container_id!,
                 metricType,
                 from.toISOString(),
@@ -302,7 +302,7 @@ async function gatherEvidence(insight: Insight): Promise<{
     try {
       const forecasts: CapacityForecast[] = [];
       for (const metricType of ['cpu', 'memory']) {
-        const forecast = generateForecast(insight.container_id, insight.container_name, metricType);
+        const forecast = await generateForecast(insight.container_id, insight.container_name, metricType);
         if (forecast) forecasts.push(forecast);
       }
       if (forecasts.length > 0) {

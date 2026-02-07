@@ -45,43 +45,43 @@ describe('isolation-forest-detector', () => {
     mockGetMetrics.mockReset();
   });
 
-  it('returns null when insufficient data', () => {
-    mockGetMetrics.mockReturnValue([]);
-    const result = getOrTrainModel('container-1');
+  it('returns null when insufficient data', async () => {
+    mockGetMetrics.mockResolvedValue([]);
+    const result = await getOrTrainModel('container-1');
     expect(result).toBeNull();
   });
 
-  it('trains and returns model with sufficient data', () => {
+  it('trains and returns model with sufficient data', async () => {
     mockGetMetrics
-      .mockReturnValueOnce(generateMetrics(100, 50)) // cpu
-      .mockReturnValueOnce(generateMetrics(100, 60)); // memory
+      .mockResolvedValueOnce(generateMetrics(100, 50)) // cpu
+      .mockResolvedValueOnce(generateMetrics(100, 60)); // memory
 
-    const model = getOrTrainModel('container-1');
+    const model = await getOrTrainModel('container-1');
     expect(model).not.toBeNull();
   });
 
-  it('uses cached model on subsequent calls', () => {
+  it('uses cached model on subsequent calls', async () => {
     const cpuData = generateMetrics(100, 50);
     const memData = generateMetrics(100, 60);
     mockGetMetrics
-      .mockReturnValueOnce(cpuData)
-      .mockReturnValueOnce(memData);
+      .mockResolvedValueOnce(cpuData)
+      .mockResolvedValueOnce(memData);
 
-    const model1 = getOrTrainModel('container-1');
+    const model1 = await getOrTrainModel('container-1');
     expect(model1).not.toBeNull();
 
     // Second call should use cache (no additional getMetrics calls)
-    const model2 = getOrTrainModel('container-1');
+    const model2 = await getOrTrainModel('container-1');
     expect(model2).toBe(model1);
     expect(mockGetMetrics).toHaveBeenCalledTimes(2); // Only the first two calls
   });
 
-  it('detects anomaly with trained model', () => {
+  it('detects anomaly with trained model', async () => {
     mockGetMetrics
-      .mockReturnValueOnce(generateMetrics(100, 50))
-      .mockReturnValueOnce(generateMetrics(100, 60));
+      .mockResolvedValueOnce(generateMetrics(100, 50))
+      .mockResolvedValueOnce(generateMetrics(100, 60));
 
-    const result = detectAnomalyIsolationForest(
+    const result = await detectAnomalyIsolationForest(
       'container-1', 'test-container', 'cpu', 50, 50, 60,
     );
 
@@ -93,10 +93,10 @@ describe('isolation-forest-detector', () => {
     expect(result!.z_score).toBeLessThanOrEqual(1);
   });
 
-  it('returns null when detection has insufficient data', () => {
-    mockGetMetrics.mockReturnValue([]);
+  it('returns null when detection has insufficient data', async () => {
+    mockGetMetrics.mockResolvedValue([]);
 
-    const result = detectAnomalyIsolationForest(
+    const result = await detectAnomalyIsolationForest(
       'container-no-data', 'test', 'cpu', 50, 50, 60,
     );
 

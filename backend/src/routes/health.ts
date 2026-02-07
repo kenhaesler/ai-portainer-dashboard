@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { isDbHealthy } from '../db/sqlite.js';
+import { isMetricsDbHealthy } from '../db/timescale.js';
 import { getConfig } from '../config/index.js';
 import { HealthResponseSchema, ReadinessResponseSchema } from '../models/api-schemas.js';
 
@@ -29,10 +30,16 @@ export async function healthRoutes(fastify: FastifyInstance) {
     const config = getConfig();
     const checks: Record<string, { status: string; url?: string; error?: string }> = {};
 
-    // Check database
+    // Check SQLite database (users, sessions, settings, etc.)
     checks.database = isDbHealthy()
       ? { status: 'healthy' }
       : { status: 'unhealthy', error: 'Database query failed' };
+
+    // Check TimescaleDB (metrics, KPI snapshots)
+    const tsHealthy = await isMetricsDbHealthy();
+    checks.metricsDb = tsHealthy
+      ? { status: 'healthy' }
+      : { status: 'unhealthy', error: 'TimescaleDB query failed' };
 
     // Check Portainer
     try {

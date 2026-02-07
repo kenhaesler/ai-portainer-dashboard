@@ -3,31 +3,29 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { reportsRoutes } from './reports.js';
 
-// Mock sqlite
-vi.mock('../db/sqlite.js', () => {
-  const mockDb = {
-    prepare: vi.fn(() => ({
-      all: vi.fn(() => []),
-      get: vi.fn(() => null),
-      run: vi.fn(() => ({ changes: 0 })),
-    })),
-    exec: vi.fn(),
-    transaction: vi.fn((fn: () => void) => fn),
-  };
-  return { getDb: () => mockDb };
-});
+const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
-import { getDb } from '../db/sqlite.js';
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
+}));
 
-const mockPrepare = vi.fn();
-const mockAll = vi.fn();
-const mockGet = vi.fn();
+vi.mock('../services/metrics-rollup-selector.js', () => ({
+  selectRollupTable: vi.fn().mockReturnValue({
+    table: 'metrics',
+    timestampCol: 'timestamp',
+    valueCol: 'value',
+    isRollup: false,
+  }),
+}));
 
-function setupMock() {
-  const db = getDb();
-  mockPrepare.mockReturnValue({ all: mockAll, get: mockGet, run: vi.fn() });
-  (db.prepare as ReturnType<typeof vi.fn>) = mockPrepare;
-}
+vi.mock('../utils/logger.js', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
 
 describe('Reports routes', () => {
   const app = Fastify({ logger: false });
@@ -45,8 +43,7 @@ describe('Reports routes', () => {
 
   describe('GET /api/reports/utilization', () => {
     it('returns empty report when no metrics exist', async () => {
-      setupMock();
-      mockAll.mockReturnValue([]);
+      mockQuery.mockResolvedValue({ rows: [] });
 
       const res = await app.inject({
         method: 'GET',
@@ -62,39 +59,38 @@ describe('Reports routes', () => {
     });
 
     it('returns aggregated data for containers', async () => {
-      setupMock();
-
-      // First call: aggregate query returns rows
-      mockAll
-        .mockReturnValueOnce([
-          {
-            container_id: 'c1',
-            container_name: 'web',
-            endpoint_id: 1,
-            metric_type: 'cpu',
-            avg_value: 45.5,
-            min_value: 10,
-            max_value: 92,
-            sample_count: 100,
-          },
-          {
-            container_id: 'c1',
-            container_name: 'web',
-            endpoint_id: 1,
-            metric_type: 'memory',
-            avg_value: 60.2,
-            min_value: 30,
-            max_value: 88,
-            sample_count: 100,
-          },
-        ])
-        // Percentile calls return sorted values
-        .mockReturnValueOnce(
-          Array.from({ length: 100 }, (_, i) => ({ value: i + 1 })),
-        )
-        .mockReturnValueOnce(
-          Array.from({ length: 100 }, (_, i) => ({ value: 20 + i * 0.7 })),
-        );
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'c1',
+              container_name: 'web',
+              endpoint_id: 1,
+              metric_type: 'cpu',
+              avg_value: 45.5,
+              min_value: 10,
+              max_value: 92,
+              sample_count: 100,
+            },
+            {
+              container_id: 'c1',
+              container_name: 'web',
+              endpoint_id: 1,
+              metric_type: 'memory',
+              avg_value: 60.2,
+              min_value: 30,
+              max_value: 88,
+              sample_count: 100,
+            },
+          ],
+        })
+        // Percentile queries
+        .mockResolvedValueOnce({
+          rows: [{ p50: 50, p95: 95, p99: 99 }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ p50: 55, p95: 85, p99: 90 }],
+        });
 
       const res = await app.inject({
         method: 'GET',
@@ -112,8 +108,7 @@ describe('Reports routes', () => {
     });
 
     it('accepts optional endpointId filter', async () => {
-      setupMock();
-      mockAll.mockReturnValue([]);
+      mockQuery.mockResolvedValue({ rows: [] });
 
       const res = await app.inject({
         method: 'GET',
@@ -126,12 +121,13 @@ describe('Reports routes', () => {
 
   describe('GET /api/reports/trends', () => {
     it('returns hourly trend data', async () => {
-      setupMock();
-      mockAll.mockReturnValue([
-        { hour: '2025-01-01T10:00:00', metric_type: 'cpu', avg_value: 40, max_value: 80, min_value: 5, sample_count: 60 },
-        { hour: '2025-01-01T11:00:00', metric_type: 'cpu', avg_value: 45, max_value: 85, min_value: 8, sample_count: 60 },
-        { hour: '2025-01-01T10:00:00', metric_type: 'memory', avg_value: 55, max_value: 70, min_value: 40, sample_count: 60 },
-      ]);
+      mockQuery.mockResolvedValue({
+        rows: [
+          { hour: '2025-01-01T10:00:00', metric_type: 'cpu', avg_value: 40, max_value: 80, min_value: 5, sample_count: 60 },
+          { hour: '2025-01-01T11:00:00', metric_type: 'cpu', avg_value: 45, max_value: 85, min_value: 8, sample_count: 60 },
+          { hour: '2025-01-01T10:00:00', metric_type: 'memory', avg_value: 55, max_value: 70, min_value: 40, sample_count: 60 },
+        ],
+      });
 
       const res = await app.inject({
         method: 'GET',
@@ -146,8 +142,7 @@ describe('Reports routes', () => {
     });
 
     it('returns empty trends when no data', async () => {
-      setupMock();
-      mockAll.mockReturnValue([]);
+      mockQuery.mockResolvedValue({ rows: [] });
 
       const res = await app.inject({
         method: 'GET',

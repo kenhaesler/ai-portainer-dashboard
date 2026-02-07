@@ -52,51 +52,51 @@ describe('adaptive-anomaly-detector', () => {
   });
 
   describe('detectAnomalyAdaptive', () => {
-    it('returns null when insufficient samples', () => {
-      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 5, sample_count: 3 });
-      const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 60);
+    it('returns null when insufficient samples', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 3 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 60);
       expect(result).toBeNull();
     });
 
-    it('detects anomaly with z-score method', () => {
-      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 5, sample_count: 15 });
+    it('detects anomaly with z-score method', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
       // z-score = (75 - 50) / 5 = 5 > 2.5 threshold
-      const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 75, 'zscore');
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 75, 'zscore');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(true);
       expect(result!.method).toBe('zscore');
     });
 
-    it('detects normal values correctly', () => {
-      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 5, sample_count: 15 });
+    it('detects normal values correctly', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
       // z-score = (52 - 50) / 5 = 0.4 < 2.5 threshold
-      const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 52, 'zscore');
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 52, 'zscore');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(false);
     });
 
-    it('detects anomaly with bollinger bands', () => {
-      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 5, sample_count: 15 });
+    it('detects anomaly with bollinger bands', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 15 });
       // Bollinger upper = 50 + 2*5 = 60. Value 65 > 60 → anomaly
-      const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 65, 'bollinger');
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 65, 'bollinger');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(true);
       expect(result!.method).toBe('bollinger');
     });
 
-    it('uses adaptive method with high variance', () => {
+    it('uses adaptive method with high variance', async () => {
       // cv = 20/50 = 0.4 > 0.3 → adaptive method with scaled threshold
-      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 20, sample_count: 25 });
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 20, sample_count: 25 });
       // z-score = (80 - 50) / 20 = 1.5, adaptive threshold = 2.5 * 1.5 = 3.75
-      const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 80, 'adaptive');
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 80, 'adaptive');
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(false); // 1.5 < 3.75
       expect(result!.method).toBe('adaptive');
     });
 
-    it('handles zero standard deviation', () => {
-      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 0, sample_count: 15 });
-      const result = detectAnomalyAdaptive('c1', 'web', 'cpu', 60);
+    it('handles zero standard deviation', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 0, sample_count: 15 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 60);
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(true);
       expect(result!.z_score).toBe(Infinity);

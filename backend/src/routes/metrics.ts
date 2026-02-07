@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getMetricsDb } from '../db/timescale.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
 import { getNetworkRates } from '../services/metrics-store.js';
+import { selectRollupTable } from '../services/metrics-rollup-selector.js';
+import { decimateLTTB } from '../services/lttb-decimator.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metrics-routes');
@@ -53,38 +55,55 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     const metricType = query.metricType || query.metric_type;
     const timeRange = query.timeRange || '1h';
 
-    const db = getDb();
-    const conditions = ['endpoint_id = ?', '(container_id = ? OR container_id LIKE ?)'];
-    const params: unknown[] = [endpointId, containerId, `${containerId}%`];
-
-    if (metricType) {
-      conditions.push('metric_type = ?');
-      params.push(metricType);
-    }
+    const db = await getMetricsDb();
 
     // Parse timeRange or use explicit from/to
+    let fromDate: Date;
+    let toDate: Date;
     if (query.from) {
-      conditions.push('timestamp >= ?');
-      params.push(query.from);
+      fromDate = new Date(query.from);
+      toDate = query.to ? new Date(query.to) : new Date();
     } else {
-      const { from } = parseTimeRange(timeRange);
-      conditions.push('timestamp >= datetime(?)');
-      params.push(from.toISOString());
+      const parsed = parseTimeRange(timeRange);
+      fromDate = parsed.from;
+      toDate = parsed.to;
     }
 
-    if (query.to) {
-      conditions.push('timestamp <= datetime(?)');
-      params.push(query.to);
+    // Auto-select rollup table
+    const rollup = selectRollupTable(fromDate, toDate);
+
+    const conditions = [`endpoint_id = $1`, `(container_id = $2 OR container_id LIKE $3)`];
+    const params: unknown[] = [endpointId, containerId, `${containerId}%`];
+    let paramIdx = 4;
+
+    if (metricType) {
+      conditions.push(`metric_type = $${paramIdx}`);
+      params.push(metricType);
+      paramIdx++;
     }
+
+    conditions.push(`${rollup.timestampCol} >= $${paramIdx}`);
+    params.push(fromDate.toISOString());
+    paramIdx++;
+
+    conditions.push(`${rollup.timestampCol} <= $${paramIdx}`);
+    params.push(toDate.toISOString());
 
     const where = conditions.join(' AND ');
-    const metrics = db.prepare(`
-      SELECT timestamp, value FROM metrics WHERE ${where}
-      ORDER BY timestamp ASC
-      LIMIT 1000
-    `).all(...params) as Array<{ timestamp: string; value: number }>;
+    const { rows: metrics } = await db.query<{ timestamp: string; value: number }>(
+      `SELECT ${rollup.timestampCol} as timestamp, ${rollup.valueCol}::double precision as value
+       FROM ${rollup.table} WHERE ${where}
+       ORDER BY ${rollup.timestampCol} ASC
+       LIMIT 5000`,
+      params,
+    );
 
-    if (metrics.length === 0) {
+    // Apply LTTB decimation for raw data
+    const decimated = !rollup.isRollup
+      ? decimateLTTB(metrics as Array<{ timestamp: string; value: number }>, 500)
+      : metrics;
+
+    if (decimated.length === 0) {
       log.debug({ endpointId, containerId, metricType, timeRange }, 'Metrics query returned zero rows');
     }
 
@@ -94,7 +113,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       endpointId,
       metricType: metricType || 'cpu',
       timeRange,
-      data: metrics,
+      data: decimated,
     };
   });
 
@@ -108,21 +127,21 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { limit = 50 } = request.query as { limit?: number };
-    const db = getDb();
+    const db = await getMetricsDb();
 
-    // Get metrics with high z-score-like values (values significantly above average)
-    const recentMetrics = db.prepare(`
-      SELECT m1.*,
+    const { rows: recentMetrics } = await db.query(
+      `SELECT m1.*,
         (SELECT AVG(value) FROM metrics m2
          WHERE m2.container_id = m1.container_id
          AND m2.metric_type = m1.metric_type
-         AND m2.timestamp > datetime(m1.timestamp, '-1 hour')
+         AND m2.timestamp > m1.timestamp - INTERVAL '1 hour'
         ) as avg_value
       FROM metrics m1
-      WHERE m1.timestamp > datetime('now', '-24 hours')
+      WHERE m1.timestamp > NOW() - INTERVAL '24 hours'
       ORDER BY m1.timestamp DESC
-      LIMIT ?
-    `).all(limit);
+      LIMIT $1`,
+      [limit],
+    );
 
     return { anomalies: recentMetrics };
   });
@@ -136,7 +155,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { endpointId } = request.params as { endpointId: string };
-    const rates = getNetworkRates(Number(endpointId));
+    const rates = await getNetworkRates(Number(endpointId));
     return { rates };
   });
 }

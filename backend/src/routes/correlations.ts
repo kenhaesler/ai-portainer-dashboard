@@ -18,6 +18,6 @@ export async function correlationRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { windowSize, minScore } = request.query as { windowSize?: number; minScore?: number };
-    return detectCorrelatedAnomalies(windowSize ?? 30, minScore ?? 2);
+    return await detectCorrelatedAnomalies(windowSize ?? 30, minScore ?? 2);
   });
 }
