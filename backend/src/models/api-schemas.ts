@@ -190,6 +190,7 @@ export const TracesQuerySchema = z.object({
   to: z.string().optional(),
   serviceName: z.string().optional(),
   status: z.string().optional(),
+  source: z.string().optional(),
   minDuration: z.coerce.number().optional(),
   limit: z.coerce.number().default(50),
 });
@@ -254,6 +255,7 @@ export const LogsSearchQuerySchema = z.object({
 export const LogsTestBodySchema = z.object({
   endpoint: z.string(),
   apiKey: z.string().optional(),
+  verifySsl: z.coerce.boolean().optional().default(true),
 });
 
 // ─── Images schemas ─────────────────────────────────────────────────

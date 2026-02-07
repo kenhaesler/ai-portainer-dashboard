@@ -6,9 +6,6 @@ const mockGet = vi.fn().mockImplementation((path: string) => {
   if (path === '/api/logs/config') {
     return Promise.resolve({ configured: false, endpoint: null, indexPattern: null });
   }
-  if (path === '/api/settings') {
-    return Promise.resolve([]);
-  }
   return Promise.resolve({});
 });
 
@@ -37,10 +34,12 @@ vi.mock('@/hooks/use-containers', () => ({
 }));
 
 describe('LogViewerPage', () => {
-  it('renders page shell and controls', () => {
+  it('renders page shell and controls', async () => {
     render(<LogViewerPage />);
+    await screen.findByText('Open Settings');
     expect(screen.getByText('Log Viewer')).toBeInTheDocument();
-    expect(screen.getByText('Logs Settings')).toBeInTheDocument();
+    expect(screen.getByText('Elasticsearch Integration')).toBeInTheDocument();
+    expect(screen.getByText('Open Settings')).toBeInTheDocument();
     expect(screen.getByText('Regex Search')).toBeInTheDocument();
     expect(screen.getByText('Live Tail ON')).toBeInTheDocument();
     expect(screen.getByText('Select one or more containers to view aggregated logs.')).toBeInTheDocument();

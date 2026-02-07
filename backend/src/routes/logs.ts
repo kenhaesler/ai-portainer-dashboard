@@ -1,64 +1,12 @@
 import { FastifyInstance } from 'fastify';
-import { getConfig } from '../config/index.js';
-import { getDb } from '../db/sqlite.js';
+import { Agent } from 'undici';
 import { createChildLogger } from '../utils/logger.js';
 import { LogsSearchQuerySchema, LogsTestBodySchema } from '../models/api-schemas.js';
+import { getElasticsearchConfig } from '../services/elasticsearch-config.js';
 
 const log = createChildLogger('logs-route');
 
-interface ElasticsearchConfig {
-  enabled: boolean;
-  endpoint: string;
-  apiKey: string;
-  indexPattern: string;
-  verifySsl: boolean;
-}
-
-function getElasticsearchConfig(): ElasticsearchConfig | null {
-  const db = getDb();
-  const config = getConfig();
-
-  // Try to get settings from database first
-  const dbSettings = db.prepare(
-    "SELECT key, value FROM settings WHERE key LIKE 'elasticsearch.%'"
-  ).all() as Array<{ key: string; value: string }>;
-
-  const settingsMap: Record<string, string> = {};
-  dbSettings.forEach((s) => {
-    settingsMap[s.key] = s.value;
-  });
-
-  // Check if Elasticsearch is enabled in database settings
-  const dbEnabled = settingsMap['elasticsearch.enabled'] === 'true';
-  const dbEndpoint = settingsMap['elasticsearch.endpoint'];
-  const dbApiKey = settingsMap['elasticsearch.api_key'];
-  const dbIndexPattern = settingsMap['elasticsearch.index_pattern'] || 'logs-*';
-  const dbVerifySsl = settingsMap['elasticsearch.verify_ssl'] !== 'false';
-
-  // If database has valid config, use it
-  if (dbEnabled && dbEndpoint) {
-    return {
-      enabled: true,
-      endpoint: dbEndpoint,
-      apiKey: dbApiKey || '',
-      indexPattern: dbIndexPattern,
-      verifySsl: dbVerifySsl,
-    };
-  }
-
-  // Fall back to environment variables
-  if (config.KIBANA_ENDPOINT) {
-    return {
-      enabled: true,
-      endpoint: config.KIBANA_ENDPOINT,
-      apiKey: config.KIBANA_API_KEY || '',
-      indexPattern: 'logs-*',
-      verifySsl: true,
-    };
-  }
-
-  return null;
-}
+const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
 
 export async function logsRoutes(fastify: FastifyInstance) {
   // Get Elasticsearch configuration status
@@ -143,7 +91,8 @@ export async function logsRoutes(fastify: FastifyInstance) {
         headers,
         body: JSON.stringify(esQuery),
         signal: controller.signal,
-      });
+        dispatcher: esConfig.verifySsl ? undefined : insecureDispatcher,
+      } as RequestInit);
       clearTimeout(timeout);
 
       if (!res.ok) {
@@ -179,7 +128,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
-    const { endpoint, apiKey } = request.body as { endpoint: string; apiKey?: string };
+    const { endpoint, apiKey, verifySsl = true } = request.body as { endpoint: string; apiKey?: string; verifySsl?: boolean };
 
     try {
       const controller = new AbortController();
@@ -196,7 +145,8 @@ export async function logsRoutes(fastify: FastifyInstance) {
         method: 'GET',
         headers,
         signal: controller.signal,
-      });
+        dispatcher: verifySsl ? undefined : insecureDispatcher,
+      } as RequestInit);
       clearTimeout(timeout);
 
       if (!res.ok) {

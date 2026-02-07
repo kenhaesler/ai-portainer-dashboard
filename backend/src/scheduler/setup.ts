@@ -12,6 +12,7 @@ import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.j
 import { normalizeEndpoint } from '../services/portainer-normalizers.js';
 import { runStalenessChecks } from '../services/image-staleness.js';
 import { getImages } from '../services/portainer-client.js';
+import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
 
 const log = createChildLogger('scheduler');
 
@@ -298,6 +299,9 @@ export function startScheduler(): void {
   const cleanupInterval = setInterval(runCleanup, 24 * 60 * 60 * 1000);
   intervals.push(cleanupInterval);
 
+  // Forward container-origin logs to Elasticsearch when enabled.
+  startElasticsearchLogForwarder();
+
   log.info({ taskCount: intervals.length }, 'Scheduler started');
 }
 
@@ -306,6 +310,7 @@ export function stopScheduler(): void {
     clearInterval(interval);
   }
   intervals.length = 0;
+  stopElasticsearchLogForwarder();
   stopWebhookListener();
   log.info('Scheduler stopped');
 }
