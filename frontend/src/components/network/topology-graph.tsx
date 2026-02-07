@@ -231,14 +231,14 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
 
   if (!containers.length && !networks.length) {
     return (
-      <div className="flex h-[600px] items-center justify-center text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-muted-foreground">
         No topology data. Select an endpoint to view its network topology.
       </div>
     );
   }
 
   return (
-    <div className="h-[600px] rounded-lg border">
+    <div className="h-full rounded-lg border">
       <ReactFlow
         nodes={nodes}
         edges={edges}
