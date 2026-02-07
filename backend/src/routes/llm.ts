@@ -5,6 +5,7 @@ import { createChildLogger } from '../utils/logger.js';
 import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('route:llm');
 
@@ -91,13 +92,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       tags: ['LLM'],
       summary: 'Process a natural language dashboard query',
       security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        required: ['query'],
-        properties: {
-          query: { type: 'string', minLength: 2 },
-        },
-      },
+      body: LlmQueryBodySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -182,20 +177,75 @@ export async function llmRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // Test connection to Ollama or custom endpoint
+  fastify.post<{ Body: { url?: string; token?: string; ollamaUrl?: string } }>('/api/llm/test-connection', {
+    schema: {
+      tags: ['LLM'],
+      summary: 'Test connectivity to Ollama or a custom OpenAI-compatible endpoint',
+      security: [{ bearerAuth: [] }],
+      body: LlmTestConnectionBodySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { url, token, ollamaUrl } = request.body;
+
+    try {
+      if (url && token) {
+        // Test custom OpenAI-compatible endpoint
+        const baseUrl = new URL(url);
+        const modelsUrl = `${baseUrl.origin}/v1/models`;
+
+        const authHeaders: Record<string, string> = {};
+        if (token.includes(':')) {
+          authHeaders['Authorization'] = `Basic ${Buffer.from(token).toString('base64')}`;
+        } else {
+          authHeaders['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(modelsUrl, {
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        if (!response.ok) {
+          return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+
+        const data = await response.json() as { data?: Array<{ id: string }> };
+        const models = (data.data ?? []).map((m) => m.id);
+        return { ok: true, models };
+      }
+
+      // Test Ollama connection using provided URL or fallback to config
+      const config = getConfig();
+      const host = ollamaUrl || config.OLLAMA_BASE_URL;
+      const ollama = new Ollama({ host });
+      const response = await ollama.list();
+      const models = response.models.map((m) => m.name);
+      return { ok: true, models };
+    } catch (err) {
+      log.error({ err }, 'LLM connection test failed');
+      const message = err instanceof Error ? err.message : 'Connection failed';
+      return { ok: false, error: message };
+    }
+  });
+
   // List available models
-  fastify.get('/api/llm/models', {
+  fastify.get<{ Querystring: { host?: string } }>('/api/llm/models', {
     schema: {
       tags: ['LLM'],
       summary: 'List available LLM models from Ollama',
       security: [{ bearerAuth: [] }],
+      querystring: LlmModelsQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
+  }, async (request) => {
     const config = getConfig();
+    const customHost = request.query.host;
 
     try {
       // If using custom API endpoint, try OpenAI-compatible /v1/models
-      if (config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
+      if (!customHost && config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
         const baseUrl = new URL(config.OLLAMA_API_ENDPOINT);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
 
@@ -216,8 +266,8 @@ export async function llmRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Default: use Ollama SDK
-      const ollama = new Ollama({ host: config.OLLAMA_BASE_URL });
+      // Default: use Ollama SDK (prefer custom host from settings over env var)
+      const ollama = new Ollama({ host: customHost || config.OLLAMA_BASE_URL });
       const response = await ollama.list();
       return {
         models: response.models.map((m) => ({

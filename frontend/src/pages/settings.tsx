@@ -23,14 +23,19 @@ import {
   Send,
   Webhook,
   Globe,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, dashboardBackgroundOptions, type Theme, type DashboardBackground } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
+import { useLlmModels, useLlmTestConnection } from '@/hooks/use-llm-models';
+import type { LlmModel } from '@/hooks/use-llm-models';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { cn } from '@/lib/utils';
+import { cn, formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Default settings definitions
 const DEFAULT_SETTINGS = {
@@ -61,10 +66,13 @@ const DEFAULT_SETTINGS = {
     { key: 'cache.image_ttl', label: 'Image Cache TTL', description: 'Time to cache image list (seconds)', type: 'number', defaultValue: '60', min: 30, max: 600 },
   ],
   llm: [
-    { key: 'llm.model', label: 'LLM Model', description: 'Ollama model to use for AI features', type: 'select', defaultValue: 'llama3.2', options: ['llama3.2', 'llama3.1', 'mistral', 'codellama', 'gemma2'] },
+    { key: 'llm.model', label: 'LLM Model', description: 'Model to use for AI features', type: 'string', defaultValue: 'llama3.2' },
     { key: 'llm.temperature', label: 'Temperature', description: 'Creativity of LLM responses (0-1)', type: 'number', defaultValue: '0.7', min: 0, max: 1, step: 0.1 },
     { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://ollama:11434' },
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '2048', min: 256, max: 8192 },
+    { key: 'llm.custom_endpoint_enabled', label: 'Custom Endpoint Enabled', description: 'Use a custom OpenAI-compatible API endpoint', type: 'boolean', defaultValue: 'false' },
+    { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'OpenAI-compatible chat completions URL', type: 'string', defaultValue: '' },
+    { key: 'llm.custom_endpoint_token', label: 'Custom Endpoint Token', description: 'Bearer token for custom endpoint', type: 'password', defaultValue: '' },
   ],
   authentication: [
     { key: 'oidc.enabled', label: 'Enable OIDC/SSO', description: 'Enable OpenID Connect single sign-on authentication', type: 'boolean', defaultValue: 'false' },
@@ -144,23 +152,6 @@ function SettingInput({ setting, value, onChange, disabled }: SettingInputProps)
           )}
         />
       </button>
-    );
-  }
-
-  if (setting.type === 'select' && 'options' in setting) {
-    return (
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-      >
-        {setting.options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
     );
   }
 
@@ -283,6 +274,328 @@ function SettingsSection({
             disabled={disabled}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+interface LlmSettingsSectionProps {
+  values: Record<string, string>;
+  originalValues: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  disabled?: boolean;
+}
+
+export function LlmSettingsSection({ values, originalValues, onChange, disabled }: LlmSettingsSectionProps) {
+  const ollamaUrl = values['llm.ollama_url'] || 'http://ollama:11434';
+  const selectedModel = values['llm.model'] || 'llama3.2';
+  const temperature = values['llm.temperature'] || '0.7';
+  const maxTokens = values['llm.max_tokens'] || '2048';
+  const customEnabled = values['llm.custom_endpoint_enabled'] === 'true';
+  const customUrl = values['llm.custom_endpoint_url'] || '';
+  const customToken = values['llm.custom_endpoint_token'] || '';
+
+  // Fetch models from the user's configured Ollama URL
+  const { data: modelsData, isLoading: modelsLoading, refetch: refetchModels } = useLlmModels(ollamaUrl);
+  const testConnection = useLlmTestConnection();
+  const queryClient = useQueryClient();
+  const [showToken, setShowToken] = useState(false);
+  // Connection status is driven by explicit Test Connection, not by the models query
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [connectionError, setConnectionError] = useState<string>();
+
+  const models: LlmModel[] = modelsData?.models ?? [];
+
+  const hasChanges = [
+    'llm.model', 'llm.temperature', 'llm.ollama_url', 'llm.max_tokens',
+    'llm.custom_endpoint_enabled', 'llm.custom_endpoint_url', 'llm.custom_endpoint_token',
+  ].some((key) => values[key] !== originalValues[key]);
+
+  const handleScanModels = () => {
+    void queryClient.invalidateQueries({ queryKey: ['llm-models', ollamaUrl] });
+    void refetchModels();
+  };
+
+  const handleTestConnection = () => {
+    const body = customEnabled && customUrl
+      ? { url: customUrl, token: customToken }
+      : { ollamaUrl: ollamaUrl };
+    testConnection.mutate(body, {
+      onSuccess: (data) => {
+        if (data.ok) {
+          setConnectionStatus('ok');
+          setConnectionError(undefined);
+          toast.success(`Connection successful${data.models?.length ? ` — ${data.models.length} model(s) available` : ''}`);
+        } else {
+          setConnectionStatus('error');
+          setConnectionError(data.error);
+          toast.error(`Connection failed: ${data.error || 'Unknown error'}`);
+        }
+      },
+      onError: (err) => {
+        setConnectionStatus('error');
+        setConnectionError(err.message);
+        toast.error(`Connection test failed: ${err.message}`);
+      },
+    });
+  };
+
+  const connectionIcon = connectionStatus === 'ok'
+    ? <Wifi className="h-4 w-4 text-emerald-500" />
+    : connectionStatus === 'error'
+      ? <WifiOff className="h-4 w-4 text-red-500" />
+      : <Info className="h-4 w-4 text-muted-foreground" />;
+
+  const connectionLabel = connectionStatus === 'ok'
+    ? 'Connected'
+    : connectionStatus === 'error'
+      ? 'Connection Failed'
+      : 'Not tested';
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Bot className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">LLM / Ollama</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasChanges && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+              <RefreshCw className="h-3 w-3" />
+              Requires restart
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-6">
+        {/* Connection Status */}
+        <div className="rounded-lg bg-muted/50 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {testConnection.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : connectionIcon}
+              <div>
+                <p className="text-sm font-medium">
+                  {testConnection.isPending ? 'Testing...' : connectionLabel}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {connectionStatus === 'error' && connectionError
+                    ? connectionError
+                    : customEnabled ? customUrl || 'No custom URL set' : ollamaUrl}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testConnection.isPending || disabled}
+                className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                {testConnection.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wifi className="h-3.5 w-3.5" />
+                )}
+                Test Connection
+              </button>
+            </div>
+          </div>
+          {connectionStatus === 'ok' && testConnection.data?.models && testConnection.data.models.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {testConnection.data.models.length} model{testConnection.data.models.length !== 1 ? 's' : ''} available on server
+            </p>
+          )}
+        </div>
+
+        {/* Model Selection */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <label htmlFor="llm-model-select" className="font-medium">Model</label>
+              <p className="text-sm text-muted-foreground mt-0.5">Select the LLM model for AI features</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleScanModels}
+              disabled={modelsLoading || disabled}
+              className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {modelsLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Scan Models
+            </button>
+          </div>
+
+          {models.length > 0 ? (
+            <select
+              id="llm-model-select"
+              value={selectedModel}
+              onChange={(e) => onChange('llm.model', e.target.value)}
+              disabled={disabled}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            >
+              {models.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name}{m.size ? ` (${formatBytes(m.size)})` : ''}
+                </option>
+              ))}
+              {/* Include current value if not in the models list */}
+              {selectedModel && !models.some((m) => m.name === selectedModel) && (
+                <option value={selectedModel}>{selectedModel}</option>
+              )}
+            </select>
+          ) : (
+            <input
+              id="llm-model-select"
+              type="text"
+              value={selectedModel}
+              onChange={(e) => onChange('llm.model', e.target.value)}
+              disabled={disabled}
+              placeholder="Enter model name (e.g., llama3.2)"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+          )}
+          {!modelsLoading && models.length === 0 && (
+            <p className="text-xs text-amber-500">Could not fetch models. Enter model name manually or click Scan Models.</p>
+          )}
+        </div>
+
+        {/* Ollama URL */}
+        <div className="flex items-center justify-between py-4 border-t border-border">
+          <div className="flex-1 pr-4">
+            <label className="font-medium">Ollama URL</label>
+            <p className="text-sm text-muted-foreground mt-0.5">URL of the Ollama server</p>
+          </div>
+          <div className="shrink-0 w-72">
+            <input
+              type="text"
+              value={ollamaUrl}
+              onChange={(e) => onChange('llm.ollama_url', e.target.value)}
+              disabled={disabled}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        {/* Temperature */}
+        <div className="flex items-center justify-between py-4 border-t border-border">
+          <div className="flex-1 pr-4">
+            <label className="font-medium">Temperature</label>
+            <p className="text-sm text-muted-foreground mt-0.5">Creativity of LLM responses (0-1)</p>
+          </div>
+          <div className="shrink-0">
+            <input
+              type="number"
+              value={temperature}
+              onChange={(e) => onChange('llm.temperature', e.target.value)}
+              disabled={disabled}
+              min={0}
+              max={1}
+              step={0.1}
+              className="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        {/* Max Tokens */}
+        <div className="flex items-center justify-between py-4 border-t border-border">
+          <div className="flex-1 pr-4">
+            <label className="font-medium">Max Tokens</label>
+            <p className="text-sm text-muted-foreground mt-0.5">Maximum tokens in LLM response</p>
+          </div>
+          <div className="shrink-0">
+            <input
+              type="number"
+              value={maxTokens}
+              onChange={(e) => onChange('llm.max_tokens', e.target.value)}
+              disabled={disabled}
+              min={256}
+              max={8192}
+              className="h-9 w-28 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        {/* Custom API Endpoint */}
+        <div className="border-t border-border pt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="font-medium">Custom API Endpoint</label>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Use an OpenAI-compatible API instead of the Ollama SDK
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onChange('llm.custom_endpoint_enabled', customEnabled ? 'false' : 'true')}
+              disabled={disabled}
+              className={cn(
+                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                customEnabled ? 'bg-primary' : 'bg-muted',
+                disabled && 'opacity-50 cursor-not-allowed'
+              )}
+              aria-label="Toggle custom API endpoint"
+            >
+              <span
+                className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                  customEnabled ? 'translate-x-6' : 'translate-x-1'
+                )}
+              />
+            </button>
+          </div>
+
+          {customEnabled && (
+            <div className="space-y-4 rounded-lg border border-border p-4 bg-muted/30">
+              <div>
+                <label htmlFor="custom-endpoint-url" className="text-sm font-medium">API Endpoint URL</label>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  OpenAI-compatible chat completions URL (e.g., https://api.openai.com/v1/chat/completions)
+                </p>
+                <input
+                  id="custom-endpoint-url"
+                  type="text"
+                  value={customUrl}
+                  onChange={(e) => onChange('llm.custom_endpoint_url', e.target.value)}
+                  disabled={disabled}
+                  placeholder="https://api.example.com/v1/chat/completions"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                />
+              </div>
+              <div>
+                <label htmlFor="custom-endpoint-token" className="text-sm font-medium">API Key / Bearer Token</label>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  Authentication token for the custom endpoint
+                </p>
+                <div className="relative">
+                  <input
+                    id="custom-endpoint-token"
+                    type={showToken ? 'text' : 'password'}
+                    value={customToken}
+                    onChange={(e) => onChange('llm.custom_endpoint_token', e.target.value)}
+                    disabled={disabled}
+                    placeholder="sk-..."
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -697,6 +1010,9 @@ export default function SettingsPage() {
       'monitoring.enabled',
       'llm.ollama_url',
       'llm.model',
+      'llm.custom_endpoint_enabled',
+      'llm.custom_endpoint_url',
+      'llm.custom_endpoint_token',
       'elasticsearch.enabled',
       'elasticsearch.endpoint',
       'elasticsearch.api_key',
@@ -1083,15 +1399,10 @@ export default function SettingsPage() {
       </div>
 
       {/* LLM Settings */}
-      <SettingsSection
-        title="LLM / Ollama"
-        icon={<Bot className="h-5 w-5" />}
-        category="llm"
-        settings={DEFAULT_SETTINGS.llm}
+      <LlmSettingsSection
         values={editedValues}
         originalValues={originalValues}
         onChange={handleChange}
-        requiresRestart
         disabled={isSaving}
       />
 
@@ -1129,7 +1440,7 @@ export default function SettingsPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Application</p>
-            <p className="font-medium mt-1">Container-Infrastructure</p>
+            <p className="font-medium mt-1">Docker Insight</p>
           </div>
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Version</p>
