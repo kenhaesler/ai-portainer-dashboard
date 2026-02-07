@@ -95,7 +95,7 @@ describe('RefreshButton', () => {
     const button = screen.getByRole('button');
     expect(button).toHaveClass('inline-flex');
     expect(button).toHaveClass('items-center');
-    expect(button).toHaveClass('rounded-md');
+    expect(button).toHaveClass('rounded-full');
   });
 
   it('should contain RefreshCw icon', () => {
