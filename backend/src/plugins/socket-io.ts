@@ -3,8 +3,41 @@ import fp from 'fastify-plugin';
 import { Server } from 'socket.io';
 import { verifyJwt } from '../utils/crypto.js';
 import { createChildLogger } from '../utils/logger.js';
+import { getSession } from '../services/session-store.js';
 
 const log = createChildLogger('socket.io');
+
+interface SocketUser {
+  sub: string;
+  username: string;
+  sessionId: string;
+}
+
+export async function authenticateSocketToken(token: unknown): Promise<SocketUser | null> {
+  if (typeof token !== 'string' || token.length === 0) {
+    return null;
+  }
+
+  const payload = await verifyJwt(token);
+  if (!payload?.sessionId) {
+    return null;
+  }
+
+  const session = getSession(payload.sessionId);
+  if (!session) {
+    return null;
+  }
+
+  if (session.user_id !== payload.sub || session.username !== payload.username) {
+    return null;
+  }
+
+  return {
+    sub: payload.sub,
+    username: payload.username,
+    sessionId: payload.sessionId,
+  };
+}
 
 async function socketIoPlugin(fastify: FastifyInstance) {
   const io = new Server(fastify.server, {
@@ -39,15 +72,12 @@ async function socketIoPlugin(fastify: FastifyInstance) {
     if (!token) {
       return next(new Error('Authentication required'));
     }
-    const payload = await verifyJwt(token);
-    if (!payload) {
-      return next(new Error('Invalid or expired token'));
+
+    const user = await authenticateSocketToken(token);
+    if (!user) {
+      return next(new Error('Invalid, expired, or revoked token'));
     }
-    socket.data.user = {
-      sub: payload.sub,
-      username: payload.username,
-      sessionId: payload.sessionId,
-    };
+    socket.data.user = user;
     next();
   });
 
@@ -68,13 +98,9 @@ async function socketIoPlugin(fastify: FastifyInstance) {
     ns.use(async (socket, next) => {
       const token = socket.handshake.auth?.token;
       if (!token) return next(new Error('Authentication required'));
-      const payload = await verifyJwt(token);
-      if (!payload) return next(new Error('Invalid or expired token'));
-      socket.data.user = {
-        sub: payload.sub,
-        username: payload.username,
-        sessionId: payload.sessionId,
-      };
+      const user = await authenticateSocketToken(token);
+      if (!user) return next(new Error('Invalid, expired, or revoked token'));
+      socket.data.user = user;
       next();
     });
   }
