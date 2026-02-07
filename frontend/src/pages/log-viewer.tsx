@@ -4,7 +4,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
-import { api } from '@/lib/api';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
 
@@ -20,12 +19,6 @@ const CONTAINER_COLORS = ['text-cyan-300', 'text-emerald-300', 'text-yellow-300'
 
 interface LogsResponse {
   logs: string;
-}
-
-interface LogsConfigResponse {
-  configured: boolean;
-  endpoint: string | null;
-  indexPattern: string | null;
 }
 
 function highlightLine(line: string, regex: RegExp | null): ReactNode {
@@ -166,7 +159,6 @@ export default function LogViewerPage() {
   const [lineWrap, setLineWrap] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [liveTail, setLiveTail] = useState(true);
-  const [logsConfigStatus, setLogsConfigStatus] = useState<LogsConfigResponse | null>(null);
 
   const { data: endpoints = [] } = useEndpoints();
   const { data: containers = [] } = useContainers(selectedEndpoint);
@@ -176,27 +168,6 @@ export default function LogViewerPage() {
       setSelectedEndpoint(endpoints[0].id);
     }
   }, [endpoints, selectedEndpoint]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadConfigStatus = async () => {
-      try {
-        const configPayload = await api.get<LogsConfigResponse>('/api/logs/config');
-
-        if (!active) return;
-        setLogsConfigStatus(configPayload);
-      } catch {
-        if (!active) return;
-        setLogsConfigStatus(null);
-      }
-    };
-
-    void loadConfigStatus();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     setSelectedContainers([]);
@@ -295,26 +266,6 @@ export default function LogViewerPage() {
         <h1 className="text-3xl font-bold tracking-tight">Log Viewer</h1>
         <p className="text-muted-foreground">Live tail, regex search, level filtering, and multi-container aggregation.</p>
       </div>
-
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold">Elasticsearch Integration</h2>
-            <p className="text-sm text-muted-foreground">Manage Elasticsearch settings from the Settings page.</p>
-          </div>
-          {logsConfigStatus && (
-            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${logsConfigStatus.configured ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
-              {logsConfigStatus.configured ? 'Configured' : 'Not configured'}
-            </span>
-          )}
-        </div>
-        <a
-          href="/settings"
-          className="mt-3 inline-flex rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
-        >
-          Open Settings
-        </a>
-      </section>
 
       <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="grid gap-3 lg:grid-cols-4">
