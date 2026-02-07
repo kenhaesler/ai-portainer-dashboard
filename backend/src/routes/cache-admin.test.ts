@@ -24,11 +24,29 @@ const mockWriteAuditLog = vi.mocked(writeAuditLog);
 
 describe('Cache Admin Routes', () => {
   let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
   beforeAll(async () => {
+    currentRole = 'admin';
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = {
+        sub: 'user-1',
+        username: 'viewer',
+        sessionId: 'session-1',
+        role: currentRole,
+      };
+    });
     await app.register(cacheAdminRoutes);
     await app.ready();
   });
@@ -38,6 +56,7 @@ describe('Cache Admin Routes', () => {
   });
 
   beforeEach(() => {
+    currentRole = 'admin';
     vi.clearAllMocks();
   });
 
@@ -73,6 +92,18 @@ describe('Cache Admin Routes', () => {
       expect(body.entries).toHaveLength(2);
       expect(body.entries[0].key).toBe('endpoints');
     });
+
+    it('rejects non-admin users', async () => {
+      currentRole = 'viewer';
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/admin/cache/stats',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+    });
   });
 
   describe('POST /api/admin/cache/clear', () => {
@@ -94,6 +125,18 @@ describe('Cache Admin Routes', () => {
           target_id: '*',
         }),
       );
+    });
+
+    it('rejects non-admin users', async () => {
+      currentRole = 'viewer';
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/admin/cache/clear',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
     });
   });
 
@@ -137,6 +180,18 @@ describe('Cache Admin Routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+
+    it('rejects non-admin users', async () => {
+      currentRole = 'viewer';
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/admin/cache/invalidate?resource=containers',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
     });
   });
 });
