@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Palette,
@@ -31,6 +31,7 @@ import {
   Trash2,
   Download,
   Archive,
+  Users,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, dashboardBackgroundOptions, type Theme, type DashboardBackground } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
@@ -50,6 +51,9 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
+
+const LazyUsersPanel = lazy(() => import('@/pages/users').then((m) => ({ default: m.UsersPanel })));
+const LazyWebhooksPanel = lazy(() => import('@/pages/webhooks').then((m) => ({ default: m.WebhooksPanel })));
 
 // Default settings definitions
 const DEFAULT_SETTINGS = {
@@ -1197,13 +1201,18 @@ export default function SettingsPage() {
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'portainer-backup'>(
-    searchParams.get('tab') === 'portainer-backup' ? 'portainer-backup' : 'general'
-  );
+  type SettingsTab = 'general' | 'portainer-backup' | 'users' | 'webhooks';
+  const validTabs: SettingsTab[] = ['general', 'portainer-backup', 'users', 'webhooks'];
+  const initialTab = validTabs.includes(searchParams.get('tab') as SettingsTab)
+    ? (searchParams.get('tab') as SettingsTab)
+    : 'general';
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
   useEffect(() => {
-    const requestedTab =
-      searchParams.get('tab') === 'portainer-backup' ? 'portainer-backup' : 'general';
+    const raw = searchParams.get('tab');
+    const requestedTab: SettingsTab = validTabs.includes(raw as SettingsTab)
+      ? (raw as SettingsTab)
+      : 'general';
     setActiveTab((currentTab) =>
       currentTab === requestedTab ? currentTab : requestedTab
     );
@@ -1321,9 +1330,9 @@ export default function SettingsPage() {
   };
 
   const handleTabChange = (tab: string) => {
-    if (tab !== 'general' && tab !== 'portainer-backup') return;
+    if (!validTabs.includes(tab as SettingsTab)) return;
 
-    setActiveTab(tab);
+    setActiveTab(tab as SettingsTab);
     setSearchParams((previous) => {
       const next = new URLSearchParams(previous);
       if (tab === 'general') {
@@ -1452,6 +1461,20 @@ export default function SettingsPage() {
           >
             <HardDriveDownload className="h-4 w-4" />
             Portainer Backup
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="users"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <Users className="h-4 w-4" />
+            Users
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="webhooks"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <Webhook className="h-4 w-4" />
+            Webhooks
           </Tabs.Trigger>
         </Tabs.List>
 
@@ -1789,6 +1812,20 @@ export default function SettingsPage() {
       {/* Backup Management */}
       <PortainerBackupManagement />
 
+        </Tabs.Content>
+
+        {/* Users Tab */}
+        <Tabs.Content value="users" className="space-y-6 focus:outline-none">
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <LazyUsersPanel />
+          </Suspense>
+        </Tabs.Content>
+
+        {/* Webhooks Tab */}
+        <Tabs.Content value="webhooks" className="space-y-6 focus:outline-none">
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <LazyWebhooksPanel />
+          </Suspense>
         </Tabs.Content>
       </Tabs.Root>
     </div>

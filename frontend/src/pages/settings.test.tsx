@@ -250,3 +250,15 @@ describe('getRedisSystemInfo', () => {
     });
   });
 });
+
+describe('Settings tab structure', () => {
+  it('validates settings page exports include the new tab-hosted panels', async () => {
+    const usersModule = await import('./users');
+    const webhooksModule = await import('./webhooks');
+
+    expect(usersModule.UsersPanel).toBeDefined();
+    expect(typeof usersModule.UsersPanel).toBe('function');
+    expect(webhooksModule.WebhooksPanel).toBeDefined();
+    expect(typeof webhooksModule.WebhooksPanel).toBe('function');
+  });
+});

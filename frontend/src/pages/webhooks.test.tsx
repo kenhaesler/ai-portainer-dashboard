@@ -60,25 +60,25 @@ vi.mock('@/hooks/use-webhooks', () => ({
   streamDashboardEvents: () => Promise.resolve(),
 }));
 
-import WebhooksPage from './webhooks';
+import { WebhooksPanel } from './webhooks';
 
-describe('WebhooksPage', () => {
+describe('WebhooksPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
   });
 
-  it('renders webhook list and delivery monitor', () => {
-    render(<WebhooksPage />);
+  it('renders webhook list, delivery monitor, and add button', () => {
+    render(<WebhooksPanel />);
 
-    expect(screen.getByText('Webhook Control Center')).toBeInTheDocument();
+    expect(screen.getByText('Add Webhook')).toBeInTheDocument();
     expect(screen.getByText('Alerts Hook')).toBeInTheDocument();
     expect(screen.getByText('Delivery Monitor')).toBeInTheDocument();
     expect(screen.getAllByText('insight.created').length).toBeGreaterThan(0);
   });
 
   it('creates a webhook from form input', async () => {
-    render(<WebhooksPage />);
+    render(<WebhooksPanel />);
 
     fireEvent.change(screen.getByPlaceholderText('alerts-slack'), { target: { value: 'PagerDuty Hook' } });
     fireEvent.change(screen.getByPlaceholderText('https://hooks.example.com/...'), { target: { value: 'https://events.pagerduty.com/v2/enqueue' } });
@@ -94,7 +94,7 @@ describe('WebhooksPage', () => {
   });
 
   it('tests and deletes a webhook via actions', async () => {
-    render(<WebhooksPage />);
+    render(<WebhooksPanel />);
 
     fireEvent.click(screen.getByRole('button', { name: /test/i }));
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));

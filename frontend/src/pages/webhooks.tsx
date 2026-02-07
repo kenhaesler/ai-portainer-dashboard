@@ -49,7 +49,7 @@ function statusStyle(enabled: number) {
     : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
 }
 
-export default function WebhooksPage() {
+export function WebhooksPanel() {
   const webhooksQuery = useWebhooks();
   const eventTypesQuery = useWebhookEventTypes();
   const createWebhook = useCreateWebhook();
@@ -168,11 +168,7 @@ export default function WebhooksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Webhook Control Center</h1>
-          <p className="text-muted-foreground">Manage outbound webhooks, delivery outcomes, and live event flow.</p>
-        </div>
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={beginCreate}
@@ -433,6 +429,20 @@ export default function WebhooksPage() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+export default function WebhooksPage() {
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Webhook Control Center</h1>
+          <p className="text-muted-foreground">Manage outbound webhooks, delivery outcomes, and live event flow.</p>
+        </div>
+      </div>
+      <WebhooksPanel />
     </div>
   );
 }
