@@ -30,6 +30,22 @@ claude mcp get kali-lab
 
 4. If prompted, run `/mcp` in Claude Code to complete auth.
 
+## Test app via MCP (Claude Code)
+
+After registration, use `run_allowed` to execute black-box checks against your running stack.
+
+Example checks:
+- Backend health:
+  - `curl -i http://host.docker.internal:3051/health`
+- Frontend status:
+  - `curl -I http://host.docker.internal:5273`
+- Port visibility:
+  - `ss -tulpen`
+
+Tips:
+- If you are not using `KALI_MCP_ALLOWED_COMMANDS=all`, make sure required commands are in the allowlist (`curl`, `ss`, `jq`, etc.).
+- Use `host.docker.internal` from the container to reach host-exposed ports.
+
 ## Build (standalone)
 
 ```bash

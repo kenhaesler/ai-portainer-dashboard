@@ -326,6 +326,31 @@ claude mcp get kali-lab
 
 4. In Claude Code, run `/mcp` if the server requires interactive auth.
 
+### 6. Test the app via MCP (Claude Code)
+
+Use the `kali-lab` MCP tool `run_allowed` for black-box smoke tests from Claude Code.
+
+1. Ensure the app stack is running:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+2. In Claude Code, ask it to run checks with `kali-lab`:
+
+- Backend health:
+  - `curl -i http://host.docker.internal:3051/health`
+- Frontend status:
+  - `curl -I http://host.docker.internal:5273`
+- Open ports:
+  - `ss -tulpen`
+
+3. Use the same pattern for API smoke/regression checks (auth, read-only endpoints, and expected status codes).
+
+Notes:
+- If `KALI_MCP_ALLOWED_COMMANDS` is not `all`, include required commands (`curl`, `ss`, `jq`, etc.) in the allowlist.
+- From inside the Kali container, use `host.docker.internal` to reach host-published app ports.
+
 ---
 
 ## Navigation
