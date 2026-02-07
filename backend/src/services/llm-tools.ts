@@ -680,42 +680,91 @@ export function parseToolCalls(responseText: string): ToolCallRequest[] | null {
   const trimmed = responseText.trim();
 
   // Try direct parse first (response is just the JSON)
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-      return validateToolCalls(parsed.tool_calls);
-    }
-  } catch {
-    // Not direct JSON
+  const directParsed = tryParseToolCallJson(trimmed);
+  if (directParsed?.tool_calls && Array.isArray(directParsed.tool_calls)) {
+    return validateToolCalls(directParsed.tool_calls);
   }
 
   // Try to find JSON block in markdown code fence
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlockMatch) {
-    try {
-      const parsed = JSON.parse(codeBlockMatch[1].trim());
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        return validateToolCalls(parsed.tool_calls);
-      }
-    } catch {
-      // Invalid JSON in code block
+    const parsed = tryParseToolCallJson(codeBlockMatch[1].trim());
+    if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
+      return validateToolCalls(parsed.tool_calls);
     }
   }
 
   // Try to find inline JSON object with tool_calls
   const jsonMatch = trimmed.match(/\{[\s\S]*"tool_calls"[\s\S]*\}/);
   if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        return validateToolCalls(parsed.tool_calls);
-      }
-    } catch {
-      // Invalid JSON
+    const parsed = tryParseToolCallJson(jsonMatch[0]);
+    if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
+      return validateToolCalls(parsed.tool_calls);
     }
   }
 
   return null;
+}
+
+function tryParseToolCallJson(raw: string): any | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Try a best-effort repair when tool-call JSON is truncated mid-stream.
+    const repaired = repairTruncatedToolCallJson(raw);
+    if (!repaired) return null;
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function repairTruncatedToolCallJson(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.includes('"tool_calls"')) return null;
+
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (const ch of trimmed) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{' || ch === '[') {
+      stack.push(ch);
+      continue;
+    }
+    if (ch === '}' || ch === ']') {
+      const last = stack[stack.length - 1];
+      if ((ch === '}' && last === '{') || (ch === ']' && last === '[')) {
+        stack.pop();
+      }
+    }
+  }
+
+  if (stack.length === 0) return null;
+
+  let repaired = trimmed;
+  while (stack.length > 0) {
+    const open = stack.pop();
+    repaired += open === '{' ? '}' : ']';
+  }
+  return repaired;
 }
 
 function validateToolCalls(calls: unknown[]): ToolCallRequest[] | null {

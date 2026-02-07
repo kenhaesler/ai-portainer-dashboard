@@ -37,6 +37,15 @@ interface ChatMessage {
   content: string;
 }
 
+export function isRecoverableToolCallParseError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('error parsing tool call') ||
+    (msg.includes('tool call') && msg.includes('unexpected end of json input'))
+  );
+}
+
 // Per-session conversation history
 const sessions = new Map<string, ChatMessage[]>();
 
@@ -269,16 +278,16 @@ export function setupLlmNamespace(ns: Namespace) {
       const infrastructureContext = await buildInfrastructureContext();
       const toolPrompt = getToolSystemPrompt();
 
-      // Build system prompt with infrastructure context and tool definitions
-      const systemPrompt = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
+      const additionalContext = data.context ? `\n## Additional Context\n${JSON.stringify(data.context, null, 2)}` : '';
+      const systemPromptCore = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
 
 ${infrastructureContext}
 
-${toolPrompt}
-
-${data.context ? `\n## Additional Context\n${JSON.stringify(data.context, null, 2)}` : ''}
+${additionalContext}
 
 Provide concise, actionable responses. Use markdown formatting for code blocks and lists. When suggesting actions, explain the reasoning and potential impact.`;
+      const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}`;
+      const systemPromptWithoutTools = `${systemPromptCore}\n\nTool calling is temporarily unavailable for this response. Do not output tool_calls JSON. Provide the best direct answer you can from available context.`;
 
       history.push({ role: 'user', content: data.text });
 
@@ -289,9 +298,10 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         socket.emit('chat:start');
 
         let messages: ChatMessage[] = [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: systemPromptWithTools },
           ...history.slice(-20),
         ];
+        let toolsEnabled = true;
 
         let finalResponse = '';
         let toolIteration = 0;
@@ -303,20 +313,33 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         while (toolIteration < MAX_TOOL_ITERATIONS) {
           let iterationResponse = '';
 
-          iterationResponse = await streamLlmCall(
-            llmConfig,
-            selectedModel,
-            messages,
-            (text) => {
-              socket.emit('chat:chunk', text);
-            },
-            abortController.signal,
-          );
+          try {
+            iterationResponse = await streamLlmCall(
+              llmConfig,
+              selectedModel,
+              messages,
+              (text) => {
+                socket.emit('chat:chunk', text);
+              },
+              abortController.signal,
+            );
+          } catch (streamErr) {
+            if (toolsEnabled && isRecoverableToolCallParseError(streamErr)) {
+              log.warn({ err: streamErr, userId }, 'LLM tool-call parse failed; retrying without tool mode');
+              toolsEnabled = false;
+              messages = [
+                { role: 'system', content: systemPromptWithoutTools },
+                ...history.slice(-20),
+              ];
+              continue;
+            }
+            throw streamErr;
+          }
 
           if (abortController.signal.aborted) break;
 
           // Check if the response contains tool calls
-          const toolCalls = parseToolCalls(iterationResponse);
+          const toolCalls = toolsEnabled ? parseToolCalls(iterationResponse) : null;
 
           if (!toolCalls) {
             // No tool calls — this is the final response (already streamed above)

@@ -138,6 +138,14 @@ describe('llm-tools', () => {
       expect(result).toBeNull();
     });
 
+    it('should recover truncated tool call JSON missing closing brackets', () => {
+      const input = '{"tool_calls":[{"tool":"get_container_logs","arguments":{"container_name":"backend","tail":50}}]';
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('get_container_logs');
+      expect(result![0].arguments).toEqual({ container_name: 'backend', tail: 50 });
+    });
+
     it('should reject unknown tool names', () => {
       const input = '{"tool_calls": [{"tool": "delete_container", "arguments": {}}]}';
       const result = parseToolCalls(input);
