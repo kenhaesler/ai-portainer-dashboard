@@ -31,7 +31,7 @@ export function useApproveAction() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/approve`);
+      await api.post(`/api/remediation/actions/${actionId}/approve`, {});
     },
     onSuccess: (_data, actionId) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
@@ -87,7 +87,7 @@ export function useExecuteAction() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/execute`);
+      await api.post(`/api/remediation/actions/${actionId}/execute`, {});
     },
     onSuccess: (_data, actionId) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
