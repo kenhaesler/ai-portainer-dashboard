@@ -9,7 +9,6 @@ import { ActivityFeed } from '@/components/shared/activity-feed';
 import { KeyboardShortcutsOverlay } from '@/components/shared/keyboard-shortcuts-overlay';
 import { DashboardBackground } from '@/components/layout/dashboard-background';
 import { useUiStore } from '@/stores/ui-store';
-import { useActivityFeedStore } from '@/stores/activity-feed-store';
 import { useThemeStore, themeOptions } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
@@ -22,14 +21,13 @@ function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
 }
 
-export function getDesktopMainPaddingClass(activityFeedCollapsed: boolean): 'md:pb-24' | 'md:pb-[30rem]' {
-  return activityFeedCollapsed ? 'md:pb-24' : 'md:pb-[30rem]';
+export function getDesktopMainPaddingClass(): 'md:pb-12' {
+  return 'md:pb-12';
 }
 
 export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
-  const activityFeedCollapsed = useActivityFeedStore((s) => s.collapsed);
   const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const { theme, setTheme, dashboardBackground } = useThemeStore();
@@ -216,7 +214,7 @@ export function AppLayout() {
         <motion.main
           className={cn(
             'flex-1 overflow-y-auto p-3 pb-36 md:p-4',
-            getDesktopMainPaddingClass(activityFeedCollapsed),
+            getDesktopMainPaddingClass(),
           )}
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}

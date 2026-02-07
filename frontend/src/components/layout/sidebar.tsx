@@ -27,7 +27,6 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
-import { useActivityFeedStore } from '@/stores/activity-feed-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
 import { usePrefetch } from '@/hooks/use-prefetch';
@@ -46,8 +45,8 @@ interface NavGroup {
   items: NavItem[];
 }
 
-export function getSidebarBottomClass(activityFeedCollapsed: boolean): 'md:bottom-12' | 'md:bottom-80' {
-  return activityFeedCollapsed ? 'md:bottom-12' : 'md:bottom-80';
+export function getSidebarBottomClass(): 'md:bottom-12' {
+  return 'md:bottom-12';
 }
 
 const navigation: NavGroup[] = [
@@ -165,7 +164,6 @@ function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null
 
 export function Sidebar() {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
-  const activityFeedCollapsed = useActivityFeedStore((s) => s.collapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const collapsedGroups = useUiStore((s) => s.collapsedGroups);
   const toggleGroup = useUiStore((s) => s.toggleGroup);
@@ -191,8 +189,8 @@ export function Sidebar() {
     <aside
       data-animated-bg={hasAnimatedBg || undefined}
       className={cn(
-        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
-        getSidebarBottomClass(activityFeedCollapsed),
+        'fixed left-4 top-4 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+        getSidebarBottomClass(),
         sidebarCollapsed ? 'w-14' : 'w-60'
       )}
     >

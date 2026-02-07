@@ -71,7 +71,7 @@ export function Header() {
   return (
     <header
       data-animated-bg={hasAnimatedBg || undefined}
-      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:px-4"
+      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
     >
       {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
