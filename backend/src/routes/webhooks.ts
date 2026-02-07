@@ -64,7 +64,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const body = request.body as {
       name: string;
@@ -129,7 +129,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         },
       },
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as {
@@ -166,7 +166,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         properties: { id: { type: 'string' } },
       },
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const deleted = deleteWebhook(id);
@@ -216,7 +216,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         properties: { id: { type: 'string' } },
       },
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const webhook = getWebhookById(id);

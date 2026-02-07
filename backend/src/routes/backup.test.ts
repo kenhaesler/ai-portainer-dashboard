@@ -37,8 +37,10 @@ import { backupRoutes } from './backup.js';
 describe('backup routes', () => {
   let app: FastifyInstance;
   let tempDir: string;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
   beforeEach(async () => {
+    currentRole = 'admin';
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-route-test-'));
     sqlitePath = path.join(tempDir, 'dashboard.db');
     fs.writeFileSync(sqlitePath, 'current-db-content');
@@ -50,13 +52,20 @@ describe('backup routes', () => {
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
     app.decorateRequest('user', undefined);
     app.addHook('preHandler', async (request) => {
       request.user = {
         sub: 'user-1',
         username: 'operator',
         sessionId: 'session-1',
-        role: 'admin',
+        role: currentRole,
       };
     });
 
@@ -121,5 +130,27 @@ describe('backup routes', () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects restore for non-admin users', async () => {
+    currentRole = 'viewer';
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/backup/backup-1.db/restore',
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+  });
+
+  it('rejects delete for non-admin users', async () => {
+    currentRole = 'viewer';
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/backup/backup-1.db',
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
   });
 });
