@@ -19,3 +19,9 @@ pycryptodome>=3.20
 
 # SSH & remote access
 paramiko>=3.4
+
+# JWT testing
+pyjwt>=2.8
+
+# Intercepting proxy
+mitmproxy>=10.0
