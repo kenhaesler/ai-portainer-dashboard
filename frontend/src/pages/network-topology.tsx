@@ -96,9 +96,9 @@ export default function NetworkTopologyPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-[calc(100vh-8rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Network Topology</h1>
           <p className="text-muted-foreground">
@@ -112,7 +112,7 @@ export default function NetworkTopologyPage() {
       </div>
 
       {/* Endpoint Filter */}
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap shrink-0 mt-4">
         <div className="flex items-center gap-2">
           <label htmlFor="endpoint-select" className="text-sm font-medium">
             Endpoint
@@ -138,12 +138,12 @@ export default function NetworkTopologyPage() {
         )}
       </div>
 
-      {/* Graph Container */}
-      <div className="relative">
+      {/* Graph Container — fills remaining height */}
+      <div className="relative flex-1 min-h-0 mt-4">
         {isLoading ? (
-          <SkeletonCard className="h-[600px]" />
+          <SkeletonCard className="h-full" />
         ) : isError ? (
-          <div className="flex h-[600px] items-center justify-center rounded-lg border bg-card p-8">
+          <div className="flex h-full items-center justify-center rounded-lg border bg-card p-8">
             <div className="text-center">
               <p className="text-lg font-semibold text-destructive">Error loading topology</p>
               <p className="text-sm text-muted-foreground mt-2">
@@ -158,8 +158,8 @@ export default function NetworkTopologyPage() {
             </div>
           </div>
         ) : (
-          <div className="flex gap-4">
-            <div className={`transition-all ${selectedNode ? 'w-2/3' : 'w-full'}`}>
+          <div className="flex gap-4 h-full">
+            <div className={`transition-all h-full ${selectedNode ? 'w-2/3' : 'w-full'}`}>
               <TopologyGraph
                 containers={graphData.containers}
                 networks={graphData.networks}
@@ -170,7 +170,7 @@ export default function NetworkTopologyPage() {
 
             {/* Side Panel */}
             {selectedNode && (
-              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 h-[600px] overflow-y-auto">
+              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">
                     {selectedNode.type === 'container' ? 'Container Details' : 'Network Details'}

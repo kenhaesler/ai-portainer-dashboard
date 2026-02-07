@@ -173,7 +173,7 @@ export function CommandPalette() {
   );
 
   const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark';
+    const next = theme === 'apple-dark' ? 'apple-light' : theme === 'apple-light' ? 'system' : 'apple-dark';
     setTheme(next);
     setOpen(false);
   };

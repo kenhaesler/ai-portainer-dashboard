@@ -28,7 +28,7 @@ const routeLabels: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const { username, logout } = useAuth();
-  const { theme, setTheme, dashboardBackground } = useThemeStore();
+  const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -71,7 +71,7 @@ export function Header() {
   return (
     <header
       data-animated-bg={hasAnimatedBg || undefined}
-      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:px-4"
+      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
     >
       {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
@@ -113,14 +113,14 @@ export function Header() {
           </kbd>
         </button>
 
-        {/* Theme toggle - pill style (Glass Light / Glass Dark) */}
+        {/* Theme toggle — pill switch between two configured themes */}
         {(() => {
-          const isDark = theme === 'dark' || theme === 'apple-dark' || theme.includes('mocha') || theme.includes('macchiato') || theme.includes('frappe');
+          const isDark = useThemeStore.getState().resolvedTheme() === 'dark';
           return (
             <button
-              onClick={() => setTheme(isDark ? 'apple-light' : 'apple-dark')}
+              onClick={toggleTheme}
               className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
-              aria-label={`Switch to ${isDark ? 'Glass Light' : 'Glass Dark'} theme`}
+              aria-label={`Switch to ${isDark ? 'light' : 'dark'} theme`}
             >
               <span
                 className={cn(

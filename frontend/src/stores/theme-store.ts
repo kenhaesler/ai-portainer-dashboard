@@ -3,38 +3,58 @@ import { persist } from 'zustand/middleware';
 
 export type Theme =
   | 'system'
-  | 'light'
-  | 'dark'
   | 'apple-light'
   | 'apple-dark'
+  | 'retro-70s'
+  | 'retro-arcade'
+  | 'retro-terminal'
+  | 'retro-vaporwave'
   | 'catppuccin-latte'
   | 'catppuccin-frappe'
   | 'catppuccin-macchiato'
   | 'catppuccin-mocha';
 
-export type DashboardBackground = 'none' | 'gradient-mesh' | 'gradient-mesh-particles';
+export type DashboardBackground =
+  | 'none'
+  | 'gradient-mesh'
+  | 'gradient-mesh-particles'
+  | 'retro-70s'
+  | 'retro-arcade'
+  | 'retro-terminal'
+  | 'retro-vaporwave';
 
 export const dashboardBackgroundOptions: { value: DashboardBackground; label: string; description: string }[] = [
   { value: 'none', label: 'None', description: 'Plain background' },
   { value: 'gradient-mesh', label: 'Gradient Mesh', description: 'Animated gradient background' },
   { value: 'gradient-mesh-particles', label: 'Mesh + Particles', description: 'Gradient with floating particles' },
+  { value: 'retro-70s', label: 'Retro 70s', description: 'Warm flowing wave stripes' },
+  { value: 'retro-arcade', label: 'Retro Arcade', description: 'Neon grid on dark purple' },
+  { value: 'retro-terminal', label: 'Retro Terminal', description: 'Green phosphor CRT scanlines' },
+  { value: 'retro-vaporwave', label: 'Retro Vaporwave', description: 'Pastel neon gradient mesh' },
 ];
 
 export const themeOptions: { value: Theme; label: string; description: string }[] = [
   { value: 'system', label: 'System', description: 'Follow system preference' },
-  { value: 'light', label: 'Light', description: 'Default light theme' },
-  { value: 'dark', label: 'Dark', description: 'Default dark theme' },
   { value: 'apple-light', label: 'Glass Light', description: 'Futuristic frosted glass with gradients' },
   { value: 'apple-dark', label: 'Glass Dark', description: 'Deep space glassmorphism aesthetic' },
+  { value: 'retro-70s', label: 'Retro 70s', description: 'Warm cream, gold, teal & coral' },
+  { value: 'retro-arcade', label: 'Retro Arcade', description: 'Dark neon magenta & cyan' },
+  { value: 'retro-terminal', label: 'Retro Terminal', description: 'Green phosphor on black' },
+  { value: 'retro-vaporwave', label: 'Retro Vaporwave', description: 'Deep purple with pastel neons' },
   { value: 'catppuccin-latte', label: 'Catppuccin Latte', description: 'Warm light pastel theme' },
   { value: 'catppuccin-frappe', label: 'Catppuccin Frappé', description: 'Medium dark pastel theme' },
   { value: 'catppuccin-macchiato', label: 'Catppuccin Macchiato', description: 'Darker pastel theme' },
   { value: 'catppuccin-mocha', label: 'Catppuccin Mocha', description: 'Darkest pastel theme' },
 ];
 
+export const DEFAULT_TOGGLE_THEMES: [Theme, Theme] = ['apple-light', 'apple-dark'];
+
 interface ThemeState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  toggleThemes: [Theme, Theme];
+  setToggleThemes: (themes: [Theme, Theme]) => void;
+  toggleTheme: () => void;
   dashboardBackground: DashboardBackground;
   setDashboardBackground: (bg: DashboardBackground) => void;
   resolvedTheme: () => 'dark' | 'light';
@@ -46,6 +66,13 @@ export const useThemeStore = create<ThemeState>()(
     (set, get) => ({
       theme: 'system',
       setTheme: (theme) => set({ theme }),
+      toggleThemes: DEFAULT_TOGGLE_THEMES,
+      setToggleThemes: (toggleThemes) => set({ toggleThemes }),
+      toggleTheme: () => {
+        const { theme, toggleThemes } = get();
+        const next = theme === toggleThemes[0] ? toggleThemes[1] : toggleThemes[0];
+        set({ theme: next });
+      },
       dashboardBackground: 'none',
       setDashboardBackground: (dashboardBackground) => set({ dashboardBackground }),
       resolvedTheme: () => {
@@ -55,7 +82,7 @@ export const useThemeStore = create<ThemeState>()(
             ? 'dark'
             : 'light';
         }
-        if (theme === 'light' || theme === 'catppuccin-latte' || theme === 'apple-light') {
+        if (theme === 'catppuccin-latte' || theme === 'apple-light' || theme === 'retro-70s') {
           return 'light';
         }
         return 'dark';

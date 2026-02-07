@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DefaultLandingPagePreference, LlmSettingsSection } from './settings';
+import { DefaultLandingPagePreference, LlmSettingsSection, getRedisSystemInfo } from './settings';
 
 const mockGet = vi.fn();
 const mockPatch = vi.fn();
@@ -39,19 +39,18 @@ describe('DefaultLandingPagePreference', () => {
       expect(mockGet).toHaveBeenCalledWith('/api/settings/preferences');
     });
 
-    expect(screen.getByLabelText('Default Landing Page')).toHaveValue('/workloads');
+    expect(screen.getByLabelText('Default Landing Page')).toHaveTextContent('Workload Explorer');
   });
 
   it('saves updated landing page preference', async () => {
     render(<DefaultLandingPagePreference />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Default Landing Page')).toHaveValue('/workloads');
+      expect(screen.getByLabelText('Default Landing Page')).toHaveTextContent('Workload Explorer');
     });
 
-    fireEvent.change(screen.getByLabelText('Default Landing Page'), {
-      target: { value: '/ai-monitor' },
-    });
+    fireEvent.click(screen.getByLabelText('Default Landing Page'));
+    fireEvent.click(screen.getByRole('option', { name: 'AI Monitor' }));
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
@@ -116,9 +115,9 @@ describe('LlmSettingsSection', () => {
       expect(select).toBeInTheDocument();
     });
 
-    const options = screen.getAllByRole('option');
-    expect(options.some((o) => o.textContent?.includes('llama3.2'))).toBe(true);
-    expect(options.some((o) => o.textContent?.includes('mistral'))).toBe(true);
+    fireEvent.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option', { name: /llama3.2/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /mistral/i })).toBeInTheDocument();
   });
 
   it('falls back to text input when no models available', async () => {
@@ -215,5 +214,39 @@ describe('LlmSettingsSection', () => {
     );
 
     expect(screen.getByText('Requires restart')).toBeInTheDocument();
+  });
+});
+
+describe('getRedisSystemInfo', () => {
+  it('returns unknown state when cache stats are unavailable', () => {
+    expect(getRedisSystemInfo()).toEqual({
+      status: 'Unknown',
+      details: 'Cache stats unavailable',
+      keys: 'N/A',
+    });
+  });
+
+  it('returns active Redis state when multi-layer cache backend is enabled', () => {
+    expect(getRedisSystemInfo({
+      backend: 'multi-layer',
+      l1Size: 2,
+      l2Size: 9,
+    })).toEqual({
+      status: 'Active',
+      details: 'Using Redis + in-memory cache',
+      keys: '9',
+    });
+  });
+
+  it('returns inactive Redis state when backend falls back to memory-only', () => {
+    expect(getRedisSystemInfo({
+      backend: 'memory-only',
+      l1Size: 7,
+      l2Size: 0,
+    })).toEqual({
+      status: 'Inactive (Memory fallback)',
+      details: 'Using in-memory cache only',
+      keys: 'N/A',
+    });
   });
 });

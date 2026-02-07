@@ -117,10 +117,35 @@ const LANDING_PAGE_OPTIONS = [
 
 type SettingCategory = keyof typeof DEFAULT_SETTINGS;
 
+interface CacheStatsSummary {
+  backend: 'multi-layer' | 'memory-only';
+  l1Size: number;
+  l2Size: number;
+}
+
+export function getRedisSystemInfo(cacheStats?: CacheStatsSummary) {
+  if (!cacheStats) {
+    return {
+      status: 'Unknown',
+      details: 'Cache stats unavailable',
+      keys: 'N/A',
+    };
+  }
+
+  const redisEnabled = cacheStats.backend === 'multi-layer';
+  return {
+    status: redisEnabled ? 'Active' : 'Inactive (Memory fallback)',
+    details: redisEnabled
+      ? 'Using Redis + in-memory cache'
+      : 'Using in-memory cache only',
+    keys: redisEnabled ? String(cacheStats.l2Size) : 'N/A',
+  };
+}
+
 function ThemeIcon({ theme }: { theme: Theme }) {
   if (theme === 'system') return <Monitor className="h-4 w-4" />;
-  if (theme === 'light') return <Sun className="h-4 w-4" />;
-  if (theme.startsWith('apple')) return <Sparkles className="h-4 w-4" />;
+  if (theme === 'apple-light') return <Sun className="h-4 w-4" />;
+  if (theme === 'apple-dark') return <Sparkles className="h-4 w-4" />;
   if (theme.startsWith('catppuccin')) return <Palette className="h-4 w-4" />;
   return <Moon className="h-4 w-4" />;
 }
@@ -953,11 +978,12 @@ export function DefaultLandingPagePreference() {
 }
 
 export default function SettingsPage() {
-  const { theme, setTheme, dashboardBackground, setDashboardBackground } = useThemeStore();
+  const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
   const { data: cacheStats } = useCacheStats();
   const cacheClear = useCacheClear();
+  const redisSystemInfo = getRedisSystemInfo(cacheStats);
 
   // Local state for edited values
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
@@ -1218,6 +1244,31 @@ export default function SettingsPage() {
         </div>
 
         <div className="mt-6 border-t border-border pt-6">
+          <h3 className="text-sm font-medium mb-1">Header Toggle</h3>
+          <p className="text-sm text-muted-foreground mb-3">
+            Choose the two themes the header pill switch toggles between.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Light side (Sun)</label>
+              <ThemedSelect
+                value={toggleThemes[0]}
+                onValueChange={(v) => setToggleThemes([v as Theme, toggleThemes[1]])}
+                options={themeOptions.filter((o) => o.value !== 'system').map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Dark side (Moon)</label>
+              <ThemedSelect
+                value={toggleThemes[1]}
+                onValueChange={(v) => setToggleThemes([toggleThemes[0], v as Theme])}
+                options={themeOptions.filter((o) => o.value !== 'system').map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-border pt-6">
           <h3 className="text-sm font-medium mb-1">Dashboard Background</h3>
           <p className="text-sm text-muted-foreground mb-3">
             Add an animated gradient background to the dashboard, similar to the login page.
@@ -1431,7 +1482,7 @@ export default function SettingsPage() {
           <Settings2 className="h-5 w-5" />
           <h2 className="text-lg font-semibold">System Information</h2>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Application</p>
             <p className="font-medium mt-1">Docker Insight</p>
@@ -1447,6 +1498,15 @@ export default function SettingsPage() {
           <div className="rounded-lg bg-muted/50 p-4">
             <p className="text-xs text-muted-foreground">Theme</p>
             <p className="font-medium mt-1 capitalize">{theme.replace('-', ' ')}</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4">
+            <p className="text-xs text-muted-foreground">Redis Cache</p>
+            <p className="font-medium mt-1">{redisSystemInfo.status}</p>
+            <p className="text-xs text-muted-foreground mt-1">{redisSystemInfo.details}</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4">
+            <p className="text-xs text-muted-foreground">Redis Keys</p>
+            <p className="font-medium mt-1">{redisSystemInfo.keys}</p>
           </div>
         </div>
       </div>

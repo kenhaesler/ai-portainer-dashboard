@@ -6,6 +6,10 @@ const ALL_THEME_CLASSES = [
   'dark',
   'apple-light',
   'apple-dark',
+  'retro-70s',
+  'retro-arcade',
+  'retro-terminal',
+  'retro-vaporwave',
   'catppuccin-latte',
   'catppuccin-frappe',
   'catppuccin-macchiato',
@@ -28,6 +32,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // For dark themes, also add 'dark' class for Tailwind dark: variants
     if (
       currentClass === 'apple-dark' ||
+      currentClass === 'retro-arcade' ||
+      currentClass === 'retro-terminal' ||
+      currentClass === 'retro-vaporwave' ||
       currentClass === 'catppuccin-frappe' ||
       currentClass === 'catppuccin-macchiato' ||
       currentClass === 'catppuccin-mocha'

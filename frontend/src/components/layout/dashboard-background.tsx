@@ -12,16 +12,9 @@ const PARTICLES = [
   { left: '92%', delay: '1.1s', duration: '15s', size: '7px' },
 ];
 
-export function DashboardBackground() {
-  const bg = useThemeStore((s) => s.dashboardBackground) as DashboardBg;
-  const reducedMotion = useReducedMotion();
-
-  if (bg === 'none') return null;
-
-  const showParticles = bg === 'gradient-mesh-particles' && !reducedMotion;
-
+function GradientMeshBackground({ reducedMotion, showParticles }: { reducedMotion: boolean | null; showParticles: boolean }) {
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+    <>
       <div
         className={`login-gradient-mesh opacity-60 ${reducedMotion ? '' : 'login-gradient-mesh-animate'}`}
         data-testid="dashboard-gradient"
@@ -45,6 +38,59 @@ export function DashboardBackground() {
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+function Retro70sBackground() {
+  return (
+    <div className="retro-bg retro-70s-bg" data-testid="retro-bg">
+      <div className="retro-70s-top" />
+      <div className="retro-70s-bottom" />
+    </div>
+  );
+}
+
+function RetroArcadeBackground() {
+  return (
+    <div className="retro-bg retro-arcade-bg" data-testid="retro-bg">
+      <div className="retro-arcade-glow" />
+    </div>
+  );
+}
+
+function RetroTerminalBackground() {
+  return (
+    <div className="retro-bg retro-terminal-bg" data-testid="retro-bg">
+      <div className="retro-terminal-vignette" />
+    </div>
+  );
+}
+
+function RetroVaporwaveBackground() {
+  return (
+    <div className="retro-bg retro-vaporwave-bg" data-testid="retro-bg" />
+  );
+}
+
+export function DashboardBackground() {
+  const bg = useThemeStore((s) => s.dashboardBackground) as DashboardBg;
+  const reducedMotion = useReducedMotion();
+
+  if (bg === 'none') return null;
+
+  const showParticles = bg === 'gradient-mesh-particles' && !reducedMotion;
+  const isGradientMesh = bg === 'gradient-mesh' || bg === 'gradient-mesh-particles';
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+      {isGradientMesh && (
+        <GradientMeshBackground reducedMotion={reducedMotion} showParticles={showParticles} />
+      )}
+      {bg === 'retro-70s' && <Retro70sBackground />}
+      {bg === 'retro-arcade' && <RetroArcadeBackground />}
+      {bg === 'retro-terminal' && <RetroTerminalBackground />}
+      {bg === 'retro-vaporwave' && <RetroVaporwaveBackground />}
     </div>
   );
 }

@@ -45,6 +45,10 @@ interface NavGroup {
   items: NavItem[];
 }
 
+export function getSidebarBottomClass(): 'md:bottom-12' {
+  return 'md:bottom-12';
+}
+
 const navigation: NavGroup[] = [
   {
     title: 'Overview',
@@ -185,7 +189,8 @@ export function Sidebar() {
     <aside
       data-animated-bg={hasAnimatedBg || undefined}
       className={cn(
-        'fixed left-2 top-2 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+        'fixed left-4 top-4 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+        getSidebarBottomClass(),
         sidebarCollapsed ? 'w-14' : 'w-60'
       )}
     >

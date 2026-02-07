@@ -8,9 +8,12 @@ interface CacheEntry {
 
 interface CacheStats {
   size: number;
+  l1Size: number;
+  l2Size: number;
   hits: number;
   misses: number;
   hitRate: string;
+  backend: 'multi-layer' | 'memory-only';
   entries: CacheEntry[];
 }
 

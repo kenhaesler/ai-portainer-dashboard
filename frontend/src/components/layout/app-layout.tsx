@@ -21,6 +21,10 @@ function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
 }
 
+export function getDesktopMainPaddingClass(): 'md:pb-12' {
+  return 'md:pb-12';
+}
+
 export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -188,7 +192,7 @@ export function AppLayout() {
       </motion.div>
       <div
         className={cn(
-          'flex flex-1 flex-col overflow-hidden transition-all duration-300',
+          'relative z-10 flex flex-1 flex-col overflow-hidden transition-all duration-300',
           'md:ml-[4.5rem]',
           !sidebarCollapsed && 'md:ml-[16rem]',
         )}
@@ -208,7 +212,10 @@ export function AppLayout() {
 
         {/* Main content — fades in from bottom */}
         <motion.main
-          className="flex-1 overflow-y-auto p-3 pb-20 md:p-4 md:pb-4"
+          className={cn(
+            'flex-1 overflow-y-auto p-3 pb-36 md:p-4',
+            getDesktopMainPaddingClass(),
+          )}
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           transition={

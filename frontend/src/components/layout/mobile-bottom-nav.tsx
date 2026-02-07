@@ -58,7 +58,7 @@ function NavButton({ item, onClick }: { item: MobileNavItem; onClick?: () => voi
       onClick={onClick}
       className={({ isActive }) =>
         cn(
-          'flex flex-col items-center gap-0.5 px-2 py-1.5 text-[10px] font-medium transition-colors min-w-[56px]',
+          'flex flex-col items-center gap-0.5 px-2 py-2 text-[10px] font-medium transition-colors min-w-[56px]',
           isActive
             ? 'text-primary'
             : 'text-muted-foreground',
@@ -134,7 +134,7 @@ export function MobileBottomNav() {
 
       {/* Bottom Navigation Bar */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t bg-background/95 backdrop-blur-xl pb-safe md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t bg-background/95 backdrop-blur-xl pb-safe-comfort md:hidden"
         role="navigation"
         aria-label="Mobile navigation"
       >
@@ -144,7 +144,7 @@ export function MobileBottomNav() {
         <button
           onClick={() => setDrawerOpen(!drawerOpen)}
           className={cn(
-            'flex flex-col items-center gap-0.5 px-2 py-1.5 text-[10px] font-medium transition-colors min-w-[56px]',
+            'flex flex-col items-center gap-0.5 px-2 py-2 text-[10px] font-medium transition-colors min-w-[56px]',
             isSecondaryActive || drawerOpen
               ? 'text-primary'
               : 'text-muted-foreground',
