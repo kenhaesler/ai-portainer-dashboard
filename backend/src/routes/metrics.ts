@@ -235,7 +235,8 @@ Anomalous readings (>80%): ${anomalyCount.count}
 Time range: ${timeRange}
 Endpoint ID: ${endpointId}`;
 
-    // Stream response via SSE
+    // Hijack response to bypass Fastify compression/serialization for SSE
+    reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
