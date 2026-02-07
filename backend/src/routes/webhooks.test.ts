@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { webhookRoutes } from './webhooks.js';
 
 vi.mock('../services/webhook-service.js', () => ({
@@ -36,6 +37,7 @@ const mockGetDeliveries = vi.mocked(getDeliveriesForWebhook);
 async function buildTestApp() {
   let currentRole: 'viewer' | 'operator' | 'admin' = 'admin';
   const app = Fastify();
+  app.setValidatorCompiler(validatorCompiler);
   app.decorate('authenticate', async () => undefined);
   app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
     const rank = { viewer: 0, operator: 1, admin: 2 };

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { userRoutes } from './users.js';
 
 vi.mock('../services/user-store.js', () => ({
@@ -25,6 +26,7 @@ const mockDeleteUser = vi.mocked(deleteUser);
 
 async function buildTestApp() {
   const app = Fastify();
+  app.setValidatorCompiler(validatorCompiler);
   app.decorate('authenticate', async () => undefined);
   app.decorate('requireRole', () => async () => undefined);
   app.decorateRequest('user', undefined);
