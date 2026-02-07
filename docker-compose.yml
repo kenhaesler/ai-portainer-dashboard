@@ -83,7 +83,7 @@ services:
           memory: 128M
 
   ollama:
-    image: ollama/ollama:0.12.10
+    image: ollama/ollama:0.6.5
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -99,7 +99,7 @@ services:
       - no-new-privileges:true
 
   redis:
-    image: redis:7.4.7-alpine
+    image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
@@ -107,6 +107,20 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+      - dashboard-net
+
+  kali-mcp:
+    build:
+      context: ./tools/kali-mcp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8787:8000"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-whoami,id,uname,ip,df,free,ps,ss,ls,cat}
     networks:
       - dashboard-net
 
