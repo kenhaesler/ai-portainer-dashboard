@@ -272,4 +272,62 @@ describe('settings security', () => {
 
     await app.close();
   });
+
+  it('rejects invalid schemes for security-critical URL settings', async () => {
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/llm.ollama_url',
+      headers: { authorization: 'Bearer test' },
+      payload: { value: 'file:///etc/passwd', category: 'llm' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: 'llm.ollama_url must use http:// or https://',
+    });
+    expect(mockRun).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it('accepts valid https URL for oidc.issuer_url', async () => {
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/oidc.issuer_url',
+      headers: { authorization: 'Bearer test' },
+      payload: { value: 'https://auth.example.com', category: 'authentication' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      success: true,
+      key: 'oidc.issuer_url',
+      value: 'https://auth.example.com',
+    });
+    expect(mockRun).toHaveBeenCalled();
+
+    await app.close();
+  });
 });

@@ -18,6 +18,7 @@ const SENSITIVE_KEYS = new Set([
   'llm.custom_endpoint_token',
   'portainer_backup.password',
 ]);
+const SECURITY_CRITICAL_URL_KEYS = new Set(['llm.ollama_url', 'oidc.issuer_url']);
 
 const REDACTED = '••••••••';
 const LANDING_PAGE_OPTIONS = new Set([
@@ -60,6 +61,29 @@ function isSensitiveSettingKey(key: string): boolean {
   );
 }
 
+function validateSecurityCriticalUrl(key: string, value: string): string | null {
+  if (!SECURITY_CRITICAL_URL_KEYS.has(key)) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return `${key} must be a valid URL`;
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return `${key} must use http:// or https://`;
+  }
+
+  if (key === 'oidc.issuer_url' && process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+    return 'oidc.issuer_url must use https:// in production';
+  }
+
+  return null;
+}
+
 export async function settingsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/settings/preferences', {
     schema: {
@@ -68,7 +92,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const userId = request.user?.sub;
     return {
       defaultLandingPage: userId ? getUserDefaultLandingPage(userId) : '/',
@@ -107,7 +131,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       querystring: SettingsQuerySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { category } = request.query as { category?: string };
     const db = getDb();
 
@@ -127,10 +151,15 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       body: SettingUpdateBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { key } = request.params as { key: string };
     const { value, category = 'general' } = request.body as { value: string; category?: string };
     const db = getDb();
+    const validationError = validateSecurityCriticalUrl(key, value);
+
+    if (validationError) {
+      return reply.code(400).send({ error: validationError });
+    }
 
     db.prepare(`
       INSERT INTO settings (key, value, category, updated_at)
