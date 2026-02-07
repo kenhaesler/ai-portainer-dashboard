@@ -143,8 +143,6 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   const handleAnomalyClick = useCallback(
     (point: MetricPoint) => {
       const explanation = findExplanation(point.timestamp, anomalyExplanations);
-      // Only open panel if there's a real backend insight to show
-      if (!explanation) return;
       setSelectedAnomaly((prev) =>
         prev?.point.timestamp === point.timestamp ? null : { point, explanation },
       );
@@ -262,7 +260,11 @@ export const MetricsLineChart = memo(function MetricsLineChart({
             <p className="mt-3 text-sm text-muted-foreground">
               {selectedAnomaly.explanation.description}
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Value exceeded the 80{unit} warning threshold.
+            </p>
+          )}
 
           {selectedAnomaly.explanation?.suggestedAction && (
             <div className="mt-3 flex items-start gap-2">
@@ -273,7 +275,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
             </div>
           )}
 
-          {selectedAnomaly.explanation && (
+          {selectedAnomaly.explanation ? (
             <div className="mt-2 flex items-center gap-2">
               <span className={cn(
                 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
@@ -284,6 +286,15 @@ export const MetricsLineChart = memo(function MetricsLineChart({
               </span>
               <span className="text-xs text-muted-foreground">
                 {selectedAnomaly.explanation.category}
+              </span>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <span className={cn(
+                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                severityBg.warning, severityColor.warning,
+              )}>
+                warning
               </span>
             </div>
           )}

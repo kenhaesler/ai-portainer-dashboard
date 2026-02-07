@@ -88,7 +88,7 @@ describe('MetricsLineChart', () => {
     expect(screen.getByText('critical')).toBeInTheDocument();
   });
 
-  it('does not open panel when no explanation matches', () => {
+  it('shows threshold warning when no explanation matches', () => {
     render(
       <MetricsLineChart
         data={baseData}
@@ -101,8 +101,8 @@ describe('MetricsLineChart', () => {
     const circle = document.querySelector('circle');
     fireEvent.click(circle!);
 
-    // Panel should not open — no backend insight to show
-    expect(screen.queryByText('Anomaly Detected')).not.toBeInTheDocument();
+    expect(screen.getByText(/Value exceeded the 80% warning threshold/)).toBeInTheDocument();
+    expect(screen.getByText('warning')).toBeInTheDocument();
   });
 
   it('toggles explanation card off when clicking same dot again', () => {
