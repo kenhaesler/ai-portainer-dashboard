@@ -5,7 +5,7 @@ import type { AnomalyDetection } from '../models/metrics.js';
 
 const log = createChildLogger('adaptive-anomaly');
 
-export type DetectionMethod = 'zscore' | 'bollinger' | 'adaptive';
+export type DetectionMethod = 'zscore' | 'bollinger' | 'adaptive' | 'isolation-forest';
 
 interface BollingerBands {
   upper: number;

@@ -38,6 +38,31 @@ export const envSchema = z.object({
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
 
+  // Predictive Alerting
+  PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
+  PREDICTIVE_ALERT_THRESHOLD_HOURS: z.coerce.number().int().min(1).default(24),
+
+  // Anomaly Explanations (LLM)
+  ANOMALY_EXPLANATION_ENABLED: z.coerce.boolean().default(true),
+  ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(20).default(5),
+
+  // Isolation Forest Anomaly Detection
+  ISOLATION_FOREST_ENABLED: z.coerce.boolean().default(true),
+  ISOLATION_FOREST_TREES: z.coerce.number().int().min(10).max(500).default(100),
+  ISOLATION_FOREST_SAMPLE_SIZE: z.coerce.number().int().min(32).max(512).default(256),
+  ISOLATION_FOREST_CONTAMINATION: z.coerce.number().min(0.01).max(0.5).default(0.1),
+  ISOLATION_FOREST_RETRAIN_INTERVAL: z.coerce.number().int().min(1).default(6),
+
+  // NLP Log Analysis (LLM)
+  NLP_LOG_ANALYSIS_ENABLED: z.coerce.boolean().default(true),
+  NLP_LOG_ANALYSIS_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(20).default(3),
+  NLP_LOG_ANALYSIS_TAIL_LINES: z.coerce.number().int().min(10).max(500).default(100),
+
+  // Smart Alert Grouping
+  SMART_GROUPING_ENABLED: z.coerce.boolean().default(true),
+  SMART_GROUPING_SIMILARITY_THRESHOLD: z.coerce.number().min(0.1).max(1.0).default(0.3),
+  INCIDENT_SUMMARY_ENABLED: z.coerce.boolean().default(true),
+
   // Investigation (Root Cause Analysis)
   INVESTIGATION_ENABLED: z.coerce.boolean().default(true),
   INVESTIGATION_COOLDOWN_MINUTES: z.coerce.number().int().min(1).default(30),
@@ -91,6 +116,10 @@ export const envSchema = z.object({
   // Image Staleness
   IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
   IMAGE_STALENESS_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
+
+  // eBPF Trace Ingestion (Grafana Beyla)
+  TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
+  TRACES_INGESTION_API_KEY: z.string().default(''),
 
   // Rate Limiting
   LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(

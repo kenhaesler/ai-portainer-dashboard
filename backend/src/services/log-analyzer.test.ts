@@ -1,0 +1,119 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../utils/logger.js', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    error: vi.fn(),
+  }),
+}));
+
+const mockChatStream = vi.fn();
+vi.mock('./llm-client.js', () => ({
+  chatStream: (...args: unknown[]) => mockChatStream(...args),
+}));
+
+const mockGetContainerLogs = vi.fn();
+vi.mock('./portainer-client.js', () => ({
+  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
+}));
+
+import { analyzeContainerLogs, analyzeLogsForContainers } from './log-analyzer.js';
+
+describe('log-analyzer', () => {
+  beforeEach(() => {
+    mockChatStream.mockReset();
+    mockGetContainerLogs.mockReset();
+  });
+
+  it('returns analysis when logs contain errors', async () => {
+    mockGetContainerLogs.mockResolvedValue(
+      '2024-01-01T00:00:00Z ERROR: Connection refused to database\n' +
+      '2024-01-01T00:00:01Z WARN: Retrying connection...\n'.repeat(10),
+    );
+
+    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+      onChunk(JSON.stringify({
+        severity: 'critical',
+        summary: 'Database connection failures detected',
+        errorPatterns: ['Connection refused', 'Retrying connection'],
+      }));
+      return Promise.resolve('');
+    });
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+
+    expect(result).not.toBeNull();
+    expect(result!.severity).toBe('critical');
+    expect(result!.summary).toBe('Database connection failures detected');
+    expect(result!.errorPatterns).toContain('Connection refused');
+    expect(result!.containerId).toBe('container-1');
+    expect(result!.containerName).toBe('web-app');
+  });
+
+  it('returns null for clean logs (LLM returns null)', async () => {
+    mockGetContainerLogs.mockResolvedValue(
+      '2024-01-01T00:00:00Z INFO: Server started on port 3000\n'.repeat(10),
+    );
+
+    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+      onChunk('null');
+      return Promise.resolve('');
+    });
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when logs are empty', async () => {
+    mockGetContainerLogs.mockResolvedValue('');
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+    expect(result).toBeNull();
+    expect(mockChatStream).not.toHaveBeenCalled();
+  });
+
+  it('returns null when LLM fails', async () => {
+    mockGetContainerLogs.mockResolvedValue('Some log lines here with enough content.');
+
+    mockChatStream.mockRejectedValue(new Error('LLM unavailable'));
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+    expect(result).toBeNull();
+  });
+
+  it('respects max containers limit', async () => {
+    mockGetContainerLogs.mockResolvedValue(
+      '2024-01-01T00:00:00Z ERROR: Something failed\n'.repeat(5),
+    );
+    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+      onChunk(JSON.stringify({ severity: 'warning', summary: 'Issues found', errorPatterns: [] }));
+      return Promise.resolve('');
+    });
+
+    const containers = Array.from({ length: 10 }, (_, i) => ({
+      endpointId: 1,
+      containerId: `container-${i}`,
+      containerName: `app-${i}`,
+    }));
+
+    const results = await analyzeLogsForContainers(containers, 2, 100);
+
+    // Should only call for first 2 containers
+    expect(mockGetContainerLogs).toHaveBeenCalledTimes(2);
+    expect(results.length).toBeLessThanOrEqual(2);
+  });
+
+  it('handles malformed JSON from LLM gracefully', async () => {
+    mockGetContainerLogs.mockResolvedValue('ERROR: Something broke\n'.repeat(5));
+
+    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+      onChunk('This is not valid JSON at all');
+      return Promise.resolve('');
+    });
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+    expect(result).toBeNull();
+  });
+});

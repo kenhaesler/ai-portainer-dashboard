@@ -8,10 +8,14 @@ import { scanContainer } from './security-scanner.js';
 import { collectMetrics } from './metrics-collector.js';
 import { insertMetrics, type MetricInsert } from './metrics-store.js';
 import { detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
+import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { suggestAction } from './remediation-service.js';
 import { triggerInvestigation } from './investigation-service.js';
+import { getCapacityForecasts } from './capacity-forecaster.js';
+import { explainAnomalies } from './anomaly-explainer.js';
+import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '../models/monitoring.js';
 import type { SecurityFinding } from './security-scanner.js';
@@ -186,6 +190,161 @@ export async function runMonitoringCycle(): Promise<void> {
       }
     }
 
+    // 4.1. Isolation Forest anomaly detection — multivariate ML-based detection
+    if (config.ISOLATION_FOREST_ENABLED) {
+      for (const container of runningContainers) {
+        const containerName =
+          container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
+
+        const cpuMetric = metricsToInsert.find(
+          (m) => m.container_id === container.raw.Id && m.metric_type === 'cpu',
+        );
+        const memMetric = metricsToInsert.find(
+          (m) => m.container_id === container.raw.Id && m.metric_type === 'memory',
+        );
+        if (!cpuMetric || !memMetric) continue;
+
+        // Skip if already flagged by statistical detection
+        if (anomalyInsights.some((a) => a.container_id === container.raw.Id)) continue;
+
+        for (const metricType of ['cpu', 'memory'] as const) {
+          const value = metricType === 'cpu' ? cpuMetric.value : memMetric.value;
+          const ifAnomaly = detectAnomalyIsolationForest(
+            container.raw.Id, containerName, metricType, value,
+            cpuMetric.value, memMetric.value,
+          );
+          if (ifAnomaly?.is_anomalous) {
+            anomalyInsights.push({
+              id: uuidv4(),
+              endpoint_id: container.endpointId,
+              endpoint_name: container.endpointName,
+              container_id: container.raw.Id,
+              container_name: containerName,
+              severity: ifAnomaly.z_score > 0.7 ? 'critical' : 'warning',
+              category: 'anomaly',
+              title: `Anomalous ${metricType} usage on "${containerName}" (ML-detected)`,
+              description:
+                `Isolation Forest anomaly score: ${ifAnomaly.z_score.toFixed(2)} ` +
+                `(cpu: ${cpuMetric.value.toFixed(1)}%, memory: ${memMetric.value.toFixed(1)}%, ` +
+                `method: isolation-forest). ` +
+                `Multivariate analysis detected unusual resource usage pattern.`,
+              suggested_action: metricType === 'memory'
+                ? 'Check for memory leaks or increase memory limit'
+                : 'Check for runaway processes or increase CPU allocation',
+            });
+            break; // One insight per container for IF detection
+          }
+        }
+      }
+    }
+
+    // 4.5. Predictive alerting — proactive resource exhaustion warnings
+    const predictiveInsights: InsightInsert[] = [];
+    if (config.PREDICTIVE_ALERTING_ENABLED) {
+      try {
+        const forecasts = getCapacityForecasts(20);
+        for (const forecast of forecasts) {
+          if (
+            forecast.trend === 'increasing' &&
+            forecast.timeToThreshold != null &&
+            forecast.timeToThreshold <= config.PREDICTIVE_ALERT_THRESHOLD_HOURS &&
+            forecast.confidence !== 'low'
+          ) {
+            const severity: 'critical' | 'warning' | 'info' =
+              forecast.timeToThreshold < 4 ? 'critical' :
+              forecast.timeToThreshold < 12 ? 'warning' : 'info';
+
+            predictiveInsights.push({
+              id: uuidv4(),
+              endpoint_id: null,
+              endpoint_name: null,
+              container_id: forecast.containerId,
+              container_name: forecast.containerName,
+              severity,
+              category: 'predictive',
+              title: `Predicted ${forecast.metricType} exhaustion on "${forecast.containerName}" in ~${forecast.timeToThreshold}h`,
+              description:
+                `${forecast.metricType} is trending upward (slope: ${forecast.slope.toFixed(3)}/h, R²: ${forecast.r_squared.toFixed(2)}). ` +
+                `Current: ${forecast.currentValue.toFixed(1)}%. Estimated time to 90% threshold: ~${forecast.timeToThreshold}h. ` +
+                `Confidence: ${forecast.confidence}.`,
+              suggested_action: forecast.metricType === 'memory'
+                ? 'Consider increasing memory limits or investigating memory consumption patterns before threshold is reached'
+                : 'Consider scaling CPU resources or optimizing workload before threshold is reached',
+            });
+          }
+        }
+        if (predictiveInsights.length > 0) {
+          log.info({ count: predictiveInsights.length }, 'Predictive alerts generated');
+        }
+      } catch (err) {
+        log.warn({ err }, 'Predictive alerting failed');
+      }
+    }
+
+    // 4.75. Anomaly explanations — LLM explains anomalies in plain English
+    const ollamaAvailable = await isOllamaAvailable();
+    if (config.ANOMALY_EXPLANATION_ENABLED && ollamaAvailable && anomalyInsights.length > 0) {
+      try {
+        const anomalyData = anomalyInsights.map((ins) => ({
+          insight: ins,
+          description: ins.description,
+        }));
+        const explanations = await explainAnomalies(anomalyData, config.ANOMALY_EXPLANATION_MAX_PER_CYCLE);
+        for (const [insightId, explanation] of explanations) {
+          const insight = anomalyInsights.find((i) => i.id === insightId);
+          if (insight) {
+            insight.description += `\n\nAI Analysis: ${explanation}`;
+          }
+        }
+        if (explanations.size > 0) {
+          log.info({ count: explanations.size }, 'Anomaly explanations generated');
+        }
+      } catch (err) {
+        log.warn({ err }, 'Anomaly explanation failed');
+      }
+    }
+
+    // 4.8. NLP Log Analysis — LLM analyzes container logs for error patterns
+    const logAnalysisInsights: InsightInsert[] = [];
+    if (config.NLP_LOG_ANALYSIS_ENABLED && ollamaAvailable && runningContainers.length > 0) {
+      try {
+        const containersForLogAnalysis = runningContainers.map((c) => ({
+          endpointId: c.endpointId,
+          containerId: c.raw.Id,
+          containerName: c.raw.Names?.[0]?.replace(/^\//, '') || c.raw.Id.slice(0, 12),
+        }));
+        const logResults = await analyzeLogsForContainers(
+          containersForLogAnalysis,
+          config.NLP_LOG_ANALYSIS_MAX_PER_CYCLE,
+          config.NLP_LOG_ANALYSIS_TAIL_LINES,
+        );
+        for (const result of logResults) {
+          const container = runningContainers.find((c) => c.raw.Id === result.containerId);
+          logAnalysisInsights.push({
+            id: uuidv4(),
+            endpoint_id: container?.endpointId ?? null,
+            endpoint_name: container?.endpointName ?? null,
+            container_id: result.containerId,
+            container_name: result.containerName,
+            severity: result.severity,
+            category: 'log-analysis',
+            title: `Log issues detected in "${result.containerName}"`,
+            description:
+              `${result.summary}` +
+              (result.errorPatterns.length > 0
+                ? `\n\nError patterns: ${result.errorPatterns.join(', ')}`
+                : ''),
+            suggested_action: 'Review container logs for the identified error patterns and address the root cause',
+          });
+        }
+        if (logAnalysisInsights.length > 0) {
+          log.info({ count: logAnalysisInsights.length }, 'NLP log analysis insights generated');
+        }
+      } catch (err) {
+        log.warn({ err }, 'NLP log analysis failed');
+      }
+    }
+
     // 5. Create insights from security findings
     const securityInsights: InsightInsert[] = allFindings.map((f) => ({
       id: uuidv4(),
@@ -202,7 +361,6 @@ export async function runMonitoringCycle(): Promise<void> {
 
     // 6. Attempt AI analysis (with LLM fallback)
     const aiInsights: InsightInsert[] = [];
-    const ollamaAvailable = await isOllamaAvailable();
 
     if (ollamaAvailable) {
       try {
@@ -242,7 +400,7 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     // 7. Store all insights and suggest remediation actions
-    const allInsights = [...anomalyInsights, ...securityInsights, ...aiInsights];
+    const allInsights = [...anomalyInsights, ...predictiveInsights, ...logAnalysisInsights, ...securityInsights, ...aiInsights];
     const suggestedActions: Array<{ actionId: string; actionType: string; insightId: string }> = [];
 
     for (const insight of allInsights) {
@@ -276,8 +434,11 @@ export async function runMonitoringCycle(): Promise<void> {
           );
         }
 
-        // Trigger root cause investigation for anomaly insights
-        if (insight.category === 'anomaly') {
+        // Trigger root cause investigation for anomaly and non-info predictive insights
+        if (
+          insight.category === 'anomaly' ||
+          (insight.category === 'predictive' && insight.severity !== 'info')
+        ) {
           triggerInvestigation(insight as Insight).catch((err) => {
             log.warn({ insightId: insight.id, err }, 'Failed to trigger investigation');
           });
@@ -304,7 +465,7 @@ export async function runMonitoringCycle(): Promise<void> {
           is_acknowledged: 0,
           created_at: new Date().toISOString(),
         }));
-        const correlation = correlateInsights(storedInsights as Insight[]);
+        const correlation = await correlateInsights(storedInsights as Insight[]);
         if (correlation.incidentsCreated > 0) {
           log.info(
             { incidentsCreated: correlation.incidentsCreated, insightsGrouped: correlation.insightsGrouped },
@@ -325,6 +486,8 @@ export async function runMonitoringCycle(): Promise<void> {
         metricsCollected: metricsToInsert.length,
         securityFindings: allFindings.length,
         anomalies: anomalyInsights.length,
+        predictiveAlerts: predictiveInsights.length,
+        logAnalysisInsights: logAnalysisInsights.length,
         aiAvailable: ollamaAvailable,
         totalInsights: allInsights.length,
         suggestedActions: suggestedActions.length,
