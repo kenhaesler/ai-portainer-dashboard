@@ -215,6 +215,25 @@ describe('LlmSettingsSection', () => {
 
     expect(screen.getByText('Requires restart')).toBeInTheDocument();
   });
+
+  it('blocks test connection when custom endpoint is enabled but URL is empty', async () => {
+    const customValues = {
+      ...defaultValues,
+      'llm.custom_endpoint_enabled': 'true',
+      'llm.custom_endpoint_url': '',
+      'llm.custom_endpoint_token': 'secret-token',
+    };
+
+    render(
+      <LlmSettingsSection values={customValues} originalValues={customValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /test connection/i }));
+
+    expect(mockError).toHaveBeenCalledWith('Set a custom endpoint URL before testing connection');
+    expect(mockPost).not.toHaveBeenCalled();
+  });
 });
 
 describe('getRedisSystemInfo', () => {

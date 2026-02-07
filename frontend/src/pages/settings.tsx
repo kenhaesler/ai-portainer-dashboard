@@ -141,6 +141,15 @@ const LANDING_PAGE_OPTIONS = [
 ] as const;
 
 type SettingCategory = keyof typeof DEFAULT_SETTINGS;
+const SETTING_CATEGORY_BY_KEY: Record<string, SettingCategory> = Object.entries(DEFAULT_SETTINGS).reduce(
+  (acc, [category, settings]) => {
+    settings.forEach((setting) => {
+      acc[setting.key] = category as SettingCategory;
+    });
+    return acc;
+  },
+  {} as Record<string, SettingCategory>,
+);
 
 interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';
@@ -382,8 +391,15 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   };
 
   const handleTestConnection = () => {
-    const body = customEnabled && customUrl
-      ? { url: customUrl, token: customToken }
+    if (customEnabled && !customUrl.trim()) {
+      setConnectionStatus('error');
+      setConnectionError('Custom endpoint URL is required when custom mode is enabled.');
+      toast.error('Set a custom endpoint URL before testing connection');
+      return;
+    }
+
+    const body = customEnabled && customUrl.trim()
+      ? { url: customUrl.trim(), token: customToken }
       : { ollamaUrl: ollamaUrl };
     testConnection.mutate(body, {
       onSuccess: (data) => {
@@ -1660,6 +1676,7 @@ export default function SettingsPage() {
         await updateSetting.mutateAsync({
           key,
           value: editedValues[key],
+          category: SETTING_CATEGORY_BY_KEY[key],
         });
       }
 

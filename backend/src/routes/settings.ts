@@ -153,7 +153,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { key } = request.params as { key: string };
-    const { value, category = 'general' } = request.body as { value: string; category?: string };
+    const { value, category } = request.body as { value: string; category?: string };
     const db = getDb();
     const validationError = validateSecurityCriticalUrl(key, value);
 
@@ -161,11 +161,16 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: validationError });
     }
 
+    const existingSetting = db
+      .prepare('SELECT category FROM settings WHERE key = ?')
+      .get(key) as { category?: string } | undefined;
+    const effectiveCategory = category ?? existingSetting?.category ?? 'general';
+
     db.prepare(`
       INSERT INTO settings (key, value, category, updated_at)
       VALUES (?, ?, ?, datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
-    `).run(key, value, category, value, category);
+    `).run(key, value, effectiveCategory, value, effectiveCategory);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -173,7 +178,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       action: 'settings.update',
       target_type: 'setting',
       target_id: key,
-      details: { category },
+      details: { category: effectiveCategory },
       request_id: request.requestId,
       ip_address: request.ip,
     });

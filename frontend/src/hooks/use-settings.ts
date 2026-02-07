@@ -16,6 +16,7 @@ interface Setting {
 interface UpdateSettingParams {
   key: string;
   value: unknown;
+  category?: string;
 }
 
 interface AuditLogEntry {
@@ -51,16 +52,18 @@ export function useSettings(category?: string) {
 export function useUpdateSetting() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, UpdateSettingParams, { previousSettings: unknown }>({
-    mutationFn: async ({ key, value }) => {
-      await api.put(`/api/settings/${key}`, { value });
+  return useMutation<void, Error, UpdateSettingParams, { previousSettings: Array<[readonly unknown[], unknown]> }>({
+    mutationFn: async ({ key, value, category }) => {
+      await api.put(`/api/settings/${key}`, category ? { value, category } : { value });
     },
     onMutate: async ({ key, value }) => {
       // Cancel outgoing refetches to avoid overwriting optimistic update
       await queryClient.cancelQueries({ queryKey: ['settings'] });
 
-      // Snapshot current value for rollback
-      const previousSettings = queryClient.getQueryData(['settings']);
+      // Snapshot current settings-related queries for rollback
+      const previousSettings = queryClient
+        .getQueriesData({ queryKey: ['settings'] })
+        .filter(([queryKey]) => Array.isArray(queryKey) && queryKey[0] === 'settings');
 
       // Optimistically update the cache
       queryClient.setQueriesData<Setting[]>(
@@ -73,17 +76,17 @@ export function useUpdateSetting() {
         },
       );
 
-      // Show instant success toast
+      return { previousSettings };
+    },
+    onSuccess: (_data, { key }) => {
       toast.success('Setting saved', {
         description: `"${key}" updated.`,
       });
-
-      return { previousSettings };
     },
     onError: (error, { key }, context) => {
       // Rollback to previous value
-      if (context?.previousSettings) {
-        queryClient.setQueryData(['settings'], context.previousSettings);
+      for (const [queryKey, data] of context?.previousSettings ?? []) {
+        queryClient.setQueryData(queryKey, data);
       }
       toast.error(`Failed to save "${key}"`, {
         description: error.message,

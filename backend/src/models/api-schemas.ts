@@ -223,7 +223,7 @@ export const SettingKeyParamsSchema = z.object({
 
 export const SettingUpdateBodySchema = z.object({
   value: z.string(),
-  category: z.string().default('general'),
+  category: z.string().optional(),
 });
 
 export const PreferencesResponseSchema = z.object({
