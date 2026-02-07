@@ -1,0 +1,157 @@
+import { getEndpoints, getContainers } from './portainer-client.js';
+import type { Container } from '../models/portainer.js';
+import { getSetting, setSetting } from './settings-store.js';
+import {
+  scanCapabilityPosture,
+  type CapabilityPosture,
+  type CapabilityFinding,
+  type SecurityFinding,
+} from './security-scanner.js';
+
+export const SECURITY_AUDIT_IGNORE_KEY = 'security_audit_ignore_list';
+
+export const DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS = [
+  'portainer',
+  'portainer_edge_agent',
+  'traefik',
+  'nginx*',
+  'caddy*',
+  'prometheus*',
+  'grafana*',
+] as const;
+
+export interface SecurityAuditEntry {
+  containerId: string;
+  containerName: string;
+  stackName: string | null;
+  endpointId: number;
+  endpointName: string;
+  state: string;
+  status: string;
+  image: string;
+  posture: CapabilityPosture;
+  findings: CapabilityFinding[];
+  severity: 'critical' | 'warning' | 'info' | 'none';
+  ignored: boolean;
+}
+
+function toContainerName(container: Container): string {
+  return container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+}
+
+function normalizePattern(pattern: string): string {
+  return pattern.trim().toLowerCase();
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const escaped = escapeRegExp(pattern).replace(/\\\*/g, '.*');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+function matchesPattern(value: string, pattern: string): boolean {
+  if (!pattern) return false;
+  if (!pattern.includes('*')) {
+    return value.toLowerCase() === pattern.toLowerCase();
+  }
+  return wildcardToRegExp(pattern).test(value);
+}
+
+export function resolveAuditSeverity(findings: SecurityFinding[]): SecurityAuditEntry['severity'] {
+  if (findings.some((f) => f.severity === 'critical')) return 'critical';
+  if (findings.some((f) => f.severity === 'warning')) return 'warning';
+  if (findings.some((f) => f.severity === 'info')) return 'info';
+  return 'none';
+}
+
+export function getSecurityAuditIgnoreList(): string[] {
+  const stored = getSetting(SECURITY_AUDIT_IGNORE_KEY)?.value;
+  if (!stored) {
+    return [...DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS];
+  }
+
+  try {
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [...DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS];
+
+    const cleaned = parsed
+      .filter((value): value is string => typeof value === 'string')
+      .map(normalizePattern)
+      .filter((value) => value.length > 0);
+
+    return cleaned.length > 0 ? cleaned : [...DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS];
+  } catch {
+    return [...DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS];
+  }
+}
+
+export function setSecurityAuditIgnoreList(patterns: string[]): string[] {
+  const cleaned = patterns
+    .map(normalizePattern)
+    .filter((value) => value.length > 0);
+
+  setSetting(SECURITY_AUDIT_IGNORE_KEY, JSON.stringify(cleaned), 'security');
+  return cleaned;
+}
+
+export function isIgnoredContainer(containerName: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => matchesPattern(containerName, pattern));
+}
+
+export async function getSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
+  const ignorePatterns = getSecurityAuditIgnoreList();
+  const endpoints = await getEndpoints();
+  const scopedEndpoints = endpointId
+    ? endpoints.filter((endpoint) => endpoint.Id === endpointId)
+    : endpoints;
+
+  const entries: SecurityAuditEntry[] = [];
+
+  for (const endpoint of scopedEndpoints) {
+    const containers = await getContainers(endpoint.Id, true);
+
+    for (const container of containers) {
+      const containerName = toContainerName(container);
+      const findings = scanCapabilityPosture(container);
+      const posture = {
+        capAdd: container.HostConfig?.CapAdd || [],
+        privileged: !!container.HostConfig?.Privileged,
+        networkMode: container.HostConfig?.NetworkMode || null,
+        pidMode: container.HostConfig?.PidMode || null,
+      };
+
+      entries.push({
+        containerId: container.Id,
+        containerName,
+        stackName: container.Labels?.['com.docker.compose.project'] || null,
+        endpointId: endpoint.Id,
+        endpointName: endpoint.Name,
+        state: container.State || 'unknown',
+        status: container.Status || '',
+        image: container.Image || '',
+        posture,
+        findings,
+        severity: resolveAuditSeverity(findings),
+        ignored: isIgnoredContainer(containerName, ignorePatterns),
+      });
+    }
+  }
+
+  return entries;
+}
+
+export function buildSecurityAuditSummary(entries: SecurityAuditEntry[]): {
+  totalAudited: number;
+  flagged: number;
+  ignored: number;
+} {
+  const flaggedEntries = entries.filter((entry) => entry.findings.length > 0);
+  return {
+    totalAudited: entries.length,
+    flagged: flaggedEntries.filter((entry) => !entry.ignored).length,
+    ignored: flaggedEntries.filter((entry) => entry.ignored).length,
+  };
+}

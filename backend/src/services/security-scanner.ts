@@ -10,6 +10,15 @@ export interface SecurityFinding {
   description: string;
 }
 
+export type CapabilityFinding = SecurityFinding;
+
+export interface CapabilityPosture {
+  capAdd: string[];
+  privileged: boolean;
+  networkMode: string | null;
+  pidMode: string | null;
+}
+
 const DANGEROUS_CAPABILITIES = [
   'SYS_ADMIN',
   'NET_ADMIN',
@@ -18,12 +27,13 @@ const DANGEROUS_CAPABILITIES = [
   'SYS_MODULE',
 ] as const;
 
-export function scanContainer(container: Container): SecurityFinding[] {
-  const findings: SecurityFinding[] = [];
+export function scanCapabilityPosture(container: Container): CapabilityFinding[] {
+  const findings: CapabilityFinding[] = [];
   const name = container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+  const capAdd = container.HostConfig?.CapAdd || [];
+  const isPrivileged = !!container.HostConfig?.Privileged;
 
-  // Check for privileged mode
-  if (container.HostConfig?.Privileged) {
+  if (isPrivileged) {
     findings.push({
       severity: 'critical',
       category: 'privileged-mode',
@@ -34,7 +44,19 @@ export function scanContainer(container: Container): SecurityFinding[] {
     });
   }
 
-  // Check for host network mode
+  // Portainer list responses do not expose CapDrop directly; infer missing cap_drop: ALL
+  // when a container adds capabilities or runs privileged.
+  if (isPrivileged || capAdd.length > 0) {
+    findings.push({
+      severity: isPrivileged ? 'critical' : 'warning',
+      category: 'cap-drop-missing',
+      title: `Container "${name}" may be missing cap_drop: ALL hardening`,
+      description:
+        'This container runs privileged or adds Linux capabilities. In Portainer list responses, ' +
+        'CapDrop is not exposed, so treat this as a hardening signal and verify cap_drop: ALL is set.',
+    });
+  }
+
   if (container.HostConfig?.NetworkMode === 'host') {
     findings.push({
       severity: 'warning',
@@ -46,8 +68,17 @@ export function scanContainer(container: Container): SecurityFinding[] {
     });
   }
 
-  // Check for dangerous capabilities
-  const capAdd = container.HostConfig?.CapAdd || [];
+  if (container.HostConfig?.PidMode === 'host') {
+    findings.push({
+      severity: 'warning',
+      category: 'host-pid',
+      title: `Container "${name}" using host PID namespace`,
+      description:
+        'Sharing the host PID namespace allows the container to see and potentially interact with ' +
+        'all processes on the host system, which is a security risk.',
+    });
+  }
+
   for (const cap of capAdd) {
     if (DANGEROUS_CAPABILITIES.includes(cap as typeof DANGEROUS_CAPABILITIES[number])) {
       findings.push({
@@ -60,6 +91,14 @@ export function scanContainer(container: Container): SecurityFinding[] {
       });
     }
   }
+
+  return findings;
+}
+
+export function scanContainer(container: Container): SecurityFinding[] {
+  const findings: SecurityFinding[] = [];
+  const name = container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+  findings.push(...scanCapabilityPosture(container));
 
   // Check for running as root (via labels)
   const userLabel = container.Labels?.['com.docker.compose.container-number'];

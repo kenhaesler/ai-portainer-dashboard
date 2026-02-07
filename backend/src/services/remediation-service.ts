@@ -5,6 +5,7 @@ import {
   insertAction,
   getAction,
   updateActionStatus,
+  hasPendingAction,
   type ActionInsert,
 } from './actions-store.js';
 import type { Insight } from '../models/monitoring.js';
@@ -56,6 +57,14 @@ export function suggestAction(
         log.debug(
           { insightId: insight.id },
           'Insight matches action pattern but has no container/endpoint context',
+        );
+        return null;
+      }
+
+      if (hasPendingAction(insight.container_id, pattern.actionType)) {
+        log.debug(
+          { containerId: insight.container_id, actionType: pattern.actionType },
+          'Skipping duplicate pending action',
         );
         return null;
       }

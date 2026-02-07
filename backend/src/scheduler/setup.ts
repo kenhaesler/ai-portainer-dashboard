@@ -13,6 +13,7 @@ import { normalizeEndpoint } from '../services/portainer-normalizers.js';
 import { runStalenessChecks } from '../services/image-staleness.js';
 import { getImages } from '../services/portainer-client.js';
 import { runWithTraceContext } from '../services/trace-context.js';
+import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
 
 const log = createChildLogger('scheduler');
 
@@ -320,6 +321,9 @@ export function startScheduler(): void {
   );
   intervals.push(cleanupInterval);
 
+  // Forward container-origin logs to Elasticsearch when enabled.
+  startElasticsearchLogForwarder();
+
   log.info({ taskCount: intervals.length }, 'Scheduler started');
 }
 
@@ -328,6 +332,7 @@ export function stopScheduler(): void {
     clearInterval(interval);
   }
   intervals.length = 0;
+  stopElasticsearchLogForwarder();
   stopWebhookListener();
   log.info('Scheduler stopped');
 }

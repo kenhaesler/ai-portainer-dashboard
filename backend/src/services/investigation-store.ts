@@ -42,6 +42,7 @@ export function updateInvestigationStatus(
     confidence_score?: number;
     analysis_duration_ms?: number;
     llm_model?: string;
+    ai_summary?: string;
     error_message?: string;
     completed_at?: string;
   },

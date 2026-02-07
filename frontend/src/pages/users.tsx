@@ -17,7 +17,7 @@ const initialForm: UserForm = {
   role: 'viewer',
 };
 
-export default function UsersPage() {
+export function UsersPanel() {
   const { role } = useAuth();
   const usersQuery = useUsers();
   const createUser = useCreateUser();
@@ -105,13 +105,6 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground">Manage account roles and access for dashboard operators.</p>
-        </div>
-      </div>
-
       <div className="grid gap-6 lg:grid-cols-5">
         <section className="rounded-lg border bg-card p-4 lg:col-span-3">
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -261,6 +254,20 @@ export default function UsersPage() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+export default function UsersPage() {
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
+          <p className="text-muted-foreground">Manage account roles and access for dashboard operators.</p>
+        </div>
+      </div>
+      <UsersPanel />
     </div>
   );
 }

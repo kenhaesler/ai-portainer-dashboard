@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Radio,
   RefreshCw,
@@ -12,6 +12,7 @@ import {
 import { StatusBadge } from '@/components/shared/status-badge';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
+import { useStacks } from '@/hooks/use-stacks';
 import {
   useCaptures,
   useStartCapture,
@@ -23,6 +24,7 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
+import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -50,6 +52,7 @@ const STATUS_TABS = [
 
 export default function PacketCapture() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
+  const [selectedStack, setSelectedStack] = useState<string | undefined>();
   const [selectedContainer, setSelectedContainer] = useState('');
   const [selectedContainerName, setSelectedContainerName] = useState('');
   const [bpfFilter, setBpfFilter] = useState('');
@@ -59,6 +62,7 @@ export default function PacketCapture() {
 
   const { data: endpoints } = useEndpoints();
   const { data: containers } = useContainers(selectedEndpoint);
+  const { data: stacks } = useStacks();
   const { data: capturesData, refetch } = useCaptures({ status: statusFilter });
   const startCapture = useStartCapture();
   const stopCapture = useStopCapture();
@@ -69,6 +73,31 @@ export default function PacketCapture() {
     (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
   );
   const runningContainers = containers?.filter((c) => c.state === 'running') ?? [];
+  const stackNamesForEndpoint = useMemo(() => {
+    if (!selectedEndpoint || !stacks) return [];
+    return stacks
+      .filter((stack) => stack.endpointId === selectedEndpoint)
+      .map((stack) => stack.name);
+  }, [selectedEndpoint, stacks]);
+  const stackOptions = useMemo(() => {
+    const stackSet = new Set<string>(stackNamesForEndpoint);
+    for (const container of runningContainers) {
+      const resolvedStack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
+      stackSet.add(resolvedStack);
+    }
+    return [...stackSet].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+  }, [runningContainers, stackNamesForEndpoint]);
+  const filteredRunningContainers = useMemo(() => {
+    if (!selectedStack) return runningContainers;
+    return runningContainers.filter((container) => {
+      const resolvedStack = resolveContainerStackName(container, stackNamesForEndpoint) ?? NO_STACK_LABEL;
+      return resolvedStack === selectedStack;
+    });
+  }, [runningContainers, selectedStack, stackNamesForEndpoint]);
+  const groupedContainerOptions = useMemo(
+    () => buildStackGroupedContainerOptions(filteredRunningContainers, stackNamesForEndpoint),
+    [filteredRunningContainers, stackNamesForEndpoint],
+  );
 
   const handleStartCapture = () => {
     if (!selectedEndpoint || !selectedContainer) return;
@@ -85,7 +114,7 @@ export default function PacketCapture() {
 
   const handleContainerChange = (value: string) => {
     setSelectedContainer(value);
-    const container = runningContainers.find((c) => c.id === value);
+    const container = filteredRunningContainers.find((c) => c.id === value);
     setSelectedContainerName(container?.name ?? '');
   };
 
@@ -123,6 +152,7 @@ export default function PacketCapture() {
               onValueChange={(val) => {
                 const resolved = val === '__all__' ? undefined : Number(val);
                 setSelectedEndpoint(resolved);
+                setSelectedStack(undefined);
                 setSelectedContainer('');
                 setSelectedContainerName('');
               }}
@@ -130,6 +160,26 @@ export default function PacketCapture() {
               options={[
                 { value: '__all__', label: 'Select endpoint...' },
                 ...(endpoints?.map((ep) => ({ value: String(ep.id), label: ep.name })) ?? []),
+              ]}
+              className="w-full text-sm"
+            />
+          </div>
+
+          {/* Stack */}
+          <div>
+            <label className="mb-1 block text-sm font-medium">Stack</label>
+            <ThemedSelect
+              value={selectedStack ?? '__all__'}
+              onValueChange={(val) => {
+                setSelectedStack(val === '__all__' ? undefined : val);
+                setSelectedContainer('');
+                setSelectedContainerName('');
+              }}
+              disabled={!selectedEndpoint}
+              placeholder="All stacks"
+              options={[
+                { value: '__all__', label: 'All stacks' },
+                ...stackOptions.map((stackName) => ({ value: stackName, label: stackName })),
               ]}
               className="w-full text-sm"
             />
@@ -145,7 +195,7 @@ export default function PacketCapture() {
               placeholder="Select container..."
               options={[
                 { value: '__all__', label: 'Select container...' },
-                ...runningContainers.map((c) => ({ value: c.id, label: c.name })),
+                ...groupedContainerOptions,
               ]}
               className="w-full text-sm"
             />

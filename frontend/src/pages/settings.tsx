@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Palette,
@@ -31,11 +31,13 @@ import {
   Trash2,
   Download,
   Archive,
+  Users,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, dashboardBackgroundOptions, type Theme, type DashboardBackground } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { useLlmModels, useLlmTestConnection } from '@/hooks/use-llm-models';
+import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/hooks/use-security-audit';
 import type { LlmModel } from '@/hooks/use-llm-models';
 import {
   usePortainerBackups,
@@ -50,6 +52,10 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
+
+const LazyUsersPanel = lazy(() => import('@/pages/users').then((m) => ({ default: m.UsersPanel })));
+const LazyWebhooksPanel = lazy(() => import('@/pages/webhooks').then((m) => ({ default: m.WebhooksPanel })));
+const REDACTED_SECRET = '••••••••';
 
 // Default settings definitions
 const DEFAULT_SETTINGS = {
@@ -103,7 +109,7 @@ const DEFAULT_SETTINGS = {
     { key: 'webhooks.retry_interval', label: 'Retry Interval', description: 'Seconds between webhook retry checks', type: 'number', defaultValue: '60', min: 10, max: 600 },
   ],
   elasticsearch: [
-    { key: 'elasticsearch.enabled', label: 'Enable Elasticsearch', description: 'Enable Elasticsearch/Kibana integration for edge agent logs', type: 'boolean', defaultValue: 'false' },
+    { key: 'elasticsearch.enabled', label: 'Enable Elasticsearch', description: 'Enable container-origin log forwarding and Elasticsearch search integration', type: 'boolean', defaultValue: 'false' },
     { key: 'elasticsearch.endpoint', label: 'Elasticsearch URL', description: 'URL of your Elasticsearch cluster (e.g., https://localhost:9200)', type: 'string', defaultValue: '' },
     { key: 'elasticsearch.api_key', label: 'API Key', description: 'Elasticsearch API key for authentication (keep blank for no auth)', type: 'password', defaultValue: '' },
     { key: 'elasticsearch.index_pattern', label: 'Index Pattern', description: 'Index pattern for log searching (e.g., logs-* or filebeat-*)', type: 'string', defaultValue: 'logs-*' },
@@ -329,6 +335,20 @@ interface LlmSettingsSectionProps {
   originalValues: Record<string, string>;
   onChange: (key: string, value: string) => void;
   disabled?: boolean;
+}
+
+interface LogsConfigResponse {
+  configured: boolean;
+  endpoint: string | null;
+  indexPattern: string | null;
+}
+
+interface TestConnectionResponse {
+  success: boolean;
+  error?: string;
+  status?: string;
+  cluster_name?: string;
+  number_of_nodes?: number;
 }
 
 export function LlmSettingsSection({ values, originalValues, onChange, disabled }: LlmSettingsSectionProps) {
@@ -645,6 +665,257 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   );
 }
 
+interface ElasticsearchSettingsSectionProps {
+  values: Record<string, string>;
+  originalValues: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  disabled?: boolean;
+}
+
+export function ElasticsearchSettingsSection({
+  values,
+  originalValues,
+  onChange,
+  disabled,
+}: ElasticsearchSettingsSectionProps) {
+  const [configStatus, setConfigStatus] = useState<LogsConfigResponse | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestConnectionResponse | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const enabled = values['elasticsearch.enabled'] === 'true';
+  const endpoint = values['elasticsearch.endpoint'] ?? '';
+  const apiKey = values['elasticsearch.api_key'] ?? '';
+  const indexPattern = values['elasticsearch.index_pattern'] ?? 'logs-*';
+  const verifySsl = values['elasticsearch.verify_ssl'] !== 'false';
+
+  const hasChanges = [
+    'elasticsearch.enabled',
+    'elasticsearch.endpoint',
+    'elasticsearch.api_key',
+    'elasticsearch.index_pattern',
+    'elasticsearch.verify_ssl',
+  ].some((key) => values[key] !== originalValues[key]);
+
+  const endpointValidationError = useMemo(() => {
+    if (!endpoint.trim()) return 'Endpoint is required.';
+    try {
+      const parsed = new URL(endpoint);
+      if (!/^https?:$/.test(parsed.protocol)) {
+        return 'Endpoint must start with http:// or https://';
+      }
+      return null;
+    } catch {
+      return 'Enter a valid URL (for example: https://logs.internal:9200)';
+    }
+  }, [endpoint]);
+
+  useEffect(() => {
+    let active = true;
+    const loadConfigStatus = async () => {
+      setIsLoadingStatus(true);
+      try {
+        const config = await api.get<LogsConfigResponse>('/api/logs/config');
+        if (!active) return;
+        setConfigStatus(config);
+      } catch {
+        if (!active) return;
+        setConfigStatus(null);
+      } finally {
+        if (active) {
+          setIsLoadingStatus(false);
+        }
+      }
+    };
+
+    void loadConfigStatus();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleTestConnection = async () => {
+    if (endpointValidationError) return;
+
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.post<TestConnectionResponse>('/api/logs/test-connection', {
+        endpoint: endpoint.trim(),
+        apiKey: apiKey.trim() && apiKey !== REDACTED_SECRET ? apiKey.trim() : undefined,
+        verifySsl,
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Connection test failed',
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Search className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">Elasticsearch / Kibana</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {configStatus && (
+            <span className={cn(
+              'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+              configStatus.configured
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+            )}>
+              {configStatus.configured ? 'Configured' : 'Not configured'}
+            </span>
+          )}
+          {hasChanges && (
+            <span className="text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+              Modified
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Configure Elasticsearch in Settings. When enabled, the backend forwards container-origin logs to the configured cluster.
+        </p>
+
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <label className="font-medium">Enable Elasticsearch logs</label>
+            <p className="text-sm text-muted-foreground mt-0.5">Enable forwarding and search integration.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange('elasticsearch.enabled', enabled ? 'false' : 'true')}
+            disabled={disabled}
+            aria-label="Toggle Elasticsearch logs"
+            className={cn(
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              enabled ? 'bg-primary' : 'bg-muted',
+              disabled && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            <span
+              className={cn(
+                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                enabled ? 'translate-x-6' : 'translate-x-1'
+              )}
+            />
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Elasticsearch Endpoint</span>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-background px-3"
+              value={endpoint}
+              onChange={(e) => onChange('elasticsearch.endpoint', e.target.value)}
+              placeholder="https://logs.internal:9200"
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Index Pattern</span>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-background px-3"
+              value={indexPattern}
+              onChange={(e) => onChange('elasticsearch.index_pattern', e.target.value)}
+              placeholder="logs-*"
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="text-sm lg:col-span-2">
+            <span className="mb-1 block text-muted-foreground">API Key (optional)</span>
+            <div className="relative">
+              <input
+                className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10"
+                value={apiKey}
+                onChange={(e) => onChange('elasticsearch.api_key', e.target.value)}
+                type={showApiKey ? 'text' : 'password'}
+                placeholder="Api key"
+                disabled={disabled}
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey((value) => !value)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
+        </div>
+
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={verifySsl}
+            onChange={(e) => onChange('elasticsearch.verify_ssl', String(e.target.checked))}
+            disabled={disabled}
+          />
+          Verify SSL
+        </label>
+
+        {endpointValidationError && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">{endpointValidationError}</p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={disabled || isTesting || !!endpointValidationError}
+            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+            Test Connection
+          </button>
+          {isLoadingStatus && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Checking status...
+            </span>
+          )}
+        </div>
+
+        {testResult && (
+          <div className={cn(
+            'rounded-md border p-3 text-sm',
+            testResult.success
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300'
+              : 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300'
+          )}>
+            <div className="flex items-center gap-1">
+              {testResult.success ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              <span className="font-medium">{testResult.success ? 'Connection successful' : 'Connection failed'}</span>
+            </div>
+            {!testResult.success && testResult.error && (
+              <p className="mt-1 text-xs">{testResult.error}</p>
+            )}
+            {testResult.success && (
+              <p className="mt-1 text-xs">
+                Cluster: {testResult.cluster_name ?? 'unknown'} | Status: {testResult.status ?? 'unknown'} | Nodes: {testResult.number_of_nodes ?? 'n/a'}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function NotificationTestButtons() {
   const [testingTeams, setTestingTeams] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
@@ -687,6 +958,96 @@ export function NotificationTestButtons() {
           {testingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
           Test Email
         </button>
+      </div>
+    </div>
+  );
+}
+
+export function SecurityAuditSettingsSection() {
+  const { data, isLoading, isError, error, refetch } = useSecurityIgnoreList();
+  const updateIgnoreList = useUpdateSecurityIgnoreList();
+  const [draftValue, setDraftValue] = useState('');
+
+  useEffect(() => {
+    if (!data) return;
+    setDraftValue(data.patterns.join('\n'));
+  }, [data]);
+
+  const parsePatterns = (): string[] => {
+    return draftValue
+      .split('\n')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  };
+
+  const handleSave = async () => {
+    try {
+      await updateIgnoreList.mutateAsync(parsePatterns());
+      toast.success('Security ignore list updated');
+    } catch (err) {
+      toast.error(`Failed to save ignore list: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleReset = () => {
+    if (!data?.defaults) return;
+    setDraftValue(data.defaults.join('\n'));
+  };
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <Shield className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">Security Audit Ignore List</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={isLoading || !data?.defaults}
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            Reset Defaults
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isLoading || updateIgnoreList.isPending}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {updateIgnoreList.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save
+          </button>
+        </div>
+      </div>
+      <div className="p-4 space-y-3">
+        <p className="text-sm text-muted-foreground">
+          One container name pattern per line. Use <code>*</code> as a wildcard (for example <code>nginx*</code>).
+          Ignored containers remain visible in the audit and are marked as ignored.
+        </p>
+
+        {isError ? (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+            Failed to load ignore list: {error instanceof Error ? error.message : 'Unknown error'}
+          </div>
+        ) : (
+          <textarea
+            value={draftValue}
+            onChange={(event) => setDraftValue(event.target.value)}
+            className="min-h-[160px] w-full rounded-md border border-input bg-background p-3 font-mono text-sm"
+            placeholder="portainer\ntraefik\nnginx*"
+            disabled={isLoading || updateIgnoreList.isPending}
+          />
+        )}
       </div>
     </div>
   );
@@ -1197,13 +1558,18 @@ export default function SettingsPage() {
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'portainer-backup'>(
-    searchParams.get('tab') === 'portainer-backup' ? 'portainer-backup' : 'general'
-  );
+  type SettingsTab = 'general' | 'portainer-backup' | 'users' | 'webhooks';
+  const validTabs: SettingsTab[] = ['general', 'portainer-backup', 'users', 'webhooks'];
+  const initialTab = validTabs.includes(searchParams.get('tab') as SettingsTab)
+    ? (searchParams.get('tab') as SettingsTab)
+    : 'general';
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
   useEffect(() => {
-    const requestedTab =
-      searchParams.get('tab') === 'portainer-backup' ? 'portainer-backup' : 'general';
+    const raw = searchParams.get('tab');
+    const requestedTab: SettingsTab = validTabs.includes(raw as SettingsTab)
+      ? (raw as SettingsTab)
+      : 'general';
     setActiveTab((currentTab) =>
       currentTab === requestedTab ? currentTab : requestedTab
     );
@@ -1251,9 +1617,6 @@ export default function SettingsPage() {
       'llm.custom_endpoint_enabled',
       'llm.custom_endpoint_url',
       'llm.custom_endpoint_token',
-      'elasticsearch.enabled',
-      'elasticsearch.endpoint',
-      'elasticsearch.api_key',
       'oidc.enabled',
       'oidc.issuer_url',
       'oidc.client_id',
@@ -1321,9 +1684,9 @@ export default function SettingsPage() {
   };
 
   const handleTabChange = (tab: string) => {
-    if (tab !== 'general' && tab !== 'portainer-backup') return;
+    if (!validTabs.includes(tab as SettingsTab)) return;
 
-    setActiveTab(tab);
+    setActiveTab(tab as SettingsTab);
     setSearchParams((previous) => {
       const next = new URLSearchParams(previous);
       if (tab === 'general') {
@@ -1452,6 +1815,20 @@ export default function SettingsPage() {
           >
             <HardDriveDownload className="h-4 w-4" />
             Portainer Backup
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="users"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <Users className="h-4 w-4" />
+            Users
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="webhooks"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <Webhook className="h-4 w-4" />
+            Webhooks
           </Tabs.Trigger>
         </Tabs.List>
 
@@ -1721,17 +2098,14 @@ export default function SettingsPage() {
       />
 
       {/* Elasticsearch Settings */}
-      <SettingsSection
-        title="Elasticsearch / Kibana"
-        icon={<Search className="h-5 w-5" />}
-        category="elasticsearch"
-        settings={DEFAULT_SETTINGS.elasticsearch}
+      <ElasticsearchSettingsSection
         values={editedValues}
         originalValues={originalValues}
         onChange={handleChange}
-        requiresRestart
         disabled={isSaving}
       />
+
+      <SecurityAuditSettingsSection />
 
       {/* System Info */}
       <div className="rounded-lg border bg-card p-6">
@@ -1789,6 +2163,20 @@ export default function SettingsPage() {
       {/* Backup Management */}
       <PortainerBackupManagement />
 
+        </Tabs.Content>
+
+        {/* Users Tab */}
+        <Tabs.Content value="users" className="space-y-6 focus:outline-none">
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <LazyUsersPanel />
+          </Suspense>
+        </Tabs.Content>
+
+        {/* Webhooks Tab */}
+        <Tabs.Content value="webhooks" className="space-y-6 focus:outline-none">
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <LazyWebhooksPanel />
+          </Suspense>
         </Tabs.Content>
       </Tabs.Root>
     </div>

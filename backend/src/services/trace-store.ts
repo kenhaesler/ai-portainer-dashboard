@@ -16,7 +16,7 @@ export interface SpanInsert {
   duration_ms: number | null;
   service_name: string;
   attributes: string;
-  trace_source?: 'http' | 'scheduler';
+  trace_source?: string;
 }
 
 export function insertSpan(span: SpanInsert): void {
@@ -42,6 +42,44 @@ export function insertSpan(span: SpanInsert): void {
   );
 
   log.debug({ spanId: span.id, traceId: span.trace_id }, 'Span inserted');
+}
+
+export function insertSpans(spans: SpanInsert[]): number {
+  if (spans.length === 0) return 0;
+
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO spans (
+      id, trace_id, parent_span_id, name, kind, status,
+      start_time, end_time, duration_ms, service_name, attributes, trace_source, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `);
+
+  const insertMany = db.transaction((items: SpanInsert[]) => {
+    let count = 0;
+    for (const span of items) {
+      stmt.run(
+        span.id,
+        span.trace_id,
+        span.parent_span_id,
+        span.name,
+        span.kind,
+        span.status,
+        span.start_time,
+        span.end_time,
+        span.duration_ms,
+        span.service_name,
+        span.attributes,
+        span.trace_source ?? 'ebpf',
+      );
+      count++;
+    }
+    return count;
+  });
+
+  const count = insertMany(spans);
+  log.info({ count }, 'Batch inserted spans');
+  return count;
 }
 
 export function getTrace(traceId: string): Span[] {

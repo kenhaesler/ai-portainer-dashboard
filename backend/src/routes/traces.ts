@@ -124,7 +124,8 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       SELECT
         COUNT(DISTINCT trace_id) as totalTraces,
         AVG(duration_ms) as avgDuration,
-        CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as errorRate
+        CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as errorRate,
+        COUNT(DISTINCT service_name) as services
       FROM spans
       WHERE parent_span_id IS NULL
       AND start_time > datetime('now', '-24 hours')
