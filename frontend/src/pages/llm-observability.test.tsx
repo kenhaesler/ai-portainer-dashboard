@@ -126,11 +126,13 @@ describe('LlmObservabilityPage', () => {
 
     renderPage();
     expect(screen.getByText('Model Breakdown')).toBeTruthy();
+    expect(screen.getByText('Share')).toBeTruthy();
     expect(screen.getByText('llama3.2')).toBeTruthy();
     expect(screen.getByText('mistral')).toBeTruthy();
+    expect(screen.getByLabelText('llama3.2 share')).toBeTruthy();
   });
 
-  it('renders feedback summary with score', () => {
+  it('does not render feedback summary card', () => {
     vi.mocked(useLlmStats).mockReturnValue({
       data: mockStats,
       isLoading: false,
@@ -138,9 +140,7 @@ describe('LlmObservabilityPage', () => {
     } as ReturnType<typeof useLlmStats>);
 
     renderPage();
-    expect(screen.getByText('Feedback Summary')).toBeTruthy();
-    expect(screen.getByText('4.2')).toBeTruthy();
-    expect(screen.getByText('/ 5')).toBeTruthy();
+    expect(screen.queryByText('Feedback Summary')).toBeNull();
   });
 
   it('renders when stats payload is missing model breakdown', () => {

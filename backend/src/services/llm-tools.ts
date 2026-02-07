@@ -680,59 +680,150 @@ export function parseToolCalls(responseText: string): ToolCallRequest[] | null {
   const trimmed = responseText.trim();
 
   // Try direct parse first (response is just the JSON)
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-      return validateToolCalls(parsed.tool_calls);
-    }
-  } catch {
-    // Not direct JSON
+  const directParsed = tryParseToolCallJson(trimmed);
+  if (directParsed?.tool_calls && Array.isArray(directParsed.tool_calls)) {
+    return validateToolCalls(directParsed.tool_calls);
   }
 
   // Try to find JSON block in markdown code fence
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlockMatch) {
-    try {
-      const parsed = JSON.parse(codeBlockMatch[1].trim());
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        return validateToolCalls(parsed.tool_calls);
-      }
-    } catch {
-      // Invalid JSON in code block
+    const parsed = tryParseToolCallJson(codeBlockMatch[1].trim());
+    if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
+      return validateToolCalls(parsed.tool_calls);
     }
   }
 
   // Try to find inline JSON object with tool_calls
   const jsonMatch = trimmed.match(/\{[\s\S]*"tool_calls"[\s\S]*\}/);
   if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        return validateToolCalls(parsed.tool_calls);
-      }
-    } catch {
-      // Invalid JSON
+    const parsed = tryParseToolCallJson(jsonMatch[0]);
+    if (parsed?.tool_calls && Array.isArray(parsed.tool_calls)) {
+      return validateToolCalls(parsed.tool_calls);
     }
   }
 
   return null;
 }
 
+function tryParseToolCallJson(raw: string): any | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Try a best-effort repair when tool-call JSON is truncated mid-stream.
+    const repaired = repairTruncatedToolCallJson(raw);
+    if (!repaired) return null;
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function repairTruncatedToolCallJson(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.includes('"tool_calls"')) return null;
+
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (const ch of trimmed) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{' || ch === '[') {
+      stack.push(ch);
+      continue;
+    }
+    if (ch === '}' || ch === ']') {
+      const last = stack[stack.length - 1];
+      if ((ch === '}' && last === '{') || (ch === ']' && last === '[')) {
+        stack.pop();
+      }
+    }
+  }
+
+  if (stack.length === 0) return null;
+
+  let repaired = trimmed;
+  while (stack.length > 0) {
+    const open = stack.pop();
+    repaired += open === '{' ? '}' : ']';
+  }
+  return repaired;
+}
+
 function validateToolCalls(calls: unknown[]): ToolCallRequest[] | null {
   const valid: ToolCallRequest[] = [];
   for (const call of calls) {
+    if (typeof call !== 'object' || call === null) continue;
+    const candidate = call as Record<string, unknown>;
+
+    // Some models return a wrapper call:
+    // {"tool":"tool_calls","arguments":{"tool_calls":[...]}}
     if (
-      typeof call === 'object' &&
-      call !== null &&
-      'tool' in call &&
-      typeof (call as ToolCallRequest).tool === 'string' &&
-      executors[(call as ToolCallRequest).tool]
+      candidate.tool === 'tool_calls' &&
+      typeof candidate.arguments === 'object' &&
+      candidate.arguments !== null &&
+      'tool_calls' in (candidate.arguments as Record<string, unknown>)
     ) {
-      valid.push({
-        tool: (call as ToolCallRequest).tool,
-        arguments: (call as ToolCallRequest).arguments || {},
-      });
+      const nested = (candidate.arguments as Record<string, unknown>).tool_calls;
+      if (Array.isArray(nested)) {
+        const nestedValid = validateToolCalls(nested);
+        if (nestedValid) valid.push(...nestedValid);
+      }
+      continue;
     }
+
+    let toolName: string | null = null;
+    let rawArgs: unknown = {};
+
+    if (typeof candidate.tool === 'string') {
+      toolName = candidate.tool;
+      rawArgs = candidate.arguments ?? {};
+    } else if (
+      typeof candidate.function === 'object' &&
+      candidate.function !== null
+    ) {
+      const fn = candidate.function as Record<string, unknown>;
+      if (typeof fn.name === 'string') {
+        toolName = fn.name;
+        rawArgs = fn.arguments ?? {};
+      }
+    }
+
+    if (!toolName || !executors[toolName]) continue;
+
+    if (typeof rawArgs === 'string') {
+      try {
+        rawArgs = JSON.parse(rawArgs);
+      } catch {
+        rawArgs = {};
+      }
+    }
+
+    if (!rawArgs || typeof rawArgs !== 'object') {
+      rawArgs = {};
+    }
+
+    valid.push({
+      tool: toolName,
+      arguments: rawArgs as Record<string, unknown>,
+    });
   }
   return valid.length > 0 ? valid : null;
 }

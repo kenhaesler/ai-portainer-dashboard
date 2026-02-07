@@ -14,7 +14,6 @@ import {
   Hash,
   Eye,
   EyeOff,
-  Star,
 } from 'lucide-react';
 
 type TimeRange = 1 | 6 | 24 | 168;
@@ -119,6 +118,8 @@ export default function LlmObservabilityPage() {
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useLlmStats(timeRange);
   const { data: traces, isLoading: tracesLoading, refetch: refetchTraces } = useLlmTraces(50);
   const modelBreakdown = stats?.modelBreakdown ?? [];
+  const totalModelQueries = modelBreakdown.reduce((sum, model) => sum + model.count, 0);
+  const maxModelQueries = modelBreakdown.reduce((max, model) => Math.max(max, model.count), 0);
 
   const handleRefresh = () => {
     refetchStats();
@@ -208,60 +209,54 @@ export default function LlmObservabilityPage() {
         </div>
       )}
 
-      {/* Model Breakdown + Feedback Summary */}
+      {/* Model Breakdown */}
       {stats && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Model Breakdown */}
-          <div className="rounded-lg border bg-card p-6">
-            <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
-            {modelBreakdown.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No model data available.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="pb-2 text-left font-medium text-muted-foreground">Model</th>
-                      <th className="pb-2 text-right font-medium text-muted-foreground">Queries</th>
-                      <th className="pb-2 text-right font-medium text-muted-foreground">Tokens</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {modelBreakdown.map((model) => (
-                      <tr key={model.model} className="border-b last:border-0">
-                        <td className="py-2 font-mono text-xs">{model.model}</td>
-                        <td className="py-2 text-right">{model.count.toLocaleString()}</td>
-                        <td className="py-2 text-right">{model.tokens.toLocaleString()}</td>
+        <div className="rounded-lg border bg-card p-6">
+          <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
+          {modelBreakdown.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No model data available.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="px-3 pb-2 pt-1 text-left font-medium text-muted-foreground">Model</th>
+                    <th className="px-3 pb-2 pt-1 text-right font-medium text-muted-foreground">Queries</th>
+                    <th className="px-3 pb-2 pt-1 text-right font-medium text-muted-foreground">Tokens</th>
+                    <th className="px-3 pb-2 pt-1 text-left font-medium text-muted-foreground">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modelBreakdown.map((model) => {
+                    const queryShare = totalModelQueries > 0 ? Math.round((model.count / totalModelQueries) * 100) : 0;
+                    const density = maxModelQueries > 0 ? Math.round((model.count / maxModelQueries) * 100) : 0;
+                    return (
+                      <tr key={model.model} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <span className="inline-flex rounded-md bg-muted/50 px-2 py-1 font-mono text-xs">
+                            {model.model}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-medium">{model.count.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-right font-medium">{model.tokens.toLocaleString()}</td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex min-w-36 items-center gap-2">
+                            <div className="h-2 w-24 overflow-hidden rounded-full bg-muted" aria-label={`${model.model} share`}>
+                              <div
+                                className="h-full rounded-full bg-primary"
+                                style={{ width: `${Math.max(4, density)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">{queryShare}%</span>
+                          </div>
+                        </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Feedback Summary */}
-          <div className="rounded-lg border bg-card p-6">
-            <h2 className="text-lg font-semibold mb-4">Feedback Summary</h2>
-            <div className="flex items-center gap-6">
-              <div>
-                <p className="text-sm text-muted-foreground">Average Score</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <Star className="h-5 w-5 text-yellow-500" />
-                  <span className="text-3xl font-bold">
-                    {stats.avgFeedbackScore != null
-                      ? stats.avgFeedbackScore.toFixed(1)
-                      : '—'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">/ 5</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Ratings</p>
-                <p className="mt-1 text-3xl font-bold">{stats.feedbackCount}</p>
-              </div>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
         </div>
       )}
 

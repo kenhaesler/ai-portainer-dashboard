@@ -34,6 +34,7 @@ export function useLlmChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEvent[]>([]);
+  const streamedResponseRef = useRef('');
 
   // Use a ref to track tool calls so that socket listeners don't need to be
   // torn down and re-subscribed every time a tool_call event fires.
@@ -47,26 +48,40 @@ export function useLlmChat() {
       setCurrentResponse('');
       setActiveToolCalls([]);
       toolCallsRef.current = [];
+      streamedResponseRef.current = '';
     };
 
     const handleChatChunk = (chunk: string) => {
+      streamedResponseRef.current += chunk;
       setCurrentResponse((prev) => prev + chunk);
     };
 
     const handleChatEnd = (data: { id: string; content: string }) => {
       setIsStreaming(false);
       const snapshotToolCalls = toolCallsRef.current;
-      const assistantMessage: ChatMessage = {
-        id: data.id,
-        role: 'assistant',
-        content: data.content,
-        timestamp: new Date().toISOString(),
-        toolCalls: snapshotToolCalls.length > 0 ? [...snapshotToolCalls] : undefined,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const finalizedContent = (data.content || streamedResponseRef.current).trim();
+      if (finalizedContent) {
+        const assistantMessage: ChatMessage = {
+          id: data.id,
+          role: 'assistant',
+          content: finalizedContent,
+          timestamp: new Date().toISOString(),
+          toolCalls: snapshotToolCalls.length > 0 ? [...snapshotToolCalls] : undefined,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        const fallbackMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: 'Error: Assistant returned an empty response. Please retry.',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, fallbackMessage]);
+      }
       setCurrentResponse('');
       setActiveToolCalls([]);
       toolCallsRef.current = [];
+      streamedResponseRef.current = '';
     };
 
     const handleChatError = (error: { message: string }) => {
@@ -74,6 +89,7 @@ export function useLlmChat() {
       setCurrentResponse('');
       setActiveToolCalls([]);
       toolCallsRef.current = [];
+      streamedResponseRef.current = '';
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'system',
@@ -91,6 +107,7 @@ export function useLlmChat() {
     const handleToolResponsePending = () => {
       // The LLM produced a tool call — clear the streamed tool-call JSON
       // so the next iteration's natural language response replaces it
+      streamedResponseRef.current = '';
       setCurrentResponse('');
     };
 
