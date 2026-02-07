@@ -59,11 +59,15 @@ function decimateData(data: MetricPoint[], maxPoints: number): MetricPoint[] {
   return result;
 }
 
-/** Find the closest anomaly explanation to a given timestamp (within 5 minutes). */
+/** Find the best anomaly explanation for a given timestamp.
+ *  Prefers a close timestamp match (within 5 min), but falls back to the
+ *  most recent explanation so every anomaly dot can show AI context. */
 function findExplanation(
   timestamp: string,
   explanations: AnomalyExplanation[],
 ): AnomalyExplanation | undefined {
+  if (explanations.length === 0) return undefined;
+
   const t = new Date(timestamp).getTime();
   let closest: AnomalyExplanation | undefined;
   let closestDist = Infinity;
@@ -75,7 +79,9 @@ function findExplanation(
       closest = e;
     }
   }
-  return closest;
+
+  // Fall back to the most recent explanation (already sorted DESC from API)
+  return closest ?? explanations[0];
 }
 
 const CustomTooltip = ({ active, payload, label, unit, name }: any) => {
