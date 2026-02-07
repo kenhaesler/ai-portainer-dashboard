@@ -1,19 +1,16 @@
 import { Namespace } from 'socket.io';
 import { createChildLogger } from '../utils/logger.js';
-import { getConfig } from '../config/index.js';
 import { Ollama } from 'ollama';
 import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { getEffectiveLlmConfig } from '../services/settings-store.js';
 import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
 
 const log = createChildLogger('socket:llm');
 
-function getAuthHeaders(): Record<string, string> {
-  const config = getConfig();
-  const token = config.OLLAMA_BEARER_TOKEN;
-
+function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 
   // Check if token is in username:password format (Basic auth)
@@ -175,8 +172,8 @@ export function setupLlmNamespace(ns: Namespace) {
     let abortController: AbortController | null = null;
 
     socket.on('chat:message', async (data: { text: string; context?: any; model?: string }) => {
-      const config = getConfig();
-      const selectedModel = data.model || config.OLLAMA_MODEL;
+      const llmConfig = getEffectiveLlmConfig();
+      const selectedModel = data.model || llmConfig.model;
 
       // Get or create session history
       if (!sessions.has(socket.id)) {
@@ -209,13 +206,13 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
 
         let fullResponse = '';
 
-        // Use authenticated fetch if API endpoint and token are configured
-        if (config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
-          const response = await fetch(config.OLLAMA_API_ENDPOINT, {
+        // Use authenticated fetch if custom endpoint is enabled and configured
+        if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+          const response = await fetch(llmConfig.customEndpointUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...getAuthHeaders(),
+              ...getAuthHeaders(llmConfig.customEndpointToken),
             },
             body: JSON.stringify({
               model: selectedModel,
@@ -259,7 +256,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           }
         } else {
           // Use Ollama SDK for local/unauthenticated access
-          const ollama = new Ollama({ host: config.OLLAMA_BASE_URL });
+          const ollama = new Ollama({ host: llmConfig.ollamaUrl });
           const response = await ollama.chat({
             model: selectedModel,
             messages,

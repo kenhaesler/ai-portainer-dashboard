@@ -3,12 +3,16 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmRoutes } from './llm.js';
 
-// Mock config
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    OLLAMA_BASE_URL: 'http://localhost:11434',
-    OLLAMA_MODEL: 'llama3.2',
+// Mock settings-store (getEffectiveLlmConfig)
+vi.mock('../services/settings-store.js', () => ({
+  getEffectiveLlmConfig: vi.fn().mockReturnValue({
+    ollamaUrl: 'http://localhost:11434',
+    model: 'llama3.2',
+    customEnabled: false,
+    customEndpointUrl: undefined,
+    customEndpointToken: undefined,
   }),
+  getSetting: vi.fn().mockReturnValue(undefined),
 }));
 
 // Mock Ollama
