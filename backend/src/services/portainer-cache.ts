@@ -101,6 +101,18 @@ class HybridCache {
     return Boolean(config.REDIS_URL);
   }
 
+  /**
+   * Build the Redis connection URL, injecting the password when configured.
+   * Supports both cases: REDIS_URL already contains a password, or REDIS_PASSWORD
+   * is set separately. The separate REDIS_PASSWORD takes precedence.
+   */
+  private buildRedisUrl(baseUrl: string, password?: string): string {
+    if (!password) return baseUrl;
+    const parsed = new URL(baseUrl);
+    parsed.password = password;
+    return parsed.toString();
+  }
+
   private disableRedisTemporarily(reason: string, err?: unknown): void {
     this.redisDisabledUntil = Date.now() + this.redisRetryMs;
     if (err) {
@@ -126,7 +138,8 @@ class HybridCache {
     }
 
     const config = getConfig();
-    const client = createClient({ url: config.REDIS_URL });
+    const redisUrl = this.buildRedisUrl(config.REDIS_URL!, config.REDIS_PASSWORD);
+    const client = createClient({ url: redisUrl });
     client.on('error', (err) => {
       this.disableRedisTemporarily('redis-client-error', err);
     });
@@ -136,7 +149,9 @@ class HybridCache {
     this.redisClient = client;
     this.redisConnectPromise = client.connect()
       .then(() => {
-        log.info({ redisUrl: config.REDIS_URL }, 'Redis cache connected');
+        const safeUrl = new URL(redisUrl);
+        if (safeUrl.password) safeUrl.password = '***';
+        log.info({ redisUrl: safeUrl.toString() }, 'Redis cache connected');
       })
       .catch((err) => {
         this.disableRedisTemporarily('redis-connect-failed', err);
