@@ -89,4 +89,10 @@ describe('CommandPalette', () => {
     renderPalette();
     expect(screen.getByText('ask AI')).toBeInTheDocument();
   });
+
+  it('does not include deprecated backups page in static page entries', () => {
+    renderPalette();
+    expect(screen.queryByText('Backups')).not.toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+  });
 });
