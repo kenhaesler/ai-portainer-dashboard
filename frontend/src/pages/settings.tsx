@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Palette,
@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Database,
   Bot,
-  Save,
   Loader2,
   RefreshCw,
   Settings2,
@@ -1542,6 +1541,8 @@ export default function SettingsPage() {
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [restartPending, setRestartPending] = useState(false);
   type SettingsTab = 'general' | 'portainer-backup' | 'users' | 'webhooks';
   const validTabs: SettingsTab[] = ['general', 'portainer-backup', 'users', 'webhooks'];
   const initialTab = validTabs.includes(searchParams.get('tab') as SettingsTab)
@@ -1581,6 +1582,9 @@ export default function SettingsPage() {
 
       setEditedValues(values);
       setOriginalValues(values);
+      setSaveSuccess(false);
+      setSaveError(null);
+      setRestartPending(false);
     }
   }, [settingsData]);
 
@@ -1591,81 +1595,113 @@ export default function SettingsPage() {
     );
   }, [editedValues, originalValues]);
 
+  const restartKeys = useMemo(() => [
+    'monitoring.polling_interval',
+    'monitoring.enabled',
+    'llm.ollama_url',
+    'llm.model',
+    'llm.custom_endpoint_enabled',
+    'llm.custom_endpoint_url',
+    'llm.custom_endpoint_token',
+    'oidc.enabled',
+    'oidc.issuer_url',
+    'oidc.client_id',
+    'oidc.client_secret',
+    'notifications.teams_enabled',
+    'notifications.teams_webhook_url',
+    'notifications.email_enabled',
+    'notifications.smtp_host',
+    'notifications.smtp_port',
+    'notifications.smtp_user',
+    'notifications.smtp_password',
+    'notifications.email_recipients',
+    'webhooks.enabled',
+    'portainer_backup.enabled',
+    'portainer_backup.interval_hours',
+  ], []);
+
   // Get changed settings that require restart
   const changesRequireRestart = useMemo(() => {
-    const restartKeys = [
-      'monitoring.polling_interval',
-      'monitoring.enabled',
-      'llm.ollama_url',
-      'llm.model',
-      'llm.custom_endpoint_enabled',
-      'llm.custom_endpoint_url',
-      'llm.custom_endpoint_token',
-      'oidc.enabled',
-      'oidc.issuer_url',
-      'oidc.client_id',
-      'oidc.client_secret',
-      'notifications.teams_enabled',
-      'notifications.teams_webhook_url',
-      'notifications.email_enabled',
-      'notifications.smtp_host',
-      'notifications.smtp_port',
-      'notifications.smtp_user',
-      'notifications.smtp_password',
-      'notifications.email_recipients',
-      'webhooks.enabled',
-      'portainer_backup.enabled',
-      'portainer_backup.interval_hours',
-    ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
     );
-  }, [editedValues, originalValues]);
+  }, [editedValues, originalValues, restartKeys]);
 
   // Handle value change
   const handleChange = (key: string, value: string) => {
     setEditedValues((prev) => ({ ...prev, [key]: value }));
     setSaveSuccess(false);
+    setSaveError(null);
   };
 
-  // Handle save
-  const handleSave = async () => {
+  const saveChangedSettings = useCallback(async (
+    editedSnapshot: Record<string, string>,
+    originalSnapshot: Record<string, string>,
+  ) => {
+    const changedKeys = Object.keys(editedSnapshot).filter(
+      (key) => editedSnapshot[key] !== originalSnapshot[key]
+    );
+    if (changedKeys.length === 0) return;
+
     setIsSaving(true);
     setSaveSuccess(false);
+    setSaveError(null);
 
-    try {
-      // Find all changed settings
-      const changedKeys = Object.keys(editedValues).filter(
-        (key) => editedValues[key] !== originalValues[key]
-      );
+    let hadFailure = false;
+    const appliedValues: Record<string, string> = {};
+    let appliedRestartSetting = false;
 
-      // Update each changed setting
-      for (const key of changedKeys) {
+    for (const key of changedKeys) {
+      try {
         await updateSetting.mutateAsync({
           key,
-          value: editedValues[key],
+          value: editedSnapshot[key],
           category: SETTING_CATEGORY_BY_KEY[key],
+          showToast: false,
         });
+        appliedValues[key] = editedSnapshot[key];
+        if (restartKeys.includes(key)) {
+          appliedRestartSetting = true;
+        }
+      } catch {
+        hadFailure = true;
       }
-
-      // Update original values to match edited
-      setOriginalValues({ ...editedValues });
-      setSaveSuccess(true);
-
-      if (changesRequireRestart) {
-        toast.info('Some changes require a service restart to take effect');
-      }
-    } catch (err) {
-      toast.error('Failed to save some settings');
-    } finally {
-      setIsSaving(false);
     }
-  };
+
+    if (Object.keys(appliedValues).length > 0) {
+      setOriginalValues((prev) => ({ ...prev, ...appliedValues }));
+      setSaveSuccess(true);
+      if (appliedRestartSetting) {
+        setRestartPending(true);
+      }
+    }
+
+    if (hadFailure) {
+      setSaveError('Failed to auto-save some settings');
+      toast.error('Failed to auto-save some settings');
+    }
+
+    setIsSaving(false);
+  }, [restartKeys, updateSetting]);
+
+  useEffect(() => {
+    if (isSaving || !hasChanges) return;
+    const editedSnapshot = { ...editedValues };
+    const originalSnapshot = { ...originalValues };
+    const timeout = window.setTimeout(() => {
+      void saveChangedSettings(editedSnapshot, originalSnapshot);
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [editedValues, hasChanges, isSaving, originalValues, saveChangedSettings]);
 
   // Handle reset
   const handleReset = () => {
     setEditedValues({ ...originalValues });
     setSaveSuccess(false);
+    setSaveError(null);
   };
 
   const handleTabChange = (tab: string) => {
@@ -1738,47 +1774,42 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {saveSuccess && (
+          {isSaving && (
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving changes...
+            </div>
+          )}
+          {!isSaving && saveError && (
+            <div className="text-sm text-destructive">{saveError}</div>
+          )}
+          {!isSaving && !saveError && saveSuccess && !hasChanges && (
             <div className="flex items-center gap-1.5 text-sm text-emerald-500">
               <CheckCircle2 className="h-4 w-4" />
-              Saved
+              All changes saved
             </div>
           )}
           {hasChanges && (
-            <>
-              <button
-                onClick={handleReset}
-                disabled={isSaving}
-                className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-              >
-                Reset
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save Changes
-              </button>
-            </>
+            <button
+              onClick={handleReset}
+              disabled={isSaving}
+              className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              Reset
+            </button>
           )}
         </div>
       </div>
 
       {/* Restart Warning */}
-      {changesRequireRestart && hasChanges && (
+      {(changesRequireRestart || restartPending) && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 p-4">
           <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
             <h3 className="font-medium text-amber-500">Restart Required</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Some of the changes you've made require a service restart to take effect.
-              After saving, restart the backend service to apply these changes.
+              Some settings changes require a backend restart to take effect.
+              Changes are auto-saved; restart the backend service to apply them.
             </p>
           </div>
         </div>

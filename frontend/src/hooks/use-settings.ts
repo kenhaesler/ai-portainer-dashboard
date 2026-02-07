@@ -17,6 +17,7 @@ interface UpdateSettingParams {
   key: string;
   value: unknown;
   category?: string;
+  showToast?: boolean;
 }
 
 interface AuditLogEntry {
@@ -78,16 +79,18 @@ export function useUpdateSetting() {
 
       return { previousSettings };
     },
-    onSuccess: (_data, { key }) => {
+    onSuccess: (_data, { key, showToast }) => {
+      if (showToast === false) return;
       toast.success('Setting saved', {
         description: `"${key}" updated.`,
       });
     },
-    onError: (error, { key }, context) => {
+    onError: (error, { key, showToast }, context) => {
       // Rollback to previous value
       for (const [queryKey, data] of context?.previousSettings ?? []) {
         queryClient.setQueryData(queryKey, data);
       }
+      if (showToast === false) return;
       toast.error(`Failed to save "${key}"`, {
         description: error.message,
       });
