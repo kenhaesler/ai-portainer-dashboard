@@ -16,6 +16,7 @@ const SENSITIVE_KEYS = new Set([
   'oidc.client_secret',
   'elasticsearch.api_key',
   'llm.custom_endpoint_token',
+  'portainer_backup.password',
 ]);
 
 const REDACTED = '••••••••';

@@ -5,6 +5,8 @@ import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
+import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
+import { getSetting } from '../services/settings-store.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
 import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.js';
 import { normalizeEndpoint } from '../services/portainer-normalizers.js';
@@ -164,6 +166,26 @@ async function runImageStalenessCheck(): Promise<void> {
   }
 }
 
+async function runPortainerBackupSchedule(): Promise<void> {
+  try {
+    const enabledSetting = getSetting('portainer_backup.enabled');
+    if (enabledSetting?.value !== 'true') return;
+
+    const passwordSetting = getSetting('portainer_backup.password');
+    const password = passwordSetting?.value || undefined;
+
+    await createPortainerBackup(password);
+
+    const maxCountSetting = getSetting('portainer_backup.max_count');
+    const maxCount = parseInt(maxCountSetting?.value ?? '10', 10) || 10;
+    cleanupOldPortainerBackups(maxCount);
+
+    log.info('Portainer backup schedule completed');
+  } catch (err) {
+    log.error({ err }, 'Portainer backup schedule failed');
+  }
+}
+
 async function runCleanup(): Promise<void> {
   try {
     const config = getConfig();
@@ -256,6 +278,20 @@ export function startScheduler(): void {
     intervals.push(stalenessInterval);
     // Run once after a short delay to let the system warm up
     setTimeout(() => { runImageStalenessCheck().catch(() => {}); }, 30_000);
+  }
+
+  // Portainer server backup schedule
+  const pbEnabledSetting = getSetting('portainer_backup.enabled');
+  if (pbEnabledSetting?.value === 'true') {
+    const pbIntervalSetting = getSetting('portainer_backup.interval_hours');
+    const pbIntervalHours = parseInt(pbIntervalSetting?.value ?? '24', 10) || 24;
+    const pbIntervalMs = pbIntervalHours * 60 * 60 * 1000;
+    log.info(
+      { intervalHours: pbIntervalHours },
+      'Starting Portainer backup scheduler',
+    );
+    const pbInterval = setInterval(runPortainerBackupSchedule, pbIntervalMs);
+    intervals.push(pbInterval);
   }
 
   // Cleanup old metrics once per day
