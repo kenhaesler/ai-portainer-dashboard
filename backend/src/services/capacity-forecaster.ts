@@ -78,19 +78,14 @@ function getRecentMetrics(
   `).all(containerId, metricType, `-${hoursBack}`) as Array<{ timestamp: string; value: number }>;
 }
 
-/**
- * Generate a capacity forecast for a specific container and metric.
- */
-export function generateForecast(
+function buildForecastFromData(
   containerId: string,
   containerName: string,
   metricType: string,
+  dataPoints: Array<{ timestamp: string; value: number }>,
   threshold: number = 90,
-  hoursBack: number = 24,
   hoursForward: number = 24,
 ): CapacityForecast | null {
-  const dataPoints = getRecentMetrics(containerId, metricType, hoursBack);
-
   if (dataPoints.length < 5) return null;
 
   // Convert timestamps to hours offset from first point
@@ -162,32 +157,93 @@ export function generateForecast(
 }
 
 /**
+ * Generate a capacity forecast for a specific container and metric.
+ */
+export function generateForecast(
+  containerId: string,
+  containerName: string,
+  metricType: string,
+  threshold: number = 90,
+  hoursBack: number = 24,
+  hoursForward: number = 24,
+): CapacityForecast | null {
+  const dataPoints = getRecentMetrics(containerId, metricType, hoursBack);
+  return buildForecastFromData(
+    containerId,
+    containerName,
+    metricType,
+    dataPoints,
+    threshold,
+    hoursForward,
+  );
+}
+
+/**
  * Get top containers with concerning capacity trends.
  */
 export function getCapacityForecasts(
   limit: number = 10,
 ): CapacityForecast[] {
   const db = getDb();
+  const hoursBack = 6;
+  const maxPointsPerSeries = 180;
 
   // Get unique container IDs with recent metrics
   const containers = db.prepare(`
     SELECT DISTINCT container_id, container_name
     FROM metrics
-    WHERE timestamp >= datetime('now', '-24 hours')
+    WHERE timestamp >= datetime('now', ? || ' hours')
     GROUP BY container_id
     HAVING COUNT(*) >= 5
     ORDER BY container_name ASC
     LIMIT ?
-  `).all(limit * 2) as Array<{ container_id: string; container_name: string }>;
+  `).all(`-${hoursBack}`, limit * 2) as Array<{ container_id: string; container_name: string }>;
+
+  if (containers.length === 0) {
+    return [];
+  }
+
+  const containerNameById = new Map(
+    containers.map((container) => [container.container_id, container.container_name]),
+  );
+  const containerIds = containers.map((container) => container.container_id);
+  const placeholders = containerIds.map(() => '?').join(', ');
+  const recentMetrics = db.prepare(`
+    SELECT container_id, metric_type, timestamp, value
+    FROM metrics
+    WHERE metric_type IN ('cpu', 'memory')
+      AND timestamp >= datetime('now', ? || ' hours')
+      AND container_id IN (${placeholders})
+    ORDER BY container_id ASC, metric_type ASC, timestamp ASC
+  `).all(`-${hoursBack}`, ...containerIds) as Array<{
+    container_id: string;
+    metric_type: string;
+    timestamp: string;
+    value: number;
+  }>;
+
+  const metricsBySeries = new Map<string, Array<{ timestamp: string; value: number }>>();
+  for (const row of recentMetrics) {
+    const key = `${row.container_id}:${row.metric_type}`;
+    const series = metricsBySeries.get(key) ?? [];
+    series.push({ timestamp: row.timestamp, value: row.value });
+    metricsBySeries.set(key, series);
+  }
 
   const forecasts: CapacityForecast[] = [];
 
   for (const container of containers) {
     for (const metricType of ['cpu', 'memory']) {
-      const forecast = generateForecast(
+      const seriesKey = `${container.container_id}:${metricType}`;
+      const series = metricsBySeries.get(seriesKey) ?? [];
+      const sampledSeries = series.length <= maxPointsPerSeries
+        ? series
+        : series.filter((_, index) => index % Math.ceil(series.length / maxPointsPerSeries) === 0);
+      const forecast = buildForecastFromData(
         container.container_id,
-        container.container_name,
+        containerNameById.get(container.container_id) ?? container.container_name,
         metricType,
+        sampledSeries,
       );
       if (forecast) {
         forecasts.push(forecast);

@@ -17,7 +17,15 @@ export async function forecastRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { limit } = request.query as { limit?: number };
-    return getCapacityForecasts(limit ?? 10);
+    const safeLimit = Math.max(1, Math.min(50, Math.floor(limit ?? 10)));
+    const startedAt = Date.now();
+    const forecasts = getCapacityForecasts(safeLimit);
+    request.log.info({
+      limit: safeLimit,
+      forecastCount: forecasts.length,
+      durationMs: Date.now() - startedAt,
+    }, 'Computed forecast overview');
+    return forecasts;
   });
 
   fastify.get<{ Params: { containerId: string }; Querystring: { metric?: string; hours?: number } }>(

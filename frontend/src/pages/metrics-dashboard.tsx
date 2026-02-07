@@ -287,6 +287,8 @@ export default function MetricsDashboardPage() {
   const isLoading = endpointsLoading || containersLoading;
   const hasSelection = selectedEndpoint && selectedContainer;
   const metricsLoading = cpuLoading || memoryLoading || memoryBytesLoading;
+  const allMetricsEmpty = !metricsLoading && hasSelection
+    && cpuData.length === 0 && memoryData.length === 0 && memoryBytesData.length === 0;
 
   return (
     <div className="space-y-6">
@@ -568,6 +570,23 @@ export default function MetricsDashboardPage() {
             <div className="space-y-4">
               <SkeletonCard className="h-[350px]" />
               <SkeletonCard className="h-[350px]" />
+            </div>
+          ) : allMetricsEmpty ? (
+            <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center">
+              <Clock className="mx-auto h-10 w-10 text-muted-foreground" />
+              <h4 className="mt-3 font-semibold">No Metrics Data Available</h4>
+              <p className="mt-2 text-sm text-muted-foreground max-w-lg mx-auto">
+                No metrics have been recorded for this container in the selected time range.
+                This can happen when:
+              </p>
+              <ul className="mt-3 text-sm text-muted-foreground space-y-1 max-w-md mx-auto text-left list-disc list-inside">
+                <li>The container was recently started and metrics collection hasn&apos;t run yet (runs every 60 seconds)</li>
+                <li>The container is stopped or paused</li>
+                <li>The selected time range doesn&apos;t overlap with when the container was running</li>
+              </ul>
+              <p className="mt-4 text-xs text-muted-foreground">
+                Try selecting a wider time range or wait for the next collection cycle.
+              </p>
             </div>
           ) : (
             <div className="space-y-6">

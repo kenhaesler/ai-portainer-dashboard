@@ -42,6 +42,11 @@ export function useContainerMetrics(
       );
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
+    // Poll faster while empty so first data appears sooner; back off once data is flowing.
+    refetchInterval: (query) => {
+      const points = query.state.data?.data?.length ?? 0;
+      return points === 0 ? 15_000 : 60_000;
+    },
   });
 }
 
