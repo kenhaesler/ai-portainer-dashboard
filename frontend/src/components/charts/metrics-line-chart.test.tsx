@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { isValidElement } from 'react';
 import { MetricsLineChart } from './metrics-line-chart';
 import type { AnomalyExplanation } from '@/hooks/use-metrics';
 
 // Mock Recharts — renders children and data attributes for testing
 vi.mock('recharts', () => {
-  const OrigReact = require('react');
   const ResponsiveContainer = ({ children }: any) => (
     <div data-testid="responsive-container">{children}</div>
   );
@@ -21,7 +21,7 @@ vi.mock('recharts', () => {
   const Legend = () => <g data-testid="legend" />;
   const Line = () => <g data-testid="line" />;
   const ReferenceDot = ({ shape }: any) => {
-    if (shape && OrigReact.isValidElement(shape)) {
+    if (shape && isValidElement(shape)) {
       return <g data-testid="reference-dot">{shape}</g>;
     }
     return <g data-testid="reference-dot" />;
