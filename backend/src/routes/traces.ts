@@ -13,11 +13,12 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { from, to, serviceName, status, minDuration, limit = 50 } = request.query as {
+    const { from, to, serviceName, status, source, minDuration, limit = 50 } = request.query as {
       from?: string;
       to?: string;
       serviceName?: string;
       status?: string;
+      source?: string;
       minDuration?: number;
       limit?: number;
     };
@@ -30,6 +31,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     if (to) { conditions.push('s.start_time <= ?'); params.push(to); }
     if (serviceName) { conditions.push('s.service_name = ?'); params.push(serviceName); }
     if (status) { conditions.push('s.status = ?'); params.push(status); }
+    if (source) { conditions.push('s.trace_source = ?'); params.push(source); }
     if (minDuration) { conditions.push('s.duration_ms >= ?'); params.push(minDuration); }
 
     // Only get root spans (no parent)
@@ -39,7 +41,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
 
     const traces = db.prepare(`
       SELECT s.trace_id, s.name as root_span, s.duration_ms, s.status, s.service_name,
-             s.start_time,
+             s.start_time, s.trace_source,
              (SELECT COUNT(*) FROM spans s2 WHERE s2.trace_id = s.trace_id) as span_count
       FROM spans s
       ${where}
@@ -126,8 +128,19 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       FROM spans
       WHERE parent_span_id IS NULL
       AND start_time > datetime('now', '-24 hours')
-    `).get();
+    `).get() as { totalTraces: number; avgDuration: number | null; errorRate: number | null };
 
-    return summary;
+    const serviceCount = db.prepare(`
+      SELECT COUNT(DISTINCT service_name) as services
+      FROM spans
+      WHERE start_time > datetime('now', '-24 hours')
+    `).get() as { services: number };
+
+    return {
+      totalTraces: summary.totalTraces ?? 0,
+      avgDuration: Math.round((summary.avgDuration ?? 0) * 100) / 100,
+      errorRate: Math.round((summary.errorRate ?? 0) * 10000) / 10000,
+      services: serviceCount.services ?? 0,
+    };
   });
 }

@@ -1,6 +1,7 @@
 import { Agent } from 'undici';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
+import { withSpan } from './trace-context.js';
 import {
   EndpointSchema, ContainerSchema, StackSchema,
   ContainerStatsSchema, NetworkSchema, ImageSchema,
@@ -47,6 +48,21 @@ async function sleep(ms: number) {
 }
 
 async function portainerFetch<T>(
+  path: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    timeout?: number;
+    retries?: number;
+  } = {},
+): Promise<T> {
+  const { method = 'GET' } = options;
+  return withSpan(`${method} ${path}`, 'portainer-api', 'client', () =>
+    portainerFetchInner<T>(path, options),
+  );
+}
+
+async function portainerFetchInner<T>(
   path: string,
   options: {
     method?: string;

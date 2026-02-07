@@ -2,9 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   Search,
   GitBranch,
-  Clock,
   AlertTriangle,
-  CheckCircle2,
   XCircle,
   ChevronRight,
   Activity,
@@ -175,6 +173,7 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
 export default function TraceExplorerPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'http' | 'scheduler'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>('all');
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
@@ -184,6 +183,7 @@ export default function TraceExplorerPage() {
   // Fetch data
   const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces({
     service: serviceFilter || undefined,
+    source: sourceFilter !== 'all' ? sourceFilter : undefined,
     limit: 50,
   });
 
@@ -432,6 +432,20 @@ export default function TraceExplorerPage() {
             options={[
               { value: '__all__', label: 'All services' },
               ...services.map((s) => ({ value: s, label: s })),
+            ]}
+            className="text-sm"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <ThemedSelect
+            value={sourceFilter}
+            onValueChange={(val) => setSourceFilter(val as 'all' | 'http' | 'scheduler')}
+            options={[
+              { value: 'all', label: 'All sources' },
+              { value: 'http', label: 'HTTP requests' },
+              { value: 'scheduler', label: 'Background jobs' },
             ]}
             className="text-sm"
           />

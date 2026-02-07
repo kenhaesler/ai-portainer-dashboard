@@ -12,6 +12,7 @@ import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.j
 import { normalizeEndpoint } from '../services/portainer-normalizers.js';
 import { runStalenessChecks } from '../services/image-staleness.js';
 import { getImages } from '../services/portainer-client.js';
+import { runWithTraceContext } from '../services/trace-context.js';
 
 const log = createChildLogger('scheduler');
 
@@ -222,7 +223,10 @@ export function startScheduler(): void {
       { intervalSeconds: config.METRICS_COLLECTION_INTERVAL_SECONDS },
       'Starting metrics collection scheduler',
     );
-    const metricsInterval = setInterval(runMetricsCollection, metricsIntervalMs);
+    const metricsInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, runMetricsCollection),
+      metricsIntervalMs,
+    );
     intervals.push(metricsInterval);
   }
 
@@ -232,7 +236,10 @@ export function startScheduler(): void {
       { intervalMinutes: config.MONITORING_INTERVAL_MINUTES },
       'Starting monitoring scheduler',
     );
-    const monitoringInterval = setInterval(runMonitoringWithErrorHandling, monitoringIntervalMs);
+    const monitoringInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, runMonitoringWithErrorHandling),
+      monitoringIntervalMs,
+    );
     intervals.push(monitoringInterval);
   }
 
@@ -244,16 +251,19 @@ export function startScheduler(): void {
       { retryIntervalSeconds: config.WEBHOOKS_RETRY_INTERVAL_SECONDS },
       'Starting webhook retry scheduler',
     );
-    const webhookRetryInterval = setInterval(async () => {
-      try {
-        const processed = await processRetries();
-        if (processed > 0) {
-          log.info({ processed }, 'Webhook retries processed');
+    const webhookRetryInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, async () => {
+        try {
+          const processed = await processRetries();
+          if (processed > 0) {
+            log.info({ processed }, 'Webhook retries processed');
+          }
+        } catch (err) {
+          log.error({ err }, 'Webhook retry processing failed');
         }
-      } catch (err) {
-        log.error({ err }, 'Webhook retry processing failed');
-      }
-    }, retryIntervalMs);
+      }),
+      retryIntervalMs,
+    );
     intervals.push(webhookRetryInterval);
   }
 
@@ -261,10 +271,13 @@ export function startScheduler(): void {
   if (config.METRICS_COLLECTION_ENABLED) {
     const kpiIntervalMs = 5 * 60 * 1000;
     log.info('Starting KPI snapshot collection (every 5 minutes)');
-    const kpiInterval = setInterval(runKpiSnapshotCollection, kpiIntervalMs);
+    const kpiInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, runKpiSnapshotCollection),
+      kpiIntervalMs,
+    );
     intervals.push(kpiInterval);
     // Run once immediately to seed initial data
-    runKpiSnapshotCollection().catch(() => {});
+    runWithTraceContext({ source: 'scheduler' }, runKpiSnapshotCollection).catch(() => {});
   }
 
   // Image staleness checks
@@ -274,10 +287,13 @@ export function startScheduler(): void {
       { intervalHours: config.IMAGE_STALENESS_CHECK_INTERVAL_HOURS },
       'Starting image staleness checker',
     );
-    const stalenessInterval = setInterval(runImageStalenessCheck, stalenessIntervalMs);
+    const stalenessInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, runImageStalenessCheck),
+      stalenessIntervalMs,
+    );
     intervals.push(stalenessInterval);
     // Run once after a short delay to let the system warm up
-    setTimeout(() => { runImageStalenessCheck().catch(() => {}); }, 30_000);
+    setTimeout(() => { runWithTraceContext({ source: 'scheduler' }, runImageStalenessCheck).catch(() => {}); }, 30_000);
   }
 
   // Portainer server backup schedule
@@ -290,12 +306,18 @@ export function startScheduler(): void {
       { intervalHours: pbIntervalHours },
       'Starting Portainer backup scheduler',
     );
-    const pbInterval = setInterval(runPortainerBackupSchedule, pbIntervalMs);
+    const pbInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, runPortainerBackupSchedule),
+      pbIntervalMs,
+    );
     intervals.push(pbInterval);
   }
 
   // Cleanup old metrics once per day
-  const cleanupInterval = setInterval(runCleanup, 24 * 60 * 60 * 1000);
+  const cleanupInterval = setInterval(
+    () => runWithTraceContext({ source: 'scheduler' }, runCleanup),
+    24 * 60 * 60 * 1000,
+  );
   intervals.push(cleanupInterval);
 
   log.info({ taskCount: intervals.length }, 'Scheduler started');

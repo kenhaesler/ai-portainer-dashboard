@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
+import { withSpan } from './trace-context.js';
 import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normalizers.js';
 import type { Insight } from '../models/monitoring.js';
 
@@ -32,6 +33,16 @@ export interface ChatMessage {
 }
 
 export async function chatStream(
+  messages: ChatMessage[],
+  systemPrompt: string,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
+  return withSpan('LLM chat', 'llm-service', 'client', () =>
+    chatStreamInner(messages, systemPrompt, onChunk),
+  );
+}
+
+async function chatStreamInner(
   messages: ChatMessage[],
   systemPrompt: string,
   onChunk: (chunk: string) => void,

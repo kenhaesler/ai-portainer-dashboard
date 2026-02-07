@@ -190,6 +190,7 @@ export const TracesQuerySchema = z.object({
   to: z.string().optional(),
   serviceName: z.string().optional(),
   status: z.string().optional(),
+  source: z.enum(['http', 'scheduler']).optional(),
   minDuration: z.coerce.number().optional(),
   limit: z.coerce.number().default(50),
 });

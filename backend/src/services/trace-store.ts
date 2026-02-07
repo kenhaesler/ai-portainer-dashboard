@@ -16,6 +16,7 @@ export interface SpanInsert {
   duration_ms: number | null;
   service_name: string;
   attributes: string;
+  trace_source?: 'http' | 'scheduler';
 }
 
 export function insertSpan(span: SpanInsert): void {
@@ -23,8 +24,8 @@ export function insertSpan(span: SpanInsert): void {
   db.prepare(`
     INSERT INTO spans (
       id, trace_id, parent_span_id, name, kind, status,
-      start_time, end_time, duration_ms, service_name, attributes, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      start_time, end_time, duration_ms, service_name, attributes, trace_source, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     span.id,
     span.trace_id,
@@ -37,6 +38,7 @@ export function insertSpan(span: SpanInsert): void {
     span.duration_ms,
     span.service_name,
     span.attributes,
+    span.trace_source ?? 'http',
   );
 
   log.debug({ spanId: span.id, traceId: span.trace_id }, 'Span inserted');
@@ -58,6 +60,7 @@ export interface GetTracesOptions {
   to?: string;
   serviceName?: string;
   status?: string;
+  source?: string;
   limit?: number;
 }
 
@@ -92,6 +95,11 @@ export function getTraces(options: GetTracesOptions = {}): Array<{
   if (options.status) {
     conditions.push('s.status = ?');
     params.push(options.status);
+  }
+
+  if (options.source) {
+    conditions.push('s.trace_source = ?');
+    params.push(options.source);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -170,6 +178,7 @@ export function getTraceSummary(
   totalTraces: number;
   avgDuration: number;
   errorRate: number;
+  services: number;
 } {
   const db = getDb();
   const conditions: string[] = [];
@@ -193,7 +202,8 @@ export function getTraceSummary(
          COUNT(DISTINCT trace_id) as totalTraces,
          AVG(duration_ms) as avgDuration,
          CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) /
-           NULLIF(COUNT(*), 0) as errorRate
+           NULLIF(COUNT(*), 0) as errorRate,
+         COUNT(DISTINCT service_name) as services
        FROM spans
        ${where}`,
     )
@@ -201,11 +211,13 @@ export function getTraceSummary(
     totalTraces: number;
     avgDuration: number | null;
     errorRate: number | null;
+    services: number;
   };
 
   return {
     totalTraces: result.totalTraces ?? 0,
     avgDuration: Math.round((result.avgDuration ?? 0) * 100) / 100,
     errorRate: Math.round((result.errorRate ?? 0) * 10000) / 10000,
+    services: result.services ?? 0,
   };
 }

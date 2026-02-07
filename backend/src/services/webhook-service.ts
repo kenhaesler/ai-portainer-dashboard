@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { getDb } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
 import { onEvent, type WebhookEvent } from './event-bus.js';
+import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('webhook-service');
 
@@ -135,6 +136,12 @@ export function createDelivery(webhookId: string, event: WebhookEvent): string {
 }
 
 export async function deliverWebhook(deliveryId: string): Promise<boolean> {
+  return withSpan('webhook.deliver', 'webhook-delivery', 'client', () =>
+    deliverWebhookInner(deliveryId),
+  );
+}
+
+async function deliverWebhookInner(deliveryId: string): Promise<boolean> {
   const db = getDb();
   const delivery = db.prepare('SELECT * FROM webhook_deliveries WHERE id = ?').get(deliveryId) as WebhookDelivery | undefined;
   if (!delivery) return false;
