@@ -63,4 +63,21 @@ describe('useLlmTraces', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toHaveLength(1);
   });
+
+  it('normalizes malformed traces payload', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce([
+      {
+        id: 7,
+        trace_id: 'tr-7',
+        model: 'llama3.2',
+        // token and latency fields intentionally missing
+      },
+    ]);
+
+    const { result } = renderHook(() => useLlmTraces(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].total_tokens).toBe(0);
+    expect(result.current.data?.[0].latency_ms).toBe(0);
+    expect(result.current.data?.[0].status).toBe('unknown');
+  });
 });
