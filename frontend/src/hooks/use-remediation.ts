@@ -59,7 +59,7 @@ export function useRejectAction() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/reject`);
+      await api.post(`/api/remediation/actions/${actionId}/reject`, {});
     },
     onSuccess: (_data, actionId) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
