@@ -39,19 +39,18 @@ describe('DefaultLandingPagePreference', () => {
       expect(mockGet).toHaveBeenCalledWith('/api/settings/preferences');
     });
 
-    expect(screen.getByLabelText('Default Landing Page')).toHaveValue('/workloads');
+    expect(screen.getByLabelText('Default Landing Page')).toHaveTextContent('Workload Explorer');
   });
 
   it('saves updated landing page preference', async () => {
     render(<DefaultLandingPagePreference />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Default Landing Page')).toHaveValue('/workloads');
+      expect(screen.getByLabelText('Default Landing Page')).toHaveTextContent('Workload Explorer');
     });
 
-    fireEvent.change(screen.getByLabelText('Default Landing Page'), {
-      target: { value: '/ai-monitor' },
-    });
+    fireEvent.click(screen.getByLabelText('Default Landing Page'));
+    fireEvent.click(screen.getByRole('option', { name: 'AI Monitor' }));
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => {
@@ -116,9 +115,9 @@ describe('LlmSettingsSection', () => {
       expect(select).toBeInTheDocument();
     });
 
-    const options = screen.getAllByRole('option');
-    expect(options.some((o) => o.textContent?.includes('llama3.2'))).toBe(true);
-    expect(options.some((o) => o.textContent?.includes('mistral'))).toBe(true);
+    fireEvent.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option', { name: /llama3.2/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /mistral/i })).toBeInTheDocument();
   });
 
   it('falls back to text input when no models available', async () => {

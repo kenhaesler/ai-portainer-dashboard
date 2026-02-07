@@ -58,7 +58,15 @@ describe('UsersPage', () => {
 
     fireEvent.change(screen.getByPlaceholderText('ops-bot'), { target: { value: 'support-user' } });
     fireEvent.change(screen.getByPlaceholderText('Minimum 8 characters'), { target: { value: 'password123' } });
-    fireEvent.change(screen.getByDisplayValue('Viewer'), { target: { value: 'operator' } });
+
+    const createSection = screen.getByRole('heading', { name: 'Create User' }).closest('section');
+    expect(createSection).toBeTruthy();
+    if (!createSection) {
+      return;
+    }
+    const roleSelect = within(createSection).getByRole('combobox');
+    fireEvent.click(roleSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'Operator' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Create User' }));
 

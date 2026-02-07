@@ -70,10 +70,14 @@ describe('NotificationHistoryPanel', () => {
       expect(screen.getByText('CPU Spike')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'failed' } });
+    const statusSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.click(statusSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'Failed' }));
 
-    expect(screen.queryByText('CPU Spike')).not.toBeInTheDocument();
-    expect(screen.getByText('Delivery Failure')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('CPU Spike')).not.toBeInTheDocument();
+      expect(screen.getByText('Delivery Failure')).toBeInTheDocument();
+    });
   });
 
   it('shows error state when history request fails', async () => {

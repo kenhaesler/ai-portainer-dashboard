@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -61,10 +61,9 @@ describe('LlmAssistantPage', () => {
     renderPage();
     const select = screen.getByRole('combobox');
     expect(select).toBeTruthy();
-    const options = screen.getAllByRole('option');
-    expect(options).toHaveLength(2);
-    expect(options[0].textContent).toBe('llama3.2');
-    expect(options[1].textContent).toBe('codellama');
+    fireEvent.click(select);
+    expect(screen.getByRole('option', { name: 'llama3.2' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'codellama' })).toBeTruthy();
   });
 
   it('hides model selector when no models available', () => {
