@@ -330,6 +330,51 @@ export const CacheInvalidateQuerySchema = z.object({
   resource: z.enum(['endpoints', 'containers', 'images', 'networks', 'stacks']),
 });
 
+// ─── User schemas ─────────────────────────────────────────────────
+export const UserIdParamsSchema = z.object({
+  id: z.string(),
+});
+
+export const UserCreateBodySchema = z.object({
+  username: z.string().min(1).max(50),
+  password: z.string().min(8).max(128),
+  role: z.enum(['viewer', 'operator', 'admin']),
+});
+
+export const UserUpdateBodySchema = z.object({
+  username: z.string().min(1).max(50).optional(),
+  password: z.string().min(8).max(128).optional(),
+  role: z.enum(['viewer', 'operator', 'admin']).optional(),
+});
+
+// ─── Webhook schemas ──────────────────────────────────────────────
+export const WebhookIdParamsSchema = z.object({
+  id: z.string(),
+});
+
+export const WebhookCreateBodySchema = z.object({
+  name: z.string().min(1).max(100),
+  url: z.string().url(),
+  secret: z.string().optional(),
+  events: z.array(z.string()).min(1),
+  enabled: z.boolean().optional(),
+  description: z.string().max(500).optional(),
+});
+
+export const WebhookUpdateBodySchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  url: z.string().url().optional(),
+  secret: z.string().optional(),
+  events: z.array(z.string()).min(1).optional(),
+  enabled: z.boolean().optional(),
+  description: z.string().max(500).optional(),
+});
+
+export const WebhookDeliveriesQuerySchema = z.object({
+  limit: z.coerce.number().default(50),
+  offset: z.coerce.number().default(0),
+});
+
 // ─── LLM schemas ───────────────────────────────────────────────────
 export const LlmQueryBodySchema = z.object({
   query: z.string().min(2),

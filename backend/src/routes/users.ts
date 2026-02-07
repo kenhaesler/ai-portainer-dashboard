@@ -1,8 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { listUsers, createUser, updateUser, deleteUser, getUserById, type Role } from '../services/user-store.js';
+import { listUsers, createUser, updateUser, deleteUser, type Role } from '../services/user-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-
-const VALID_ROLES: Role[] = ['viewer', 'operator', 'admin'];
+import { UserCreateBodySchema, UserIdParamsSchema, UserUpdateBodySchema } from '../models/api-schemas.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // List all users (admin only)
@@ -23,15 +22,7 @@ export async function userRoutes(fastify: FastifyInstance) {
       tags: ['Users'],
       summary: 'Create a new user',
       security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        required: ['username', 'password', 'role'],
-        properties: {
-          username: { type: 'string', minLength: 1, maxLength: 50 },
-          password: { type: 'string', minLength: 8, maxLength: 128 },
-          role: { type: 'string', enum: VALID_ROLES },
-        },
-      },
+      body: UserCreateBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -64,19 +55,8 @@ export async function userRoutes(fastify: FastifyInstance) {
       tags: ['Users'],
       summary: 'Update a user',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
-      body: {
-        type: 'object',
-        properties: {
-          username: { type: 'string', minLength: 1, maxLength: 50 },
-          password: { type: 'string', minLength: 8, maxLength: 128 },
-          role: { type: 'string', enum: VALID_ROLES },
-        },
-      },
+      params: UserIdParamsSchema,
+      body: UserUpdateBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -106,11 +86,7 @@ export async function userRoutes(fastify: FastifyInstance) {
       tags: ['Users'],
       summary: 'Delete a user',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
+      params: UserIdParamsSchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {

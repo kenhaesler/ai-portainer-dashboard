@@ -12,6 +12,12 @@ import {
 import { emitEvent } from '../services/event-bus.js';
 import { onEvent, type WebhookEvent } from '../services/event-bus.js';
 import { validateOutboundWebhookUrl } from '../utils/network-security.js';
+import {
+  WebhookCreateBodySchema,
+  WebhookDeliveriesQuerySchema,
+  WebhookIdParamsSchema,
+  WebhookUpdateBodySchema,
+} from '../models/api-schemas.js';
 
 const VALID_EVENT_TYPES = [
   'insight.created',
@@ -52,18 +58,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tags: ['Webhooks'],
       summary: 'Create a new webhook',
       security: [{ bearerAuth: [] }],
-      body: {
-        type: 'object',
-        required: ['name', 'url', 'events'],
-        properties: {
-          name: { type: 'string', minLength: 1, maxLength: 100 },
-          url: { type: 'string', format: 'uri' },
-          secret: { type: 'string' },
-          events: { type: 'array', items: { type: 'string' }, minItems: 1 },
-          enabled: { type: 'boolean' },
-          description: { type: 'string', maxLength: 500 },
-        },
-      },
+      body: WebhookCreateBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -97,11 +92,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tags: ['Webhooks'],
       summary: 'Get webhook details',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
+      params: WebhookIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -117,22 +108,8 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tags: ['Webhooks'],
       summary: 'Update a webhook',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
-      body: {
-        type: 'object',
-        properties: {
-          name: { type: 'string', minLength: 1, maxLength: 100 },
-          url: { type: 'string', format: 'uri' },
-          secret: { type: 'string' },
-          events: { type: 'array', items: { type: 'string' }, minItems: 1 },
-          enabled: { type: 'boolean' },
-          description: { type: 'string', maxLength: 500 },
-        },
-      },
+      params: WebhookIdParamsSchema,
+      body: WebhookUpdateBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -171,11 +148,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tags: ['Webhooks'],
       summary: 'Delete a webhook',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
+      params: WebhookIdParamsSchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
@@ -191,18 +164,8 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tags: ['Webhooks'],
       summary: 'Get webhook delivery history',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
-      querystring: {
-        type: 'object',
-        properties: {
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      params: WebhookIdParamsSchema,
+      querystring: WebhookDeliveriesQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -221,11 +184,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       tags: ['Webhooks'],
       summary: 'Send a test event to a webhook',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string' } },
-      },
+      params: WebhookIdParamsSchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
