@@ -1,4 +1,5 @@
 import { getDb } from '../db/sqlite.js';
+import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Setting } from '../models/settings.js';
 
@@ -37,6 +38,20 @@ export function getSettings(category?: string): Setting[] {
   return db
     .prepare('SELECT * FROM settings ORDER BY category ASC, key ASC')
     .all() as Setting[];
+}
+
+/**
+ * Read LLM config from the settings DB, falling back to env vars.
+ * Called per-request so that Settings page changes take effect immediately.
+ */
+export function getEffectiveLlmConfig() {
+  const config = getConfig();
+  const ollamaUrl = getSetting('llm.ollama_url')?.value || config.OLLAMA_BASE_URL;
+  const model = getSetting('llm.model')?.value || config.OLLAMA_MODEL;
+  const customEnabled = getSetting('llm.custom_endpoint_enabled')?.value === 'true';
+  const customEndpointUrl = getSetting('llm.custom_endpoint_url')?.value || config.OLLAMA_API_ENDPOINT;
+  const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.OLLAMA_BEARER_TOKEN;
+  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken };
 }
 
 export function deleteSetting(key: string): boolean {

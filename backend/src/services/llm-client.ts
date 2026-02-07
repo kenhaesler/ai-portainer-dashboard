@@ -1,26 +1,12 @@
 import { Ollama } from 'ollama';
-import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
+import { getEffectiveLlmConfig } from './settings-store.js';
 import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normalizers.js';
 import type { Insight } from '../models/monitoring.js';
 
 const log = createChildLogger('llm-client');
 
-let client: Ollama | null = null;
-
-function getClient(): Ollama {
-  if (!client) {
-    const config = getConfig();
-    client = new Ollama({ host: config.OLLAMA_BASE_URL });
-    log.info({ baseUrl: config.OLLAMA_BASE_URL }, 'Ollama client initialized');
-  }
-  return client;
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const config = getConfig();
-  const token = config.OLLAMA_BEARER_TOKEN;
-
+function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 
   // Check if token is in username:password format (Basic auth)
@@ -43,7 +29,7 @@ export async function chatStream(
   systemPrompt: string,
   onChunk: (chunk: string) => void,
 ): Promise<string> {
-  const config = getConfig();
+  const llmConfig = getEffectiveLlmConfig();
 
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -53,16 +39,16 @@ export async function chatStream(
   let fullResponse = '';
 
   try {
-    // Use authenticated fetch if API endpoint and token are configured
-    if (config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
-      const response = await fetch(config.OLLAMA_API_ENDPOINT, {
+    // Use authenticated fetch if custom endpoint is enabled and configured
+    if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+      const response = await fetch(llmConfig.customEndpointUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(),
+          ...getAuthHeaders(llmConfig.customEndpointToken),
         },
         body: JSON.stringify({
-          model: config.OLLAMA_MODEL,
+          model: llmConfig.model,
           messages: fullMessages,
           stream: true,
         }),
@@ -100,9 +86,9 @@ export async function chatStream(
       }
     } else {
       // Use Ollama SDK for local/unauthenticated access
-      const ollama = getClient();
+      const ollama = new Ollama({ host: llmConfig.ollamaUrl });
       const response = await ollama.chat({
-        model: config.OLLAMA_MODEL,
+        model: llmConfig.model,
         messages: fullMessages,
         stream: true,
       });
@@ -116,7 +102,7 @@ export async function chatStream(
       }
     }
 
-    log.debug({ model: config.OLLAMA_MODEL, responseLength: fullResponse.length }, 'Chat stream completed');
+    log.debug({ model: llmConfig.model, responseLength: fullResponse.length }, 'Chat stream completed');
     return fullResponse;
   } catch (err) {
     log.error({ err }, 'Ollama chat stream failed');
@@ -175,7 +161,8 @@ Provide concise, actionable recommendations. When suggesting changes, always exp
 
 export async function isOllamaAvailable(): Promise<boolean> {
   try {
-    const ollama = getClient();
+    const llmConfig = getEffectiveLlmConfig();
+    const ollama = new Ollama({ host: llmConfig.ollamaUrl });
     await ollama.list();
     return true;
   } catch {
@@ -189,11 +176,11 @@ export async function isOllamaAvailable(): Promise<boolean> {
  * Called at backend startup so the LLM Assistant is ready without manual intervention.
  */
 export async function ensureModel(): Promise<void> {
-  const config = getConfig();
-  const model = config.OLLAMA_MODEL;
+  const llmConfig = getEffectiveLlmConfig();
+  const { model, ollamaUrl } = llmConfig;
 
   try {
-    const ollama = getClient();
+    const ollama = new Ollama({ host: ollamaUrl });
     const { models } = await ollama.list();
     const installed = models.some((m) => m.name === model || m.name.startsWith(`${model}:`));
 
