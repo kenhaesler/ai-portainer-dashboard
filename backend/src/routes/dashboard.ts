@@ -112,7 +112,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { hours = 24 } = request.query as { hours?: number };
-    const snapshots = getKpiHistory(Math.min(hours, 168)); // Cap at 7 days
-    return { snapshots };
+    const safeHours = Number.isFinite(hours) ? Math.max(1, Math.min(hours, 168)) : 24;
+
+    try {
+      const snapshots = getKpiHistory(safeHours); // Cap at 7 days
+      return { snapshots };
+    } catch (err) {
+      log.error({ err }, 'Failed to fetch KPI history');
+      // Keep dashboard pages functional even when KPI snapshot storage is unavailable.
+      return { snapshots: [] };
+    }
   });
 }
