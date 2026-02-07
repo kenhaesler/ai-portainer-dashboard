@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { forecastRoutes } from './forecasts.js';
 
 vi.mock('../config/index.js', () => ({
@@ -8,10 +9,12 @@ vi.mock('../config/index.js', () => ({
 
 const mockGetCapacityForecasts = vi.fn();
 const mockGenerateForecast = vi.fn();
+const mockLookupContainerName = vi.fn();
 
 vi.mock('../services/capacity-forecaster.js', () => ({
   getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
+  lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -29,6 +32,8 @@ describe('Forecast Routes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(forecastRoutes);
     await app.ready();
@@ -84,6 +89,38 @@ describe('Forecast Routes', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.trend).toBe('stable');
+  });
+
+  it('looks up container name for per-container forecast', async () => {
+    mockLookupContainerName.mockReturnValue('my-container');
+    mockGenerateForecast.mockReturnValue({
+      containerId: 'abc123',
+      containerName: 'my-container',
+      metricType: 'cpu',
+      currentValue: 60,
+      trend: 'stable',
+      slope: 0.01,
+      r_squared: 0.2,
+      forecast: [],
+      timeToThreshold: null,
+      confidence: 'low',
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/forecasts/abc123?metric=cpu',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockLookupContainerName).toHaveBeenCalledWith('abc123');
+    expect(mockGenerateForecast).toHaveBeenCalledWith(
+      'abc123',
+      'my-container',
+      'cpu',
+      90,
+      24,
+      24,
+    );
   });
 
   it('returns error when insufficient data', async () => {
