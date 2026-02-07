@@ -49,8 +49,10 @@ import { portainerBackupRoutes } from './portainer-backup.js';
 describe('portainer-backup routes', () => {
   let app: FastifyInstance;
   let tempDir: string;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
   beforeEach(async () => {
+    currentRole = 'admin';
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portainer-backup-test-'));
     sqlitePath = path.join(tempDir, 'dashboard.db');
 
@@ -62,13 +64,20 @@ describe('portainer-backup routes', () => {
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
     app.decorateRequest('user', undefined);
     app.addHook('preHandler', async (request) => {
       request.user = {
         sub: 'user-1',
         username: 'operator',
         sessionId: 'session-1',
-        role: 'admin',
+        role: currentRole,
       };
     });
 
@@ -142,6 +151,19 @@ describe('portainer-backup routes', () => {
         error: expect.stringContaining('Failed to create Portainer backup'),
       });
     });
+
+    it('rejects create for non-admin users', async () => {
+      currentRole = 'viewer';
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/portainer-backup',
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+    });
   });
 
   describe('GET /api/portainer-backup', () => {
@@ -175,6 +197,18 @@ describe('portainer-backup routes', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ backups: [] });
+    });
+
+    it('rejects list for non-admin users', async () => {
+      currentRole = 'viewer';
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/portainer-backup',
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
     });
   });
 
@@ -220,6 +254,18 @@ describe('portainer-backup routes', () => {
         message: expect.stringContaining('filename must be a .tar.gz file'),
       });
     });
+
+    it('rejects download for non-admin users', async () => {
+      currentRole = 'viewer';
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/portainer-backup/test-backup.tar.gz',
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+    });
   });
 
   describe('DELETE /api/portainer-backup/:filename', () => {
@@ -254,6 +300,18 @@ describe('portainer-backup routes', () => {
 
       expect(response.statusCode).toBe(404);
       expect(response.json()).toEqual({ error: 'Portainer backup not found' });
+    });
+
+    it('rejects delete for non-admin users', async () => {
+      currentRole = 'viewer';
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/portainer-backup/test-backup.tar.gz',
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
     });
   });
 });

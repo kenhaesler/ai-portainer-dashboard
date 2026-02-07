@@ -105,6 +105,39 @@ describe('backup routes', () => {
     expect(response.json()).toEqual({ error: 'Backup not found' });
   });
 
+  it('rejects create for non-admin users', async () => {
+    currentRole = 'viewer';
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/backup',
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+  });
+
+  it('rejects list for non-admin users', async () => {
+    currentRole = 'viewer';
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/backup',
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+  });
+
+  it('rejects download for non-admin users', async () => {
+    currentRole = 'viewer';
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/backup/backup-1.db',
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+  });
+
   it('rejects traversal attempts on download endpoint', async () => {
     const response = await app.inject({
       method: 'GET',
