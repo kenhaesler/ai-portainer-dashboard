@@ -118,7 +118,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: FilenameParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
     const config = getConfig();
@@ -159,7 +159,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: FilenameParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
     const backupDir = getBackupDir();
