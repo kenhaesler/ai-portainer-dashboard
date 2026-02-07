@@ -19,6 +19,8 @@ const log = createChildLogger('scheduler');
 
 const intervals: NodeJS.Timeout[] = [];
 
+const METRICS_CONCURRENCY = 6;
+
 async function runMetricsCollection(): Promise<void> {
   log.debug('Running metrics collection cycle');
 
@@ -31,12 +33,24 @@ async function runMetricsCollection(): Promise<void> {
         const containers = await getContainers(ep.Id);
         const running = containers.filter((c) => c.State === 'running');
 
-        for (const container of running) {
-          try {
-            const stats = await collectMetrics(ep.Id, container.Id);
-            const containerName =
-              container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+        // Collect stats in parallel batches to avoid ~1.3s per container sequentially
+        for (let i = 0; i < running.length; i += METRICS_CONCURRENCY) {
+          const batch = running.slice(i, i + METRICS_CONCURRENCY);
+          const results = await Promise.allSettled(
+            batch.map(async (container) => {
+              const stats = await collectMetrics(ep.Id, container.Id);
+              const containerName =
+                container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+              return { stats, container, containerName };
+            }),
+          );
 
+          for (const result of results) {
+            if (result.status === 'rejected') {
+              log.warn({ err: result.reason }, 'Failed to collect metrics for container');
+              continue;
+            }
+            const { stats, container, containerName } = result.value;
             metricsToInsert.push(
               {
                 endpoint_id: ep.Id,
@@ -73,11 +87,6 @@ async function runMetricsCollection(): Promise<void> {
                 metric_type: 'network_tx_bytes',
                 value: stats.networkTxBytes,
               },
-            );
-          } catch (err) {
-            log.warn(
-              { containerId: container.Id, err },
-              'Failed to collect metrics for container',
             );
           }
         }
@@ -229,6 +238,8 @@ export function startScheduler(): void {
       metricsIntervalMs,
     );
     intervals.push(metricsInterval);
+    // Run once immediately to seed initial data
+    runWithTraceContext({ source: 'scheduler' }, runMetricsCollection).catch(() => {});
   }
 
   if (config.MONITORING_ENABLED) {

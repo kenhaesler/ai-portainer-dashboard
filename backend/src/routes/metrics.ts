@@ -2,6 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
 import { getNetworkRates } from '../services/metrics-store.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('metrics-routes');
 
 function parseTimeRange(timeRange: string): { from: Date; to: Date } {
   const now = new Date();
@@ -51,8 +54,8 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     const timeRange = query.timeRange || '1h';
 
     const db = getDb();
-    const conditions = ['container_id = ?'];
-    const params: unknown[] = [containerId];
+    const conditions = ['endpoint_id = ?', '(container_id = ? OR container_id LIKE ?)'];
+    const params: unknown[] = [endpointId, containerId, `${containerId}%`];
 
     if (metricType) {
       conditions.push('metric_type = ?');
@@ -80,6 +83,10 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       ORDER BY timestamp ASC
       LIMIT 1000
     `).all(...params) as Array<{ timestamp: string; value: number }>;
+
+    if (metrics.length === 0) {
+      log.debug({ endpointId, containerId, metricType, timeRange }, 'Metrics query returned zero rows');
+    }
 
     // Return in format expected by frontend
     return {

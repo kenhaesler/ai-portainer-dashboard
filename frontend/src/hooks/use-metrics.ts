@@ -42,6 +42,7 @@ export function useContainerMetrics(
       );
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
+    refetchInterval: 60_000,
   });
 }
 
