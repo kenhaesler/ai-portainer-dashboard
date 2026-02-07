@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Radio,
   RefreshCw,
@@ -23,6 +23,7 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
+import { buildStackGroupedContainerOptions } from '@/lib/container-stack-grouping';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -69,6 +70,10 @@ export default function PacketCapture() {
     (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
   );
   const runningContainers = containers?.filter((c) => c.state === 'running') ?? [];
+  const groupedContainerOptions = useMemo(
+    () => buildStackGroupedContainerOptions(runningContainers),
+    [runningContainers],
+  );
 
   const handleStartCapture = () => {
     if (!selectedEndpoint || !selectedContainer) return;
@@ -145,7 +150,7 @@ export default function PacketCapture() {
               placeholder="Select container..."
               options={[
                 { value: '__all__', label: 'Select container...' },
-                ...runningContainers.map((c) => ({ value: c.id, label: c.name })),
+                ...groupedContainerOptions,
               ]}
               className="w-full text-sm"
             />

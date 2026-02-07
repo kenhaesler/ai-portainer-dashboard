@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -12,7 +12,26 @@ vi.mock('@/hooks/use-endpoints', () => ({
 
 vi.mock('@/hooks/use-containers', () => ({
   useContainers: vi.fn().mockReturnValue({
-    data: [{ id: 'c1', name: 'web-server', endpointId: 1 }],
+    data: [
+      {
+        id: 'c1',
+        name: 'api-1',
+        endpointId: 1,
+        labels: { 'com.docker.compose.project': 'alpha' },
+      },
+      {
+        id: 'c2',
+        name: 'worker-1',
+        endpointId: 1,
+        labels: { 'com.docker.compose.project': 'alpha' },
+      },
+      {
+        id: 'c3',
+        name: 'standalone-1',
+        endpointId: 1,
+        labels: {},
+      },
+    ],
     isLoading: false,
     refetch: vi.fn(),
     isFetching: false,
@@ -92,6 +111,23 @@ describe('MetricsDashboardPage', () => {
     renderPage();
     const select = screen.getAllByRole('combobox')[0];
     expect(select).toBeTruthy();
+  });
+
+  it('groups container selector options by stack with a No Stack group', () => {
+    renderPage();
+
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    const containerSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.click(containerSelect);
+
+    expect(screen.getByText('alpha')).toBeInTheDocument();
+    expect(screen.getByText('No Stack')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'api-1' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'standalone-1' })).toBeInTheDocument();
   });
 
   it('renders forecast overview rows and risk badges', () => {

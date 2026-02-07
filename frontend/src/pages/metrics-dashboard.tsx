@@ -28,6 +28,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
+import { buildStackGroupedContainerOptions } from '@/lib/container-stack-grouping';
 import {
   AreaChart,
   Area,
@@ -116,6 +117,10 @@ export default function MetricsDashboardPage() {
     if (!allContainers || !selectedEndpoint) return [];
     return allContainers.filter((c) => c.endpointId === selectedEndpoint);
   }, [allContainers, selectedEndpoint]);
+  const groupedContainerOptions = useMemo(
+    () => buildStackGroupedContainerOptions(containers),
+    [containers],
+  );
 
   // Get selected container details
   const selectedContainerData = useMemo(() => {
@@ -304,10 +309,7 @@ export default function MetricsDashboardPage() {
             disabled={!selectedEndpoint || containersLoading}
             options={[
               { value: '__placeholder__', label: 'Select container...', disabled: true },
-              ...containers.map((c) => ({
-                value: c.id,
-                label: c.name,
-              })),
+              ...groupedContainerOptions,
             ]}
           />
         </div>
