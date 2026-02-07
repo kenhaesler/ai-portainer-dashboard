@@ -11,8 +11,9 @@ import {
   MessageSquare,
   Zap,
   AlertTriangle,
-  Star,
   Hash,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 type TimeRange = 1 | 6 | 24 | 168;
@@ -40,17 +41,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function FeedbackDisplay({ score }: { score: number | null }) {
-  if (score == null) return <span className="text-muted-foreground">—</span>;
-  return (
-    <span className="inline-flex items-center gap-1 text-sm">
-      <Star className="h-3 w-3 text-yellow-500" />
-      {score}
-    </span>
-  );
-}
-
-function TracesTable({ traces, isLoading }: { traces: LlmTrace[]; isLoading: boolean }) {
+function TracesTable({ traces, isLoading, privacyMode }: { traces: LlmTrace[]; isLoading: boolean; privacyMode: boolean }) {
   if (isLoading) {
     return (
       <div className="grid gap-4 md:grid-cols-2">
@@ -84,7 +75,6 @@ function TracesTable({ traces, isLoading }: { traces: LlmTrace[]; isLoading: boo
               <th className="px-4 py-3 text-right font-medium text-muted-foreground">Tokens</th>
               <th className="px-4 py-3 text-right font-medium text-muted-foreground">Latency</th>
               <th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
-              <th className="px-4 py-3 text-center font-medium text-muted-foreground">Feedback</th>
             </tr>
           </thead>
           <tbody>
@@ -96,7 +86,10 @@ function TracesTable({ traces, isLoading }: { traces: LlmTrace[]; isLoading: boo
                 <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
                   {trace.model}
                 </td>
-                <td className="px-4 py-3 max-w-[300px] truncate" title={trace.user_query ?? undefined}>
+                <td className={cn(
+                  'px-4 py-3 max-w-[300px] truncate select-none',
+                  privacyMode && 'blur-sm hover:blur-none transition-[filter] duration-200'
+                )} title={privacyMode ? undefined : (trace.user_query ?? undefined)}>
                   {trace.user_query || '—'}
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap font-mono">
@@ -107,9 +100,6 @@ function TracesTable({ traces, isLoading }: { traces: LlmTrace[]; isLoading: boo
                 </td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadge status={trace.status} />
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <FeedbackDisplay score={trace.feedback_score} />
                 </td>
               </tr>
             ))}
@@ -122,6 +112,7 @@ function TracesTable({ traces, isLoading }: { traces: LlmTrace[]; isLoading: boo
 
 export default function LlmObservabilityPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>(24);
+  const [privacyMode, setPrivacyMode] = useState(true);
   const { interval, setInterval } = useAutoRefresh(30);
 
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useLlmStats(timeRange);
@@ -139,7 +130,7 @@ export default function LlmObservabilityPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">LLM Observability</h1>
           <p className="text-muted-foreground">
-            Monitor LLM usage, performance, and feedback
+            Monitor LLM usage and performance
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -162,6 +153,19 @@ export default function LlmObservabilityPage() {
               </button>
             ))}
           </div>
+          <button
+            onClick={() => setPrivacyMode(!privacyMode)}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
+              privacyMode
+                ? 'border-primary/50 bg-primary/10 text-primary'
+                : 'border-input bg-background text-muted-foreground hover:text-foreground'
+            )}
+            title={privacyMode ? 'Queries are blurred — click to reveal' : 'Queries are visible — click to blur'}
+          >
+            {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            Privacy
+          </button>
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
           <RefreshButton onClick={handleRefresh} />
         </div>
@@ -202,59 +206,29 @@ export default function LlmObservabilityPage() {
         </div>
       )}
 
-      {/* Model Breakdown + Feedback Summary */}
-      {stats && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Model Breakdown */}
-          <div className="rounded-lg border bg-card p-6">
-            <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
-            {stats.modelBreakdown.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No model data available.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="pb-2 text-left font-medium text-muted-foreground">Model</th>
-                      <th className="pb-2 text-right font-medium text-muted-foreground">Queries</th>
-                      <th className="pb-2 text-right font-medium text-muted-foreground">Tokens</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.modelBreakdown.map((model) => (
-                      <tr key={model.model} className="border-b last:border-0">
-                        <td className="py-2 font-mono text-xs">{model.model}</td>
-                        <td className="py-2 text-right">{model.count.toLocaleString()}</td>
-                        <td className="py-2 text-right">{model.tokens.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Feedback Summary */}
-          <div className="rounded-lg border bg-card p-6">
-            <h2 className="text-lg font-semibold mb-4">Feedback Summary</h2>
-            <div className="flex items-center gap-6">
-              <div>
-                <p className="text-sm text-muted-foreground">Average Score</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <Star className="h-5 w-5 text-yellow-500" />
-                  <span className="text-3xl font-bold">
-                    {stats.avgFeedbackScore != null
-                      ? stats.avgFeedbackScore.toFixed(1)
-                      : '—'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">/ 5</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Ratings</p>
-                <p className="mt-1 text-3xl font-bold">{stats.feedbackCount}</p>
-              </div>
-            </div>
+      {/* Model Breakdown */}
+      {stats && stats.modelBreakdown.length > 0 && (
+        <div className="rounded-lg border bg-card p-6">
+          <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="pb-2 text-left font-medium text-muted-foreground">Model</th>
+                  <th className="pb-2 text-right font-medium text-muted-foreground">Queries</th>
+                  <th className="pb-2 text-right font-medium text-muted-foreground">Tokens</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.modelBreakdown.map((model) => (
+                  <tr key={model.model} className="border-b last:border-0">
+                    <td className="py-2 font-mono text-xs">{model.model}</td>
+                    <td className="py-2 text-right">{model.count.toLocaleString()}</td>
+                    <td className="py-2 text-right">{model.tokens.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -265,7 +239,7 @@ export default function LlmObservabilityPage() {
           <Activity className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold">Recent Traces</h2>
         </div>
-        <TracesTable traces={traces ?? []} isLoading={tracesLoading} />
+        <TracesTable traces={traces ?? []} isLoading={tracesLoading} privacyMode={privacyMode} />
       </div>
     </div>
   );
