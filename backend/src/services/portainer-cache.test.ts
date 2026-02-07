@@ -228,6 +228,39 @@ describe('stampede prevention', () => {
     expect(getInFlightCount()).toBe(0);
   });
 
+  it('cleans up in-flight map after completion so next call re-fetches', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cachedFetch, getInFlightCount } = await import('./portainer-cache.js');
+
+    let resolveFirst!: (v: string) => void;
+    const firstFetcher = vi.fn(() => new Promise<string>((r) => { resolveFirst = r; }));
+
+    const p1 = cachedFetch('cleanup:key', 30, firstFetcher);
+    expect(getInFlightCount()).toBe(1);
+
+    // Let the IIFE progress to the fetcher
+    await new Promise((r) => setTimeout(r, 0));
+    resolveFirst('first');
+    await p1;
+
+    // After resolution, in-flight should be cleaned up
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getInFlightCount()).toBe(0);
+
+    // Second call with a new fetcher should invoke the fetcher (not reuse stale promise)
+    const secondFetcher = vi.fn().mockResolvedValue('second');
+    // Uses a different key to bypass cache hit on first value
+    const result = await cachedFetch('cleanup:key2', 30, secondFetcher);
+    expect(result).toBe('second');
+    expect(secondFetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('does not deduplicate fetches for different keys', async () => {
     vi.doMock('../config/index.js', () => ({
       getConfig: () => ({ ...baseConfig }),
