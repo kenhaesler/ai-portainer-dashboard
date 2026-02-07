@@ -238,7 +238,19 @@ describe('ApiClient', () => {
   });
 
   describe('headers', () => {
-    it('should set Content-Type header', async () => {
+    it('should set Content-Type header when body is present', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+
+      await api.post('/api/test', { data: 'value' });
+
+      const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
+      expect(headers.get('Content-Type')).toBe('application/json');
+    });
+
+    it('should not set Content-Type header when no body', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({}),
@@ -247,7 +259,7 @@ describe('ApiClient', () => {
       await api.get('/api/test');
 
       const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
-      expect(headers.get('Content-Type')).toBe('application/json');
+      expect(headers.get('Content-Type')).toBeNull();
     });
 
     it('should set X-Request-ID header', async () => {

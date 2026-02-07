@@ -42,7 +42,9 @@ class ApiClient {
   ): Promise<T> {
     const { params, ...fetchOptions } = options;
     const headers = new Headers(fetchOptions.headers);
-    headers.set('Content-Type', 'application/json');
+    if (fetchOptions.body) {
+      headers.set('Content-Type', 'application/json');
+    }
     headers.set('X-Request-ID', crypto.randomUUID());
 
     if (this.token) {
