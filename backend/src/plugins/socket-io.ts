@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { Server } from 'socket.io';
+import { IncomingMessage } from 'http';
 import { verifyJwt } from '../utils/crypto.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getSession } from '../services/session-store.js';
@@ -39,8 +40,45 @@ export async function authenticateSocketToken(token: unknown): Promise<SocketUse
   };
 }
 
+/**
+ * Engine.IO-level request filter. Rejects HTTP requests that do not carry
+ * a valid JWT in the `token` query parameter. This runs *before* any
+ * transport session is allocated, preventing unauthenticated clients from
+ * consuming server resources (H-02 defence-in-depth).
+ */
+export async function verifyTransportRequest(
+  req: IncomingMessage,
+  callback: (err: string | null | undefined, success: boolean) => void,
+): Promise<void> {
+  try {
+    const url = new URL(req.url ?? '', 'http://localhost');
+    const token = url.searchParams.get('token');
+    if (!token) {
+      callback('Authentication required', false);
+      return;
+    }
+
+    const payload = await verifyJwt(token);
+    if (!payload?.sessionId) {
+      callback('Invalid or expired token', false);
+      return;
+    }
+
+    const session = getSession(payload.sessionId);
+    if (!session || session.user_id !== payload.sub || session.username !== payload.username) {
+      callback('Session invalid or revoked', false);
+      return;
+    }
+
+    callback(null, true);
+  } catch {
+    callback('Authentication failed', false);
+  }
+}
+
 async function socketIoPlugin(fastify: FastifyInstance) {
   const io = new Server(fastify.server, {
+    allowRequest: verifyTransportRequest as unknown as Server['opts']['allowRequest'],
     cors: {
       origin: process.env.NODE_ENV === 'production'
         ? false
