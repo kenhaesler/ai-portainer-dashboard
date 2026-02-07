@@ -42,12 +42,34 @@ function GradientMeshBackground({ reducedMotion, showParticles }: { reducedMotio
   );
 }
 
-function RetroBackground() {
+function Retro70sBackground() {
   return (
-    <div className="retro-bg" data-testid="retro-bg">
-      <div className="retro-stripes-tl" />
-      <div className="retro-stripes-br" />
+    <div className="retro-bg retro-70s-bg" data-testid="retro-bg">
+      <div className="retro-70s-top" />
+      <div className="retro-70s-bottom" />
     </div>
+  );
+}
+
+function RetroArcadeBackground() {
+  return (
+    <div className="retro-bg retro-arcade-bg" data-testid="retro-bg">
+      <div className="retro-arcade-glow" />
+    </div>
+  );
+}
+
+function RetroTerminalBackground() {
+  return (
+    <div className="retro-bg retro-terminal-bg" data-testid="retro-bg">
+      <div className="retro-terminal-vignette" />
+    </div>
+  );
+}
+
+function RetroVaporwaveBackground() {
+  return (
+    <div className="retro-bg retro-vaporwave-bg" data-testid="retro-bg" />
   );
 }
 
@@ -65,7 +87,10 @@ export function DashboardBackground() {
       {isGradientMesh && (
         <GradientMeshBackground reducedMotion={reducedMotion} showParticles={showParticles} />
       )}
-      {bg === 'retro' && <RetroBackground />}
+      {bg === 'retro-70s' && <Retro70sBackground />}
+      {bg === 'retro-arcade' && <RetroArcadeBackground />}
+      {bg === 'retro-terminal' && <RetroTerminalBackground />}
+      {bg === 'retro-vaporwave' && <RetroVaporwaveBackground />}
     </div>
   );
 }

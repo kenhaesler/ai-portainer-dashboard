@@ -102,6 +102,10 @@ const CONTAINER_SPACING_X = 160;
 const CONTAINER_SPACING_Y = 110;
 const CONTAINERS_PER_ROW = 4;
 
+const INLINE_NET_SPACING_X = 140;
+const INLINE_NET_ROW_HEIGHT = 90;
+const INLINE_NETS_PER_ROW = 4;
+
 export function TopologyGraph({ containers, networks, onNodeClick, networkRates }: TopologyGraphProps) {
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
     const nodes: Node[] = [];
@@ -117,6 +121,36 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
       stackMap.get(stack)!.push(container);
     }
 
+    // Classify networks: single-stack (inline) vs cross-stack (external bridge)
+    const netToStacks = new Map<string, Set<string>>();
+    for (const container of containers) {
+      const stack = container.labels['com.docker.compose.project'] || 'Standalone';
+      for (const netName of container.networks) {
+        if (!netToStacks.has(netName)) {
+          netToStacks.set(netName, new Set());
+        }
+        netToStacks.get(netName)!.add(stack);
+      }
+    }
+
+    const inlineNetsByStack = new Map<string, NetworkData[]>();
+    const externalNets: NetworkData[] = [];
+
+    for (const net of networks) {
+      const stacks = netToStacks.get(net.name);
+      if (stacks && stacks.size === 1) {
+        // Network belongs to a single stack — place inside the group
+        const stackName = Array.from(stacks)[0];
+        if (!inlineNetsByStack.has(stackName)) {
+          inlineNetsByStack.set(stackName, []);
+        }
+        inlineNetsByStack.get(stackName)!.push(net);
+      } else {
+        // Cross-stack, system, or unused network — keep external
+        externalNets.push(net);
+      }
+    }
+
     // Sort stacks: named stacks first (alphabetical), Standalone last
     const stackNames = Array.from(stackMap.keys()).sort((a, b) => {
       if (a === 'Standalone') return 1;
@@ -124,16 +158,25 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
       return a.localeCompare(b);
     });
 
-    // Create stack group nodes and position containers inside them
+    // Create stack group nodes with inline networks + containers
     let groupY = GROUP_START_Y;
 
     for (const stackName of stackNames) {
       const stackContainers = stackMap.get(stackName)!;
-      const cols = Math.min(stackContainers.length, CONTAINERS_PER_ROW);
-      const rows = Math.ceil(stackContainers.length / CONTAINERS_PER_ROW);
+      const stackNets = inlineNetsByStack.get(stackName) || [];
 
-      const groupWidth = GROUP_PADDING_X * 2 + cols * CONTAINER_SPACING_X;
-      const groupHeight = GROUP_PADDING_TOP + GROUP_PADDING_BOTTOM + rows * CONTAINER_SPACING_Y;
+      // Inline network rows at the top of the group
+      const netCols = Math.min(stackNets.length, INLINE_NETS_PER_ROW);
+      const netRows = stackNets.length > 0 ? Math.ceil(stackNets.length / INLINE_NETS_PER_ROW) : 0;
+      const netSectionHeight = netRows * INLINE_NET_ROW_HEIGHT;
+
+      // Container rows below the networks
+      const containerCols = Math.min(stackContainers.length, CONTAINERS_PER_ROW);
+      const containerRows = Math.ceil(stackContainers.length / CONTAINERS_PER_ROW);
+
+      const maxCols = Math.max(containerCols, netCols);
+      const groupWidth = GROUP_PADDING_X * 2 + maxCols * CONTAINER_SPACING_X;
+      const groupHeight = GROUP_PADDING_TOP + netSectionHeight + GROUP_PADDING_BOTTOM + containerRows * CONTAINER_SPACING_Y;
 
       const groupId = `stack-${stackName}`;
 
@@ -146,7 +189,30 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
         style: { width: groupWidth, height: groupHeight },
       });
 
-      // Container nodes inside the group
+      // Inline network nodes inside the group (top section)
+      stackNets.forEach((net, i) => {
+        const row = Math.floor(i / INLINE_NETS_PER_ROW);
+        const col = i % INLINE_NETS_PER_ROW;
+
+        nodes.push({
+          id: `net-${net.id}`,
+          type: 'network',
+          position: {
+            x: GROUP_PADDING_X + col * INLINE_NET_SPACING_X,
+            y: GROUP_PADDING_TOP + row * INLINE_NET_ROW_HEIGHT,
+          },
+          parentId: groupId,
+          extent: 'parent' as const,
+          data: {
+            label: net.name,
+            driver: net.driver,
+            subnet: net.subnet,
+          },
+        });
+      });
+
+      // Container nodes inside the group (below networks)
+      const containerStartY = GROUP_PADDING_TOP + netSectionHeight;
       stackContainers.forEach((container, i) => {
         const row = Math.floor(i / CONTAINERS_PER_ROW);
         const col = i % CONTAINERS_PER_ROW;
@@ -156,7 +222,7 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
           type: 'container',
           position: {
             x: GROUP_PADDING_X + col * CONTAINER_SPACING_X,
-            y: GROUP_PADDING_TOP + row * CONTAINER_SPACING_Y,
+            y: containerStartY + row * CONTAINER_SPACING_Y,
           },
           parentId: groupId,
           extent: 'parent' as const,
@@ -190,12 +256,12 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
       groupY += groupHeight + GROUP_SPACING_Y;
     }
 
-    // Network nodes on the left, vertically centered relative to groups
+    // External (cross-stack / bridge) network nodes on the left
     const totalGroupsHeight = groupY - GROUP_SPACING_Y - GROUP_START_Y;
-    const networksTotalHeight = networks.length * NETWORK_SPACING_Y;
+    const networksTotalHeight = externalNets.length * NETWORK_SPACING_Y;
     const networkStartY = NETWORK_START_Y + Math.max(0, (totalGroupsHeight - networksTotalHeight) / 2);
 
-    networks.forEach((net, i) => {
+    externalNets.forEach((net, i) => {
       nodes.push({
         id: `net-${net.id}`,
         type: 'network',

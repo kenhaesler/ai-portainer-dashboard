@@ -23,34 +23,47 @@ describe('useThemeStore - dashboardBackground', () => {
     expect(useThemeStore.getState().dashboardBackground).toBe('gradient-mesh-particles');
   });
 
-  it('sets dashboard background to "retro"', () => {
-    const { setDashboardBackground } = useThemeStore.getState();
-    setDashboardBackground('retro');
-    expect(useThemeStore.getState().dashboardBackground).toBe('retro');
-  });
+  it.each(['retro-70s', 'retro-arcade', 'retro-terminal', 'retro-vaporwave'] as const)(
+    'sets dashboard background to "%s"',
+    (bg) => {
+      const { setDashboardBackground } = useThemeStore.getState();
+      setDashboardBackground(bg);
+      expect(useThemeStore.getState().dashboardBackground).toBe(bg);
+    }
+  );
 
   it('can toggle back to "none"', () => {
     const { setDashboardBackground } = useThemeStore.getState();
-    setDashboardBackground('gradient-mesh');
+    setDashboardBackground('retro-arcade');
     setDashboardBackground('none');
     expect(useThemeStore.getState().dashboardBackground).toBe('none');
   });
 });
 
-describe('useThemeStore - theme', () => {
+describe('useThemeStore - retro themes', () => {
   beforeEach(() => {
     useThemeStore.setState({ theme: 'system' });
   });
 
-  it('sets theme to "retro"', () => {
-    const { setTheme } = useThemeStore.getState();
-    setTheme('retro');
-    expect(useThemeStore.getState().theme).toBe('retro');
-  });
+  it.each(['retro-70s', 'retro-arcade', 'retro-terminal', 'retro-vaporwave'] as const)(
+    'sets theme to "%s"',
+    (theme) => {
+      const { setTheme } = useThemeStore.getState();
+      setTheme(theme);
+      expect(useThemeStore.getState().theme).toBe(theme);
+    }
+  );
 
-  it('resolves "retro" as light theme', () => {
-    const { setTheme } = useThemeStore.getState();
-    setTheme('retro');
+  it('resolves "retro-70s" as light theme', () => {
+    useThemeStore.setState({ theme: 'retro-70s' });
     expect(useThemeStore.getState().resolvedTheme()).toBe('light');
   });
+
+  it.each(['retro-arcade', 'retro-terminal', 'retro-vaporwave'] as const)(
+    'resolves "%s" as dark theme',
+    (theme) => {
+      useThemeStore.setState({ theme });
+      expect(useThemeStore.getState().resolvedTheme()).toBe('dark');
+    }
+  );
 });

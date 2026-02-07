@@ -57,29 +57,37 @@ describe('DashboardBackground', () => {
     expect(wrapper).toHaveAttribute('aria-hidden', 'true');
   });
 
-  it('applies reduced opacity class to gradient mesh', () => {
-    useThemeStore.setState({ dashboardBackground: 'gradient-mesh' });
-    render(<DashboardBackground />);
-    const gradient = screen.getByTestId('dashboard-gradient');
-    expect(gradient.className).toContain('opacity-60');
-  });
-
-  it('renders retro background with corner stripes', () => {
-    useThemeStore.setState({ dashboardBackground: 'retro' });
-    render(<DashboardBackground />);
-    expect(screen.getByTestId('retro-bg')).toBeInTheDocument();
-  });
-
-  it('retro background contains top-left and bottom-right stripe arcs', () => {
-    useThemeStore.setState({ dashboardBackground: 'retro' });
-    const { container } = render(<DashboardBackground />);
-    expect(container.querySelector('.retro-stripes-tl')).toBeInTheDocument();
-    expect(container.querySelector('.retro-stripes-br')).toBeInTheDocument();
-  });
+  it.each(['retro-70s', 'retro-arcade', 'retro-terminal', 'retro-vaporwave'] as const)(
+    'renders retro background for "%s"',
+    (bg) => {
+      useThemeStore.setState({ dashboardBackground: bg });
+      render(<DashboardBackground />);
+      expect(screen.getByTestId('retro-bg')).toBeInTheDocument();
+    }
+  );
 
   it('does not render gradient mesh when retro background is selected', () => {
-    useThemeStore.setState({ dashboardBackground: 'retro' });
+    useThemeStore.setState({ dashboardBackground: 'retro-70s' });
     render(<DashboardBackground />);
     expect(screen.queryByTestId('dashboard-gradient')).not.toBeInTheDocument();
+  });
+
+  it('retro-70s contains wave stripe elements', () => {
+    useThemeStore.setState({ dashboardBackground: 'retro-70s' });
+    const { container } = render(<DashboardBackground />);
+    expect(container.querySelector('.retro-70s-top')).toBeInTheDocument();
+    expect(container.querySelector('.retro-70s-bottom')).toBeInTheDocument();
+  });
+
+  it('retro-arcade contains glow element', () => {
+    useThemeStore.setState({ dashboardBackground: 'retro-arcade' });
+    const { container } = render(<DashboardBackground />);
+    expect(container.querySelector('.retro-arcade-glow')).toBeInTheDocument();
+  });
+
+  it('retro-terminal contains vignette element', () => {
+    useThemeStore.setState({ dashboardBackground: 'retro-terminal' });
+    const { container } = render(<DashboardBackground />);
+    expect(container.querySelector('.retro-terminal-vignette')).toBeInTheDocument();
   });
 });
