@@ -16,6 +16,17 @@ function getBackupDir() {
   return dir;
 }
 
+function resolveBackupFilePath(backupDir: string, filename: string): string | null {
+  const resolvedBackupDir = path.resolve(backupDir);
+  const filePath = path.resolve(backupDir, filename);
+
+  if (!filePath.startsWith(`${resolvedBackupDir}${path.sep}`)) {
+    return null;
+  }
+
+  return filePath;
+}
+
 export async function backupRoutes(fastify: FastifyInstance) {
   // Create backup
   fastify.post('/api/backup', {
@@ -83,7 +94,11 @@ export async function backupRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
     const backupDir = getBackupDir();
-    const filePath = path.join(backupDir, filename);
+    const filePath = resolveBackupFilePath(backupDir, filename);
+
+    if (!filePath) {
+      return reply.code(400).send({ error: 'Invalid backup filename' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return reply.code(404).send({ error: 'Backup not found' });
@@ -109,7 +124,11 @@ export async function backupRoutes(fastify: FastifyInstance) {
     const config = getConfig();
     const db = getDb();
     const backupDir = getBackupDir();
-    const filePath = path.join(backupDir, filename);
+    const filePath = resolveBackupFilePath(backupDir, filename);
+
+    if (!filePath) {
+      return reply.code(400).send({ error: 'Invalid backup filename' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return reply.code(404).send({ error: 'Backup not found' });
@@ -144,7 +163,11 @@ export async function backupRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
     const backupDir = getBackupDir();
-    const filePath = path.join(backupDir, filename);
+    const filePath = resolveBackupFilePath(backupDir, filename);
+
+    if (!filePath) {
+      return reply.code(400).send({ error: 'Invalid backup filename' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return reply.code(404).send({ error: 'Backup not found' });
