@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Sidebar } from './sidebar';
+import { Sidebar, getSidebarBottomClass } from './sidebar';
 
 vi.mock('@/hooks/use-remediation', () => ({
   useRemediationActions: vi.fn(),
@@ -26,6 +26,14 @@ function renderSidebar() {
 }
 
 describe('Sidebar', () => {
+  it('uses compact bottom offset when activity feed is collapsed', () => {
+    expect(getSidebarBottomClass(true)).toBe('md:bottom-12');
+  });
+
+  it('uses larger bottom offset when activity feed is expanded', () => {
+    expect(getSidebarBottomClass(false)).toBe('md:bottom-80');
+  });
+
   it('shows pending remediation count as badge', () => {
     mockUseRemediationActions.mockReturnValue({
       data: [

@@ -1310,23 +1310,39 @@ aside nav:hover {
   overflow: hidden;
 }
 
-/* --- 70s: warm ambient color washes --- */
+/* --- 70s: bold sweeping arcs --- */
 .retro-70s-bg { background: #f4edd8; }
 
 .retro-70s-top {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 70% 60% at 10% 15%, rgba(200, 163, 92, 0.35) 0%, transparent 100%),
-    radial-gradient(ellipse 50% 50% at 80% 10%, rgba(138, 175, 163, 0.3) 0%, transparent 100%);
+    radial-gradient(ellipse 180% 140% at -25% 15%,
+      #b8912e 0%, #b8912e 12%,
+      #f0e6cf 12.5%, #f0e6cf 15%,
+      #6d9e8e 15%, #6d9e8e 26%,
+      #f0e6cf 26.5%, #f0e6cf 29%,
+      #c47458 29%, #c47458 39%,
+      transparent 40%
+    );
+  mask-image: linear-gradient(180deg, black 0%, black 30%, transparent 60%);
+  -webkit-mask-image: linear-gradient(180deg, black 0%, black 30%, transparent 60%);
 }
 
 .retro-70s-bottom {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 60% 55% at 85% 85%, rgba(207, 138, 114, 0.35) 0%, transparent 100%),
-    radial-gradient(ellipse 45% 45% at 25% 90%, rgba(200, 163, 92, 0.25) 0%, transparent 100%);
+    radial-gradient(ellipse 180% 140% at 125% 85%,
+      #c47458 0%, #c47458 12%,
+      #f0e6cf 12.5%, #f0e6cf 15%,
+      #b8912e 15%, #b8912e 26%,
+      #f0e6cf 26.5%, #f0e6cf 29%,
+      #6d9e8e 29%, #6d9e8e 39%,
+      transparent 40%
+    );
+  mask-image: linear-gradient(0deg, black 0%, black 30%, transparent 60%);
+  -webkit-mask-image: linear-gradient(0deg, black 0%, black 30%, transparent 60%);
 }
 
 /* --- Arcade: neon grid on dark --- */
@@ -1439,7 +1455,7 @@ aside nav:hover {
 }
 
 .pb-safe-comfort {
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
 }
 
 /* Mobile responsive table scrolling */

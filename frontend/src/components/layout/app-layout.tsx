@@ -22,8 +22,8 @@ function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
 }
 
-export function getDesktopMainPaddingClass(activityFeedCollapsed: boolean): 'md:pb-20' | 'md:pb-96' {
-  return activityFeedCollapsed ? 'md:pb-20' : 'md:pb-96';
+export function getDesktopMainPaddingClass(activityFeedCollapsed: boolean): 'md:pb-24' | 'md:pb-[30rem]' {
+  return activityFeedCollapsed ? 'md:pb-24' : 'md:pb-[30rem]';
 }
 
 export function AppLayout() {
@@ -215,7 +215,7 @@ export function AppLayout() {
         {/* Main content — fades in from bottom */}
         <motion.main
           className={cn(
-            'flex-1 overflow-y-auto p-3 pb-28 md:p-4',
+            'flex-1 overflow-y-auto p-3 pb-36 md:p-4',
             getDesktopMainPaddingClass(activityFeedCollapsed),
           )}
           initial={showEntrance ? { y: 12, opacity: 0 } : false}
