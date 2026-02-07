@@ -381,7 +381,6 @@ Compare with expected outcomes:
 - API should not return 5xx
 Return pass/fail checklist.
 ```
-
 ---
 
 ## Navigation

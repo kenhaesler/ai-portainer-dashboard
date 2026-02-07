@@ -2,6 +2,42 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import { verifyJwt } from '../utils/crypto.js';
 import { hasMinRole, type Role } from '../services/user-store.js';
+import { getSession } from '../services/session-store.js';
+
+interface AuthenticatedUser {
+  sub: string;
+  username: string;
+  sessionId: string;
+  role: Role;
+}
+
+export async function authenticateBearerHeader(authHeader?: string): Promise<AuthenticatedUser | null> {
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.slice(7);
+  const payload = await verifyJwt(token);
+  if (!payload?.sessionId) {
+    return null;
+  }
+
+  const session = getSession(payload.sessionId);
+  if (!session) {
+    return null;
+  }
+
+  if (session.user_id !== payload.sub || session.username !== payload.username) {
+    return null;
+  }
+
+  return {
+    sub: payload.sub,
+    username: payload.username,
+    sessionId: payload.sessionId,
+    role: (payload.role as Role) || 'viewer',
+  };
+}
 
 async function authPlugin(fastify: FastifyInstance) {
   fastify.decorate('authenticate', async function (
@@ -14,19 +50,13 @@ async function authPlugin(fastify: FastifyInstance) {
       return;
     }
 
-    const token = authHeader.slice(7);
-    const payload = await verifyJwt(token);
-    if (!payload) {
-      reply.code(401).send({ error: 'Invalid or expired token' });
+    const user = await authenticateBearerHeader(authHeader);
+    if (!user) {
+      reply.code(401).send({ error: 'Invalid, expired, or revoked token' });
       return;
     }
 
-    request.user = {
-      sub: payload.sub,
-      username: payload.username,
-      sessionId: payload.sessionId,
-      role: (payload.role as Role) || 'viewer',
-    };
+    request.user = user;
   });
 
   fastify.decorate('requireRole', function (minRole: Role) {

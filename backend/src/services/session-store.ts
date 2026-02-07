@@ -39,7 +39,7 @@ export function createSession(userId: string, username: string): Session {
 
 export function getSession(sessionId: string): Session | undefined {
   return prepareStmt(
-    'SELECT * FROM sessions WHERE id = ? AND is_valid = 1 AND expires_at > datetime(?)'
+    'SELECT * FROM sessions WHERE id = ? AND is_valid = 1 AND unixepoch(expires_at) > unixepoch(?)'
   ).get(sessionId, new Date().toISOString()) as Session | undefined;
 }
 
@@ -62,7 +62,7 @@ export function refreshSession(sessionId: string): Session | undefined {
 
 export function cleanExpiredSessions(): number {
   const result = prepareStmt(
-    'DELETE FROM sessions WHERE expires_at < datetime(?) OR is_valid = 0'
+    'DELETE FROM sessions WHERE unixepoch(expires_at) < unixepoch(?) OR is_valid = 0'
   ).run(new Date().toISOString());
   return result.changes;
 }

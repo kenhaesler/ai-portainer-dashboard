@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
-import Fastify, { FastifyInstance } from 'fastify';
+import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { settingsRoutes } from './settings.js';
 
@@ -189,5 +189,87 @@ describe('audit-log cursor pagination', () => {
     const body = response.json();
     expect(body.offset).toBe(20);
     expect(body.limit).toBe(10);
+  });
+});
+
+describe('settings security', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('blocks non-admin users from GET /api/settings', async () => {
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u2', username: 'viewer', sessionId: 's2', role: 'viewer' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe('Insufficient permissions');
+
+    await app.close();
+  });
+
+  it('redacts sensitive values for admin on GET /api/settings', async () => {
+    mockAll.mockReturnValueOnce([
+      { key: 'oidc.client_secret', value: 'super-secret', category: 'authentication' },
+      { key: 'elasticsearch.api_key', value: 'es-key', category: 'logs' },
+      { key: 'notifications.smtp_password', value: 'smtp-pass', category: 'notifications' },
+      { key: 'notifications.teams_webhook_url', value: 'https://secret.webhook', category: 'notifications' },
+      { key: 'llm.custom_endpoint_token', value: 'llm-token', category: 'llm' },
+      { key: 'general.theme', value: 'apple-dark', category: 'general' },
+    ]);
+
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { key: 'oidc.client_secret', value: '••••••••', category: 'authentication' },
+      { key: 'elasticsearch.api_key', value: '••••••••', category: 'logs' },
+      { key: 'notifications.smtp_password', value: '••••••••', category: 'notifications' },
+      { key: 'notifications.teams_webhook_url', value: '••••••••', category: 'notifications' },
+      { key: 'llm.custom_endpoint_token', value: '••••••••', category: 'llm' },
+      { key: 'general.theme', value: 'apple-dark', category: 'general' },
+    ]);
+
+    await app.close();
   });
 });
