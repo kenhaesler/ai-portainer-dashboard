@@ -2,6 +2,7 @@ import * as portainer from './portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.js';
 import { getDb } from '../db/sqlite.js';
+import { getTraces, getTrace, getTraceSummary } from './trace-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('llm-tools');
@@ -105,6 +106,44 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: 'query_traces',
+    description:
+      'Search API request traces by service, status, time range, or minimum duration. Returns trace summaries grouped by trace ID.',
+    parameters: {
+      type: 'object',
+      properties: {
+        service_name: { type: 'string', description: 'Filter by service name (e.g. "api-gateway")' },
+        status: { type: 'string', description: 'Filter by trace status', enum: ['ok', 'error'] },
+        time_range: { type: 'string', description: 'Time range (e.g. "1h", "6h", "24h", "7d"). Default: "24h"' },
+        min_duration_ms: { type: 'string', description: 'Minimum duration in milliseconds to filter slow requests' },
+        limit: { type: 'string', description: 'Maximum number of traces to return (default 20)' },
+      },
+    },
+  },
+  {
+    name: 'get_trace_details',
+    description:
+      'Get the full span tree for a specific trace ID. Returns all spans ordered by start time.',
+    parameters: {
+      type: 'object',
+      properties: {
+        trace_id: { type: 'string', description: 'The trace ID to look up' },
+      },
+      required: ['trace_id'],
+    },
+  },
+  {
+    name: 'get_trace_stats',
+    description:
+      'Get trace summary statistics including total traces, average duration, error rate, and top slowest endpoints.',
+    parameters: {
+      type: 'object',
+      properties: {
+        time_range: { type: 'string', description: 'Time range (e.g. "1h", "6h", "24h", "7d"). Default: "24h"' },
+      },
+    },
+  },
+  {
     name: 'navigate_to',
     description:
       'Generate a deep link URL to a specific dashboard page. Use this when the user wants to go to a particular view.',
@@ -126,6 +165,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
             'metrics',
             'settings',
             'search',
+            'trace-explorer',
           ],
         },
         container_name: { type: 'string', description: 'For container-specific pages, the container name to link to' },
@@ -457,6 +497,114 @@ async function executeListAnomalies(
   }
 }
 
+function parseTimeRange(timeRange: string): Date {
+  const now = new Date();
+  const from = new Date(now);
+  const rangeMatch = timeRange.match(/^(\d+)([mhd])$/);
+  if (rangeMatch) {
+    const value = parseInt(rangeMatch[1], 10);
+    const unit = rangeMatch[2];
+    switch (unit) {
+      case 'm': from.setMinutes(from.getMinutes() - value); break;
+      case 'h': from.setHours(from.getHours() - value); break;
+      case 'd': from.setDate(from.getDate() - value); break;
+    }
+  } else {
+    from.setHours(from.getHours() - 24);
+  }
+  return from;
+}
+
+function executeQueryTraces(
+  args: Record<string, unknown>,
+): ToolCallResult {
+  try {
+    const timeRange = String(args.time_range || '24h');
+    const from = parseTimeRange(timeRange);
+    const limit = Math.min(parseInt(String(args.limit || '20'), 10) || 20, 50);
+
+    let traces = getTraces({
+      from: from.toISOString(),
+      serviceName: args.service_name ? String(args.service_name) : undefined,
+      status: args.status ? String(args.status) : undefined,
+      limit,
+    });
+
+    if (args.min_duration_ms) {
+      const minDuration = parseInt(String(args.min_duration_ms), 10);
+      if (!isNaN(minDuration)) {
+        traces = traces.filter((t) => (t.duration_ms ?? 0) >= minDuration);
+      }
+    }
+
+    return {
+      tool: 'query_traces',
+      success: true,
+      data: { traces, count: traces.length, timeRange },
+    };
+  } catch (err) {
+    log.error({ err }, 'query_traces failed');
+    return { tool: 'query_traces', success: false, error: 'Failed to query traces' };
+  }
+}
+
+function executeGetTraceDetails(
+  args: Record<string, unknown>,
+): ToolCallResult {
+  try {
+    const traceId = String(args.trace_id || '');
+    if (!traceId) {
+      return { tool: 'get_trace_details', success: false, error: 'trace_id is required' };
+    }
+
+    const spans = getTrace(traceId);
+    if (spans.length === 0) {
+      return { tool: 'get_trace_details', success: false, error: `No trace found with ID "${traceId}"` };
+    }
+
+    return {
+      tool: 'get_trace_details',
+      success: true,
+      data: { trace_id: traceId, spans, spanCount: spans.length },
+    };
+  } catch (err) {
+    log.error({ err }, 'get_trace_details failed');
+    return { tool: 'get_trace_details', success: false, error: 'Failed to fetch trace details' };
+  }
+}
+
+function executeGetTraceStats(
+  args: Record<string, unknown>,
+): ToolCallResult {
+  try {
+    const timeRange = String(args.time_range || '24h');
+    const from = parseTimeRange(timeRange);
+
+    const summary = getTraceSummary(from.toISOString());
+
+    // Get top slowest endpoints
+    const db = getDb();
+    const slowest = db.prepare(`
+      SELECT name, AVG(duration_ms) as avg_duration_ms, COUNT(*) as call_count,
+             CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as error_rate
+      FROM spans
+      WHERE start_time >= ?
+      GROUP BY name
+      ORDER BY AVG(duration_ms) DESC
+      LIMIT 10
+    `).all(from.toISOString()) as Array<Record<string, unknown>>;
+
+    return {
+      tool: 'get_trace_stats',
+      success: true,
+      data: { ...summary, timeRange, slowestEndpoints: slowest },
+    };
+  } catch (err) {
+    log.error({ err }, 'get_trace_stats failed');
+    return { tool: 'get_trace_stats', success: false, error: 'Failed to fetch trace stats' };
+  }
+}
+
 function executeNavigateTo(
   args: Record<string, unknown>,
 ): ToolCallResult {
@@ -475,6 +623,7 @@ function executeNavigateTo(
     metrics: '/metrics',
     settings: '/settings',
     search: '/search',
+    'trace-explorer': '/trace-explorer',
   };
 
   const path = routes[page] || '/';
@@ -495,6 +644,9 @@ const executors: Record<string, (args: Record<string, unknown>) => Promise<ToolC
   list_insights: executeListInsights,
   get_container_logs: executeGetContainerLogs,
   list_anomalies: executeListAnomalies,
+  query_traces: executeQueryTraces,
+  get_trace_details: executeGetTraceDetails,
+  get_trace_stats: executeGetTraceStats,
   navigate_to: executeNavigateTo,
 };
 
