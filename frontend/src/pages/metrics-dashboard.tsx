@@ -409,105 +409,6 @@ export default function MetricsDashboardPage() {
         </div>
       </div>
 
-      {/* Forecast Overview */}
-      <div className="rounded-lg border bg-card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold">Forecast Overview (Next 24h)</h2>
-            <p className="text-sm text-muted-foreground">
-              Risk-ranked capacity outlook across containers.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full bg-red-100 px-2.5 py-1 font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              Critical: {riskBuckets.critical}
-            </span>
-            <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-              Warning: {riskBuckets.warning}
-            </span>
-            <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              Healthy: {riskBuckets.healthy}
-            </span>
-          </div>
-        </div>
-
-        {forecastOverviewQuery.isLoading ? (
-          <div className="mt-4 space-y-2">
-            <div className="h-10 animate-pulse rounded bg-muted" />
-            <div className="h-10 animate-pulse rounded bg-muted" />
-            <div className="h-10 animate-pulse rounded bg-muted" />
-          </div>
-        ) : forecastOverviewQuery.error ? (
-          <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-4">
-            <p className="font-medium text-destructive">Failed to load forecast overview</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {forecastOverviewQuery.error instanceof Error ? forecastOverviewQuery.error.message : 'Unexpected error'}
-            </p>
-          </div>
-        ) : rankedForecasts.length === 0 ? (
-          <div className="mt-4 rounded-md border border-dashed bg-muted/20 p-6 text-center">
-            <p className="font-medium">No forecast data available</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Keep metrics collection running to build cross-container forecast insights.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-2 py-2.5 font-medium">Rank</th>
-                  <th className="px-2 py-2.5 font-medium">Container</th>
-                  <th className="px-2 py-2.5 font-medium">Metric</th>
-                  <th className="px-2 py-2.5 font-medium">Current</th>
-                  <th className="px-2 py-2.5 font-medium">Trend</th>
-                  <th className="px-2 py-2.5 font-medium">Threshold ETA</th>
-                  <th className="px-2 py-2.5 font-medium">Status</th>
-                  <th className="px-2 py-2.5 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rankedForecasts.map((forecast, index) => {
-                  const riskLevel = getForecastRiskLevel(forecast);
-                  const riskStyles: Record<ForecastRiskLevel, string> = {
-                    critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                    warning: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                    healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                  };
-
-                  return (
-                    <tr key={`${forecast.containerId}-${forecast.metricType}`} className="border-b last:border-0">
-                      <td className="px-2 py-2.5 text-muted-foreground">{index + 1}</td>
-                      <td className="px-2 py-2.5 font-medium">{forecast.containerName}</td>
-                      <td className="px-2 py-2.5 uppercase text-xs">{forecast.metricType}</td>
-                      <td className="px-2 py-2.5">{forecast.currentValue.toFixed(1)}%</td>
-                      <td className="px-2 py-2.5 capitalize">{forecast.trend}</td>
-                      <td className="px-2 py-2.5">
-                        {forecast.timeToThreshold !== null ? `~${forecast.timeToThreshold}h` : 'No breach predicted'}
-                      </td>
-                      <td className="px-2 py-2.5">
-                        <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', riskStyles[riskLevel])}>
-                          {riskLevel}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => drillIntoForecast(forecast.containerId)}
-                          className="rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       {/* Loading State */}
       {isLoading && (
         <div className="space-y-4">
@@ -742,6 +643,105 @@ export default function MetricsDashboardPage() {
           )}
         </>
       )}
+
+      {/* Forecast Overview */}
+      <div className="rounded-lg border bg-card p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">Forecast Overview (Next 24h)</h2>
+            <p className="text-sm text-muted-foreground">
+              Risk-ranked capacity outlook across containers.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-red-100 px-2.5 py-1 font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+              Critical: {riskBuckets.critical}
+            </span>
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              Warning: {riskBuckets.warning}
+            </span>
+            <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              Healthy: {riskBuckets.healthy}
+            </span>
+          </div>
+        </div>
+
+        {forecastOverviewQuery.isLoading ? (
+          <div className="mt-4 space-y-2">
+            <div className="h-10 animate-pulse rounded bg-muted" />
+            <div className="h-10 animate-pulse rounded bg-muted" />
+            <div className="h-10 animate-pulse rounded bg-muted" />
+          </div>
+        ) : forecastOverviewQuery.error ? (
+          <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-4">
+            <p className="font-medium text-destructive">Failed to load forecast overview</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {forecastOverviewQuery.error instanceof Error ? forecastOverviewQuery.error.message : 'Unexpected error'}
+            </p>
+          </div>
+        ) : rankedForecasts.length === 0 ? (
+          <div className="mt-4 rounded-md border border-dashed bg-muted/20 p-6 text-center">
+            <p className="font-medium">No forecast data available</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keep metrics collection running to build cross-container forecast insights.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2 py-2.5 font-medium">Rank</th>
+                  <th className="px-2 py-2.5 font-medium">Container</th>
+                  <th className="px-2 py-2.5 font-medium">Metric</th>
+                  <th className="px-2 py-2.5 font-medium">Current</th>
+                  <th className="px-2 py-2.5 font-medium">Trend</th>
+                  <th className="px-2 py-2.5 font-medium">Threshold ETA</th>
+                  <th className="px-2 py-2.5 font-medium">Status</th>
+                  <th className="px-2 py-2.5 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rankedForecasts.map((forecast, index) => {
+                  const riskLevel = getForecastRiskLevel(forecast);
+                  const riskStyles: Record<ForecastRiskLevel, string> = {
+                    critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                    warning: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                    healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                  };
+
+                  return (
+                    <tr key={`${forecast.containerId}-${forecast.metricType}`} className="border-b last:border-0">
+                      <td className="px-2 py-2.5 text-muted-foreground">{index + 1}</td>
+                      <td className="px-2 py-2.5 font-medium">{forecast.containerName}</td>
+                      <td className="px-2 py-2.5 uppercase text-xs">{forecast.metricType}</td>
+                      <td className="px-2 py-2.5">{forecast.currentValue.toFixed(1)}%</td>
+                      <td className="px-2 py-2.5 capitalize">{forecast.trend}</td>
+                      <td className="px-2 py-2.5">
+                        {forecast.timeToThreshold !== null ? `~${forecast.timeToThreshold}h` : 'No breach predicted'}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', riskStyles[riskLevel])}>
+                          {riskLevel}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => drillIntoForecast(forecast.containerId)}
+                          className="rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
