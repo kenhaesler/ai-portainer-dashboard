@@ -1,5 +1,5 @@
-# Stack: web-platform — Web tier + API gateway + cron
-# 5 services: web-frontend, web-backend-1, web-backend-2, app-gateway, app-cron
+# Stack: web-platform — Web tier + API gateway + cron + eBPF tracing
+# 6 services: web-frontend, web-backend-1, web-backend-2, app-gateway, app-cron, beyla
 # Networks: app-frontend-net (external), app-backend-net (external)
 
 services:
@@ -90,6 +90,30 @@ services:
       app.tier: "cron"
       app.env: "production"
       app.role: "scheduler"
+    restart: unless-stopped
+
+  # Grafana Beyla — eBPF auto-instrumentation for all HTTP services in this stack
+  beyla:
+    image: grafana/beyla:latest
+    container_name: web-platform-beyla
+    privileged: true
+    pid: "host"
+    init: true
+    environment:
+      BEYLA_OPEN_PORT: "80"
+      BEYLA_SERVICE_NAMESPACE: "web-platform"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://host.docker.internal:3051/api/traces/otlp"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
+      OTEL_METRICS_EXPORTER: "none"
+      OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=ebpf-trace-key-change-me"
+      BEYLA_TRACE_PRINTER: "disabled"
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup
+      - /sys/kernel/security:/sys/kernel/security
+    labels:
+      app.tier: "observability"
+      app.env: "production"
+      app.role: "ebpf-tracer"
     restart: unless-stopped
 
 networks:

@@ -15,6 +15,7 @@ export const SpanSchema = z.object({
   duration_ms: z.number().nullable(),
   service_name: z.string(),
   attributes: z.string().default('{}'),
+  trace_source: z.string().optional(),
   created_at: z.string(),
 });
 

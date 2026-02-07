@@ -1,0 +1,38 @@
+# Grafana Beyla - eBPF auto-instrumentation sidecar
+# Usage:
+#   docker compose -f docker-compose.dev.yml -f docker/beyla.yml up
+#   OR with profile: docker compose --profile ebpf up
+#
+# Prerequisites:
+#   - Linux kernel 5.8+ with BTF support
+#   - Docker host must allow --privileged or SYS_ADMIN + SYS_PTRACE capabilities
+#   - macOS/Windows Docker Desktop: works inside Linux VM but cannot instrument host processes
+#
+# Set TRACES_INGESTION_ENABLED=true and TRACES_INGESTION_API_KEY in .env
+
+services:
+  beyla:
+    image: grafana/beyla:latest
+    privileged: true
+    pid: "host"
+    init: true
+    environment:
+      BEYLA_OPEN_PORT: "${BEYLA_OPEN_PORT:-80,443,3000-9999}"
+      BEYLA_SERVICE_NAMESPACE: "portainer-apps"
+      # Beyla auto-appends /v1/traces to the base endpoint URL
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://backend:3051/api/traces/otlp"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
+      # Disable metrics export — we only ingest traces
+      OTEL_METRICS_EXPORTER: "none"
+      BEYLA_TRACE_PRINTER: "disabled"
+      # Header format: key=value (no spaces, no colon)
+      OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=${TRACES_INGESTION_API_KEY:-}"
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup
+      - /sys/kernel/security:/sys/kernel/security
+    networks:
+      - dashboard-net
+    depends_on:
+      - backend
+    profiles:
+      - ebpf

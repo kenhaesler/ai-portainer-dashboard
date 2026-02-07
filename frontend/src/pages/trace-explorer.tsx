@@ -175,6 +175,7 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
 export default function TraceExplorerPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>('all');
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
@@ -184,6 +185,7 @@ export default function TraceExplorerPage() {
   // Fetch data
   const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces({
     service: serviceFilter || undefined,
+    source: sourceFilter || undefined,
     limit: 50,
   });
 
@@ -432,6 +434,21 @@ export default function TraceExplorerPage() {
             options={[
               { value: '__all__', label: 'All services' },
               ...services.map((s) => ({ value: s, label: s })),
+            ]}
+            className="text-sm"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <ThemedSelect
+            value={sourceFilter || '__all__'}
+            onValueChange={(val) => setSourceFilter(val === '__all__' ? '' : val)}
+            options={[
+              { value: '__all__', label: 'All sources' },
+              { value: 'http', label: 'HTTP Requests' },
+              { value: 'scheduler', label: 'Background Jobs' },
+              { value: 'ebpf', label: 'eBPF (Apps)' },
             ]}
             className="text-sm"
           />

@@ -29,6 +29,9 @@ services:
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-900}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-aidash:cache:}
+      # eBPF Trace Ingestion (Grafana Beyla) — see docker/beyla.yml
+      - TRACES_INGESTION_ENABLED=${TRACES_INGESTION_ENABLED:-false}
+      - TRACES_INGESTION_API_KEY=${TRACES_INGESTION_API_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3051/health"]
       interval: 30s
