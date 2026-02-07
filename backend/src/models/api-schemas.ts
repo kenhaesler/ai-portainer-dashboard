@@ -200,7 +200,9 @@ export const TraceIdParamsSchema = z.object({
 
 // ─── Backup schemas ─────────────────────────────────────────────────
 export const FilenameParamsSchema = z.object({
-  filename: z.string(),
+  filename: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]+\.db$/, 'filename must be a .db file without path separators'),
 });
 
 // ─── Settings schemas ───────────────────────────────────────────────

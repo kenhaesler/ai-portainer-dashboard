@@ -75,7 +75,7 @@ services:
 
   # Ollama for AI features
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.12.10
     ports:
       - "11434:11434"
     volumes:
@@ -84,7 +84,7 @@ services:
       - dashboard-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:

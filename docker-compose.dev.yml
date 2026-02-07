@@ -82,7 +82,7 @@ services:
     #       memory: 256M
 
   ollama:
-    image: ollama/ollama:0.6.5
+    image: ollama/ollama:0.12.10
     restart: unless-stopped
     ports:
       - "11534:11434"
@@ -107,7 +107,7 @@ services:
     #       memory: 2G
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.7-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:

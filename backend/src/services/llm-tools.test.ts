@@ -8,8 +8,8 @@ import {
 
 describe('llm-tools', () => {
   describe('TOOL_DEFINITIONS', () => {
-    it('should define exactly 6 tools', () => {
-      expect(TOOL_DEFINITIONS).toHaveLength(6);
+    it('should define exactly 9 tools', () => {
+      expect(TOOL_DEFINITIONS).toHaveLength(9);
     });
 
     it('should have unique tool names', () => {
@@ -24,6 +24,9 @@ describe('llm-tools', () => {
       expect(names).toContain('list_insights');
       expect(names).toContain('get_container_logs');
       expect(names).toContain('list_anomalies');
+      expect(names).toContain('query_traces');
+      expect(names).toContain('get_trace_details');
+      expect(names).toContain('get_trace_stats');
       expect(names).toContain('navigate_to');
     });
 
@@ -45,6 +48,15 @@ describe('llm-tools', () => {
 
       const navTool = TOOL_DEFINITIONS.find((t) => t.name === 'navigate_to');
       expect(navTool?.parameters.required).toContain('page');
+
+      const traceDetailsTool = TOOL_DEFINITIONS.find((t) => t.name === 'get_trace_details');
+      expect(traceDetailsTool?.parameters.required).toContain('trace_id');
+    });
+
+    it('should include trace-explorer in navigate_to page enum', () => {
+      const navTool = TOOL_DEFINITIONS.find((t) => t.name === 'navigate_to');
+      const pageParam = navTool?.parameters.properties.page;
+      expect(pageParam?.enum).toContain('trace-explorer');
     });
   });
 
@@ -155,6 +167,34 @@ describe('llm-tools', () => {
       const input = '{"tool_calls": []}';
       const result = parseToolCalls(input);
       expect(result).toBeNull();
+    });
+
+    it('should parse trace tool calls', () => {
+      const input = JSON.stringify({
+        tool_calls: [{ tool: 'query_traces', arguments: { status: 'error', time_range: '1h' } }],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('query_traces');
+      expect(result![0].arguments).toEqual({ status: 'error', time_range: '1h' });
+    });
+
+    it('should parse get_trace_details tool call', () => {
+      const input = JSON.stringify({
+        tool_calls: [{ tool: 'get_trace_details', arguments: { trace_id: 'abc-123' } }],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('get_trace_details');
+    });
+
+    it('should parse get_trace_stats tool call', () => {
+      const input = JSON.stringify({
+        tool_calls: [{ tool: 'get_trace_stats', arguments: {} }],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('get_trace_stats');
     });
 
     it('should handle whitespace and newlines in JSON', () => {

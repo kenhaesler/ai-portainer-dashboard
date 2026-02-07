@@ -34,18 +34,43 @@ const mockDeleteWebhook = vi.mocked(deleteWebhook);
 const mockGetDeliveries = vi.mocked(getDeliveriesForWebhook);
 
 async function buildTestApp() {
+  let currentRole: 'viewer' | 'operator' | 'admin' = 'admin';
   const app = Fastify();
   app.decorate('authenticate', async () => undefined);
+  app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+    const rank = { viewer: 0, operator: 1, admin: 2 };
+    const userRole = request.user?.role ?? 'viewer';
+    if (rank[userRole] < rank[minRole]) {
+      reply.code(403).send({ error: 'Insufficient permissions' });
+    }
+  });
+  app.decorateRequest('user', undefined);
+  app.addHook('preHandler', async (request) => {
+    request.user = {
+      sub: 'user-1',
+      username: 'tester',
+      sessionId: 'session-1',
+      role: currentRole,
+    };
+  });
   await app.register(webhookRoutes);
-  return app;
+  return {
+    app,
+    setRole: (role: 'viewer' | 'operator' | 'admin') => {
+      currentRole = role;
+    },
+  };
 }
 
 describe('webhookRoutes', () => {
-  let app: Awaited<ReturnType<typeof buildTestApp>>;
+  let app: Awaited<ReturnType<typeof buildTestApp>>['app'];
+  let setRole: Awaited<ReturnType<typeof buildTestApp>>['setRole'];
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    app = await buildTestApp();
+    const built = await buildTestApp();
+    app = built.app;
+    setRole = built.setRole;
   });
 
   afterEach(async () => {
@@ -119,6 +144,23 @@ describe('webhookRoutes', () => {
       });
       expect(res.statusCode).toBe(400);
     });
+
+    it('should reject non-admin users', async () => {
+      setRole('viewer');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/webhooks',
+        payload: {
+          name: 'New Hook',
+          url: 'https://example.com/hook',
+          events: ['*'],
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+    });
   });
 
   describe('GET /api/webhooks/:id', () => {
@@ -181,6 +223,17 @@ describe('webhookRoutes', () => {
       });
       expect(res.statusCode).toBe(404);
     });
+
+    it('should reject non-admin users', async () => {
+      setRole('viewer');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/webhooks/wh-1',
+        payload: { name: 'Updated' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+    });
   });
 
   describe('DELETE /api/webhooks/:id', () => {
@@ -197,6 +250,22 @@ describe('webhookRoutes', () => {
 
       const res = await app.inject({ method: 'DELETE', url: '/api/webhooks/non-existent' });
       expect(res.statusCode).toBe(404);
+    });
+
+    it('should reject non-admin users', async () => {
+      setRole('viewer');
+      const res = await app.inject({ method: 'DELETE', url: '/api/webhooks/wh-1' });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+    });
+  });
+
+  describe('POST /api/webhooks/:id/test', () => {
+    it('should reject non-admin users', async () => {
+      setRole('viewer');
+      const res = await app.inject({ method: 'POST', url: '/api/webhooks/wh-1/test' });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
     });
   });
 

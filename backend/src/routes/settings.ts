@@ -13,6 +13,9 @@ import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../service
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
   'notifications.teams_webhook_url',
+  'oidc.client_secret',
+  'elasticsearch.api_key',
+  'llm.custom_endpoint_token',
   'portainer_backup.password',
 ]);
 
@@ -29,11 +32,32 @@ const LANDING_PAGE_OPTIONS = new Set([
 
 function redactSensitive(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
   return rows.map((row) => {
-    if (typeof row.key === 'string' && SENSITIVE_KEYS.has(row.key) && row.value) {
+    if (
+      typeof row.key === 'string'
+      && isSensitiveSettingKey(row.key)
+      && row.value
+    ) {
       return { ...row, value: REDACTED };
     }
     return row;
   });
+}
+
+function isSensitiveSettingKey(key: string): boolean {
+  if (SENSITIVE_KEYS.has(key)) return true;
+
+  const keyLower = key.toLowerCase();
+  return (
+    keyLower.endsWith('_password')
+    || keyLower.endsWith('_secret')
+    || keyLower.endsWith('_token')
+    || keyLower.endsWith('_api_key')
+    || keyLower.endsWith('.password')
+    || keyLower.endsWith('.secret')
+    || keyLower.endsWith('.token')
+    || keyLower.endsWith('.api_key')
+    || keyLower.endsWith('.webhook_url')
+  );
 }
 
 export async function settingsRoutes(fastify: FastifyInstance) {
@@ -82,7 +106,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: SettingsQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { category } = request.query as { category?: string };
     const db = getDb();
@@ -125,7 +149,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
-    const responseValue = SENSITIVE_KEYS.has(key) ? REDACTED : value;
+    const responseValue = isSensitiveSettingKey(key) ? REDACTED : value;
     return { success: true, key, value: responseValue };
   });
 
