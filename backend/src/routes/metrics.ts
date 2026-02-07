@@ -91,7 +91,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
 
     const where = conditions.join(' AND ');
     const { rows: metrics } = await db.query<{ timestamp: string; value: number }>(
-      `SELECT ${rollup.timestampCol}::text as timestamp, ${rollup.valueCol}::double precision as value
+      `SELECT ${rollup.timestampCol} as timestamp, ${rollup.valueCol}::double precision as value
        FROM ${rollup.table} WHERE ${where}
        ORDER BY ${rollup.timestampCol} ASC
        LIMIT 5000`,

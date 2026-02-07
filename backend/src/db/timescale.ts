@@ -8,6 +8,12 @@ import { createChildLogger } from '../utils/logger.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createChildLogger('timescale');
 
+// Override pg type parsers so TIMESTAMPTZ (OID 1184) and TIMESTAMP (OID 1114)
+// are returned as ISO 8601 strings instead of JavaScript Date objects.
+// This avoids serialization issues with Fastify response schemas.
+pg.types.setTypeParser(1184, (val: string) => new Date(val).toISOString()); // timestamptz
+pg.types.setTypeParser(1114, (val: string) => new Date(val + 'Z').toISOString()); // timestamp
+
 let pool: pg.Pool | null = null;
 
 export async function getMetricsDb(): Promise<pg.Pool> {
