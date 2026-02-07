@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
+import { api } from '@/lib/api';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
 
