@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -8,11 +8,14 @@ import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useNetworkRates } from '@/hooks/use-metrics';
 import { TopologyGraph } from '@/components/network/topology-graph';
+import { Topology3D } from '@/components/network/topology-3d';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { formatDate } from '@/lib/utils';
+import { filterTopologyData } from '@/lib/topology-search';
+import { isWebGLAvailable } from '@/lib/webgl';
 
 type SelectedNode =
   | { type: 'container'; data: Container }
@@ -22,6 +25,8 @@ type SelectedNode =
 export default function NetworkTopologyPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedNode, setSelectedNode] = useState<SelectedNode>(null);
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>(() => (isWebGLAvailable() ? '3d' : '2d'));
+  const [searchTerm, setSearchTerm] = useState('');
 
   const endpointParam = searchParams.get('endpoint');
   const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
@@ -39,14 +44,30 @@ export default function NetworkTopologyPage() {
   const { data: networks, isLoading: networksLoading, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
   const { interval, setInterval } = useAutoRefresh(30);
+  const webglAvailable = useMemo(() => isWebGLAvailable(), []);
+
+  useEffect(() => {
+    if (!webglAvailable && viewMode === '3d') {
+      setViewMode('2d');
+    }
+  }, [webglAvailable, viewMode]);
 
   // Transform data for TopologyGraph
-  const graphData = useMemo(() => {
+  const filteredTopology = useMemo(() => {
     if (!containers || !networks) {
-      return { containers: [], networks: [] };
+      return {
+        containers: [],
+        networks: [],
+        matchedContainerIds: new Set<string>(),
+        matchedNetworkIds: new Set<string>(),
+      };
     }
 
-    const transformedContainers = containers.map(c => ({
+    return filterTopologyData(containers, networks, searchTerm);
+  }, [containers, networks, searchTerm]);
+
+  const graphData = useMemo(() => {
+    const transformedContainers = filteredTopology.containers.map(c => ({
       id: c.id,
       name: c.name,
       state: c.state as 'running' | 'stopped' | 'paused' | 'unknown',
@@ -55,7 +76,7 @@ export default function NetworkTopologyPage() {
       labels: c.labels,
     }));
 
-    const transformedNetworks = networks.map(n => ({
+    const transformedNetworks = filteredTopology.networks.map(n => ({
       id: n.id,
       name: n.name,
       driver: n.driver,
@@ -67,7 +88,15 @@ export default function NetworkTopologyPage() {
       containers: transformedContainers,
       networks: transformedNetworks,
     };
-  }, [containers, networks]);
+  }, [filteredTopology]);
+
+  const searchMatchIds = useMemo(() => {
+    if (!searchTerm.trim()) return undefined;
+    const ids = new Set<string>();
+    filteredTopology.matchedContainerIds.forEach(id => ids.add(`container-${id}`));
+    filteredTopology.matchedNetworkIds.forEach(id => ids.add(`net-${id}`));
+    return ids;
+  }, [filteredTopology, searchTerm]);
 
   const handleRefresh = () => {
     refetchContainers();
@@ -131,6 +160,37 @@ export default function NetworkTopologyPage() {
           />
         </div>
 
+        <div className="flex items-center gap-2">
+          <label htmlFor="topology-view" className="text-sm font-medium">
+            View
+          </label>
+          <ThemedSelect
+            id="topology-view"
+            value={viewMode}
+            onValueChange={(val) => setViewMode(val as '2d' | '3d')}
+            options={[
+              { value: '3d', label: '3D Force' },
+              { value: '2d', label: '2D Flow' },
+            ]}
+          />
+          {!webglAvailable && (
+            <span className="text-xs text-muted-foreground">WebGL unavailable — showing 2D fallback</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="topology-search" className="text-sm font-medium">
+            Search
+          </label>
+          <input
+            id="topology-search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Name, image, or stack"
+            className="h-9 w-56 rounded-md border bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+
         {containers && networks && (
           <span className="text-sm text-muted-foreground">
             {containers.length} container{containers.length !== 1 ? 's' : ''} · {networks.length} network{networks.length !== 1 ? 's' : ''}
@@ -160,12 +220,22 @@ export default function NetworkTopologyPage() {
         ) : (
           <div className="flex gap-4 h-full">
             <div className={`transition-all h-full ${selectedNode ? 'w-2/3' : 'w-full'}`}>
-              <TopologyGraph
-                containers={graphData.containers}
-                networks={graphData.networks}
-                onNodeClick={handleNodeClick}
-                networkRates={networkRatesData?.rates}
-              />
+              {viewMode === '3d' && webglAvailable ? (
+                <Topology3D
+                  containers={graphData.containers}
+                  networks={graphData.networks}
+                  onNodeClick={handleNodeClick}
+                  networkRates={networkRatesData?.rates}
+                  searchMatches={searchMatchIds}
+                />
+              ) : (
+                <TopologyGraph
+                  containers={graphData.containers}
+                  networks={graphData.networks}
+                  onNodeClick={handleNodeClick}
+                  networkRates={networkRatesData?.rates}
+                />
+              )}
             </div>
 
             {/* Side Panel */}
