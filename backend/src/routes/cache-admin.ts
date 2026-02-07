@@ -14,7 +14,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       summary: 'Get cache statistics and active entries',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
     const stats = await cache.getStats();
     const entries = await cache.getEntries();
@@ -31,7 +31,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       summary: 'Clear all cache entries',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     await cache.clear();
 
@@ -56,7 +56,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: CacheInvalidateQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { resource } = request.query as { resource?: string };
 
