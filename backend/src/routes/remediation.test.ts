@@ -4,9 +4,6 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { remediationRoutes } from './remediation.js';
 
 const mockBroadcastActionUpdate = vi.fn();
-const mockRestart = vi.fn();
-const mockStop = vi.fn();
-const mockStart = vi.fn();
 
 let state: { action: any } = {
   action: null,
@@ -18,12 +15,6 @@ vi.mock('../services/audit-logger.js', () => ({
 
 vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
-}));
-
-vi.mock('../services/portainer-client.js', () => ({
-  restartContainer: (...args: unknown[]) => mockRestart(...args),
-  stopContainer: (...args: unknown[]) => mockStop(...args),
-  startContainer: (...args: unknown[]) => mockStart(...args),
 }));
 
 vi.mock('../db/sqlite.js', () => ({
@@ -85,15 +76,23 @@ vi.mock('../db/sqlite.js', () => ({
 
 describe('remediation routes', () => {
   let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
   beforeAll(async () => {
+    currentRole = 'admin';
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
-    app.decorate('requireRole', () => async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
     app.decorateRequest('user', undefined);
     app.addHook('preHandler', async (request) => {
-      request.user = { sub: 'u1', username: 'operator', sessionId: 's1', role: 'operator' as const };
+      request.user = { sub: 'u1', username: 'operator', sessionId: 's1', role: currentRole };
     });
     await app.register(remediationRoutes);
     await app.ready();
@@ -104,6 +103,7 @@ describe('remediation routes', () => {
   });
 
   beforeEach(() => {
+    currentRole = 'admin';
     vi.clearAllMocks();
     state.action = {
       id: 'a1',
@@ -134,5 +134,39 @@ describe('remediation routes', () => {
 
     expect(res.statusCode).toBe(200);
     expect(mockBroadcastActionUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
+  });
+
+  it('rejects approve for non-admin users', async () => {
+    currentRole = 'viewer';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/approve',
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+  });
+
+  it('rejects reject for non-admin users', async () => {
+    currentRole = 'operator';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/reject',
+      payload: { reason: 'not now' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+  });
+
+  it('does not expose execute endpoint', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(404);
   });
 });
