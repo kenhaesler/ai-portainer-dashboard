@@ -48,6 +48,7 @@ export const envSchema = z.object({
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(30),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
   ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(15),
+  ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(80),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
