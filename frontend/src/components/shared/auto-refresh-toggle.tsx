@@ -21,7 +21,7 @@ export function AutoRefreshToggle({ interval, onIntervalChange, className }: Aut
   const isActive = interval > 0;
 
   return (
-    <div className={cn('inline-flex h-9 items-center rounded-full border border-input bg-background p-0.5', className)}>
+    <div className={cn('inline-flex h-9 items-center gap-0.5 rounded-full border border-input bg-background p-0.5', className)}>
       {INTERVALS.map((opt) => {
         const isSelected = interval === opt.value;
         const isOff = opt.value === 0;

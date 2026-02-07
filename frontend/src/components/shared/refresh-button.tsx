@@ -25,10 +25,10 @@ export function RefreshButton({ onClick, isLoading, className, onForceRefresh }:
   }
 
   return (
-    <div className={cn('inline-flex h-9 items-stretch overflow-hidden rounded-full border border-input bg-background', className)}>
+    <div className={cn('inline-flex h-9 items-center gap-0.5 rounded-full border border-input bg-background p-0.5', className)}>
       <button
         onClick={onClick}
-        className="inline-flex h-full items-center gap-2 px-4 text-sm font-medium hover:bg-accent"
+        className="inline-flex h-8 items-center gap-2 rounded-full px-4 text-sm font-medium hover:bg-accent"
       >
         <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
         {isLoading ? 'Updating...' : 'Refresh'}
@@ -36,7 +36,7 @@ export function RefreshButton({ onClick, isLoading, className, onForceRefresh }:
       <button
         onClick={onForceRefresh}
         title="Force refresh (bypass backend cache)"
-        className="inline-flex h-full items-center border-l border-input px-3 text-sm font-medium hover:bg-accent"
+        className="inline-flex h-8 items-center rounded-full px-3 text-sm font-medium hover:bg-accent"
       >
         <Zap className="h-4 w-4" />
       </button>
