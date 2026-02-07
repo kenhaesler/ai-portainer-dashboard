@@ -1,13 +1,22 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check } from 'lucide-react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { useLlmChat } from '@/hooks/use-llm-chat';
+import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import 'highlight.js/styles/tokyo-night-dark.css';
+
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  query_containers: 'Querying containers',
+  get_container_metrics: 'Fetching metrics',
+  list_insights: 'Loading insights',
+  get_container_logs: 'Reading logs',
+  list_anomalies: 'Checking anomalies',
+  navigate_to: 'Generating link',
+};
 
 export default function LlmAssistantPage() {
   const location = useLocation();
@@ -17,7 +26,7 @@ export default function LlmAssistantPage() {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { messages, isStreaming, currentResponse, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
+  const { messages, isStreaming, currentResponse, activeToolCalls, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
   const { data: modelsData } = useLlmModels();
 
   useEffect(() => {
@@ -133,10 +142,10 @@ export default function LlmAssistantPage() {
                 </p>
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
                   {[
-                    'What containers are currently running?',
-                    'Are there any unhealthy containers?',
-                    'Show me resource usage across endpoints',
-                    'Help me troubleshoot a container issue'
+                    'Show me all running containers',
+                    'Are there any critical insights or anomalies?',
+                    'What are the CPU metrics for my busiest container?',
+                    'Show me recent logs for the backend service'
                   ].map((suggestion, i) => (
                     <button
                       key={i}
@@ -172,6 +181,22 @@ export default function LlmAssistantPage() {
                       </div>
                       <span className="text-[13px] text-muted-foreground">Thinking...</span>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tool call indicator */}
+            {isStreaming && activeToolCalls.length > 0 && !currentResponse && (
+              <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex-shrink-0">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+                    <Bot className="h-5 w-5 text-white" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 backdrop-blur-sm p-4 shadow-sm border border-border/50">
+                    <ToolCallIndicator events={activeToolCalls} />
                   </div>
                 </div>
               </div>
@@ -247,6 +272,7 @@ interface MessageBubbleProps {
     role: 'user' | 'assistant' | 'system';
     content: string;
     timestamp: string;
+    toolCalls?: ToolCallEvent[];
   };
 }
 
@@ -265,6 +291,11 @@ function MessageBubble({ message }: MessageBubbleProps) {
     );
   }
 
+  // Collect unique tools used across all tool call events
+  const toolsUsed = message.toolCalls
+    ? [...new Set(message.toolCalls.flatMap(tc => tc.tools))]
+    : [];
+
   return (
     <div className={`flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div className="flex-shrink-0">
@@ -281,6 +312,19 @@ function MessageBubble({ message }: MessageBubbleProps) {
         </div>
       </div>
       <div className={`flex-1 space-y-2 ${isUser ? 'max-w-[80%]' : ''}`}>
+        {toolsUsed.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-1">
+            {toolsUsed.map((tool) => (
+              <span
+                key={tool}
+                className="inline-flex items-center gap-1 rounded-md bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[11px] font-medium text-purple-600 dark:text-purple-400"
+              >
+                <Wrench className="h-3 w-3" />
+                {tool.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+        )}
         <div className={`rounded-2xl p-4 shadow-sm ${
           isUser
             ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white ml-auto border border-emerald-400/20'
@@ -296,6 +340,51 @@ function MessageBubble({ message }: MessageBubbleProps) {
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
+    </div>
+  );
+}
+
+function ToolCallIndicator({ events }: { events: ToolCallEvent[] }) {
+  return (
+    <div className="space-y-2">
+      {events.map((event, i) => (
+        <div key={i} className="flex items-center gap-2">
+          {event.status === 'executing' ? (
+            <>
+              <div className="flex gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-bounce" />
+              </div>
+              <Wrench className="h-3.5 w-3.5 text-purple-500" />
+              <span className="text-[13px] text-muted-foreground">
+                {event.tools.map(t => TOOL_DISPLAY_NAMES[t] || t).join(', ')}...
+              </span>
+            </>
+          ) : (
+            <>
+              {event.results?.every(r => r.success) ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5 text-red-500" />
+              )}
+              <span className="text-[13px] text-muted-foreground">
+                {event.tools.map(t => TOOL_DISPLAY_NAMES[t] || t).join(', ')} — done
+              </span>
+            </>
+          )}
+        </div>
+      ))}
+      {events.length > 0 && events[events.length - 1].status === 'complete' && (
+        <div className="flex items-center gap-2 mt-1">
+          <div className="flex gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce" />
+          </div>
+          <span className="text-[13px] text-muted-foreground">Generating response with results...</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -26,7 +26,7 @@ const mockStats = {
   avgLatencyMs: 1250,
   errorRate: 0.03,
   avgFeedbackScore: 4.2,
-  feedbackCount: 27,
+  feedbackCount: 37,
   modelBreakdown: [
     { model: 'llama3.2', count: 120, tokens: 48000 },
     { model: 'mistral', count: 22, tokens: 10300 },
@@ -46,8 +46,6 @@ const mockTraces = [
     status: 'success',
     user_query: 'What containers are using the most memory?',
     response_preview: 'Based on the metrics...',
-    feedback_score: 4,
-    feedback_text: null,
     created_at: '2025-01-15 10:30:00',
   },
   {
@@ -62,8 +60,6 @@ const mockTraces = [
     status: 'error',
     user_query: 'Show CPU anomalies',
     response_preview: null,
-    feedback_score: null,
-    feedback_text: null,
     created_at: '2025-01-15 10:25:00',
   },
 ];
@@ -72,7 +68,6 @@ const mockTraces = [
 vi.mock('@/hooks/use-llm-observability', () => ({
   useLlmTraces: vi.fn().mockReturnValue({ data: [], isLoading: false, refetch: vi.fn() }),
   useLlmStats: vi.fn().mockReturnValue({ data: null, isLoading: false, refetch: vi.fn() }),
-  useSubmitFeedback: vi.fn().mockReturnValue({ mutate: vi.fn() }),
 }));
 
 vi.mock('@/hooks/use-auto-refresh', () => ({
@@ -97,7 +92,7 @@ describe('LlmObservabilityPage', () => {
   it('renders the page title and subtitle', () => {
     renderPage();
     expect(screen.getByText('LLM Observability')).toBeTruthy();
-    expect(screen.getByText('Monitor LLM usage, performance, and feedback')).toBeTruthy();
+    expect(screen.getByText('Monitor LLM usage and performance')).toBeTruthy();
   });
 
   it('shows empty state when no traces exist', () => {
@@ -167,6 +162,7 @@ describe('LlmObservabilityPage', () => {
     expect(screen.getByText('No model data available.')).toBeTruthy();
   });
 
+
   it('renders traces table with data', () => {
     vi.mocked(useLlmStats).mockReturnValue({
       data: mockStats,
@@ -184,6 +180,28 @@ describe('LlmObservabilityPage', () => {
     expect(screen.getByText('Show CPU anomalies')).toBeTruthy();
     expect(screen.getByText('success')).toBeTruthy();
     expect(screen.getByText('error')).toBeTruthy();
+  });
+
+  it('blurs query column by default and reveals on toggle', () => {
+    vi.mocked(useLlmTraces).mockReturnValue({
+      data: mockTraces,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmTraces>);
+
+    renderPage();
+    const queryCell = screen.getByText('What containers are using the most memory?');
+
+    // Privacy mode is ON by default — cell should have blur class
+    expect(queryCell.closest('td')?.className).toContain('blur-sm');
+
+    // Click the Privacy toggle button to reveal
+    fireEvent.click(screen.getByText('Privacy'));
+    expect(queryCell.closest('td')?.className).not.toContain('blur-sm');
+
+    // Click again to re-blur
+    fireEvent.click(screen.getByText('Privacy'));
+    expect(queryCell.closest('td')?.className).toContain('blur-sm');
   });
 
   it('renders skeleton cards during loading', () => {
