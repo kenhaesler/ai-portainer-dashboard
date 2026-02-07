@@ -31,10 +31,16 @@ interface NetworkData {
   containers: string[];
 }
 
+interface NetworkRate {
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+}
+
 interface TopologyGraphProps {
   containers: ContainerData[];
   networks: NetworkData[];
   onNodeClick?: (nodeId: string) => void;
+  networkRates?: Record<string, NetworkRate>;
 }
 
 const nodeTypes = {
@@ -55,13 +61,48 @@ const GROUP_PADDING_X = 20;
 const GROUP_PADDING_TOP = 30;
 const GROUP_PADDING_BOTTOM = 15;
 
+export function getEdgeStyle(
+  containerId: string,
+  state: string,
+  networkRates?: Record<string, NetworkRate>,
+): { stroke: string; strokeWidth: number } {
+  if (state !== 'running') {
+    return { stroke: '#6b7280', strokeWidth: 1.5 };
+  }
+
+  const rate = networkRates?.[containerId];
+  if (!rate) {
+    return { stroke: '#6b7280', strokeWidth: 1.5 };
+  }
+
+  const totalBytesPerSec = rate.rxBytesPerSec + rate.txBytesPerSec;
+
+  if (totalBytesPerSec === 0) {
+    return { stroke: '#6b7280', strokeWidth: 1.5 };
+  }
+  if (totalBytesPerSec < 10_240) {
+    // < 10 KB/s
+    return { stroke: '#10b981', strokeWidth: 2 };
+  }
+  if (totalBytesPerSec < 102_400) {
+    // < 100 KB/s
+    return { stroke: '#eab308', strokeWidth: 3 };
+  }
+  if (totalBytesPerSec < 1_048_576) {
+    // < 1 MB/s
+    return { stroke: '#f97316', strokeWidth: 4 };
+  }
+  // >= 1 MB/s
+  return { stroke: '#ef4444', strokeWidth: 6 };
+}
+
 const CONTAINER_WIDTH = 140;
 const CONTAINER_HEIGHT = 90;
 const CONTAINER_SPACING_X = 160;
 const CONTAINER_SPACING_Y = 110;
 const CONTAINERS_PER_ROW = 4;
 
-export function TopologyGraph({ containers, networks, onNodeClick }: TopologyGraphProps) {
+export function TopologyGraph({ containers, networks, onNodeClick, networkRates }: TopologyGraphProps) {
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
@@ -130,13 +171,16 @@ export function TopologyGraph({ containers, networks, onNodeClick }: TopologyGra
         container.networks.forEach((netName) => {
           const net = networks.find((n) => n.name === netName);
           if (net) {
+            const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
             edges.push({
               id: `e-${container.id}-${net.id}`,
               source: `container-${container.id}`,
               target: `net-${net.id}`,
               animated: container.state === 'running',
               style: {
-                stroke: container.state === 'running' ? '#10b981' : '#6b7280',
+                stroke: edgeStyle.stroke,
+                strokeWidth: edgeStyle.strokeWidth,
+                opacity: 0.7,
               },
             });
           }
@@ -165,7 +209,7 @@ export function TopologyGraph({ containers, networks, onNodeClick }: TopologyGra
     });
 
     return { nodes, edges };
-  }, [containers, networks]);
+  }, [containers, networks, networkRates]);
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);

@@ -436,7 +436,12 @@ ai-portainer-dashboard/
 │   └── deploy-workload.sh          # Test workload deployment script
 ├── docker-compose.yml              # Production (Nginx + Node)
 ├── docker-compose.dev.yml          # Development (hot-reload + Ollama)
-├── docker-compose.workload.yml     # Test workload containers
+├── workloads/                       # Multi-stack test workload compose files
+│   ├── data-services.yml            #   Postgres, Redis, RabbitMQ
+│   ├── web-platform.yml             #   Web tier + API gateway + cron
+│   ├── workers.yml                  #   Workers + app-api + app-worker-queue
+│   ├── staging-dev.yml              #   Staging + dev environments + monitoring
+│   └── issue-simulators.yml         #   Issue containers + heavy-load stress
 └── .github/workflows/ci.yml        # CI: typecheck → lint → test → build
 ```
 
@@ -543,32 +548,29 @@ npm run test:watch
 
 ### Test Workload
 
-A Docker Compose file is provided to spin up realistic test containers:
+Five Docker Compose stacks are provided to spin up realistic test containers across multiple Portainer stacks:
 
 ```bash
-# Deploy via script (reads .env for Portainer credentials)
+# Deploy all 5 stacks via script (reads .env for Portainer credentials)
 ./scripts/deploy-workload.sh start
 
-# Or run directly
-docker compose -f docker-compose.workload.yml up -d
+# Check status of all stacks
+./scripts/deploy-workload.sh status
+
+# Stop / delete all stacks
+./scripts/deploy-workload.sh stop
+./scripts/deploy-workload.sh delete
 ```
 
-Includes web servers, databases (PostgreSQL, Redis), message queues (RabbitMQ), workers, Prometheus, staging/dev environments, and intentionally unhealthy containers for testing alerts.
+| Stack | Services | Purpose |
+|-------|----------|---------|
+| `data-services` | db-postgres, db-redis, mq-rabbitmq | Database, cache, message queue |
+| `web-platform` | web-frontend, web-backend-1/2, app-gateway, app-cron | Web tier + API gateway |
+| `workers` | worker-1/2, app-api, app-worker-queue | Workers + backend API |
+| `staging-dev` | staging-web, staging-api, dev-web, monitoring-prometheus | Non-prod environments |
+| `issue-simulators` | 10 issue containers + 6 heavy-load stress containers | Anomaly, security, health, CPU/memory/network stress |
 
-| Container | Image | Purpose |
-|-----------|-------|---------|
-| `web-frontend` | nginx:alpine | Frontend web server |
-| `web-backend-1/2` | httpd:alpine | Backend servers |
-| `db-postgres` | postgres:16-alpine | Primary database |
-| `db-redis` | redis:7-alpine | Cache layer |
-| `mq-rabbitmq` | rabbitmq:3-management | Message queue |
-| `worker-1/2` | alpine | Background workers |
-| `monitoring-prometheus` | prom/prometheus | Metrics collection |
-| `staging-web` / `staging-api` | nginx/httpd:alpine | Staging environment |
-| `dev-web` | nginx:alpine | Development environment |
-| `unhealthy-service` | alpine | Intentionally failing (test alerts) |
-| `cpu-stress` | alpine | CPU load generator (test metrics) |
-| `stopped-service` | alpine | Exits immediately (test states) |
+Heavy-load containers (`stress-cpu`, `stress-memory`, `stress-io`, `net-server`, `net-client`, `net-chatter`) generate real CPU, memory, disk I/O, and network traffic for testing metrics and network topology visualization.
 
 ### CI Pipeline
 

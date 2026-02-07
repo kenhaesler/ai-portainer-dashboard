@@ -5,6 +5,7 @@ import { useContainers, type Container } from '@/hooks/use-containers';
 import { useNetworks, type Network } from '@/hooks/use-networks';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useNetworkRates } from '@/hooks/use-metrics';
 import { TopologyGraph } from '@/components/network/topology-graph';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
@@ -35,6 +36,7 @@ export default function NetworkTopologyPage() {
   const { data: endpoints } = useEndpoints();
   const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint);
   const { data: networks, isLoading: networksLoading, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
+  const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
   const { interval, setInterval } = useAutoRefresh(30);
 
   // Transform data for TopologyGraph
@@ -162,6 +164,7 @@ export default function NetworkTopologyPage() {
                 containers={graphData.containers}
                 networks={graphData.networks}
                 onNodeClick={handleNodeClick}
+                networkRates={networkRatesData?.rates}
               />
             </div>
 

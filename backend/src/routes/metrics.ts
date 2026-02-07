@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/sqlite.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
+import { getNetworkRates } from '../services/metrics-store.js';
 
 function parseTimeRange(timeRange: string): { from: Date; to: Date } {
   const now = new Date();
@@ -117,5 +118,18 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     `).all(limit);
 
     return { anomalies: recentMetrics };
+  });
+
+  fastify.get('/api/metrics/network-rates/:endpointId', {
+    schema: {
+      tags: ['Metrics'],
+      summary: 'Get network I/O rates for all containers in an endpoint',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { endpointId } = request.params as { endpointId: string };
+    const rates = getNetworkRates(Number(endpointId));
+    return { rates };
   });
 }

@@ -51,3 +51,17 @@ export function useAnomalies() {
     queryFn: () => api.get<Anomaly[]>('/api/metrics/anomalies'),
   });
 }
+
+export interface NetworkRate {
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+}
+
+export function useNetworkRates(endpointId?: number) {
+  return useQuery<{ rates: Record<string, NetworkRate> }>({
+    queryKey: ['metrics', 'network-rates', endpointId],
+    queryFn: () => api.get(`/api/metrics/network-rates/${endpointId}`),
+    enabled: Boolean(endpointId),
+    refetchInterval: 60_000,
+  });
+}

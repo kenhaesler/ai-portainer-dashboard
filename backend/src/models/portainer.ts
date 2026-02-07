@@ -105,6 +105,10 @@ export const ContainerStatsSchema = z.object({
       total_cache: z.number().optional(),
     }).optional(),
   }),
+  networks: z.record(z.object({
+    rx_bytes: z.number().optional().default(0),
+    tx_bytes: z.number().optional().default(0),
+  })).optional(),
 }).passthrough();
 
 export const NetworkSchema = z.object({
