@@ -187,18 +187,20 @@ const nodeTypes = {
   'stack-group': StackGroupNode,
 };
 
-// Internal grid layout constants
-const GROUP_PADDING_X = 20;
-const GROUP_PADDING_TOP = 30;
-const GROUP_PADDING_BOTTOM = 15;
-const CONTAINER_SPACING_X = 160;
-const CONTAINER_SPACING_Y = 110;
-const CONTAINERS_PER_ROW = 4;
-const INLINE_NET_SPACING_X = 140;
-const INLINE_NET_ROW_HEIGHT = 90;
-const INLINE_NETS_PER_ROW = 4;
-const EXTERNAL_NET_WIDTH = 120;
-const EXTERNAL_NET_HEIGHT = 80;
+// Node dimensions for elkjs layout
+const CONTAINER_W = 120;
+const CONTAINER_H = 80;
+const NETWORK_W = 120;
+const NETWORK_H = 80;
+
+// Layout options for within-group arrangement (elkjs compound graph)
+const GROUP_LAYOUT_OPTIONS: Record<string, string> = {
+  'elk.algorithm': 'layered',
+  'elk.direction': 'DOWN',
+  'elk.spacing.nodeNode': '25',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '30',
+  'elk.padding': '[top=35, left=20, bottom=15, right=20]',
+};
 
 export function getEdgeStyle(
   containerId: string,
@@ -228,21 +230,17 @@ export function getEdgeStyle(
   return { stroke: '#ef4444', strokeWidth: 6 };
 }
 
-/** Data computed per stack before layout — dimensions + children definitions */
+/** Simplified blueprint: stack metadata + sorted members (elkjs handles positioning). */
 interface StackBlueprint {
   stackName: string;
   groupId: string;
-  groupWidth: number;
-  groupHeight: number;
-  /** Children positioned relative to the group (0,0 = group top-left) */
-  children: Node[];
-  /** Containers in this stack (for edge creation) */
   containers: ContainerData[];
+  inlineNets: NetworkData[];
 }
 
 export function TopologyGraph({ containers, networks, onNodeClick, networkRates }: TopologyGraphProps) {
-  // Phase 1: Compute group dimensions + internal child layouts (no absolute positions yet)
-  const { blueprints, externalNets, inlineNetsByStack, netToStacks } = useMemo(() => {
+  // Phase 1: Categorize stacks, classify inline/external networks, sort everything
+  const { blueprints, externalNets } = useMemo(() => {
     const stackMap = new Map<string, ContainerData[]>();
     for (const container of containers) {
       const stack = container.labels['com.docker.compose.project'] || 'Standalone';
@@ -278,220 +276,187 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
     for (const stackName of stackNames) {
       const stackContainers = sortContainers(stackMap.get(stackName)!, networkRates);
       const stackContainerIds = stackContainers.map((c) => c.id);
-      const stackNets = sortInlineNetworks(inlineNetsByStack.get(stackName) || [], stackContainerIds);
-
-      const netCols = Math.min(stackNets.length, INLINE_NETS_PER_ROW);
-      const netRows = stackNets.length > 0 ? Math.ceil(stackNets.length / INLINE_NETS_PER_ROW) : 0;
-      const netSectionHeight = netRows * INLINE_NET_ROW_HEIGHT;
-
-      const containerCols = Math.min(stackContainers.length, CONTAINERS_PER_ROW);
-      const containerRows = Math.ceil(stackContainers.length / CONTAINERS_PER_ROW);
-      const maxCols = Math.max(containerCols, netCols, 1);
-
-      const groupWidth = GROUP_PADDING_X * 2 + maxCols * CONTAINER_SPACING_X;
-      const groupHeight =
-        GROUP_PADDING_TOP + netSectionHeight + GROUP_PADDING_BOTTOM + containerRows * CONTAINER_SPACING_Y;
-
-      const groupId = `stack-${stackName}`;
-      const children: Node[] = [];
-
-      // Inline networks
-      stackNets.forEach((net, i) => {
-        const row = Math.floor(i / INLINE_NETS_PER_ROW);
-        const col = i % INLINE_NETS_PER_ROW;
-        children.push({
-          id: `net-${net.id}`,
-          type: 'network',
-          position: {
-            x: GROUP_PADDING_X + col * INLINE_NET_SPACING_X,
-            y: GROUP_PADDING_TOP + row * INLINE_NET_ROW_HEIGHT,
-          },
-          parentId: groupId,
-          extent: 'parent' as const,
-          data: { label: net.name, driver: net.driver, subnet: net.subnet },
-        });
-      });
-
-      // Containers
-      const containerStartY = GROUP_PADDING_TOP + netSectionHeight;
-      stackContainers.forEach((container, i) => {
-        const row = Math.floor(i / CONTAINERS_PER_ROW);
-        const col = i % CONTAINERS_PER_ROW;
-        children.push({
-          id: `container-${container.id}`,
-          type: 'container',
-          position: {
-            x: GROUP_PADDING_X + col * CONTAINER_SPACING_X,
-            y: containerStartY + row * CONTAINER_SPACING_Y,
-          },
-          parentId: groupId,
-          extent: 'parent' as const,
-          data: { label: container.name, state: container.state, image: container.image },
-        });
-      });
+      const inlineNets = sortInlineNetworks(inlineNetsByStack.get(stackName) || [], stackContainerIds);
 
       blueprints.push({
         stackName,
-        groupId,
-        groupWidth,
-        groupHeight,
-        children,
+        groupId: `stack-${stackName}`,
         containers: stackContainers,
+        inlineNets,
       });
     }
 
-    return { blueprints, externalNets, inlineNetsByStack, netToStacks };
+    return { blueprints, externalNets };
   }, [containers, networks, networkRates]);
 
-  // Phase 2: Build elk-layout input — group nodes + external net nodes + edges
+  // Phase 2: Build compound elkjs graph — groups with children + cross-hierarchy edges
   const { elkNodes, elkEdges } = useMemo(() => {
     const elkNodes: ElkLayoutNode[] = [];
     const elkEdges: ElkLayoutEdge[] = [];
-    const edgeSet = new Set<string>();
 
-    // Groups as elk nodes (use actual dimensions)
     for (const bp of blueprints) {
-      elkNodes.push({ id: bp.groupId, width: bp.groupWidth, height: bp.groupHeight });
-    }
+      const children: ElkLayoutNode[] = [];
+      const groupEdges: ElkLayoutEdge[] = [];
 
-    // External networks as elk nodes
-    for (const net of externalNets) {
-      elkNodes.push({ id: `net-${net.id}`, width: EXTERNAL_NET_WIDTH, height: EXTERNAL_NET_HEIGHT });
-    }
+      // Inline networks as group children
+      for (const net of bp.inlineNets) {
+        children.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
+      }
 
-    // Edges: external net ↔ groups that use it
-    for (const net of externalNets) {
-      const netNodeId = `net-${net.id}`;
-      const stacks = netToStacks.get(net.name);
-      if (!stacks) continue;
-      for (const stackName of stacks) {
-        const groupId = `stack-${stackName}`;
-        const key = `${netNodeId}--${groupId}`;
-        if (!edgeSet.has(key)) {
-          edgeSet.add(key);
-          elkEdges.push({ id: key, source: netNodeId, target: groupId });
+      // Containers as group children
+      for (const container of bp.containers) {
+        children.push({ id: `container-${container.id}`, width: CONTAINER_W, height: CONTAINER_H });
+
+        for (const netName of container.networks) {
+          // Intra-group edge (container → inline net within same stack)
+          const inlineNet = bp.inlineNets.find((n) => n.name === netName);
+          if (inlineNet) {
+            groupEdges.push({
+              id: `e-${container.id}-${inlineNet.id}`,
+              source: `container-${container.id}`,
+              target: `net-${inlineNet.id}`,
+            });
+            continue;
+          }
+
+          // Cross-hierarchy edge (container → external net)
+          const extNet = externalNets.find((n) => n.name === netName);
+          if (extNet) {
+            elkEdges.push({
+              id: `e-${container.id}-${extNet.id}`,
+              source: `container-${container.id}`,
+              target: `net-${extNet.id}`,
+            });
+          }
         }
       }
+
+      elkNodes.push({
+        id: bp.groupId,
+        width: 0,
+        height: 0,
+        children,
+        edges: groupEdges.length > 0 ? groupEdges : undefined,
+        layoutOptions: GROUP_LAYOUT_OPTIONS,
+      });
+    }
+
+    // External networks at root level
+    for (const net of externalNets) {
+      elkNodes.push({ id: `net-${net.id}`, width: NETWORK_W, height: NETWORK_H });
     }
 
     return { elkNodes, elkEdges };
-  }, [blueprints, externalNets, netToStacks]);
+  }, [blueprints, externalNets]);
 
-  // Phase 3: Run elkjs layout to get group positions (deterministic)
-  const groupPositions = useElkLayout({ nodes: elkNodes, edges: elkEdges });
+  // Phase 3: Run elkjs compound layout (positions all nodes at all hierarchy levels)
+  const layoutPositions = useElkLayout({ nodes: elkNodes, edges: elkEdges });
 
-  // Phase 4: Assemble final React Flow nodes and edges using force-computed positions
+  // Phase 4: Assemble React Flow nodes and edges using elkjs-computed positions
   const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
     const nodeAbsolutePositions = new Map<string, { x: number; y: number }>();
 
     for (const bp of blueprints) {
-      const pos = groupPositions.get(bp.groupId) ?? { x: 0, y: 0 };
+      const groupPos = layoutPositions.get(bp.groupId);
+      if (!groupPos) continue;
 
-      // Group node
+      // Group node with elkjs-computed position and auto-sized dimensions
       nodes.push({
         id: bp.groupId,
         type: 'stack-group',
-        position: { x: pos.x, y: pos.y },
+        position: { x: groupPos.x, y: groupPos.y },
         data: { label: bp.stackName },
-        style: { width: bp.groupWidth, height: bp.groupHeight },
+        style: { width: groupPos.width ?? 200, height: groupPos.height ?? 150 },
       });
 
-      // Children (relative to group)
-      for (const child of bp.children) {
-        nodes.push(child);
-        // Track absolute position for edge handle computation
-        nodeAbsolutePositions.set(child.id, {
-          x: pos.x + child.position.x,
-          y: pos.y + child.position.y,
+      // Inline nets (elkjs positions, relative to group)
+      for (const net of bp.inlineNets) {
+        const childId = `net-${net.id}`;
+        const childPos = layoutPositions.get(childId);
+        if (!childPos) continue;
+        nodes.push({
+          id: childId,
+          type: 'network',
+          position: { x: childPos.x, y: childPos.y },
+          parentId: bp.groupId,
+          extent: 'parent' as const,
+          data: { label: net.name, driver: net.driver, subnet: net.subnet },
+        });
+        nodeAbsolutePositions.set(childId, {
+          x: groupPos.x + childPos.x,
+          y: groupPos.y + childPos.y,
         });
       }
 
-      // Edges from containers to networks
+      // Containers (elkjs positions, relative to group)
       for (const container of bp.containers) {
-        container.networks.forEach((netName) => {
-          const net = networks.find((n) => n.name === netName);
-          if (net) {
-            const sourceId = `container-${container.id}`;
-            const targetId = `net-${net.id}`;
-            const sourcePos = nodeAbsolutePositions.get(sourceId);
-            const targetPos = nodeAbsolutePositions.get(targetId);
-            const handles = sourcePos && targetPos
-              ? getBestHandles(sourcePos, targetPos)
-              : { sourceHandle: 'top' as HandleDirection, targetHandle: 'bottom' as HandleDirection };
-
-            const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
-            edges.push({
-              id: `e-${container.id}-${net.id}`,
-              source: sourceId,
-              target: targetId,
-              sourceHandle: handles.sourceHandle,
-              targetHandle: handles.targetHandle,
-              type: 'smoothstep',
-              animated: container.state === 'running',
-              style: {
-                stroke: edgeStyle.stroke,
-                strokeWidth: edgeStyle.strokeWidth,
-                opacity: 0.7,
-              },
-            });
-          }
+        const childId = `container-${container.id}`;
+        const childPos = layoutPositions.get(childId);
+        if (!childPos) continue;
+        nodes.push({
+          id: childId,
+          type: 'container',
+          position: { x: childPos.x, y: childPos.y },
+          parentId: bp.groupId,
+          extent: 'parent' as const,
+          data: { label: container.name, state: container.state, image: container.image },
+        });
+        nodeAbsolutePositions.set(childId, {
+          x: groupPos.x + childPos.x,
+          y: groupPos.y + childPos.y,
         });
       }
     }
 
-    // External network nodes
+    // External network nodes (elkjs positions, absolute)
     for (const net of externalNets) {
-      const netNodeId = `net-${net.id}`;
-      const pos = groupPositions.get(netNodeId) ?? { x: 0, y: 0 };
+      const netId = `net-${net.id}`;
+      const pos = layoutPositions.get(netId);
+      if (!pos) continue;
       nodes.push({
-        id: netNodeId,
+        id: netId,
         type: 'network',
         position: { x: pos.x, y: pos.y },
         data: { label: net.name, driver: net.driver, subnet: net.subnet },
       });
-      nodeAbsolutePositions.set(netNodeId, pos);
+      nodeAbsolutePositions.set(netId, { x: pos.x, y: pos.y });
     }
 
-    // Edges from containers to external networks (may not have been created above
-    // because the external net wasn't positioned yet when inline edges were made)
+    // Create React Flow edges for all container ↔ network connections
     for (const container of containers) {
       for (const netName of container.networks) {
-        const net = externalNets.find((n) => n.name === netName);
-        if (net) {
-          const sourceId = `container-${container.id}`;
-          const targetId = `net-${net.id}`;
-          const edgeId = `e-${container.id}-${net.id}`;
-          if (!edges.some((e) => e.id === edgeId)) {
-            const sourcePos = nodeAbsolutePositions.get(sourceId);
-            const targetPos = nodeAbsolutePositions.get(targetId);
-            const handles = sourcePos && targetPos
-              ? getBestHandles(sourcePos, targetPos)
-              : { sourceHandle: 'left' as HandleDirection, targetHandle: 'right' as HandleDirection };
+        const net = networks.find((n) => n.name === netName);
+        if (!net) continue;
+        const sourceId = `container-${container.id}`;
+        const targetId = `net-${net.id}`;
+        const sourcePos = nodeAbsolutePositions.get(sourceId);
+        const targetPos = nodeAbsolutePositions.get(targetId);
+        const handles = sourcePos && targetPos
+          ? getBestHandles(sourcePos, targetPos)
+          : { sourceHandle: 'bottom' as HandleDirection, targetHandle: 'top' as HandleDirection };
 
-            const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
-            edges.push({
-              id: edgeId,
-              source: sourceId,
-              target: targetId,
-              sourceHandle: handles.sourceHandle,
-              targetHandle: handles.targetHandle,
-              type: 'smoothstep',
-              animated: container.state === 'running',
-              style: {
-                stroke: edgeStyle.stroke,
-                strokeWidth: edgeStyle.strokeWidth,
-                opacity: 0.7,
-              },
-            });
-          }
-        }
+        const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
+        edges.push({
+          id: `e-${container.id}-${net.id}`,
+          source: sourceId,
+          target: targetId,
+          sourceHandle: handles.sourceHandle,
+          targetHandle: handles.targetHandle,
+          type: 'smoothstep',
+          animated: container.state === 'running',
+          style: {
+            stroke: edgeStyle.stroke,
+            strokeWidth: edgeStyle.strokeWidth,
+            opacity: 0.7,
+          },
+        });
       }
     }
 
     return { nodes, edges };
-  }, [blueprints, externalNets, groupPositions, containers, networks, networkRates]);
+  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
