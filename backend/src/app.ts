@@ -21,6 +21,7 @@ import { metricsRoutes } from './routes/metrics.js';
 import { remediationRoutes } from './routes/remediation.js';
 import { tracesRoutes } from './routes/traces.js';
 import { backupRoutes } from './routes/backup.js';
+import { portainerBackupRoutes } from './routes/portainer-backup.js';
 import { settingsRoutes } from './routes/settings.js';
 import { logsRoutes } from './routes/logs.js';
 import { imagesRoutes } from './routes/images.js';
@@ -103,6 +104,7 @@ export async function buildApp() {
   await app.register(remediationRoutes);
   await app.register(tracesRoutes);
   await app.register(backupRoutes);
+  await app.register(portainerBackupRoutes);
   await app.register(settingsRoutes);
   await app.register(logsRoutes);
   await app.register(imagesRoutes);

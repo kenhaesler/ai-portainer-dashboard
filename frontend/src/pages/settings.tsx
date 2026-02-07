@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import * as Tabs from '@radix-ui/react-tabs';
 import {
   Palette,
   Monitor,
@@ -25,12 +26,23 @@ import {
   Globe,
   Wifi,
   WifiOff,
+  HardDriveDownload,
+  Clock,
+  Trash2,
+  Download,
+  Archive,
 } from 'lucide-react';
 import { useThemeStore, themeOptions, dashboardBackgroundOptions, type Theme, type DashboardBackground } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { useLlmModels, useLlmTestConnection } from '@/hooks/use-llm-models';
 import type { LlmModel } from '@/hooks/use-llm-models';
+import {
+  usePortainerBackups,
+  useCreatePortainerBackup,
+  useDeletePortainerBackup,
+  downloadPortainerBackup,
+} from '@/hooks/use-portainer-backups';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn, formatBytes } from '@/lib/utils';
@@ -102,6 +114,12 @@ const DEFAULT_SETTINGS = {
     { key: 'status.page.description', label: 'Page Description', description: 'Optional description shown below the title', type: 'string', defaultValue: '' },
     { key: 'status.page.show_incidents', label: 'Show Incidents', description: 'Display recent incidents on the status page', type: 'boolean', defaultValue: 'true' },
     { key: 'status.page.refresh_interval', label: 'Auto-Refresh Interval', description: 'How often the status page auto-refreshes (seconds)', type: 'number', defaultValue: '30', min: 10, max: 300 },
+  ],
+  portainerBackup: [
+    { key: 'portainer_backup.enabled', label: 'Enable Scheduled Backups', description: 'Automatically back up Portainer server configuration on a schedule', type: 'boolean', defaultValue: 'false' },
+    { key: 'portainer_backup.interval_hours', label: 'Backup Interval (hours)', description: 'Hours between automated Portainer backups', type: 'number', defaultValue: '24', min: 1, max: 168 },
+    { key: 'portainer_backup.max_count', label: 'Max Backups to Retain', description: 'Maximum number of Portainer backups to keep (oldest deleted first)', type: 'number', defaultValue: '10', min: 1, max: 50 },
+    { key: 'portainer_backup.password', label: 'Backup Password', description: 'Optional encryption password for Portainer backups', type: 'password', defaultValue: '' },
   ],
 } as const;
 
@@ -977,6 +995,193 @@ export function DefaultLandingPagePreference() {
   );
 }
 
+function PortainerBackupManagement() {
+  const { data, isLoading, refetch } = usePortainerBackups();
+  const createBackup = useCreatePortainerBackup();
+  const deleteBackupMut = useDeletePortainerBackup();
+  const [manualPassword, setManualPassword] = useState('');
+  const [showManualPassword, setShowManualPassword] = useState(false);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+
+  const backups = data?.backups ?? [];
+
+  const handleCreate = () => {
+    createBackup.mutate(manualPassword || undefined, {
+      onSuccess: (result) => {
+        toast.success(`Portainer backup created: ${result.filename}`);
+        setManualPassword('');
+      },
+      onError: (err) => {
+        toast.error(`Backup failed: ${err.message}`);
+      },
+    });
+  };
+
+  const handleDownload = async (filename: string) => {
+    try {
+      await downloadPortainerBackup(filename);
+    } catch (err) {
+      toast.error(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDelete = (filename: string) => {
+    setDeletingFile(filename);
+    deleteBackupMut.mutate(filename, {
+      onSuccess: () => {
+        toast.success(`Deleted ${filename}`);
+        setDeletingFile(null);
+      },
+      onError: (err) => {
+        toast.error(`Delete failed: ${err.message}`);
+        setDeletingFile(null);
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Manual Backup */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Archive className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">Create Backup</h2>
+          </div>
+        </div>
+        <div className="p-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Create a manual backup of your Portainer server configuration. This calls the Portainer API and saves the resulting archive locally.
+          </p>
+          <div className="flex items-end gap-3">
+            <div className="flex-1 max-w-sm">
+              <label htmlFor="manual-backup-password" className="text-sm font-medium mb-1 block">
+                Password (optional)
+              </label>
+              <div className="relative">
+                <input
+                  id="manual-backup-password"
+                  type={showManualPassword ? 'text' : 'password'}
+                  value={manualPassword}
+                  onChange={(e) => setManualPassword(e.target.value)}
+                  placeholder="Encryption password"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowManualPassword(!showManualPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showManualPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={createBackup.isPending}
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {createBackup.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <HardDriveDownload className="h-4 w-4" />
+              )}
+              Create Backup
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Backup List */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">Backup Files</h2>
+            <span className="text-sm text-muted-foreground">({backups.length})</span>
+          </div>
+          <button
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {isLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Refresh
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            <div className="h-10 animate-pulse rounded bg-muted" />
+            <div className="h-10 animate-pulse rounded bg-muted" />
+          </div>
+        ) : backups.length === 0 ? (
+          <div className="p-8 text-center">
+            <Archive className="mx-auto h-10 w-10 text-muted-foreground" />
+            <p className="mt-4 text-sm font-medium">No Portainer backups yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Create a manual backup above or enable scheduled backups.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-2.5 font-medium">Filename</th>
+                  <th className="px-4 py-2.5 font-medium">Size</th>
+                  <th className="px-4 py-2.5 font-medium">Created</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.map((backup) => (
+                  <tr key={backup.filename} className="border-b last:border-0">
+                    <td className="px-4 py-3 font-mono text-xs">{backup.filename}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatBytes(backup.size)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(backup.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleDownload(backup.filename)}
+                          className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                          title="Download"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download
+                        </button>
+                        <button
+                          onClick={() => handleDelete(backup.filename)}
+                          disabled={deletingFile === backup.filename}
+                          className="flex items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          title="Delete"
+                        >
+                          {deletingFile === backup.filename ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
@@ -1049,6 +1254,8 @@ export default function SettingsPage() {
       'notifications.smtp_password',
       'notifications.email_recipients',
       'webhooks.enabled',
+      'portainer_backup.enabled',
+      'portainer_backup.interval_hours',
     ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
@@ -1200,6 +1407,28 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Tabs */}
+      <Tabs.Root defaultValue="general" className="space-y-6">
+        <Tabs.List className="flex items-center gap-1 border-b">
+          <Tabs.Trigger
+            value="general"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <Settings2 className="h-4 w-4" />
+            General
+          </Tabs.Trigger>
+          <Tabs.Trigger
+            value="portainer-backup"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <HardDriveDownload className="h-4 w-4" />
+            Portainer Backup
+          </Tabs.Trigger>
+        </Tabs.List>
+
+        {/* General Tab */}
+        <Tabs.Content value="general" className="space-y-6 focus:outline-none">
 
       {/* Theme Settings */}
       <div className="rounded-lg border bg-card p-6">
@@ -1510,6 +1739,30 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+        </Tabs.Content>
+
+        {/* Portainer Backup Tab */}
+        <Tabs.Content value="portainer-backup" className="space-y-6 focus:outline-none">
+
+      {/* Backup Schedule Settings */}
+      <SettingsSection
+        title="Backup Schedule"
+        icon={<Clock className="h-5 w-5" />}
+        category="portainerBackup"
+        settings={DEFAULT_SETTINGS.portainerBackup}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        requiresRestart
+        disabled={isSaving}
+      />
+
+      {/* Backup Management */}
+      <PortainerBackupManagement />
+
+        </Tabs.Content>
+      </Tabs.Root>
     </div>
   );
 }

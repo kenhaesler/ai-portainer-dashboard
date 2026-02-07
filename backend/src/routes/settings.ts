@@ -13,6 +13,7 @@ import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../service
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
   'notifications.teams_webhook_url',
+  'portainer_backup.password',
 ]);
 
 const REDACTED = '••••••••';
