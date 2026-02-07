@@ -14,6 +14,7 @@ describe('ApiClient', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     api.setToken(null);
+    window.localStorage.removeItem('auth_token');
   });
 
   afterEach(() => {
@@ -149,6 +150,22 @@ describe('ApiClient', () => {
   });
 
   describe('authentication', () => {
+    it('should hydrate token from localStorage on client initialization', async () => {
+      window.localStorage.setItem('auth_token', 'persisted-token');
+      vi.resetModules();
+      const { api: freshApi } = await import('./api');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+
+      await freshApi.get('/api/protected');
+
+      const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
+      expect(headers.get('Authorization')).toBe('Bearer persisted-token');
+    });
+
     it('should include Authorization header when token is set', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
