@@ -9,7 +9,7 @@ import {
   getPortainerBackupPath,
   deletePortainerBackup,
 } from '../services/portainer-backup.js';
-import { FilenameParamsSchema } from '../models/api-schemas.js';
+import { PortainerBackupFilenameParamsSchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('portainer-backup-route');
 
@@ -69,7 +69,7 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
       tags: ['Portainer Backup'],
       summary: 'Download a Portainer backup file',
       security: [{ bearerAuth: [] }],
-      params: FilenameParamsSchema,
+      params: PortainerBackupFilenameParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
@@ -98,7 +98,7 @@ export async function portainerBackupRoutes(fastify: FastifyInstance) {
       tags: ['Portainer Backup'],
       summary: 'Delete a Portainer backup file',
       security: [{ bearerAuth: [] }],
-      params: FilenameParamsSchema,
+      params: PortainerBackupFilenameParamsSchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
