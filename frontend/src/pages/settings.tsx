@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Palette,
@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Database,
   Bot,
-  Save,
   Loader2,
   RefreshCw,
   Settings2,
@@ -130,17 +129,16 @@ const DEFAULT_SETTINGS = {
   ],
 } as const;
 
-const LANDING_PAGE_OPTIONS = [
-  { value: '/', label: 'Home' },
-  { value: '/workloads', label: 'Workload Explorer' },
-  { value: '/fleet', label: 'Fleet Overview' },
-  { value: '/ai-monitor', label: 'AI Monitor' },
-  { value: '/metrics', label: 'Metrics Dashboard' },
-  { value: '/remediation', label: 'Remediation' },
-  { value: '/assistant', label: 'LLM Assistant' },
-] as const;
-
 type SettingCategory = keyof typeof DEFAULT_SETTINGS;
+const SETTING_CATEGORY_BY_KEY: Record<string, SettingCategory> = Object.entries(DEFAULT_SETTINGS).reduce(
+  (acc, [category, settings]) => {
+    settings.forEach((setting) => {
+      acc[setting.key] = category as SettingCategory;
+    });
+    return acc;
+  },
+  {} as Record<string, SettingCategory>,
+);
 
 interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';
@@ -266,7 +264,7 @@ function SettingRow({ setting, value, onChange, hasChanges, disabled }: SettingR
         </div>
         <p className="text-sm text-muted-foreground mt-0.5">{setting.description}</p>
       </div>
-      <div className="shrink-0">
+      <div className="shrink-0 w-72">
         <SettingInput setting={setting} value={value} onChange={onChange} disabled={disabled} />
       </div>
     </div>
@@ -283,6 +281,9 @@ interface SettingsSectionProps {
   onChange: (key: string, value: string) => void;
   requiresRestart?: boolean;
   disabled?: boolean;
+  footerContent?: React.ReactNode;
+  status?: 'configured' | 'not-configured';
+  statusLabel?: string;
 }
 
 function SettingsSection({
@@ -295,6 +296,9 @@ function SettingsSection({
   onChange,
   requiresRestart,
   disabled,
+  footerContent,
+  status,
+  statusLabel,
 }: SettingsSectionProps) {
   const hasChanges = settings.some(
     (s) => values[s.key] !== originalValues[s.key]
@@ -307,12 +311,26 @@ function SettingsSection({
           {icon}
           <h2 className="text-lg font-semibold">{title}</h2>
         </div>
-        {requiresRestart && hasChanges && (
-          <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
-            <RefreshCw className="h-3 w-3" />
-            Requires restart
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {status && (
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+                status === 'configured'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+              )}
+            >
+              {statusLabel ?? (status === 'configured' ? 'Configured' : 'Not configured')}
+            </span>
+          )}
+          {requiresRestart && hasChanges && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+              <RefreshCw className="h-3 w-3" />
+              Requires restart
+            </div>
+          )}
+        </div>
       </div>
       <div className="px-4">
         {settings.map((setting) => (
@@ -326,6 +344,11 @@ function SettingsSection({
           />
         ))}
       </div>
+      {footerContent && (
+        <div className="border-t border-border p-4">
+          {footerContent}
+        </div>
+      )}
     </div>
   );
 }
@@ -375,6 +398,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
     'llm.model', 'llm.temperature', 'llm.ollama_url', 'llm.max_tokens',
     'llm.custom_endpoint_enabled', 'llm.custom_endpoint_url', 'llm.custom_endpoint_token',
   ].some((key) => values[key] !== originalValues[key]);
+  const llmConfigured = Boolean(selectedModel.trim()) && (customEnabled ? Boolean(customUrl.trim()) : Boolean(ollamaUrl.trim()));
 
   const handleScanModels = () => {
     void queryClient.invalidateQueries({ queryKey: ['llm-models', ollamaUrl] });
@@ -382,8 +406,15 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   };
 
   const handleTestConnection = () => {
-    const body = customEnabled && customUrl
-      ? { url: customUrl, token: customToken }
+    if (customEnabled && !customUrl.trim()) {
+      setConnectionStatus('error');
+      setConnectionError('Custom endpoint URL is required when custom mode is enabled.');
+      toast.error('Set a custom endpoint URL before testing connection');
+      return;
+    }
+
+    const body = customEnabled && customUrl.trim()
+      ? { url: customUrl.trim(), token: customToken }
       : { ollamaUrl: ollamaUrl };
     testConnection.mutate(body, {
       onSuccess: (data) => {
@@ -425,6 +456,14 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           <h2 className="text-lg font-semibold">LLM / Ollama</h2>
         </div>
         <div className="flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+            llmConfigured
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          )}>
+            {llmConfigured ? 'Configured' : 'Not configured'}
+          </span>
           {hasChanges && (
             <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
               <RefreshCw className="h-3 w-3" />
@@ -435,47 +474,6 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
       </div>
 
       <div className="p-4 space-y-6">
-        {/* Connection Status */}
-        <div className="rounded-lg bg-muted/50 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {testConnection.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              ) : connectionIcon}
-              <div>
-                <p className="text-sm font-medium">
-                  {testConnection.isPending ? 'Testing...' : connectionLabel}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {connectionStatus === 'error' && connectionError
-                    ? connectionError
-                    : customEnabled ? customUrl || 'No custom URL set' : ollamaUrl}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleTestConnection}
-                disabled={testConnection.isPending || disabled}
-                className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-              >
-                {testConnection.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Wifi className="h-3.5 w-3.5" />
-                )}
-                Test Connection
-              </button>
-            </div>
-          </div>
-          {connectionStatus === 'ok' && testConnection.data?.models && testConnection.data.models.length > 0 && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {testConnection.data.models.length} model{testConnection.data.models.length !== 1 ? 's' : ''} available on server
-            </p>
-          )}
-        </div>
-
         {/* Model Selection */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -553,6 +551,9 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           <div className="flex-1 pr-4">
             <label className="font-medium">Temperature</label>
             <p className="text-sm text-muted-foreground mt-0.5">Creativity of LLM responses (0-1)</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Lower values are more deterministic and consistent. Higher values are more varied and creative.
+            </p>
           </div>
           <div className="shrink-0">
             <input
@@ -658,6 +659,44 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
                 </div>
               </div>
             </div>
+          )}
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {testConnection.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : connectionIcon}
+              <div>
+                <p className="text-sm font-medium">
+                  {testConnection.isPending ? 'Testing...' : connectionLabel}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {connectionStatus === 'error' && connectionError
+                    ? connectionError
+                    : customEnabled ? customUrl || 'No custom URL set' : ollamaUrl}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={testConnection.isPending || disabled}
+              className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {testConnection.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wifi className="h-3.5 w-3.5" />
+              )}
+              Test Connection
+            </button>
+          </div>
+          {connectionStatus === 'ok' && testConnection.data?.models && testConnection.data.models.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {testConnection.data.models.length} model{testConnection.data.models.length !== 1 ? 's' : ''} available on server
+            </p>
           )}
         </div>
       </div>
@@ -967,10 +1006,15 @@ export function SecurityAuditSettingsSection() {
   const { data, isLoading, isError, error, refetch } = useSecurityIgnoreList();
   const updateIgnoreList = useUpdateSecurityIgnoreList();
   const [draftValue, setDraftValue] = useState('');
+  const [lastSavedValue, setLastSavedValue] = useState('');
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const hasPatternsConfigured = (data?.patterns.length ?? 0) > 0;
 
   useEffect(() => {
     if (!data) return;
-    setDraftValue(data.patterns.join('\n'));
+    const initialValue = data.patterns.join('\n');
+    setDraftValue(initialValue);
+    setLastSavedValue(initialValue);
   }, [data]);
 
   const parsePatterns = (): string[] => {
@@ -980,19 +1024,34 @@ export function SecurityAuditSettingsSection() {
       .filter((value) => value.length > 0);
   };
 
-  const handleSave = async () => {
-    try {
-      await updateIgnoreList.mutateAsync(parsePatterns());
-      toast.success('Security ignore list updated');
-    } catch (err) {
-      toast.error(`Failed to save ignore list: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
-
   const handleReset = () => {
     if (!data?.defaults) return;
     setDraftValue(data.defaults.join('\n'));
   };
+
+  useEffect(() => {
+    if (!data || isLoading || isError) return;
+    if (draftValue === lastSavedValue) return;
+
+    const timeout = window.setTimeout(() => {
+      setIsAutoSaving(true);
+      void updateIgnoreList.mutateAsync(parsePatterns())
+        .then(() => {
+          setLastSavedValue(draftValue);
+          toast.success('Security ignore list updated');
+        })
+        .catch((err) => {
+          toast.error(`Failed to save ignore list: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        })
+        .finally(() => {
+          setIsAutoSaving(false);
+        });
+    }, 600);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [data, draftValue, isError, isLoading, lastSavedValue, updateIgnoreList]);
 
   return (
     <div className="rounded-lg border bg-card">
@@ -1002,6 +1061,14 @@ export function SecurityAuditSettingsSection() {
           <h2 className="text-lg font-semibold">Security Audit Ignore List</h2>
         </div>
         <div className="flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+            hasPatternsConfigured
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          )}>
+            {hasPatternsConfigured ? 'Configured' : 'Not configured'}
+          </span>
           <button
             type="button"
             onClick={() => refetch()}
@@ -1018,21 +1085,15 @@ export function SecurityAuditSettingsSection() {
           >
             Reset Defaults
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isLoading || updateIgnoreList.isPending}
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {updateIgnoreList.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save
-          </button>
         </div>
       </div>
       <div className="p-4 space-y-3">
         <p className="text-sm text-muted-foreground">
           One container name pattern per line. Use <code>*</code> as a wildcard (for example <code>nginx*</code>).
           Ignored containers remain visible in the audit and are marked as ignored.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {isAutoSaving || updateIgnoreList.isPending ? 'Saving changes...' : 'All changes saved automatically'}
         </p>
 
         {isError ? (
@@ -1279,84 +1340,6 @@ export function NotificationHistoryPanel() {
   );
 }
 
-export function DefaultLandingPagePreference() {
-  const [value, setValue] = useState('/');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const data = await api.get<{ defaultLandingPage?: string }>('/api/settings/preferences');
-        if (!active) return;
-        const route = data.defaultLandingPage || '/';
-        const isValid = LANDING_PAGE_OPTIONS.some((option) => option.value === route);
-        setValue(isValid ? route : '/');
-      } catch {
-        if (!active) return;
-        setValue('/');
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void load();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const savePreference = async () => {
-    setSaving(true);
-    try {
-      await api.patch('/api/settings/preferences', { defaultLandingPage: value });
-      toast.success('Default landing page updated');
-    } catch (err) {
-      toast.error(`Failed to save default landing page: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="rounded-lg border bg-card p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Settings2 className="h-5 w-5" />
-        <h2 className="text-lg font-semibold">General</h2>
-      </div>
-      <div className="flex flex-col gap-2">
-        <label htmlFor="default-landing-page" className="text-sm font-medium">
-          Default Landing Page
-        </label>
-        <div className="flex items-center gap-3">
-          <ThemedSelect
-            id="default-landing-page"
-            value={value}
-            disabled={loading || saving}
-            onValueChange={(val) => setValue(val)}
-            options={LANDING_PAGE_OPTIONS.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
-          />
-          <button
-            onClick={savePreference}
-            disabled={loading || saving}
-            className="flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Save
-          </button>
-        </div>
-        <p className="text-sm text-muted-foreground">Page shown after login. Fallback is Home if route becomes invalid.</p>
-      </div>
-    </div>
-  );
-}
-
 function PortainerBackupManagement() {
   const { data, isLoading, refetch } = usePortainerBackups();
   const createBackup = useCreatePortainerBackup();
@@ -1558,6 +1541,8 @@ export default function SettingsPage() {
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [restartPending, setRestartPending] = useState(false);
   type SettingsTab = 'general' | 'portainer-backup' | 'users' | 'webhooks';
   const validTabs: SettingsTab[] = ['general', 'portainer-backup', 'users', 'webhooks'];
   const initialTab = validTabs.includes(searchParams.get('tab') as SettingsTab)
@@ -1597,6 +1582,9 @@ export default function SettingsPage() {
 
       setEditedValues(values);
       setOriginalValues(values);
+      setSaveSuccess(false);
+      setSaveError(null);
+      setRestartPending(false);
     }
   }, [settingsData]);
 
@@ -1607,80 +1595,113 @@ export default function SettingsPage() {
     );
   }, [editedValues, originalValues]);
 
+  const restartKeys = useMemo(() => [
+    'monitoring.polling_interval',
+    'monitoring.enabled',
+    'llm.ollama_url',
+    'llm.model',
+    'llm.custom_endpoint_enabled',
+    'llm.custom_endpoint_url',
+    'llm.custom_endpoint_token',
+    'oidc.enabled',
+    'oidc.issuer_url',
+    'oidc.client_id',
+    'oidc.client_secret',
+    'notifications.teams_enabled',
+    'notifications.teams_webhook_url',
+    'notifications.email_enabled',
+    'notifications.smtp_host',
+    'notifications.smtp_port',
+    'notifications.smtp_user',
+    'notifications.smtp_password',
+    'notifications.email_recipients',
+    'webhooks.enabled',
+    'portainer_backup.enabled',
+    'portainer_backup.interval_hours',
+  ], []);
+
   // Get changed settings that require restart
   const changesRequireRestart = useMemo(() => {
-    const restartKeys = [
-      'monitoring.polling_interval',
-      'monitoring.enabled',
-      'llm.ollama_url',
-      'llm.model',
-      'llm.custom_endpoint_enabled',
-      'llm.custom_endpoint_url',
-      'llm.custom_endpoint_token',
-      'oidc.enabled',
-      'oidc.issuer_url',
-      'oidc.client_id',
-      'oidc.client_secret',
-      'notifications.teams_enabled',
-      'notifications.teams_webhook_url',
-      'notifications.email_enabled',
-      'notifications.smtp_host',
-      'notifications.smtp_port',
-      'notifications.smtp_user',
-      'notifications.smtp_password',
-      'notifications.email_recipients',
-      'webhooks.enabled',
-      'portainer_backup.enabled',
-      'portainer_backup.interval_hours',
-    ];
     return restartKeys.some(
       (key) => editedValues[key] !== originalValues[key]
     );
-  }, [editedValues, originalValues]);
+  }, [editedValues, originalValues, restartKeys]);
 
   // Handle value change
   const handleChange = (key: string, value: string) => {
     setEditedValues((prev) => ({ ...prev, [key]: value }));
     setSaveSuccess(false);
+    setSaveError(null);
   };
 
-  // Handle save
-  const handleSave = async () => {
+  const saveChangedSettings = useCallback(async (
+    editedSnapshot: Record<string, string>,
+    originalSnapshot: Record<string, string>,
+  ) => {
+    const changedKeys = Object.keys(editedSnapshot).filter(
+      (key) => editedSnapshot[key] !== originalSnapshot[key]
+    );
+    if (changedKeys.length === 0) return;
+
     setIsSaving(true);
     setSaveSuccess(false);
+    setSaveError(null);
 
-    try {
-      // Find all changed settings
-      const changedKeys = Object.keys(editedValues).filter(
-        (key) => editedValues[key] !== originalValues[key]
-      );
+    let hadFailure = false;
+    const appliedValues: Record<string, string> = {};
+    let appliedRestartSetting = false;
 
-      // Update each changed setting
-      for (const key of changedKeys) {
+    for (const key of changedKeys) {
+      try {
         await updateSetting.mutateAsync({
           key,
-          value: editedValues[key],
+          value: editedSnapshot[key],
+          category: SETTING_CATEGORY_BY_KEY[key],
+          showToast: false,
         });
+        appliedValues[key] = editedSnapshot[key];
+        if (restartKeys.includes(key)) {
+          appliedRestartSetting = true;
+        }
+      } catch {
+        hadFailure = true;
       }
-
-      // Update original values to match edited
-      setOriginalValues({ ...editedValues });
-      setSaveSuccess(true);
-
-      if (changesRequireRestart) {
-        toast.info('Some changes require a service restart to take effect');
-      }
-    } catch (err) {
-      toast.error('Failed to save some settings');
-    } finally {
-      setIsSaving(false);
     }
-  };
+
+    if (Object.keys(appliedValues).length > 0) {
+      setOriginalValues((prev) => ({ ...prev, ...appliedValues }));
+      setSaveSuccess(true);
+      if (appliedRestartSetting) {
+        setRestartPending(true);
+      }
+    }
+
+    if (hadFailure) {
+      setSaveError('Failed to auto-save some settings');
+      toast.error('Failed to auto-save some settings');
+    }
+
+    setIsSaving(false);
+  }, [restartKeys, updateSetting]);
+
+  useEffect(() => {
+    if (isSaving || !hasChanges) return;
+    const editedSnapshot = { ...editedValues };
+    const originalSnapshot = { ...originalValues };
+    const timeout = window.setTimeout(() => {
+      void saveChangedSettings(editedSnapshot, originalSnapshot);
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [editedValues, hasChanges, isSaving, originalValues, saveChangedSettings]);
 
   // Handle reset
   const handleReset = () => {
     setEditedValues({ ...originalValues });
     setSaveSuccess(false);
+    setSaveError(null);
   };
 
   const handleTabChange = (tab: string) => {
@@ -1753,47 +1774,42 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {saveSuccess && (
+          {isSaving && (
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving changes...
+            </div>
+          )}
+          {!isSaving && saveError && (
+            <div className="text-sm text-destructive">{saveError}</div>
+          )}
+          {!isSaving && !saveError && saveSuccess && !hasChanges && (
             <div className="flex items-center gap-1.5 text-sm text-emerald-500">
               <CheckCircle2 className="h-4 w-4" />
-              Saved
+              All changes saved
             </div>
           )}
           {hasChanges && (
-            <>
-              <button
-                onClick={handleReset}
-                disabled={isSaving}
-                className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-              >
-                Reset
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save Changes
-              </button>
-            </>
+            <button
+              onClick={handleReset}
+              disabled={isSaving}
+              className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              Reset
+            </button>
           )}
         </div>
       </div>
 
       {/* Restart Warning */}
-      {changesRequireRestart && hasChanges && (
+      {(changesRequireRestart || restartPending) && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 p-4">
           <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
             <h3 className="font-medium text-amber-500">Restart Required</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Some of the changes you've made require a service restart to take effect.
-              After saving, restart the backend service to apply these changes.
+              Some settings changes require a backend restart to take effect.
+              Changes are auto-saved; restart the backend service to apply them.
             </p>
           </div>
         </div>
@@ -1931,8 +1947,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <DefaultLandingPagePreference />
-
       {/* Authentication Settings */}
       <SettingsSection
         title="Authentication"
@@ -1944,6 +1958,8 @@ export default function SettingsPage() {
         onChange={handleChange}
         requiresRestart
         disabled={isSaving}
+        status={editedValues['oidc.enabled'] === 'true' ? 'configured' : 'not-configured'}
+        statusLabel={editedValues['oidc.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
       />
 
       {/* Monitoring Settings */}
@@ -1957,6 +1973,8 @@ export default function SettingsPage() {
         onChange={handleChange}
         requiresRestart
         disabled={isSaving}
+        status={editedValues['monitoring.enabled'] === 'true' ? 'configured' : 'not-configured'}
+        statusLabel={editedValues['monitoring.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
       />
 
       {/* Anomaly Detection Settings */}
@@ -1969,6 +1987,8 @@ export default function SettingsPage() {
         originalValues={originalValues}
         onChange={handleChange}
         disabled={isSaving}
+        status={editedValues['anomaly.detection_enabled'] === 'true' ? 'configured' : 'not-configured'}
+        statusLabel={editedValues['anomaly.detection_enabled'] === 'true' ? 'Enabled' : 'Disabled'}
       />
 
       {/* Notification Settings */}
@@ -1982,26 +2002,21 @@ export default function SettingsPage() {
         onChange={handleChange}
         requiresRestart
         disabled={isSaving}
+        footerContent={<NotificationTestButtons />}
+        status={
+          editedValues['notifications.teams_enabled'] === 'true' || editedValues['notifications.email_enabled'] === 'true'
+            ? 'configured'
+            : 'not-configured'
+        }
+        statusLabel={
+          editedValues['notifications.teams_enabled'] === 'true' || editedValues['notifications.email_enabled'] === 'true'
+            ? 'Enabled'
+            : 'Disabled'
+        }
       />
-
-      {/* Notification Test Buttons */}
-      <NotificationTestButtons />
 
       {/* Notification History */}
       <NotificationHistoryPanel />
-
-      {/* Webhooks Settings */}
-      <SettingsSection
-        title="Webhooks"
-        icon={<Webhook className="h-5 w-5" />}
-        category="webhooks"
-        settings={DEFAULT_SETTINGS.webhooks}
-        values={editedValues}
-        originalValues={originalValues}
-        onChange={handleChange}
-        requiresRestart
-        disabled={isSaving}
-      />
 
       {/* Cache Settings */}
       <SettingsSection
@@ -2013,69 +2028,8 @@ export default function SettingsPage() {
         originalValues={originalValues}
         onChange={handleChange}
         disabled={isSaving}
+        status="configured"
       />
-
-      {/* Cache Status */}
-      <div className="rounded-lg border bg-card">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            <h2 className="text-lg font-semibold">Cache Status</h2>
-          </div>
-          <button
-            onClick={() => cacheClear.mutate()}
-            disabled={cacheClear.isPending}
-            className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          >
-            {cacheClear.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            Clear All Cache
-          </button>
-        </div>
-        <div className="p-4 space-y-4">
-          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-muted/50 p-4">
-              <p className="text-xs text-muted-foreground">Entries</p>
-              <p className="text-2xl font-bold mt-1">{cacheStats?.size ?? 0}</p>
-            </div>
-            <div className="rounded-lg bg-muted/50 p-4">
-              <p className="text-xs text-muted-foreground">Hits</p>
-              <p className="text-2xl font-bold mt-1">{cacheStats?.hits ?? 0}</p>
-            </div>
-            <div className="rounded-lg bg-muted/50 p-4">
-              <p className="text-xs text-muted-foreground">Misses</p>
-              <p className="text-2xl font-bold mt-1">{cacheStats?.misses ?? 0}</p>
-            </div>
-            <div className="rounded-lg bg-muted/50 p-4">
-              <p className="text-xs text-muted-foreground">Hit Rate</p>
-              <p className="text-2xl font-bold mt-1">{cacheStats?.hitRate ?? 'N/A'}</p>
-            </div>
-          </div>
-          {cacheStats?.entries && cacheStats.entries.length > 0 && (
-            <div className="rounded-lg border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left p-3 font-medium">Cache Key</th>
-                    <th className="text-right p-3 font-medium">Expires In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cacheStats.entries.map((entry) => (
-                    <tr key={entry.key} className="border-b last:border-0">
-                      <td className="p-3 font-mono text-xs">{entry.key}</td>
-                      <td className="p-3 text-right text-muted-foreground">{entry.expiresIn}s</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* LLM Settings */}
       <LlmSettingsSection
@@ -2095,6 +2049,8 @@ export default function SettingsPage() {
         originalValues={originalValues}
         onChange={handleChange}
         disabled={isSaving}
+        status={editedValues['status.page.enabled'] === 'true' ? 'configured' : 'not-configured'}
+        statusLabel={editedValues['status.page.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
       />
 
       {/* Elasticsearch Settings */}
@@ -2109,9 +2065,23 @@ export default function SettingsPage() {
 
       {/* System Info */}
       <div className="rounded-lg border bg-card p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Settings2 className="h-5 w-5" />
-          <h2 className="text-lg font-semibold">System Information</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">System Information</h2>
+          </div>
+          <button
+            onClick={() => cacheClear.mutate()}
+            disabled={cacheClear.isPending}
+            className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {cacheClear.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Clear All Cache
+          </button>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg bg-muted/50 p-4">
@@ -2135,9 +2105,61 @@ export default function SettingsPage() {
             <p className="font-medium mt-1">{redisSystemInfo.status}</p>
             <p className="text-xs text-muted-foreground mt-1">{redisSystemInfo.details}</p>
           </div>
-          <div className="rounded-lg bg-muted/50 p-4">
-            <p className="text-xs text-muted-foreground">Redis Keys</p>
-            <p className="font-medium mt-1">{redisSystemInfo.keys}</p>
+          <div className="rounded-lg border border-border/50 bg-muted/30 p-4 md:col-span-2 lg:col-span-3">
+            <h3 className="text-sm font-semibold">Cache Info</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-md border border-border/40 bg-background/50 p-3">
+                <p className="text-xs text-muted-foreground">Entries</p>
+                <p className="font-medium mt-1">{cacheStats?.size ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-border/40 bg-background/50 p-3">
+                <p className="text-xs text-muted-foreground">Hits</p>
+                <p className="font-medium mt-1">{cacheStats?.hits ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-border/40 bg-background/50 p-3">
+                <p className="text-xs text-muted-foreground">Misses</p>
+                <p className="font-medium mt-1">{cacheStats?.misses ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-border/40 bg-background/50 p-3">
+                <p className="text-xs text-muted-foreground">Hit Rate</p>
+                <p className="font-medium mt-1">{cacheStats?.hitRate ?? 'N/A'}</p>
+              </div>
+            </div>
+            {cacheStats?.entries && cacheStats.entries.length > 0 && (
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                  <p className="text-xs font-medium">Redis Keys</p>
+                  <p className="mt-1 text-lg font-semibold">{redisSystemInfo.keys}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Count of keys currently stored in Redis (L2 cache). More keys means more reusable cached responses.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/50 bg-muted/20">
+                  <div className="border-b border-border/50 px-3 py-2">
+                    <p className="text-xs font-medium">Cached Entry Keys</p>
+                    <p className="text-xs text-muted-foreground">
+                      Internal cache identifiers used by the backend for stored query results.
+                    </p>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left font-medium">Key</th>
+                        <th className="p-3 text-right font-medium">Expires In (TTL)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cacheStats.entries.map((entry) => (
+                        <tr key={entry.key} className="border-b last:border-0">
+                          <td className="p-3 font-mono text-xs">{entry.key}</td>
+                          <td className="p-3 text-right text-muted-foreground">{entry.expiresIn}s</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2158,6 +2180,8 @@ export default function SettingsPage() {
         onChange={handleChange}
         requiresRestart
         disabled={isSaving}
+        status={editedValues['portainer_backup.enabled'] === 'true' ? 'configured' : 'not-configured'}
+        statusLabel={editedValues['portainer_backup.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
       />
 
       {/* Backup Management */}
@@ -2177,6 +2201,19 @@ export default function SettingsPage() {
           <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
             <LazyWebhooksPanel />
           </Suspense>
+          <SettingsSection
+            title="Webhook Service"
+            icon={<Webhook className="h-5 w-5" />}
+            category="webhooks"
+            settings={DEFAULT_SETTINGS.webhooks}
+            values={editedValues}
+            originalValues={originalValues}
+            onChange={handleChange}
+            requiresRestart
+            disabled={isSaving}
+            status={editedValues['webhooks.enabled'] === 'true' ? 'configured' : 'not-configured'}
+            statusLabel={editedValues['webhooks.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
+          />
         </Tabs.Content>
       </Tabs.Root>
     </div>

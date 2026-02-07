@@ -1,10 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DefaultLandingPagePreference, LlmSettingsSection, getRedisSystemInfo } from './settings';
+import { LlmSettingsSection, getRedisSystemInfo } from './settings';
 
 const mockGet = vi.fn();
-const mockPatch = vi.fn();
 const mockPost = vi.fn();
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
@@ -12,7 +11,6 @@ const mockError = vi.fn();
 vi.mock('@/lib/api', () => ({
   api: {
     get: (...args: unknown[]) => mockGet(...args),
-    patch: (...args: unknown[]) => mockPatch(...args),
     post: (...args: unknown[]) => mockPost(...args),
   },
 }));
@@ -24,41 +22,6 @@ vi.mock('sonner', () => ({
     info: vi.fn(),
   },
 }));
-
-describe('DefaultLandingPagePreference', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGet.mockResolvedValue({ defaultLandingPage: '/workloads' });
-    mockPatch.mockResolvedValue({ defaultLandingPage: '/workloads' });
-  });
-
-  it('loads and renders saved landing page preference', async () => {
-    render(<DefaultLandingPagePreference />);
-
-    await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith('/api/settings/preferences');
-    });
-
-    expect(screen.getByLabelText('Default Landing Page')).toHaveTextContent('Workload Explorer');
-  });
-
-  it('saves updated landing page preference', async () => {
-    render(<DefaultLandingPagePreference />);
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Default Landing Page')).toHaveTextContent('Workload Explorer');
-    });
-
-    fireEvent.click(screen.getByLabelText('Default Landing Page'));
-    fireEvent.click(screen.getByRole('option', { name: 'AI Monitor' }));
-    fireEvent.click(screen.getByRole('button', { name: /save/i }));
-
-    await waitFor(() => {
-      expect(mockPatch).toHaveBeenCalledWith('/api/settings/preferences', { defaultLandingPage: '/ai-monitor' });
-      expect(mockSuccess).toHaveBeenCalledWith('Default landing page updated');
-    });
-  });
-});
 
 function createWrapper() {
   const qc = new QueryClient({
@@ -214,6 +177,25 @@ describe('LlmSettingsSection', () => {
     );
 
     expect(screen.getByText('Requires restart')).toBeInTheDocument();
+  });
+
+  it('blocks test connection when custom endpoint is enabled but URL is empty', async () => {
+    const customValues = {
+      ...defaultValues,
+      'llm.custom_endpoint_enabled': 'true',
+      'llm.custom_endpoint_url': '',
+      'llm.custom_endpoint_token': 'secret-token',
+    };
+
+    render(
+      <LlmSettingsSection values={customValues} originalValues={customValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /test connection/i }));
+
+    expect(mockError).toHaveBeenCalledWith('Set a custom endpoint URL before testing connection');
+    expect(mockPost).not.toHaveBeenCalled();
   });
 });
 

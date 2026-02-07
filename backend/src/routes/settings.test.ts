@@ -330,4 +330,37 @@ describe('settings security', () => {
 
     await app.close();
   });
+
+  it('preserves existing category when update payload omits category', async () => {
+    const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    mockGet.mockReturnValueOnce({ category: 'llm' });
+
+    await app.register(settingsRoutes);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/llm.model',
+      headers: { authorization: 'Bearer test' },
+      payload: { value: 'llama3.2' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockRun).toHaveBeenCalledWith(
+      'llm.model',
+      'llama3.2',
+      'llm',
+      'llama3.2',
+      'llm',
+    );
+
+    await app.close();
+  });
 });

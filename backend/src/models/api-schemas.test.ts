@@ -192,11 +192,11 @@ describe('api-schemas', () => {
   });
 
   describe('SettingUpdateBodySchema', () => {
-    it('should apply default category', () => {
+    it('should allow omitted category', () => {
       const result = SettingUpdateBodySchema.safeParse({ value: 'test' });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.category).toBe('general');
+        expect(result.data.category).toBeUndefined();
       }
     });
   });
