@@ -227,7 +227,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     // Hourly aggregation using date_trunc
     const { rows } = await db.query(
       `SELECT
-        date_trunc('hour', timestamp) as hour,
+        date_trunc('hour', timestamp)::text as hour,
         metric_type,
         AVG(value) as avg_value,
         MAX(value) as max_value,

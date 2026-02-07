@@ -52,7 +52,7 @@ export async function getMetrics(
 ): Promise<Metric[]> {
   const db = await getMetricsDb();
   const { rows } = await db.query(
-    `SELECT endpoint_id, container_id, container_name, metric_type, value, timestamp
+    `SELECT endpoint_id, container_id, container_name, metric_type, value, timestamp::text
      FROM metrics
      WHERE container_id = $1 AND metric_type = $2
        AND timestamp >= $3 AND timestamp <= $4
@@ -143,7 +143,7 @@ export async function getNetworkRates(
 ): Promise<Record<string, NetworkRate>> {
   const db = await getMetricsDb();
   const { rows } = await db.query(
-    `SELECT container_id, metric_type, value, timestamp
+    `SELECT container_id, metric_type, value, timestamp::text
      FROM metrics
      WHERE endpoint_id = $1
        AND metric_type IN ('network_rx_bytes', 'network_tx_bytes')
