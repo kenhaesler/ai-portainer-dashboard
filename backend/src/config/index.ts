@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { envSchema, type EnvConfig } from './env.schema.js';
 
 let config: EnvConfig | null = null;
@@ -29,6 +30,28 @@ function validateJwtSecret(secret: string): void {
   }
 }
 
+function validateJwtAlgorithm(data: EnvConfig): void {
+  const { JWT_ALGORITHM, JWT_PRIVATE_KEY_PATH, JWT_PUBLIC_KEY_PATH } = data;
+
+  if (JWT_ALGORITHM === 'RS256' || JWT_ALGORITHM === 'ES256') {
+    if (!JWT_PRIVATE_KEY_PATH || !JWT_PUBLIC_KEY_PATH) {
+      throw new Error(
+        `Invalid environment configuration:\n  JWT_ALGORITHM=${JWT_ALGORITHM} requires both JWT_PRIVATE_KEY_PATH and JWT_PUBLIC_KEY_PATH`
+      );
+    }
+    if (!existsSync(JWT_PRIVATE_KEY_PATH)) {
+      throw new Error(
+        `Invalid environment configuration:\n  JWT_PRIVATE_KEY_PATH: file not found: ${JWT_PRIVATE_KEY_PATH}`
+      );
+    }
+    if (!existsSync(JWT_PUBLIC_KEY_PATH)) {
+      throw new Error(
+        `Invalid environment configuration:\n  JWT_PUBLIC_KEY_PATH: file not found: ${JWT_PUBLIC_KEY_PATH}`
+      );
+    }
+  }
+}
+
 function validateDashboardCredentials(username: string, password: string): void {
   const normalizedPassword = password.toLowerCase();
   if (username === 'admin' && normalizedPassword === 'changeme123') {
@@ -54,6 +77,7 @@ export function getConfig(): EnvConfig {
       throw new Error(`Invalid environment configuration:\n${errors}`);
     }
     validateJwtSecret(result.data.JWT_SECRET);
+    validateJwtAlgorithm(result.data);
     validateDashboardCredentials(result.data.DASHBOARD_USERNAME, result.data.DASHBOARD_PASSWORD);
     config = result.data;
   }

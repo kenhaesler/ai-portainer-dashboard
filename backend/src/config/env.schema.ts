@@ -5,6 +5,16 @@ export const envSchema = z.object({
   DASHBOARD_USERNAME: z.string().min(1),
   DASHBOARD_PASSWORD: z.string().min(12),
   JWT_SECRET: z.string().min(32),
+  // JWT signing algorithm: HS256 (symmetric, default), RS256 or ES256 (asymmetric).
+  // HS256 is appropriate for single-service architectures. Switch to RS256/ES256 if:
+  //   - Multiple backend services need to verify tokens independently
+  //   - Token verification moves to edge/proxy layers
+  //   - Compliance mandates asymmetric signing
+  // When using RS256/ES256, JWT_SECRET is ignored and JWT_PRIVATE_KEY_PATH +
+  // JWT_PUBLIC_KEY_PATH must be set to PEM key files.
+  JWT_ALGORITHM: z.enum(['HS256', 'RS256', 'ES256']).default('HS256'),
+  JWT_PRIVATE_KEY_PATH: z.string().optional(),
+  JWT_PUBLIC_KEY_PATH: z.string().optional(),
 
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),

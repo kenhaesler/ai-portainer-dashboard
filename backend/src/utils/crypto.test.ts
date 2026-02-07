@@ -1,14 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { signJwt, verifyJwt, hashPassword, comparePassword } from './crypto.js';
+import { signJwt, verifyJwt, hashPassword, comparePassword, _resetKeyCache } from './crypto.js';
 
-// Mock the config module
+// Mock the config module — default HS256
 vi.mock('../config/index.js', () => ({
-  getConfig: () => ({
+  getConfig: vi.fn(() => ({
     JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long',
-  }),
+    JWT_ALGORITHM: 'HS256',
+  })),
 }));
 
 describe('crypto', () => {
+  beforeEach(() => {
+    _resetKeyCache();
+  });
+
   describe('JWT operations', () => {
     describe('signJwt', () => {
       it('should create a valid JWT token', async () => {
@@ -30,6 +35,13 @@ describe('crypto', () => {
         const token2 = await signJwt({ sub: 'user-2', username: 'admin2', sessionId: 'sess-2' });
 
         expect(token1).not.toBe(token2);
+      });
+
+      it('should use HS256 algorithm by default', async () => {
+        const token = await signJwt({ sub: 'user-1', username: 'admin', sessionId: 'sess-1' });
+        // Decode header to verify algorithm
+        const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
+        expect(header.alg).toBe('HS256');
       });
     });
 
@@ -123,6 +135,33 @@ describe('crypto', () => {
         const verified = await verifyJwt(token);
 
         expect(verified?.username).toBe('user-日本語');
+      });
+    });
+
+    describe('key caching', () => {
+      it('should cache keys across multiple sign operations', async () => {
+        const payload = { sub: 'user-1', username: 'admin', sessionId: 'sess-1' };
+
+        // Sign twice — second call should use cached key
+        const token1 = await signJwt(payload);
+        const token2 = await signJwt(payload);
+
+        // Both should be valid (different iat but same key)
+        const v1 = await verifyJwt(token1);
+        const v2 = await verifyJwt(token2);
+        expect(v1?.sub).toBe('user-1');
+        expect(v2?.sub).toBe('user-1');
+      });
+
+      it('should clear cache when _resetKeyCache is called', async () => {
+        const payload = { sub: 'user-1', username: 'admin', sessionId: 'sess-1' };
+        const token = await signJwt(payload);
+
+        _resetKeyCache();
+
+        // Should still work after cache reset (key regenerated from config)
+        const verified = await verifyJwt(token);
+        expect(verified?.sub).toBe('user-1');
       });
     });
   });
