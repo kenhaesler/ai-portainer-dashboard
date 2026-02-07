@@ -166,32 +166,50 @@ function groupByCorrelation(
     );
 
     if (singles.length >= 2) {
-      // Multiple containers on the same endpoint — cascade pattern
       const cascadeInsights = singles.flatMap((s) => s.insights);
 
-      // Remove the singles from groups
-      for (const single of singles) {
-        const idx = groups.indexOf(single);
-        if (idx >= 0) groups.splice(idx, 1);
+      // Require at least 2 distinct anomaly types (e.g., cpu + memory)
+      // to avoid cascade alerts from the same metric spiking on multiple containers
+      const distinctTypes = new Set(
+        cascadeInsights.map((i) => extractMetricType(i.title)),
+      );
+
+      if (distinctTypes.size >= 2) {
+        // Remove the singles from groups
+        for (const single of singles) {
+          const idx = groups.indexOf(single);
+          if (idx >= 0) groups.splice(idx, 1);
+        }
+
+        // Root cause: the insight with the highest severity, or earliest
+        const sorted = [...cascadeInsights].sort((a, b) => {
+          const sevOrder = { critical: 0, warning: 1, info: 2 };
+          const sevDiff = sevOrder[a.severity] - sevOrder[b.severity];
+          if (sevDiff !== 0) return sevDiff;
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
+
+        groups.push({
+          insights: cascadeInsights,
+          correlationType: 'cascade',
+          rootCause: sorted[0],
+        });
       }
-
-      // Root cause: the insight with the highest severity, or earliest
-      const sorted = [...cascadeInsights].sort((a, b) => {
-        const sevOrder = { critical: 0, warning: 1, info: 2 };
-        const sevDiff = sevOrder[a.severity] - sevOrder[b.severity];
-        if (sevDiff !== 0) return sevDiff;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      });
-
-      groups.push({
-        insights: cascadeInsights,
-        correlationType: 'cascade',
-        rootCause: sorted[0],
-      });
+      // else: leave as individual singles (no cascade for same-type anomalies)
     }
   }
 
   return groups;
+}
+
+/**
+ * Extract the metric type from an anomaly insight title.
+ * Titles follow the pattern: 'Anomalous cpu usage on "container"'
+ * Falls back to the full title if pattern doesn't match.
+ */
+function extractMetricType(title: string): string {
+  const match = /anomalous\s+(\w+)\s+usage/i.exec(title);
+  return match ? match[1].toLowerCase() : title;
 }
 
 function groupByContainerAndMetric(insights: Insight[]): Insight[][] {
