@@ -11,6 +11,7 @@ import {
   getInvestigation,
   getRecentInvestigationForContainer,
 } from './investigation-store.js';
+import { generateForecast, type CapacityForecast } from './capacity-forecaster.js';
 import type { Insight } from '../models/monitoring.js';
 import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '../models/investigation.js';
 
@@ -31,6 +32,7 @@ export interface ParsedInvestigationResult {
   severity_assessment: string;
   recommended_actions: RecommendedAction[];
   confidence_score: number;
+  ai_summary: string;
 }
 
 export function parseInvestigationResponse(raw: string): ParsedInvestigationResult {
@@ -54,12 +56,14 @@ export function parseInvestigationResponse(raw: string): ParsedInvestigationResu
   }
 
   // Fallback: treat raw text as the root cause with low confidence
+  const fallbackCause = raw.trim().slice(0, 2000);
   return {
-    root_cause: raw.trim().slice(0, 2000),
+    root_cause: fallbackCause,
     contributing_factors: [],
     severity_assessment: 'unknown',
     recommended_actions: [],
     confidence_score: 0.3,
+    ai_summary: fallbackCause.slice(0, 200),
   };
 }
 
@@ -99,12 +103,17 @@ function validateParsedResult(parsed: Record<string, unknown>): ParsedInvestigat
     ? Math.max(0, Math.min(1, parsed.confidence_score))
     : 0.5;
 
+  const aiSummary = typeof parsed.ai_summary === 'string'
+    ? parsed.ai_summary.slice(0, 200)
+    : rootCause.slice(0, 200);
+
   return {
     root_cause: rootCause,
     contributing_factors: contributingFactors,
     severity_assessment: severityAssessment,
     recommended_actions: recommendedActions,
     confidence_score: confidenceScore,
+    ai_summary: aiSummary,
   };
 }
 
@@ -114,6 +123,7 @@ export function buildInvestigationPrompt(
     logs?: string;
     metrics?: MetricSnapshot[];
     relatedContainers?: string[];
+    forecasts?: CapacityForecast[];
   },
 ): string {
   const parts: string[] = [
@@ -148,6 +158,18 @@ export function buildInvestigationPrompt(
     }
   }
 
+  if (evidence.forecasts && evidence.forecasts.length > 0) {
+    parts.push('', '## Capacity Forecast');
+    for (const f of evidence.forecasts) {
+      const ttt = f.timeToThreshold != null ? `${f.timeToThreshold}h` : 'N/A';
+      parts.push(
+        `- **${f.metricType}**: trend=${f.trend}, slope=${f.slope.toFixed(3)}/h, ` +
+        `R²=${f.r_squared.toFixed(2)}, current=${f.currentValue.toFixed(1)}%, ` +
+        `time-to-threshold=${ttt}, confidence=${f.confidence}`,
+      );
+    }
+  }
+
   parts.push(
     '',
     '## Instructions',
@@ -161,7 +183,8 @@ export function buildInvestigationPrompt(
     '  "recommended_actions": [',
     '    { "action": "What to do", "priority": "high | medium | low", "rationale": "Why" }',
     '  ],',
-    '  "confidence_score": 0.85',
+    '  "confidence_score": 0.85,',
+    '  "ai_summary": "One-sentence executive summary of the root cause and impact"',
     '}',
     '```',
     '',
@@ -178,6 +201,7 @@ async function gatherEvidence(insight: Insight): Promise<{
   logs?: string;
   metrics?: MetricSnapshot[];
   relatedContainers?: string[];
+  forecasts?: CapacityForecast[];
   evidenceSummary: EvidenceSummary;
 }> {
   const config = getConfig();
@@ -185,6 +209,7 @@ async function gatherEvidence(insight: Insight): Promise<{
     logs?: string;
     metrics?: MetricSnapshot[];
     relatedContainers?: string[];
+    forecasts?: CapacityForecast[];
     evidenceSummary: EvidenceSummary;
   } = { evidenceSummary: {} };
 
@@ -272,6 +297,22 @@ async function gatherEvidence(insight: Insight): Promise<{
     );
   }
 
+  // Gather capacity forecasts
+  if (insight.container_id && insight.container_name) {
+    try {
+      const forecasts: CapacityForecast[] = [];
+      for (const metricType of ['cpu', 'memory']) {
+        const forecast = generateForecast(insight.container_id, insight.container_name, metricType);
+        if (forecast) forecasts.push(forecast);
+      }
+      if (forecasts.length > 0) {
+        evidence.forecasts = forecasts;
+      }
+    } catch (err) {
+      log.warn({ err, containerId: insight.container_id }, 'Failed to gather capacity forecasts');
+    }
+  }
+
   await Promise.all(promises);
   return evidence;
 }
@@ -312,6 +353,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
       severity_assessment: result.severity_assessment,
       recommended_actions: JSON.stringify(result.recommended_actions),
       confidence_score: result.confidence_score,
+      ai_summary: result.ai_summary,
       analysis_duration_ms: durationMs,
       llm_model: config.OLLAMA_MODEL,
       completed_at: new Date().toISOString(),

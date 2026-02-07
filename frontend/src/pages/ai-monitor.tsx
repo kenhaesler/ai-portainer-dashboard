@@ -29,6 +29,8 @@ import {
   Layers,
   CheckCircle2,
   Zap,
+  TrendingUp,
+  FileText,
 } from 'lucide-react';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -104,6 +106,11 @@ function CorrelationTypeBadge({ type }: { type: string }) {
       icon: Filter,
       label: 'Dedup',
       className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    },
+    semantic: {
+      icon: Brain,
+      label: 'Semantic',
+      className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
     },
   };
 
@@ -208,6 +215,10 @@ function DetectionMethodBadge({ method }: { method: string }) {
     adaptive: {
       label: 'Adaptive',
       className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    },
+    'isolation-forest': {
+      label: 'Isolation Forest',
+      className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
     },
   };
   const entry = config[method] ?? config.zscore;
@@ -360,6 +371,17 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
         <div className="rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3">
           <h5 className="text-xs font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-1">Root Cause</h5>
           <p className="text-sm text-purple-900 dark:text-purple-100">{investigation.root_cause}</p>
+        </div>
+      )}
+
+      {/* AI Summary */}
+      {investigation.ai_summary && (
+        <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Sparkles className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+            <h5 className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">AI Summary</h5>
+          </div>
+          <p className="text-sm text-blue-900 dark:text-blue-100">{investigation.ai_summary}</p>
         </div>
       )}
 
@@ -537,6 +559,8 @@ function InsightCard({
     security: Shield,
     anomaly: Activity,
     'ai-analysis': Sparkles,
+    predictive: TrendingUp,
+    'log-analysis': FileText,
   }[insight.category.split(':')[0]] || Server;
 
   const CategoryIcon = categoryIcon;

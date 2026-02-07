@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../config/index.js';
+import { isOllamaAvailable } from './llm-client.js';
 import type { Insight } from '../models/monitoring.js';
 import {
   insertIncident,
@@ -8,6 +10,8 @@ import {
   type IncidentInsert,
 } from './incident-store.js';
 import { getDb } from '../db/sqlite.js';
+import { findSimilarInsights } from './alert-similarity.js';
+import { generateLlmIncidentSummary } from './incident-summarizer.js';
 
 const log = createChildLogger('incident-correlator');
 
@@ -29,10 +33,10 @@ export interface CorrelationResult {
  * 2. Cascade: Multiple containers on same endpoint within window → group as cascade
  * 3. Temporal: Any insights within the window on the same endpoint → group
  */
-export function correlateInsights(
+export async function correlateInsights(
   insights: Insight[],
   correlationWindowMinutes: number = DEFAULT_CORRELATION_WINDOW,
-): CorrelationResult {
+): Promise<CorrelationResult> {
   const result: CorrelationResult = {
     incidentsCreated: 0,
     insightsGrouped: 0,
@@ -70,6 +74,57 @@ export function correlateInsights(
 
   // Multiple anomalies in this batch — attempt correlation
   const grouped = groupByCorrelation(anomalyInsights, correlationWindowMinutes);
+
+  // Semantic grouping pass: group ungrouped singles by text similarity
+  const config = getConfig();
+  if (config.SMART_GROUPING_ENABLED) {
+    const ungroupedSingles = grouped.filter((g) => g.insights.length === 1);
+    if (ungroupedSingles.length >= 2) {
+      const ungroupedInsights = ungroupedSingles.map((g) => g.insights[0]);
+      const semanticGroups = findSimilarInsights(ungroupedInsights, config.SMART_GROUPING_SIMILARITY_THRESHOLD);
+
+      for (const semanticGroup of semanticGroups) {
+        // Remove the individual entries from grouped
+        for (const insight of semanticGroup.insights) {
+          const idx = grouped.findIndex(
+            (g) => g.insights.length === 1 && g.insights[0].id === insight.id,
+          );
+          if (idx >= 0) grouped.splice(idx, 1);
+        }
+
+        // Sort by severity, then earliest
+        const sorted = [...semanticGroup.insights].sort((a, b) => {
+          const sevOrder = { critical: 0, warning: 1, info: 2 };
+          const sevDiff = sevOrder[a.severity] - sevOrder[b.severity];
+          if (sevDiff !== 0) return sevDiff;
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
+
+        grouped.push({
+          insights: semanticGroup.insights,
+          correlationType: 'semantic',
+          rootCause: sorted[0],
+        });
+      }
+    }
+  }
+
+  // LLM summary enrichment for multi-insight groups
+  const ollamaAvailable = config.INCIDENT_SUMMARY_ENABLED ? await isOllamaAvailable() : false;
+  if (ollamaAvailable) {
+    for (const group of grouped) {
+      if (group.insights.length >= 2) {
+        try {
+          const llmSummary = await generateLlmIncidentSummary(group.insights, group.correlationType);
+          if (llmSummary) {
+            group.llmSummary = llmSummary;
+          }
+        } catch (err) {
+          log.debug({ err }, 'LLM incident summary failed, using rule-based summary');
+        }
+      }
+    }
+  }
 
   for (const group of grouped) {
     if (group.insights.length < 2) {
@@ -109,8 +164,9 @@ export function correlateInsights(
 
 interface InsightGroup {
   insights: Insight[];
-  correlationType: 'cascade' | 'dedup' | 'temporal';
+  correlationType: 'cascade' | 'dedup' | 'temporal' | 'semantic';
   rootCause: Insight;
+  llmSummary?: string;
 }
 
 function groupByCorrelation(
@@ -242,10 +298,10 @@ function buildIncident(group: InsightGroup): IncidentInsert {
   // Generate title
   const title = generateIncidentTitle(group);
 
-  // Generate summary
-  const summary = generateIncidentSummary(group);
+  // Generate summary — prefer LLM summary if available
+  const summary = group.llmSummary ?? generateIncidentSummary(group);
 
-  // Confidence: cascade with 3+ insights = high, 2 = medium, dedup = high
+  // Confidence: cascade with 3+ insights = high, 2 = medium, dedup = high, semantic = medium
   let confidence: 'high' | 'medium' | 'low' = 'medium';
   if (correlationType === 'dedup') confidence = 'high';
   if (correlationType === 'cascade' && insights.length >= 3) confidence = 'high';
@@ -290,6 +346,13 @@ function generateIncidentTitle(group: InsightGroup): string {
     return `Cascade anomaly affecting ${containers.length} containers${endpointName ? ` on ${endpointName}` : ''}`;
   }
 
+  if (correlationType === 'semantic') {
+    if (containers.length <= 3) {
+      return `Similar anomalies on ${containers.join(', ')}`;
+    }
+    return `Similar anomalies across ${containers.length} containers`;
+  }
+
   return `Correlated anomalies on ${endpointName || 'unknown endpoint'} (${insights.length} alerts)`;
 }
 
@@ -303,6 +366,9 @@ function generateIncidentSummary(group: InsightGroup): string {
     parts.push(`Likely root cause: ${rootCause.title}`);
   } else if (correlationType === 'dedup') {
     parts.push(`${insights.length} duplicate anomalies detected for the same container within the correlation window.`);
+  } else if (correlationType === 'semantic') {
+    parts.push(`${insights.length} semantically similar anomalies grouped by text similarity analysis.`);
+    parts.push(`Primary alert: ${rootCause.title}`);
   } else {
     parts.push(`${insights.length} related anomalies detected within the correlation window.`);
   }

@@ -26,6 +26,7 @@ interface Trace {
 interface TracesOptions {
   service?: string;
   operation?: string;
+  source?: string;
   minDuration?: number;
   maxDuration?: number;
   limit?: number;
