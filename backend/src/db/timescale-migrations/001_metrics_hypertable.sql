@@ -40,19 +40,19 @@ FROM metrics GROUP BY bucket, endpoint_id, container_id, container_name, metric_
 
 -- Refresh policies for continuous aggregates
 SELECT add_continuous_aggregate_policy('metrics_5min',
-  start_offset => INTERVAL '10 minutes',
+  start_offset => INTERVAL '15 minutes',
   end_offset => INTERVAL '1 minute',
   schedule_interval => INTERVAL '5 minutes',
   if_not_exists => TRUE);
 
 SELECT add_continuous_aggregate_policy('metrics_1hour',
-  start_offset => INTERVAL '2 hours',
+  start_offset => INTERVAL '3 hours',
   end_offset => INTERVAL '5 minutes',
   schedule_interval => INTERVAL '1 hour',
   if_not_exists => TRUE);
 
 SELECT add_continuous_aggregate_policy('metrics_1day',
-  start_offset => INTERVAL '2 days',
+  start_offset => INTERVAL '3 days',
   end_offset => INTERVAL '1 hour',
   schedule_interval => INTERVAL '1 day',
   if_not_exists => TRUE);

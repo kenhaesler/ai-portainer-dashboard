@@ -36,7 +36,7 @@ export async function insertMetrics(metrics: MetricInsert[]): Promise<void> {
     `INSERT INTO metrics (endpoint_id, container_id, container_name, metric_type, value, timestamp)
      SELECT * FROM unnest(
        $1::int[], $2::text[], $3::text[], $4::text[], $5::double precision[],
-       array_fill(NOW(), ARRAY[$6])::timestamptz[]
+       array_fill(NOW(), ARRAY[$6::int])::timestamptz[]
      )`,
     [endpointIds, containerIds, containerNames, metricTypes, values, metrics.length],
   );
