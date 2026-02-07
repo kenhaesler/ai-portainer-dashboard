@@ -144,8 +144,8 @@ export function getRedisSystemInfo(cacheStats?: CacheStatsSummary) {
 
 function ThemeIcon({ theme }: { theme: Theme }) {
   if (theme === 'system') return <Monitor className="h-4 w-4" />;
-  if (theme === 'light') return <Sun className="h-4 w-4" />;
-  if (theme.startsWith('apple')) return <Sparkles className="h-4 w-4" />;
+  if (theme === 'apple-light') return <Sun className="h-4 w-4" />;
+  if (theme === 'apple-dark') return <Sparkles className="h-4 w-4" />;
   if (theme.startsWith('catppuccin')) return <Palette className="h-4 w-4" />;
   return <Moon className="h-4 w-4" />;
 }
@@ -978,7 +978,7 @@ export function DefaultLandingPagePreference() {
 }
 
 export default function SettingsPage() {
-  const { theme, setTheme, enabledThemes, toggleEnabledTheme, dashboardBackground, setDashboardBackground } = useThemeStore();
+  const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
   const { data: cacheStats } = useCacheStats();
@@ -1212,60 +1212,61 @@ export default function SettingsPage() {
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {themeOptions.map((option) => {
-            const isEnabled = enabledThemes.includes(option.value);
-            const isOnlyEnabled = isEnabled && enabledThemes.length === 1;
-            return (
+          {themeOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setTheme(option.value)}
+              className={cn(
+                'flex items-center gap-3 p-4 rounded-lg border text-left transition-colors',
+                theme === option.value
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border hover:border-primary/50 hover:bg-muted/50'
+              )}
+            >
               <div
-                key={option.value}
                 className={cn(
-                  'flex items-center gap-3 p-4 rounded-lg border text-left transition-colors',
+                  'flex items-center justify-center w-10 h-10 rounded-lg',
                   theme === option.value
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground'
                 )}
               >
-                <button
-                  onClick={() => setTheme(option.value)}
-                  className="flex items-center gap-3 flex-1 min-w-0"
-                >
-                  <div
-                    className={cn(
-                      'flex items-center justify-center w-10 h-10 rounded-lg shrink-0',
-                      theme === option.value
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground'
-                    )}
-                  >
-                    <ThemeIcon theme={option.value} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{option.label}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {option.description}
-                    </div>
-                  </div>
-                </button>
-                <label
-                  title={isOnlyEnabled ? 'At least one theme must be enabled' : `${isEnabled ? 'Remove from' : 'Add to'} header cycle`}
-                  className="flex items-center shrink-0 cursor-pointer"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isEnabled}
-                    disabled={isOnlyEnabled}
-                    onChange={() => toggleEnabledTheme(option.value)}
-                    className="h-4 w-4 rounded border-border accent-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                </label>
+                <ThemeIcon theme={option.value} />
               </div>
-            );
-          })}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{option.label}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {option.description}
+                </div>
+              </div>
+            </button>
+          ))}
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          Tick the checkbox on themes to include them in the header cycle button.
-        </p>
+
+        <div className="mt-6 border-t border-border pt-6">
+          <h3 className="text-sm font-medium mb-1">Header Toggle</h3>
+          <p className="text-sm text-muted-foreground mb-3">
+            Choose the two themes the header pill switch toggles between.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Light side (Sun)</label>
+              <ThemedSelect
+                value={toggleThemes[0]}
+                onValueChange={(v) => setToggleThemes([v as Theme, toggleThemes[1]])}
+                options={themeOptions.filter((o) => o.value !== 'system').map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Dark side (Moon)</label>
+              <ThemedSelect
+                value={toggleThemes[1]}
+                onValueChange={(v) => setToggleThemes([toggleThemes[0], v as Theme])}
+                options={themeOptions.filter((o) => o.value !== 'system').map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </div>
+          </div>
+        </div>
 
         <div className="mt-6 border-t border-border pt-6">
           <h3 className="text-sm font-medium mb-1">Dashboard Background</h3>

@@ -3,8 +3,6 @@ import { persist } from 'zustand/middleware';
 
 export type Theme =
   | 'system'
-  | 'light'
-  | 'dark'
   | 'apple-light'
   | 'apple-dark'
   | 'retro-70s'
@@ -37,8 +35,6 @@ export const dashboardBackgroundOptions: { value: DashboardBackground; label: st
 
 export const themeOptions: { value: Theme; label: string; description: string }[] = [
   { value: 'system', label: 'System', description: 'Follow system preference' },
-  { value: 'light', label: 'Light', description: 'Default light theme' },
-  { value: 'dark', label: 'Dark', description: 'Default dark theme' },
   { value: 'apple-light', label: 'Glass Light', description: 'Futuristic frosted glass with gradients' },
   { value: 'apple-dark', label: 'Glass Dark', description: 'Deep space glassmorphism aesthetic' },
   { value: 'retro-70s', label: 'Retro 70s', description: 'Warm cream, gold, teal & coral' },
@@ -86,7 +82,7 @@ export const useThemeStore = create<ThemeState>()(
             ? 'dark'
             : 'light';
         }
-        if (theme === 'light' || theme === 'catppuccin-latte' || theme === 'apple-light' || theme === 'retro-70s') {
+        if (theme === 'catppuccin-latte' || theme === 'apple-light' || theme === 'retro-70s') {
           return 'light';
         }
         return 'dark';

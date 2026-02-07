@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useThemeStore, DEFAULT_ENABLED_THEMES } from './theme-store';
+import { useThemeStore, DEFAULT_TOGGLE_THEMES } from './theme-store';
 
 describe('useThemeStore - dashboardBackground', () => {
   beforeEach(() => {
@@ -68,54 +68,38 @@ describe('useThemeStore - retro themes', () => {
   );
 });
 
-describe('useThemeStore - enabledThemes & cycleTheme', () => {
+describe('useThemeStore - toggleThemes', () => {
   beforeEach(() => {
     useThemeStore.setState({
       theme: 'apple-light',
-      enabledThemes: [...DEFAULT_ENABLED_THEMES],
+      toggleThemes: [...DEFAULT_TOGGLE_THEMES],
     });
   });
 
-  it('defaults to DEFAULT_ENABLED_THEMES', () => {
-    expect(useThemeStore.getState().enabledThemes).toEqual(DEFAULT_ENABLED_THEMES);
+  it('defaults to DEFAULT_TOGGLE_THEMES', () => {
+    expect(useThemeStore.getState().toggleThemes).toEqual(DEFAULT_TOGGLE_THEMES);
   });
 
-  it('toggleEnabledTheme adds a theme', () => {
-    useThemeStore.getState().toggleEnabledTheme('dark');
-    expect(useThemeStore.getState().enabledThemes).toContain('dark');
-  });
-
-  it('toggleEnabledTheme removes a theme', () => {
-    useThemeStore.getState().toggleEnabledTheme('apple-light');
-    expect(useThemeStore.getState().enabledThemes).not.toContain('apple-light');
-  });
-
-  it('does not remove the last enabled theme', () => {
-    useThemeStore.setState({ enabledThemes: ['apple-dark'] });
-    useThemeStore.getState().toggleEnabledTheme('apple-dark');
-    expect(useThemeStore.getState().enabledThemes).toEqual(['apple-dark']);
-  });
-
-  it('cycleTheme advances to the next enabled theme', () => {
-    useThemeStore.setState({ theme: 'apple-light', enabledThemes: ['apple-light', 'apple-dark'] });
-    useThemeStore.getState().cycleTheme();
+  it('toggleTheme switches from first to second', () => {
+    useThemeStore.setState({ theme: 'apple-light', toggleThemes: ['apple-light', 'apple-dark'] });
+    useThemeStore.getState().toggleTheme();
     expect(useThemeStore.getState().theme).toBe('apple-dark');
   });
 
-  it('cycleTheme wraps around to the first enabled theme', () => {
-    useThemeStore.setState({ theme: 'apple-dark', enabledThemes: ['apple-light', 'apple-dark'] });
-    useThemeStore.getState().cycleTheme();
+  it('toggleTheme switches from second to first', () => {
+    useThemeStore.setState({ theme: 'apple-dark', toggleThemes: ['apple-light', 'apple-dark'] });
+    useThemeStore.getState().toggleTheme();
     expect(useThemeStore.getState().theme).toBe('apple-light');
   });
 
-  it('cycleTheme picks the first enabled theme when current is not in the list', () => {
-    useThemeStore.setState({ theme: 'dark', enabledThemes: ['apple-light', 'apple-dark'] });
-    useThemeStore.getState().cycleTheme();
+  it('toggleTheme defaults to first when current is neither', () => {
+    useThemeStore.setState({ theme: 'retro-arcade', toggleThemes: ['apple-light', 'apple-dark'] });
+    useThemeStore.getState().toggleTheme();
     expect(useThemeStore.getState().theme).toBe('apple-light');
   });
 
-  it('setEnabledThemes replaces the list', () => {
-    useThemeStore.getState().setEnabledThemes(['dark', 'light']);
-    expect(useThemeStore.getState().enabledThemes).toEqual(['dark', 'light']);
+  it('setToggleThemes replaces the pair', () => {
+    useThemeStore.getState().setToggleThemes(['catppuccin-latte', 'catppuccin-mocha']);
+    expect(useThemeStore.getState().toggleThemes).toEqual(['catppuccin-latte', 'catppuccin-mocha']);
   });
 });
