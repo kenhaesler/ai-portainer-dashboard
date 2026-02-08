@@ -1,44 +1,61 @@
 /**
  * Artillery processor helpers for REST load tests.
  *
- * Functions are invoked by Artillery's `processor` config to generate
- * dynamic payloads and debug auth tokens during test runs.
+ * Logs in once (singleton) and shares the JWT token across all
+ * virtual users to avoid hitting the login rate limit.
  */
 
-const CHAT_MESSAGES = [
-  'Which containers are using the most CPU right now?',
-  'Show me containers with high memory usage.',
-  'Are there any stopped containers that should be running?',
-  'Summarize the health of my Docker environment.',
-  'What anomalies have been detected in the last hour?',
-  'Which stacks are currently running?',
-  'Tell me about network connectivity between containers.',
-  'Are there any security concerns with my running containers?',
-  'What is the average CPU usage across all containers?',
-  'List containers that restarted recently.',
-];
+let sharedToken = null;
+let loginPromise = null;
 
 /**
- * Sets a random chat message on context.vars for use in Artillery scenarios.
+ * Logs in once — concurrent calls wait on the same promise.
  */
-function generateRandomMessage(context, events, done) {
-  const idx = Math.floor(Math.random() * CHAT_MESSAGES.length);
-  context.vars.chatMessage = CHAT_MESSAGES[idx];
-  return done();
+function doLogin() {
+  if (loginPromise) return loginPromise;
+
+  loginPromise = (async () => {
+    const baseUrl = process.env.BASE_URL;
+    const username = process.env.DASHBOARD_USER || 'admin';
+    const password = process.env.DASHBOARD_PASS || 'admin';
+
+    const res = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Login failed: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    sharedToken = data.token;
+    console.log(`  [auth] Token acquired: ${sharedToken.substring(0, 40)}...`);
+  })();
+
+  return loginPromise;
 }
 
 /**
- * Logs the first 40 characters of the captured JWT token for debugging.
- * Artillery v2 afterResponse signature: (requestParams, response, context, ee, done)
+ * Artillery `beforeScenario` hook — runs before each VU scenario.
+ * First call triggers login; subsequent calls reuse the token.
  */
-function logToken(requestParams, response, context, ee, done) {
-  const token = context.vars && context.vars.token;
-  if (token) {
-    console.log(`  [auth] token: ${token.substring(0, 40)}...`);
-  } else {
-    console.log(`  [auth] WARNING: no token captured (status=${response.statusCode})`);
+function setToken(context, events, done) {
+  if (sharedToken) {
+    context.vars.token = sharedToken;
+    return done();
   }
-  return done();
+
+  doLogin()
+    .then(() => {
+      context.vars.token = sharedToken;
+      done();
+    })
+    .catch((err) => {
+      console.error(`  [auth] ${err.message}`);
+      done(err);
+    });
 }
 
-module.exports = { generateRandomMessage, logToken };
+module.exports = { setToken };

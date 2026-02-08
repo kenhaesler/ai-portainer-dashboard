@@ -106,7 +106,7 @@ async function main() {
         path: endpoint.path,
         reqPerSec: Math.round(result.requests.average),
         p50: result.latency.p50,
-        p95: result.latency.p95,
+        p95: result.latency.p97_5,
         p99: result.latency.p99,
         errors: result.errors,
         timeouts: result.timeouts,
@@ -115,7 +115,7 @@ async function main() {
       });
       console.log(
         `  → ${formatNum(Math.round(result.requests.average))} req/s | ` +
-        `p50=${result.latency.p50}ms | p95=${result.latency.p95}ms | ` +
+        `p50=${result.latency.p50}ms | p95=${result.latency.p97_5}ms | ` +
         `p99=${result.latency.p99}ms | errors=${result.errors}\n`,
       );
     } catch (err) {
