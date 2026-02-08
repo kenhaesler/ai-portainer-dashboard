@@ -273,7 +273,7 @@ export function ContainerMultiSelect({
           aria-multiselectable="true"
           aria-label="Container list"
           className={cn(
-            'absolute left-0 z-50 mt-1 w-full min-w-[280px] overflow-hidden rounded-md border bg-popover/80 text-popover-foreground shadow-md backdrop-blur-xl',
+            'absolute left-0 z-50 mt-1 w-full min-w-[280px] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
             'animate-in fade-in-0 zoom-in-95 slide-in-from-top-2',
           )}
           onKeyDown={handleKeyDown}
