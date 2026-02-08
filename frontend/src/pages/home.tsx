@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
@@ -23,6 +23,7 @@ import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/mot
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
@@ -101,6 +102,22 @@ export default function HomePage() {
   }, [data?.endpoints]);
 
   const workloadData = useMemo(() => {
+    const search = new URLSearchParams(location.search);
+    const mockWorkloadCount = Number(search.get('mockWorkload') ?? 0);
+    if (mockWorkloadCount > 0) {
+      return Array.from({ length: mockWorkloadCount }, (_, i) => {
+        const base = 30 + (mockWorkloadCount - i) * 4;
+        const stopped = (i % 4) + (i > 6 ? 2 : 0);
+        const running = Math.max(1, base - stopped);
+        return {
+          endpoint: `endpoint-${String(i + 1).padStart(2, '0')}`,
+          containers: running + stopped,
+          running,
+          stopped,
+        };
+      });
+    }
+
     if (!data?.endpoints) return [];
     return data.endpoints.map((ep) => ({
       endpoint: `${ep.name} (ID: ${ep.id})`,
@@ -108,7 +125,7 @@ export default function HomePage() {
       running: ep.containersRunning,
       stopped: ep.containersStopped,
     }));
-  }, [data?.endpoints]);
+  }, [data?.endpoints, location.search]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
@@ -311,29 +328,35 @@ export default function HomePage() {
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal>
-            <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
-              <ContainerStatePie
-                running={data.kpis.running}
-                stopped={data.kpis.stopped}
-                unhealthy={data.kpis.unhealthy}
-              />
+              <div className="flex flex-1 items-center justify-center">
+                <ContainerStatePie
+                  running={data.kpis.running}
+                  stopped={data.kpis.stopped}
+                  unhealthy={data.kpis.unhealthy}
+                />
+              </div>
             </div>
           </MotionReveal>
           <MotionReveal>
-            <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Endpoint Status
               </h3>
-              <EndpointStatusBar data={endpointBarData} />
+              <div className="flex flex-1 items-center justify-center">
+                <EndpointStatusBar data={endpointBarData} />
+              </div>
             </div>
           </MotionReveal>
           <MotionReveal>
-            <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Workload Distribution
               </h3>
-              <WorkloadDistribution data={workloadData} />
+              <div className="flex flex-1 items-stretch justify-start">
+                <WorkloadDistribution data={workloadData} />
+              </div>
             </div>
           </MotionReveal>
         </MotionStagger>

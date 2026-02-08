@@ -42,7 +42,7 @@ export function ThemedSelect({
       value={opt.value}
       disabled={opt.disabled}
       className={cn(
-        'relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none',
+        'relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none',
         'focus:bg-accent focus:text-accent-foreground',
         'data-disabled:pointer-events-none data-disabled:opacity-50',
         inset && 'pl-10',
@@ -97,7 +97,7 @@ export function ThemedSelect({
               return (
                 <SelectPrimitive.Group key={`${entry.label}-${index}`}>
                   {index > 0 && <SelectPrimitive.Separator className="my-2 h-px bg-border" />}
-                  <SelectPrimitive.Label className="mx-1 mb-1 rounded-sm border border-border/70 bg-muted/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/90 shadow-xs">
+                  <SelectPrimitive.Label className="mx-1 mb-1 rounded-md border border-border/70 bg-muted/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/90 shadow-xs">
                     {entry.label}
                   </SelectPrimitive.Label>
                   {entry.options.map((opt) => renderOption(opt, true))}

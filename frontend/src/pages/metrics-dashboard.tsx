@@ -20,7 +20,7 @@ import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useStacks } from '@/hooks/use-stacks';
-import { useContainerMetrics, useAnomalies } from '@/hooks/use-metrics';
+import { useContainerMetrics, useAnomalies, useAnomalyExplanations } from '@/hooks/use-metrics';
 import { useContainerForecast, useForecasts, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
@@ -189,6 +189,12 @@ export default function MetricsDashboardPage() {
   // Fetch anomalies
   const { data: anomaliesData } = useAnomalies();
 
+  // Fetch anomaly explanations for selected container
+  const { data: explanationsData } = useAnomalyExplanations(
+    selectedContainer ?? undefined,
+    timeRange,
+  );
+
   // Fetch capacity forecasts for selected container
   const forecastOverviewQuery = useForecasts(20);
   const { data: cpuForecast } = useContainerForecast(selectedContainer ?? '', 'cpu');
@@ -197,6 +203,16 @@ export default function MetricsDashboardPage() {
   const hasForecastData =
     (cpuForecast && !('error' in cpuForecast)) ||
     (memoryForecast && !('error' in memoryForecast));
+
+  // Pre-filter explanations by metric type for reuse
+  const cpuExplanations = useMemo(
+    () => explanationsData?.explanations?.filter(e => e.title.toLowerCase().includes('cpu')) ?? [],
+    [explanationsData],
+  );
+  const memoryExplanations = useMemo(
+    () => explanationsData?.explanations?.filter(e => e.title.toLowerCase().includes('memory')) ?? [],
+    [explanationsData],
+  );
 
   // Process data for charts
   const cpuData = useMemo(() => {
@@ -515,14 +531,14 @@ export default function MetricsDashboardPage() {
                     Export CSV
                   </button>
                 </div>
-                <div style={{ height: 300 * zoomLevel }}>
-                  <MetricsLineChart
-                    data={cpuData}
-                    label="CPU Usage"
-                    color="#3b82f6"
-                    unit="%"
-                  />
-                </div>
+                <MetricsLineChart
+                  data={cpuData}
+                  label="CPU Usage"
+                  color="#3b82f6"
+                  unit="%"
+                  height={300 * zoomLevel}
+                  anomalyExplanations={cpuExplanations}
+                />
                 {cpuError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -547,14 +563,14 @@ export default function MetricsDashboardPage() {
                     Export CSV
                   </button>
                 </div>
-                <div style={{ height: 300 * zoomLevel }}>
-                  <MetricsLineChart
-                    data={memoryData}
-                    label="Memory Usage"
-                    color="#8b5cf6"
-                    unit="%"
-                  />
-                </div>
+                <MetricsLineChart
+                  data={memoryData}
+                  label="Memory Usage"
+                  color="#8b5cf6"
+                  unit="%"
+                  height={300 * zoomLevel}
+                  anomalyExplanations={memoryExplanations}
+                />
                 {memoryError && (
                   <div className="mt-4 flex items-center gap-2 text-sm text-destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -582,14 +598,13 @@ export default function MetricsDashboardPage() {
                     Export CSV
                   </button>
                 </div>
-                <div style={{ height: 300 * zoomLevel }}>
-                  <MetricsLineChart
-                    data={memoryBytesData}
-                    label="Memory"
-                    color="#06b6d4"
-                    unit=" MB"
-                  />
-                </div>
+                <MetricsLineChart
+                  data={memoryBytesData}
+                  label="Memory"
+                  color="#06b6d4"
+                  unit=" MB"
+                  height={300 * zoomLevel}
+                />
               </div>
             </div>
           )}
