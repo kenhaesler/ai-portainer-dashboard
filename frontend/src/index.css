@@ -923,12 +923,35 @@ aside nav:hover {
   }
 }
 
+/* Opt-out for fields that must remain opaque even with Apple glass input overrides */
+input.input-solid-bg,
+input.input-solid-bg:focus {
+  background: var(--color-background) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.apple-light input.input-solid-bg:not([type='checkbox']):not([type='radio']),
+.apple-light input.input-solid-bg:not([type='checkbox']):not([type='radio']):focus,
+.apple-dark input.input-solid-bg:not([type='checkbox']):not([type='radio']),
+.apple-dark input.input-solid-bg:not([type='checkbox']):not([type='radio']):focus {
+  background: var(--color-background) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* ====== GLASS POPOVERS & DROPDOWNS ====== */
 
 .apple-light {
   & .bg-popover,
   & [data-radix-popper-content-wrapper] > div {
     background: rgba(255, 255, 255, 0.85) !important;
+    border-radius: var(--radius-lg) !important;
+    overflow: hidden;
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
     border: 1px solid rgba(255, 255, 255, 0.6) !important;
@@ -942,6 +965,8 @@ aside nav:hover {
   & .bg-popover,
   & [data-radix-popper-content-wrapper] > div {
     background: rgba(20, 22, 35, 0.85) !important;
+    border-radius: var(--radius-lg) !important;
+    overflow: hidden;
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
     border: 1px solid rgba(148, 163, 184, 0.12) !important;
@@ -1797,4 +1822,47 @@ tr.keyboard-selected {
   stroke-width: 1.75 !important;
   fill: currentColor;
   fill-opacity: 0.12;
+}
+
+/* Log Viewer container dropdown should be fully opaque (no glass/transparency). */
+.container-multi-select-solid {
+  background: #0f172a !important;
+  border-color: var(--color-border) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.container-multi-select-solid-input,
+.container-multi-select-solid-input:focus {
+  background: #0f172a !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@keyframes log-toggle-breathe {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.06);
+  }
+}
+
+.log-toggle-on {
+  animation: log-toggle-breathe 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .log-toggle-on {
+    animation: none;
+  }
+}
+
+/* Keep select dropdown item highlight rounded and avoid square global focus outline. */
+.themed-select-item:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: var(--radius-lg) !important;
 }

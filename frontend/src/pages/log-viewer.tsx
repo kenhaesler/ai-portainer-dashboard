@@ -5,6 +5,7 @@ import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { ContainerMultiSelect } from '@/components/shared/container-multi-select';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -349,11 +350,23 @@ export default function LogViewerPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <button onClick={() => setLiveTail((v) => !v)} className="rounded-md border px-2 py-1">
+          <button
+            onClick={() => setLiveTail((v) => !v)}
+            className={cn(
+              'rounded-md border px-2 py-1 transition-colors',
+              liveTail && 'log-toggle-on border-emerald-500/70 bg-emerald-500/15 text-emerald-300',
+            )}
+          >
             <Activity className="mr-1 inline h-4 w-4" />
             Live Tail {liveTail ? 'ON' : 'OFF'}
           </button>
-          <button onClick={() => setLineWrap((v) => !v)} className="rounded-md border px-2 py-1">
+          <button
+            onClick={() => setLineWrap((v) => !v)}
+            className={cn(
+              'rounded-md border px-2 py-1 transition-colors',
+              lineWrap && 'log-toggle-on border-emerald-500/70 bg-emerald-500/15 text-emerald-300',
+            )}
+          >
             <WrapText className="mr-1 inline h-4 w-4" />
             Wrap {lineWrap ? 'ON' : 'OFF'}
           </button>
@@ -368,7 +381,7 @@ export default function LogViewerPage() {
           <label className="ml-auto inline-flex items-center text-sm">
             <span className="mr-2 text-muted-foreground">Buffer</span>
             <ThemedSelect
-              className="h-8"
+              className="h-9"
               value={String(bufferSize)}
               onValueChange={(val) => setBufferSize(Number(val))}
               options={BUFFER_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}

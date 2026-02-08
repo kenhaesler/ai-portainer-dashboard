@@ -208,7 +208,7 @@ export function ContainerMultiSelect({
         aria-expanded={isOpen}
         aria-label={`Select containers, ${selected.length} of ${containers.length} selected`}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm',
+          'inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs',
           'ring-offset-background transition-colors',
           'hover:bg-accent hover:text-accent-foreground',
           'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
@@ -273,7 +273,7 @@ export function ContainerMultiSelect({
           aria-multiselectable="true"
           aria-label="Container list"
           className={cn(
-            'absolute left-0 z-50 mt-1 w-full min-w-[280px] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
+            'container-multi-select-solid absolute left-0 z-50 mt-1 w-full min-w-[280px] overflow-hidden rounded-md border text-popover-foreground shadow-md',
             'animate-in fade-in-0 zoom-in-95 slide-in-from-top-2',
           )}
           onKeyDown={handleKeyDown}
@@ -289,7 +289,7 @@ export function ContainerMultiSelect({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search containers..."
                 aria-label="Search containers"
-                className="h-9 w-full rounded-md border border-input bg-background pl-10 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="container-multi-select-solid-input h-9 w-full rounded-md border border-input pl-10 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {search && (
                 <button
