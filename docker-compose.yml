@@ -107,6 +107,9 @@ services:
     restart: unless-stopped
     ports:
       - "8787:8000"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000

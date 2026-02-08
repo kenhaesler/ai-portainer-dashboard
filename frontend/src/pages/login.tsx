@@ -83,7 +83,7 @@ export default function LoginPage() {
   const { data: oidcStatus } = useOIDCStatus();
   const reducedMotion = usePrefersReducedMotion();
   const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("changeme123changeme123");
+  const [password, setPassword] = useState("changeme123");
   const [error, setError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
 

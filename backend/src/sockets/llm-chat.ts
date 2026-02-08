@@ -316,7 +316,8 @@ async function streamOllamaRawCall(
         const toolCallJson = normalizeToolCallsFromOllama(json);
         if (toolCallJson) {
           fullResponse += toolCallJson;
-          onChunk(toolCallJson);
+          // Don't emit tool call JSON as a chat chunk — the main loop
+          // will detect and execute tool calls via parseToolCalls().
         }
       } catch {
         // Skip malformed NDJSON fragments.
@@ -337,7 +338,7 @@ async function streamOllamaRawCall(
         const toolCallJson = normalizeToolCallsFromOllama(json);
         if (toolCallJson) {
           fullResponse += toolCallJson;
-          onChunk(toolCallJson);
+          // Don't emit tool call JSON as a chat chunk.
         }
       }
     } catch {
@@ -649,7 +650,11 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
             status: 'executing',
           });
 
-          const results = await executeToolCalls(toolCalls);
+          // Convert to OllamaToolCall format for proper MCP routing
+          const ollamaFormatCalls: OllamaToolCall[] = toolCalls.map(tc => ({
+            function: { name: tc.tool, arguments: tc.arguments },
+          }));
+          const results = await routeToolCalls(ollamaFormatCalls);
           lastToolResults = results;
 
           socket.emit('chat:tool_call', {
