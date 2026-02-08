@@ -103,22 +103,26 @@ graph TB
         Services --> DB
     end
 
-    subgraph Schema["&nbsp;&nbsp; Database Schema — 7 tables &nbsp;&nbsp;"]
+    subgraph Bottom[" "]
         direction LR
-        T1["sessions"]
-        T2["settings"]
-        T3["insights"]
-        T4["metrics"]
-        T5["actions"]
-        T6["spans"]
-        T7["audit_log"]
-    end
 
-    subgraph External["&nbsp;&nbsp; External Services &nbsp;&nbsp;"]
-        direction LR
-        Portainer(["Portainer API<br/><i>Container Management</i>"])
-        Ollama(["Ollama<br/><i>Local LLM — llama3.2</i>"])
-        Kibana(["Elasticsearch / Kibana<br/><i>Log Aggregation — optional</i>"])
+        subgraph Schema["&nbsp;&nbsp; Database Schema — 7 tables &nbsp;&nbsp;"]
+            direction LR
+            T1["sessions"]
+            T2["settings"]
+            T3["insights"]
+            T4["metrics"]
+            T5["actions"]
+            T6["spans"]
+            T7["audit_log"]
+        end
+
+        subgraph External["&nbsp;&nbsp; External Services &nbsp;&nbsp;"]
+            direction LR
+            Portainer(["Portainer API<br/><i>Container Management</i>"])
+            Ollama(["Ollama<br/><i>Local LLM — llama3.2</i>"])
+            Kibana(["Elasticsearch / Kibana<br/><i>Log Aggregation — optional</i>"])
+        end
     end
 
     %% Frontend to Backend
@@ -139,12 +143,14 @@ graph TB
     classDef backend fill:#f0fdf4,stroke:#22c55e,stroke-width:1.5px,color:#14532d
     classDef scheduler fill:#faf5ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
     classDef data fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
+    classDef invisible fill:none,stroke:none
 
     class Portainer,Ollama,Kibana external
     class Router,P1,P2,P3,P4,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
     class API,NSllm,NSmon,NSrem,PortClient,Cache,LLMClient,AnomalyDet,MonService,MetricsCol backend
     class J1,J2,J3 scheduler
     class DB,T1,T2,T3,T4,T5,T6,T7 data
+    class Bottom invisible
 ```
 
 ## Data Flow
