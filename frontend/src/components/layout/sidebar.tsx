@@ -68,13 +68,12 @@ const navigation: NavGroup[] = [
   {
     title: 'Intelligence',
     items: [
-      { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
       { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-      { label: 'Remediation', to: '/remediation', icon: Shield },
+      { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
       { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
-      { label: 'Reports', to: '/reports', icon: FileBarChart },
+      { label: 'Remediation', to: '/remediation', icon: Shield },
     ],
   },
   {
@@ -84,6 +83,7 @@ const navigation: NavGroup[] = [
       { label: 'Security Audit', to: '/security/audit', icon: Shield },
       { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
       { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
+      { label: 'Reports', to: '/reports', icon: FileBarChart },
       { label: 'Settings', to: '/settings', icon: Settings },
     ],
   },

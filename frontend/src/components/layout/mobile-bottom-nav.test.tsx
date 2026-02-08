@@ -21,7 +21,7 @@ describe('MobileBottomNav', () => {
     expect(screen.getByText('Home')).toBeTruthy();
     expect(screen.getByText('Workloads')).toBeTruthy();
     expect(screen.getByText('Health')).toBeTruthy();
-    expect(screen.getByText('AI Monitor')).toBeTruthy();
+    expect(screen.getByText('Metrics')).toBeTruthy();
   });
 
   it('renders More button', () => {
@@ -58,7 +58,7 @@ describe('MobileBottomNav', () => {
     renderNav();
     fireEvent.click(screen.getByLabelText('More pages'));
     expect(screen.getByText('Stacks')).toBeTruthy();
-    expect(screen.getByText('Metrics')).toBeTruthy();
+    expect(screen.getByText('AI Monitor')).toBeTruthy();
     expect(screen.getByText('Remediation')).toBeTruthy();
     expect(screen.getByText('Traces')).toBeTruthy();
     expect(screen.getByText('Assistant')).toBeTruthy();

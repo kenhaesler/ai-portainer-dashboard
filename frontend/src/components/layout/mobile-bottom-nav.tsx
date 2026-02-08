@@ -32,7 +32,7 @@ const primaryNav: MobileNavItem[] = [
   { label: 'Home', to: '/', icon: LayoutDashboard },
   { label: 'Workloads', to: '/workloads', icon: Boxes },
   { label: 'Health', to: '/health', icon: HeartPulse },
-  { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
+  { label: 'Metrics', to: '/metrics', icon: BarChart3 },
 ];
 
 const secondaryNav: MobileNavItem[] = [
@@ -41,10 +41,10 @@ const secondaryNav: MobileNavItem[] = [
   { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
   { label: 'Images', to: '/images', icon: PackageOpen },
   { label: 'Topology', to: '/topology', icon: Network },
-  { label: 'Metrics', to: '/metrics', icon: BarChart3 },
-  { label: 'Remediation', to: '/remediation', icon: Shield },
+  { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
   { label: 'Traces', to: '/traces', icon: GitBranch },
   { label: 'Assistant', to: '/assistant', icon: MessageSquare },
+  { label: 'Remediation', to: '/remediation', icon: Shield },
   { label: 'Edge Logs', to: '/edge-logs', icon: FileSearch },
   { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
   { label: 'Settings', to: '/settings', icon: Settings },

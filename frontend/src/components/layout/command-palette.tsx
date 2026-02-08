@@ -50,17 +50,17 @@ const pages: PageEntry[] = [
   { label: 'Container Health', to: '/health', icon: HeartPulse },
   { label: 'Image Footprint', to: '/images', icon: PackageOpen },
   { label: 'Network Topology', to: '/topology', icon: Network },
-  { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
   { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-  { label: 'Remediation', to: '/remediation', icon: Shield },
+  { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
   { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
   { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
   { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
+  { label: 'Remediation', to: '/remediation', icon: Shield },
   { label: 'Security Audit', to: '/security/audit', icon: Shield },
   { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
+  { label: 'Settings', to: '/settings', icon: Settings },
   { label: 'Webhooks', to: '/webhooks', icon: Webhook },
   { label: 'Users', to: '/users', icon: Users },
-  { label: 'Settings', to: '/settings', icon: Settings },
 ];
 
 /** Heuristic: detect if input looks like a natural language question rather than a name search */
