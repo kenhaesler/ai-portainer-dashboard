@@ -42,15 +42,17 @@ graph LR
             P1["Home<br/>Fleet Overview"]
             P2["Workload Explorer<br/>Stack Overview"]
             P3["Container Detail<br/>Container Health"]
-            P4["Image Footprint<br/>Network Topology"]
-            P5["AI Monitor<br/>Metrics Dashboard"]
-            P6["Remediation<br/>Trace Explorer"]
-            P7["LLM Assistant<br/>Edge Logs"]
-            P8["Packet Capture<br/>Settings"]
-            P9["Investigations<br/>Security Audit"]
-            P10["LLM Observability<br/>Status Page"]
-            P11["Webhooks<br/>Users"]
-            P12["Backups<br/>Reports"]
+            P4["Container Comparison<br/>Image Footprint"]
+            P5["Network Topology<br/>AI Monitor"]
+            P6["Metrics Dashboard<br/>Remediation"]
+            P7["Trace Explorer<br/>LLM Assistant"]
+            P8["LLM Observability<br/>Edge Logs"]
+            P9["Log Viewer<br/>Packet Capture"]
+            P10["Investigations<br/>Investigation Detail"]
+            P11["Security Audit<br/>Status Page"]
+            P12["Webhooks<br/>Users"]
+            P13["Backups<br/>Reports"]
+            P14["Settings<br/>Login"]
         end
 
         subgraph FState["&nbsp; State &nbsp;"]
@@ -89,38 +91,58 @@ graph LR
             subgraph SvcRow1[" "]
                 direction LR
                 PortClient["Portainer Client"]
+                PortNorm["Normalizers"]
                 HybridCache["Hybrid Cache"]
                 LLMClient["LLM Client"]
+                LLMTools["LLM Tools"]
             end
             subgraph SvcRow2[" "]
                 direction LR
                 AnomalyDet["Anomaly Detection"]
                 IsoForest["Isolation Forest"]
+                AnomalyExp["Anomaly Explainer"]
                 LogNLP["NLP Log Analyzer"]
+                Predictor["Predictive Alerting"]
             end
             subgraph SvcRow3[" "]
                 direction LR
                 MonService["Monitoring"]
                 MetricsCol["Metrics Collector"]
-                Predictor["Predictive Alerting"]
+                MetricCorr["Metric Correlator"]
+                CapForecast["Capacity Forecaster"]
+                LttbSvc["LTTB Decimator"]
             end
             subgraph SvcRow4[" "]
                 direction LR
                 IncidentCorr["Incident Correlator"]
+                IncidentSum["Incident Summarizer"]
+                AlertSim["Alert Similarity"]
                 InvestSvc["Investigation"]
-                AnomalyExp["Anomaly Explainer"]
+                RemSvc["Remediation"]
             end
             subgraph SvcRow5[" "]
                 direction LR
+                TraceStore["Trace Store"]
+                OtlpTransform["OTLP Transformer"]
                 PcapSvc["PCAP Service"]
+                PcapAnalysis["PCAP Analysis"]
                 SecurityScan["Security Scanner"]
-                NotifSvc["Notifications"]
             end
             subgraph SvcRow6[" "]
                 direction LR
                 OidcSvc["OIDC"]
+                SessionStore["Session Store"]
+                AuditLogger["Audit Logger"]
+                EventBus["Event Bus"]
+                ImgStale["Image Staleness"]
+            end
+            subgraph SvcRow7[" "]
+                direction LR
+                NotifSvc["Notifications"]
                 WebhookSvc["Webhooks"]
-                LttbSvc["LTTB Decimator"]
+                EsForwarder["ES Log Forwarder"]
+                KibanaClient["Kibana Client"]
+                BackupSvc["Backup Service"]
             end
         end
 
@@ -142,7 +164,7 @@ graph LR
     subgraph Bottom[" "]
         direction TB
 
-        subgraph Schema["&nbsp; DB Schema — 20+ tables &nbsp;"]
+        subgraph Schema["&nbsp; DB Schema — 19 tables &nbsp;"]
             direction TB
             subgraph SchemaRow1[" "]
                 direction LR
@@ -150,27 +172,30 @@ graph LR
                 T2["settings"]
                 T3["insights"]
                 T4["metrics"]
+                T5["actions"]
             end
             subgraph SchemaRow2[" "]
                 direction LR
-                T5["actions"]
                 T6["spans"]
                 T7["audit_log"]
                 T8["investigations"]
+                T9["incidents"]
+                T10["users"]
             end
             subgraph SchemaRow3[" "]
                 direction LR
-                T9["incidents"]
-                T10["pcap_captures"]
-                T11["webhooks"]
-                T12["users"]
+                T11["pcap_captures"]
+                T12["webhooks"]
+                T13["webhook_deliveries"]
+                T14["notification_log"]
+                T15["llm_traces"]
             end
             subgraph SchemaRow4[" "]
                 direction LR
-                T13["notification_log"]
-                T14["kpi_snapshots"]
-                T15["llm_traces"]
-                T16["network_metrics"]
+                T16["kpi_snapshots"]
+                T17["image_staleness"]
+                T18["monitoring_cycles"]
+                T19["monitoring_snapshots"]
             end
         end
 
@@ -185,6 +210,7 @@ graph LR
                 direction LR
                 Redis(["Redis"])
                 Kibana(["Elasticsearch"])
+                TimescaleDB(["TimescaleDB"])
             end
         end
     end
@@ -197,7 +223,8 @@ graph LR
     PortClient -- "REST" --> Portainer
     LLMClient -- "API" --> Ollama
     HybridCache -- "cache" --> Redis
-    API -. "optional" .-> Kibana
+    EsForwarder -. "optional" .-> Kibana
+    MetricsCol -. "scale" .-> TimescaleDB
 
     %% Database
     DB --> Schema
@@ -210,13 +237,13 @@ graph LR
     classDef data fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
     classDef invisible fill:none,stroke:none
 
-    class Portainer,Ollama,Kibana,Redis external
-    class Router,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
+    class Portainer,Ollama,Kibana,Redis,TimescaleDB external
+    class Router,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
     class API,NSllm,NSmon,NSrem backend
-    class PortClient,HybridCache,LLMClient,AnomalyDet,IsoForest,LogNLP,MonService,MetricsCol,Predictor,IncidentCorr,InvestSvc,AnomalyExp,PcapSvc,SecurityScan,NotifSvc,OidcSvc,WebhookSvc,LttbSvc backend
+    class PortClient,PortNorm,HybridCache,LLMClient,LLMTools,AnomalyDet,IsoForest,AnomalyExp,LogNLP,Predictor,MonService,MetricsCol,MetricCorr,CapForecast,LttbSvc,IncidentCorr,IncidentSum,AlertSim,InvestSvc,RemSvc,TraceStore,OtlpTransform,PcapSvc,PcapAnalysis,SecurityScan,OidcSvc,SessionStore,AuditLogger,EventBus,ImgStale,NotifSvc,WebhookSvc,EsForwarder,KibanaClient,BackupSvc backend
     class J1,J2,J3 scheduler
-    class DB,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16 data
-    class Bottom,SvcRow1,SvcRow2,SvcRow3,SvcRow4,SvcRow5,SvcRow6,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,ExtRow1,ExtRow2 invisible
+    class DB,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,T18,T19 data
+    class Bottom,SvcRow1,SvcRow2,SvcRow3,SvcRow4,SvcRow5,SvcRow6,SvcRow7,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,ExtRow1,ExtRow2 invisible
 ```
 
 </div>
