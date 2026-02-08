@@ -64,10 +64,12 @@ describe('RemediationPage', () => {
     vi.clearAllMocks();
   });
 
-  it('shows container name as primary label and keeps id de-emphasized', () => {
+  it('shows container name and hides action/container ids from row display', () => {
     renderPage();
     expect(screen.getByText('api-service')).toBeInTheDocument();
-    expect(screen.getByText('ID: containe')).toBeInTheDocument();
+    expect(screen.queryByText('ID: containe')).not.toBeInTheDocument();
+    expect(screen.queryByText('action-1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument();
   });
 
   it('shows rationale and routes Discuss with AI with context', () => {
