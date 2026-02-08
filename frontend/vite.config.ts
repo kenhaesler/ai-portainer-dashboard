@@ -3,8 +3,20 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { execSync } from 'node:child_process';
+
+const appCommit = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+  } catch {
+    return process.env.VITE_GIT_COMMIT || process.env.GIT_COMMIT || 'dev';
+  }
+})();
 
 export default defineConfig({
+  define: {
+    __APP_COMMIT__: JSON.stringify(appCommit),
+  },
   plugins: [
     react({
       babel: {

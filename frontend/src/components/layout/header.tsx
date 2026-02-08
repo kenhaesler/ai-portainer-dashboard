@@ -32,6 +32,7 @@ export function Header() {
   const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
+  const appCommit = __APP_COMMIT__;
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +96,15 @@ export function Header() {
             )}
           </span>
         ))}
+        {appCommit && (
+          <span
+            className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            aria-label={`Build ${appCommit}`}
+            title={`Build ${appCommit}`}
+          >
+            {appCommit}
+          </span>
+        )}
       </nav>
 
       {/* Right-side actions */}
