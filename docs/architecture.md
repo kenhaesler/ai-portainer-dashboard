@@ -86,7 +86,7 @@ graph LR
             NSrem["/remediation"]
         end
 
-        subgraph Services["&nbsp; Services &nbsp;"]
+        subgraph Services["&nbsp; Services (35 modules) &nbsp;"]
             direction TB
             subgraph SvcRow1[" "]
                 direction LR
@@ -95,49 +95,34 @@ graph LR
                 HybridCache["Hybrid Cache"]
                 LLMClient["LLM Client"]
                 LLMTools["LLM Tools"]
-            end
-            subgraph SvcRow2[" "]
-                direction LR
                 AnomalyDet["Anomaly Detection"]
                 IsoForest["Isolation Forest"]
                 AnomalyExp["Anomaly Explainer"]
                 LogNLP["NLP Log Analyzer"]
                 Predictor["Predictive Alerting"]
-            end
-            subgraph SvcRow3[" "]
-                direction LR
                 MonService["Monitoring"]
                 MetricsCol["Metrics Collector"]
                 MetricCorr["Metric Correlator"]
                 CapForecast["Capacity Forecaster"]
                 LttbSvc["LTTB Decimator"]
-            end
-            subgraph SvcRow4[" "]
-                direction LR
                 IncidentCorr["Incident Correlator"]
                 IncidentSum["Incident Summarizer"]
                 AlertSim["Alert Similarity"]
+            end
+            subgraph SvcRow2[" "]
+                direction LR
                 InvestSvc["Investigation"]
                 RemSvc["Remediation"]
-            end
-            subgraph SvcRow5[" "]
-                direction LR
                 TraceStore["Trace Store"]
                 OtlpTransform["OTLP Transformer"]
                 PcapSvc["PCAP Service"]
                 PcapAnalysis["PCAP Analysis"]
                 SecurityScan["Security Scanner"]
-            end
-            subgraph SvcRow6[" "]
-                direction LR
                 OidcSvc["OIDC"]
                 SessionStore["Session Store"]
                 AuditLogger["Audit Logger"]
                 EventBus["Event Bus"]
                 ImgStale["Image Staleness"]
-            end
-            subgraph SvcRow7[" "]
-                direction LR
                 NotifSvc["Notifications"]
                 WebhookSvc["Webhooks"]
                 EsForwarder["ES Log Forwarder"]
@@ -243,7 +228,7 @@ graph LR
     class PortClient,PortNorm,HybridCache,LLMClient,LLMTools,AnomalyDet,IsoForest,AnomalyExp,LogNLP,Predictor,MonService,MetricsCol,MetricCorr,CapForecast,LttbSvc,IncidentCorr,IncidentSum,AlertSim,InvestSvc,RemSvc,TraceStore,OtlpTransform,PcapSvc,PcapAnalysis,SecurityScan,OidcSvc,SessionStore,AuditLogger,EventBus,ImgStale,NotifSvc,WebhookSvc,EsForwarder,KibanaClient,BackupSvc backend
     class J1,J2,J3 scheduler
     class DB,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,T18,T19 data
-    class Bottom,SvcRow1,SvcRow2,SvcRow3,SvcRow4,SvcRow5,SvcRow6,SvcRow7,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,ExtRow1,ExtRow2 invisible
+    class Bottom,SvcRow1,SvcRow2,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,ExtRow1,ExtRow2 invisible
 ```
 
 </div>
