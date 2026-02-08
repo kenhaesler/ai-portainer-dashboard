@@ -31,74 +31,120 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 
 ```mermaid
 graph TB
-    subgraph External["&nbsp; External Services &nbsp;"]
+    subgraph External["&nbsp;&nbsp; External Services &nbsp;&nbsp;"]
         direction LR
-        Portainer(["Portainer API"])
-        Ollama(["Ollama LLM"])
-        Kibana(["Elasticsearch<br/><i>optional</i>"])
+        Portainer(["Portainer API<br/><i>Container Management</i>"])
+        Ollama(["Ollama<br/><i>Local LLM — llama3.2</i>"])
+        Kibana(["Elasticsearch / Kibana<br/><i>Log Aggregation — optional</i>"])
     end
 
-    subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 &nbsp;&nbsp; :5173 &nbsp;"]
-        direction LR
-        Pages["18 Pages<br/><i>lazy-loaded</i>"]
-        RQ["TanStack Query<br/><i>server state</i>"]
-        SIO_C["Socket.IO Client<br/><i>3 namespaces</i>"]
-        UI["Radix · Recharts<br/>XYFlow · Tailwind v4"]
-    end
-
-    subgraph Backend["&nbsp; Backend — Fastify 5 + TypeScript &nbsp;&nbsp; :3001 &nbsp;"]
+    subgraph Frontend["&nbsp;&nbsp; Frontend — React 19 + Vite 6 &nbsp;&nbsp; :5173 &nbsp;&nbsp;"]
         direction TB
+        Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
 
-        API["REST API<br/><i>15 route modules</i>"]
-        WS["Socket.IO<br/><i>/llm · /monitoring · /remediation</i>"]
-
-        subgraph Core[" &nbsp; Services &nbsp; "]
+        subgraph Pages["&nbsp;&nbsp; Pages &nbsp;&nbsp;"]
             direction LR
-            PortClient["Portainer Client<br/><i>retry + backoff</i>"]
-            Cache["Response Cache<br/><i>TTL-based</i>"]
-            LLM["LLM Client<br/><i>Ollama SDK</i>"]
+            P1["Home · Fleet Overview<br/>Workload Explorer<br/>Stack Overview"]
+            P2["Container Detail<br/>Container Health<br/>Image Footprint<br/>Network Topology"]
+            P3["AI Monitor<br/>Metrics Dashboard<br/>Remediation<br/>Trace Explorer"]
+            P4["LLM Assistant<br/>Edge Logs<br/>Packet Capture<br/>Settings"]
         end
 
-        subgraph AI["&nbsp; AI Pipeline &nbsp;"]
+        subgraph FState["&nbsp;&nbsp; State Management &nbsp;&nbsp;"]
             direction LR
-            Anomaly["Anomaly Detection<br/><i>Z-score · Bollinger<br/>Adaptive · Isolation Forest</i>"]
-            LogNLP["NLP Log Analysis"]
-            Predict["Predictive Alerting"]
+            RQ["TanStack React Query 5<br/><i>Server state &amp; caching</i>"]
+            Zustand["Zustand 5<br/><i>UI state — theme, sidebar,<br/>notifications, filters</i>"]
         end
 
-        Sched(["Scheduler<br/><i>60s · 5min · daily</i>"])
-        DB[("SQLite + WAL<br/><i>7 tables</i>")]
+        subgraph FRealtime["&nbsp;&nbsp; Real-Time &nbsp;&nbsp;"]
+            SIOClient["Socket.IO Client<br/><i>3 namespaces</i>"]
+        end
 
-        API --> Core
-        WS --> Core
-        Sched --> AI
-        AI --> DB
-        Core --> DB
+        subgraph FUI["&nbsp;&nbsp; UI Layer &nbsp;&nbsp;"]
+            direction LR
+            Radix["Radix UI<br/><i>Accessible components</i>"]
+            Recharts["Recharts<br/><i>Charts &amp; metrics</i>"]
+            XYFlow["XYFlow<br/><i>Network topology</i>"]
+            Tailwind["Tailwind CSS v4<br/><i>Glassmorphism theme</i>"]
+        end
+
+        Router --> Pages
+        Pages --> FState
+        Pages --> FRealtime
+        Pages --> FUI
     end
 
-    Pages --> RQ
+    subgraph Backend["&nbsp;&nbsp; Backend — Fastify 5 + TypeScript &nbsp;&nbsp; :3001 &nbsp;&nbsp;"]
+        direction TB
+        API["REST API<br/><i>Auth, Containers, Metrics,<br/>Monitoring, Remediation,<br/>Settings, Logs, Traces</i>"]
+
+        subgraph Sockets["&nbsp;&nbsp; Socket.IO Namespaces &nbsp;&nbsp;"]
+            direction LR
+            NSllm["/llm<br/><i>Chat streaming</i>"]
+            NSmon["/monitoring<br/><i>Live insights</i>"]
+            NSrem["/remediation<br/><i>Action updates</i>"]
+        end
+
+        subgraph Services["&nbsp;&nbsp; Services &nbsp;&nbsp;"]
+            direction LR
+            PortClient["Portainer Client<br/><i>Retry + backoff</i>"]
+            Cache["Response Cache<br/><i>TTL-based</i>"]
+            LLMClient["LLM Client<br/><i>Ollama SDK</i>"]
+            AnomalyDet["Anomaly Detection<br/><i>Z-score · Bollinger<br/>Adaptive · Isolation Forest</i>"]
+            MonService["Monitoring Service<br/><i>Insight generation</i>"]
+            MetricsCol["Metrics Collector<br/><i>CPU/memory stats</i>"]
+        end
+
+        subgraph Scheduler["&nbsp;&nbsp; Background Scheduler &nbsp;&nbsp;"]
+            direction LR
+            J1(["Metrics Collection<br/><i>Every 60s</i>"])
+            J2(["Monitoring Cycle<br/><i>Every 5min</i>"])
+            J3(["Cleanup<br/><i>Daily</i>"])
+        end
+
+        DB[("SQLite + WAL<br/><i>better-sqlite3</i>")]
+
+        API --> Services
+        Sockets --> Services
+        Scheduler --> Services
+        Services --> DB
+    end
+
+    subgraph Schema["&nbsp;&nbsp; Database Schema — 7 tables &nbsp;&nbsp;"]
+        direction LR
+        T1["sessions"]
+        T2["settings"]
+        T3["insights"]
+        T4["metrics"]
+        T5["actions"]
+        T6["spans"]
+        T7["audit_log"]
+    end
+
+    %% Frontend to Backend
     RQ -- "HTTP /api/*" --> API
-    SIO_C -- "WebSocket" --> WS
+    SIOClient -- "WebSocket" --> Sockets
 
-    PortClient -- "REST" --> Portainer
-    LLM -- "API" --> Ollama
-    API -. "optional" .-> Kibana
+    %% Backend to External
+    PortClient -- "REST API" --> Portainer
+    LLMClient -- "Ollama API" --> Ollama
+    API -. "Optional" .-> Kibana
 
-    classDef ext fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af,rx:20
-    classDef fe fill:#f0f9ff,stroke:#0ea5e9,stroke-width:2px,color:#0c4a6e
-    classDef be fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#14532d
-    classDef svc fill:#ecfdf5,stroke:#10b981,stroke-width:1px,color:#064e3b
-    classDef ai fill:#faf5ff,stroke:#a855f7,stroke-width:1px,color:#581c87
-    classDef store fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
-    classDef sched fill:#fdf4ff,stroke:#c084fc,stroke-width:1px,color:#6b21a8
+    %% Database
+    DB --> Schema
 
-    class Portainer,Ollama,Kibana ext
-    class Pages,RQ,SIO_C,UI fe
-    class API,WS be
-    class PortClient,Cache,LLM svc
-    class Anomaly,LogNLP,Predict ai
-    class DB store
-    class Sched sched
+    %% --- Styling ---
+    classDef external fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af
+    classDef frontend fill:#f0f9ff,stroke:#0ea5e9,stroke-width:1.5px,color:#0c4a6e
+    classDef backend fill:#f0fdf4,stroke:#22c55e,stroke-width:1.5px,color:#14532d
+    classDef scheduler fill:#faf5ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
+    classDef data fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
+
+    class Portainer,Ollama,Kibana external
+    class Router,P1,P2,P3,P4,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
+    class API,NSllm,NSmon,NSrem,PortClient,Cache,LLMClient,AnomalyDet,MonService,MetricsCol backend
+    class J1,J2,J3 scheduler
+    class DB,T1,T2,T3,T4,T5,T6,T7 data
 ```
 
 ## Data Flow
