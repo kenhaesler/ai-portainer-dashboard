@@ -1,12 +1,9 @@
 import { createChildLogger } from '../utils/logger.js';
 import { chatStream } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import type { Insight } from '../models/monitoring.js';
 
 const log = createChildLogger('incident-summarizer');
-
-const SYSTEM_PROMPT =
-  'Summarize this group of related container alerts into a concise incident description (2-3 sentences). ' +
-  'Explain the likely relationship between the alerts. Be specific and actionable. No markdown.';
 
 /**
  * Generate an LLM-powered incident summary for a group of correlated insights.
@@ -31,7 +28,7 @@ export async function generateLlmIncidentSummary(
     let response = '';
     await chatStream(
       [{ role: 'user', content: userPrompt }],
-      SYSTEM_PROMPT,
+      getEffectivePrompt('incident_summarizer'),
       (chunk) => { response += chunk; },
     );
 

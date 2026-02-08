@@ -5,6 +5,7 @@ import { createChildLogger } from '../utils/logger.js';
 import { getContainerLogs, getContainers } from './portainer-client.js';
 import { getMetrics, getMovingAverage } from './metrics-store.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import {
   insertInvestigation,
   updateInvestigationStatus,
@@ -339,7 +340,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
     let llmResponse = '';
     await chatStream(
       [{ role: 'user', content: prompt }],
-      'You are a Docker container infrastructure analyst. Analyze anomalies and provide structured root cause analysis in JSON format.',
+      getEffectivePrompt('root_cause'),
       (chunk) => { llmResponse += chunk; },
     );
 

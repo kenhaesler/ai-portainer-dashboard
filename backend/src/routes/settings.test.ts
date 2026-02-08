@@ -28,6 +28,17 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
+vi.mock('../services/prompt-store.js', () => ({
+  PROMPT_FEATURES: [
+    { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
+    { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
+  ],
+  DEFAULT_PROMPTS: {
+    chat_assistant: 'You are a helpful assistant.',
+    anomaly_explainer: 'You are an anomaly explainer.',
+  },
+}));
+
 describe('settings preference routes', () => {
   let app: FastifyInstance;
 
@@ -362,5 +373,78 @@ describe('settings security', () => {
     );
 
     await app.close();
+  });
+});
+
+describe('prompt-features endpoint', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns feature definitions with default prompts', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/settings/prompt-features',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.features).toHaveLength(2);
+    expect(body.features[0]).toEqual({
+      key: 'chat_assistant',
+      label: 'Chat Assistant',
+      description: 'Main AI chat',
+      defaultPrompt: 'You are a helpful assistant.',
+    });
+    expect(body.features[1]).toEqual({
+      key: 'anomaly_explainer',
+      label: 'Anomaly Explainer',
+      description: 'Explains anomalies',
+      defaultPrompt: 'You are an anomaly explainer.',
+    });
+  });
+
+  it('blocks non-admin users', async () => {
+    const restrictedApp = Fastify({ logger: false });
+    restrictedApp.setValidatorCompiler(validatorCompiler);
+    restrictedApp.decorate('authenticate', async () => undefined);
+    restrictedApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    restrictedApp.decorateRequest('user', undefined);
+    restrictedApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u2', username: 'viewer', sessionId: 's2', role: 'viewer' as const };
+    });
+    await restrictedApp.register(settingsRoutes);
+    await restrictedApp.ready();
+
+    const response = await restrictedApp.inject({
+      method: 'GET',
+      url: '/api/settings/prompt-features',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    await restrictedApp.close();
   });
 });

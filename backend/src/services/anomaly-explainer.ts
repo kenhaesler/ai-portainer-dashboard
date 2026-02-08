@@ -1,11 +1,9 @@
 import { createChildLogger } from '../utils/logger.js';
 import { chatStream } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import type { InsightInsert } from './insights-store.js';
 
 const log = createChildLogger('anomaly-explainer');
-
-const SYSTEM_PROMPT =
-  'You are a Docker infrastructure analyst. Be specific, concise, and actionable. No markdown.';
 
 /**
  * Use LLM to explain a single anomaly in 2-3 plain-English sentences.
@@ -26,7 +24,7 @@ export async function explainAnomaly(
     let response = '';
     await chatStream(
       [{ role: 'user', content: userPrompt }],
-      SYSTEM_PROMPT,
+      getEffectivePrompt('anomaly_explainer'),
       (chunk) => { response += chunk; },
     );
 
@@ -118,7 +116,7 @@ export async function explainAnomalies(
     let response = '';
     await chatStream(
       [{ role: 'user', content: userPrompt }],
-      SYSTEM_PROMPT,
+      getEffectivePrompt('anomaly_explainer'),
       (chunk) => { response += chunk; },
     );
 

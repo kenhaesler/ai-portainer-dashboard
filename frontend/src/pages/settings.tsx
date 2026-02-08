@@ -36,6 +36,11 @@ import {
   Power,
   PowerOff,
   Wrench,
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
+  MessageSquare,
+  Save,
 } from 'lucide-react';
 import {
   useThemeStore,
@@ -70,6 +75,7 @@ import {
   useMcpServerTools,
   type McpServer,
 } from '@/hooks/use-mcp';
+import { useAuth } from '@/providers/auth-provider';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn, formatBytes } from '@/lib/utils';
@@ -1760,8 +1766,387 @@ function PortainerBackupManagement() {
   );
 }
 
+// ─── AI Prompts Settings Tab ────────────────────────────────────────
+
+interface PromptFeatureInfo {
+  key: string;
+  label: string;
+  description: string;
+  defaultPrompt: string;
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function TokenBadge({ count }: { count: number }) {
+  const color = count < 500 ? 'text-emerald-600 bg-emerald-500/10' : count < 1000 ? 'text-amber-600 bg-amber-500/10' : 'text-red-600 bg-red-500/10';
+  return (
+    <span className={cn('text-xs px-1.5 py-0.5 rounded font-mono', color)}>
+      ~{count} tokens
+    </span>
+  );
+}
+
+export function AiPromptsTab({
+  values,
+  onChange,
+}: {
+  values: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+}) {
+  const [features, setFeatures] = useState<PromptFeatureInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedFeatures, setExpandedFeatures] = useState<Set<string>>(new Set());
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [savedValues, setSavedValues] = useState<Record<string, string>>({});
+  const updateSetting = useUpdateSetting();
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Fetch models for per-feature model override
+  const ollamaUrl = values['llm.ollama_url'] || 'http://host.docker.internal:11434';
+  const globalModel = values['llm.model'] || 'llama3.2';
+  const { data: modelsData } = useLlmModels(ollamaUrl);
+  const models: LlmModel[] = modelsData?.models ?? [];
+
+  useEffect(() => {
+    const loadFeatures = async () => {
+      try {
+        const data = await api.get<{ features: PromptFeatureInfo[] }>('/api/settings/prompt-features');
+        setFeatures(data.features);
+      } catch {
+        setFeatures([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    void loadFeatures();
+  }, []);
+
+  // Initialize drafts from server values
+  useEffect(() => {
+    if (features.length === 0) return;
+    const drafts: Record<string, string> = {};
+    for (const f of features) {
+      const promptKey = `prompts.${f.key}.system_prompt`;
+      const modelKey = `prompts.${f.key}.model`;
+      const tempKey = `prompts.${f.key}.temperature`;
+      drafts[promptKey] = values[promptKey] || f.defaultPrompt;
+      drafts[modelKey] = values[modelKey] || '';
+      drafts[tempKey] = values[tempKey] || '';
+    }
+    setDraftValues(drafts);
+    setSavedValues(drafts);
+  }, [features, values]);
+
+  const toggleFeature = (key: string) => {
+    setExpandedFeatures((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    setExpandedFeatures(new Set(features.map((f) => f.key)));
+  };
+
+  const collapseAll = () => {
+    setExpandedFeatures(new Set());
+  };
+
+  const handleDraftChange = (key: string, value: string) => {
+    setDraftValues((prev) => ({ ...prev, [key]: value }));
+    setSaveSuccess(false);
+  };
+
+  const resetToDefault = (featureKey: string) => {
+    const feature = features.find((f) => f.key === featureKey);
+    if (!feature) return;
+    const promptKey = `prompts.${featureKey}.system_prompt`;
+    const modelKey = `prompts.${featureKey}.model`;
+    const tempKey = `prompts.${featureKey}.temperature`;
+    setDraftValues((prev) => ({
+      ...prev,
+      [promptKey]: feature.defaultPrompt,
+      [modelKey]: '',
+      [tempKey]: '',
+    }));
+    setSaveSuccess(false);
+  };
+
+  const hasUnsavedChanges = useMemo(() => {
+    return Object.keys(draftValues).some((k) => draftValues[k] !== savedValues[k]);
+  }, [draftValues, savedValues]);
+
+  const changedCount = useMemo(() => {
+    return features.filter((f) => {
+      const promptKey = `prompts.${f.key}.system_prompt`;
+      return draftValues[promptKey] !== savedValues[promptKey];
+    }).length;
+  }, [draftValues, savedValues, features]);
+
+  const isCustomized = (featureKey: string) => {
+    const feature = features.find((f) => f.key === featureKey);
+    if (!feature) return false;
+    const promptKey = `prompts.${featureKey}.system_prompt`;
+    const modelKey = `prompts.${featureKey}.model`;
+    const tempKey = `prompts.${featureKey}.temperature`;
+    const storedPrompt = values[promptKey] || feature.defaultPrompt;
+    return storedPrompt !== feature.defaultPrompt || (values[modelKey] || '') !== '' || (values[tempKey] || '') !== '';
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveSuccess(false);
+    const changedKeys = Object.keys(draftValues).filter((k) => draftValues[k] !== savedValues[k]);
+    try {
+      for (const key of changedKeys) {
+        await updateSetting.mutateAsync({
+          key,
+          value: draftValues[key],
+          category: 'prompts',
+          showToast: false,
+        });
+        onChange(key, draftValues[key]);
+      }
+      setSavedValues({ ...draftValues });
+      setSaveSuccess(true);
+      toast.success(`Saved ${changedKeys.length} prompt setting${changedKeys.length !== 1 ? 's' : ''}`);
+    } catch (err) {
+      toast.error(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDiscard = () => {
+    setDraftValues({ ...savedValues });
+    setSaveSuccess(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="h-12 animate-pulse rounded bg-muted" />
+        <div className="h-12 animate-pulse rounded bg-muted" />
+        <div className="h-12 animate-pulse rounded bg-muted" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Customize the system prompt, model, and temperature for each AI-powered feature.
+            Changes only take effect when you click Save.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={expandAll}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Expand All
+          </button>
+          <span className="text-muted-foreground">|</span>
+          <button
+            type="button"
+            onClick={collapseAll}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Collapse All
+          </button>
+        </div>
+      </div>
+
+      {/* Feature Accordions */}
+      {features.map((feature) => {
+        const isExpanded = expandedFeatures.has(feature.key);
+        const promptKey = `prompts.${feature.key}.system_prompt`;
+        const modelKey = `prompts.${feature.key}.model`;
+        const tempKey = `prompts.${feature.key}.temperature`;
+        const promptValue = draftValues[promptKey] || feature.defaultPrompt;
+        const modelValue = draftValues[modelKey] || '';
+        const tempValue = draftValues[tempKey] || '';
+        const tokenCount = estimateTokens(promptValue);
+        const customized = isCustomized(feature.key);
+        const hasLocalChanges = draftValues[promptKey] !== savedValues[promptKey]
+          || draftValues[modelKey] !== savedValues[modelKey]
+          || draftValues[tempKey] !== savedValues[tempKey];
+
+        return (
+          <div key={feature.key} className="rounded-lg border bg-card">
+            <button
+              type="button"
+              onClick={() => toggleFeature(feature.key)}
+              className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <MessageSquare className="h-4 w-4" />
+                <span className="font-medium">{feature.label}</span>
+                {customized && (
+                  <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                    customized
+                  </span>
+                )}
+                {hasLocalChanges && (
+                  <span className="text-xs bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded">
+                    unsaved
+                  </span>
+                )}
+              </div>
+              <TokenBadge count={tokenCount} />
+            </button>
+
+            {isExpanded && (
+              <div className="border-t border-border p-4 space-y-4">
+                <p className="text-sm text-muted-foreground">{feature.description}</p>
+
+                {/* Model & Temperature Override */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Model Override</label>
+                    <p className="text-xs text-muted-foreground mb-1.5">
+                      Leave empty to use global default ({globalModel})
+                    </p>
+                    {models.length > 0 ? (
+                      <ThemedSelect
+                        value={modelValue || '__global_default__'}
+                        onValueChange={(val) => handleDraftChange(modelKey, val === '__global_default__' ? '' : val)}
+                        options={[
+                          { value: '__global_default__', label: 'Use Global Default' },
+                          ...models.map((m) => ({
+                            value: m.name,
+                            label: `${m.name}${m.size ? ` (${formatBytes(m.size)})` : ''}`,
+                          })),
+                        ]}
+                        className="w-full"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={modelValue}
+                        onChange={(e) => handleDraftChange(modelKey, e.target.value)}
+                        placeholder="Use Global Default"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Temperature Override</label>
+                    <p className="text-xs text-muted-foreground mb-1.5">
+                      Leave empty to use global default
+                    </p>
+                    <input
+                      type="number"
+                      value={tempValue}
+                      onChange={(e) => handleDraftChange(tempKey, e.target.value)}
+                      placeholder="Use Global Default"
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+                </div>
+
+                {/* System Prompt Textarea */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-sm font-medium">System Prompt</label>
+                    <TokenBadge count={tokenCount} />
+                  </div>
+                  <textarea
+                    value={promptValue}
+                    onChange={(e) => handleDraftChange(promptKey, e.target.value)}
+                    className="min-h-[160px] w-full rounded-md border border-input bg-background p-3 font-mono text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="Enter system prompt..."
+                  />
+                </div>
+
+                {/* Reset to Default */}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => resetToDefault(feature.key)}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Reset to Default
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Save Bar */}
+      {(hasUnsavedChanges || saveSuccess) && (
+        <div className="sticky bottom-4 z-10">
+          <div className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-lg">
+            <div className="flex items-center gap-2">
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : saveSuccess ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Info className="h-4 w-4 text-amber-500" />
+              )}
+              <span className="text-sm">
+                {isSaving
+                  ? 'Saving...'
+                  : saveSuccess
+                    ? 'All changes saved'
+                    : `${changedCount} feature${changedCount !== 1 ? 's' : ''} modified`}
+              </span>
+            </div>
+            {hasUnsavedChanges && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDiscard}
+                  disabled={isSaving}
+                  className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={isSaving}
+                  className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  Save & Apply
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { role } = useAuth();
   const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground, iconTheme, setIconTheme } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
@@ -1776,8 +2161,8 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [restartPending, setRestartPending] = useState(false);
-  type SettingsTab = 'general' | 'portainer-backup' | 'users' | 'webhooks';
-  const validTabs: SettingsTab[] = ['general', 'portainer-backup', 'users', 'webhooks'];
+  type SettingsTab = 'general' | 'portainer-backup' | 'users' | 'webhooks' | 'ai-prompts';
+  const validTabs: SettingsTab[] = ['general', 'portainer-backup', 'users', 'webhooks', 'ai-prompts'];
   const initialTab = validTabs.includes(searchParams.get('tab') as SettingsTab)
     ? (searchParams.get('tab') as SettingsTab)
     : 'general';
@@ -2093,6 +2478,15 @@ export default function SettingsPage() {
             <Webhook className="h-4 w-4" />
             Webhooks
           </Tabs.Trigger>
+          {role === 'admin' && (
+            <Tabs.Trigger
+              value="ai-prompts"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+            >
+              <Bot className="h-4 w-4" />
+              AI Prompts
+            </Tabs.Trigger>
+          )}
         </Tabs.List>
 
         {/* General Tab */}
@@ -2520,6 +2914,12 @@ export default function SettingsPage() {
             statusLabel={editedValues['webhooks.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
           />
         </Tabs.Content>
+
+        {role === 'admin' && (
+          <Tabs.Content value="ai-prompts" className="space-y-6 focus:outline-none">
+            <AiPromptsTab values={editedValues} onChange={handleChange} />
+          </Tabs.Content>
+        )}
       </Tabs.Root>
     </div>
   );
