@@ -73,21 +73,6 @@ vi.mock('@/hooks/use-containers', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-networks', () => ({
-  useNetworks: vi.fn().mockReturnValue({
-    data: [
-      { id: 'n1', name: 'frontend', endpointId: 1, endpointName: 'local', containers: ['c1', 'c2'] },
-      { id: 'n2', name: 'jobs', endpointId: 1, endpointName: 'local', containers: ['c2'] },
-      { id: 'n3', name: 'beta-net', endpointId: 1, endpointName: 'local', containers: ['c4'] },
-      { id: 'n4', name: 'standalone-net', endpointId: 1, endpointName: 'local', containers: ['c3'] },
-    ],
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-    isFetching: false,
-  }),
-}));
-
 vi.mock('@/hooks/use-stacks', () => ({
   useStacks: vi.fn().mockReturnValue({
     data: [
@@ -114,6 +99,9 @@ vi.mock('@/hooks/use-auto-refresh', () => ({
 
 // Mock recharts to avoid canvas issues in jsdom
 vi.mock('recharts', () => ({
+  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
+  Bar: () => null,
+  CartesianGrid: () => null,
   AreaChart: ({ children }: { children: React.ReactNode }) => <div data-testid="area-chart">{children}</div>,
   Area: () => null,
   XAxis: () => null,
@@ -137,24 +125,6 @@ vi.mock('@/components/charts/anomaly-sparkline', () => ({
 
 vi.mock('@/components/metrics/ai-metrics-summary', () => ({
   AiMetricsSummary: () => <div data-testid="ai-metrics-summary" />,
-}));
-
-vi.mock('@/components/network/topology-graph', () => ({
-  TopologyGraph: ({
-    containers,
-    networks,
-    onNodeClick,
-  }: {
-    containers: Array<{ id: string }>;
-    networks: Array<{ id: string }>;
-    onNodeClick?: (nodeId: string) => void;
-  }) => (
-    <div data-testid="topology-graph" data-containers={containers.length} data-networks={networks.length}>
-      <button type="button" onClick={() => onNodeClick?.('container-c2')}>
-        Simulate graph container click
-      </button>
-    </div>
-  ),
 }));
 
 import MetricsDashboardPage from './metrics-dashboard';
@@ -203,14 +173,24 @@ describe('MetricsDashboardPage', () => {
     expect(select).toBeTruthy();
   });
 
-  it('renders network context card once an endpoint is selected', () => {
+  it('renders network rx/tx chart for selected container', () => {
     renderPage();
     const endpointSelect = screen.getAllByRole('combobox')[0];
     fireEvent.click(endpointSelect);
     fireEvent.click(screen.getByRole('option', { name: 'local' }));
 
-    expect(screen.getByText('Network Context')).toBeInTheDocument();
-    expect(screen.getByText('Select a container to view its network neighborhood')).toBeInTheDocument();
+    const stackSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.click(stackSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText('Network RX/TX by Network')).toBeInTheDocument();
+    expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
+    expect(screen.getByText('2 networks')).toBeInTheDocument();
+    expect(screen.getByText('Per-network values are estimated (evenly split)')).toBeInTheDocument();
   });
 
   it('groups container selector options by stack with a No Stack group', () => {
@@ -250,48 +230,6 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByRole('option', { name: 'worker-1' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'beta-api-1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'standalone-1' })).not.toBeInTheDocument();
-  });
-
-  it('switches network scope and updates graph payload', () => {
-    renderPage();
-
-    const endpointSelect = screen.getAllByRole('combobox')[0];
-    fireEvent.click(endpointSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'local' }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Endpoint' }));
-    const graph = screen.getByTestId('topology-graph');
-    expect(graph.getAttribute('data-containers')).toBe('4');
-    expect(graph.getAttribute('data-networks')).toBe('4');
-
-    const stackSelect = screen.getAllByRole('combobox')[1];
-    fireEvent.click(stackSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Stack' }));
-
-    const stackGraph = screen.getByTestId('topology-graph');
-    expect(stackGraph.getAttribute('data-containers')).toBe('2');
-    expect(stackGraph.getAttribute('data-networks')).toBe('2');
-  });
-
-  it('syncs container selection when graph container is clicked', () => {
-    renderPage();
-
-    const endpointSelect = screen.getAllByRole('combobox')[0];
-    fireEvent.click(endpointSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'local' }));
-
-    const stackSelect = screen.getAllByRole('combobox')[1];
-    fireEvent.click(stackSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
-
-    const containerSelect = screen.getAllByRole('combobox')[2];
-    fireEvent.click(containerSelect);
-    fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph container click' }));
-
-    expect(screen.getAllByRole('combobox')[2]).toHaveTextContent('worker-1');
   });
 
   it('renders forecast overview rows and risk badges', () => {

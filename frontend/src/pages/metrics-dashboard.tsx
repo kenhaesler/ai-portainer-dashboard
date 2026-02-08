@@ -19,28 +19,29 @@ import {
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
-import { useNetworks } from '@/hooks/use-networks';
 import { useStacks } from '@/hooks/use-stacks';
 import { useContainerMetrics, useAnomalies, useNetworkRates } from '@/hooks/use-metrics';
 import { useContainerForecast, useForecasts, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
-import { TopologyGraph } from '@/components/network/topology-graph';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { AiMetricsSummary } from '@/components/metrics/ai-metrics-summary';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
-import { buildMetricsNetworkContext, type MetricsNetworkScope } from '@/lib/metrics-network-context';
 import {
+  BarChart,
+  Bar,
+  CartesianGrid,
   AreaChart,
   Area,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  Legend,
   ReferenceLine,
 } from 'recharts';
 import { formatDate } from '@/lib/utils';
@@ -58,12 +59,6 @@ const METRIC_TYPES = [
   { value: 'cpu', label: 'CPU Usage', icon: Cpu, color: '#3b82f6', unit: '%' },
   { value: 'memory', label: 'Memory Usage', icon: MemoryStick, color: '#8b5cf6', unit: '%' },
   { value: 'memory_bytes', label: 'Memory (Bytes)', icon: MemoryStick, color: '#06b6d4', unit: ' MB' },
-];
-
-const NETWORK_SCOPE_OPTIONS: Array<{ value: MetricsNetworkScope; label: string }> = [
-  { value: 'container', label: 'Container' },
-  { value: 'stack', label: 'Stack' },
-  { value: 'endpoint', label: 'Endpoint' },
 ];
 
 function formatBytes(bytes: number): string {
@@ -114,7 +109,6 @@ export default function MetricsDashboardPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | null>(null);
   const [selectedStack, setSelectedStack] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
-  const [networkScope, setNetworkScope] = useState<MetricsNetworkScope>('container');
   const [timeRange, setTimeRange] = useState('1h');
   const [zoomLevel, setZoomLevel] = useState(1);
   const { interval, setInterval } = useAutoRefresh(0);
@@ -124,13 +118,6 @@ export default function MetricsDashboardPage() {
 
   // Fetch containers
   const { data: allContainers, isLoading: containersLoading, refetch, isFetching } = useContainers();
-  const {
-    data: endpointNetworks = [],
-    isLoading: networksLoading,
-    isError: networksError,
-    refetch: refetchNetworks,
-    isFetching: networksFetching,
-  } = useNetworks(selectedEndpoint ?? undefined);
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint ?? undefined);
   const { data: stacks } = useStacks();
 
@@ -164,41 +151,30 @@ export default function MetricsDashboardPage() {
     () => buildStackGroupedContainerOptions(filteredContainers, stackNamesForEndpoint),
     [filteredContainers, stackNamesForEndpoint],
   );
-  const topologyContext = useMemo(
-    () => buildMetricsNetworkContext({
-      containers,
-      networks: endpointNetworks,
-      scope: networkScope,
-      selectedContainerId: selectedContainer,
-      selectedStack,
-      knownStackNames: stackNamesForEndpoint,
-      maxContainers: 80,
-    }),
-    [containers, endpointNetworks, networkScope, selectedContainer, selectedStack, stackNamesForEndpoint],
-  );
-  const topologyData = useMemo(() => ({
-    containers: topologyContext.containers.map((container) => ({
-      id: container.id,
-      name: container.name,
-      state: container.state as 'running' | 'stopped' | 'paused' | 'unknown',
-      image: container.image,
-      networks: container.networks,
-      labels: container.labels,
-    })),
-    networks: topologyContext.networks.map((network) => ({
-      id: network.id,
-      name: network.name,
-      driver: network.driver,
-      subnet: network.subnet,
-      containers: network.containers,
-    })),
-  }), [topologyContext.containers, topologyContext.networks]);
-
   // Get selected container details
   const selectedContainerData = useMemo(() => {
     if (!allContainers || !selectedContainer) return null;
     return allContainers.find((c) => c.id === selectedContainer);
   }, [allContainers, selectedContainer]);
+  const networkTrafficData = useMemo(() => {
+    if (!selectedContainerData) return [];
+    const connectedNetworks = selectedContainerData.networks ?? [];
+    if (!connectedNetworks.length) return [];
+
+    const rate = networkRatesData?.rates?.[selectedContainerData.id];
+    const split = connectedNetworks.length;
+    const perNetworkRx = split > 0 ? (rate?.rxBytesPerSec ?? 0) / split : 0;
+    const perNetworkTx = split > 0 ? (rate?.txBytesPerSec ?? 0) / split : 0;
+
+    return connectedNetworks
+      .map((networkName) => ({
+        network: networkName,
+        rx: perNetworkRx,
+        tx: perNetworkTx,
+        total: perNetworkRx + perNetworkTx,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [selectedContainerData, networkRatesData]);
 
   // Fetch metrics for each type
   const {
@@ -326,19 +302,6 @@ export default function MetricsDashboardPage() {
 
   const handleRefresh = () => {
     refetch();
-    if (selectedEndpoint) {
-      refetchNetworks();
-    }
-  };
-
-  const handleTopologyNodeClick = (nodeId: string) => {
-    if (!nodeId.startsWith('container-')) return;
-    const containerId = nodeId.replace('container-', '');
-    const containerMatch = containers.find((container) => container.id === containerId);
-    if (!containerMatch) return;
-    setSelectedContainer(containerId);
-    const resolvedStack = resolveContainerStackName(containerMatch, stackNamesForEndpoint) ?? NO_STACK_LABEL;
-    setSelectedStack(resolvedStack);
   };
 
   const drillIntoForecast = (containerId: string) => {
@@ -351,9 +314,6 @@ export default function MetricsDashboardPage() {
 
   const isLoading = endpointsLoading || containersLoading;
   const hasSelection = selectedEndpoint && selectedContainer;
-  const hasEndpointSelection = Boolean(selectedEndpoint);
-  const topologyLoading = hasEndpointSelection && (containersLoading || networksLoading);
-  const topologyError = hasEndpointSelection && networksError;
   const metricsLoading = cpuLoading || memoryLoading || memoryBytesLoading;
   const allMetricsEmpty = !metricsLoading && hasSelection
     && cpuData.length === 0 && memoryData.length === 0 && memoryBytesData.length === 0;
@@ -370,7 +330,7 @@ export default function MetricsDashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={handleRefresh} isLoading={isFetching || networksFetching} />
+          <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
         </div>
       </div>
 
@@ -477,90 +437,60 @@ export default function MetricsDashboardPage() {
         </div>
       </div>
 
-      {hasEndpointSelection && (
+      {hasSelection && (
         <div className="rounded-lg border bg-card p-4 md:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Network className="h-5 w-5 text-blue-500" />
               <div>
-                <h3 className="text-lg font-semibold">Network Context</h3>
+                <h3 className="text-lg font-semibold">Network RX/TX by Network</h3>
                 <p className="text-xs text-muted-foreground">
-                  In-context topology for this endpoint while analyzing metrics
+                  Selected container: <span className="font-medium text-foreground">{selectedContainerData?.name}</span>
                 </p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/60 p-1">
-              {NETWORK_SCOPE_OPTIONS.map((scopeOption) => (
-                <button
-                  key={scopeOption.value}
-                  type="button"
-                  onClick={() => setNetworkScope(scopeOption.value)}
-                  className={cn(
-                    'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
-                    networkScope === scopeOption.value
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                  )}
-                >
-                  {scopeOption.label}
-                </button>
-              ))}
             </div>
           </div>
 
-          {topologyLoading ? (
-            <SkeletonCard className="h-[320px]" />
-          ) : topologyError ? (
-            <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed border-destructive/40 bg-destructive/5 p-6 text-center">
-              <div>
-                <p className="font-medium text-destructive">Failed to load network topology</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Check endpoint connectivity and try refreshing.
-                </p>
-              </div>
-            </div>
-          ) : topologyData.containers.length === 0 || topologyData.networks.length === 0 ? (
+          {networkTrafficData.length === 0 ? (
             <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-8 text-center">
               <div>
-                <p className="font-medium">
-                  {networkScope === 'container' && !selectedContainer
-                    ? 'Select a container to view its network neighborhood'
-                    : 'No topology data for current scope'}
-                </p>
+                <p className="font-medium">No connected networks found for this container</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Try switching scope to Stack or Endpoint for broader visibility.
+                  Select a different container or check container network attachments.
                 </p>
               </div>
             </div>
           ) : (
             <div className="space-y-3">
               <div className="h-[320px]">
-                <TopologyGraph
-                  containers={topologyData.containers}
-                  networks={topologyData.networks}
-                  networkRates={networkRatesData?.rates}
-                  selectedNodeId={selectedContainer ? `container-${selectedContainer}` : undefined}
-                  relatedNodeIds={topologyContext.relatedNodeIds}
-                  onNodeClick={handleTopologyNodeClick}
-                />
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={networkTrafficData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                    <XAxis dataKey="network" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => formatBytes(Number(value))} />
+                    <Tooltip
+                      formatter={(value: number, key: string) => [
+                        `${formatBytes(value)} MB/s`,
+                        key === 'rx' ? 'RX' : 'TX',
+                      ]}
+                    />
+                    <Legend />
+                    <Bar dataKey="rx" name="RX" fill="#22c55e" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="tx" name="TX" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
 
               <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
-                  {topologyData.containers.length} containers
+                  {networkTrafficData.length} networks
                 </span>
                 <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
-                  {topologyData.networks.length} networks
+                  RX/TX source: container-level network rates
                 </span>
                 <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
-                  Edge labels: ↓ RX / ↑ TX
+                  Per-network values are estimated (evenly split)
                 </span>
-                {topologyContext.isTruncated && (
-                  <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-amber-300">
-                    Endpoint view capped for performance
-                  </span>
-                )}
               </div>
             </div>
           )}
