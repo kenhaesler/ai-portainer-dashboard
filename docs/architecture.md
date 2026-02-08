@@ -79,13 +79,19 @@ graph TB
         end
 
         subgraph Services["&nbsp; Services &nbsp;"]
-            direction LR
-            PortClient["Portainer Client"]
-            Cache["Cache"]
-            LLMClient["LLM Client"]
-            AnomalyDet["Anomaly Detection"]
-            MonService["Monitoring"]
-            MetricsCol["Metrics Collector"]
+            direction TB
+            subgraph SvcRow1[" "]
+                direction LR
+                PortClient["Portainer Client"]
+                Cache["Cache"]
+                LLMClient["LLM Client"]
+            end
+            subgraph SvcRow2[" "]
+                direction LR
+                AnomalyDet["Anomaly Detection"]
+                MonService["Monitoring"]
+                MetricsCol["Metrics Collector"]
+            end
         end
 
         subgraph Scheduler["&nbsp; Scheduler &nbsp;"]
@@ -150,7 +156,7 @@ graph TB
     class API,NSllm,NSmon,NSrem,PortClient,Cache,LLMClient,AnomalyDet,MonService,MetricsCol backend
     class J1,J2,J3 scheduler
     class DB,T1,T2,T3,T4,T5,T6,T7 data
-    class Bottom invisible
+    class Bottom,SvcRow1,SvcRow2 invisible
 ```
 
 ## Data Flow
