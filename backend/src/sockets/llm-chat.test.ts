@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRecoverableToolCallParseError, formatChatContext, getAuthHeaders } from './llm-chat.js';
+import { isRecoverableToolCallParseError, looksLikeToolCallAttempt, formatChatContext, getAuthHeaders } from './llm-chat.js';
 
 describe('getAuthHeaders', () => {
   it('returns empty object when token is undefined', () => {
@@ -36,6 +36,47 @@ describe('isRecoverableToolCallParseError', () => {
   it('returns false for unrelated errors', () => {
     expect(isRecoverableToolCallParseError(new Error('HTTP 500 internal server error'))).toBe(false);
     expect(isRecoverableToolCallParseError(new Error('timeout'))).toBe(false);
+  });
+});
+
+describe('looksLikeToolCallAttempt', () => {
+  it('returns true for raw JSON with tool_calls', () => {
+    const raw = '{"tool_calls":[{"tool":"container.exec","arguments":{"cmd":"ls"}}]}';
+    expect(looksLikeToolCallAttempt(raw)).toBe(true);
+  });
+
+  it('returns true for raw JSON with leading/trailing whitespace', () => {
+    const raw = '  {"tool_calls":[{"tool":"fake_tool","arguments":{}}]}  ';
+    expect(looksLikeToolCallAttempt(raw)).toBe(true);
+  });
+
+  it('returns true for JSON inside a code fence', () => {
+    const fenced = '```json\n{"tool_calls":[{"tool":"container.exec","arguments":{}}]}\n```';
+    expect(looksLikeToolCallAttempt(fenced)).toBe(true);
+  });
+
+  it('returns true for JSON inside a bare code fence (no language)', () => {
+    const fenced = '```\n{"tool_calls":[{"tool":"foo","arguments":{}}]}\n```';
+    expect(looksLikeToolCallAttempt(fenced)).toBe(true);
+  });
+
+  it('returns false for natural language mentioning tool_calls', () => {
+    const natural = 'The response contained "tool_calls" which were invalid. Please try again.';
+    expect(looksLikeToolCallAttempt(natural)).toBe(false);
+  });
+
+  it('returns false for empty string', () => {
+    expect(looksLikeToolCallAttempt('')).toBe(false);
+  });
+
+  it('returns false for normal assistant response', () => {
+    const normal = 'Here are the running containers:\n- nginx (running)\n- redis (running)';
+    expect(looksLikeToolCallAttempt(normal)).toBe(false);
+  });
+
+  it('returns false for JSON that does not contain tool_calls', () => {
+    const json = '{"containers":[{"name":"nginx","state":"running"}]}';
+    expect(looksLikeToolCallAttempt(json)).toBe(false);
   });
 });
 
