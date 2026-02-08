@@ -427,6 +427,7 @@ async function callOllamaWithNativeTools(
   messages: ChatMessage[],
 ): Promise<{ content: string; toolCalls: OllamaToolCall[] }> {
   const tools = collectAllTools();
+  log.debug({ toolCount: tools.length, toolNames: tools.map(t => t.function.name) }, 'Collected tools for native Ollama call');
 
   if (tools.length === 0) {
     return { content: '', toolCalls: [] };
@@ -515,7 +516,9 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         // This only works with local Ollama (not custom endpoints).
         if (!llmConfig.customEnabled && toolsEnabled) {
           try {
+            log.debug({ userId, model: selectedModel }, 'Attempting native Ollama tool calling');
             const nativeResult = await callOllamaWithNativeTools(llmConfig, selectedModel, messages);
+            log.debug({ userId, toolCallCount: nativeResult.toolCalls.length, hasContent: !!nativeResult.content }, 'Native tool call result');
             if (nativeResult.toolCalls.length > 0) {
               // Native tool calls detected — execute them
               const toolNames = nativeResult.toolCalls.map(tc => tc.function.name);
@@ -564,7 +567,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
               return; // Done — skip streaming loop
             }
           } catch (nativeErr) {
-            log.warn({ err: nativeErr, userId }, 'Native Ollama tool calling failed, falling back to text-based');
+            log.warn({ err: nativeErr, userId, message: nativeErr instanceof Error ? nativeErr.message : String(nativeErr) }, 'Native Ollama tool calling failed, falling back to text-based');
             // Fall through to text-based streaming
           }
         }

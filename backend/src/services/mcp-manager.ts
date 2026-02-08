@@ -3,6 +3,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createChildLogger } from '../utils/logger.js';
+import { getDb } from '../db/sqlite.js';
 
 const log = createChildLogger('mcp-manager');
 
@@ -235,6 +236,29 @@ export async function executeMcpToolCall(
     log.error({ err, server: serverName, tool: toolName }, 'MCP tool execution failed');
     throw new Error(message);
   }
+}
+
+/** Auto-connect all enabled MCP servers from the database on startup. */
+export async function autoConnectAll(): Promise<void> {
+  let servers: McpServerConfig[];
+  try {
+    const db = getDb();
+    servers = db.prepare('SELECT * FROM mcp_servers WHERE enabled = 1').all() as McpServerConfig[];
+  } catch {
+    log.debug('MCP servers table not ready yet, skipping auto-connect');
+    return;
+  }
+
+  if (servers.length === 0) return;
+
+  log.info({ count: servers.length }, 'Auto-connecting enabled MCP servers');
+  const results = await Promise.allSettled(
+    servers.map((s) => connectServer(s).catch((err) => {
+      log.warn({ server: s.name, err: err instanceof Error ? err.message : String(err) }, 'Auto-connect failed');
+    })),
+  );
+  const connected = results.filter((r) => r.status === 'fulfilled').length;
+  log.info({ connected, total: servers.length }, 'MCP auto-connect complete');
 }
 
 // Export for testing
