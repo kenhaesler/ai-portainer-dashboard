@@ -37,3 +37,19 @@ export function useContainerForecast(containerId: string, metric: string = 'cpu'
     enabled: !!containerId,
   });
 }
+
+interface ForecastNarrativeResponse {
+  narrative: string | null;
+}
+
+export function useAiForecastNarrative(containerId: string, metricType: string, enabled: boolean = true) {
+  return useQuery<ForecastNarrativeResponse>({
+    queryKey: ['forecast-narrative', containerId, metricType],
+    queryFn: () => api.get<ForecastNarrativeResponse>(
+      `/api/forecasts/${containerId}/narrative?metricType=${metricType}`,
+    ),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    enabled: enabled && !!containerId,
+  });
+}

@@ -22,7 +22,7 @@ import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useStacks } from '@/hooks/use-stacks';
 import { useContainerMetrics, useAnomalies, useAnomalyExplanations } from '@/hooks/use-metrics';
-import { useContainerForecast, useForecasts, type CapacityForecast } from '@/hooks/use-forecasts';
+import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
@@ -637,10 +637,10 @@ export default function MetricsDashboardPage() {
             {hasForecastData ? (
               <div className="grid gap-6 lg:grid-cols-2">
                 {cpuForecast && !('error' in cpuForecast) && (
-                  <ForecastCard forecast={cpuForecast} color="#3b82f6" label="CPU" unit="%" />
+                  <ForecastCard forecast={cpuForecast} color="#3b82f6" label="CPU" unit="%" llmAvailable={llmAvailable} />
                 )}
                 {memoryForecast && !('error' in memoryForecast) && (
-                  <ForecastCard forecast={memoryForecast} color="#8b5cf6" label="Memory" unit="%" />
+                  <ForecastCard forecast={memoryForecast} color="#8b5cf6" label="Memory" unit="%" llmAvailable={llmAvailable} />
                 )}
               </div>
             ) : (
@@ -808,12 +808,19 @@ function ForecastCard({
   color,
   label,
   unit,
+  llmAvailable = false,
 }: {
   forecast: CapacityForecast;
   color: string;
   label: string;
   unit: string;
+  llmAvailable?: boolean;
 }) {
+  const { data: narrativeData, isLoading: narrativeLoading } = useAiForecastNarrative(
+    forecast.containerId,
+    forecast.metricType,
+    llmAvailable,
+  );
   const TrendIcon =
     forecast.trend === 'increasing'
       ? TrendingUp
@@ -955,6 +962,23 @@ function ForecastCard({
       <p className="mt-2 text-xs text-muted-foreground text-right">
         R² = {forecast.r_squared.toFixed(3)} | slope = {forecast.slope.toFixed(2)}/h
       </p>
+
+      {/* AI Narrative */}
+      {llmAvailable && (
+        <div className="mt-3 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Bot className="h-3.5 w-3.5 text-purple-500" />
+            <span className="text-xs font-medium text-muted-foreground">AI Analysis</span>
+          </div>
+          {narrativeLoading ? (
+            <div className="h-8 animate-pulse rounded bg-muted" />
+          ) : narrativeData?.narrative ? (
+            <p className="text-xs leading-relaxed text-foreground/80">{narrativeData.narrative}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">Narrative unavailable</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
