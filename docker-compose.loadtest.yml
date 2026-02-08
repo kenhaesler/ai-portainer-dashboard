@@ -19,8 +19,8 @@ x-loadtest: &loadtest
   image: aidash-loadtest
   environment: &loadtest-env
     BASE_URL: http://backend:3051
-    DASHBOARD_USER: ${DASHBOARD_USERNAME:-admin}
-    DASHBOARD_PASS: ${DASHBOARD_PASSWORD:-changeme123}
+    DASHBOARD_USER: ${LOADTEST_USER:-admin}
+    DASHBOARD_PASS: ${LOADTEST_PASS:-changeme123}
   networks:
     - dashboard-net
 
