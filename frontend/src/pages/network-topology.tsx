@@ -229,6 +229,11 @@ function ContainerDetails({ container }: { container: Container }) {
             container.networks.map((net) => (
               <div key={net} className="text-sm px-2 py-1 rounded bg-muted">
                 {net}
+                {container.networkIPs?.[net] && (
+                  <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+                    ({container.networkIPs[net]})
+                  </span>
+                )}
               </div>
             ))
           ) : (

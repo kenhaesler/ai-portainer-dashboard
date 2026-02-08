@@ -52,7 +52,8 @@ export function getEffectiveLlmConfig() {
   const customEndpointUrl = getSetting('llm.custom_endpoint_url')?.value || config.OLLAMA_API_ENDPOINT;
   const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.OLLAMA_BEARER_TOKEN;
   const maxTokens = parseInt(getSetting('llm.max_tokens')?.value || '20000', 10) || 20000;
-  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, maxTokens };
+  const maxToolIterations = parseInt(getSetting('llm.max_tool_iterations')?.value || '', 10) || config.LLM_MAX_TOOL_ITERATIONS;
+  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, maxTokens, maxToolIterations };
 }
 
 /**

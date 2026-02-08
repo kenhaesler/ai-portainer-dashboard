@@ -30,6 +30,7 @@ export interface NormalizedContainer {
   endpointName: string;
   ports: Array<{ private: number; public?: number; type: string }>;
   networks: string[];
+  networkIPs: Record<string, string>;
   labels: Record<string, string>;
   healthStatus?: string;
 }
@@ -112,6 +113,11 @@ export function normalizeContainer(
       type: p.Type || 'tcp',
     })),
     networks: Object.keys(c.NetworkSettings?.Networks || {}),
+    networkIPs: Object.fromEntries(
+      Object.entries(c.NetworkSettings?.Networks || {})
+        .filter(([, v]: [string, any]) => v?.IPAddress)
+        .map(([k, v]: [string, any]) => [k, v.IPAddress as string]),
+    ),
     labels: c.Labels || {},
     healthStatus: c.Labels?.['com.docker.compose.service'],
   };
