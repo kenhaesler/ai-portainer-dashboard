@@ -3,3 +3,18 @@ dist
 coverage
 *.log
 *.tsbuildinfo
+
+# Sensitive files
+.env
+.env.*
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Test artifacts
+__snapshots__
