@@ -79,6 +79,7 @@ services:
     environment:
       - VITE_API_URL=http://localhost:3051
       - VITE_SOCKET_URL=http://localhost:3051
+      - VITE_INTERNAL_API_URL=http://backend:3051
     healthcheck:
       test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:5273/"]
       interval: 30s
