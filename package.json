@@ -19,9 +19,11 @@
     "loadtest:socketio": "docker compose -f docker-compose.loadtest.yml run --rm socketio",
     "loadtest:bench": "docker compose -f docker-compose.loadtest.yml run --rm bench",
     "loadtest:llm": "docker compose -f docker-compose.loadtest.yml run --rm llm",
-    "loadtest:all": "docker compose -f docker-compose.loadtest.yml run --rm all"
+    "loadtest:all": "docker compose -f docker-compose.loadtest.yml run --rm all",
+    "test:e2e": "npx playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "concurrently": "^9.1.0"
   },
   "engines": {

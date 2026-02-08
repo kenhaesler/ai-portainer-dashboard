@@ -82,7 +82,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
     if (!open && messages.length > 0) {
       clearHistory();
     }
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open]);  
 
   // Auto-scroll on new messages
   useEffect(() => {

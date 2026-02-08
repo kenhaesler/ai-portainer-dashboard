@@ -33,7 +33,7 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 
 ```mermaid
 graph LR
-    subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 :5173 &nbsp;"]
+    subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 :5273 &nbsp;"]
         direction TB
         Router["React Router v7<br/><i>28 lazy-loaded pages</i>"]
 
@@ -75,7 +75,7 @@ graph LR
         Pages --> FUI
     end
 
-    subgraph Backend["&nbsp; Backend — Fastify 5 + TypeScript :3001 &nbsp;"]
+    subgraph Backend["&nbsp; Backend — Fastify 5 + TypeScript :3051 &nbsp;"]
         direction TB
         API["REST API<br/><i>34 route modules</i>"]
 

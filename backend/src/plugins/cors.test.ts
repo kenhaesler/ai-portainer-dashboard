@@ -24,7 +24,7 @@ describe('cors plugin', () => {
     await app.close();
   });
 
-  it('sends credentials header only for allowed origins', async () => {
+  it('sends credentials header for localhost:5273', async () => {
     process.env.NODE_ENV = 'development';
     const app = Fastify();
     await app.register(corsPlugin);
@@ -34,11 +34,31 @@ describe('cors plugin', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/ping',
-      headers: { origin: 'http://localhost:5173' },
+      headers: { origin: 'http://localhost:5273' },
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5273');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+
+    await app.close();
+  });
+
+  it('sends credentials header for localhost:8080', async () => {
+    process.env.NODE_ENV = 'development';
+    const app = Fastify();
+    await app.register(corsPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { origin: 'http://localhost:8080' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:8080');
     expect(response.headers['access-control-allow-credentials']).toBe('true');
 
     await app.close();

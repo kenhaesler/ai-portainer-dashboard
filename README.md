@@ -57,7 +57,7 @@ PORTAINER_API_KEY=ptr_your_token_here
 docker compose up -d
 ```
 
-**Development** (hot-reload on ports 5173 + 3001):
+**Development** (hot-reload on ports 5273 + 3051):
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
@@ -84,7 +84,7 @@ ollama serve
 | Mode | URL |
 |------|-----|
 | Production | http://localhost:8080 |
-| Development | http://localhost:5173 |
+| Development | http://localhost:5273 |
 
 Default credentials: `admin` / `changeme123`
 

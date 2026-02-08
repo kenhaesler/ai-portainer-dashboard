@@ -5,6 +5,8 @@
 **Target:** AI Portainer Dashboard (dev branch, commit `1cd6739`)
 **Scope:** Full-stack (backend :3051, nginx :8080, Prometheus :9090, Ollama :11534)
 
+**Regression Checklist:** See [SECURITY-REGRESSION-CHECKLIST.md](SECURITY-REGRESSION-CHECKLIST.md) for test coverage mapping.
+
 ---
 
 ## Executive Summary
@@ -290,7 +292,7 @@ Currently blocked by a `schema.safeParse is not a function` error in the webhook
 **CWE:** CWE-942 (Overly Permissive CORS Policy)
 **Status:** CONFIRMED (low impact)
 
-**Description:** The `access-control-allow-credentials: true` header is sent on every response, even without an `Origin` header. However, the `access-control-allow-origin` is correctly restricted to `http://localhost:5173` only — evil origins receive no ACAO header. This limits the actual risk significantly.
+**Description:** The `access-control-allow-credentials: true` header is sent on every response, even without an `Origin` header. However, the `access-control-allow-origin` is correctly restricted to `http://localhost:5273` only — evil origins receive no ACAO header. This limits the actual risk significantly.
 
 **Remediation:**
 Only send `access-control-allow-credentials: true` when a matching origin is present.
@@ -374,7 +376,7 @@ Only send `access-control-allow-credentials: true` when a matching origin is pre
 ### What's Working Well
 1. **Session management** — Tokens are properly invalidated on logout (reuse returns 401)
 2. **Rate limiting** — Login rate limit works correctly, not bypassable via X-Forwarded-For
-3. **CORS origin validation** — Only allows `localhost:5173`, rejects evil origins
+3. **CORS origin validation** — Only allows `localhost:5273`, rejects evil origins
 4. **Path traversal protection** — Backup download validates filenames, blocks `../` sequences
 5. **SQL injection protection** — All tested SQL queries use parameterized statements
 6. **XXE protection** — Fastify rejects XML content type (415)

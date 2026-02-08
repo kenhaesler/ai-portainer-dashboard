@@ -5,6 +5,7 @@ import { IncomingMessage } from 'http';
 import { verifyJwt } from '../utils/crypto.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getSession } from '../services/session-store.js';
+import { DEV_ALLOWED_ORIGINS } from './dev-origins.js';
 
 const log = createChildLogger('socket.io');
 
@@ -82,7 +83,7 @@ async function socketIoPlugin(fastify: FastifyInstance) {
     cors: {
       origin: process.env.NODE_ENV === 'production'
         ? false
-        : ['http://localhost:5173', 'http://localhost:8080'],
+        : DEV_ALLOWED_ORIGINS,
       credentials: true,
     },
     transports: ['websocket', 'polling'],
