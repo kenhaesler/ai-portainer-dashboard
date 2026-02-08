@@ -469,7 +469,7 @@ function MarkdownContent({ content }: { content: string }) {
           ),
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
-            const codeContent = String(children).replace(/\n$/, '');
+            const codeContent = (children != null ? String(children) : '').replace(/\n$/, '');
             const isCodeBlock = match !== null;
 
             return isCodeBlock ? (

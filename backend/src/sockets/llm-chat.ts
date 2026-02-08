@@ -554,25 +554,61 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
               toolIteration++;
               // Fall through to streaming loop for final response
             } else if (nativeResult.content) {
-              // No tool calls, just content — stream it to client and finish
-              socket.emit('chat:chunk', nativeResult.content);
-              finalResponse = nativeResult.content;
-              history.push({ role: 'assistant', content: finalResponse });
-              socket.emit('chat:end', { id: randomUUID(), content: finalResponse });
+              // No native tool calls — check if the model embedded text-based
+              // tool calls in its content (models that follow system prompt
+              // instructions but don't support Ollama's native tool format).
+              const textToolCalls = toolsEnabled ? parseToolCalls(nativeResult.content) : null;
 
-              const latencyMs = Date.now() - startTime;
-              const promptTokens = estimateTokens(messages.map(m => m.content).join(''));
-              const completionTokens = estimateTokens(finalResponse);
-              try {
-                insertLlmTrace({
-                  trace_id: randomUUID(), session_id: socket.id, model: selectedModel,
-                  prompt_tokens: promptTokens, completion_tokens: completionTokens,
-                  total_tokens: promptTokens + completionTokens, latency_ms: latencyMs,
-                  status: 'success', user_query: data.text.slice(0, 500),
-                  response_preview: finalResponse.slice(0, 500),
+              if (textToolCalls) {
+                log.debug({ userId, tools: textToolCalls.map(t => t.tool) }, 'Text-based tool calls found in Phase 1 content');
+                socket.emit('chat:tool_call', {
+                  tools: textToolCalls.map(t => t.tool),
+                  status: 'executing',
                 });
-              } catch (traceErr) { log.warn({ err: traceErr }, 'Failed to record LLM trace'); }
-              return; // Done — skip streaming loop
+
+                const ollamaFormatCalls: OllamaToolCall[] = textToolCalls.map(tc => ({
+                  function: { name: tc.tool, arguments: tc.arguments },
+                }));
+                const results = await routeToolCalls(ollamaFormatCalls);
+                lastToolResults = results;
+
+                socket.emit('chat:tool_call', {
+                  tools: textToolCalls.map(t => t.tool),
+                  status: 'complete',
+                  results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
+                });
+
+                messages = [
+                  ...messages,
+                  { role: 'assistant', content: nativeResult.content },
+                  {
+                    role: 'system',
+                    content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
+                  },
+                ];
+                toolIteration++;
+                // Fall through to streaming loop for final response with tool results
+              } else {
+                // No tool calls at all — send content as final response
+                socket.emit('chat:chunk', nativeResult.content);
+                finalResponse = nativeResult.content;
+                history.push({ role: 'assistant', content: finalResponse });
+                socket.emit('chat:end', { id: randomUUID(), content: finalResponse });
+
+                const latencyMs = Date.now() - startTime;
+                const promptTokens = estimateTokens(messages.map(m => m.content).join(''));
+                const completionTokens = estimateTokens(finalResponse);
+                try {
+                  insertLlmTrace({
+                    trace_id: randomUUID(), session_id: socket.id, model: selectedModel,
+                    prompt_tokens: promptTokens, completion_tokens: completionTokens,
+                    total_tokens: promptTokens + completionTokens, latency_ms: latencyMs,
+                    status: 'success', user_query: data.text.slice(0, 500),
+                    response_preview: finalResponse.slice(0, 500),
+                  });
+                } catch (traceErr) { log.warn({ err: traceErr }, 'Failed to record LLM trace'); }
+                return; // Done — skip streaming loop
+              }
             }
           } catch (nativeErr) {
             log.warn({ err: nativeErr, userId, message: nativeErr instanceof Error ? nativeErr.message : String(nativeErr) }, 'Native Ollama tool calling failed, falling back to text-based');
