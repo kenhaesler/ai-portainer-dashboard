@@ -1,12 +1,15 @@
-import { getEndpoints, getContainers } from './portainer-client.js';
+import { getEndpoints, getContainers, getContainerHostConfig } from './portainer-client.js';
 import type { Container } from '../models/portainer.js';
 import { getSetting, setSetting } from './settings-store.js';
+import { createChildLogger } from '../utils/logger.js';
 import {
   scanCapabilityPosture,
   type CapabilityPosture,
   type CapabilityFinding,
   type SecurityFinding,
 } from './security-scanner.js';
+
+const log = createChildLogger('security-audit');
 
 export const SECURITY_AUDIT_IGNORE_KEY = 'security_audit_ignore_list';
 
@@ -113,14 +116,36 @@ export async function getSecurityAudit(endpointId?: number): Promise<SecurityAud
   for (const endpoint of scopedEndpoints) {
     const containers = await getContainers(endpoint.Id, true);
 
-    for (const container of containers) {
+    // Inspect containers in parallel to get full HostConfig (CapAdd, Privileged, PidMode)
+    // — the list endpoint only returns NetworkMode.
+    const inspectResults = await Promise.allSettled(
+      containers.map((c) => getContainerHostConfig(endpoint.Id, c.Id)),
+    );
+
+    for (let i = 0; i < containers.length; i++) {
+      const container = containers[i];
       const containerName = toContainerName(container);
-      const findings = scanCapabilityPosture(container);
-      const posture = {
-        capAdd: container.HostConfig?.CapAdd || [],
-        privileged: !!container.HostConfig?.Privileged,
-        networkMode: container.HostConfig?.NetworkMode || null,
-        pidMode: container.HostConfig?.PidMode || null,
+
+      // Merge inspect HostConfig over the sparse list HostConfig
+      const inspectResult = inspectResults[i];
+      let hostConfig = container.HostConfig;
+      if (inspectResult.status === 'fulfilled') {
+        const { CapDrop: _drop, ...inspect } = inspectResult.value;
+        // Docker inspect returns CapAdd as null when empty — normalize to undefined
+        hostConfig = { ...hostConfig, ...inspect, CapAdd: inspect.CapAdd ?? undefined };
+      } else {
+        log.warn({ containerId: container.Id, err: inspectResult.reason }, 'Failed to inspect container for HostConfig');
+      }
+
+      // Build a container-like object with the enriched HostConfig for the scanner
+      const enriched: Container = { ...container, HostConfig: hostConfig };
+
+      const findings = scanCapabilityPosture(enriched);
+      const posture: CapabilityPosture = {
+        capAdd: hostConfig?.CapAdd || [],
+        privileged: !!hostConfig?.Privileged,
+        networkMode: hostConfig?.NetworkMode || null,
+        pidMode: hostConfig?.PidMode || null,
       };
 
       entries.push({
