@@ -18,9 +18,31 @@ interface ParseInput {
 
 const TS_PREFIX_RE = /^(\d{4}-\d{2}-\d{2}T[^\s]+)\s(.*)$/;
 const ISO_TS_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/;
-const ANSI_ESCAPE_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\u0007]*\u0007)/g;
-const CONTROL_CHAR_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 const REPLACEMENT_CHAR_RE = /\uFFFD+/g;
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const ANSI_ESCAPE_RE = new RegExp(
+  `${ESC}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}]*${BEL})`,
+  'g'
+);
+
+function isControlChar(charCode: number): boolean {
+  return (
+    (charCode >= 0x00 && charCode <= 0x08)
+    || (charCode >= 0x0b && charCode <= 0x1f)
+    || (charCode >= 0x7f && charCode <= 0x9f)
+  );
+}
+
+function stripControlChars(input: string): string {
+  let output = '';
+  for (const char of input) {
+    if (!isControlChar(char.charCodeAt(0))) {
+      output += char;
+    }
+  }
+  return output;
+}
 
 export function detectLevel(input: string): LogLevel {
   const line = input.toLowerCase();
@@ -53,9 +75,16 @@ export function parseLogs({ containerId, containerName, logs }: ParseInput): Par
 }
 
 export function sanitizeLogLine(line: string): string {
-  return line
-    .replace(ANSI_ESCAPE_RE, '')
-    .replace(CONTROL_CHAR_RE, '')
+  return sanitizeWithControlCharFiltering(
+    line
+      .replace(ANSI_ESCAPE_RE, '')
+      .replaceAll(ESC, '')
+      .replaceAll(BEL, '')
+  );
+}
+
+function sanitizeWithControlCharFiltering(line: string): string {
+  return stripControlChars(line)
     .replace(REPLACEMENT_CHAR_RE, '')
     .trimStart();
 }
