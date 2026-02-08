@@ -4,6 +4,8 @@ import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCirc
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { useMcpServers } from '@/hooks/use-mcp';
@@ -465,7 +467,7 @@ function MarkdownContent({ content }: { content: string }) {
     <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-pre:bg-zinc-900 prose-pre:shadow-lg prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-li:text-[13px] prose-td:text-[13px] prose-th:text-xs">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[]}
+        rehypePlugins={[rehypeHighlight]}
         components={{
           h1: ({ children }) => <h1 className="mb-3 pb-2 border-b border-border text-lg">{children}</h1>,
           h2: ({ children }) => <h2 className="mt-4 mb-2 pb-1.5 border-b border-border/50 text-base">{children}</h2>,
@@ -498,12 +500,19 @@ function MarkdownContent({ content }: { content: string }) {
           ),
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
-            const codeContent = (children != null ? String(children) : '').replace(/\n$/, '');
             const isCodeBlock = match !== null;
 
-            return isCodeBlock ? (
-              <CodeBlock code={codeContent} language={match?.[1]} />
-            ) : (
+            if (isCodeBlock) {
+              // Extract plain text for the copy button
+              const plainText = extractText(children).replace(/\n$/, '');
+              return (
+                <CodeBlock plainText={plainText} language={match?.[1]}>
+                  {children}
+                </CodeBlock>
+              );
+            }
+
+            return (
               <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono border border-border/50" {...props}>
                 {children}
               </code>
@@ -517,11 +526,22 @@ function MarkdownContent({ content }: { content: string }) {
   );
 }
 
-function CodeBlock({ code, language }: { code: string; language?: string }) {
+/** Recursively extract plain text from React children (for clipboard copy). */
+function extractText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (typeof node === 'object' && 'props' in node) {
+    return extractText((node as React.ReactElement<{ children?: React.ReactNode }>).props.children);
+  }
+  return '';
+}
+
+function CodeBlock({ plainText, language, children }: { plainText: string; language?: string; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(plainText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -548,7 +568,7 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
         </button>
       </div>
       <pre className="overflow-x-auto rounded-b-lg bg-zinc-900 p-4 !mt-0 shadow-lg border border-zinc-800">
-        <code className={`language-${language || 'text'} text-xs`}>{code}</code>
+        <code className={`language-${language || 'text'} text-xs text-zinc-100`}>{children}</code>
       </pre>
     </div>
   );

@@ -165,6 +165,71 @@ describe('LlmAssistantPage', () => {
   });
 });
 
+describe('CodeBlock rendering', () => {
+  beforeEach(() => {
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+  });
+
+  it('renders code block text with light color on dark background', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'assistant', content: '```bash\necho hello\n```', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    const { container } = renderPage();
+    const codeEl = container.querySelector('pre code');
+    expect(codeEl).toBeTruthy();
+    expect(codeEl!.className).toContain('text-zinc-100');
+  });
+
+  it('applies syntax highlighting via rehype-highlight', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'assistant', content: '```js\nconst x = 1;\n```', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    const { container } = renderPage();
+    // rehype-highlight adds hljs class and produces <span> elements with hljs-* classes
+    const codeEl = container.querySelector('pre code');
+    expect(codeEl).toBeTruthy();
+    const highlightedSpans = codeEl!.querySelectorAll('span[class*="hljs-"]');
+    expect(highlightedSpans.length).toBeGreaterThan(0);
+  });
+
+  it('shows language label in code block header', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'assistant', content: '```python\nprint("hi")\n```', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+    expect(screen.getByText('python')).toBeTruthy();
+  });
+});
+
 describe('normalizeMarkdown', () => {
   // We test the normalizeMarkdown function indirectly through MarkdownContent rendering.
   // The function is not exported, but its effects are visible in the rendered output.
