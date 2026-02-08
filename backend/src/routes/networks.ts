@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeNetwork, normalizeEndpoint } from '../services/portainer-normalizers.js';
 import { EndpointIdQuerySchema } from '../models/api-schemas.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -22,7 +22,7 @@ export async function networksRoutes(fastify: FastifyInstance) {
 
     let endpoints;
     try {
-      endpoints = await cachedFetch(
+      endpoints = await cachedFetchSWR(
         getCacheKey('endpoints'),
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
@@ -45,7 +45,7 @@ export async function networksRoutes(fastify: FastifyInstance) {
     const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>
-        cachedFetch(
+        cachedFetchSWR(
           getCacheKey('networks', ep.Id),
           TTL.NETWORKS,
           () => portainer.getNetworks(ep.Id),

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { getKpiHistory } from '../services/kpi-store.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -19,7 +19,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
   }, async (_request, reply) => {
     let endpoints;
     try {
-      endpoints = await cachedFetch(
+      endpoints = await cachedFetchSWR(
         getCacheKey('endpoints'),
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
@@ -66,7 +66,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     const upEndpoints = normalized.filter((e) => e.status === 'up').slice(0, 5);
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>
-        cachedFetch(
+        cachedFetchSWR(
           getCacheKey('containers', ep.id),
           TTL.CONTAINERS,
           () => portainer.getContainers(ep.id),

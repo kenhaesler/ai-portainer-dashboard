@@ -102,7 +102,14 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${REDIS_PASSWORD:-changeme-redis}"]
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --maxmemory-samples 5
+      --save ""
+      --appendonly no
+      --requirepass ${REDIS_PASSWORD:-changeme-redis}
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme-redis}", "ping"]
       interval: 15s

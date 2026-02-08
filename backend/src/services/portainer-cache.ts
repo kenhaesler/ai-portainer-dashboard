@@ -2,6 +2,12 @@ import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
 import { createClient } from 'redis';
 import { withSpan } from './trace-context.js';
+import { gzip, gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+const COMPRESSION_THRESHOLD = 10_000; // 10 KB
 
 const log = createChildLogger('portainer-cache');
 type RedisClient = ReturnType<typeof createClient>;
@@ -99,6 +105,8 @@ class HybridCache {
   private readonly l1TtlSeconds = 5; // Short L1 TTL for instant access
   private hits = 0;
   private misses = 0;
+  private compressedCount = 0;
+  private bytesSaved = 0;
   private redisClient: RedisClient | null = null;
   private redisConnectPromise: Promise<void> | null = null;
   private redisDisabledUntil = 0;
@@ -210,10 +218,20 @@ class HybridCache {
       const client = await this.ensureRedisClient();
       if (client) {
         try {
+          // Check compressed key first, then plain key
+          const gzKey = this.getRedisKey(key) + ':gz';
+          const gzB64 = await client.get(gzKey);
+          if (gzB64 != null) {
+            const decompressed = await gunzipAsync(Buffer.from(gzB64, 'base64'));
+            const parsed = JSON.parse(decompressed.toString('utf8')) as T;
+            this.memory.set(key, parsed, this.l1TtlSeconds);
+            this.hits++;
+            return parsed;
+          }
+
           const raw = await client.get(this.getRedisKey(key));
           if (raw != null) {
             const parsed = JSON.parse(raw) as T;
-            // Populate L1 on L2 hit for subsequent instant access
             this.memory.set(key, parsed, this.l1TtlSeconds);
             this.hits++;
             return parsed;
@@ -229,15 +247,35 @@ class HybridCache {
   }
 
   async set<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
-    // Always write to L1 (short TTL for instant reads)
+    // Always write to L1 uncompressed (short TTL for instant reads)
     this.memory.set(key, data, Math.min(ttlSeconds, this.l1TtlSeconds));
 
-    // Write to L2 (Redis) with full TTL (traced)
+    // Write to L2 (Redis) with full TTL — compress if above threshold (traced)
     await withSpan('cache.set', 'redis-cache', 'internal', async () => {
       const client = await this.ensureRedisClient();
       if (client) {
         try {
-          await client.set(this.getRedisKey(key), JSON.stringify(data), { EX: ttlSeconds });
+          const json = JSON.stringify(data);
+          const jsonBytes = Buffer.byteLength(json, 'utf8');
+
+          if (jsonBytes >= COMPRESSION_THRESHOLD) {
+            const compressed = await gzipAsync(Buffer.from(json, 'utf8'));
+            const saved = jsonBytes - compressed.length;
+            this.compressedCount++;
+            this.bytesSaved += saved;
+            if (jsonBytes > 1_000_000) {
+              log.warn({ key, originalSize: jsonBytes, compressedSize: compressed.length }, 'Cache entry exceeds 1 MB');
+            }
+            // Store compressed + delete any old uncompressed key
+            const redisKey = this.getRedisKey(key);
+            await client.set(redisKey + ':gz', compressed.toString('base64'), { EX: ttlSeconds });
+            await client.del(redisKey);
+          } else {
+            // Store uncompressed + delete any old compressed key
+            const redisKey = this.getRedisKey(key);
+            await client.set(redisKey, json, { EX: ttlSeconds });
+            await client.del(redisKey + ':gz');
+          }
         } catch (err) {
           this.disableRedisTemporarily('redis-set-failed', err);
         }
@@ -381,16 +419,114 @@ class HybridCache {
     }
   }
 
+  /**
+   * Store a cache entry with associated tags for surgical invalidation.
+   * Tags are stored as Redis Sets mapping tag → keys.
+   */
+  async setWithTags<T>(key: string, data: T, ttlSeconds: number, tags: string[]): Promise<void> {
+    await this.set(key, data, ttlSeconds);
+
+    const client = await this.ensureRedisClient();
+    if (client && tags.length > 0) {
+      try {
+        const redisKey = this.getRedisKey(key);
+        const pipeline = client.multi();
+        for (const tag of tags) {
+          const tagKey = this.getRedisKey(`_tag:${tag}`);
+          pipeline.sAdd(tagKey, redisKey);
+          pipeline.expire(tagKey, ttlSeconds);
+        }
+        await pipeline.exec();
+      } catch (err) {
+        this.disableRedisTemporarily('redis-set-tags-failed', err);
+      }
+    }
+  }
+
+  /**
+   * Invalidate all cache entries associated with a tag.
+   * Deletes all member keys + the tag set itself.
+   */
+  async invalidateTag(tag: string): Promise<void> {
+    // Invalidate L1 entries matching the tag pattern
+    this.memory.invalidatePattern(tag);
+
+    const client = await this.ensureRedisClient();
+    if (client) {
+      try {
+        const tagKey = this.getRedisKey(`_tag:${tag}`);
+        const members = await client.sMembers(tagKey);
+        if (members.length > 0) {
+          // Also delete compressed variants
+          const allKeys = members.flatMap((k) => [k, `${k}:gz`]);
+          await client.del([...allKeys, tagKey]);
+        } else {
+          await client.del(tagKey);
+        }
+      } catch (err) {
+        this.disableRedisTemporarily('redis-invalidate-tag-failed', err);
+      }
+    }
+  }
+
+  private redisInfoCache: { data: Record<string, string | number>; fetchedAt: number } | null = null;
+  private readonly redisInfoCacheTtlMs = 10_000; // 10s
+
+  private async getRedisInfo(client: RedisClient): Promise<Record<string, string | number> | null> {
+    const now = Date.now();
+    if (this.redisInfoCache && now - this.redisInfoCache.fetchedAt < this.redisInfoCacheTtlMs) {
+      return this.redisInfoCache.data;
+    }
+    try {
+      const infoRaw = await client.info();
+      const parsed: Record<string, string | number> = {};
+      for (const line of infoRaw.split('\r\n')) {
+        const idx = line.indexOf(':');
+        if (idx > 0) {
+          const k = line.slice(0, idx);
+          const v = line.slice(idx + 1);
+          parsed[k] = /^\d+$/.test(v) ? Number(v) : v;
+        }
+      }
+      this.redisInfoCache = { data: parsed, fetchedAt: now };
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
   async getStats() {
     const memoryStats = this.memory.getStats();
     const client = await this.ensureRedisClient();
     let l2Size = 0;
     let backend: 'multi-layer' | 'memory-only' = 'memory-only';
+    let redis: {
+      memoryUsedBytes: number;
+      memoryMaxBytes: number;
+      memoryUsagePct: string;
+      evictedKeys: number;
+      connectedClients: number;
+      uptimeSeconds: number;
+    } | null = null;
 
     if (client) {
       try {
         l2Size = (await this.redisKeys(client)).length;
         backend = 'multi-layer';
+
+        const info = await this.getRedisInfo(client);
+        if (info) {
+          const usedMem = Number(info['used_memory']) || 0;
+          const maxMem = Number(info['maxmemory']) || 0;
+          redis = {
+            memoryUsedBytes: usedMem,
+            memoryMaxBytes: maxMem,
+            memoryUsagePct: maxMem > 0 ? `${(usedMem / maxMem * 100).toFixed(1)}%` : 'unlimited',
+            evictedKeys: Number(info['evicted_keys']) || 0,
+            connectedClients: Number(info['connected_clients']) || 0,
+            uptimeSeconds: Number(info['uptime_in_seconds']) || 0,
+          };
+        }
       } catch (err) {
         this.disableRedisTemporarily('redis-stats-failed', err);
       }
@@ -406,6 +542,12 @@ class HybridCache {
         ? `${(this.hits / (this.hits + this.misses) * 100).toFixed(1)}%`
         : 'N/A',
       backend,
+      compression: {
+        compressedCount: this.compressedCount,
+        bytesSaved: this.bytesSaved,
+        threshold: COMPRESSION_THRESHOLD,
+      },
+      redis,
     };
   }
 }

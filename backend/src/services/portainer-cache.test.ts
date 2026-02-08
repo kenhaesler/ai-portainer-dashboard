@@ -9,15 +9,23 @@ const baseConfig = {
 
 function createMockRedisClient() {
   const store = new Map<string, string>();
+  const sets = new Map<string, Set<string>>();
 
   const mockPipeline = {
     set: vi.fn().mockReturnThis(),
+    sAdd: vi.fn(function sAdd(key: string, member: string) {
+      if (!sets.has(key)) sets.set(key, new Set());
+      sets.get(key)!.add(member);
+      return mockPipeline;
+    }),
+    expire: vi.fn().mockReturnThis(),
     exec: vi.fn(async () => []),
   };
 
   return {
     isOpen: false,
     _store: store,
+    _sets: sets,
     connect: vi.fn(async function connect(this: { isOpen: boolean }) {
       this.isOpen = true;
     }),
@@ -35,10 +43,31 @@ function createMockRedisClient() {
       const list = Array.isArray(keys) ? keys : [keys];
       for (const key of list) {
         store.delete(key);
+        sets.delete(key);
       }
       return list.length;
     }),
     ttl: vi.fn(async () => 60),
+    sAdd: vi.fn(async (key: string, member: string) => {
+      if (!sets.has(key)) sets.set(key, new Set());
+      sets.get(key)!.add(member);
+      return 1;
+    }),
+    sMembers: vi.fn(async (key: string) => {
+      return [...(sets.get(key) ?? [])];
+    }),
+    expire: vi.fn(async () => 1),
+    info: vi.fn(async () => [
+      '# Server',
+      'uptime_in_seconds:86400',
+      '# Clients',
+      'connected_clients:3',
+      '# Memory',
+      'used_memory:8388608',
+      'maxmemory:536870912',
+      '# Stats',
+      'evicted_keys:0',
+    ].join('\r\n')),
     scanIterator: vi.fn(async function* scanIterator({ MATCH }: { MATCH: string }) {
       const prefix = MATCH.replace('*', '');
       for (const key of store.keys()) {
@@ -99,8 +128,8 @@ describe('portainer-cache hybrid backend', () => {
     expect(createClient).toHaveBeenCalledWith({ url: 'redis://redis:6379' });
     expect(redisClient.connect).toHaveBeenCalledTimes(1);
     expect(redisClient.set).toHaveBeenCalledTimes(1);
-    // Only 1 Redis get (first call), second call hits L1
-    expect(redisClient.get).toHaveBeenCalledTimes(1);
+    // 2 Redis gets on first call (check :gz key + plain key), second call hits L1
+    expect(redisClient.get).toHaveBeenCalledTimes(2);
     await expect(cache.getStats()).resolves.toMatchObject({ backend: 'multi-layer' });
   });
 
@@ -124,16 +153,16 @@ describe('portainer-cache hybrid backend', () => {
     await redisClient.connect.call(redisClient);
     await redisClient.set(redisKey, JSON.stringify({ val: 42 }));
 
-    // First get: L1 miss → L2 hit → populates L1
+    // First get: L1 miss → L2 check :gz miss + plain hit → populates L1
     const val1 = await cache.get('test-key');
     expect(val1).toEqual({ val: 42 });
-    expect(redisClient.get).toHaveBeenCalledTimes(1);
+    expect(redisClient.get).toHaveBeenCalledTimes(2); // :gz + plain
 
     // Second get: L1 hit → skips Redis
     const val2 = await cache.get('test-key');
     expect(val2).toEqual({ val: 42 });
     // Redis.get should NOT have been called again
-    expect(redisClient.get).toHaveBeenCalledTimes(1);
+    expect(redisClient.get).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to memory cache when Redis connection fails', async () => {
@@ -626,5 +655,231 @@ describe('Redis authentication (requirepass)', () => {
     expect(createClient).toHaveBeenCalledWith({
       url: 'redis://redis:6379',
     });
+  });
+});
+
+describe('compression (#382)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('compresses entries above threshold and decompresses on read', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Create data > 10 KB
+    const largeData = { items: Array.from({ length: 500 }, (_, i) => ({ id: i, name: `container-${i}`, status: 'running' })) };
+    const jsonSize = Buffer.byteLength(JSON.stringify(largeData), 'utf8');
+    expect(jsonSize).toBeGreaterThan(10_000);
+
+    await cache.set('large-key', largeData, 60);
+
+    // Verify compressed key was stored (base64 string in :gz key)
+    const gzKey = 'aidash:cache:large-key:gz';
+    expect(redisClient._store.has(gzKey)).toBe(true);
+    // Plain key should have been deleted
+    expect(redisClient._store.has('aidash:cache:large-key')).toBe(false);
+
+    // Clear L1 to force L2 read
+    await cache.invalidate('large-key');
+
+    // Read back — should decompress
+    const result = await cache.get<typeof largeData>('large-key');
+    expect(result).toEqual(largeData);
+  });
+
+  it('does not compress entries below threshold', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    const smallData = { name: 'test' };
+    await cache.set('small-key', smallData, 60);
+
+    // Should be stored as plain JSON
+    expect(redisClient._store.has('aidash:cache:small-key')).toBe(true);
+    expect(redisClient._store.has('aidash:cache:small-key:gz')).toBe(false);
+  });
+
+  it('includes compression stats in getStats()', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    const largeData = { items: Array.from({ length: 500 }, (_, i) => ({ id: i, name: `item-${i}` })) };
+    await cache.set('stats-key', largeData, 60);
+
+    const stats = await cache.getStats();
+    expect(stats.compression.compressedCount).toBe(1);
+    expect(stats.compression.bytesSaved).toBeGreaterThan(0);
+    expect(stats.compression.threshold).toBe(10_000);
+  });
+});
+
+describe('Redis memory monitoring (#384)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('includes Redis INFO metrics in stats when Redis is connected', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const stats = await cache.getStats();
+
+    expect(stats.redis).not.toBeNull();
+    expect(stats.redis!.memoryUsedBytes).toBe(8388608);
+    expect(stats.redis!.memoryMaxBytes).toBe(536870912);
+    expect(stats.redis!.memoryUsagePct).toBe('1.6%');
+    expect(stats.redis!.evictedKeys).toBe(0);
+    expect(stats.redis!.connectedClients).toBe(3);
+    expect(stats.redis!.uptimeSeconds).toBe(86400);
+  });
+
+  it('returns redis: null when Redis is not configured', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const stats = await cache.getStats();
+
+    expect(stats.redis).toBeNull();
+    expect(stats.backend).toBe('memory-only');
+  });
+});
+
+describe('tag-based cache invalidation (#385)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('setWithTags stores data and associates tags via Redis Sets', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    await cache.setWithTags('containers:5', [{ id: 1 }], 300, ['endpoint:5', 'resource:containers']);
+
+    // Data should be stored
+    const data = await cache.get('containers:5');
+    expect(data).toEqual([{ id: 1 }]);
+
+    // Tags should have been set via pipeline
+    expect(redisClient.multi).toHaveBeenCalled();
+  });
+
+  it('invalidateTag deletes all tagged keys', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Manually populate tag set and data keys
+    const tagKey = 'aidash:cache:_tag:endpoint:5';
+    const dataKey1 = 'aidash:cache:containers:5';
+    const dataKey2 = 'aidash:cache:networks:5';
+    redisClient._sets.set(tagKey, new Set([dataKey1, dataKey2]));
+    redisClient._store.set(dataKey1, JSON.stringify([{ id: 1 }]));
+    redisClient._store.set(dataKey2, JSON.stringify([{ id: 2 }]));
+
+    await cache.invalidateTag('endpoint:5');
+
+    expect(redisClient.del).toHaveBeenCalled();
+    // Verify the del call included the data keys and the tag key
+    const delCall = redisClient.del.mock.calls.find(
+      (args: unknown[]) => Array.isArray(args[0]) && args[0].includes(dataKey1),
+    );
+    expect(delCall).toBeDefined();
+  });
+
+  it('invalidateTag also clears L1 entries matching tag pattern', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Set L1 entries
+    await cache.set('endpoint:5:containers', 'data1', 60);
+    await cache.set('endpoint:5:networks', 'data2', 60);
+    await cache.set('endpoint:6:containers', 'data3', 60);
+
+    // Verify all exist
+    expect(await cache.get('endpoint:5:containers')).toBe('data1');
+
+    // Invalidate by tag — L1 pattern match on 'endpoint:5'
+    await cache.invalidateTag('endpoint:5');
+
+    // endpoint:5 entries should be gone
+    expect(await cache.get('endpoint:5:containers')).toBeUndefined();
+    expect(await cache.get('endpoint:5:networks')).toBeUndefined();
+    // endpoint:6 should remain
+    expect(await cache.get('endpoint:6:containers')).toBe('data3');
   });
 });
