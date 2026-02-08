@@ -9,7 +9,7 @@ RUN npm run build
 
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache dumb-init wget && \
+RUN apk add --no-cache dumb-init wget tcpdump && \
     addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
 
 WORKDIR /app

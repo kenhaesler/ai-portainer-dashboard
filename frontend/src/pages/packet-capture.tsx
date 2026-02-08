@@ -146,9 +146,9 @@ export default function PacketCapture() {
         </div>
         <button
           onClick={() => refetch()}
-          className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80"
+          className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </button>
       </div>
@@ -537,8 +537,8 @@ function CaptureRow({
         <td className="px-4 py-2">
           <div className="flex items-center gap-2">
             {analysis && (
-              <button onClick={onToggleExpand} className="text-muted-foreground hover:text-foreground" title="Toggle analysis">
-                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <button onClick={onToggleExpand} className="-ml-1 rounded p-1 text-muted-foreground hover:bg-muted/50 hover:text-foreground" title="Toggle analysis">
+                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
             )}
             <div>
