@@ -1,68 +1,5 @@
 # Architecture
 
-## System Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              EXTERNAL SERVICES                              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────────┐   │
-│  │  Portainer   │    │    Ollama     │    │  Elasticsearch / Kibana      │   │
-│  │  REST API    │    │  Local LLM   │    │  (optional)                  │   │
-│  └──────┬───────┘    └──────┬───────┘    └──────────────┬───────────────┘   │
-└─────────┼───────────────────┼───────────────────────────┼───────────────────┘
-          │ REST              │ Ollama API                │ optional
-          ▼                   ▼                           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    BACKEND — Fastify 5 + TypeScript :3001                    │
-│                                                                             │
-│  ┌─ REST API ────────────────────────────────────────────────────────────┐   │
-│  │  Auth · Containers · Metrics · Monitoring · Remediation · Settings   │   │
-│  │  Images · Networks · Stacks · Traces · Search · PCAP · Backup        │   │
-│  └───────────────────────────────────┬───────────────────────────────────┘   │
-│                                      │                                      │
-│  ┌─ Socket.IO ──────────┐    ┌───────┴──── Services ─────────────────┐      │
-│  │  /llm       Chat     │    │  Portainer Client   (retry + backoff) │      │
-│  │  /monitoring Insights│───▶│  Response Cache     (TTL-based)       │      │
-│  │  /remediation Actions│    │  LLM Client         (Ollama SDK)      │      │
-│  └──────────────────────┘    │  Anomaly Detection  (Z/BB/Adaptive/IF)│      │
-│                              │  Monitoring Service  (orchestration)   │      │
-│  ┌─ Scheduler ──────────┐    │  Metrics Collector   (CPU/memory)     │      │
-│  │  Metrics     60s     │───▶│  Log Analyzer        (NLP)            │      │
-│  │  Monitoring  5min    │    │  Alert Similarity    (Jaccard)         │      │
-│  │  Cleanup     daily   │    │  Incident Correlator (grouping)        │      │
-│  └──────────────────────┘    └───────────────┬───────────────────────┘      │
-│                                              │                              │
-│                                    ┌─────────▼─────────┐                    │
-│                                    │  SQLite + WAL      │                    │
-│                                    │  (better-sqlite3)  │                    │
-│                                    └─────────┬─────────┘                    │
-└──────────────────────────────────────────────┼──────────────────────────────┘
-                                               │
-          ┌────────────────────────────────────┼────────────────────┐
-          │             DATABASE SCHEMA (7 tables)                  │
-          │  sessions · settings · insights · metrics               │
-          │  actions  · spans    · audit_log                        │
-          └─────────────────────────────────────────────────────────┘
-                                               ▲
-                                               │ HTTP /api/* + WebSocket
-                                               │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                   FRONTEND — React 19 + Vite 6 :5173                        │
-│                                                                             │
-│  ┌─ Pages (18 lazy-loaded) ──────────────────────────────────────────────┐   │
-│  │  Home · Fleet Overview · Workload Explorer · Stack Overview           │   │
-│  │  Container Detail/Health · Image Footprint · Network Topology         │   │
-│  │  AI Monitor · Metrics · Remediation · Trace Explorer · LLM Assistant  │   │
-│  │  Edge Logs · Packet Capture · Settings                                │   │
-│  └───────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─ State ──────────────┐  ┌─ UI Layer ─────────────────────────────────┐   │
-│  │  TanStack Query 5    │  │  Radix UI · Recharts · XYFlow              │   │
-│  │  Zustand 5           │  │  Tailwind CSS v4 (Glassmorphism)           │   │
-│  └──────────────────────┘  └─────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## Architecture Map (Route → Service/Data)
 
 Backend request flow is organized by route modules, with most Portainer-facing routes using the Portainer client + cache/normalizers. Monitoring and metrics read/write directly to SQLite.
@@ -94,167 +31,130 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 
 ```mermaid
 graph TB
-    subgraph External["External Services"]
-        Portainer["Portainer API<br/><i>Container Management</i>"]
-        Ollama["Ollama<br/><i>Local LLM (llama3.2)</i>"]
-        Kibana["Elasticsearch / Kibana<br/><i>Log Aggregation (optional)</i>"]
-    end
-
-    subgraph Frontend["Frontend — React 19 + Vite 6 :5173"]
-        direction TB
-        Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
-
-        subgraph Pages["Pages"]
-            direction LR
-            P1["Home<br/>Fleet Overview<br/>Workload Explorer<br/>Stack Overview"]
-            P2["Container Detail<br/>Container Health<br/>Image Footprint<br/>Network Topology"]
-            P3["AI Monitor<br/>Metrics Dashboard<br/>Remediation<br/>Trace Explorer"]
-            P4["LLM Assistant<br/>Edge Logs<br/>Packet Capture<br/>Settings"]
-        end
-
-        subgraph FState["State Management"]
-            RQ["TanStack React Query 5<br/><i>Server state & caching</i>"]
-            Zustand["Zustand 5<br/><i>UI state (theme, sidebar,<br/>notifications, filters)</i>"]
-        end
-
-        subgraph FRealtime["Real-Time"]
-            SIOClient["Socket.IO Client<br/><i>3 namespaces</i>"]
-        end
-
-        subgraph FUI["UI Layer"]
-            Radix["Radix UI<br/><i>Accessible components</i>"]
-            Recharts["Recharts<br/><i>Charts & metrics</i>"]
-            XYFlow["XYFlow<br/><i>Network topology</i>"]
-            Tailwind["Tailwind CSS v4<br/><i>Glassmorphism theme</i>"]
-        end
-
-        Router --> Pages
-        Pages --> FState
-        Pages --> FRealtime
-        Pages --> FUI
-    end
-
-    subgraph Backend["Backend — Fastify 5 + TypeScript :3001"]
-        direction TB
-        API["REST API<br/><i>Auth, Containers, Metrics,<br/>Monitoring, Remediation,<br/>Settings, Logs, Traces</i>"]
-
-        subgraph Sockets["Socket.IO Namespaces"]
-            direction LR
-            NSllm["/llm<br/><i>Chat streaming</i>"]
-            NSmon["/monitoring<br/><i>Live insights</i>"]
-            NSrem["/remediation<br/><i>Action updates</i>"]
-        end
-
-        subgraph Services["Services"]
-            direction LR
-            PortClient["Portainer Client<br/><i>Retry + backoff</i>"]
-            Cache["Response Cache<br/><i>TTL-based</i>"]
-            LLMClient["LLM Client<br/><i>Ollama SDK</i>"]
-            AnomalyDet["Anomaly Detection<br/><i>Multi-method (Z-score,<br/>Bollinger, Adaptive, IF)</i>"]
-            MonService["Monitoring Service<br/><i>Insight generation</i>"]
-            MetricsCol["Metrics Collector<br/><i>CPU/memory stats</i>"]
-        end
-
-        subgraph Scheduler["Background Scheduler"]
-            direction LR
-            J1["Metrics Collection<br/><i>Every 60s</i>"]
-            J2["Monitoring Cycle<br/><i>Every 5min</i>"]
-            J3["Cleanup<br/><i>Daily</i>"]
-        end
-
-        subgraph Data["Data Layer"]
-            SQLite["SQLite + WAL<br/><i>better-sqlite3</i>"]
-        end
-
-        API --> Services
-        Sockets --> Services
-        Scheduler --> Services
-        Services --> Data
-    end
-
-    subgraph DB["Database Schema (7 tables)"]
+    subgraph External["&nbsp; External Services &nbsp;"]
         direction LR
-        T1["sessions"]
-        T2["settings"]
-        T3["insights"]
-        T4["metrics"]
-        T5["actions"]
-        T6["spans"]
-        T7["audit_log"]
+        Portainer(["Portainer API"])
+        Ollama(["Ollama LLM"])
+        Kibana(["Elasticsearch<br/><i>optional</i>"])
     end
 
-    %% Frontend to Backend connections
+    subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 &nbsp;&nbsp; :5173 &nbsp;"]
+        direction LR
+        Pages["18 Pages<br/><i>lazy-loaded</i>"]
+        RQ["TanStack Query<br/><i>server state</i>"]
+        SIO_C["Socket.IO Client<br/><i>3 namespaces</i>"]
+        UI["Radix · Recharts<br/>XYFlow · Tailwind v4"]
+    end
+
+    subgraph Backend["&nbsp; Backend — Fastify 5 + TypeScript &nbsp;&nbsp; :3001 &nbsp;"]
+        direction TB
+
+        API["REST API<br/><i>15 route modules</i>"]
+        WS["Socket.IO<br/><i>/llm · /monitoring · /remediation</i>"]
+
+        subgraph Core[" &nbsp; Services &nbsp; "]
+            direction LR
+            PortClient["Portainer Client<br/><i>retry + backoff</i>"]
+            Cache["Response Cache<br/><i>TTL-based</i>"]
+            LLM["LLM Client<br/><i>Ollama SDK</i>"]
+        end
+
+        subgraph AI["&nbsp; AI Pipeline &nbsp;"]
+            direction LR
+            Anomaly["Anomaly Detection<br/><i>Z-score · Bollinger<br/>Adaptive · Isolation Forest</i>"]
+            LogNLP["NLP Log Analysis"]
+            Predict["Predictive Alerting"]
+        end
+
+        Sched(["Scheduler<br/><i>60s · 5min · daily</i>"])
+        DB[("SQLite + WAL<br/><i>7 tables</i>")]
+
+        API --> Core
+        WS --> Core
+        Sched --> AI
+        AI --> DB
+        Core --> DB
+    end
+
+    Pages --> RQ
     RQ -- "HTTP /api/*" --> API
-    SIOClient -- "WebSocket" --> Sockets
+    SIO_C -- "WebSocket" --> WS
 
-    %% Backend to External connections
-    PortClient -- "REST API" --> Portainer
-    LLMClient -- "Ollama API" --> Ollama
-    API -. "Optional" .-> Kibana
+    PortClient -- "REST" --> Portainer
+    LLM -- "API" --> Ollama
+    API -. "optional" .-> Kibana
 
-    %% Database
-    SQLite --> DB
+    classDef ext fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e40af,rx:20
+    classDef fe fill:#f0f9ff,stroke:#0ea5e9,stroke-width:2px,color:#0c4a6e
+    classDef be fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#14532d
+    classDef svc fill:#ecfdf5,stroke:#10b981,stroke-width:1px,color:#064e3b
+    classDef ai fill:#faf5ff,stroke:#a855f7,stroke-width:1px,color:#581c87
+    classDef store fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
+    classDef sched fill:#fdf4ff,stroke:#c084fc,stroke-width:1px,color:#6b21a8
 
-    %% Styling
-    classDef external fill:#f0f4ff,stroke:#4a6fa5,stroke-width:2px,color:#1a2a3a
-    classDef frontend fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
-    classDef backend fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#14532d
-    classDef data fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
-    classDef scheduler fill:#f3e8ff,stroke:#a855f7,stroke-width:2px,color:#581c87
-
-    class Portainer,Ollama,Kibana external
-    class Router,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
-    class API,NSllm,NSmon,NSrem,PortClient,Cache,LLMClient,AnomalyDet,MonService,MetricsCol backend
-    class J1,J2,J3 scheduler
-    class SQLite,T1,T2,T3,T4,T5,T6,T7 data
+    class Portainer,Ollama,Kibana ext
+    class Pages,RQ,SIO_C,UI fe
+    class API,WS be
+    class PortClient,Cache,LLM svc
+    class Anomaly,LogNLP,Predict ai
+    class DB store
+    class Sched sched
 ```
 
 ## Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant Browser
-    participant Frontend as Frontend<br/>(React + Vite)
-    participant API as Backend API<br/>(Fastify)
+    actor User
+    participant FE as Frontend
+    participant API as REST API
     participant WS as Socket.IO
-    participant Scheduler as Scheduler
-    participant Portainer
-    participant Ollama
+    participant Sched as Scheduler
+    participant Port as Portainer
+    participant LLM as Ollama
     participant DB as SQLite
 
-    Note over Browser,DB: Authentication Flow
-    Browser->>Frontend: Login
-    Frontend->>API: POST /api/auth/login
-    API->>DB: Create session
-    API-->>Frontend: JWT token
-    Frontend-->>Browser: Redirect to dashboard
+    rect rgba(59, 130, 246, 0.05)
+        Note over User,DB: Authentication
+        User->>FE: Login
+        FE->>API: POST /api/auth/login
+        API->>DB: Create session
+        API-->>FE: JWT token
+        FE-->>User: Redirect to dashboard
+    end
 
-    Note over Browser,DB: Dashboard Data Flow
-    Browser->>Frontend: Navigate to page
-    Frontend->>API: GET /api/containers
-    API->>Portainer: Fetch containers
-    Portainer-->>API: Container data
-    API-->>Frontend: Normalized response
-    Frontend-->>Browser: Render UI
+    rect rgba(34, 197, 94, 0.05)
+        Note over User,DB: Dashboard Data
+        User->>FE: Navigate to page
+        FE->>API: GET /api/containers
+        API->>Port: Fetch containers
+        Port-->>API: Container data
+        API-->>FE: Normalized response
+        FE-->>User: Render UI
+    end
 
-    Note over Browser,DB: Real-Time Monitoring
-    Scheduler->>Portainer: Collect metrics (every 60s)
-    Portainer-->>Scheduler: CPU/memory stats
-    Scheduler->>DB: Store metrics
-    Scheduler->>Scheduler: Run anomaly detection (every 5min)
-    Scheduler->>DB: Store insights
-    Scheduler->>WS: Broadcast new insights
-    WS-->>Frontend: Push to /monitoring namespace
-    Frontend-->>Browser: Update UI in real-time
+    rect rgba(168, 85, 247, 0.05)
+        Note over User,DB: Real-Time Monitoring
+        Sched->>Port: Collect metrics (60s)
+        Port-->>Sched: CPU/memory stats
+        Sched->>DB: Store metrics
+        Sched->>Sched: Anomaly detection (5min)
+        Sched->>DB: Store insights
+        Sched->>WS: Broadcast
+        WS-->>FE: Push to /monitoring
+        FE-->>User: Live update
+    end
 
-    Note over Browser,DB: AI Chat Flow
-    Browser->>Frontend: Send chat message
-    Frontend->>WS: Emit to /llm namespace
-    WS->>Portainer: Fetch infrastructure context
-    WS->>Ollama: Stream LLM response
-    Ollama-->>WS: Token stream
-    WS-->>Frontend: Stream tokens
-    Frontend-->>Browser: Render markdown response
+    rect rgba(245, 158, 11, 0.05)
+        Note over User,DB: AI Chat
+        User->>FE: Send message
+        FE->>WS: Emit to /llm
+        WS->>Port: Fetch context
+        WS->>LLM: Stream request
+        LLM-->>WS: Token stream
+        WS-->>FE: Stream tokens
+        FE-->>User: Render markdown
+    end
 ```
 
 ## Tech Stack
