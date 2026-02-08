@@ -69,8 +69,9 @@ describe('Dockerfile security best practices', () => {
   describe('backend/Dockerfile.dev', () => {
     const content = readFile('backend/Dockerfile.dev');
 
-    it('runs as non-root user', () => {
-      expect(content).toMatch(/^USER\s+\S+/m);
+    it('drops privileges via entrypoint (su-exec to node user)', () => {
+      expect(content).toMatch(/su-exec/);
+      expect(content).toMatch(/docker-entrypoint\.sh/);
     });
 
     it('has a healthcheck', () => {
@@ -79,6 +80,18 @@ describe('Dockerfile security best practices', () => {
 
     it('uses dumb-init for PID 1', () => {
       expect(content).toMatch(/dumb-init/);
+    });
+  });
+
+  describe('backend/docker-entrypoint.sh', () => {
+    const content = readFile('backend/docker-entrypoint.sh');
+
+    it('fixes data directory ownership', () => {
+      expect(content).toMatch(/chown.*node.*\/app\/data/);
+    });
+
+    it('drops to non-root user via su-exec', () => {
+      expect(content).toMatch(/exec su-exec node/);
     });
   });
 
