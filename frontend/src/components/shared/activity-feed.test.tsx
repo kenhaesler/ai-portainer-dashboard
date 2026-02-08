@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { ActivityFeed } from './activity-feed';
-import { useActivityFeedStore, EVENT_TYPES, SEVERITIES } from '@/stores/activity-feed-store';
+import { useActivityFeedStore } from '@/stores/activity-feed-store';
 
 // Mock react-router-dom
 const mockNavigate = vi.fn();
@@ -15,16 +15,10 @@ const mockMonitoringSocket = {
   off: vi.fn(),
   connected: true,
 };
-const mockRemediationSocket = {
-  on: vi.fn(),
-  off: vi.fn(),
-  connected: true,
-};
 
 vi.mock('@/providers/socket-provider', () => ({
   useSockets: () => ({
     monitoringSocket: mockMonitoringSocket,
-    remediationSocket: mockRemediationSocket,
     connected: true,
   }),
 }));
@@ -64,21 +58,10 @@ describe('ActivityFeed', () => {
     vi.clearAllMocks();
     mockMonitoringSocket.on.mockClear();
     mockMonitoringSocket.off.mockClear();
-    mockRemediationSocket.on.mockClear();
-    mockRemediationSocket.off.mockClear();
     useActivityFeedStore.setState({
       events: [],
       collapsed: true,
       unreadCount: 0,
-      filters: {
-        eventTypes: new Set(EVENT_TYPES),
-        severities: new Set(SEVERITIES),
-      },
-      preferences: {
-        desktopNotifications: false,
-        soundNotifications: false,
-        notificationPermission: 'default',
-      },
     });
   });
 
@@ -96,154 +79,6 @@ describe('ActivityFeed', () => {
     expect(monitoringEvents).toContain('insights:new');
     expect(monitoringEvents).toContain('connect');
     expect(monitoringEvents).toContain('disconnect');
-  });
-
-  it('should subscribe to remediation socket events', () => {
-    render(<ActivityFeed />);
-
-    const remediationEvents = mockRemediationSocket.on.mock.calls.map(
-      (c: string[]) => c[0],
-    );
-    expect(remediationEvents).toContain('actions:new');
-    expect(remediationEvents).toContain('actions:updated');
-  });
-
-  it('should add remediation event when actions:new fires', () => {
-    render(<ActivityFeed />);
-
-    const actionsNewHandler = mockRemediationSocket.on.mock.calls.find(
-      (c: string[]) => c[0] === 'actions:new',
-    )?.[1] as (action: { title: string; status: string }) => void;
-
-    expect(actionsNewHandler).toBeDefined();
-    actionsNewHandler({ title: 'Restart container', status: 'pending' });
-
-    const state = useActivityFeedStore.getState();
-    expect(state.events[0].type).toBe('remediation');
-    expect(state.events[0].message).toBe('Restart container');
-    expect(state.events[0].link).toBe('/remediation');
-  });
-
-  it('should add remediation event when actions:updated fires', () => {
-    render(<ActivityFeed />);
-
-    const actionsUpdatedHandler = mockRemediationSocket.on.mock.calls.find(
-      (c: string[]) => c[0] === 'actions:updated',
-    )?.[1] as (action: { title: string; status: string }) => void;
-
-    expect(actionsUpdatedHandler).toBeDefined();
-    actionsUpdatedHandler({ title: 'Restart container', status: 'completed' });
-
-    const state = useActivityFeedStore.getState();
-    expect(state.events[0].type).toBe('remediation');
-    expect(state.events[0].severity).toBe('success');
-    expect(state.events[0].message).toContain('completed');
-  });
-
-  it('should show filter chips when expanded', () => {
-    useActivityFeedStore.setState({ collapsed: false });
-    render(<ActivityFeed />);
-
-    expect(screen.getByText('Container')).toBeInTheDocument();
-    expect(screen.getByText('Anomaly')).toBeInTheDocument();
-    expect(screen.getByText('Insight')).toBeInTheDocument();
-    expect(screen.getByText('Connection')).toBeInTheDocument();
-    expect(screen.getByText('Incident')).toBeInTheDocument();
-    expect(screen.getByText('Remediation')).toBeInTheDocument();
-    expect(screen.getByText('Success')).toBeInTheDocument();
-    expect(screen.getByText('Warning')).toBeInTheDocument();
-    expect(screen.getByText('Error')).toBeInTheDocument();
-    expect(screen.getByText('Info')).toBeInTheDocument();
-  });
-
-  it('should filter events by type when chip is toggled', () => {
-    // Add events of different types
-    useActivityFeedStore.getState().addEvent({
-      type: 'insight',
-      severity: 'info',
-      message: 'Insight event',
-    });
-    useActivityFeedStore.getState().addEvent({
-      type: 'container',
-      severity: 'info',
-      message: 'Container event',
-    });
-
-    useActivityFeedStore.setState({ collapsed: false });
-    render(<ActivityFeed />);
-
-    // Both should be visible
-    expect(screen.getByText('Container event')).toBeInTheDocument();
-    expect(screen.getByText('Insight event')).toBeInTheDocument();
-
-    // Click the Container chip to disable it
-    fireEvent.click(screen.getByText('Container'));
-
-    // Container event should be gone
-    expect(screen.queryByText('Container event')).not.toBeInTheDocument();
-    expect(screen.getByText('Insight event')).toBeInTheDocument();
-  });
-
-  it('should filter events by severity when chip is toggled', () => {
-    useActivityFeedStore.getState().addEvent({
-      type: 'insight',
-      severity: 'info',
-      message: 'Info event',
-    });
-    useActivityFeedStore.getState().addEvent({
-      type: 'insight',
-      severity: 'error',
-      message: 'Error event',
-    });
-
-    useActivityFeedStore.setState({ collapsed: false });
-    render(<ActivityFeed />);
-
-    expect(screen.getByText('Info event')).toBeInTheDocument();
-    expect(screen.getByText('Error event')).toBeInTheDocument();
-
-    // Click the Info severity chip to disable it
-    fireEvent.click(screen.getByText('Info'));
-
-    expect(screen.queryByText('Info event')).not.toBeInTheDocument();
-    expect(screen.getByText('Error event')).toBeInTheDocument();
-  });
-
-  it('should show filtered count when filters are active', () => {
-    useActivityFeedStore.getState().addEvent({
-      type: 'insight',
-      severity: 'info',
-      message: 'Event 1',
-    });
-    useActivityFeedStore.getState().addEvent({
-      type: 'container',
-      severity: 'info',
-      message: 'Event 2',
-    });
-
-    useActivityFeedStore.setState({ collapsed: false });
-    render(<ActivityFeed />);
-
-    // Disable container type
-    fireEvent.click(screen.getByText('Container'));
-
-    // Should show filtered count
-    expect(screen.getByText(/1\/2/)).toBeInTheDocument();
-  });
-
-  it('should show "No events match filters" when all filtered out', () => {
-    useActivityFeedStore.getState().addEvent({
-      type: 'insight',
-      severity: 'info',
-      message: 'Event 1',
-    });
-
-    // Disable insight type
-    useActivityFeedStore.getState().setEventTypeFilter('insight', false);
-    useActivityFeedStore.setState({ collapsed: false });
-
-    render(<ActivityFeed />);
-    expect(screen.getByText('No events match filters')).toBeInTheDocument();
   });
 
   it('should show "No activity yet" when no events exist', () => {
@@ -266,5 +101,61 @@ describe('ActivityFeed', () => {
     });
     render(<ActivityFeed />);
     expect(screen.getByText('1 events')).toBeInTheDocument();
+  });
+
+  it('should display events when expanded', () => {
+    useActivityFeedStore.getState().addEvent({
+      type: 'insight',
+      severity: 'info',
+      message: 'Test insight event',
+    });
+    useActivityFeedStore.setState({ collapsed: false });
+
+    render(<ActivityFeed />);
+    expect(screen.getByText('Test insight event')).toBeInTheDocument();
+  });
+
+  it('should add insight event when insights:new fires', () => {
+    render(<ActivityFeed />);
+
+    const insightsHandler = mockMonitoringSocket.on.mock.calls.find(
+      (c: string[]) => c[0] === 'insights:new',
+    )?.[1] as (insight: { severity: string; title: string; container_name?: string }) => void;
+
+    expect(insightsHandler).toBeDefined();
+    insightsHandler({ severity: 'warning', title: 'High CPU usage', container_name: 'web-app' });
+
+    const state = useActivityFeedStore.getState();
+    expect(state.events[0].type).toBe('insight');
+    expect(state.events[0].severity).toBe('warning');
+    expect(state.events[0].message).toBe('High CPU usage (web-app)');
+    expect(state.events[0].link).toBe('/ai-monitor');
+  });
+
+  it('should add connection event on connect/disconnect', () => {
+    render(<ActivityFeed />);
+
+    const connectHandler = mockMonitoringSocket.on.mock.calls.find(
+      (c: string[]) => c[0] === 'connect',
+    )?.[1] as () => void;
+
+    const disconnectHandler = mockMonitoringSocket.on.mock.calls.find(
+      (c: string[]) => c[0] === 'disconnect',
+    )?.[1] as () => void;
+
+    expect(connectHandler).toBeDefined();
+    expect(disconnectHandler).toBeDefined();
+
+    connectHandler();
+    const stateAfterConnect = useActivityFeedStore.getState();
+    expect(stateAfterConnect.events[0].type).toBe('connection');
+    expect(stateAfterConnect.events[0].severity).toBe('success');
+    expect(stateAfterConnect.events[0].message).toBe('WebSocket connected');
+
+    disconnectHandler();
+    const stateAfterDisconnect = useActivityFeedStore.getState();
+    expect(stateAfterDisconnect.events[0].type).toBe('connection');
+    expect(stateAfterDisconnect.events[0].severity).toBe('error');
+    expect(stateAfterDisconnect.events[0].message).toBe('WebSocket disconnected');
   });
 });
