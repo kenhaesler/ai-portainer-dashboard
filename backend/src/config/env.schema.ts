@@ -20,6 +20,8 @@ export const envSchema = z.object({
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
   PORTAINER_API_KEY: z.string().min(1).default(''),
   PORTAINER_VERIFY_SSL: z.coerce.boolean().default(true),
+  PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(10),
+  PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
 
   // Ollama
   OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),

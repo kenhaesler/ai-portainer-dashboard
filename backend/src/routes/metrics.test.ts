@@ -247,6 +247,48 @@ describe('metrics routes', () => {
     });
   });
 
+  describe('error handling', () => {
+    it('should return 500 when metrics query fails', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('DB connection lost'));
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/abc123?metricType=cpu&timeRange=1h',
+      });
+
+      expect(response.statusCode).toBe(500);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Failed to query metrics');
+      expect(body.details).toContain('DB connection lost');
+    });
+
+    it('should return 500 when anomalies query fails', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('timeout'));
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/anomalies?limit=10',
+      });
+
+      expect(response.statusCode).toBe(500);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Failed to query anomalies');
+    });
+
+    it('should return 500 when network rates fail', async () => {
+      mockGetNetworkRates.mockRejectedValueOnce(new Error('store error'));
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/network-rates/1',
+      });
+
+      expect(response.statusCode).toBe(500);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Failed to fetch network rates');
+    });
+  });
+
   describe('GET /api/metrics/:endpointId/:containerId/ai-summary', () => {
     it('should return 503 when LLM is unavailable', async () => {
       mockIsOllamaAvailable.mockResolvedValue(false);

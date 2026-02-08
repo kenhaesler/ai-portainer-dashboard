@@ -42,21 +42,25 @@ export async function networksRoutes(fastify: FastifyInstance) {
 
     const results = [];
     const errors: string[] = [];
-    const upEndpoints = [];
-    for (const ep of targetEndpoints) {
-      const norm = normalizeEndpoint(ep);
-      if (norm.status !== 'up') continue;
-      upEndpoints.push(ep);
-      try {
-        const networks = await cachedFetch(
+    const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
+    const settled = await Promise.allSettled(
+      upEndpoints.map((ep) =>
+        cachedFetch(
           getCacheKey('networks', ep.Id),
           TTL.NETWORKS,
           () => portainer.getNetworks(ep.Id),
-        );
+        ).then((networks) => ({ ep, networks })),
+      ),
+    );
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      if (result.status === 'fulfilled') {
+        const { ep, networks } = result.value;
         results.push(...networks.map((n) => normalizeNetwork(n, ep.Id, ep.Name)));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ endpointId: ep.Id, endpointName: ep.Name, err }, 'Failed to fetch networks for endpoint');
+      } else {
+        const ep = upEndpoints[i];
+        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+        log.warn({ endpointId: ep.Id, endpointName: ep.Name, err: result.reason }, 'Failed to fetch networks for endpoint');
         errors.push(`${ep.Name}: ${msg}`);
       }
     }

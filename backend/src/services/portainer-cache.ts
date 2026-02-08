@@ -8,6 +8,7 @@ type RedisClient = ReturnType<typeof createClient>;
 
 interface CacheEntry<T> {
   data: T;
+  staleAt: number;
   expiresAt: number;
 }
 
@@ -31,10 +32,23 @@ class TtlCache {
     return entry.data as T;
   }
 
-  set<T>(key: string, data: T, ttlSeconds: number): void {
+  getWithStaleInfo<T>(key: string): { data: T; isStale: boolean } | undefined {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    const now = Date.now();
+    if (now > entry.expiresAt) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return { data: entry.data as T, isStale: now > entry.staleAt };
+  }
+
+  set<T>(key: string, data: T, ttlSeconds: number, staleFraction = 0.8): void {
+    const now = Date.now();
     this.store.set(key, {
       data,
-      expiresAt: Date.now() + ttlSeconds * 1000,
+      staleAt: now + ttlSeconds * 1000 * staleFraction,
+      expiresAt: now + ttlSeconds * 1000,
     });
   }
 
@@ -89,6 +103,14 @@ class HybridCache {
   private redisConnectPromise: Promise<void> | null = null;
   private redisDisabledUntil = 0;
   private readonly redisRetryMs = 30_000;
+
+  /**
+   * Check L1 (in-memory) cache with stale info — synchronous, no Redis round-trip.
+   * Used by stale-while-revalidate to return stale data immediately.
+   */
+  getMemoryWithStaleInfo<T>(key: string): { data: T; isStale: boolean } | undefined {
+    return this.memory.getWithStaleInfo<T>(key);
+  }
 
   private getRedisKey(key: string): string {
     const config = getConfig();
@@ -461,6 +483,46 @@ export function cachedFetch<T>(
   })();
 
   return promise;
+}
+
+/**
+ * Stale-while-revalidate variant of cachedFetch.
+ * Returns stale data immediately while kicking off a background refetch.
+ * Falls back to a blocking fetch when no cached data exists.
+ */
+export function cachedFetchSWR<T>(
+  key: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+): Promise<T> {
+  const config = getConfig();
+  if (!config.CACHE_ENABLED) {
+    return fetcher();
+  }
+
+  // Check in-memory SWR data (synchronous — no Redis round-trip)
+  const staleInfo = cache.getMemoryWithStaleInfo<T>(key);
+  if (staleInfo) {
+    if (staleInfo.isStale) {
+      // Return stale data immediately, kick off background revalidation
+      if (!inFlight.has(key)) {
+        const revalidate = (async () => {
+          try {
+            const data = await fetcher();
+            await cache.set(key, data, ttlSeconds);
+          } catch (err) {
+            log.warn({ key, err }, 'SWR background revalidation failed');
+          }
+        })();
+        inFlight.set(key, revalidate);
+        revalidate.finally(() => { inFlight.delete(key); });
+      }
+    }
+    return Promise.resolve(staleInfo.data);
+  }
+
+  // No data at all — blocking fetch
+  return cachedFetch(key, ttlSeconds, fetcher);
 }
 
 /**

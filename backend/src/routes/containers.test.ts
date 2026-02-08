@@ -6,6 +6,7 @@ import { containersRoutes } from './containers.js';
 vi.mock('../services/portainer-client.js', () => ({
   getEndpoints: vi.fn(),
   getContainers: vi.fn(),
+  getContainer: vi.fn(),
 }));
 
 vi.mock('../services/portainer-cache.js', () => ({
@@ -27,6 +28,7 @@ import * as portainer from '../services/portainer-client.js';
 
 const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
 const mockGetContainers = vi.mocked(portainer.getContainers);
+const mockGetContainer = vi.mocked(portainer.getContainer);
 
 function buildApp() {
   const app = Fastify();
@@ -158,5 +160,20 @@ describe('containers routes', () => {
     const body = JSON.parse(res.body);
     expect(body).toHaveLength(0);
     expect(mockGetContainers).not.toHaveBeenCalled();
+  });
+
+  it('should return 502 when getContainer fails for detail endpoint', async () => {
+    mockGetContainer.mockRejectedValue(new Error('Container not found'));
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/1/abc123',
+    });
+
+    expect(res.statusCode).toBe(502);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe('Unable to fetch container details from Portainer');
+    expect(body.details).toContain('Container not found');
   });
 });

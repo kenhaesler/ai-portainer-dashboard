@@ -42,21 +42,25 @@ export async function containersRoutes(fastify: FastifyInstance) {
 
     const results = [];
     const errors: string[] = [];
-    const upEndpoints = [];
-    for (const ep of targetEndpoints) {
-      const norm = normalizeEndpoint(ep);
-      if (norm.status !== 'up') continue;
-      upEndpoints.push(ep);
-      try {
-        const containers = await cachedFetch(
+    const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
+    const settled = await Promise.allSettled(
+      upEndpoints.map((ep) =>
+        cachedFetch(
           getCacheKey('containers', ep.Id),
           TTL.CONTAINERS,
           () => portainer.getContainers(ep.Id),
-        );
+        ).then((containers) => ({ ep, containers })),
+      ),
+    );
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      if (result.status === 'fulfilled') {
+        const { ep, containers } = result.value;
         results.push(...containers.map((c) => normalizeContainer(c, ep.Id, ep.Name)));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ endpointId: ep.Id, endpointName: ep.Name, err }, 'Failed to fetch containers for endpoint');
+      } else {
+        const ep = upEndpoints[i];
+        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+        log.warn({ endpointId: ep.Id, endpointName: ep.Name, err: result.reason }, 'Failed to fetch containers for endpoint');
         errors.push(`${ep.Name}: ${msg}`);
       }
     }
@@ -80,12 +84,18 @@ export async function containersRoutes(fastify: FastifyInstance) {
       params: ContainerParamsSchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { endpointId, containerId } = request.params as {
       endpointId: number;
       containerId: string;
     };
-    const container = await portainer.getContainer(endpointId, containerId);
-    return container;
+    try {
+      const container = await portainer.getContainer(endpointId, containerId);
+      return container;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, endpointId, containerId }, 'Failed to fetch container details');
+      return reply.code(502).send({ error: 'Unable to fetch container details from Portainer', details: msg });
+    }
   });
 }

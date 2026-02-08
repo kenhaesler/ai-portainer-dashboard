@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { decodeDockerLogPayload, sanitizeContainerLabels } from './portainer-client.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState } from './portainer-client.js';
+import pLimit from 'p-limit';
 
 describe('sanitizeContainerLabels', () => {
   it('redacts known path-disclosing Docker labels', () => {
@@ -49,5 +50,38 @@ describe('decodeDockerLogPayload', () => {
   it('falls back to utf8 when payload is plain text', () => {
     const plain = Buffer.from('2026-02-08T00:19:36.5759Z INFO plain line\n', 'utf8');
     expect(decodeDockerLogPayload(plain)).toBe(plain.toString('utf8'));
+  });
+});
+
+describe('concurrency limiter', () => {
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  it('p-limit restricts concurrent calls to configured limit', async () => {
+    const concurrency = 2;
+    const limit = pLimit(concurrency);
+
+    let running = 0;
+    let maxRunning = 0;
+
+    const task = () =>
+      limit(async () => {
+        running++;
+        maxRunning = Math.max(maxRunning, running);
+        await new Promise((r) => setTimeout(r, 20));
+        running--;
+        return 'done';
+      });
+
+    const results = await Promise.all([task(), task(), task(), task(), task()]);
+
+    expect(results).toEqual(['done', 'done', 'done', 'done', 'done']);
+    expect(maxRunning).toBeLessThanOrEqual(concurrency);
+  });
+
+  it('_resetClientState clears cached limiter and dispatcher', () => {
+    // Just verify it doesn't throw — internal state is private
+    expect(() => _resetClientState()).not.toThrow();
   });
 });
