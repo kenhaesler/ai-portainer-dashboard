@@ -102,14 +102,14 @@ export default function SecurityAuditPage() {
       </div>
 
       <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
-        <div className="log-viewer-search relative mb-3">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search containers by name or image..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="log-viewer-search__input w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
         <div className="grid gap-3 lg:grid-cols-4">
