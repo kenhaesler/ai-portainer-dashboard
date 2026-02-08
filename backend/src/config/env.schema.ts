@@ -56,7 +56,7 @@ export const envSchema = z.object({
 
   // Anomaly Explanations (LLM)
   ANOMALY_EXPLANATION_ENABLED: z.coerce.boolean().default(true),
-  ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(20).default(5),
+  ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(50).default(20),
 
   // Isolation Forest Anomaly Detection
   ISOLATION_FOREST_ENABLED: z.coerce.boolean().default(true),
