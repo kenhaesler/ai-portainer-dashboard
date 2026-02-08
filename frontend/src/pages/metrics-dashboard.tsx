@@ -358,7 +358,12 @@ export default function MetricsDashboardPage() {
           {hasSelection && llmAvailable && (
             <button
               onClick={() => setChatOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-all hover:shadow-md"
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition-colors',
+                chatOpen
+                  ? 'border-primary/40 bg-primary/15 text-primary'
+                  : 'border-border/70 bg-card/70 text-foreground hover:bg-card'
+              )}
             >
               <Bot className="h-4 w-4" />
               Ask AI

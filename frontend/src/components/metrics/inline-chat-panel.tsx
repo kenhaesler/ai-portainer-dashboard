@@ -82,7 +82,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
     if (!open && messages.length > 0) {
       clearHistory();
     }
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, messages.length, clearHistory]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -122,16 +122,16 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
     <div
       data-testid="inline-chat-panel"
       className={cn(
-        'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-background/95 backdrop-blur-xl shadow-2xl',
-        'md:w-[420px] lg:w-[480px]',
-        'animate-in slide-in-from-right duration-300',
+        'fixed bottom-3 right-3 z-50 flex w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/75 backdrop-blur-xl shadow-2xl shadow-black/25',
+        'h-[min(680px,calc(100vh-6.5rem))] max-h-[calc(100vh-6.5rem)] md:bottom-5 md:right-5 md:w-[420px] lg:w-[460px]',
+        'animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-4 duration-200',
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border/60 bg-card/60 px-4 py-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
-            <Bot className="h-4 w-4 text-white" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+            <Bot className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold truncate">Ask AI</p>
@@ -142,7 +142,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
         </div>
         <button
           onClick={onClose}
-          className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           aria-label="Close chat panel"
         >
           <X className="h-4 w-4" />
@@ -150,12 +150,12 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 space-y-4 overflow-y-auto bg-background/40 p-4">
         {/* Empty state with suggestions */}
         {messages.length === 0 && !isStreaming && !isSending && (
           <div className="flex flex-col items-center text-center pt-8">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
-              <Bot className="h-7 w-7 text-blue-500" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10">
+              <Bot className="h-7 w-7 text-primary" />
             </div>
             <p className="mt-4 text-sm font-medium">
               Ask anything about {context.containerName}
@@ -168,7 +168,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
                 <button
                   key={q}
                   onClick={() => handleSuggestionClick(q)}
-                  className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-left hover:bg-muted transition-colors"
+                  className="rounded-lg border border-border/60 bg-card/70 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/70"
                 >
                   {q}
                 </button>
@@ -228,7 +228,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
       </div>
 
       {/* Input */}
-      <div className="border-t bg-background/80 p-3">
+      <div className="border-t border-border/60 bg-card/65 p-3">
         <form onSubmit={handleSubmit} className="flex gap-2">
           <input
             ref={inputRef}
@@ -242,7 +242,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
           <button
             type="submit"
             disabled={!input.trim() || isStreaming || isSending}
-            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 p-2 text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center rounded-lg border border-primary/30 bg-primary text-primary-foreground p-2 shadow-sm transition-all hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Send message"
           >
             <Send className="h-4 w-4" />
@@ -255,8 +255,8 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
 
 function BotAvatar() {
   return (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
-      <Bot className="h-3.5 w-3.5 text-white" />
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+      <Bot className="h-3.5 w-3.5" />
     </div>
   );
 }
