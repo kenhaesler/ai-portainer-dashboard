@@ -128,7 +128,7 @@ function VirtualizedLogView({
   );
 
   return (
-    <section className="relative overflow-hidden rounded-xl border bg-slate-950">
+    <section className="relative z-10 overflow-hidden rounded-xl border bg-slate-950">
       {!autoScroll && (
         <button
           onClick={() => {
@@ -299,7 +299,7 @@ export default function LogViewerPage() {
         <p className="text-muted-foreground">Live tail, regex search, level filtering, and multi-container aggregation.</p>
       </div>
 
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <section className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Endpoint</span>

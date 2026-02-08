@@ -31,6 +31,10 @@ vi.mock('../services/llm-client.js', () => ({
   isOllamaAvailable: vi.fn(),
 }));
 
+vi.mock('../services/prompt-store.js', () => ({
+  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
+}));
+
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
     info: vi.fn(),
