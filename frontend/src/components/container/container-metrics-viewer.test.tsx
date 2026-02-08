@@ -79,4 +79,19 @@ describe('ContainerMetricsViewer', () => {
     expect(screen.getByText('No connected networks found for this container')).toBeInTheDocument();
     expect(screen.queryByTestId('bar-chart')).not.toBeInTheDocument();
   });
+
+  it('uses a provided time range when controlled by parent', () => {
+    render(
+      <ContainerMetricsViewer
+        endpointId={1}
+        containerId="c1"
+        containerNetworks={['frontend']}
+        showTimeRangeSelector={false}
+        timeRange="6h"
+      />
+    );
+
+    expect(mockUseContainerMetrics).toHaveBeenCalledWith(1, 'c1', 'cpu', '6h');
+    expect(mockUseContainerMetrics).toHaveBeenCalledWith(1, 'c1', 'memory', '6h');
+  });
 });

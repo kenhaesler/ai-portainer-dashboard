@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
+import { useStacks } from '@/hooks/use-stacks';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -13,6 +14,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { formatDate, truncate } from '@/lib/utils';
 
 export default function WorkloadExplorerPage() {
@@ -37,27 +39,43 @@ export default function WorkloadExplorerPage() {
   };
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
-    setFilters(endpointId, selectedStack);
+    setFilters(endpointId, undefined);
   };
 
   const setSelectedStack = (stackName: string | undefined) => {
     setFilters(selectedEndpoint, stackName);
   };
 
-  const clearStackFilter = () => {
-    setFilters(selectedEndpoint, undefined);
-  };
-
   const { data: endpoints } = useEndpoints();
+  const { data: stacks } = useStacks();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
+  const knownStackNames = useMemo(() => {
+    if (!stacks) return [];
+    return stacks
+      .filter((stack) => selectedEndpoint === undefined || stack.endpointId === selectedEndpoint)
+      .map((stack) => stack.name);
+  }, [stacks, selectedEndpoint]);
+
+  const availableStacks = useMemo(() => {
+    if (!containers) return [];
+    const stackNames = new Set<string>(knownStackNames);
+    for (const container of containers) {
+      const resolvedStack = resolveContainerStackName(container, knownStackNames);
+      if (resolvedStack) {
+        stackNames.add(resolvedStack);
+      }
+    }
+    return [...stackNames].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+  }, [containers, knownStackNames]);
+
   // Filter containers by stack if stack parameter is present
   const filteredContainers = useMemo(() => {
     if (!containers || !selectedStack) return containers;
-    return containers.filter(c => c.labels['com.docker.compose.project'] === selectedStack);
-  }, [containers, selectedStack]);
+    return containers.filter((container) => resolveContainerStackName(container, knownStackNames) === selectedStack);
+  }, [containers, selectedStack, knownStackNames]);
 
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
@@ -181,20 +199,24 @@ export default function WorkloadExplorerPage() {
           />
         </div>
 
-        {selectedStack && (
-          <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 dark:border-blue-900/30 dark:bg-blue-900/20">
-            <span className="text-sm font-medium text-blue-900 dark:text-blue-300">
-              Stack: {selectedStack}
-            </span>
-            <button
-              onClick={clearStackFilter}
-              className="inline-flex items-center justify-center rounded-sm p-0.5 text-blue-700 hover:bg-blue-200 dark:text-blue-400 dark:hover:bg-blue-900/40"
-              title="Clear stack filter"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <label htmlFor="stack-select" className="text-sm font-medium">
+            Stack
+          </label>
+          <ThemedSelect
+            id="stack-select"
+            value={selectedStack ?? '__all__'}
+            onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
+            options={[
+              { value: '__all__', label: 'All stacks' },
+              ...availableStacks.map((stackName) => ({
+                value: stackName,
+                label: stackName,
+              })),
+            ]}
+            disabled={!containers || availableStacks.length === 0}
+          />
+        </div>
 
         {filteredContainers && (
           <span className="text-sm text-muted-foreground">

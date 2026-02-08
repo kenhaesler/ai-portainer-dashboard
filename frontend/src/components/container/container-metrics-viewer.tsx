@@ -19,6 +19,8 @@ interface ContainerMetricsViewerProps {
   containerId: string;
   containerNetworks?: string[];
   showTimeRangeSelector?: boolean;
+  timeRange?: string;
+  onTimeRangeChange?: (timeRange: string) => void;
 }
 
 export function ContainerMetricsViewer({
@@ -26,8 +28,18 @@ export function ContainerMetricsViewer({
   containerId,
   containerNetworks = [],
   showTimeRangeSelector = true,
+  timeRange: controlledTimeRange,
+  onTimeRangeChange,
 }: ContainerMetricsViewerProps) {
-  const [timeRange, setTimeRange] = useState<string>('1h');
+  const [localTimeRange, setLocalTimeRange] = useState<string>('1h');
+  const timeRange = controlledTimeRange ?? localTimeRange;
+
+  const handleTimeRangeChange = (value: string) => {
+    if (controlledTimeRange === undefined) {
+      setLocalTimeRange(value);
+    }
+    onTimeRangeChange?.(value);
+  };
 
   // Fetch metrics for selected container
   const {
@@ -79,9 +91,10 @@ export function ContainerMetricsViewer({
           </label>
           <ThemedSelect
             value={timeRange}
-            onValueChange={(val) => setTimeRange(val)}
+            onValueChange={handleTimeRangeChange}
             options={[
               { value: '15m', label: 'Last 15 minutes' },
+              { value: '30m', label: 'Last 30 minutes' },
               { value: '1h', label: 'Last 1 hour' },
               { value: '6h', label: 'Last 6 hours' },
               { value: '24h', label: 'Last 24 hours' },

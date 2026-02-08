@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/hooks/use-container-detail';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
@@ -10,14 +11,24 @@ import { ContainerOverview } from '@/components/container/container-overview';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
 import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
 
+const TIME_RANGES = [
+  { value: '15m', label: '15 min' },
+  { value: '30m', label: '30 min' },
+  { value: '1h', label: '1 hour' },
+  { value: '6h', label: '6 hours' },
+  { value: '24h', label: '24 hours' },
+  { value: '7d', label: '7 days' },
+];
+
 export default function ContainerDetailPage() {
   const navigate = useNavigate();
   const { endpointId, containerId } = useParams<{ endpointId: string; containerId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [metricsTimeRange, setMetricsTimeRange] = useState('1h');
 
   // Parse URL params
   const parsedEndpointId = endpointId ? Number(endpointId) : undefined;
-  const defaultTab = searchParams.get('tab') || 'overview';
+  const activeTab = searchParams.get('tab') || 'overview';
 
   // Fetch container details
   const {
@@ -120,12 +131,35 @@ export default function ContainerDetailPage() {
             </p>
           </div>
         </div>
-        <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+        <div className="flex items-center gap-2" data-testid="metrics-header-controls">
+          {activeTab === 'metrics' && container.state === 'running' && (
+            <div className="flex items-center gap-2" data-testid="metrics-time-range-control">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <div className="flex rounded-md border border-input overflow-hidden" data-testid="time-range-selector">
+                {TIME_RANGES.map((range) => (
+                  <button
+                    key={range.value}
+                    type="button"
+                    onClick={() => setMetricsTimeRange(range.value)}
+                    className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                      metricsTimeRange === range.value
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-background hover:bg-muted'
+                    }`}
+                  >
+                    {range.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+        </div>
       </div>
 
       {/* Tabs */}
       <Tabs.Root
-        value={defaultTab}
+        value={activeTab}
         onValueChange={handleTabChange}
         className="space-y-6"
       >
@@ -170,6 +204,9 @@ export default function ContainerDetailPage() {
               endpointId={container.endpointId}
               containerId={container.id}
               containerNetworks={container.networks}
+              timeRange={metricsTimeRange}
+              onTimeRangeChange={setMetricsTimeRange}
+              showTimeRangeSelector={false}
             />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center">
