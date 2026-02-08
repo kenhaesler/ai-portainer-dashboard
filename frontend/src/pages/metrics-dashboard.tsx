@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  Bot,
   Cpu,
   MemoryStick,
   Network,
@@ -30,6 +31,8 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { AiMetricsSummary } from '@/components/metrics/ai-metrics-summary';
+import { InlineChatPanel } from '@/components/metrics/inline-chat-panel';
+import { useLlmModels } from '@/hooks/use-llm-models';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
 import {
@@ -113,7 +116,12 @@ export default function MetricsDashboardPage() {
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState('1h');
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [chatOpen, setChatOpen] = useState(false);
   const { interval, setInterval } = useAutoRefresh(0);
+
+  // Check if LLM is available (hide Ask AI button when Ollama is down)
+  const { data: llmModels } = useLlmModels();
+  const llmAvailable = (llmModels?.models?.length ?? 0) > 0;
 
   // Fetch endpoints
   const { data: endpoints, isLoading: endpointsLoading } = useEndpoints();
@@ -347,6 +355,15 @@ export default function MetricsDashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {hasSelection && llmAvailable && (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-all hover:shadow-md"
+            >
+              <Bot className="h-4 w-4" />
+              Ask AI
+            </button>
+          )}
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
           <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
         </div>
@@ -861,6 +878,23 @@ export default function MetricsDashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Inline Chat Panel */}
+      {selectedContainerData && selectedEndpoint && (
+        <InlineChatPanel
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          context={{
+            containerId: selectedContainerData.id,
+            containerName: selectedContainerData.name,
+            endpointId: selectedEndpoint,
+            endpointName: endpoints?.find((ep) => ep.id === selectedEndpoint)?.name,
+            timeRange,
+            cpuAvg: stats.cpu.avg,
+            memoryAvg: stats.memory.avg,
+          }}
+        />
+      )}
     </div>
   );
 }

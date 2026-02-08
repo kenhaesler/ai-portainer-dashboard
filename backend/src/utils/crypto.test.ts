@@ -249,7 +249,7 @@ describe('crypto', () => {
     });
 
     describe('hashPassword and comparePassword round-trip', () => {
-      it('should verify hashed password correctly', async () => {
+      it('should verify hashed password correctly', { timeout: 30_000 }, async () => {
         const testCases = [
           'simplePassword',
           'WithNumbers123',

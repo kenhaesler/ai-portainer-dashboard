@@ -25,6 +25,7 @@ EXTERNAL_NETWORKS=("app-frontend-net" "app-backend-net")
 
 # Load environment variables
 if [ -f "$PROJECT_DIR/.env" ]; then
+  # shellcheck disable=SC2046
   export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs)
 fi
 
