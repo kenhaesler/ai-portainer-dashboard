@@ -268,5 +268,32 @@ describe('llm-tools', () => {
       expect(result![0].tool).toBe('navigate_to');
       expect(result![0].arguments).toEqual({ page: 'ai-monitor' });
     });
+
+    it('should recognize MCP-prefixed tool names', () => {
+      const input = JSON.stringify({
+        tool_calls: [
+          { tool: 'mcp__kali-mcp__run_allowed', arguments: { cmd: 'nmap -sV 172.20.0.5', timeout_sec: 60 } },
+        ],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('mcp__kali-mcp__run_allowed');
+      expect(result![0].arguments).toEqual({ cmd: 'nmap -sV 172.20.0.5', timeout_sec: 60 });
+    });
+
+    it('should recognize MCP tool calls inside markdown code blocks', () => {
+      const input = '```json\n{"tool_calls": [{"tool": "mcp__kali-mcp__run_allowed", "arguments": {"cmd": "whoami"}}]}\n```';
+      const result = parseToolCalls(input);
+      expect(result).toHaveLength(1);
+      expect(result![0].tool).toBe('mcp__kali-mcp__run_allowed');
+    });
+
+    it('should reject invalid MCP-prefixed names missing second separator', () => {
+      const input = JSON.stringify({
+        tool_calls: [{ tool: 'mcp__noseparator', arguments: {} }],
+      });
+      const result = parseToolCalls(input);
+      expect(result).toBeNull();
+    });
   });
 });
