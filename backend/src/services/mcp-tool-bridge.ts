@@ -82,6 +82,37 @@ export function collectAllTools(): OllamaToolDefinition[] {
   return [...builtinTools, ...mcpTools];
 }
 
+// ─── System Prompt Supplement ────────────────────────────────────────────
+
+/** Build a text description of connected MCP tools for the system prompt. */
+export function getMcpToolPrompt(): string {
+  const mcpTools = getAllMcpTools();
+  if (mcpTools.length === 0) return '';
+
+  const descriptions = mcpTools.map((tool) => {
+    const params = tool.inputSchema.properties
+      ? Object.entries(tool.inputSchema.properties as Record<string, { type?: string; description?: string }>)
+          .map(([name, prop]) => {
+            const req = (tool.inputSchema.required as string[] | undefined)?.includes(name) ? ' (required)' : ' (optional)';
+            return `    - ${name}: ${prop.description || prop.type || 'any'}${req}`;
+          })
+          .join('\n')
+      : '    (no parameters)';
+    return `- **${tool.name}** (MCP server: ${tool.serverName}): ${tool.description}\n  Parameters:\n${params}`;
+  }).join('\n\n');
+
+  return `\n\n## External MCP Tools
+
+You also have access to external tools from connected MCP servers. **You MUST use these tools when the user asks you to — do NOT just explain how to use them manually.**
+
+${descriptions}
+
+To call an MCP tool, use the same tool_calls JSON format with the prefixed name \`mcp__<server>__<tool>\`.
+For example: \`{"tool_calls": [{"tool": "mcp__kali-mcp__run_allowed", "arguments": {"cmd": "nmap -sV 172.20.0.5"}}]}\`
+
+**CRITICAL: When the user asks you to run a command or use an MCP tool, ALWAYS execute it via tool_calls. Never just describe the steps — actually call the tool.**`;
+}
+
 // ─── Route Tool Calls ───────────────────────────────────────────────────
 
 export async function routeToolCall(call: OllamaToolCall): Promise<ToolCallResult> {

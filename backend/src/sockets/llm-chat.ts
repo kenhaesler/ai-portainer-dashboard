@@ -9,7 +9,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
-import { collectAllTools, routeToolCalls, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
+import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -481,6 +481,7 @@ export function setupLlmNamespace(ns: Namespace) {
       // Build infrastructure context
       const infrastructureContext = await buildInfrastructureContext();
       const toolPrompt = getToolSystemPrompt();
+      const mcpToolPrompt = getMcpToolPrompt();
 
       const additionalContext = data.context ? formatChatContext(data.context) : '';
       const systemPromptCore = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
@@ -490,7 +491,7 @@ ${additionalContext}
 ${infrastructureContext}
 
 Provide concise, actionable responses. Use markdown formatting for code blocks and lists. When suggesting actions, explain the reasoning and potential impact.`;
-      const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}`;
+      const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}${mcpToolPrompt}`;
       const systemPromptWithoutTools = `${systemPromptCore}\n\nTool calling is temporarily unavailable for this response. Do not output tool_calls JSON. Provide the best direct answer you can from available context.`;
 
       history.push({ role: 'user', content: data.text });
