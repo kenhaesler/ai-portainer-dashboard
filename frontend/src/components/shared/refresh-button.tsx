@@ -10,7 +10,7 @@ interface RefreshButtonProps {
 }
 
 export function RefreshButton({ onClick, isLoading, className, onForceRefresh }: RefreshButtonProps) {
-  const MIN_SPIN_MS = 900;
+  const MIN_SPIN_MS = 1500;
   const [showSpin, setShowSpin] = useState(Boolean(isLoading));
   const spinStartedAtRef = useRef(0);
   const stopTimerRef = useRef<number | null>(null);
