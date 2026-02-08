@@ -48,6 +48,9 @@ vi.mock('@/hooks/use-prompt-profiles', () => ({
   useDeleteProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDuplicateProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSwitchProfile: () => ({ mutateAsync: (...args: unknown[]) => mockSwitchProfileAsync(...args), isPending: false }),
+  useExportProfile: () => ({ mutate: vi.fn(), isPending: false }),
+  useImportPreview: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useImportApply: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const mockTestPromptMutate = vi.fn();

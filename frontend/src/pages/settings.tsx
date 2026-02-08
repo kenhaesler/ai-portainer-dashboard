@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   Palette,
@@ -47,6 +47,7 @@ import {
   Zap,
   Copy,
   Layers,
+  Upload,
 } from 'lucide-react';
 import {
   useThemeStore,
@@ -73,8 +74,13 @@ import {
   useDeleteProfile,
   useDuplicateProfile,
   useSwitchProfile,
+  useExportProfile,
+  useImportPreview,
+  useImportApply,
   type PromptProfile,
   type PromptProfileFeatureConfig,
+  type PromptExportData,
+  type ImportPreviewResponse,
 } from '@/hooks/use-prompt-profiles';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/hooks/use-llm-models';
@@ -1799,19 +1805,63 @@ interface PromptFeatureInfo {
 
 function ProfileSelector({
   onProfileSwitch,
+  onImportPreview,
 }: {
   onProfileSwitch: () => void;
+  onImportPreview: (data: PromptExportData, preview: ImportPreviewResponse) => void;
 }) {
   const { data: profileData, isLoading } = usePromptProfiles();
   const createProfile = useCreateProfile();
   const deleteProfileMut = useDeleteProfile();
   const duplicateProfile = useDuplicateProfile();
   const switchProfileMut = useSwitchProfile();
+  const exportProfile = useExportProfile();
+  const importPreview = useImportPreview();
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = () => {
+    exportProfile.mutate({ profileId: activeId });
+  };
+
+  const handleImportClick = () => {
+    setImportError(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file) return;
+
+    if (file.size > 1024 * 1024) {
+      setImportError('File too large (max 1 MB)');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as PromptExportData;
+      if (typeof parsed.version !== 'number' || typeof parsed.features !== 'object') {
+        setImportError('Invalid file format: missing required fields');
+        return;
+      }
+      const preview = await importPreview.mutateAsync(parsed);
+      setImportError(null);
+      onImportPreview(parsed, preview);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setImportError('Invalid JSON file');
+      } else {
+        setImportError(err instanceof Error ? err.message : 'Failed to parse import file');
+      }
+    }
+  };
 
   const profiles = profileData?.profiles ?? [];
   const activeId = profileData?.activeProfileId ?? 'default';
@@ -1901,8 +1951,50 @@ function ProfileSelector({
               Delete
             </button>
           )}
+
+          <span className="text-muted-foreground">|</span>
+
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exportProfile.isPending}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground border border-input rounded-md px-2.5 py-1.5 hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exportProfile.isPending ? 'Exporting...' : 'Export'}
+          </button>
+          <button
+            type="button"
+            onClick={handleImportClick}
+            disabled={importPreview.isPending}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground border border-input rounded-md px-2.5 py-1.5 hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {importPreview.isPending ? 'Reading...' : 'Import'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={(e) => void handleFileSelected(e)}
+          />
         </div>
       </div>
+
+      {importError && (
+        <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-500/5 p-3 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+          <p className="text-sm text-red-600 dark:text-red-400">{importError}</p>
+          <button
+            type="button"
+            onClick={() => setImportError(null)}
+            className="ml-auto text-red-400 hover:text-red-300"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {activeProfile && (
         <p className="text-xs text-muted-foreground pl-6">
@@ -2195,6 +2287,120 @@ function PromptTestPanel({
   );
 }
 
+function ImportPreviewPanel({
+  preview,
+  importData,
+  features,
+  onCancel,
+  onApply,
+  isApplying,
+}: {
+  preview: ImportPreviewResponse;
+  importData: PromptExportData;
+  features: PromptFeatureInfo[];
+  onCancel: () => void;
+  onApply: () => void;
+  isApplying: boolean;
+}) {
+  const featureLabelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const f of features) map[f.key] = f.label;
+    return map;
+  }, [features]);
+
+  const changedEntries = Object.entries(preview.changes).filter(([, c]) => c.status !== 'unchanged');
+  const unchangedCount = Object.values(preview.changes).filter((c) => c.status === 'unchanged').length;
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium flex items-center gap-2">
+          <Upload className="h-4 w-4" />
+          Import Preview
+        </h4>
+        <button type="button" onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        Importing from "<strong>{preview.profile}</strong>" ({preview.featureCount} feature{preview.featureCount !== 1 ? 's' : ''})
+        {preview.exportedFrom && <> exported from {preview.exportedFrom}</>}
+      </p>
+
+      <div className="flex items-center gap-4 text-xs">
+        {preview.summary.modified > 0 && (
+          <span className="bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded">
+            {preview.summary.modified} modified
+          </span>
+        )}
+        {preview.summary.added > 0 && (
+          <span className="bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded">
+            {preview.summary.added} added
+          </span>
+        )}
+        {unchangedCount > 0 && (
+          <span className="text-muted-foreground">
+            {unchangedCount} unchanged
+          </span>
+        )}
+      </div>
+
+      {changedEntries.length > 0 && (
+        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+          {changedEntries.map(([key, change]) => (
+            <div key={key} className="flex items-center gap-2 text-sm rounded px-2 py-1 bg-background/50">
+              <span className={change.status === 'added' ? 'text-emerald-500' : 'text-amber-500'}>
+                {change.status === 'added' ? '+' : '~'}
+              </span>
+              <span className="font-medium">{featureLabelMap[key] ?? key}</span>
+              {change.status === 'modified' && change.tokenDelta !== undefined && change.tokenDelta !== 0 && (
+                <span className="text-xs text-muted-foreground">
+                  ({change.tokenDelta > 0 ? '+' : ''}{change.tokenDelta} tokens)
+                </span>
+              )}
+              {change.after.model && (
+                <span className="text-xs bg-blue-500/10 text-blue-600 px-1.5 py-0.5 rounded">
+                  model: {change.after.model}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {changedEntries.length === 0 && (
+        <p className="text-sm text-muted-foreground">No changes to apply - all features already match.</p>
+      )}
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={isApplying || changedEntries.length === 0}
+          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {isApplying ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Importing...
+            </>
+          ) : (
+            'Import & Apply'
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AiPromptsTab({
   values,
   onChange,
@@ -2212,6 +2418,8 @@ export function AiPromptsTab({
   const updateSetting = useUpdateSetting();
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [importPreviewData, setImportPreviewData] = useState<{ data: PromptExportData; preview: ImportPreviewResponse } | null>(null);
+  const importApply = useImportApply();
 
   // Fetch models for per-feature model override
   const ollamaUrl = values['llm.ollama_url'] || 'http://host.docker.internal:11434';
@@ -2358,7 +2566,29 @@ export function AiPromptsTab({
   return (
     <div className="space-y-4">
       {/* Profile Selector */}
-      <ProfileSelector onProfileSwitch={handleProfileSwitch} />
+      <ProfileSelector
+        onProfileSwitch={handleProfileSwitch}
+        onImportPreview={(data, preview) => setImportPreviewData({ data, preview })}
+      />
+
+      {/* Import Preview Panel */}
+      {importPreviewData && (
+        <ImportPreviewPanel
+          preview={importPreviewData.preview}
+          importData={importPreviewData.data}
+          features={features}
+          onCancel={() => setImportPreviewData(null)}
+          onApply={() => {
+            importApply.mutate(importPreviewData.data, {
+              onSuccess: () => {
+                setImportPreviewData(null);
+                handleProfileSwitch();
+              },
+            });
+          }}
+          isApplying={importApply.isPending}
+        />
+      )}
 
       <div className="border-t border-border" />
 

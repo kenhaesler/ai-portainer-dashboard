@@ -25,6 +25,15 @@ vi.mock('../services/prompt-profile-store.js', () => ({
   switchProfile: (...args: unknown[]) => mockSwitchProfile(...args),
 }));
 
+vi.mock('../services/prompt-store.js', () => ({
+  PROMPT_FEATURES: [
+    { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
+    { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
+    { key: 'log_analyzer', label: 'Log Analyzer', description: 'Analyzes logs' },
+  ],
+  estimateTokens: (text: string) => Math.ceil(text.length / 4),
+}));
+
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
@@ -49,6 +58,30 @@ const CUSTOM_PROFILE = {
   prompts: { chat_assistant: { systemPrompt: 'Custom prompt' } },
   createdAt: '2025-01-02T00:00:00',
   updatedAt: '2025-01-02T00:00:00',
+};
+
+const SECURITY_PROFILE = {
+  id: 'security-1',
+  name: 'Security Audit',
+  description: 'Security-focused prompts',
+  isBuiltIn: true,
+  prompts: {
+    chat_assistant: { systemPrompt: 'Security-focused assistant', model: 'llama3.2:70b', temperature: 0.3 },
+    anomaly_explainer: { systemPrompt: 'Security anomaly analysis' },
+  },
+  createdAt: '2025-01-01T00:00:00',
+  updatedAt: '2025-01-01T00:00:00',
+};
+
+const VALID_IMPORT_DATA = {
+  version: 1,
+  exportedAt: '2026-02-08T14:30:00Z',
+  exportedFrom: 'dashboard-prod-01',
+  profile: 'Security Audit',
+  features: {
+    chat_assistant: { systemPrompt: 'Imported security prompt', model: 'llama3.2:70b', temperature: 0.3 },
+    anomaly_explainer: { systemPrompt: 'Imported anomaly prompt', model: null, temperature: null },
+  },
 };
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -305,6 +338,207 @@ describe('prompt-profiles routes', () => {
         url: '/api/prompt-profiles/switch',
         headers: { authorization: 'Bearer test' },
         payload: { id: 'nonexistent' },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  // ── Export Tests ──────────────────────────────────────────────────
+
+  describe('GET /api/prompt-profiles/export', () => {
+    it('exports the active profile as JSON', async () => {
+      mockGetActiveProfileId.mockReturnValue('security-1');
+      mockGetProfileById.mockReturnValue(SECURITY_PROFILE);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/prompt-profiles/export',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('application/json');
+      expect(response.headers['content-disposition']).toContain('attachment');
+      expect(response.headers['content-disposition']).toContain('security-audit');
+
+      const body = JSON.parse(response.body);
+      expect(body.version).toBe(1);
+      expect(body.exportedAt).toBeDefined();
+      expect(body.exportedFrom).toBeDefined();
+      expect(body.profile).toBe('Security Audit');
+      expect(body.features.chat_assistant.systemPrompt).toBe('Security-focused assistant');
+      expect(body.features.chat_assistant.model).toBe('llama3.2:70b');
+    });
+
+    it('exports a specific profile by ID', async () => {
+      mockGetProfileById.mockReturnValue(CUSTOM_PROFILE);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/prompt-profiles/export?profileId=custom-1',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.profile).toBe('My Custom');
+    });
+
+    it('returns 404 for nonexistent profile', async () => {
+      mockGetProfileById.mockReturnValue(undefined);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/prompt-profiles/export?profileId=nonexistent',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
+  // ── Import Preview Tests ──────────────────────────────────────────
+
+  describe('POST /api/prompt-profiles/import/preview', () => {
+    it('returns a diff preview for valid import data', async () => {
+      mockGetActiveProfileId.mockReturnValue('custom-1');
+      mockGetProfileById.mockReturnValue(CUSTOM_PROFILE);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import/preview',
+        headers: { authorization: 'Bearer test' },
+        payload: VALID_IMPORT_DATA,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.valid).toBe(true);
+      expect(body.profile).toBe('Security Audit');
+      expect(body.featureCount).toBe(2);
+      expect(body.summary.modified).toBe(1); // chat_assistant is modified
+      expect(body.summary.added).toBe(1); // anomaly_explainer is new
+      expect(body.summary.unchanged).toBe(0);
+      expect(body.changes.chat_assistant.status).toBe('modified');
+      expect(body.changes.anomaly_explainer.status).toBe('added');
+    });
+
+    it('detects unchanged features', async () => {
+      mockGetActiveProfileId.mockReturnValue('security-1');
+      mockGetProfileById.mockReturnValue(SECURITY_PROFILE);
+
+      const sameData = {
+        ...VALID_IMPORT_DATA,
+        features: {
+          chat_assistant: { systemPrompt: 'Security-focused assistant', model: 'llama3.2:70b', temperature: 0.3 },
+        },
+      };
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import/preview',
+        headers: { authorization: 'Bearer test' },
+        payload: sameData,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.summary.unchanged).toBe(1);
+      expect(body.changes.chat_assistant.status).toBe('unchanged');
+    });
+
+    it('rejects invalid version number', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import/preview',
+        headers: { authorization: 'Bearer test' },
+        payload: { ...VALID_IMPORT_DATA, version: 2 },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toContain('Invalid');
+    });
+
+    it('rejects invalid feature keys', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import/preview',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          ...VALID_IMPORT_DATA,
+          features: { not_a_real_feature: { systemPrompt: 'test' } },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toContain('Invalid');
+    });
+
+    it('rejects missing required fields', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import/preview',
+        headers: { authorization: 'Bearer test' },
+        payload: { version: 1 },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
+
+  // ── Import Apply Tests ────────────────────────────────────────────
+
+  describe('POST /api/prompt-profiles/import', () => {
+    it('applies valid import to the active profile', async () => {
+      mockGetActiveProfileId.mockReturnValue('custom-1');
+      mockGetProfileById.mockReturnValue(CUSTOM_PROFILE);
+      const updatedProfile = {
+        ...CUSTOM_PROFILE,
+        prompts: {
+          chat_assistant: { systemPrompt: 'Imported security prompt', model: 'llama3.2:70b', temperature: 0.3 },
+          anomaly_explainer: { systemPrompt: 'Imported anomaly prompt' },
+        },
+      };
+      mockUpdateProfile.mockReturnValue(updatedProfile);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import',
+        headers: { authorization: 'Bearer test' },
+        payload: VALID_IMPORT_DATA,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().success).toBe(true);
+      expect(mockUpdateProfile).toHaveBeenCalledWith('custom-1', {
+        prompts: expect.objectContaining({
+          chat_assistant: { systemPrompt: 'Imported security prompt', model: 'llama3.2:70b', temperature: 0.3 },
+          anomaly_explainer: { systemPrompt: 'Imported anomaly prompt' },
+        }),
+      });
+    });
+
+    it('rejects invalid import data', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import',
+        headers: { authorization: 'Bearer test' },
+        payload: { version: 99, features: {} },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('returns 404 when active profile not found', async () => {
+      mockGetActiveProfileId.mockReturnValue('deleted-profile');
+      mockGetProfileById.mockReturnValue(undefined);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/prompt-profiles/import',
+        headers: { authorization: 'Bearer test' },
+        payload: VALID_IMPORT_DATA,
       });
 
       expect(response.statusCode).toBe(404);
