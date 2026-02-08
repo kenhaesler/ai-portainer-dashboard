@@ -3,12 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
-import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { useMcpServers } from '@/hooks/use-mcp';
-import 'highlight.js/styles/tokyo-night-dark.css';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',
@@ -465,7 +463,7 @@ function MarkdownContent({ content }: { content: string }) {
     <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-pre:bg-zinc-900 prose-pre:shadow-lg prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-li:text-[13px] prose-td:text-[13px] prose-th:text-xs">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[]}
         components={{
           h1: ({ children }) => <h1 className="mb-3 pb-2 border-b border-border text-lg">{children}</h1>,
           h2: ({ children }) => <h2 className="mt-4 mb-2 pb-1.5 border-b border-border/50 text-base">{children}</h2>,

@@ -539,17 +539,16 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
               // Add tool context and get final streamed response.
               // Use a neutral assistant message — nativeResult.content often
               // contains "I can't run this" text that poisons the follow-up.
-              // Send each tool result as role: 'tool' so the model recognises
-              // them as actual tool outputs (Ollama native tool calling format).
+              // Use role: 'system' for tool results since the follow-up streaming
+              // call doesn't use native tool format and small models may not
+              // understand role: 'tool' outside of a native tool conversation.
               messages = [
                 ...messages,
-                { role: 'assistant', content: `Calling tools: ${toolNames.join(', ')}` },
-                ...results.map(r => ({
-                  role: 'tool' as const,
-                  content: r.success
-                    ? (typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2))
-                    : `Error: ${r.error}`,
-                })),
+                { role: 'assistant', content: `I executed the following tools: ${toolNames.join(', ')}` },
+                {
+                  role: 'system',
+                  content: `## Tool Execution Results\n\nThe tools have been executed successfully. Present these results to the user in a clear, helpful response.\n\n${formatToolResults(results)}`,
+                },
               ];
               toolIteration++;
               // Fall through to streaming loop for final response
