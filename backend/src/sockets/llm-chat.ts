@@ -208,6 +208,7 @@ async function streamLlmCall(
         model: selectedModel,
         messages,
         stream: true,
+        max_tokens: llmConfig.maxTokens,
       }),
       signal,
     });
@@ -249,6 +250,7 @@ async function streamLlmCall(
       model: selectedModel,
       messages,
       stream: true,
+      options: { num_predict: llmConfig.maxTokens },
     });
 
     for await (const chunk of response) {
@@ -280,6 +282,7 @@ async function streamOllamaRawCall(
       model: selectedModel,
       messages,
       stream: true,
+      options: { num_predict: llmConfig.maxTokens },
     }),
     signal,
   });
@@ -447,6 +450,7 @@ async function callOllamaWithNativeTools(
       function: t.function,
     })),
     stream: false,
+    options: { num_predict: llmConfig.maxTokens },
   });
 
   const content = response.message?.content || '';
