@@ -205,6 +205,7 @@ function ActionRow({
   isRejecting,
   isExecuting,
 }: ActionRowProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const actionType = action.action_type || action.type || 'Unknown';
   const containerId = action.container_id || action.containerId || '';
   const containerName = action.container_name || action.containerName || 'unknown';
@@ -220,6 +221,23 @@ function ActionRow({
     : parsedAnalysis?.severity === 'warning'
       ? 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300'
       : 'text-blue-700 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300';
+  const structuredContentLength = parsedAnalysis
+    ? (
+      parsedAnalysis.root_cause.length
+      + parsedAnalysis.log_analysis.length
+      + parsedAnalysis.recommended_actions.reduce(
+        (total, recommendation) => total + recommendation.action.length + recommendation.rationale.length,
+        0,
+      )
+    )
+    : 0;
+  const shouldCollapse = parsedAnalysis
+    ? (
+      parsedAnalysis.log_analysis.length > 0
+      || parsedAnalysis.recommended_actions.length > 0
+      || structuredContentLength > 220
+    )
+    : rationale.length > 180;
 
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
@@ -250,9 +268,15 @@ function ActionRow({
           {createdAt ? formatDate(createdAt) : '-'}
         </span>
       </td>
-      <td className="p-4 max-w-sm">
-        {parsedAnalysis ? (
-          <div className="space-y-2 text-xs">
+      <td className="p-4 max-w-sm align-top">
+        <div className="space-y-2">
+          {parsedAnalysis ? (
+            <div
+              className={cn(
+                'space-y-2 text-xs',
+                shouldCollapse && !isExpanded && 'max-h-28 overflow-hidden'
+              )}
+            >
             <div className="flex flex-wrap items-center gap-2">
               <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
                 {severityLabel}
@@ -283,12 +307,28 @@ function ActionRow({
                 ))}
               </div>
             )}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground line-clamp-3" title={rationale}>
-            {rationale}
-          </p>
-        )}
+            </div>
+          ) : (
+            <p
+              className={cn(
+                'text-xs text-muted-foreground',
+                shouldCollapse && !isExpanded && 'line-clamp-3'
+              )}
+              title={rationale}
+            >
+              {rationale}
+            </p>
+          )}
+          {shouldCollapse && (
+            <button
+              onClick={() => setIsExpanded((prev) => !prev)}
+              className="text-xs font-medium text-primary hover:underline"
+              aria-expanded={isExpanded}
+            >
+              {isExpanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
       </td>
       <td className="p-4">
         <div className="flex items-center gap-2">
@@ -464,7 +504,7 @@ export default function RemediationPage() {
       `Container ID: ${containerId}`,
       `Endpoint ID: ${action.endpoint_id || action.endpointId || 'unknown'}`,
       `Status: ${action.status}`,
-      `AI Rationale: ${action.rationale || action.description || 'none provided'}`,
+      `Analysis Summary: ${action.rationale || action.description || 'none provided'}`,
       '',
       'Please explain:',
       '1) Why this action is appropriate',
@@ -609,7 +649,7 @@ export default function RemediationPage() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Suggested By</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">AI Rationale</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Analysis Summary</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
