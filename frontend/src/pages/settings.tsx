@@ -114,7 +114,7 @@ const DEFAULT_SETTINGS = {
     { key: 'llm.model', label: 'LLM Model', description: 'Model to use for AI features', type: 'string', defaultValue: 'llama3.2' },
     { key: 'llm.temperature', label: 'Temperature', description: 'Creativity of LLM responses (0-1)', type: 'number', defaultValue: '0.7', min: 0, max: 1, step: 0.1 },
     { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://host.docker.internal:11434' },
-    { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '2048', min: 256, max: 8192 },
+    { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '20000', min: 256, max: 128000 },
     { key: 'llm.custom_endpoint_enabled', label: 'Custom Endpoint Enabled', description: 'Use a custom OpenAI-compatible API endpoint', type: 'boolean', defaultValue: 'false' },
     { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'OpenAI-compatible chat completions URL', type: 'string', defaultValue: '' },
     { key: 'llm.custom_endpoint_token', label: 'Custom Endpoint Token', description: 'Bearer token for custom endpoint', type: 'password', defaultValue: '' },
@@ -146,6 +146,9 @@ const DEFAULT_SETTINGS = {
     { key: 'status.page.description', label: 'Page Description', description: 'Optional description shown below the title', type: 'string', defaultValue: '' },
     { key: 'status.page.show_incidents', label: 'Show Incidents', description: 'Display recent incidents on the status page', type: 'boolean', defaultValue: 'true' },
     { key: 'status.page.refresh_interval', label: 'Auto-Refresh Interval', description: 'How often the status page auto-refreshes (seconds)', type: 'number', defaultValue: '30', min: 10, max: 300 },
+  ],
+  mcp: [
+    { key: 'mcp.tool_timeout', label: 'Tool Timeout', description: 'Maximum execution time for MCP tool calls (seconds)', type: 'number', defaultValue: '60', min: 1, max: 600 },
   ],
   portainerBackup: [
     { key: 'portainer_backup.enabled', label: 'Enable Scheduled Backups', description: 'Automatically back up Portainer server configuration on a schedule', type: 'boolean', defaultValue: 'false' },
@@ -811,7 +814,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
               onChange={(e) => onChange('llm.max_tokens', e.target.value)}
               disabled={disabled}
               min={256}
-              max={8192}
+              max={128000}
               className="h-9 w-28 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             />
           </div>
@@ -2327,6 +2330,18 @@ export default function SettingsPage() {
 
       {/* MCP Servers */}
       <McpServersSection />
+
+      {/* MCP Tool Settings */}
+      <SettingsSection
+        title="MCP Tool Configuration"
+        icon={<Wrench className="h-5 w-5" />}
+        category="mcp"
+        settings={DEFAULT_SETTINGS.mcp}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        disabled={isSaving}
+      />
 
       {/* Status Page Settings */}
       <SettingsSection

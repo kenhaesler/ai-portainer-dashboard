@@ -114,6 +114,7 @@ services:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
       - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-whoami,id,uname,ip,df,free,ps,ss,ls,cat}
+      - MCP_TOOL_TIMEOUT=${MCP_TOOL_TIMEOUT:-60}
     networks:
       - dashboard-net
 

@@ -9,6 +9,7 @@ import {
   type ToolDefinition,
   type ToolCallResult,
 } from './llm-tools.js';
+import { getEffectiveMcpConfig } from './settings-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('mcp-tool-bridge');
@@ -101,6 +102,8 @@ export function getMcpToolPrompt(): string {
     return `- **${tool.name}** (MCP server: ${tool.serverName}): ${tool.description}\n  Parameters:\n${params}`;
   }).join('\n\n');
 
+  const { toolTimeout } = getEffectiveMcpConfig();
+
   return `\n\n## External MCP Tools
 
 You also have access to external tools from connected MCP servers. **You MUST use these tools when the user asks you to — do NOT just explain how to use them manually.**
@@ -108,7 +111,15 @@ You also have access to external tools from connected MCP servers. **You MUST us
 ${descriptions}
 
 To call an MCP tool, use the same tool_calls JSON format with the prefixed name \`mcp__<server>__<tool>\`.
-For example: \`{"tool_calls": [{"tool": "mcp__kali-mcp__run_allowed", "arguments": {"cmd": "nmap -sV 172.20.0.5"}}]}\`
+For example: \`{"tool_calls": [{"tool": "mcp__kali-mcp__run_allowed", "arguments": {"cmd": "nmap -sV 172.20.0.5", "timeout_sec": ${toolTimeout}}}]}\`
+The default timeout is ${toolTimeout} seconds. You do not need to specify timeout_sec unless you want a shorter value.
+
+### Timeout Guidance
+If a tool has a \`timeout_sec\` parameter, the default is ${toolTimeout} seconds which is sufficient for most commands. Recommended values:
+- Simple commands (whoami, id, cat): ${toolTimeout} (default)
+- Network scans (nmap -sn, nmap -p): ${toolTimeout}
+- Deep scans (nmap -sV, nmap -A): ${toolTimeout}
+- The maximum allowed timeout is ${toolTimeout} seconds
 
 **CRITICAL: When the user asks you to run a command or use an MCP tool, ALWAYS execute it via tool_calls. Never just describe the steps — actually call the tool.**`;
 }

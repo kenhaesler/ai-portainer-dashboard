@@ -6,7 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 HOST = os.getenv("MCP_HOST", "0.0.0.0")
 PORT = int(os.getenv("MCP_PORT", "8000"))
-MAX_TIMEOUT = 30
+MAX_TIMEOUT = int(os.getenv("MCP_TOOL_TIMEOUT", "60"))
 ALLOWED_COMMANDS = set(
     os.getenv("ALLOWED_COMMANDS", "whoami,id,uname,ip,df,free,ps,ss,ls,cat").split(",")
 )
@@ -22,7 +22,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def run_allowed(cmd: str, timeout_sec: int = 10) -> str:
+def run_allowed(cmd: str, timeout_sec: int = MAX_TIMEOUT) -> str:
     """Run one allowlisted command inside the container."""
     parts = shlex.split(cmd)
     if not parts:

@@ -140,6 +140,9 @@ export const envSchema = z.object({
   IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
   IMAGE_STALENESS_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
 
+  // MCP (Model Context Protocol)
+  MCP_TOOL_TIMEOUT: z.coerce.number().int().min(1).max(600).default(60),
+
   // eBPF Trace Ingestion (Grafana Beyla)
   TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
   TRACES_INGESTION_API_KEY: z.string().default(''),
