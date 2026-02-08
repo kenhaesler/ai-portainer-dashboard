@@ -33,8 +33,8 @@ const INFRA_SUGGESTIONS: Suggestion[] = [
 ];
 
 const MCP_SUGGESTIONS: Suggestion[] = [
-  { label: 'Network scan', description: 'Run nmap to discover open ports on a target', prompt: 'Run a quick nmap port scan against the web-platform stack' },
-  { label: 'Security recon', description: 'Identify services and OS fingerprints', prompt: 'Run a service version scan with nmap -sV on the web-frontend container' },
+  { label: 'Network scan', description: 'Use kali-mcp to discover open ports on a target', prompt: 'Use the kali-mcp to run a quick nmap port scan against the web-platform stack' },
+  { label: 'Security recon', description: 'Use kali-mcp to identify services and OS fingerprints', prompt: 'Use the kali-mcp to run a service version scan with nmap -sV on the web-frontend container' },
 ];
 
 const FALLBACK_SUGGESTIONS: Suggestion[] = [
