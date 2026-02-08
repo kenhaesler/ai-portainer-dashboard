@@ -34,7 +34,7 @@ export function getAuthHeaders(token: string | undefined): Record<string, string
 }
 
 interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
 }
 
@@ -536,14 +536,20 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
                 results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
               });
 
-              // Add tool context and get final streamed response
+              // Add tool context and get final streamed response.
+              // Use a neutral assistant message — nativeResult.content often
+              // contains "I can't run this" text that poisons the follow-up.
+              // Send each tool result as role: 'tool' so the model recognises
+              // them as actual tool outputs (Ollama native tool calling format).
               messages = [
                 ...messages,
-                { role: 'assistant', content: nativeResult.content || `Calling tools: ${toolNames.join(', ')}` },
-                {
-                  role: 'system',
-                  content: `## Tool Results\n\n${formatToolResults(results)}`,
-                },
+                { role: 'assistant', content: `Calling tools: ${toolNames.join(', ')}` },
+                ...results.map(r => ({
+                  role: 'tool' as const,
+                  content: r.success
+                    ? (typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2))
+                    : `Error: ${r.error}`,
+                })),
               ];
               toolIteration++;
               // Fall through to streaming loop for final response
