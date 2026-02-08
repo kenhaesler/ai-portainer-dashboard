@@ -22,7 +22,7 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
         {
           endpoint_id: 2,
           endpoint_name: 'staging-server',
-          status: 'planned',
+          status: 'not_deployed',
           exclusion_reason: null,
           deployment_profile: null,
           last_trace_at: null,
@@ -52,19 +52,44 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
           created_at: '2025-01-01',
           updated_at: '2025-01-01',
         },
+        {
+          endpoint_id: 5,
+          endpoint_name: 'remote-unreachable',
+          status: 'unreachable',
+          exclusion_reason: null,
+          deployment_profile: null,
+          last_trace_at: null,
+          last_verified_at: null,
+          created_at: '2025-01-01',
+          updated_at: '2025-01-01',
+        },
+        {
+          endpoint_id: 6,
+          endpoint_name: 'edge-agent-host',
+          status: 'incompatible',
+          exclusion_reason: null,
+          deployment_profile: null,
+          last_trace_at: null,
+          last_verified_at: null,
+          created_at: '2025-01-01',
+          updated_at: '2025-01-01',
+        },
       ],
     },
     isLoading: false,
   })),
   useEbpfCoverageSummary: vi.fn(() => ({
     data: {
-      total: 4,
+      total: 6,
       deployed: 1,
-      planned: 1,
+      planned: 0,
       excluded: 1,
       failed: 1,
       unknown: 0,
-      coveragePercent: 25,
+      not_deployed: 1,
+      unreachable: 1,
+      incompatible: 1,
+      coveragePercent: 17,
     },
     isLoading: false,
   })),
@@ -108,12 +133,12 @@ describe('EbpfCoveragePage', () => {
     renderWithProviders(<EbpfCoveragePage />);
     const summary = screen.getByTestId('coverage-summary');
     expect(summary).toBeTruthy();
-    expect(screen.getByText(/Coverage: 1\/4 endpoints \(25%\)/)).toBeTruthy();
-    expect(screen.getByText('Missing: 3')).toBeTruthy();
+    expect(screen.getByText(/Coverage: 1\/6 endpoints \(17%\)/)).toBeTruthy();
+    expect(screen.getByText('Missing: 5')).toBeTruthy();
     expect(screen.getByText('Failed: 1')).toBeTruthy();
   });
 
-  it('renders coverage table with endpoints', () => {
+  it('renders coverage table with all endpoints', () => {
     renderWithProviders(<EbpfCoveragePage />);
     const table = screen.getByTestId('coverage-table');
     expect(table).toBeTruthy();
@@ -121,14 +146,33 @@ describe('EbpfCoveragePage', () => {
     expect(screen.getByText('staging-server')).toBeTruthy();
     expect(screen.getByText('dev-box')).toBeTruthy();
     expect(screen.getByText('prod-cluster')).toBeTruthy();
+    expect(screen.getByText('remote-unreachable')).toBeTruthy();
+    expect(screen.getByText('edge-agent-host')).toBeTruthy();
   });
 
-  it('renders status badges for each endpoint', () => {
+  it('renders status badges with human-readable labels', () => {
     renderWithProviders(<EbpfCoveragePage />);
-    expect(screen.getByText('deployed')).toBeTruthy();
-    expect(screen.getByText('planned')).toBeTruthy();
-    expect(screen.getByText('excluded')).toBeTruthy();
-    expect(screen.getByText('failed')).toBeTruthy();
+    expect(screen.getByText('Deployed')).toBeTruthy();
+    expect(screen.getByText('Not Deployed')).toBeTruthy();
+    expect(screen.getByText('Excluded')).toBeTruthy();
+    expect(screen.getByText('Failed')).toBeTruthy();
+    expect(screen.getByText('Unreachable')).toBeTruthy();
+    expect(screen.getByText('Incompatible')).toBeTruthy();
+  });
+
+  it('renders hint text for new statuses', () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    const hints = screen.getAllByTestId('status-hint');
+    expect(hints.length).toBe(3); // not_deployed, unreachable, incompatible
+    expect(screen.getByText('Endpoint reachable but no Beyla container found')).toBeTruthy();
+    expect(screen.getByText('Could not connect to endpoint to check for Beyla')).toBeTruthy();
+    expect(screen.getByText('Endpoint type not supported (Edge Agent, ACI, etc.)')).toBeTruthy();
+  });
+
+  it('renders unreachable and incompatible counts in summary', () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    expect(screen.getByText('Unreachable: 1')).toBeTruthy();
+    expect(screen.getByText('Incompatible: 1')).toBeTruthy();
   });
 
   it('renders sync button', () => {
@@ -140,7 +184,7 @@ describe('EbpfCoveragePage', () => {
   it('renders verify buttons for each endpoint', () => {
     renderWithProviders(<EbpfCoveragePage />);
     const verifyButtons = screen.getAllByTestId('verify-btn');
-    expect(verifyButtons.length).toBe(4);
+    expect(verifyButtons.length).toBe(6);
   });
 
   it('renders table headers', () => {

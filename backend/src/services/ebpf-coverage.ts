@@ -4,7 +4,13 @@ import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('ebpf-coverage');
 
-export type CoverageStatus = 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown';
+export type CoverageStatus = 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown' | 'not_deployed' | 'unreachable' | 'incompatible';
+
+/** Portainer endpoint types compatible with Beyla eBPF tracing (Docker Standalone=1, Swarm=2) */
+export const BEYLA_COMPATIBLE_TYPES = new Set([1, 2]);
+
+/** Detection result from checking a single endpoint for Beyla */
+export type DetectionResult = 'deployed' | 'failed' | 'not_found' | 'unreachable' | 'incompatible';
 
 export interface CoverageRecord {
   endpoint_id: number;
@@ -25,6 +31,9 @@ export interface CoverageSummary {
   excluded: number;
   failed: number;
   unknown: number;
+  not_deployed: number;
+  unreachable: number;
+  incompatible: number;
   coveragePercent: number;
 }
 
@@ -56,21 +65,38 @@ export function updateCoverageStatus(
 
 /**
  * Detect Beyla status on a single endpoint by checking its containers.
- * Returns 'deployed' if a running beyla container exists, 'failed' if
- * one exists but is not running, or null if no beyla container found.
+ * Returns distinct statuses to differentiate failure modes:
+ * - 'deployed': Beyla container running
+ * - 'failed': Beyla container found but not running
+ * - 'not_found': Endpoint reachable, no Beyla container present
+ * - 'unreachable': Network/API error when querying endpoint
+ * - 'incompatible': Wrong endpoint type (Edge Agent, etc.)
  */
-async function detectBeylaOnEndpoint(endpointId: number): Promise<CoverageStatus | null> {
+export async function detectBeylaOnEndpoint(endpointId: number, endpointType?: number): Promise<DetectionResult> {
+  if (endpointType !== undefined && !BEYLA_COMPATIBLE_TYPES.has(endpointType)) {
+    return 'incompatible';
+  }
   try {
     const containers = await getContainers(endpointId, true);
     const beyla = containers.find((c) =>
       c.Image.toLowerCase().includes('grafana/beyla') ||
       c.Image.toLowerCase().includes('beyla'),
     );
-    if (!beyla) return null;
+    if (!beyla) return 'not_found';
     return beyla.State === 'running' ? 'deployed' : 'failed';
   } catch {
-    // Endpoint unreachable — can't detect
-    return null;
+    return 'unreachable';
+  }
+}
+
+/** Map detection results to coverage statuses stored in DB */
+function detectionToCoverageStatus(result: DetectionResult): CoverageStatus {
+  switch (result) {
+    case 'deployed': return 'deployed';
+    case 'failed': return 'failed';
+    case 'not_found': return 'not_deployed';
+    case 'unreachable': return 'unreachable';
+    case 'incompatible': return 'incompatible';
   }
 }
 
@@ -86,21 +112,29 @@ export async function syncEndpointCoverage(): Promise<number> {
   const db = getDb();
   let added = 0;
 
-  // Only query healthy (Status=1) endpoints for Beyla containers
   const upEndpoints = endpoints.filter((ep) => ep.Status === 1);
 
-  // Detect Beyla on all up endpoints in parallel
   const detectionResults = await Promise.allSettled(
     upEndpoints.map(async (ep) => ({
       id: ep.Id,
-      detected: await detectBeylaOnEndpoint(ep.Id),
+      detected: await detectBeylaOnEndpoint(ep.Id, ep.Type),
     })),
   );
 
   const detectedMap = new Map<number, CoverageStatus>();
   for (const result of detectionResults) {
-    if (result.status === 'fulfilled' && result.value.detected) {
-      detectedMap.set(result.value.id, result.value.detected);
+    if (result.status === 'fulfilled') {
+      detectedMap.set(result.value.id, detectionToCoverageStatus(result.value.detected));
+    }
+  }
+
+  for (const ep of endpoints) {
+    if (!detectedMap.has(ep.Id)) {
+      if (!BEYLA_COMPATIBLE_TYPES.has(ep.Type)) {
+        detectedMap.set(ep.Id, 'incompatible');
+      } else if (ep.Status !== 1) {
+        detectedMap.set(ep.Id, 'unreachable');
+      }
     }
   }
 
@@ -114,12 +148,10 @@ export async function syncEndpointCoverage(): Promise<number> {
     WHERE endpoint_id = ? AND endpoint_name != ?
   `);
 
-  // Auto-update status only for endpoints currently 'unknown' or auto-detected states
-  // Never overwrite manually set 'excluded' or 'planned'
   const autoUpdateStmt = db.prepare(`
     UPDATE ebpf_coverage
     SET status = ?, updated_at = datetime('now')
-    WHERE endpoint_id = ? AND status IN ('unknown', 'deployed', 'failed')
+    WHERE endpoint_id = ? AND status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible')
   `);
 
   const txn = db.transaction(() => {
@@ -130,7 +162,6 @@ export async function syncEndpointCoverage(): Promise<number> {
         added++;
       } else {
         updateNameStmt.run(ep.Name, ep.Id, ep.Name);
-        // Auto-update status if we detected something
         if (detectedMap.has(ep.Id)) {
           autoUpdateStmt.run(detected, ep.Id);
         }
@@ -153,11 +184,9 @@ export async function syncEndpointCoverage(): Promise<number> {
 export async function verifyCoverage(endpointId: number): Promise<{ verified: boolean; lastTraceAt: string | null; beylaRunning: boolean }> {
   const db = getDb();
 
-  // 1. Check for Beyla container on this endpoint
-  const beylaStatus = await detectBeylaOnEndpoint(endpointId);
-  const beylaRunning = beylaStatus === 'deployed';
+  const beylaDetection = await detectBeylaOnEndpoint(endpointId);
+  const beylaRunning = beylaDetection === 'deployed';
 
-  // 2. Check for recent eBPF spans
   const tableExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='spans'",
   ).get();
@@ -176,22 +205,13 @@ export async function verifyCoverage(endpointId: number): Promise<{ verified: bo
     lastTraceAt = recentSpan?.start_time ?? null;
   }
 
-  // 3. Determine status: deployed (running + traces), failed (container found but no traces or stopped), unknown (nothing found)
-  let newStatus: CoverageStatus | null = null;
-  if (beylaRunning) {
-    newStatus = 'deployed';
-  } else if (beylaStatus === 'failed') {
-    newStatus = 'failed';
-  }
-
-  // Update coverage record
+  const newStatus = detectionToCoverageStatus(beylaDetection);
   const verified = beylaRunning || lastTraceAt !== null;
 
-  if (newStatus) {
-    // Auto-update status (but don't overwrite 'excluded' or 'planned')
+  if (newStatus === 'deployed' || newStatus === 'failed') {
     prepareStmt(`
       UPDATE ebpf_coverage
-      SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed') THEN ? ELSE status END,
+      SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible') THEN ? ELSE status END,
           last_trace_at = COALESCE(?, last_trace_at),
           last_verified_at = datetime('now'),
           updated_at = datetime('now')
@@ -229,6 +249,9 @@ export function getCoverageSummary(): CoverageSummary {
     excluded: 0,
     failed: 0,
     unknown: 0,
+    not_deployed: 0,
+    unreachable: 0,
+    incompatible: 0,
   };
 
   for (const row of rows) {
