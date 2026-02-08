@@ -1778,3 +1778,23 @@ tr.keyboard-selected {
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
+
+/* ====== ICON THEMES ====== */
+/* Override lucide-react SVG strokeWidth via CSS.
+   lucide sets strokeWidth as an SVG attribute (low specificity),
+   so CSS stroke-width wins. !important ensures it beats any
+   inline style edge cases. */
+
+[data-icon-theme="light"] .lucide {
+  stroke-width: 1.25 !important;
+}
+
+[data-icon-theme="bold"] .lucide {
+  stroke-width: 2.75 !important;
+}
+
+[data-icon-theme="duotone"] .lucide {
+  stroke-width: 1.75 !important;
+  fill: currentColor;
+  fill-opacity: 0.12;
+}

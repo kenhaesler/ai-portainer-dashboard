@@ -17,7 +17,7 @@ const ALL_THEME_CLASSES = [
 ];
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { theme, themeClass } = useThemeStore();
+  const { theme, themeClass, iconTheme } = useThemeStore();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -42,6 +42,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.classList.add('dark');
     }
   }, [theme, themeClass]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (iconTheme === 'default') {
+      root.removeAttribute('data-icon-theme');
+    } else {
+      root.setAttribute('data-icon-theme', iconTheme);
+    }
+  }, [iconTheme]);
 
   useEffect(() => {
     if (theme !== 'system') return;

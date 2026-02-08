@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useThemeStore, DEFAULT_TOGGLE_THEMES } from './theme-store';
+import { useThemeStore, DEFAULT_TOGGLE_THEMES, DEFAULT_ICON_THEME } from './theme-store';
 
 describe('useThemeStore - dashboardBackground', () => {
   beforeEach(() => {
@@ -147,5 +147,36 @@ describe('useThemeStore - toggleThemes', () => {
   it('setToggleThemes replaces the pair', () => {
     useThemeStore.getState().setToggleThemes(['catppuccin-latte', 'catppuccin-mocha']);
     expect(useThemeStore.getState().toggleThemes).toEqual(['catppuccin-latte', 'catppuccin-mocha']);
+  });
+});
+
+describe('useThemeStore - iconTheme', () => {
+  beforeEach(() => {
+    useThemeStore.setState({ iconTheme: DEFAULT_ICON_THEME });
+  });
+
+  it('defaults to "default"', () => {
+    expect(useThemeStore.getState().iconTheme).toBe('default');
+  });
+
+  it('sets icon theme to "light"', () => {
+    useThemeStore.getState().setIconTheme('light');
+    expect(useThemeStore.getState().iconTheme).toBe('light');
+  });
+
+  it('sets icon theme to "bold"', () => {
+    useThemeStore.getState().setIconTheme('bold');
+    expect(useThemeStore.getState().iconTheme).toBe('bold');
+  });
+
+  it('sets icon theme to "duotone"', () => {
+    useThemeStore.getState().setIconTheme('duotone');
+    expect(useThemeStore.getState().iconTheme).toBe('duotone');
+  });
+
+  it('can toggle back to "default"', () => {
+    useThemeStore.getState().setIconTheme('bold');
+    useThemeStore.getState().setIconTheme('default');
+    expect(useThemeStore.getState().iconTheme).toBe('default');
   });
 });
