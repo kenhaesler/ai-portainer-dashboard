@@ -28,6 +28,10 @@ vi.mock('@/hooks/use-llm-models', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-mcp', () => ({
+  useMcpServers: vi.fn().mockReturnValue({ data: undefined }),
+}));
+
 vi.mock('@/providers/socket-provider', () => ({
   useSockets: () => ({ llmSocket: null }),
 }));
@@ -154,10 +158,10 @@ describe('LlmAssistantPage', () => {
     } as any);
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: 'Show me all running containers' }));
+    fireEvent.click(screen.getByRole('button', { name: /Running containers/i }));
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith('Show me all running containers', undefined, 'llama3.2');
+    expect(sendMessage).toHaveBeenCalledWith('Show me all running containers and their resource usage', undefined, 'llama3.2');
   });
 });
 

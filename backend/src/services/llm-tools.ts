@@ -9,6 +9,12 @@ import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('llm-tools');
 
+/** Check if a tool name is an MCP-prefixed name (e.g. mcp__kali-mcp__run_allowed). */
+function isMcpToolName(name: string): boolean {
+  if (!name.startsWith('mcp__')) return false;
+  return name.indexOf('__', 5) > 5; // must have a second __ separator
+}
+
 // ─── Tool Schema Definitions ───────────────────────────────────────────
 
 export interface ToolParameter {
@@ -817,7 +823,7 @@ function validateToolCalls(calls: unknown[]): ToolCallRequest[] | null {
       }
     }
 
-    if (!toolName || !executors[toolName]) continue;
+    if (!toolName || (!executors[toolName] && !isMcpToolName(toolName))) continue;
 
     if (typeof rawArgs === 'string') {
       try {

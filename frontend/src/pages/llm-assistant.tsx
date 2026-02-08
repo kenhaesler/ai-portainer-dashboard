@@ -3,11 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
-import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
-import 'highlight.js/styles/tokyo-night-dark.css';
+import { useMcpServers } from '@/hooks/use-mcp';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',
@@ -17,6 +16,35 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   list_anomalies: 'Checking anomalies',
   navigate_to: 'Generating link',
 };
+
+interface Suggestion {
+  label: string;
+  description: string;
+  prompt: string;
+}
+
+const INFRA_SUGGESTIONS: Suggestion[] = [
+  { label: 'Running containers', description: 'List all running containers with status and ports', prompt: 'Show me all running containers and their resource usage' },
+  { label: 'Anomaly detection', description: 'Check for critical insights or anomalies', prompt: 'Are there any critical insights or anomalies across my infrastructure?' },
+  { label: 'Resource metrics', description: 'CPU and memory usage for the busiest container', prompt: 'Which container is using the most CPU and memory right now?' },
+  { label: 'Container logs', description: 'Fetch recent logs for debugging', prompt: 'Show me recent logs for the backend service' },
+];
+
+const MCP_SUGGESTIONS: Suggestion[] = [
+  { label: 'Network scan', description: 'Use kali-mcp to discover open ports on a target', prompt: 'Use the kali-mcp to run a quick nmap port scan against the web-platform stack' },
+  { label: 'Security recon', description: 'Use kali-mcp to identify services and OS fingerprints', prompt: 'Use the kali-mcp to run a service version scan with nmap -sV on the web-frontend container' },
+];
+
+const FALLBACK_SUGGESTIONS: Suggestion[] = [
+  { label: 'Stack overview', description: 'Summarize stacks, services, and health', prompt: 'Give me an overview of all my Docker stacks and their health status' },
+  { label: 'Network topology', description: 'Describe container network connections', prompt: 'Describe the network topology and which containers can communicate' },
+];
+
+function useSuggestions(mcpServers?: import('@/hooks/use-mcp').McpServer[]): Suggestion[] {
+  const hasKaliMcp = mcpServers?.some(s => s.name.toLowerCase().includes('kali') && s.connected);
+  const mcpPart = hasKaliMcp ? MCP_SUGGESTIONS : FALLBACK_SUGGESTIONS;
+  return [...INFRA_SUGGESTIONS, ...mcpPart];
+}
 
 export default function LlmAssistantPage() {
   const location = useLocation();
@@ -28,6 +56,9 @@ export default function LlmAssistantPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isStreaming, currentResponse, activeToolCalls, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
   const { data: modelsData } = useLlmModels();
+  const { data: mcpServers } = useMcpServers();
+
+  const suggestions = useSuggestions(mcpServers);
 
   useEffect(() => {
     const state = location.state as { prefillPrompt?: string } | null;
@@ -148,20 +179,16 @@ export default function LlmAssistantPage() {
                 <p className="mt-2 text-sm text-muted-foreground max-w-md">
                   I have real-time access to your entire Docker infrastructure. Ask me about containers, stacks, resources, or troubleshooting.
                 </p>
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
-                  {[
-                    'Show me all running containers',
-                    'Are there any critical insights or anomalies?',
-                    'What are the CPU metrics for my busiest container?',
-                    'Show me recent logs for the backend service'
-                  ].map((suggestion, i) => (
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-3xl">
+                  {suggestions.map((s, i) => (
                     <button
                       key={i}
-                      onClick={() => handleSuggestedQuestionClick(suggestion)}
+                      onClick={() => handleSuggestedQuestionClick(s.prompt)}
                       disabled={isStreaming || isSending}
-                      className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-left hover:bg-accent hover:border-border transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-left hover:bg-accent hover:border-border transition-colors disabled:cursor-not-allowed disabled:opacity-50 flex flex-col gap-1"
                     >
-                      {suggestion}
+                      <span className="font-medium text-foreground">{s.label}</span>
+                      <span className="text-xs text-muted-foreground line-clamp-2">{s.description}</span>
                     </button>
                   ))}
                 </div>
@@ -436,7 +463,7 @@ function MarkdownContent({ content }: { content: string }) {
     <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-pre:bg-zinc-900 prose-pre:shadow-lg prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-li:text-[13px] prose-td:text-[13px] prose-th:text-xs">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[]}
         components={{
           h1: ({ children }) => <h1 className="mb-3 pb-2 border-b border-border text-lg">{children}</h1>,
           h2: ({ children }) => <h2 className="mt-4 mb-2 pb-1.5 border-b border-border/50 text-base">{children}</h2>,
@@ -469,7 +496,7 @@ function MarkdownContent({ content }: { content: string }) {
           ),
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
-            const codeContent = String(children).replace(/\n$/, '');
+            const codeContent = (children != null ? String(children) : '').replace(/\n$/, '');
             const isCodeBlock = match !== null;
 
             return isCodeBlock ? (

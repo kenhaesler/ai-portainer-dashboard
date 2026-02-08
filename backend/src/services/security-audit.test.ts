@@ -10,12 +10,20 @@ import {
 
 const mockGetEndpoints = vi.fn();
 const mockGetContainers = vi.fn();
+const mockGetContainerHostConfig = vi.fn();
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
+
+vi.mock('../utils/logger.js', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
+  }),
+}));
 
 vi.mock('./portainer-client.js', () => ({
   getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
   getContainers: (...args: unknown[]) => mockGetContainers(...args),
+  getContainerHostConfig: (...args: unknown[]) => mockGetContainerHostConfig(...args),
 }));
 
 vi.mock('./settings-store.js', () => ({
@@ -29,6 +37,7 @@ describe('security-audit service', () => {
     mockGetSetting.mockReturnValue(undefined);
 
     mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+    // List endpoint returns sparse HostConfig (only NetworkMode in practice)
     mockGetContainers.mockResolvedValue([
       {
         Id: 'c1',
@@ -38,12 +47,7 @@ describe('security-audit service', () => {
         State: 'running',
         Status: 'Up',
         Labels: {},
-        HostConfig: {
-          Privileged: false,
-          CapAdd: ['NET_ADMIN'],
-          NetworkMode: 'bridge',
-          PidMode: 'private',
-        },
+        HostConfig: { NetworkMode: 'bridge' },
       },
       {
         Id: 'c2',
@@ -53,14 +57,16 @@ describe('security-audit service', () => {
         State: 'running',
         Status: 'Up',
         Labels: {},
-        HostConfig: {
-          Privileged: false,
-          CapAdd: [],
-          NetworkMode: 'bridge',
-          PidMode: 'private',
-        },
+        HostConfig: { NetworkMode: 'bridge' },
       },
     ]);
+    // Inspect endpoint returns full HostConfig
+    mockGetContainerHostConfig.mockImplementation((endpointId: number, containerId: string) => {
+      if (containerId === 'c1') {
+        return Promise.resolve({ Privileged: false, CapAdd: ['NET_ADMIN'], NetworkMode: 'bridge', PidMode: 'private' });
+      }
+      return Promise.resolve({ Privileged: false, CapAdd: [], NetworkMode: 'bridge', PidMode: 'private' });
+    });
   });
 
   it('uses defaults when no ignore list setting exists', () => {
@@ -98,6 +104,26 @@ describe('security-audit service', () => {
     expect(api?.findings.length).toBeGreaterThan(0);
     expect(portainer?.ignored).toBe(true);
     expect(portainer?.findings).toHaveLength(0);
+  });
+
+  it('falls back to list HostConfig when inspect fails', async () => {
+    mockGetContainerHostConfig.mockRejectedValue(new Error('inspect timeout'));
+
+    const entries = await getSecurityAudit();
+    expect(entries).toHaveLength(2);
+    // Should still have entries — just with sparse HostConfig from list
+    const api = entries.find((entry) => entry.containerName === 'api');
+    expect(api?.posture.networkMode).toBe('bridge');
+    expect(api?.posture.capAdd).toEqual([]);
+  });
+
+  it('populates capabilities from inspect data', async () => {
+    mockGetSetting.mockReturnValue({ value: JSON.stringify([]) });
+
+    const entries = await getSecurityAudit();
+    const api = entries.find((entry) => entry.containerName === 'api');
+    expect(api?.posture.capAdd).toEqual(['NET_ADMIN']);
+    expect(api?.posture.privileged).toBe(false);
   });
 
   it('computes audit summary counts', () => {

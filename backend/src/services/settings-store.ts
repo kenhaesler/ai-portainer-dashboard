@@ -51,7 +51,18 @@ export function getEffectiveLlmConfig() {
   const customEnabled = getSetting('llm.custom_endpoint_enabled')?.value === 'true';
   const customEndpointUrl = getSetting('llm.custom_endpoint_url')?.value || config.OLLAMA_API_ENDPOINT;
   const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.OLLAMA_BEARER_TOKEN;
-  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken };
+  const maxTokens = parseInt(getSetting('llm.max_tokens')?.value || '20000', 10) || 20000;
+  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, maxTokens };
+}
+
+/**
+ * Read MCP config from the settings DB, falling back to env vars.
+ * Called per-request so that Settings page changes take effect immediately.
+ */
+export function getEffectiveMcpConfig() {
+  const config = getConfig();
+  const toolTimeout = parseInt(getSetting('mcp.tool_timeout')?.value || '', 10) || config.MCP_TOOL_TIMEOUT;
+  return { toolTimeout };
 }
 
 export function deleteSetting(key: string): boolean {
