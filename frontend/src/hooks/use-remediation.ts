@@ -23,6 +23,12 @@ export function useRemediationActions(status?: string) {
       const params: Record<string, string | undefined> = { status };
       return api.get<RemediationAction[]>('/api/remediation/actions', { params });
     },
+    // This query is mounted in multiple places (sidebar + remediation page).
+    // Prevent retry/focus bursts that can trigger transient 429 responses.
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 10_000,
   });
 }
 

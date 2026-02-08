@@ -77,9 +77,19 @@ export const themeOptions: { value: Theme; label: string; description: string }[
   { value: 'catppuccin-mocha', label: 'Catppuccin Mocha', description: 'Darkest pastel theme' },
 ];
 
+export type IconTheme = 'default' | 'light' | 'bold' | 'duotone';
+
+export const iconThemeOptions: { value: IconTheme; label: string; description: string }[] = [
+  { value: 'default', label: 'Default', description: 'Balanced stroke weight (standard)' },
+  { value: 'light', label: 'Light', description: 'Thin elegant lines' },
+  { value: 'bold', label: 'Bold', description: 'Thick strokes for high contrast' },
+  { value: 'duotone', label: 'Duotone', description: 'Soft fill with outline' },
+];
+
 export const DEFAULT_TOGGLE_THEMES: [Theme, Theme] = ['apple-light', 'apple-dark'];
 export const DEFAULT_THEME: Theme = 'apple-light';
 export const DEFAULT_DASHBOARD_BACKGROUND: DashboardBackground = 'gradient-mesh-particles';
+export const DEFAULT_ICON_THEME: IconTheme = 'default';
 
 interface ThemeState {
   theme: Theme;
@@ -89,6 +99,8 @@ interface ThemeState {
   toggleTheme: () => void;
   dashboardBackground: DashboardBackground;
   setDashboardBackground: (bg: DashboardBackground) => void;
+  iconTheme: IconTheme;
+  setIconTheme: (theme: IconTheme) => void;
   resolvedTheme: () => 'dark' | 'light';
   themeClass: () => string;
 }
@@ -107,6 +119,8 @@ export const useThemeStore = create<ThemeState>()(
       },
       dashboardBackground: DEFAULT_DASHBOARD_BACKGROUND,
       setDashboardBackground: (dashboardBackground) => set({ dashboardBackground }),
+      iconTheme: DEFAULT_ICON_THEME,
+      setIconTheme: (iconTheme) => set({ iconTheme }),
       resolvedTheme: () => {
         const { theme } = get();
         if (theme === 'system') {

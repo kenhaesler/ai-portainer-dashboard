@@ -233,6 +233,21 @@ describe('getRedisSystemInfo', () => {
   });
 });
 
+describe('Icon theme options', () => {
+  it('exports all 4 icon theme options from theme-store', async () => {
+    const { iconThemeOptions, DEFAULT_ICON_THEME } = await import('@/stores/theme-store');
+
+    expect(DEFAULT_ICON_THEME).toBe('default');
+    expect(iconThemeOptions).toHaveLength(4);
+    expect(iconThemeOptions.map((o: { value: string }) => o.value)).toEqual([
+      'default',
+      'light',
+      'bold',
+      'duotone',
+    ]);
+  });
+});
+
 describe('Settings tab structure', () => {
   it('validates settings page exports include the new tab-hosted panels', async () => {
     const usersModule = await import('./users');

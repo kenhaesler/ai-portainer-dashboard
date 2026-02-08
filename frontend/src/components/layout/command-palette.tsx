@@ -203,11 +203,11 @@ export function CommandPalette() {
             }
           }}
         >
-          <div className="flex items-center border-b border-border px-3">
+          <div className="mx-1 mt-2 flex items-center px-1">
             <Command.Input
               placeholder="Search or ask a question about your infrastructure..."
               className={cn(
-                'flex h-12 w-full bg-transparent py-3 text-sm text-foreground outline-none',
+                'flex h-12 w-full rounded-full bg-transparent px-4 py-3 text-sm text-foreground outline-none',
                 'placeholder:text-muted-foreground'
               )}
               value={query}

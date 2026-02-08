@@ -36,11 +36,14 @@ import {
   useThemeStore,
   themeOptions,
   dashboardBackgroundOptions,
+  iconThemeOptions,
   DEFAULT_THEME,
   DEFAULT_DASHBOARD_BACKGROUND,
   DEFAULT_TOGGLE_THEMES,
+  DEFAULT_ICON_THEME,
   type Theme,
   type DashboardBackground,
+  type IconTheme,
 } from '@/stores/theme-store';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
@@ -1539,7 +1542,7 @@ function PortainerBackupManagement() {
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground } = useThemeStore();
+  const { theme, setTheme, toggleThemes, setToggleThemes, dashboardBackground, setDashboardBackground, iconTheme, setIconTheme } = useThemeStore();
   const { data: settingsData, isLoading, isError, error, refetch } = useSettings();
   const updateSetting = useUpdateSetting();
   const { data: cacheStats } = useCacheStats();
@@ -1563,14 +1566,16 @@ export default function SettingsPage() {
     theme === DEFAULT_THEME &&
     dashboardBackground === DEFAULT_DASHBOARD_BACKGROUND &&
     toggleThemes[0] === DEFAULT_TOGGLE_THEMES[0] &&
-    toggleThemes[1] === DEFAULT_TOGGLE_THEMES[1];
+    toggleThemes[1] === DEFAULT_TOGGLE_THEMES[1] &&
+    iconTheme === DEFAULT_ICON_THEME;
 
   const applyRecommendedLook = useCallback(() => {
     setTheme(DEFAULT_THEME);
     setDashboardBackground(DEFAULT_DASHBOARD_BACKGROUND);
     setToggleThemes([...DEFAULT_TOGGLE_THEMES]);
+    setIconTheme(DEFAULT_ICON_THEME);
     toast.success('Applied recommended appearance preset');
-  }, [setDashboardBackground, setTheme, setToggleThemes]);
+  }, [setDashboardBackground, setIconTheme, setTheme, setToggleThemes]);
 
   useEffect(() => {
     const raw = searchParams.get('tab');
@@ -1968,6 +1973,34 @@ export default function SettingsPage() {
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-lg border text-left transition-colors',
                   dashboardBackground === option.value
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                )}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{option.label}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {option.description}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-border pt-6">
+          <h3 className="text-sm font-medium mb-1">Icon Style</h3>
+          <p className="text-sm text-muted-foreground mb-3">
+            Change the visual weight of icons across the dashboard.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {iconThemeOptions.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setIconTheme(option.value)}
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg border text-left transition-colors',
+                  iconTheme === option.value
                     ? 'border-primary bg-primary/10'
                     : 'border-border hover:border-primary/50 hover:bg-muted/50'
                 )}
