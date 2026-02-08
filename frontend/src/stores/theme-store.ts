@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { AppIconId } from '@/components/icons/icon-sets';
 
 export type Theme =
   | 'system'
@@ -90,6 +91,9 @@ export const DEFAULT_TOGGLE_THEMES: [Theme, Theme] = ['apple-light', 'apple-dark
 export const DEFAULT_THEME: Theme = 'apple-light';
 export const DEFAULT_DASHBOARD_BACKGROUND: DashboardBackground = 'gradient-mesh-particles';
 export const DEFAULT_ICON_THEME: IconTheme = 'default';
+export const DEFAULT_FAVICON_ICON: AppIconId = 'brain';
+export const DEFAULT_SIDEBAR_ICON: AppIconId = 'brain';
+export const DEFAULT_LOGIN_ICON: AppIconId = 'brain';
 
 interface ThemeState {
   theme: Theme;
@@ -101,6 +105,12 @@ interface ThemeState {
   setDashboardBackground: (bg: DashboardBackground) => void;
   iconTheme: IconTheme;
   setIconTheme: (theme: IconTheme) => void;
+  faviconIcon: AppIconId;
+  setFaviconIcon: (icon: AppIconId) => void;
+  sidebarIcon: AppIconId;
+  setSidebarIcon: (icon: AppIconId) => void;
+  loginIcon: AppIconId;
+  setLoginIcon: (icon: AppIconId) => void;
   resolvedTheme: () => 'dark' | 'light';
   themeClass: () => string;
 }
@@ -121,6 +131,12 @@ export const useThemeStore = create<ThemeState>()(
       setDashboardBackground: (dashboardBackground) => set({ dashboardBackground }),
       iconTheme: DEFAULT_ICON_THEME,
       setIconTheme: (iconTheme) => set({ iconTheme }),
+      faviconIcon: DEFAULT_FAVICON_ICON,
+      setFaviconIcon: (faviconIcon) => set({ faviconIcon }),
+      sidebarIcon: DEFAULT_SIDEBAR_ICON,
+      setSidebarIcon: (sidebarIcon) => set({ sidebarIcon }),
+      loginIcon: DEFAULT_LOGIN_ICON,
+      setLoginIcon: (loginIcon) => set({ loginIcon }),
       resolvedTheme: () => {
         const { theme } = get();
         if (theme === 'system') {
