@@ -141,6 +141,10 @@ vi.mock('@/components/metrics/inline-chat-panel', () => ({
     open ? <div data-testid="inline-chat-panel">Chat Panel</div> : null,
 }));
 
+vi.mock('@/components/metrics/correlation-insights-panel', () => ({
+  CorrelationInsightsPanel: () => <div data-testid="correlation-insights-panel" />,
+}));
+
 import MetricsDashboardPage from './metrics-dashboard';
 
 function renderPage() {

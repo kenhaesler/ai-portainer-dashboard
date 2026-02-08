@@ -168,6 +168,135 @@ async function getMetricSnapshots(containerId: string, windowSize: number): Prom
   return snapshots;
 }
 
+// ---------------------------------------------------------------------------
+// Cross-container correlation
+// ---------------------------------------------------------------------------
+
+export interface CorrelationPair {
+  containerA: { id: string; name: string };
+  containerB: { id: string; name: string };
+  metricType: string;
+  correlation: number;          // Pearson r (-1 … 1)
+  strength: 'very_strong' | 'strong';
+  direction: 'positive' | 'negative';
+  sampleCount: number;
+}
+
+/**
+ * Classify the strength label for a |correlation| value.
+ */
+export function correlationStrength(absR: number): 'very_strong' | 'strong' | 'moderate' | 'weak' {
+  if (absR >= 0.9) return 'very_strong';
+  if (absR >= 0.7) return 'strong';
+  if (absR >= 0.4) return 'moderate';
+  return 'weak';
+}
+
+/**
+ * Find strongly correlated container pairs across the fleet.
+ *
+ * For each metric type (cpu, memory) this function:
+ * 1. Fetches 5-minute-bucketed averages per container over the given time range
+ * 2. Aligns timestamps between every container pair
+ * 3. Computes Pearson correlation and retains pairs with |r| >= minCorrelation
+ *
+ * To keep the O(n²) manageable we limit to the top 50 most-active containers
+ * and only process cpu / memory metric types.
+ */
+export async function findCorrelatedContainers(
+  hours: number = 24,
+  minCorrelation: number = 0.7,
+): Promise<CorrelationPair[]> {
+  const db = await getMetricsDb();
+
+  const metricTypes = ['cpu', 'memory'];
+  const results: CorrelationPair[] = [];
+
+  for (const metricType of metricTypes) {
+    // Fetch 5-min bucketed averages for all containers
+    const { rows } = await db.query<{
+      container_id: string;
+      container_name: string;
+      bucket: string;
+      avg_value: number;
+    }>(
+      `SELECT container_id, container_name,
+              time_bucket('5 minutes', timestamp) AS bucket,
+              AVG(value) AS avg_value
+       FROM metrics
+       WHERE metric_type = $1
+         AND timestamp >= NOW() - make_interval(hours => $2)
+       GROUP BY container_id, container_name, bucket
+       ORDER BY container_id, bucket`,
+      [metricType, hours],
+    );
+
+    // Group by container
+    const byContainer = new Map<string, { name: string; series: Map<string, number> }>();
+    for (const row of rows) {
+      let entry = byContainer.get(row.container_id);
+      if (!entry) {
+        entry = { name: row.container_name, series: new Map() };
+        byContainer.set(row.container_id, entry);
+      }
+      entry.series.set(String(row.bucket), Number(row.avg_value));
+    }
+
+    // Keep only the top 50 containers by sample count
+    const containerIds = [...byContainer.entries()]
+      .sort((a, b) => b[1].series.size - a[1].series.size)
+      .slice(0, 50)
+      .map(([id]) => id);
+
+    // Pairwise correlation
+    for (let i = 0; i < containerIds.length; i++) {
+      const aId = containerIds[i];
+      const aEntry = byContainer.get(aId)!;
+      for (let j = i + 1; j < containerIds.length; j++) {
+        const bId = containerIds[j];
+        const bEntry = byContainer.get(bId)!;
+
+        // Align on shared timestamps
+        const xVals: number[] = [];
+        const yVals: number[] = [];
+        for (const [ts, val] of aEntry.series) {
+          const bVal = bEntry.series.get(ts);
+          if (bVal !== undefined) {
+            xVals.push(val);
+            yVals.push(bVal);
+          }
+        }
+
+        if (xVals.length < 5) continue;
+
+        const r = pearsonCorrelation(xVals, yVals);
+        const absR = Math.abs(r);
+        if (absR < minCorrelation) continue;
+
+        const strength = correlationStrength(absR);
+        if (strength !== 'very_strong' && strength !== 'strong') continue;
+
+        results.push({
+          containerA: { id: aId, name: aEntry.name },
+          containerB: { id: bId, name: bEntry.name },
+          metricType,
+          correlation: Math.round(r * 1000) / 1000,
+          strength,
+          direction: r > 0 ? 'positive' : 'negative',
+          sampleCount: xVals.length,
+        });
+      }
+    }
+  }
+
+  // Sort by absolute correlation descending
+  return results.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
+}
+
+// ---------------------------------------------------------------------------
+// Correlated anomaly detection (within-container)
+// ---------------------------------------------------------------------------
+
 /**
  * Detect correlated anomalies across multiple metrics for all active containers.
  */
