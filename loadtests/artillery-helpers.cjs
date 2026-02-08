@@ -29,13 +29,14 @@ function generateRandomMessage(context, events, done) {
 
 /**
  * Logs the first 40 characters of the captured JWT token for debugging.
+ * Artillery v2 afterResponse signature: (requestParams, response, context, ee, done)
  */
-function logToken(context, events, done) {
-  const token = context.vars.token;
+function logToken(requestParams, response, context, ee, done) {
+  const token = context.vars && context.vars.token;
   if (token) {
     console.log(`  [auth] token: ${token.substring(0, 40)}...`);
   } else {
-    console.log('  [auth] WARNING: no token captured');
+    console.log(`  [auth] WARNING: no token captured (status=${response.statusCode})`);
   }
   return done();
 }

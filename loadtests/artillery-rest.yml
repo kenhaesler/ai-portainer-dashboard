@@ -13,7 +13,7 @@
 #   DASHBOARD_PASS    admin
 
 config:
-  target: "{{ $processEnvironment.BASE_URL || 'http://localhost:3051' }}"
+  target: "{{ $processEnvironment.BASE_URL }}"
   processor: "./artillery-helpers.cjs"
   phases:
     # Ramp from 1 to 5 users over 10 seconds
@@ -46,8 +46,8 @@ scenarios:
       - post:
           url: "/api/auth/login"
           json:
-            username: "{{ $processEnvironment.DASHBOARD_USER || 'admin' }}"
-            password: "{{ $processEnvironment.DASHBOARD_PASS || 'admin' }}"
+            username: "{{ $processEnvironment.DASHBOARD_USER }}"
+            password: "{{ $processEnvironment.DASHBOARD_PASS }}"
           capture:
             - json: "$.token"
               as: "token"
