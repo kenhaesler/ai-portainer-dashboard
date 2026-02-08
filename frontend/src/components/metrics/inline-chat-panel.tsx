@@ -116,138 +116,154 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
     sendMessage(suggestion, chatContext());
   }, [isStreaming, isSending, sendMessage, chatContext]);
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') onClose();
+  }, [onClose]);
+
   if (!open) return null;
 
   return (
     <div
       data-testid="inline-chat-panel"
-      className={cn(
-        'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-background/95 backdrop-blur-xl shadow-2xl',
-        'md:w-[420px] lg:w-[480px]',
-        'animate-in slide-in-from-right duration-300',
-      )}
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      onKeyDown={handleKeyDown}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
-            <Bot className="h-4 w-4 text-white" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">Ask AI</p>
-            <p className="text-xs text-muted-foreground truncate">
-              {context.containerName}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          aria-label="Close chat panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      {/* Backdrop */}
+      <div
+        data-testid="chat-backdrop"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Empty state with suggestions */}
-        {messages.length === 0 && !isStreaming && !isSending && (
-          <div className="flex flex-col items-center text-center pt-8">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
-              <Bot className="h-7 w-7 text-blue-500" />
+      {/* Dialog panel */}
+      <div
+        role="dialog"
+        aria-label="Ask AI"
+        className="relative z-50 flex w-full max-w-lg flex-col rounded-xl border bg-popover/95 backdrop-blur-xl shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600">
+              <Bot className="h-4 w-4 text-white" />
             </div>
-            <p className="mt-4 text-sm font-medium">
-              Ask anything about {context.containerName}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
-              I have access to metrics, logs, anomalies, and traces for this container.
-            </p>
-            <div className="mt-5 flex flex-col gap-2 w-full">
-              {SUGGESTED_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => handleSuggestionClick(q)}
-                  className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-left hover:bg-muted transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">Ask AI</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {context.containerName}
+              </p>
             </div>
           </div>
-        )}
-
-        {/* Message list */}
-        {messages.map((msg) => (
-          <CompactMessage key={msg.id} message={msg} />
-        ))}
-
-        {/* Thinking indicator */}
-        {isSending && !isStreaming && (
-          <div className="flex gap-3">
-            <BotAvatar />
-            <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
-              <div className="flex items-center gap-2">
-                <LoadingDots />
-                <span className="text-xs text-muted-foreground">Thinking...</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tool call indicator */}
-        {isStreaming && activeToolCalls.length > 0 && !currentResponse && (
-          <div className="flex gap-3">
-            <BotAvatar />
-            <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
-              <CompactToolIndicator events={activeToolCalls} />
-            </div>
-          </div>
-        )}
-
-        {/* Streaming response */}
-        {isStreaming && currentResponse && (
-          <div className="flex gap-3">
-            <BotAvatar />
-            <div className="flex-1 space-y-2">
-              <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
-                <CompactMarkdown content={currentResponse} />
-              </div>
-              <button
-                onClick={cancelGeneration}
-                className="inline-flex items-center gap-1 rounded-md bg-destructive/10 border border-destructive/20 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/20 transition-colors"
-              >
-                <X className="h-3 w-3" />
-                Stop
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="border-t bg-background/80 p-3">
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about this container..."
-            disabled={isStreaming || isSending}
-            className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-all"
-          />
           <button
-            type="submit"
-            disabled={!input.trim() || isStreaming || isSending}
-            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 p-2 text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Send message"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Close chat panel"
           >
-            <Send className="h-4 w-4" />
+            <X className="h-4 w-4" />
           </button>
-        </form>
+        </div>
+
+        {/* Messages */}
+        <div className="max-h-[50vh] overflow-y-auto p-4 space-y-4">
+          {/* Empty state with suggestions */}
+          {messages.length === 0 && !isStreaming && !isSending && (
+            <div className="flex flex-col items-center text-center pt-8">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20">
+                <Bot className="h-7 w-7 text-blue-500" />
+              </div>
+              <p className="mt-4 text-sm font-medium">
+                Ask anything about {context.containerName}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground max-w-[280px]">
+                I have access to metrics, logs, anomalies, and traces for this container.
+              </p>
+              <div className="mt-5 flex flex-col gap-2 w-full">
+                {SUGGESTED_QUESTIONS.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => handleSuggestionClick(q)}
+                    className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-left hover:bg-muted transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Message list */}
+          {messages.map((msg) => (
+            <CompactMessage key={msg.id} message={msg} />
+          ))}
+
+          {/* Thinking indicator */}
+          {isSending && !isStreaming && (
+            <div className="flex gap-3">
+              <BotAvatar />
+              <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <LoadingDots />
+                  <span className="text-xs text-muted-foreground">Thinking...</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tool call indicator */}
+          {isStreaming && activeToolCalls.length > 0 && !currentResponse && (
+            <div className="flex gap-3">
+              <BotAvatar />
+              <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
+                <CompactToolIndicator events={activeToolCalls} />
+              </div>
+            </div>
+          )}
+
+          {/* Streaming response */}
+          {isStreaming && currentResponse && (
+            <div className="flex gap-3">
+              <BotAvatar />
+              <div className="flex-1 space-y-2">
+                <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
+                  <CompactMarkdown content={currentResponse} />
+                </div>
+                <button
+                  onClick={cancelGeneration}
+                  className="inline-flex items-center gap-1 rounded-md bg-destructive/10 border border-destructive/20 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/20 transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                  Stop
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="border-t bg-background/80 rounded-b-xl p-3">
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask about this container..."
+              disabled={isStreaming || isSending}
+              className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 transition-all"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isStreaming || isSending}
+              className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 p-2 text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

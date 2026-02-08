@@ -113,6 +113,34 @@ describe('InlineChatPanel', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('calls onClose when Escape key is pressed', () => {
+    const onClose = vi.fn();
+    render(
+      <InlineChatPanel open={true} onClose={onClose} context={defaultContext} />,
+    );
+
+    fireEvent.keyDown(screen.getByTestId('inline-chat-panel'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('calls onClose when backdrop is clicked', () => {
+    const onClose = vi.fn();
+    render(
+      <InlineChatPanel open={true} onClose={onClose} context={defaultContext} />,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-backdrop'));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('renders as a dialog with accessible label', () => {
+    render(
+      <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+    );
+
+    expect(screen.getByRole('dialog', { name: 'Ask AI' })).toBeInTheDocument();
+  });
+
   it('does not send empty messages', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
