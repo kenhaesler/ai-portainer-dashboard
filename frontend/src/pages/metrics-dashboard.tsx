@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Cpu,
@@ -106,6 +107,7 @@ function getForecastRiskScore(forecast: CapacityForecast): number {
 }
 
 export default function MetricsDashboardPage() {
+  const navigate = useNavigate();
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | null>(null);
   const [selectedStack, setSelectedStack] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
@@ -449,6 +451,13 @@ export default function MetricsDashboardPage() {
                 </p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => navigate(selectedEndpoint ? `/topology?endpoint=${selectedEndpoint}` : '/topology')}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              Open Full Topology Map
+            </button>
           </div>
 
           {networkTrafficData.length === 0 ? (
@@ -475,8 +484,8 @@ export default function MetricsDashboardPage() {
                       ]}
                     />
                     <Legend />
-                    <Bar dataKey="rx" name="RX" fill="#22c55e" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="tx" name="TX" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="rx" name="RX" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="tx" name="TX" fill="#f59e0b" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

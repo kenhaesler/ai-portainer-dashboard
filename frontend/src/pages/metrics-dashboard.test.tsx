@@ -191,6 +191,7 @@ describe('MetricsDashboardPage', () => {
     expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
     expect(screen.getByText('2 networks')).toBeInTheDocument();
     expect(screen.getByText('Per-network values are estimated (evenly split)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Full Topology Map' })).toBeInTheDocument();
   });
 
   it('groups container selector options by stack with a No Stack group', () => {
