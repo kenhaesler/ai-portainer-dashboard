@@ -9,6 +9,13 @@ RUN npm install
 
 COPY . .
 
+RUN chown -R node:node /app
+
+USER node
+
 EXPOSE 5273
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget --spider --quiet http://127.0.0.1:5273/ || exit 1
 
 CMD ["npx", "vite", "--host"]
