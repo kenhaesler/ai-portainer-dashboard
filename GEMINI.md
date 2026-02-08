@@ -1,5 +1,7 @@
 # GEMINI.md
 
+> **Keep in sync:** This file shares rules with `CLAUDE.md` and `AGENTS.md`. When updating mandatory rules, git workflow, or security requirements, apply the same change to all three files.
+
 This file provides guidance to Google Gemini (and any Gemini-based coding tools) when working with code in this repository. These rules are mandatory and must be followed exactly.
 
 ## Project Overview
@@ -34,6 +36,10 @@ This project uses a **two-tier branching model**: `feature/* → dev → main`. 
 ### 4. Never Commit Secrets
 
 No `.env` files, API keys, passwords, or credentials in commits.
+
+### 5. Never Work on Issues Tagged `NO AI`
+
+Do not pick up, implement, or modify code for any GitHub issue labeled `NO AI`. These issues are reserved for human developers only. If assigned or asked to work on a `NO AI` issue, refuse and explain that the issue is marked for human-only work.
 
 ## Build & Development Commands
 
@@ -221,6 +227,9 @@ main          ← stable/release (protected)
 - When `dev` is stable and ready for release, open a PR from `dev` → `main`. If all CI checks pass, the merge is approved.
 - Commit messages should be concise and describe the "why" not just the "what".
 - **PRs without passing tests will be automatically blocked. Do not create PRs without tests.**
+- **Always link PRs to their underlying issue.** When creating a PR, use `Closes #<issue>` in the PR body or pass `--body "Closes #<issue>"` with `gh pr create` so GitHub automatically links the PR to the issue.
+- **Only merge a PR when all CI checks pass.** Never merge with failing checks. When a PR is merged, the linked issue must also be closed — the `Closes #<issue>` keyword handles this automatically. If the issue was not linked, close it manually after merge.
+- **If a CI check fails, investigate and fix the underlying issue.** Do not ignore or dismiss failing checks. Read the CI output, identify the root cause, fix the code, and push a new commit to make the checks pass before proceeding.
 
 ## Environment Configuration
 
