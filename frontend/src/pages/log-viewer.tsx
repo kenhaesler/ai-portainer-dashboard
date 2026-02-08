@@ -45,6 +45,44 @@ function highlightLine(line: string, regex: RegExp | null): ReactNode {
   return parts;
 }
 
+function colorizeLogMessage(message: string): ReactNode[] {
+  const tokenRe = /(ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE|FATAL|PANIC|\b[\w.-]+\.(?:ts|tsx|js|jsx|css|json|sh)\b|\/[^\s,]+)/gi;
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRe.exec(message)) !== null) {
+    const token = match[0];
+    const start = match.index;
+    const end = start + token.length;
+    if (start > cursor) parts.push(message.slice(cursor, start));
+
+    const lowered = token.toLowerCase();
+    let className = 'text-slate-100';
+    if (/(error|fatal|panic)/.test(lowered)) className = 'text-rose-300';
+    else if (/warn/.test(lowered)) className = 'text-amber-300';
+    else if (/info/.test(lowered)) className = 'text-emerald-300';
+    else if (/(debug|trace)/.test(lowered)) className = 'text-sky-300';
+    else if (token.startsWith('/')) className = 'text-cyan-300';
+    else className = 'text-violet-300';
+
+    parts.push(
+      <span key={`${start}-${token}`} className={className}>
+        {token}
+      </span>,
+    );
+    cursor = end;
+  }
+
+  if (cursor < message.length) parts.push(message.slice(cursor));
+  return parts;
+}
+
+function renderLogMessage(message: string, regex: RegExp | null): ReactNode {
+  if (regex) return highlightLine(message, regex);
+  return colorizeLogMessage(message);
+}
+
 const LOG_ROW_HEIGHT = 28;
 
 function VirtualizedLogView({
@@ -137,7 +175,7 @@ function VirtualizedLogView({
                   <span className={entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-amber-400' : entry.level === 'debug' ? 'text-sky-300' : 'text-emerald-300'}>
                     {entry.level.toUpperCase()}
                   </span>
-                  <span>{highlightLine(entry.raw, regex)}</span>
+                  <span>{renderLogMessage(entry.message, regex)}</span>
                 </div>
               );
             })}
