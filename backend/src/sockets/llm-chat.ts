@@ -47,6 +47,21 @@ export function isRecoverableToolCallParseError(err: unknown): boolean {
   );
 }
 
+/**
+ * Detect when a response is raw tool-call JSON that the model hallucinated
+ * (e.g. with invalid tool names).  Avoids false positives on natural language
+ * that merely *mentions* tool_calls.
+ */
+export function looksLikeToolCallAttempt(text: string): boolean {
+  const trimmed = text.trim();
+  // Raw JSON object containing tool_calls
+  if (trimmed.startsWith('{') && trimmed.includes('"tool_calls"')) return true;
+  // JSON wrapped in a code fence
+  const fenceContent = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  if (fenceContent && fenceContent[1].includes('"tool_calls"')) return true;
+  return false;
+}
+
 // Per-session conversation history
 const sessions = new Map<string, ChatMessage[]>();
 
@@ -595,6 +610,15 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
                 ];
                 toolIteration++;
                 // Fall through to streaming loop for final response with tool results
+              } else if (looksLikeToolCallAttempt(nativeResult.content)) {
+                // Hallucinated tool names — fall through to Phase 2 without tools
+                log.debug({ userId }, 'Phase 1 content contains hallucinated tool call JSON, falling through to Phase 2 without tools');
+                toolsEnabled = false;
+                messages = [
+                  { role: 'system', content: systemPromptWithoutTools },
+                  ...history.slice(-20),
+                ];
+                // Fall through to streaming loop
               } else {
                 // No tool calls at all — send content as final response
                 socket.emit('chat:chunk', nativeResult.content);
@@ -675,9 +699,14 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           const toolCalls = toolsEnabled ? parseToolCalls(iterationResponse) : null;
 
           if (!toolCalls) {
-            if (!iterationResponse.trim() && !plainRetryAttempted) {
+            const failedToolAttempt = looksLikeToolCallAttempt(iterationResponse);
+            if ((!iterationResponse.trim() || failedToolAttempt) && !plainRetryAttempted) {
               plainRetryAttempted = true;
               toolsEnabled = false;
+              if (failedToolAttempt) {
+                // Clear the raw JSON that was already streamed to the frontend
+                socket.emit('chat:tool_response_pending');
+              }
               messages = [
                 { role: 'system', content: systemPromptWithoutTools },
                 ...history.slice(-20),
