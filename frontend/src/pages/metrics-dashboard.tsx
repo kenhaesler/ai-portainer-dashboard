@@ -32,6 +32,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { AiMetricsSummary } from '@/components/metrics/ai-metrics-summary';
 import { InlineChatPanel } from '@/components/metrics/inline-chat-panel';
+import { CorrelationInsightsPanel } from '@/components/metrics/correlation-insights-panel';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
@@ -779,6 +780,9 @@ export default function MetricsDashboardPage() {
           )}
         </>
       )}
+
+      {/* Cross-Container Correlation Insights */}
+      <CorrelationInsightsPanel llmAvailable={llmAvailable} hours={24} selectedContainerId={selectedContainer} />
 
       {/* Forecast Overview */}
       <div className="rounded-lg border bg-card p-6">

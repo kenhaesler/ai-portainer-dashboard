@@ -18,6 +18,7 @@ import {
   calculateCompositeScore,
   identifyPattern,
   scoreSeverity,
+  correlationStrength,
 } from './metric-correlator.js';
 
 describe('metric-correlator', () => {
@@ -94,6 +95,29 @@ describe('metric-correlator', () => {
         { type: 'memory', zScore: 0.5 },
       ]);
       expect(pattern).toBeNull();
+    });
+  });
+
+  describe('correlationStrength', () => {
+    it('returns very_strong for |r| >= 0.9', () => {
+      expect(correlationStrength(0.95)).toBe('very_strong');
+      expect(correlationStrength(0.9)).toBe('very_strong');
+      expect(correlationStrength(1.0)).toBe('very_strong');
+    });
+
+    it('returns strong for |r| >= 0.7', () => {
+      expect(correlationStrength(0.7)).toBe('strong');
+      expect(correlationStrength(0.89)).toBe('strong');
+    });
+
+    it('returns moderate for |r| >= 0.4', () => {
+      expect(correlationStrength(0.4)).toBe('moderate');
+      expect(correlationStrength(0.69)).toBe('moderate');
+    });
+
+    it('returns weak for |r| < 0.4', () => {
+      expect(correlationStrength(0.39)).toBe('weak');
+      expect(correlationStrength(0)).toBe('weak');
     });
   });
 

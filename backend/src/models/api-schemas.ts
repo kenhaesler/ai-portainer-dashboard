@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+const QueryBooleanSchema = z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+  }
+  return value;
+}, z.boolean());
+
 // ─── Standard error response ────────────────────────────────────────
 export const ErrorResponseSchema = z.object({
   error: z.string(),
@@ -275,7 +284,7 @@ export const ContainerLogsQuerySchema = z.object({
   tail: z.coerce.number().default(100),
   since: z.coerce.number().optional(),
   until: z.coerce.number().optional(),
-  timestamps: z.coerce.boolean().default(true),
+  timestamps: QueryBooleanSchema.default(true),
 });
 
 // ─── Dashboard schemas ──────────────────────────────────────────────

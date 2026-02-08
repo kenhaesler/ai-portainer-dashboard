@@ -235,5 +235,13 @@ describe('api-schemas', () => {
         expect(result.data.timestamps).toBe(true);
       }
     });
+
+    it('should parse string false for timestamps', () => {
+      const result = ContainerLogsQuerySchema.safeParse({ timestamps: 'false' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.timestamps).toBe(false);
+      }
+    });
   });
 });
