@@ -19,7 +19,7 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function getAuthHeaders(token: string | undefined): Record<string, string> {
+export function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 
   // Check if token is in username:password format (Basic auth)
@@ -267,7 +267,10 @@ async function streamOllamaRawCall(
   const baseUrl = llmConfig.ollamaUrl.replace(/\/$/, '');
   const response = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(llmConfig.customEndpointToken),
+    },
     body: JSON.stringify({
       model: selectedModel,
       messages,
