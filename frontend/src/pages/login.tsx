@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
+import { LoginLogo } from "@/components/icons/login-logo";
 
 const PARTICLES = [
   { left: "8%", delay: "0s", duration: "12s", size: "7px" },
@@ -28,53 +29,6 @@ function usePrefersReducedMotion(): boolean {
   }, []);
 
   return reducedMotion;
-}
-
-function BrainLogo({ reducedMotion }: { reducedMotion: boolean }) {
-  const pathClass = reducedMotion ? "opacity-100" : "login-logo-path";
-
-  return (
-    <svg
-      viewBox="0 0 64 64"
-      className="login-logo h-14 w-14"
-      role="img"
-      aria-label="AI brain logo"
-    >
-      <defs>
-        <linearGradient id="brainStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="oklch(72% 0.14 244)" />
-          <stop offset="100%" stopColor="oklch(78% 0.18 158)" />
-        </linearGradient>
-      </defs>
-      <path
-        className={pathClass}
-        style={{ "--path-delay": "0ms" } as CSSProperties}
-        d="M22 14c-6 0-10 5-10 11 0 2 1 4 2 6-1 2-2 3-2 6 0 6 4 11 10 11 2 4 6 6 10 6"
-        fill="none"
-        stroke="url(#brainStroke)"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path
-        className={pathClass}
-        style={{ "--path-delay": "100ms" } as CSSProperties}
-        d="M42 14c6 0 10 5 10 11 0 2-1 4-2 6 1 2 2 3 2 6 0 6-4 11-10 11-2 4-6 6-10 6"
-        fill="none"
-        stroke="url(#brainStroke)"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path
-        className={pathClass}
-        style={{ "--path-delay": "180ms" } as CSSProperties}
-        d="M24 24c3-4 13-4 16 0M22 32c4-3 16-3 20 0M24 40c5-2 11-2 16 0"
-        fill="none"
-        stroke="url(#brainStroke)"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 export default function LoginPage() {
@@ -157,7 +111,7 @@ export default function LoginPage() {
       <div className={`login-card z-10 w-full max-w-sm rounded-2xl border bg-card/85 p-8 shadow-2xl ${stagedClass}`}>
         <div className="mb-6 text-center">
           <div className={`mx-auto mb-3 grid place-items-center ${reducedMotion ? "" : "login-logo-shell"}`}>
-            <BrainLogo reducedMotion={reducedMotion} />
+            <LoginLogo reducedMotion={reducedMotion} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Docker Insights</h1>
           <p className={`mt-1 text-xs uppercase tracking-[0.24em] text-muted-foreground ${reducedMotion ? "" : "login-typewriter"}`}>

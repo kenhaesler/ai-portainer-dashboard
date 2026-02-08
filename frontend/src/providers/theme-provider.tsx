@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useThemeStore } from '@/stores/theme-store';
+import { useFaviconSync } from '@/components/icons/favicon-manager';
 
 const ALL_THEME_CLASSES = [
   'light',
@@ -18,6 +19,7 @@ const ALL_THEME_CLASSES = [
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { theme, themeClass, iconTheme } = useThemeStore();
+  useFaviconSync();
 
   useEffect(() => {
     const root = document.documentElement;

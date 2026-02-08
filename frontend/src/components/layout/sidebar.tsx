@@ -23,6 +23,7 @@ import {
   ChevronRight,
   ChevronDown,
 } from 'lucide-react';
+import { SidebarLogo } from '@/components/icons/sidebar-logo';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
@@ -202,7 +203,7 @@ export function Sidebar() {
                 : { type: 'spring', stiffness: 300, damping: 25 }
             }
           >
-            <Brain className="h-4 w-4" />
+            <SidebarLogo />
           </motion.div>
           <AnimatePresence>
             {!sidebarCollapsed && (
