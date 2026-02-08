@@ -6,7 +6,6 @@ import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useState, useRef, useEffect } from 'react';
 import { ConnectionOrb } from '@/components/shared/connection-orb';
-import { api } from '@/lib/api';
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',
@@ -76,9 +75,11 @@ export function Header() {
   }, []);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     let isMounted = true;
-    api.get<{ commit: string }>('/api/version')
-      .then((data) => {
+    fetch('/__commit')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { commit?: string } | null) => {
         if (!isMounted) return;
         if (data?.commit) setAppCommit(data.commit);
       })

@@ -79,6 +79,12 @@ export default defineConfig({
   },
   server: {
     port: 5273,
+    configureServer(server) {
+      server.middlewares.use('/__commit', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ commit: appCommit || 'dev' }));
+      });
+    },
     proxy: {
       '/api': {
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
