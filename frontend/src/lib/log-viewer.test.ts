@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRegex, detectLevel, parseLogs, sortByTimestamp, toLocalTimestamp } from './log-viewer';
+import { buildRegex, detectLevel, parseLogs, sanitizeLogLine, sortByTimestamp, toLocalTimestamp } from './log-viewer';
 
 describe('log-viewer utilities', () => {
   it('detects log level from line text', () => {
@@ -39,5 +39,20 @@ describe('log-viewer utilities', () => {
   it('formats timestamps safely', () => {
     expect(toLocalTimestamp('2026-02-06T10:00:00Z')).not.toBe('-');
     expect(toLocalTimestamp(null)).toBe('-');
+  });
+
+  it('sanitizes control bytes and ansi escapes from log lines', () => {
+    const dirty = '\u0001\u0002\u001b[31m2026-02-08T00:05:10.721Z ERROR x.css\u001b[0m';
+    const cleaned = sanitizeLogLine(dirty);
+    expect(cleaned).toBe('2026-02-08T00:05:10.721Z ERROR x.css');
+
+    const parsed = parseLogs({
+      containerId: 'abc',
+      containerName: 'api',
+      logs: `${dirty}\n`,
+    });
+    expect(parsed[0].timestamp).toBe('2026-02-08T00:05:10.721Z');
+    expect(parsed[0].message).toBe('ERROR x.css');
+    expect(parsed[0].raw).toBe('2026-02-08T00:05:10.721Z ERROR x.css');
   });
 });
