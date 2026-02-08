@@ -30,6 +30,7 @@ const Reports = lazy(() => import('@/pages/reports'));
 const LogViewer = lazy(() => import('@/pages/log-viewer'));
 const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
 const SecurityAudit = lazy(() => import('@/pages/security-audit'));
+const EbpfCoverage = lazy(() => import('@/pages/ebpf-coverage'));
 
 function PageLoader() {
   return (
@@ -77,6 +78,7 @@ export const router = createBrowserRouter([
       { path: 'metrics', element: <LazyPage><MetricsDashboard /></LazyPage> },
       { path: 'remediation', element: <LazyPage><Remediation /></LazyPage> },
       { path: 'traces', element: <LazyPage><TraceExplorer /></LazyPage> },
+      { path: 'ebpf-coverage', element: <LazyPage><EbpfCoverage /></LazyPage> },
       { path: 'assistant', element: <LazyPage><LlmAssistant /></LazyPage> },
       { path: 'llm-observability', element: <LazyPage><LlmObservability /></LazyPage> },
       { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
