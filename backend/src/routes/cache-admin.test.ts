@@ -70,6 +70,8 @@ describe('Cache Admin Routes', () => {
         misses: 20,
         hitRate: '83.3%',
         backend: 'memory-only',
+        compression: { compressedCount: 0, bytesSaved: 0, threshold: 10000 },
+        redis: null,
       });
       mockCache.getEntries.mockResolvedValue([
         { key: 'endpoints', expiresIn: 120 },
