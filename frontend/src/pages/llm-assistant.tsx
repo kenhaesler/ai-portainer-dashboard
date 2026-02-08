@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
+import { useMcpServers } from '@/hooks/use-mcp';
 import 'highlight.js/styles/tokyo-night-dark.css';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -18,6 +19,35 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   navigate_to: 'Generating link',
 };
 
+interface Suggestion {
+  label: string;
+  description: string;
+  prompt: string;
+}
+
+const INFRA_SUGGESTIONS: Suggestion[] = [
+  { label: 'Running containers', description: 'List all running containers with status and ports', prompt: 'Show me all running containers and their resource usage' },
+  { label: 'Anomaly detection', description: 'Check for critical insights or anomalies', prompt: 'Are there any critical insights or anomalies across my infrastructure?' },
+  { label: 'Resource metrics', description: 'CPU and memory usage for the busiest container', prompt: 'Which container is using the most CPU and memory right now?' },
+  { label: 'Container logs', description: 'Fetch recent logs for debugging', prompt: 'Show me recent logs for the backend service' },
+];
+
+const MCP_SUGGESTIONS: Suggestion[] = [
+  { label: 'Network scan', description: 'Run nmap to discover open ports on a target', prompt: 'Run a quick nmap port scan against the web-platform stack' },
+  { label: 'Security recon', description: 'Identify services and OS fingerprints', prompt: 'Run a service version scan with nmap -sV on the web-frontend container' },
+];
+
+const FALLBACK_SUGGESTIONS: Suggestion[] = [
+  { label: 'Stack overview', description: 'Summarize stacks, services, and health', prompt: 'Give me an overview of all my Docker stacks and their health status' },
+  { label: 'Network topology', description: 'Describe container network connections', prompt: 'Describe the network topology and which containers can communicate' },
+];
+
+function useSuggestions(mcpServers?: import('@/hooks/use-mcp').McpServer[]): Suggestion[] {
+  const hasKaliMcp = mcpServers?.some(s => s.name.toLowerCase().includes('kali') && s.connected);
+  const mcpPart = hasKaliMcp ? MCP_SUGGESTIONS : FALLBACK_SUGGESTIONS;
+  return [...INFRA_SUGGESTIONS, ...mcpPart];
+}
+
 export default function LlmAssistantPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -28,6 +58,9 @@ export default function LlmAssistantPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isStreaming, currentResponse, activeToolCalls, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
   const { data: modelsData } = useLlmModels();
+  const { data: mcpServers } = useMcpServers();
+
+  const suggestions = useSuggestions(mcpServers);
 
   useEffect(() => {
     const state = location.state as { prefillPrompt?: string } | null;
@@ -148,20 +181,16 @@ export default function LlmAssistantPage() {
                 <p className="mt-2 text-sm text-muted-foreground max-w-md">
                   I have real-time access to your entire Docker infrastructure. Ask me about containers, stacks, resources, or troubleshooting.
                 </p>
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
-                  {[
-                    'Show me all running containers',
-                    'Are there any critical insights or anomalies?',
-                    'What are the CPU metrics for my busiest container?',
-                    'Show me recent logs for the backend service'
-                  ].map((suggestion, i) => (
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-3xl">
+                  {suggestions.map((s, i) => (
                     <button
                       key={i}
-                      onClick={() => handleSuggestedQuestionClick(suggestion)}
+                      onClick={() => handleSuggestedQuestionClick(s.prompt)}
                       disabled={isStreaming || isSending}
-                      className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-left hover:bg-accent hover:border-border transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-left hover:bg-accent hover:border-border transition-colors disabled:cursor-not-allowed disabled:opacity-50 flex flex-col gap-1"
                     >
-                      {suggestion}
+                      <span className="font-medium text-foreground">{s.label}</span>
+                      <span className="text-xs text-muted-foreground line-clamp-2">{s.description}</span>
                     </button>
                   ))}
                 </div>
