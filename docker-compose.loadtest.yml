@@ -1,0 +1,76 @@
+## Load Testing Suite
+#
+# Requires the dev stack to be running first:
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Build once, then run any test:
+#   npm run loadtest:build
+#   npm run loadtest:rest
+#   npm run loadtest:socketio
+#   npm run loadtest:bench
+#   npm run loadtest:llm
+#   npm run loadtest:all
+#
+# Or directly:
+#   docker compose -f docker-compose.loadtest.yml run --rm rest
+
+x-loadtest: &loadtest
+  build: ./loadtests
+  image: aidash-loadtest
+  environment: &loadtest-env
+    BASE_URL: http://backend:3051
+    DASHBOARD_USER: ${DASHBOARD_USERNAME:-admin}
+    DASHBOARD_PASS: ${DASHBOARD_PASSWORD:-changeme123}
+  networks:
+    - dashboard-net
+
+services:
+  # ── Artillery REST API flow ────────────────────────────────────
+  rest:
+    <<: *loadtest
+    command: ["npx", "artillery", "run", "artillery-rest.yml"]
+
+  # ── Socket.IO /monitoring + /remediation ───────────────────────
+  socketio:
+    <<: *loadtest
+    environment:
+      <<: *loadtest-env
+      SOCKETIO_USERS: ${SOCKETIO_USERS:-10}
+    command: ["node", "socket-io-load-test.mjs"]
+
+  # ── Autocannon per-endpoint throughput ─────────────────────────
+  bench:
+    <<: *loadtest
+    environment:
+      <<: *loadtest-env
+      BENCH_CONNECTIONS: ${BENCH_CONNECTIONS:-10}
+      BENCH_DURATION: ${BENCH_DURATION:-30}
+    command: ["node", "autocannon-benchmarks.mjs"]
+
+  # ── LLM chat /llm namespace (requires Ollama) ─────────────────
+  llm:
+    <<: *loadtest
+    environment:
+      <<: *loadtest-env
+      LLM_SESSIONS: ${LLM_SESSIONS:-5}
+      LLM_MESSAGES: ${LLM_MESSAGES:-3}
+    command: ["node", "llm-load-test.mjs"]
+
+  # ── Run all (except LLM) sequentially ──────────────────────────
+  all:
+    <<: *loadtest
+    command:
+      - sh
+      - -c
+      - |
+        echo "=== REST API Load Test ===" &&
+        npx artillery run artillery-rest.yml &&
+        echo "=== Socket.IO Load Test ===" &&
+        node socket-io-load-test.mjs &&
+        echo "=== Autocannon Benchmarks ===" &&
+        node autocannon-benchmarks.mjs
+
+networks:
+  dashboard-net:
+    external: true
+    name: ai-portainer-dashboard_dashboard-net
