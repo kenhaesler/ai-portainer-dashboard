@@ -109,6 +109,19 @@ export function getAction(id: string): Action | undefined {
     .get(id) as Action | undefined;
 }
 
+export function updateActionRationale(id: string, rationale: string): boolean {
+  const db = getDb();
+  const result = db
+    .prepare('UPDATE actions SET rationale = ? WHERE id = ?')
+    .run(rationale, id);
+
+  if (result.changes > 0) {
+    log.info({ actionId: id }, 'Action rationale updated');
+    return true;
+  }
+  return false;
+}
+
 export function updateActionStatus(
   id: string,
   newStatus: ActionStatus,
