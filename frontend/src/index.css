@@ -945,6 +945,10 @@ aside nav:hover {
   outline: none !important;
 }
 
+.log-viewer-search__input[type='text'] {
+  border: none !important;
+}
+
 /* ====== GLASS POPOVERS & DROPDOWNS ====== */
 
 .apple-light {
