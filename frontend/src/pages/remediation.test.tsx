@@ -86,11 +86,20 @@ describe('RemediationPage', () => {
 
   it('renders structured remediation analysis from rationale JSON', () => {
     renderPage();
+    expect(screen.getByRole('columnheader', { name: 'Analysis Summary' })).toBeInTheDocument();
     expect(screen.getByText('Critical')).toBeInTheDocument();
     expect(screen.getByText('Confidence: 82%')).toBeInTheDocument();
     expect(screen.getByText(/Root Cause:/i)).toBeInTheDocument();
     expect(screen.getByText(/Connection pool leak is exhausting memory over time\./)).toBeInTheDocument();
     expect(screen.getByText(/HIGH:/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show more' })).toBeInTheDocument();
+  });
+
+  it('toggles analysis expansion for long rationale content', () => {
+    renderPage();
+    const toggle = screen.getByRole('button', { name: 'Show more' });
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
   });
 
   it('routes Discuss with AI with context', () => {
