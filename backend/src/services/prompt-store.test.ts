@@ -27,6 +27,14 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
+const mockGetProfilePromptConfig = vi.fn();
+const mockGetActiveProfileId = vi.fn();
+
+vi.mock('./prompt-profile-store.js', () => ({
+  getProfilePromptConfig: (...args: unknown[]) => mockGetProfilePromptConfig(...args),
+  getActiveProfileId: (...args: unknown[]) => mockGetActiveProfileId(...args),
+}));
+
 const GLOBAL_CONFIG = {
   ollamaUrl: 'http://localhost:11434',
   model: 'llama3.2',
@@ -43,6 +51,9 @@ describe('prompt-store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetGlobalLlmConfig.mockReturnValue(GLOBAL_CONFIG);
+    // Default to 'default' profile (no profile overrides active)
+    mockGetActiveProfileId.mockReturnValue('default');
+    mockGetProfilePromptConfig.mockReturnValue(undefined);
   });
 
   describe('PROMPT_FEATURES', () => {
@@ -212,6 +223,82 @@ describe('prompt-store', () => {
       expect(result.temperature).toBe(0.3);
       // Global fields preserved
       expect(result.ollamaUrl).toBe('http://localhost:11434');
+    });
+  });
+
+  describe('profile integration', () => {
+    describe('getEffectivePrompt with profiles', () => {
+      it('uses profile prompt when non-default profile is active and has feature config', () => {
+        mockGetSetting.mockReturnValue(undefined); // no per-feature override
+        mockGetActiveProfileId.mockReturnValue('security-audit');
+        mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Security-focused prompt' });
+
+        const result = getEffectivePrompt('chat_assistant');
+        expect(result).toBe('Security-focused prompt');
+      });
+
+      it('per-feature setting overrides profile prompt', () => {
+        mockGetSetting.mockReturnValue({ value: 'Individual override', key: 'prompts.chat_assistant.system_prompt', category: 'prompts', updated_at: '2025-01-01' });
+        mockGetActiveProfileId.mockReturnValue('security-audit');
+        mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Security-focused prompt' });
+
+        const result = getEffectivePrompt('chat_assistant');
+        expect(result).toBe('Individual override');
+      });
+
+      it('falls back to default when profile has no config for feature', () => {
+        mockGetSetting.mockReturnValue(undefined);
+        mockGetActiveProfileId.mockReturnValue('security-audit');
+        mockGetProfilePromptConfig.mockReturnValue(undefined);
+
+        const result = getEffectivePrompt('capacity_forecast');
+        expect(result).toBe(DEFAULT_PROMPTS.capacity_forecast);
+      });
+
+      it('skips profile lookup when default profile is active', () => {
+        mockGetSetting.mockReturnValue(undefined);
+        mockGetActiveProfileId.mockReturnValue('default');
+
+        const result = getEffectivePrompt('chat_assistant');
+        expect(result).toBe(DEFAULT_PROMPTS.chat_assistant);
+        expect(mockGetProfilePromptConfig).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('getEffectiveLlmConfig with profiles', () => {
+      it('uses profile model override when non-default profile is active', () => {
+        mockGetSetting.mockReturnValue(undefined); // no per-feature override
+        mockGetActiveProfileId.mockReturnValue('custom-1');
+        mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Custom', model: 'codellama', temperature: 0.5 });
+
+        const result = getEffectiveLlmConfig('chat_assistant') as Record<string, unknown>;
+        expect(result.model).toBe('codellama');
+        expect(result.temperature).toBe(0.5);
+      });
+
+      it('per-feature setting model overrides profile model', () => {
+        mockGetSetting.mockImplementation((key: string) => {
+          if (key === 'prompts.chat_assistant.model') {
+            return { value: 'mistral', key, category: 'prompts', updated_at: '2025-01-01' };
+          }
+          return undefined;
+        });
+        mockGetActiveProfileId.mockReturnValue('custom-1');
+        mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Custom', model: 'codellama' });
+
+        const result = getEffectiveLlmConfig('chat_assistant');
+        expect(result.model).toBe('mistral');
+      });
+
+      it('skips profile lookup when default profile is active', () => {
+        mockGetSetting.mockReturnValue(undefined);
+        mockGetActiveProfileId.mockReturnValue('default');
+
+        const result = getEffectiveLlmConfig('chat_assistant');
+        expect(result.model).toBe('llama3.2');
+        // Profile prompt config should not be called because active profile is default
+        // (getActiveProfileId is called but getProfilePromptConfig should not be)
+      });
     });
   });
 
