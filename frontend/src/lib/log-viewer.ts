@@ -17,6 +17,7 @@ interface ParseInput {
 }
 
 const TS_PREFIX_RE = /^(\d{4}-\d{2}-\d{2}T[^\s]+)\s(.*)$/;
+const ISO_TS_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/;
 const ANSI_ESCAPE_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\u0007]*\u0007)/g;
 const CONTROL_CHAR_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 const REPLACEMENT_CHAR_RE = /\uFFFD+/g;
@@ -33,7 +34,7 @@ export function detectLevel(input: string): LogLevel {
 export function parseLogs({ containerId, containerName, logs }: ParseInput): ParsedLogEntry[] {
   return logs
     .split('\n')
-    .map((line) => sanitizeLogLine(line))
+    .map((line) => lintLogLine(line))
     .filter((line) => line.trim().length > 0)
     .map((line, index) => {
       const match = line.match(TS_PREFIX_RE);
@@ -57,6 +58,32 @@ export function sanitizeLogLine(line: string): string {
     .replace(CONTROL_CHAR_RE, '')
     .replace(REPLACEMENT_CHAR_RE, '')
     .trimStart();
+}
+
+export function lintLogLine(line: string): string {
+  let cleaned = sanitizeLogLine(line);
+
+  // Handle JSON log envelope: {"log":"...","time":"...","stream":"stdout"}
+  if (cleaned.startsWith('{') && cleaned.includes('"time"') && cleaned.includes('"log"')) {
+    try {
+      const parsed = JSON.parse(cleaned) as { time?: string; log?: string };
+      if (parsed.time && parsed.log !== undefined) {
+        cleaned = `${parsed.time} ${sanitizeLogLine(parsed.log)}`;
+      }
+    } catch {
+      // Fall through to best-effort text cleanup.
+    }
+  }
+
+  // Drop any leading junk before the first ISO timestamp.
+  const tsIndex = cleaned.search(ISO_TS_RE);
+  if (tsIndex > 0) {
+    cleaned = cleaned.slice(tsIndex);
+  }
+
+  // Normalize excessive whitespace for readability.
+  cleaned = cleaned.replace(/[ \t]+/g, ' ').trim();
+  return cleaned;
 }
 
 export function sortByTimestamp(entries: ParsedLogEntry[]): ParsedLogEntry[] {

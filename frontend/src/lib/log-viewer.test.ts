@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRegex, detectLevel, parseLogs, sanitizeLogLine, sortByTimestamp, toLocalTimestamp } from './log-viewer';
+import { buildRegex, detectLevel, lintLogLine, parseLogs, sanitizeLogLine, sortByTimestamp, toLocalTimestamp } from './log-viewer';
 
 describe('log-viewer utilities', () => {
   it('detects log level from line text', () => {
@@ -54,5 +54,22 @@ describe('log-viewer utilities', () => {
     expect(parsed[0].timestamp).toBe('2026-02-08T00:05:10.721Z');
     expect(parsed[0].message).toBe('ERROR x.css');
     expect(parsed[0].raw).toBe('2026-02-08T00:05:10.721Z ERROR x.css');
+  });
+
+  it('lints noisy prefix bytes and keeps first ISO timestamp log segment', () => {
+    const noisy = 'x\x00\x00\x1b[32m2026-02-08T00:19:36.57591045Z   INFO   index.css';
+    expect(lintLogLine(noisy)).toBe('2026-02-08T00:19:36.57591045Z INFO index.css');
+  });
+
+  it('lints docker json log envelopes', () => {
+    const jsonLine = '{"log":"INFO build complete\\n","stream":"stdout","time":"2026-02-08T00:19:36.57591045Z"}';
+    const parsed = parseLogs({
+      containerId: 'abc',
+      containerName: 'api',
+      logs: jsonLine,
+    });
+
+    expect(parsed[0].timestamp).toBe('2026-02-08T00:19:36.57591045Z');
+    expect(parsed[0].message).toBe('INFO build complete');
   });
 });
