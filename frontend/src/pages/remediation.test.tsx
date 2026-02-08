@@ -21,6 +21,7 @@ vi.mock('@/hooks/use-remediation', () => ({
       action_type: 'STOP_CONTAINER',
       status: 'pending',
       container_id: 'container-1',
+      container_name: 'api-service',
       endpoint_id: 1,
       rationale: 'Container is consuming too many resources',
       suggested_by: 'AI Monitor',
@@ -63,6 +64,12 @@ describe('RemediationPage', () => {
     vi.clearAllMocks();
   });
 
+  it('shows container name as primary label and keeps id de-emphasized', () => {
+    renderPage();
+    expect(screen.getByText('api-service')).toBeInTheDocument();
+    expect(screen.getByText('ID: containe')).toBeInTheDocument();
+  });
+
   it('shows rationale and routes Discuss with AI with context', () => {
     renderPage();
     expect(screen.getByText('Container is consuming too many resources')).toBeInTheDocument();
@@ -72,6 +79,7 @@ describe('RemediationPage', () => {
       state: expect.objectContaining({
         source: 'remediation',
         actionId: 'action-1',
+        prefillPrompt: expect.stringContaining('Container: api-service'),
       }),
     }));
   });

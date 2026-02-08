@@ -157,6 +157,7 @@ function ActionRow({
 }: ActionRowProps) {
   const actionType = action.action_type || action.type || 'Unknown';
   const containerId = action.container_id || action.containerId || '';
+  const containerName = action.container_name || action.containerName || 'unknown';
   const createdAt = action.created_at || action.createdAt || '';
   const suggestedBy = action.suggested_by || action.suggestedBy || 'AI Monitor';
   const rationale = action.rationale || action.description || 'No rationale provided';
@@ -177,7 +178,14 @@ function ActionRow({
       <td className="p-4">
         <div className="flex items-center gap-2">
           <Box className="h-4 w-4 text-muted-foreground" />
-          <span className="font-mono text-xs">{containerId.slice(0, 12)}</span>
+          <div>
+            <p className="font-medium">{containerName}</p>
+            {containerId && (
+              <p className="font-mono text-[11px] text-muted-foreground">
+                ID: {containerId.slice(0, 8)}
+              </p>
+            )}
+          </div>
         </div>
       </td>
       <td className="p-4">
@@ -364,11 +372,13 @@ export default function RemediationPage() {
 
   const handleDiscuss = (action: ActionRecord) => {
     const actionType = action.action_type || action.type || 'UNKNOWN_ACTION';
+    const containerName = action.container_name || action.containerName || 'unknown';
+    const containerId = action.container_id || action.containerId || 'unknown';
     const prompt = [
       'I need guidance on this remediation action before approval.',
       `Action: ${ACTION_TYPE_LABELS[actionType] || actionType}`,
-      `Container ID: ${action.container_id || action.containerId || 'unknown'}`,
-      `Container Name: ${action.container_name || action.containerName || 'unknown'}`,
+      `Container: ${containerName}`,
+      `Container ID: ${containerId}`,
       `Endpoint ID: ${action.endpoint_id || action.endpointId || 'unknown'}`,
       `Status: ${action.status}`,
       `AI Rationale: ${action.rationale || action.description || 'none provided'}`,
