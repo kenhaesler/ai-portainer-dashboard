@@ -9,7 +9,7 @@ vi.mock('../services/portainer-client.js', () => ({
 }));
 
 vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
   getCacheKey: vi.fn((...args: string[]) => args.join(':')),
   TTL: { ENDPOINTS: 30, NETWORKS: 60 },
 }));

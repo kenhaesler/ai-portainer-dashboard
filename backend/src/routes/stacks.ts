@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeStack } from '../services/portainer-normalizers.js';
 import { StackIdParamsSchema } from '../models/api-schemas.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -17,7 +17,7 @@ export async function stacksRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
     try {
-      const stacks = await cachedFetch(
+      const stacks = await cachedFetchSWR(
         getCacheKey('stacks'),
         TTL.STACKS,
         () => portainer.getStacks(),
