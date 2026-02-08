@@ -6,38 +6,14 @@ import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { getEffectiveLlmConfig } from '../services/settings-store.js';
+import { getEffectivePrompt } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('route:llm');
 
-const QUERY_SYSTEM_PROMPT = `You are a dashboard query interpreter. The user asks natural language questions about their Docker infrastructure. You MUST respond with ONLY valid JSON — no markdown, no explanation, no code fences.
-
-Available pages and their routes:
-- "/" - Home dashboard with KPIs
-- "/workloads" - Workload Explorer: all containers, filterable by state, name, image
-- "/fleet" - Fleet Overview: all endpoints/environments
-- "/health" - Container Health: health checks, unhealthy containers
-- "/images" - Image Footprint: Docker images, sizes, registries
-- "/topology" - Network Topology: container network connections
-- "/ai-monitor" - AI Monitor: AI-generated insights, anomalies
-- "/metrics" - Metrics Dashboard: CPU, memory, network metrics over time
-- "/remediation" - Remediation: suggested and pending remediation actions
-- "/traces" - Trace Explorer: distributed traces
-- "/assistant" - LLM Assistant: AI chat for infrastructure questions
-- "/edge-logs" - Edge Agent Logs
-- "/settings" - Settings
-
-Response format — choose ONE:
-
-For navigation actions:
-{"action":"navigate","page":"/route","description":"Brief explanation of where to look"}
-
-For inline answers (simple factual questions):
-{"action":"answer","text":"The answer text","description":"Based on current infrastructure data"}
-
-INFRASTRUCTURE CONTEXT:
-`;
+// Command palette system prompt is now configurable via Settings > AI Prompts.
+// Default stored in prompt-store.ts under 'command_palette' feature key.
 
 const PROMPT_INJECTION_PATTERNS = [
   /system prompt/i,
@@ -141,7 +117,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
     try {
       const infraContext = await getInfrastructureSummary();
-      const systemPrompt = QUERY_SYSTEM_PROMPT + infraContext;
+      const systemPrompt = getEffectivePrompt('command_palette') + infraContext;
 
       const messages = [
         { role: 'system' as const, content: systemPrompt },

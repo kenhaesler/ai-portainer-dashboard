@@ -1,13 +1,9 @@
 import { createChildLogger } from '../utils/logger.js';
 import { chatStream } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import { getContainerLogs } from './portainer-client.js';
 
 const log = createChildLogger('log-analyzer');
-
-const SYSTEM_PROMPT =
-  'You are a Docker log analyst. Analyze these container logs and identify any errors, warnings, or concerning patterns. ' +
-  'Respond ONLY with valid JSON: { "severity": "critical"|"warning"|"info", "summary": "brief description", "errorPatterns": ["pattern1", "pattern2"] }. ' +
-  'If no issues found, respond with the string "null" (no quotes around null).';
 
 export interface LogAnalysisResult {
   containerId: string;
@@ -33,7 +29,7 @@ export async function analyzeContainerLogs(
     let response = '';
     await chatStream(
       [{ role: 'user', content: `Analyze these container logs from "${containerName}":\n\n${logs.slice(0, 4000)}` }],
-      SYSTEM_PROMPT,
+      getEffectivePrompt('log_analyzer'),
       (chunk) => { response += chunk; },
     );
 

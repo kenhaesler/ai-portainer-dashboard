@@ -13,6 +13,7 @@ import { emitEvent } from './event-bus.js';
 import { getContainerLogs } from './portainer-client.js';
 import { getLatestMetrics } from './metrics-store.js';
 import { chatStream, isOllamaAvailable } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
 
 const log = createChildLogger('remediation-service');
@@ -270,7 +271,7 @@ async function enrichActionWithLlmAnalysis(
 
     await chatStream(
       [{ role: 'user', content: prompt }],
-      'You are a container remediation analyst. Produce strict JSON only.',
+      getEffectivePrompt('remediation'),
       (chunk) => {
         rawResponse += chunk;
       },

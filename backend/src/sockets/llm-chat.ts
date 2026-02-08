@@ -5,6 +5,7 @@ import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { getEffectiveLlmConfig } from '../services/settings-store.js';
+import { getEffectivePrompt } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
@@ -508,13 +509,8 @@ export function setupLlmNamespace(ns: Namespace) {
       const mcpToolPrompt = getMcpToolPrompt();
 
       const additionalContext = data.context ? formatChatContext(data.context) : '';
-      const systemPromptCore = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
-
-${additionalContext}
-
-${infrastructureContext}
-
-Provide concise, actionable responses. Use markdown formatting for code blocks and lists. When suggesting actions, explain the reasoning and potential impact.`;
+      const basePrompt = getEffectivePrompt('chat_assistant');
+      const systemPromptCore = `${basePrompt}\n\n${additionalContext}\n\n${infrastructureContext}`;
       const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}${mcpToolPrompt}`;
       const systemPromptWithoutTools = `${systemPromptCore}\n\nTool calling is temporarily unavailable for this response. Do not output tool_calls JSON. Provide the best direct answer you can from available context.`;
 

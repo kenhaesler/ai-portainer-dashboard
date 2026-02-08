@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair } from '../services/metric-correlator.js';
 import { chatStream } from '../services/llm-client.js';
+import { getEffectivePrompt } from '../services/prompt-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('routes:correlations');
@@ -143,7 +144,7 @@ export async function correlationRoutes(fastify: FastifyInstance) {
     try {
       const response = await chatStream(
         [{ role: 'user', content: prompt }],
-        'You are a concise infrastructure analyst. Respond with plain text only — no markdown, no bullet points, no headings except the SUMMARY: prefix.',
+        getEffectivePrompt('correlation_insights'),
         () => {},
       );
 

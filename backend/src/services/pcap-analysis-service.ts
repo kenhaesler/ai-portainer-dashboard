@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import { getCapture, updateCaptureAnalysis } from './pcap-store.js';
 import { getCaptureFilePath } from './pcap-service.js';
 import type { PcapAnalysisResult, PcapSummary } from '../models/pcap.js';
@@ -325,7 +326,7 @@ export async function analyzeCapture(captureId: string): Promise<PcapAnalysisRes
   let llmResponse = '';
   await chatStream(
     [{ role: 'user', content: prompt }],
-    'You are a network security and performance analyst. Analyze packet capture summaries and provide structured assessments in JSON format. Be specific and data-driven.',
+    getEffectivePrompt('pcap_analyzer'),
     (chunk) => { llmResponse += chunk; },
   );
 

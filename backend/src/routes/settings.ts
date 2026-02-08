@@ -9,6 +9,7 @@ import {
   PreferencesUpdateBodySchema,
 } from '../models/api-schemas.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../services/user-store.js';
+import { PROMPT_FEATURES, DEFAULT_PROMPTS } from '../services/prompt-store.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
@@ -257,5 +258,22 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       : null;
 
     return { entries: items, limit, offset, nextCursor, hasMore };
+  });
+
+  // Get prompt feature definitions and defaults (for AI Prompts settings tab)
+  fastify.get('/api/settings/prompt-features', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Get prompt feature definitions and default prompts',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async () => {
+    return {
+      features: PROMPT_FEATURES.map((f) => ({
+        ...f,
+        defaultPrompt: DEFAULT_PROMPTS[f.key],
+      })),
+    };
   });
 }

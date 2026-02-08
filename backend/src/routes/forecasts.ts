@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getCapacityForecasts, generateForecast, lookupContainerName } from '../services/capacity-forecaster.js';
 import { chatStream } from '../services/llm-client.js';
+import { getEffectivePrompt } from '../services/prompt-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('routes:forecasts');
@@ -140,7 +141,7 @@ export async function forecastRoutes(fastify: FastifyInstance) {
     try {
       const narrative = await chatStream(
         [{ role: 'user', content: prompt }],
-        'You are a concise infrastructure analyst. Respond with plain text only — no markdown, no bullet points, no headings.',
+        getEffectivePrompt('capacity_forecast'),
         () => {}, // no streaming needed for this endpoint
       );
 

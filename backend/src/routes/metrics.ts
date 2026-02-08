@@ -5,6 +5,7 @@ import { getNetworkRates } from '../services/metrics-store.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
 import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
+import { getEffectivePrompt } from '../services/prompt-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metrics-routes');
@@ -242,7 +243,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     `, [containerId, from.toISOString()]);
     const anomalyCount = { count: Number(anomalyRows[0]?.count ?? 0) };
 
-    const systemPrompt = `You are a concise infrastructure analyst. Given container metrics data, write a 2-4 sentence natural language summary. Focus on what matters: is the container healthy? Any trends or concerns? Keep it conversational and actionable. Do NOT use markdown formatting, bullet points, or headers — just plain sentences.`;
+    const systemPrompt = getEffectivePrompt('metrics_summary');
 
     const userPrompt = `Summarize the metrics for container "${containerName}" over the last ${timeRange}:
 
