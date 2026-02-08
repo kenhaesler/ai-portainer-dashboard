@@ -67,10 +67,26 @@ export const DependencyCheckSchema = z.object({
   error: z.string().optional(),
 });
 
+export const RedactedDependencyCheckSchema = z.object({
+  status: z.string(),
+});
+
 export const ReadinessResponseSchema = z.object({
   status: z.string(),
   checks: z.object({
+    database: RedactedDependencyCheckSchema,
+    metricsDb: RedactedDependencyCheckSchema,
+    portainer: RedactedDependencyCheckSchema,
+    ollama: RedactedDependencyCheckSchema,
+  }),
+  timestamp: z.string(),
+});
+
+export const ReadinessDetailResponseSchema = z.object({
+  status: z.string(),
+  checks: z.object({
     database: DependencyCheckSchema,
+    metricsDb: DependencyCheckSchema,
     portainer: DependencyCheckSchema,
     ollama: DependencyCheckSchema,
   }),
