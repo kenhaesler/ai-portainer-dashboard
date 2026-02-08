@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { isRecoverableToolCallParseError, formatChatContext } from './llm-chat.js';
+import { isRecoverableToolCallParseError, formatChatContext, getAuthHeaders } from './llm-chat.js';
+
+describe('getAuthHeaders', () => {
+  it('returns empty object when token is undefined', () => {
+    expect(getAuthHeaders(undefined)).toEqual({});
+  });
+
+  it('returns empty object when token is empty string', () => {
+    expect(getAuthHeaders('')).toEqual({});
+  });
+
+  it('returns Bearer header for simple token', () => {
+    expect(getAuthHeaders('my-secret-token')).toEqual({
+      Authorization: 'Bearer my-secret-token',
+    });
+  });
+
+  it('returns Basic header for username:password format', () => {
+    const result = getAuthHeaders('admin:secret123');
+    const expected = Buffer.from('admin:secret123').toString('base64');
+    expect(result).toEqual({
+      Authorization: `Basic ${expected}`,
+    });
+  });
+});
 
 describe('isRecoverableToolCallParseError', () => {
   it('returns true for known tool-call parser failures', () => {
