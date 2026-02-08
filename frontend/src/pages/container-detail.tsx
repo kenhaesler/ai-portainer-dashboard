@@ -135,13 +135,13 @@ export default function ContainerDetailPage() {
           {activeTab === 'metrics' && container.state === 'running' && (
             <div className="flex items-center gap-2" data-testid="metrics-time-range-control">
               <Clock className="h-4 w-4 text-muted-foreground" />
-              <div className="flex rounded-md border border-input overflow-hidden" data-testid="time-range-selector">
+              <div className="inline-flex h-10 items-center rounded-full border border-input bg-background p-1" data-testid="time-range-selector">
                 {TIME_RANGES.map((range) => (
                   <button
                     key={range.value}
                     type="button"
                     onClick={() => setMetricsTimeRange(range.value)}
-                    className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                    className={`inline-flex h-8 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
                       metricsTimeRange === range.value
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-background hover:bg-muted'

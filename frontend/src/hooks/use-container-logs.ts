@@ -34,5 +34,10 @@ export function useContainerLogs(
       );
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
+    // Logs endpoint can be aggressively rate-limited upstream (Portainer).
+    // Avoid automatic retry/refetch bursts that turn transient 429s into sustained failures.
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
