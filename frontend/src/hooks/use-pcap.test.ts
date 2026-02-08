@@ -20,7 +20,7 @@ vi.mock('sonner', () => ({
 }));
 
 import { api } from '@/lib/api';
-import { useCaptures, useCapture, useStartCapture, useStopCapture, useDeleteCapture } from './use-pcap';
+import { useCaptures, useCapture, useStartCapture, useStopCapture, useDeleteCapture, useAnalyzeCapture } from './use-pcap';
 
 const mockApi = vi.mocked(api);
 
@@ -148,6 +148,28 @@ describe('use-pcap', () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(mockApi.delete).toHaveBeenCalledWith('/api/pcap/captures/c1');
+    });
+  });
+
+  describe('useAnalyzeCapture', () => {
+    it('should call POST to analyze capture', async () => {
+      const mockResult = {
+        health_status: 'healthy',
+        summary: 'Normal traffic',
+        findings: [],
+        confidence_score: 0.9,
+      };
+      mockApi.post.mockResolvedValue(mockResult);
+
+      const { result } = renderHook(() => useAnalyzeCapture(), {
+        wrapper: createWrapper(),
+      });
+
+      result.current.mutate('c1');
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(mockApi.post).toHaveBeenCalledWith('/api/pcap/captures/c1/analyze');
+      expect(result.current.data?.health_status).toBe('healthy');
     });
   });
 });

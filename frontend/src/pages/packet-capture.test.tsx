@@ -64,6 +64,11 @@ vi.mock('@/hooks/use-pcap', () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  useAnalyzeCapture: vi.fn().mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    variables: undefined,
+  }),
   downloadCapture: vi.fn(),
 }));
 

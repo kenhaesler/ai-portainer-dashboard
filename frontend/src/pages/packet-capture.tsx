@@ -8,6 +8,14 @@ import {
   Trash2,
   Clock,
   Filter,
+  Brain,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  ShieldAlert,
+  Gauge,
+  Info,
+  Loader2,
 } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -18,8 +26,11 @@ import {
   useStartCapture,
   useStopCapture,
   useDeleteCapture,
+  useAnalyzeCapture,
   downloadCapture,
   type Capture,
+  type PcapAnalysisResult,
+  type PcapFinding,
 } from '@/hooks/use-pcap';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -64,9 +75,11 @@ export default function PacketCapture() {
   const { data: containers } = useContainers(selectedEndpoint);
   const { data: stacks } = useStacks();
   const { data: capturesData, refetch } = useCaptures({ status: statusFilter });
+  const [expandedAnalysis, setExpandedAnalysis] = useState<Set<string>>(new Set());
   const startCapture = useStartCapture();
   const stopCapture = useStopCapture();
   const deleteCapture = useDeleteCapture();
+  const analyzeMutation = useAnalyzeCapture();
 
   const captures = capturesData?.captures ?? [];
   const activeCaptures = captures.filter(
@@ -326,6 +339,17 @@ export default function PacketCapture() {
                     onStop={() => stopCapture.mutate(capture.id)}
                     onDelete={() => deleteCapture.mutate(capture.id)}
                     onDownload={() => downloadCapture(capture.id, api.getToken())}
+                    onAnalyze={() => analyzeMutation.mutate(capture.id)}
+                    isAnalyzing={analyzeMutation.isPending && analyzeMutation.variables === capture.id}
+                    isExpanded={expandedAnalysis.has(capture.id)}
+                    onToggleExpand={() => {
+                      setExpandedAnalysis((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(capture.id)) next.delete(capture.id);
+                        else next.add(capture.id);
+                        return next;
+                      });
+                    }}
                   />
                 ))}
               </tbody>
@@ -380,71 +404,213 @@ function ActiveCaptureCard({
   );
 }
 
+function parseAnalysis(capture: Capture): PcapAnalysisResult | null {
+  if (!capture.analysis_result) return null;
+  try {
+    return JSON.parse(capture.analysis_result) as PcapAnalysisResult;
+  } catch {
+    return null;
+  }
+}
+
+function HealthBadge({ status }: { status: 'healthy' | 'degraded' | 'critical' }) {
+  const styles = {
+    healthy: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    degraded: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
+    critical: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  };
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', styles[status])}>
+      <span className={cn('h-1.5 w-1.5 rounded-full', {
+        'bg-emerald-500': status === 'healthy',
+        'bg-yellow-500': status === 'degraded',
+        'bg-red-500': status === 'critical',
+      })} />
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
+const FINDING_ICONS = {
+  anomaly: AlertTriangle,
+  security: ShieldAlert,
+  performance: Gauge,
+  informational: Info,
+} as const;
+
+const SEVERITY_STYLES = {
+  critical: 'border-red-500/30 bg-red-500/5',
+  warning: 'border-yellow-500/30 bg-yellow-500/5',
+  info: 'border-blue-500/30 bg-blue-500/5',
+} as const;
+
+function FindingCard({ finding }: { finding: PcapFinding }) {
+  const Icon = FINDING_ICONS[finding.category];
+  return (
+    <div className={cn('rounded-lg border p-3', SEVERITY_STYLES[finding.severity])}>
+      <div className="flex items-start gap-2">
+        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-sm">{finding.title}</p>
+            <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium uppercase', {
+              'bg-red-500/20 text-red-600': finding.severity === 'critical',
+              'bg-yellow-500/20 text-yellow-600': finding.severity === 'warning',
+              'bg-blue-500/20 text-blue-600': finding.severity === 'info',
+            })}>
+              {finding.severity}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{finding.description}</p>
+          {finding.evidence && (
+            <p className="mt-1 text-xs text-muted-foreground/80 italic">Evidence: {finding.evidence}</p>
+          )}
+          {finding.recommendation && (
+            <p className="mt-2 text-xs font-medium">Recommendation: {finding.recommendation}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalysisPanel({ analysis, onReanalyze, isAnalyzing }: { analysis: PcapAnalysisResult; onReanalyze: () => void; isAnalyzing: boolean }) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-card/50 p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <HealthBadge status={analysis.health_status} />
+          <span className="text-xs text-muted-foreground">
+            Confidence: {Math.round(analysis.confidence_score * 100)}%
+          </span>
+        </div>
+        <button
+          onClick={onReanalyze}
+          disabled={isAnalyzing}
+          className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/50 disabled:opacity-50"
+        >
+          {isAnalyzing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
+          Re-analyze
+        </button>
+      </div>
+
+      <p className="text-sm text-foreground">{analysis.summary}</p>
+
+      {analysis.findings.length > 0 && (
+        <div className="space-y-2">
+          {analysis.findings.map((finding, i) => (
+            <FindingCard key={i} finding={finding} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CaptureRow({
   capture,
   onStop,
   onDelete,
   onDownload,
+  onAnalyze,
+  isAnalyzing,
+  isExpanded,
+  onToggleExpand,
 }: {
   capture: Capture;
   onStop: () => void;
   onDelete: () => void;
   onDownload: () => void;
+  onAnalyze: () => void;
+  isAnalyzing: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }) {
   const isActive = capture.status === 'capturing' || capture.status === 'pending' || capture.status === 'processing';
   const hasFile = capture.capture_file && (capture.status === 'complete' || capture.status === 'succeeded');
+  const analysis = parseAnalysis(capture);
+  const canAnalyze = hasFile && !isActive;
 
   return (
-    <tr className="hover:bg-muted/30">
-      <td className="px-4 py-2">
-        <div>
-          <p className="font-medium">{capture.container_name}</p>
-          <p className="text-xs text-muted-foreground">{capture.id.slice(0, 8)}</p>
-        </div>
-      </td>
-      <td className="px-4 py-2">
-        <StatusBadge status={capture.status} />
-      </td>
-      <td className="px-4 py-2 text-muted-foreground">
-        {capture.filter || <span className="italic">none</span>}
-      </td>
-      <td className="px-4 py-2 text-muted-foreground">
-        {capture.file_size_bytes ? formatBytes(capture.file_size_bytes) : '-'}
-      </td>
-      <td className="px-4 py-2 text-muted-foreground">
-        {new Date(capture.created_at).toLocaleString()}
-      </td>
-      <td className="px-4 py-2 text-right">
-        <div className="flex items-center justify-end gap-1">
-          {isActive && (
-            <button
-              onClick={onStop}
-              className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              title="Stop capture"
-            >
-              <Square className="h-4 w-4" />
-            </button>
-          )}
-          {hasFile && (
-            <button
-              onClick={onDownload}
-              className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-              title="Download PCAP"
-            >
-              <Download className="h-4 w-4" />
-            </button>
-          )}
-          {!isActive && (
-            <button
-              onClick={onDelete}
-              className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              title="Delete capture"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
+    <>
+      <tr className="hover:bg-muted/30">
+        <td className="px-4 py-2">
+          <div className="flex items-center gap-2">
+            {analysis && (
+              <button onClick={onToggleExpand} className="text-muted-foreground hover:text-foreground" title="Toggle analysis">
+                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+            )}
+            <div>
+              <p className="font-medium">{capture.container_name}</p>
+              <p className="text-xs text-muted-foreground">{capture.id.slice(0, 8)}</p>
+            </div>
+          </div>
+        </td>
+        <td className="px-4 py-2">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={capture.status} />
+            {analysis && <HealthBadge status={analysis.health_status} />}
+          </div>
+        </td>
+        <td className="px-4 py-2 text-muted-foreground">
+          {capture.filter || <span className="italic">none</span>}
+        </td>
+        <td className="px-4 py-2 text-muted-foreground">
+          {capture.file_size_bytes ? formatBytes(capture.file_size_bytes) : '-'}
+        </td>
+        <td className="px-4 py-2 text-muted-foreground">
+          {new Date(capture.created_at).toLocaleString()}
+        </td>
+        <td className="px-4 py-2 text-right">
+          <div className="flex items-center justify-end gap-1">
+            {isActive && (
+              <button
+                onClick={onStop}
+                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                title="Stop capture"
+              >
+                <Square className="h-4 w-4" />
+              </button>
+            )}
+            {canAnalyze && (
+              <button
+                onClick={onAnalyze}
+                disabled={isAnalyzing}
+                className="rounded p-1.5 text-muted-foreground hover:bg-purple-500/10 hover:text-purple-500"
+                title="Analyze with AI"
+              >
+                {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              </button>
+            )}
+            {hasFile && (
+              <button
+                onClick={onDownload}
+                className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                title="Download PCAP"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            )}
+            {!isActive && (
+              <button
+                onClick={onDelete}
+                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                title="Delete capture"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {analysis && isExpanded && (
+        <tr>
+          <td colSpan={6} className="px-4 py-3">
+            <AnalysisPanel analysis={analysis} onReanalyze={onAnalyze} isAnalyzing={isAnalyzing} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

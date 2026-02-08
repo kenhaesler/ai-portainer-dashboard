@@ -9,6 +9,7 @@ const mockGetCaptureById = vi.fn();
 const mockListCaptures = vi.fn();
 const mockDeleteCaptureById = vi.fn();
 const mockGetCaptureFilePath = vi.fn();
+const mockAnalyzeCapture = vi.fn();
 
 vi.mock('../services/pcap-service.js', () => ({
   startCapture: (...args: unknown[]) => mockStartCapture(...args),
@@ -17,6 +18,10 @@ vi.mock('../services/pcap-service.js', () => ({
   listCaptures: (...args: unknown[]) => mockListCaptures(...args),
   deleteCaptureById: (...args: unknown[]) => mockDeleteCaptureById(...args),
   getCaptureFilePath: (...args: unknown[]) => mockGetCaptureFilePath(...args),
+}));
+
+vi.mock('../services/pcap-analysis-service.js', () => ({
+  analyzeCapture: (...args: unknown[]) => mockAnalyzeCapture(...args),
 }));
 
 vi.mock('../services/audit-logger.js', () => ({
@@ -249,6 +254,57 @@ describe('PCAP Routes', () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+  });
+
+  describe('POST /api/pcap/captures/:id/analyze', () => {
+    it('should return analysis result on success', async () => {
+      mockAnalyzeCapture.mockResolvedValue({
+        health_status: 'healthy',
+        summary: 'Normal traffic patterns',
+        findings: [],
+        confidence_score: 0.9,
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/analyze',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.health_status).toBe('healthy');
+      expect(body.confidence_score).toBe(0.9);
+      expect(mockAnalyzeCapture).toHaveBeenCalledWith('c1');
+    });
+
+    it('should return 400 when analysis fails', async () => {
+      mockAnalyzeCapture.mockRejectedValue(new Error('Capture not found'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/analyze',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Capture not found');
+    });
+
+    it('should return 400 for non-complete captures', async () => {
+      mockAnalyzeCapture.mockRejectedValue(new Error('Cannot analyze capture in status: capturing'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/analyze',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.error).toContain('Cannot analyze');
     });
   });
 
