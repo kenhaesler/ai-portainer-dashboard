@@ -5,8 +5,11 @@ import { writeAuditLog } from '../services/audit-logger.js';
 import { authenticateUser, ensureDefaultAdmin, getUserDefaultLandingPage } from '../services/user-store.js';
 import { LoginRequestSchema } from '../models/auth.js';
 import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
+import { getConfig } from '../config/index.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
+  const config = getConfig();
+
   // Ensure default admin exists on startup
   await ensureDefaultAdmin();
 
@@ -24,7 +27,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     },
     config: {
       rateLimit: {
-        max: 30,
+        max: config.LOGIN_RATE_LIMIT,
         timeWindow: '1 minute',
       },
     },

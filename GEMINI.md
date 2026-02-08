@@ -227,8 +227,8 @@ main          ← stable/release (protected)
 - When `dev` is stable and ready for release, open a PR from `dev` → `main`. If all CI checks pass, the merge is approved.
 - Commit messages should be concise and describe the "why" not just the "what".
 - **PRs without passing tests will be automatically blocked. Do not create PRs without tests.**
-- **Always link PRs to their underlying issue.** When creating a PR, use `Closes #<issue>` in the PR body or pass `--body "Closes #<issue>"` with `gh pr create` so GitHub automatically links the PR to the issue.
-- **Only merge a PR when all CI checks pass.** Never merge with failing checks. When a PR is merged, the linked issue must also be closed — the `Closes #<issue>` keyword handles this automatically. If the issue was not linked, close it manually after merge.
+- **Always link PRs to their underlying issue.** When creating a PR, use `Closes #<issue>` in the PR body or pass `--body "Closes #<issue>"` with `gh pr create` so GitHub links the PR to the issue.
+- **Only merge a PR when all CI checks pass.** Never merge with failing checks. After a PR is merged, manually close the linked issue (for example, `gh issue close <issue-number>`). Do not rely on `Closes #<issue>` to auto-close issues.
 - **If a CI check fails, investigate and fix the underlying issue.** Do not ignore or dismiss failing checks. Read the CI output, identify the root cause, fix the code, and push a new commit to make the checks pass before proceeding.
 
 ## Environment Configuration

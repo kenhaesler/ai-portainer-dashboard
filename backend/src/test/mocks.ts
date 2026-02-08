@@ -155,6 +155,7 @@ export function createMockConfig() {
     DASHBOARD_USERNAME: 'admin',
     DASHBOARD_PASSWORD: 'testpassword',
     SQLITE_PATH: ':memory:',
+    API_RATE_LIMIT: 1000,
     LOGIN_RATE_LIMIT: 10,
     ANOMALY_ZSCORE_THRESHOLD: 2.5,
     ANOMALY_MOVING_AVERAGE_WINDOW: 10,
