@@ -2,6 +2,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
+export interface PcapFinding {
+  category: 'anomaly' | 'security' | 'performance' | 'informational';
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  description: string;
+  evidence: string;
+  recommendation: string;
+}
+
+export interface PcapAnalysisResult {
+  health_status: 'healthy' | 'degraded' | 'critical';
+  summary: string;
+  findings: PcapFinding[];
+  confidence_score: number;
+}
+
 export interface Capture {
   id: string;
   endpoint_id: number;
@@ -20,6 +36,7 @@ export interface Capture {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+  analysis_result: string | null;
 }
 
 interface CapturesResponse {
@@ -139,6 +156,27 @@ export function useDeleteCapture() {
     },
     onError: (error) => {
       toast.error('Failed to delete capture', {
+        description: error.message,
+      });
+    },
+  });
+}
+
+export function useAnalyzeCapture() {
+  const queryClient = useQueryClient();
+
+  return useMutation<PcapAnalysisResult, Error, string>({
+    mutationFn: async (captureId) => {
+      return api.post<PcapAnalysisResult>(`/api/pcap/captures/${captureId}/analyze`);
+    },
+    onSuccess: (_result, captureId) => {
+      queryClient.invalidateQueries({ queryKey: ['pcap'] });
+      toast.success('Analysis complete', {
+        description: `Capture ${captureId.slice(0, 8)} has been analyzed.`,
+      });
+    },
+    onError: (error) => {
+      toast.error('Analysis failed', {
         description: error.message,
       });
     },

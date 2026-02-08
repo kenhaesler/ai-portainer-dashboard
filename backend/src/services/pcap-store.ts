@@ -146,6 +146,12 @@ export function cleanOldCaptures(retentionDays: number): number {
   return result.changes;
 }
 
+export function updateCaptureAnalysis(id: string, analysisResult: string): void {
+  const db = getDb();
+  db.prepare('UPDATE pcap_captures SET analysis_result = ? WHERE id = ?').run(analysisResult, id);
+  log.debug({ captureId: id }, 'Capture analysis result updated');
+}
+
 export function getActiveCaptureIds(): string[] {
   const db = getDb();
   const rows = db

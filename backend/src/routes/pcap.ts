@@ -10,6 +10,7 @@ import {
   deleteCaptureById,
   getCaptureFilePath,
 } from '../services/pcap-service.js';
+import { analyzeCapture } from '../services/pcap-analysis-service.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import { createChildLogger } from '../utils/logger.js';
 
@@ -157,6 +158,44 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     reply.header('Content-Type', 'application/vnd.tcpdump.pcap');
     reply.header('Content-Disposition', `attachment; filename="${filename}"`);
     return reply.send(stream);
+  });
+
+  // Analyze capture with AI
+  fastify.post('/api/pcap/captures/:id/analyze', {
+    schema: {
+      tags: ['Packet Capture'],
+      summary: 'Run AI analysis on a completed capture',
+      security: [{ bearerAuth: [] }],
+      params: ActionIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    try {
+      const result = await analyzeCapture(id);
+
+      writeAuditLog({
+        user_id: request.user?.sub,
+        username: request.user?.username,
+        action: 'pcap.analyze',
+        target_type: 'capture',
+        target_id: id,
+        details: {
+          healthStatus: result.health_status,
+          findingsCount: result.findings.length,
+          confidence: result.confidence_score,
+        },
+        request_id: request.requestId,
+        ip_address: request.ip,
+      });
+
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to analyze capture';
+      log.error({ err, captureId: id }, 'Failed to analyze capture');
+      return reply.status(400).send({ error: message });
+    }
   });
 
   // Delete capture

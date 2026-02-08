@@ -29,9 +29,42 @@ export const CaptureSchema = z.object({
   started_at: z.string().nullable(),
   completed_at: z.string().nullable(),
   created_at: z.string(),
+  analysis_result: z.string().nullable().optional(),
 });
 
 export type Capture = z.infer<typeof CaptureSchema>;
+
+// --- PCAP AI Analysis ---
+
+export const PcapFindingSchema = z.object({
+  category: z.enum(['anomaly', 'security', 'performance', 'informational']),
+  severity: z.enum(['critical', 'warning', 'info']),
+  title: z.string(),
+  description: z.string(),
+  evidence: z.string(),
+  recommendation: z.string(),
+});
+
+export type PcapFinding = z.infer<typeof PcapFindingSchema>;
+
+export const PcapAnalysisResultSchema = z.object({
+  health_status: z.enum(['healthy', 'degraded', 'critical']),
+  summary: z.string(),
+  findings: z.array(PcapFindingSchema),
+  confidence_score: z.number().min(0).max(1),
+});
+
+export type PcapAnalysisResult = z.infer<typeof PcapAnalysisResultSchema>;
+
+export interface PcapSummary {
+  totalPackets: number;
+  durationSeconds: number;
+  protocols: Record<string, number>;
+  topTalkers: { src: string; dst: string; count: number }[];
+  portDistribution: Record<string, number>;
+  tcpAnomalies: { resets: number; retransmissions: number };
+  dnsQueries: string[];
+}
 
 // BPF filter regex: only allow safe characters (prevents shell injection)
 const BPF_FILTER_REGEX = /^[a-zA-Z0-9\s.:()/\-!=<>]+$/;
