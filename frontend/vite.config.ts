@@ -7,7 +7,7 @@ import { execSync } from 'node:child_process';
 
 const appCommit = (() => {
   try {
-    return execSync('git rev-parse --short HEAD', { cwd: path.resolve(__dirname, '..') })
+    return execSync('git rev-parse --short HEAD', { cwd: __dirname })
       .toString()
       .trim();
   } catch {
