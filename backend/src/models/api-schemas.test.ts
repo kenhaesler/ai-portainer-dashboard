@@ -94,8 +94,9 @@ describe('api-schemas', () => {
         status: 'healthy',
         checks: {
           database: { status: 'healthy' },
-          portainer: { status: 'healthy', url: 'http://localhost:9000' },
-          ollama: { status: 'unhealthy', url: 'http://localhost:11434', error: 'Connection refused' },
+          metricsDb: { status: 'healthy' },
+          portainer: { status: 'healthy' },
+          ollama: { status: 'unhealthy' },
         },
         timestamp: new Date().toISOString(),
       });
