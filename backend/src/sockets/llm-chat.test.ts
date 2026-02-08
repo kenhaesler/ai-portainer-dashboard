@@ -1,5 +1,98 @@
-import { describe, it, expect } from 'vitest';
-import { isRecoverableToolCallParseError, looksLikeToolCallAttempt, formatChatContext, getAuthHeaders } from './llm-chat.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'events';
+
+// ── Hoisted mock references (available inside vi.mock factories) ──
+
+const {
+  mockOllamaChat,
+  mockParseToolCalls,
+  mockCollectAllTools,
+  mockRouteToolCalls,
+  mockGetEffectiveLlmConfig,
+} = vi.hoisted(() => ({
+  mockOllamaChat: vi.fn(),
+  mockParseToolCalls: vi.fn(),
+  mockCollectAllTools: vi.fn(),
+  mockRouteToolCalls: vi.fn(),
+  mockGetEffectiveLlmConfig: vi.fn(),
+}));
+
+// ── Module mocks ──
+
+vi.mock('ollama', () => ({
+  Ollama: vi.fn().mockImplementation(() => ({
+    chat: mockOllamaChat,
+  })),
+}));
+
+vi.mock('../utils/logger.js', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
+vi.mock('../services/portainer-client.js', () => ({
+  getEndpoints: vi.fn().mockResolvedValue([]),
+  getContainers: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../services/portainer-normalizers.js', () => ({
+  normalizeEndpoint: vi.fn((e: any) => e),
+  normalizeContainer: vi.fn((c: any) => c),
+}));
+
+vi.mock('../services/portainer-cache.js', () => ({
+  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
+  TTL: { ENDPOINTS: 60, CONTAINERS: 60 },
+}));
+
+vi.mock('../db/sqlite.js', () => ({
+  getDb: vi.fn(() => ({
+    prepare: vi.fn(() => ({
+      all: vi.fn(() => []),
+      run: vi.fn(),
+    })),
+  })),
+}));
+
+vi.mock('../services/llm-trace-store.js', () => ({
+  insertLlmTrace: vi.fn(),
+}));
+
+vi.mock('../services/llm-tools.js', () => ({
+  getToolSystemPrompt: vi.fn(() => ''),
+  parseToolCalls: mockParseToolCalls,
+  executeToolCalls: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../services/mcp-tool-bridge.js', () => ({
+  collectAllTools: mockCollectAllTools,
+  routeToolCalls: mockRouteToolCalls,
+  getMcpToolPrompt: vi.fn(() => ''),
+}));
+
+vi.mock('../services/settings-store.js', () => ({
+  getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
+}));
+
+vi.mock('../services/prompt-store.js', () => ({
+  getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
+}));
+
+// ── Import the module under test AFTER mocks are registered ──
+import {
+  isRecoverableToolCallParseError,
+  looksLikeToolCallAttempt,
+  formatChatContext,
+  getAuthHeaders,
+  setupLlmNamespace,
+} from './llm-chat.js';
+
+// ── Pure utility function tests (unchanged) ──
 
 describe('getAuthHeaders', () => {
   it('returns empty object when token is undefined', () => {
@@ -140,5 +233,264 @@ describe('formatChatContext', () => {
 
     expect(result).toContain('Additional Context');
     expect(result).not.toContain('ACTIVE FOCUS');
+  });
+});
+
+// ── Integration tests for setupLlmNamespace (tool iteration limit) ──
+
+/**
+ * Helper: create a mock Socket.IO namespace + socket pair.
+ * The namespace emits 'connection' with the socket, and the socket
+ * collects event handlers registered via socket.on().
+ */
+function createMockSocketPair() {
+  const socketHandlers = new Map<string, (...args: any[]) => any>();
+  const emitted: Array<{ event: string; args: any[] }> = [];
+
+  const socket = {
+    id: 'test-socket-id',
+    data: { user: { sub: 'test-user' } },
+    on: vi.fn((event: string, handler: (...args: any[]) => any) => {
+      socketHandlers.set(event, handler);
+    }),
+    emit: vi.fn((event: string, ...args: any[]) => {
+      emitted.push({ event, args });
+    }),
+  };
+
+  const ns = new EventEmitter() as any;
+  return {
+    ns,
+    socket,
+    socketHandlers,
+    emitted,
+    connect: () => ns.emit('connection', socket),
+  };
+}
+
+function baseLlmConfig(overrides: Record<string, any> = {}) {
+  return {
+    ollamaUrl: 'http://localhost:11434',
+    model: 'llama3.2',
+    customEnabled: false,
+    customEndpointUrl: undefined,
+    customEndpointToken: undefined,
+    maxTokens: 2000,
+    maxToolIterations: 2,
+    ...overrides,
+  };
+}
+
+describe('setupLlmNamespace — tool iteration limit graceful degradation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Phase 1 is skipped because collectAllTools returns [] (no native tools)
+    mockCollectAllTools.mockReturnValue([]);
+    mockRouteToolCalls.mockResolvedValue([]);
+    mockParseToolCalls.mockReturnValue(null);
+  });
+
+  it('generates a partial summary via LLM when tool iteration limit is reached', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 2 }));
+
+    const toolCallJson = '{"tool_calls":[{"tool":"get_container_logs","arguments":{"container_name":"nginx","tail":20}}]}';
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        return (async function* () {
+          const isSummaryCall = opts.messages?.some?.(
+            (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
+          );
+          if (isSummaryCall) {
+            yield { message: { content: 'Here is a partial summary of your infrastructure.' } };
+          } else {
+            yield { message: { content: toolCallJson } };
+          }
+        })();
+      }
+      // Non-streaming (Phase 1 native): no tool calls
+      return { message: { content: '', tool_calls: [] } };
+    });
+
+    mockParseToolCalls.mockImplementation((text: string) => {
+      if (text.includes('"tool_calls"')) {
+        return [{ tool: 'get_container_logs', arguments: { container_name: 'nginx', tail: 20 } }];
+      }
+      return null;
+    });
+
+    mockRouteToolCalls.mockResolvedValue([
+      { tool: 'get_container_logs', success: true, data: { logs: 'some log data' } },
+    ]);
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    expect(chatHandler).toBeDefined();
+
+    await chatHandler!({ text: 'Tell me about all my containers' });
+
+    const chunks = emitted
+      .filter(e => e.event === 'chat:chunk')
+      .map(e => e.args[0])
+      .join('');
+
+    // Should contain the LLM-generated partial summary
+    expect(chunks).toContain('Here is a partial summary of your infrastructure.');
+    // Should contain the truncation notice
+    expect(chunks).toContain('tool call limit');
+    expect(chunks).toContain('LLM_MAX_TOOL_ITERATIONS');
+
+    // Should have emitted chat:end with the full response
+    const endEvents = emitted.filter(e => e.event === 'chat:end');
+    expect(endEvents.length).toBe(1);
+    const finalContent = endEvents[0].args[0].content;
+    expect(finalContent).toContain('partial summary');
+    expect(finalContent).toContain('LLM_MAX_TOOL_ITERATIONS');
+  });
+
+  it('falls back to raw tool results when summary LLM call fails', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 1 }));
+
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        const isSummaryCall = opts.messages?.some?.(
+          (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
+        );
+        if (isSummaryCall) {
+          throw new Error('Ollama connection refused');
+        }
+        const toolCallJson = '{"tool_calls":[{"tool":"get_container_metrics","arguments":{}}]}';
+        return (async function* () {
+          yield { message: { content: toolCallJson } };
+        })();
+      }
+      return { message: { content: '', tool_calls: [] } };
+    });
+
+    mockParseToolCalls.mockImplementation((text: string) => {
+      if (text.includes('"tool_calls"')) {
+        return [{ tool: 'get_container_metrics', arguments: {} }];
+      }
+      return null;
+    });
+
+    mockRouteToolCalls.mockResolvedValue([
+      { tool: 'get_container_metrics', success: true, data: { cpu: 42.5 } },
+    ]);
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    await chatHandler!({ text: 'Show me metrics' });
+
+    const chunks = emitted
+      .filter(e => e.event === 'chat:chunk')
+      .map(e => e.args[0])
+      .join('');
+
+    // Should contain fallback raw tool results
+    expect(chunks).toContain('raw data');
+    expect(chunks).toContain('get_container_metrics');
+    // Should still contain the truncation notice
+    expect(chunks).toContain('LLM_MAX_TOOL_ITERATIONS');
+  });
+
+  it('falls back to hard error when summary fails and no tool results exist', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 1 }));
+
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        const isSummaryCall = opts.messages?.some?.(
+          (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
+        );
+        if (isSummaryCall) {
+          throw new Error('Ollama down');
+        }
+        const toolCallJson = '{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}';
+        return (async function* () {
+          yield { message: { content: toolCallJson } };
+        })();
+      }
+      return { message: { content: '', tool_calls: [] } };
+    });
+
+    mockParseToolCalls.mockImplementation((text: string) => {
+      if (text.includes('"tool_calls"')) {
+        return [{ tool: 'get_endpoints', arguments: {} }];
+      }
+      return null;
+    });
+
+    mockRouteToolCalls.mockResolvedValue([]);
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    await chatHandler!({ text: 'What is running?' });
+
+    const chunks = emitted
+      .filter(e => e.event === 'chat:chunk')
+      .map(e => e.args[0])
+      .join('');
+
+    // Should contain the hard error fallback
+    expect(chunks).toContain('unable to complete the request');
+    // Should still contain the truncation notice
+    expect(chunks).toContain('LLM_MAX_TOOL_ITERATIONS');
+  });
+
+  it('includes the configured limit value in the truncation notice', async () => {
+    const customLimit = 7;
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: customLimit }));
+
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        const isSummaryCall = opts.messages?.some?.(
+          (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
+        );
+        if (isSummaryCall) {
+          return (async function* () {
+            yield { message: { content: 'Summary text.' } };
+          })();
+        }
+        const toolCallJson = '{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}';
+        return (async function* () {
+          yield { message: { content: toolCallJson } };
+        })();
+      }
+      return { message: { content: '', tool_calls: [] } };
+    });
+
+    mockParseToolCalls.mockImplementation((text: string) => {
+      if (text.includes('"tool_calls"')) {
+        return [{ tool: 'get_endpoints', arguments: {} }];
+      }
+      return null;
+    });
+
+    mockRouteToolCalls.mockResolvedValue([
+      { tool: 'get_endpoints', success: true, data: [] },
+    ]);
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    await chatHandler!({ text: 'Give me everything' });
+
+    const chunks = emitted
+      .filter(e => e.event === 'chat:chunk')
+      .map(e => e.args[0])
+      .join('');
+
+    // The notice should contain the exact configured limit number
+    expect(chunks).toContain(`tool call limit (${customLimit})`);
   });
 });
