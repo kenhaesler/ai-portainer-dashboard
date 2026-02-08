@@ -77,6 +77,9 @@ describe('ContainerMultiSelect', () => {
       const searchWrapper = searchInput.parentElement;
       expect(searchWrapper).toBeTruthy();
       expect(searchWrapper).toHaveClass('relative');
+
+      const dropdown = screen.getByRole('listbox');
+      expect(dropdown).toHaveClass('backdrop-blur-xl');
     });
 
     it('closes dropdown on outside click', () => {
