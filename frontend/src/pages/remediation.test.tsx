@@ -21,6 +21,7 @@ vi.mock('@/hooks/use-remediation', () => ({
       action_type: 'STOP_CONTAINER',
       status: 'pending',
       container_id: 'container-1',
+      container_name: 'api-service',
       endpoint_id: 1,
       rationale: JSON.stringify({
         root_cause: 'Connection pool leak is exhausting memory over time.',
@@ -75,6 +76,14 @@ describe('RemediationPage', () => {
     vi.clearAllMocks();
   });
 
+  it('shows container name and hides action/container ids from row display', () => {
+    renderPage();
+    expect(screen.getByText('api-service')).toBeInTheDocument();
+    expect(screen.queryByText('ID: containe')).not.toBeInTheDocument();
+    expect(screen.queryByText('action-1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument();
+  });
+
   it('renders structured remediation analysis from rationale JSON', () => {
     renderPage();
     expect(screen.getByText('Critical')).toBeInTheDocument();
@@ -92,6 +101,7 @@ describe('RemediationPage', () => {
       state: expect.objectContaining({
         source: 'remediation',
         actionId: 'action-1',
+        prefillPrompt: expect.stringContaining('Container: api-service'),
       }),
     }));
   });
