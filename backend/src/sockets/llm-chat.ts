@@ -373,6 +373,46 @@ function normalizeToolCallsFromOllama(json: any): string | null {
   return JSON.stringify({ tool_calls: normalized });
 }
 
+/**
+ * Converts raw chat context JSON into clear natural-language instructions
+ * placed at the TOP of the system prompt so smaller LLMs don't lose it.
+ */
+export function formatChatContext(ctx: Record<string, unknown>): string {
+  const page = ctx.page as string | undefined;
+
+  // Metrics dashboard — container-focused context
+  if (page === 'metrics-dashboard' && ctx.containerName) {
+    const metrics = ctx.currentMetrics as { cpuAvg?: number; memoryAvg?: number } | undefined;
+    const lines = [
+      `## ACTIVE FOCUS — READ THIS FIRST`,
+      ``,
+      `The user is currently viewing the **Metrics Dashboard** for a specific container.`,
+      `- **Container name**: ${ctx.containerName}`,
+    ];
+    if (ctx.containerId) lines.push(`- **Container ID**: ${ctx.containerId}`);
+    if (ctx.endpointId) lines.push(`- **Endpoint ID**: ${ctx.endpointId}`);
+    if (ctx.timeRange) lines.push(`- **Selected time range**: ${ctx.timeRange}`);
+    if (metrics?.cpuAvg !== undefined) lines.push(`- **Current avg CPU**: ${Number(metrics.cpuAvg).toFixed(1)}%`);
+    if (metrics?.memoryAvg !== undefined) lines.push(`- **Current avg Memory**: ${Number(metrics.memoryAvg).toFixed(1)}%`);
+    lines.push(``);
+    lines.push(`**IMPORTANT**: All questions from this user are about the container "${ctx.containerName}" unless they explicitly mention a different container. When using tools like get_container_logs or get_container_metrics, use container_name="${ctx.containerName}" automatically — do NOT ask the user which container they mean.`);
+    return lines.join('\n');
+  }
+
+  // Generic fallback — structured but still readable
+  if (Object.keys(ctx).length > 0) {
+    const lines = [`## Additional Context`];
+    for (const [key, value] of Object.entries(ctx)) {
+      if (value !== undefined && value !== null) {
+        lines.push(`- **${key}**: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  return '';
+}
+
 export function setupLlmNamespace(ns: Namespace) {
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
@@ -394,12 +434,12 @@ export function setupLlmNamespace(ns: Namespace) {
       const infrastructureContext = await buildInfrastructureContext();
       const toolPrompt = getToolSystemPrompt();
 
-      const additionalContext = data.context ? `\n## Additional Context\n${JSON.stringify(data.context, null, 2)}` : '';
+      const additionalContext = data.context ? formatChatContext(data.context) : '';
       const systemPromptCore = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
 
-${infrastructureContext}
-
 ${additionalContext}
+
+${infrastructureContext}
 
 Provide concise, actionable responses. Use markdown formatting for code blocks and lists. When suggesting actions, explain the reasoning and potential impact.`;
       const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}`;
