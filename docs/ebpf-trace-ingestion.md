@@ -283,6 +283,161 @@ docker compose --profile ebpf up
 
 This instruments services visible from the dashboard's Docker network.
 
+## Multi-Endpoint Deployment
+
+In production environments with multiple Portainer endpoints (e.g., `prod-eu-1`, `prod-us-2`, `staging`), Beyla must be deployed on **every endpoint** where you want eBPF trace visibility. Without this, the Trace Explorer and eBPF Coverage page will have blind spots.
+
+### Deployment Architecture
+
+```
+                        ┌──────────────────────┐
+                        │  Dashboard Backend   │
+                        │  (single instance)   │
+                        │                      │
+                        │  POST /api/traces/   │
+                        │  otlp/v1/traces      │
+                        └──────────┬───────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+            ┌───────▼──────┐ ┌────▼───────┐ ┌────▼───────┐
+            │ Endpoint A   │ │ Endpoint B │ │ Endpoint C │
+            │ prod-eu-1    │ │ prod-us-2  │ │ staging    │
+            │              │ │            │ │            │
+            │ ┌──────────┐ │ │ ┌────────┐ │ │ ┌────────┐ │
+            │ │  Beyla   │ │ │ │ Beyla  │ │ │ │ Beyla  │ │
+            │ │(per stack)│ │ │ │        │ │ │ │        │ │
+            │ └──────────┘ │ │ └────────┘ │ │ └────────┘ │
+            │ ┌──────────┐ │ │ ┌────────┐ │ │ ┌────────┐ │
+            │ │  App     │ │ │ │  App   │ │ │ │  App   │ │
+            │ │ Services │ │ │ │Services│ │ │ │Services│ │
+            │ └──────────┘ │ │ └────────┘ │ │ └────────┘ │
+            └──────────────┘ └────────────┘ └────────────┘
+```
+
+### Step-by-Step: Deploy Beyla Across All Endpoints
+
+#### 1. Enable trace ingestion on the dashboard (once)
+
+```env
+TRACES_INGESTION_ENABLED=true
+TRACES_INGESTION_API_KEY=your-secret-api-key-here
+```
+
+The dashboard backend must be reachable from all endpoints. If endpoints are on different networks, ensure the dashboard URL is accessible (e.g., via public DNS or VPN).
+
+#### 2. Determine the dashboard URL for each endpoint
+
+Each Beyla instance needs to reach the dashboard's OTLP endpoint. The URL depends on the endpoint's network topology:
+
+| Endpoint location | `OTEL_EXPORTER_OTLP_ENDPOINT` value |
+|---|---|
+| Same Docker host as dashboard | `http://backend:3051/api/traces/otlp` (use Docker network) |
+| Same machine, different compose stack | `http://host.docker.internal:3051/api/traces/otlp` |
+| Remote server (LAN/VPN) | `http://<dashboard-ip>:3051/api/traces/otlp` |
+| Remote server (internet) | `https://dashboard.example.com/api/traces/otlp` (use HTTPS + reverse proxy) |
+
+#### 3. Deploy Beyla on each endpoint
+
+For each Portainer endpoint, deploy Beyla as a stack via Portainer's Stacks UI or CLI. Use this template and adjust `OTEL_EXPORTER_OTLP_ENDPOINT` per endpoint:
+
+```yaml
+# beyla-tracer stack — deploy one per Portainer endpoint
+services:
+  beyla:
+    image: grafana/beyla:latest
+    privileged: true
+    pid: "host"
+    init: true
+    environment:
+      BEYLA_OPEN_PORT: "80,443,3000-9999"
+      BEYLA_SERVICE_NAMESPACE: "${ENDPOINT_NAME:-unknown}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${DASHBOARD_OTLP_URL}"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
+      OTEL_METRICS_EXPORTER: "none"
+      OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=${TRACES_INGESTION_API_KEY}"
+      BEYLA_TRACE_PRINTER: "disabled"
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup
+      - /sys/kernel/security:/sys/kernel/security
+    restart: unless-stopped
+```
+
+**Deploy via Portainer Stacks UI:**
+
+1. Open Portainer → select the target endpoint
+2. Go to **Stacks** → **Add Stack**
+3. Name it `beyla-tracer`
+4. Paste the template above
+5. Set environment variables:
+   - `ENDPOINT_NAME` = the endpoint name (e.g., `prod-eu-1`)
+   - `DASHBOARD_OTLP_URL` = the dashboard URL from step 2
+   - `TRACES_INGESTION_API_KEY` = same key from step 1
+6. Deploy
+7. Repeat for each endpoint
+
+**Deploy via CLI (for scripted rollouts):**
+
+```bash
+# Deploy to all endpoints using Portainer API
+for ENDPOINT_ID in 1 2 3; do
+  curl -X POST "https://portainer.example.com/api/stacks/create/standalone/string?endpointId=${ENDPOINT_ID}" \
+    -H "X-API-Key: ${PORTAINER_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "beyla-tracer",
+      "stackFileContent": "<compose-yaml-here>",
+      "env": [
+        {"name": "ENDPOINT_NAME", "value": "endpoint-'${ENDPOINT_ID}'"},
+        {"name": "DASHBOARD_OTLP_URL", "value": "http://dashboard.example.com:3051/api/traces/otlp"},
+        {"name": "TRACES_INGESTION_API_KEY", "value": "your-secret-api-key-here"}
+      ]
+    }'
+done
+```
+
+#### 4. Verify trace ingestion
+
+After deploying, verify each endpoint is sending traces:
+
+1. Generate HTTP traffic on the endpoint (e.g., `curl http://app-on-endpoint/`)
+2. Open **eBPF Coverage** page in the dashboard sidebar → click **Verify** for each endpoint
+3. Open **Trace Explorer** → filter by **eBPF (Apps)** source → confirm spans arrive with the correct `service.namespace` matching the endpoint name
+
+#### 5. Track coverage status
+
+Use the **eBPF Coverage** page (`/ebpf-coverage`) to track deployment progress:
+
+1. Click **Sync Endpoints** to pull the latest endpoint list from Portainer
+2. For each endpoint, update the status:
+   - `deployed` — Beyla is running and sending traces
+   - `planned` — Beyla deployment is scheduled but not yet done
+   - `excluded` — Endpoint intentionally excluded (e.g., edge agent with no kernel access)
+   - `failed` — Deployment attempted but Beyla is not sending traces
+3. The summary bar shows overall coverage percentage
+
+### Endpoint Exclusion Criteria
+
+Not all endpoints can run Beyla. Mark these as `excluded` with a reason:
+
+| Reason | Example |
+|---|---|
+| **No kernel access** | Edge agents, Windows endpoints, Kubernetes without privileged DaemonSets |
+| **ARM architecture** | Beyla requires x86_64 (ARM support is experimental) |
+| **Compliance restriction** | Endpoints in regulated environments that prohibit privileged containers |
+| **No HTTP workloads** | Endpoints running only databases or message brokers with no HTTP traffic |
+
+### Troubleshooting Multi-Endpoint Deployment
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| No traces from a remote endpoint | Dashboard not reachable | Check firewall, verify URL with `curl` from the endpoint host |
+| Traces arrive but no `service.namespace` | `BEYLA_SERVICE_NAMESPACE` not set | Add the env var and restart the Beyla stack |
+| Beyla container keeps restarting | Missing kernel BTF support | Check `ls /sys/kernel/btf/vmlinux` on the host — if missing, kernel is too old |
+| Beyla running but no spans | No HTTP traffic on configured ports | Verify `BEYLA_OPEN_PORT` matches your application ports |
+| 401 errors in Beyla logs | Wrong API key | Verify `TRACES_INGESTION_API_KEY` matches the dashboard `.env` |
+| Coverage page shows `unknown` | Endpoints not synced | Click **Sync Endpoints** on the eBPF Coverage page |
+
 ## Known Behaviors
 
 ### Beyla sends protobuf despite `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
