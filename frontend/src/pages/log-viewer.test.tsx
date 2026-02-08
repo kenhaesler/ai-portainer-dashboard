@@ -34,4 +34,18 @@ describe('LogViewerPage', () => {
     expect(screen.getByText('Live Tail ON')).toBeInTheDocument();
     expect(screen.getByText('Select one or more containers to view aggregated logs.')).toBeInTheDocument();
   });
+
+  it('filter section has higher z-index than log output area (#404)', () => {
+    const { container } = render(<LogViewerPage />);
+
+    // The filter section (with backdrop-blur) must have z-20 so its dropdown floats above the log area
+    const filterSection = container.querySelector('section.z-20');
+    expect(filterSection).toBeInTheDocument();
+    expect(filterSection).toHaveClass('backdrop-blur');
+
+    // The log output section must have z-10 so it sits below the filter dropdown
+    const logSection = container.querySelector('section.z-10');
+    expect(logSection).toBeInTheDocument();
+    expect(logSection).toHaveClass('overflow-hidden');
+  });
 });
