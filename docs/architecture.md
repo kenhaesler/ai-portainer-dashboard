@@ -31,71 +31,71 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 
 ```mermaid
 graph TB
-    subgraph Frontend["&nbsp;&nbsp; Frontend — React 19 + Vite 6 &nbsp;&nbsp; :5173 &nbsp;&nbsp;"]
+    subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 :5173 &nbsp;"]
         direction TB
         Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
 
-        subgraph Pages["&nbsp;&nbsp; Pages &nbsp;&nbsp;"]
+        subgraph Pages["&nbsp; Pages &nbsp;"]
             direction LR
-            P1["Home · Fleet Overview<br/>Workload Explorer<br/>Stack Overview"]
-            P2["Container Detail<br/>Container Health<br/>Image Footprint<br/>Network Topology"]
-            P3["AI Monitor<br/>Metrics Dashboard<br/>Remediation<br/>Trace Explorer"]
-            P4["LLM Assistant<br/>Edge Logs<br/>Packet Capture<br/>Settings"]
+            P1["Home<br/>Fleet Overview"]
+            P2["Workload Explorer<br/>Stack Overview"]
+            P3["Container Detail<br/>Container Health"]
+            P4["Image Footprint<br/>Network Topology"]
+            P5["AI Monitor<br/>Metrics Dashboard"]
+            P6["Remediation<br/>Trace Explorer"]
+            P7["LLM Assistant<br/>Edge Logs"]
+            P8["Packet Capture<br/>Settings"]
         end
 
-        subgraph FState["&nbsp;&nbsp; State Management &nbsp;&nbsp;"]
+        subgraph FState["&nbsp; State &nbsp;"]
             direction LR
-            RQ["TanStack React Query 5<br/><i>Server state &amp; caching</i>"]
-            Zustand["Zustand 5<br/><i>UI state — theme, sidebar,<br/>notifications, filters</i>"]
+            RQ["TanStack Query 5<br/><i>Server state</i>"]
+            Zustand["Zustand 5<br/><i>UI state</i>"]
+            SIOClient["Socket.IO<br/><i>3 namespaces</i>"]
         end
 
-        subgraph FRealtime["&nbsp;&nbsp; Real-Time &nbsp;&nbsp;"]
-            SIOClient["Socket.IO Client<br/><i>3 namespaces</i>"]
-        end
-
-        subgraph FUI["&nbsp;&nbsp; UI Layer &nbsp;&nbsp;"]
+        subgraph FUI["&nbsp; UI Layer &nbsp;"]
             direction LR
-            Radix["Radix UI<br/><i>Accessible components</i>"]
-            Recharts["Recharts<br/><i>Charts &amp; metrics</i>"]
-            XYFlow["XYFlow<br/><i>Network topology</i>"]
-            Tailwind["Tailwind CSS v4<br/><i>Glassmorphism theme</i>"]
+            Radix["Radix UI"]
+            Recharts["Recharts"]
+            XYFlow["XYFlow"]
+            Tailwind["Tailwind v4"]
         end
 
         Router --> Pages
         Pages --> FState
-        Pages --> FRealtime
         Pages --> FUI
     end
 
-    subgraph Backend["&nbsp;&nbsp; Backend — Fastify 5 + TypeScript &nbsp;&nbsp; :3001 &nbsp;&nbsp;"]
+    subgraph Backend["&nbsp; Backend — Fastify 5 + TypeScript :3001 &nbsp;"]
         direction TB
-        API["REST API<br/><i>Auth, Containers, Metrics,<br/>Monitoring, Remediation,<br/>Settings, Logs, Traces</i>"]
+        API["REST API<br/><i>15 route modules</i>"]
 
-        subgraph Sockets["&nbsp;&nbsp; Socket.IO Namespaces &nbsp;&nbsp;"]
+        subgraph Sockets["&nbsp; Socket.IO &nbsp;"]
             direction LR
-            NSllm["/llm<br/><i>Chat streaming</i>"]
-            NSmon["/monitoring<br/><i>Live insights</i>"]
-            NSrem["/remediation<br/><i>Action updates</i>"]
+            NSllm["/llm"]
+            NSmon["/monitoring"]
+            NSrem["/remediation"]
         end
 
-        subgraph Services["&nbsp;&nbsp; Services &nbsp;&nbsp;"]
+        subgraph Services["&nbsp; Services &nbsp;"]
             direction LR
-            PortClient["Portainer Client<br/><i>Retry + backoff</i>"]
-            Cache["Response Cache<br/><i>TTL-based</i>"]
-            LLMClient["LLM Client<br/><i>Ollama SDK</i>"]
-            AnomalyDet["Anomaly Detection<br/><i>Z-score · Bollinger<br/>Adaptive · Isolation Forest</i>"]
-            MonService["Monitoring Service<br/><i>Insight generation</i>"]
-            MetricsCol["Metrics Collector<br/><i>CPU/memory stats</i>"]
+            PortClient["Portainer Client"]
+            Cache["Cache"]
+            LLMClient["LLM Client"]
+            AnomalyDet["Anomaly Detection"]
+            MonService["Monitoring"]
+            MetricsCol["Metrics Collector"]
         end
 
-        subgraph Scheduler["&nbsp;&nbsp; Background Scheduler &nbsp;&nbsp;"]
+        subgraph Scheduler["&nbsp; Scheduler &nbsp;"]
             direction LR
-            J1(["Metrics Collection<br/><i>Every 60s</i>"])
-            J2(["Monitoring Cycle<br/><i>Every 5min</i>"])
-            J3(["Cleanup<br/><i>Daily</i>"])
+            J1(["Metrics<br/><i>60s</i>"])
+            J2(["Monitoring<br/><i>5min</i>"])
+            J3(["Cleanup<br/><i>daily</i>"])
         end
 
-        DB[("SQLite + WAL<br/><i>better-sqlite3</i>")]
+        DB[("SQLite + WAL")]
 
         API --> Services
         Sockets --> Services
@@ -106,7 +106,7 @@ graph TB
     subgraph Bottom[" "]
         direction LR
 
-        subgraph Schema["&nbsp;&nbsp; Database Schema — 7 tables &nbsp;&nbsp;"]
+        subgraph Schema["&nbsp; DB Schema — 7 tables &nbsp;"]
             direction LR
             T1["sessions"]
             T2["settings"]
@@ -117,11 +117,11 @@ graph TB
             T7["audit_log"]
         end
 
-        subgraph External["&nbsp;&nbsp; External Services &nbsp;&nbsp;"]
+        subgraph External["&nbsp; External Services &nbsp;"]
             direction LR
-            Portainer(["Portainer API<br/><i>Container Management</i>"])
-            Ollama(["Ollama<br/><i>Local LLM — llama3.2</i>"])
-            Kibana(["Elasticsearch / Kibana<br/><i>Log Aggregation — optional</i>"])
+            Portainer(["Portainer API"])
+            Ollama(["Ollama LLM"])
+            Kibana(["Elasticsearch"])
         end
     end
 
@@ -130,9 +130,9 @@ graph TB
     SIOClient -- "WebSocket" --> Sockets
 
     %% Backend to External
-    PortClient -- "REST API" --> Portainer
-    LLMClient -- "Ollama API" --> Ollama
-    API -. "Optional" .-> Kibana
+    PortClient -- "REST" --> Portainer
+    LLMClient -- "API" --> Ollama
+    API -. "optional" .-> Kibana
 
     %% Database
     DB --> Schema
@@ -146,7 +146,7 @@ graph TB
     classDef invisible fill:none,stroke:none
 
     class Portainer,Ollama,Kibana external
-    class Router,P1,P2,P3,P4,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
+    class Router,P1,P2,P3,P4,P5,P6,P7,P8,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
     class API,NSllm,NSmon,NSrem,PortClient,Cache,LLMClient,AnomalyDet,MonService,MetricsCol backend
     class J1,J2,J3 scheduler
     class DB,T1,T2,T3,T4,T5,T6,T7 data
