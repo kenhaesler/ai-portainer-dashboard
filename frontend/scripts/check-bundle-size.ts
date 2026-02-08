@@ -218,4 +218,13 @@ function main(): void {
   }
 }
 
-main();
+// Only run when executed directly as a CLI script, not when imported by tests.
+// In ESM, there is no require.main === module equivalent, so we compare the
+// current module URL against the entry point resolved from process.argv[1].
+const entryUrl = process.argv[1]
+  ? new URL(process.argv[1], import.meta.url).href
+  : undefined;
+
+if (import.meta.url === entryUrl) {
+  main();
+}
