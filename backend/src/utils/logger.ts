@@ -32,7 +32,6 @@ function createLogger(): pino.Logger {
   // so log shipping is not supported in dev mode.
   if (isDev) {
     if (logShippingConfig) {
-      // eslint-disable-next-line no-console
       console.warn(
         '[logger] LOG_SHIPPING_ENABLED is set but ignored in development mode. ' +
           'Set NODE_ENV=production to enable Elasticsearch log shipping.',
