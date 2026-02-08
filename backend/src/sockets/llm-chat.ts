@@ -13,7 +13,7 @@ import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall 
 
 const log = createChildLogger('socket:llm');
 
-const MAX_TOOL_ITERATIONS = 3;
+/** Configured via Settings → LLM → Max Tool Iterations (env: LLM_MAX_TOOL_ITERATIONS) */
 
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
@@ -135,7 +135,11 @@ async function buildInfrastructureContext(): Promise<string> {
       ...runningContainers.slice(0, 5)
     ]
       .slice(0, 20)
-      .map(c => `- ${c.name} (${c.image}): ${c.state} on ${c.endpointName}`)
+      .map(c => {
+        const ips = Object.values(c.networkIPs);
+        const ipSuffix = ips.length > 0 ? ` [${ips.join(', ')}]` : '';
+        return `- ${c.name} (${c.image}): ${c.state} on ${c.endpointName}${ipSuffix}`;
+      })
       .join('\n');
 
     return `## Infrastructure Overview
@@ -620,7 +624,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         // Every iteration streams chunks to the client. If tool calls are detected,
         // we emit chat:tool_response_pending to clear the streamed tool-call JSON,
         // then the next iteration streams the follow-up response progressively.
-        while (toolIteration < MAX_TOOL_ITERATIONS) {
+        while (toolIteration < llmConfig.maxToolIterations) {
           let iterationResponse = '';
 
           try {
@@ -721,7 +725,7 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
           toolIteration++;
         }
 
-        if (!finalResponse && toolIteration >= MAX_TOOL_ITERATIONS) {
+        if (!finalResponse && toolIteration >= llmConfig.maxToolIterations) {
           finalResponse = 'I was unable to complete the request within the allowed number of tool calls. Please try a more specific question.';
           socket.emit('chat:chunk', finalResponse);
         }

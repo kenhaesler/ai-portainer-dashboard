@@ -153,6 +153,11 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
                   className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                 >
                   {network}
+                  {container.networkIPs?.[network] && (
+                    <span className="ml-1.5 font-mono text-xs opacity-75">
+                      ({container.networkIPs[network]})
+                    </span>
+                  )}
                 </span>
               ))}
             </div>

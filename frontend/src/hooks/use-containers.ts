@@ -17,6 +17,7 @@ export interface Container {
   created: number;
   labels: Record<string, string>;
   networks: string[];
+  networkIPs?: Record<string, string>;
   healthStatus?: string;
 }
 

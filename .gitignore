@@ -48,5 +48,9 @@ temp/
 # Load test reports
 loadtests/reports/
 
+# Python
+__pycache__/
+*.pyc
+
 # Claude Code
 .claude/

@@ -322,7 +322,13 @@ function SummaryTable({ containers }: { containers: Container[] }) {
             <td className="py-2 pr-4 text-muted-foreground">Networks</td>
             {containers.map((c) => (
               <td key={c.id} className="py-2 pr-4">
-                {c.networks.length > 0 ? c.networks.join(', ') : '—'}
+                {c.networks.length > 0
+                  ? c.networks
+                      .map((net) =>
+                        c.networkIPs?.[net] ? `${net} (${c.networkIPs[net]})` : net,
+                      )
+                      .join(', ')
+                  : '—'}
               </td>
             ))}
           </tr>
