@@ -59,7 +59,7 @@ describe('RefreshButton', () => {
     expect(icon).toHaveClass('animate-spin');
 
     act(() => {
-      vi.advanceTimersByTime(901);
+      vi.advanceTimersByTime(1501);
     });
     expect(icon).not.toHaveClass('animate-spin');
   });

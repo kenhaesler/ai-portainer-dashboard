@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   Radio,
-  RefreshCw,
   Play,
   Square,
   Download,
@@ -18,6 +17,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { RefreshButton } from '@/components/shared/refresh-button';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useStacks } from '@/hooks/use-stacks';
@@ -74,7 +74,7 @@ export default function PacketCapture() {
   const { data: endpoints } = useEndpoints();
   const { data: containers } = useContainers(selectedEndpoint);
   const { data: stacks } = useStacks();
-  const { data: capturesData, refetch } = useCaptures({ status: statusFilter });
+  const { data: capturesData, refetch, isFetching } = useCaptures({ status: statusFilter });
   const [expandedAnalysis, setExpandedAnalysis] = useState<Set<string>>(new Set());
   const startCapture = useStartCapture();
   const stopCapture = useStopCapture();
@@ -144,13 +144,7 @@ export default function PacketCapture() {
             Capture network traffic from containers using tcpdump. Download PCAP files for analysis in Wireshark.
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
-        </button>
+        <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
       </div>
 
       {/* New Capture Form */}
