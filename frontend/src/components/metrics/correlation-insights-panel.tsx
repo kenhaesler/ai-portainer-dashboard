@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 interface CorrelationInsightsPanelProps {
   llmAvailable: boolean;
   hours?: number;
+  selectedContainerId?: string | null;
 }
 
 function strengthColor(pair: CorrelationPair): string {
@@ -118,12 +119,20 @@ function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
   );
 }
 
-export function CorrelationInsightsPanel({ llmAvailable, hours = 24 }: CorrelationInsightsPanelProps) {
+export function CorrelationInsightsPanel({ llmAvailable, hours = 24, selectedContainerId }: CorrelationInsightsPanelProps) {
   const { data: correlationsData, isLoading: pairsLoading } = useCorrelations(hours);
   const { data: insightsData, isLoading: insightsLoading } = useCorrelationInsights(hours, llmAvailable);
 
-  const pairs = correlationsData?.pairs ?? [];
+  const allPairs = correlationsData?.pairs ?? [];
   const insights = insightsData?.insights ?? [];
+
+  // Filter to pairs involving the selected container (if any)
+  const pairs = useMemo(() => {
+    if (!selectedContainerId) return allPairs;
+    return allPairs.filter(
+      (p) => p.containerA.id === selectedContainerId || p.containerB.id === selectedContainerId,
+    );
+  }, [allPairs, selectedContainerId]);
   const summary = insightsData?.summary ?? null;
 
   // Build a map from pair key to narrative
@@ -158,7 +167,9 @@ export function CorrelationInsightsPanel({ llmAvailable, hours = 24 }: Correlati
           <div>
             <h3 className="text-lg font-semibold">Cross-Container Correlation Insights</h3>
             <p className="text-xs text-muted-foreground">
-              Detected relationships (last {hours}h) — |r| ≥ 0.7
+              {selectedContainerId
+                ? `Relationships for selected container (last ${hours}h) — |r| ≥ 0.7`
+                : `Detected relationships (last ${hours}h) — |r| ≥ 0.7`}
             </p>
           </div>
         </div>

@@ -782,7 +782,7 @@ export default function MetricsDashboardPage() {
       )}
 
       {/* Cross-Container Correlation Insights */}
-      <CorrelationInsightsPanel llmAvailable={llmAvailable} hours={24} />
+      <CorrelationInsightsPanel llmAvailable={llmAvailable} hours={24} selectedContainerId={selectedContainer} />
 
       {/* Forecast Overview */}
       <div className="rounded-lg border bg-card p-6">

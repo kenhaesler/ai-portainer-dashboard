@@ -202,4 +202,40 @@ describe('CorrelationInsightsPanel', () => {
     expect(screen.getByText('cpu')).toBeInTheDocument();
     expect(screen.getByText('memory')).toBeInTheDocument();
   });
+
+  it('filters pairs to selected container when selectedContainerId is set', () => {
+    mockUseCorrelations.mockReturnValue({
+      data: { pairs: samplePairs },
+      isLoading: false,
+    });
+    // Select nginx-proxy (id: a1) — should only show the CPU pair
+    renderPanel({ llmAvailable: false, selectedContainerId: 'a1' });
+
+    expect(screen.getAllByText('nginx-proxy').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('api-server').length).toBeGreaterThanOrEqual(1);
+    // postgres/redis pair should be filtered out
+    expect(screen.queryByText('postgres')).not.toBeInTheDocument();
+    expect(screen.queryByText('redis-cache')).not.toBeInTheDocument();
+    expect(screen.getByText('1 correlated pair')).toBeInTheDocument();
+  });
+
+  it('shows all pairs when no container is selected', () => {
+    mockUseCorrelations.mockReturnValue({
+      data: { pairs: samplePairs },
+      isLoading: false,
+    });
+    renderPanel({ llmAvailable: false, selectedContainerId: null });
+
+    expect(screen.getByText('2 correlated pairs')).toBeInTheDocument();
+  });
+
+  it('shows contextual subtitle when container is selected', () => {
+    mockUseCorrelations.mockReturnValue({
+      data: { pairs: samplePairs },
+      isLoading: false,
+    });
+    renderPanel({ llmAvailable: false, selectedContainerId: 'a1' });
+
+    expect(screen.getByText(/Relationships for selected container/)).toBeInTheDocument();
+  });
 });
