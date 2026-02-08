@@ -77,6 +77,11 @@ export const ReadinessResponseSchema = z.object({
   timestamp: z.string(),
 });
 
+// ─── Version schema ──────────────────────────────────────────────────
+export const VersionResponseSchema = z.object({
+  commit: z.string(),
+});
+
 // ─── Container schemas ──────────────────────────────────────────────
 export const NormalizedContainerSchema = z.object({
   id: z.string(),

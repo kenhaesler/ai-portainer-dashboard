@@ -32,6 +32,14 @@ vi.mock('@/stores/ui-store', () => ({
     selector({ setCommandPaletteOpen: vi.fn() }),
 }));
 
+const mockApi = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
+
+vi.mock('@/lib/api', () => ({
+  api: mockApi,
+}));
+
 vi.mock('@/components/shared/connection-orb', () => ({
   ConnectionOrb: () => <div data-testid="connection-orb" />,
 }));
@@ -39,16 +47,18 @@ vi.mock('@/components/shared/connection-orb', () => ({
 describe('Header', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_GIT_COMMIT', 'abc1234');
+    mockApi.get.mockResolvedValue({ commit: 'def5678' });
   });
 
-  it('renders commit hash in the top header', () => {
+  it('renders commit hash in the top header', async () => {
     render(
       <MemoryRouter>
         <Header />
       </MemoryRouter>
     );
 
-    expect(screen.getByText('abc1234')).toBeInTheDocument();
-    expect(screen.getByLabelText('Build abc1234')).toBeInTheDocument();
+    expect(await screen.findByText('def5678')).toBeInTheDocument();
+    expect(screen.getByLabelText('Build def5678')).toBeInTheDocument();
+    expect(mockApi.get).toHaveBeenCalledWith('/api/version');
   });
 });

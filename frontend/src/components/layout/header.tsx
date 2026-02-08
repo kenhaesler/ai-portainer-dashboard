@@ -6,6 +6,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useState, useRef, useEffect } from 'react';
 import { ConnectionOrb } from '@/components/shared/connection-orb';
+import { api } from '@/lib/api';
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',
@@ -32,9 +33,11 @@ export function Header() {
   const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
-  const appCommit = import.meta.env.VITE_GIT_COMMIT
-    || import.meta.env.VITE_APP_COMMIT
-    || 'dev';
+  const [appCommit, setAppCommit] = useState(
+    import.meta.env.VITE_GIT_COMMIT
+      || import.meta.env.VITE_APP_COMMIT
+      || 'dev'
+  );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +73,19 @@ export function Header() {
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    api.get<{ commit: string }>('/api/version')
+      .then((data) => {
+        if (!isMounted) return;
+        if (data?.commit) setAppCommit(data.commit);
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return (
