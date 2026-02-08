@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ShieldAlert } from 'lucide-react';
+import { Search, ShieldAlert } from 'lucide-react';
 import { useSecurityAudit } from '@/hooks/use-security-audit';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -52,6 +52,7 @@ function capabilityBadgeClass(capability: string): string {
 }
 
 export default function SecurityAuditPage() {
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedEndpoint, setSelectedEndpoint] = useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedIgnored, setSelectedIgnored] = useState<string>('all');
@@ -76,8 +77,10 @@ export default function SecurityAuditPage() {
   }, [entries]);
 
   const filteredEntries = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return entries
       .filter((entry) => {
+        if (q && !entry.containerName.toLowerCase().includes(q) && !entry.image.toLowerCase().includes(q)) return false;
         if (selectedSeverity !== 'all' && entry.severity !== selectedSeverity) return false;
         if (selectedIgnored === 'ignored' && !entry.ignored) return false;
         if (selectedIgnored === 'active' && entry.ignored) return false;
@@ -89,7 +92,7 @@ export default function SecurityAuditPage() {
         if (sev !== 0) return sev;
         return a.containerName.localeCompare(b.containerName);
       });
-  }, [entries, selectedSeverity, selectedIgnored, selectedStack]);
+  }, [entries, searchQuery, selectedSeverity, selectedIgnored, selectedStack]);
 
   return (
     <div className="space-y-4">
@@ -99,6 +102,16 @@ export default function SecurityAuditPage() {
       </div>
 
       <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search containers by name or image..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Endpoint</span>
@@ -169,7 +182,7 @@ export default function SecurityAuditPage() {
           <div className="rounded-lg border bg-muted/30 p-8 text-center">
             <ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-3 font-medium">No matching containers</p>
-            <p className="mt-1 text-sm text-muted-foreground">Try adjusting severity, stack, or ignored filters.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Try adjusting your search or filters.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
