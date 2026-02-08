@@ -71,6 +71,7 @@ export function Header() {
 
   return (
     <header
+      data-testid="header"
       data-animated-bg={hasAnimatedBg || undefined}
       className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
     >
@@ -119,6 +120,7 @@ export function Header() {
           const isDark = useThemeStore.getState().resolvedTheme() === 'dark';
           return (
             <button
+              data-testid="theme-toggle"
               onClick={toggleTheme}
               className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
               aria-label={`Switch to ${isDark ? 'light' : 'dark'} theme`}
@@ -147,6 +149,7 @@ export function Header() {
         {/* User menu */}
         <div ref={userMenuRef} className="relative">
           <button
+            data-testid="user-menu-trigger"
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition-colors hover:bg-muted/50"
           >
@@ -165,6 +168,7 @@ export function Header() {
               </div>
               <div className="my-1 h-px bg-border" />
               <button
+                data-testid="logout-button"
                 onClick={() => {
                   setUserMenuOpen(false);
                   logout();
