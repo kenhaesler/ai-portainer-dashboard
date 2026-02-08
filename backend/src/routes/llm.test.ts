@@ -47,6 +47,29 @@ vi.mock('../services/portainer-cache.js', () => ({
   TTL: { ENDPOINTS: 60, CONTAINERS: 30 },
 }));
 
+// Mock prompt-store
+vi.mock('../services/prompt-store.js', () => ({
+  getEffectivePrompt: vi.fn().mockReturnValue('default prompt'),
+  PROMPT_FEATURES: [
+    { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
+    { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
+  ],
+}));
+
+// Mock prompt-test-fixtures
+vi.mock('../services/prompt-test-fixtures.js', () => ({
+  PROMPT_TEST_FIXTURES: {
+    chat_assistant: {
+      label: 'General infrastructure question',
+      sampleInput: 'What containers are using the most CPU?',
+    },
+    anomaly_explainer: {
+      label: 'High CPU anomaly',
+      sampleInput: '{"containerId":"abc123","containerName":"nginx-proxy"}',
+    },
+  },
+}));
+
 // Mock logger
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
@@ -65,6 +88,7 @@ describe('LLM Routes', () => {
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
     await app.register(llmRoutes);
     await app.ready();
   });
@@ -327,6 +351,190 @@ describe('LLM Routes', () => {
       const body = res.json();
       expect(body.action).toBe('answer');
       expect(body.text).toContain('cannot provide internal system instructions');
+    });
+  });
+
+  describe('POST /api/llm/test-prompt', () => {
+    it('returns success with response when LLM succeeds', async () => {
+      mockChat.mockResolvedValue({
+        message: { content: 'Test response from LLM' },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+          systemPrompt: 'You are a test assistant.',
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(body.response).toBe('Test response from LLM');
+      expect(body.sampleLabel).toBe('General infrastructure question');
+      expect(body.tokens).toBeDefined();
+      expect(body.tokens.total).toBeGreaterThan(0);
+      expect(body.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(body.format).toBe('text');
+      expect(body.model).toBe('llama3.2');
+    });
+
+    it('detects JSON format in response', async () => {
+      mockChat.mockResolvedValue({
+        message: { content: '{"severity":"warning","summary":"High CPU"}' },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+          systemPrompt: 'Respond with JSON only.',
+        },
+      });
+
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(body.format).toBe('json');
+    });
+
+    it('returns error for unknown feature', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'nonexistent_feature',
+          systemPrompt: 'Test prompt',
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Unknown feature');
+    });
+
+    it('returns error when LLM call fails', async () => {
+      mockChat.mockRejectedValue(new Error('Connection refused'));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+          systemPrompt: 'Test prompt',
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Connection refused');
+      expect(body.latencyMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('validates body schema - missing feature', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          systemPrompt: 'Test prompt',
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('validates body schema - missing systemPrompt', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('uses custom model when provided', async () => {
+      mockChat.mockResolvedValue({
+        message: { content: 'Response from custom model' },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+          systemPrompt: 'Test prompt',
+          model: 'codellama',
+        },
+      });
+
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(body.model).toBe('codellama');
+    });
+
+    it('records success trace', async () => {
+      mockChat.mockResolvedValue({
+        message: { content: 'Test response' },
+      });
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+          systemPrompt: 'Test prompt',
+        },
+      });
+
+      expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
+      const trace = mockInsertLlmTrace.mock.calls[0][0];
+      expect(trace.status).toBe('success');
+      expect(trace.user_query).toContain('[test-prompt:chat_assistant]');
+    });
+
+    it('records error trace on failure', async () => {
+      mockChat.mockRejectedValue(new Error('Timeout'));
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'chat_assistant',
+          systemPrompt: 'Test prompt',
+        },
+      });
+
+      expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
+      const trace = mockInsertLlmTrace.mock.calls[0][0];
+      expect(trace.status).toBe('error');
+      expect(trace.response_preview).toContain('Timeout');
+    });
+
+    it('returns sample input and label in response', async () => {
+      mockChat.mockResolvedValue({
+        message: { content: 'Analysis complete' },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-prompt',
+        payload: {
+          feature: 'anomaly_explainer',
+          systemPrompt: 'You are an analyzer.',
+        },
+      });
+
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(body.sampleInput).toContain('abc123');
+      expect(body.sampleLabel).toBe('High CPU anomaly');
     });
   });
 });

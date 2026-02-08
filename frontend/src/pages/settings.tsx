@@ -41,6 +41,10 @@ import {
   RotateCcw,
   MessageSquare,
   Save,
+  Play,
+  X,
+  FileText,
+  Zap,
 } from 'lucide-react';
 import {
   useThemeStore,
@@ -61,9 +65,9 @@ import {
 import { ICON_SETS, ICON_SET_MAP, type AppIconId } from '@/components/icons/icon-sets';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
-import { useLlmModels, useLlmTestConnection } from '@/hooks/use-llm-models';
+import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/hooks/use-llm-models';
 import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/hooks/use-security-audit';
-import type { LlmModel } from '@/hooks/use-llm-models';
+import type { LlmModel, LlmTestPromptResponse } from '@/hooks/use-llm-models';
 import {
   usePortainerBackups,
   useCreatePortainerBackup,
@@ -1792,6 +1796,169 @@ function TokenBadge({ count }: { count: number }) {
   );
 }
 
+function PromptTestPanel({
+  feature,
+  systemPrompt,
+  model,
+  temperature,
+}: {
+  feature: string;
+  systemPrompt: string;
+  model: string;
+  temperature: string;
+}) {
+  const testPrompt = useLlmTestPrompt();
+  const [result, setResult] = useState<LlmTestPromptResponse | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleTest = () => {
+    setIsOpen(true);
+    setResult(null);
+    testPrompt.mutate(
+      {
+        feature,
+        systemPrompt,
+        ...(model ? { model } : {}),
+        ...(temperature ? { temperature: parseFloat(temperature) } : {}),
+      },
+      {
+        onSuccess: (data) => setResult(data),
+        onError: (err) => setResult({ success: false, error: err.message }),
+      },
+    );
+  };
+
+  const handleCancel = () => {
+    setIsOpen(false);
+    setResult(null);
+  };
+
+  const isLoading = testPrompt.isPending;
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={handleTest}
+        disabled={isLoading}
+        className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 disabled:opacity-50"
+      >
+        {isLoading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Play className="h-3.5 w-3.5" />
+        )}
+        {isLoading ? 'Testing...' : 'Test Prompt'}
+      </button>
+
+      {isOpen && (
+        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              Test Results
+            </span>
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Sample Input Preview */}
+          {result?.sampleInput && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">
+                Sample input: {result.sampleLabel}
+              </p>
+              <pre className="text-xs bg-background rounded border border-border p-2 overflow-x-auto max-h-24 overflow-y-auto font-mono whitespace-pre-wrap break-words">
+                {result.sampleInput.length > 300
+                  ? result.sampleInput.slice(0, 300) + '...'
+                  : result.sampleInput}
+              </pre>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center gap-2 py-4 justify-center text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Waiting for LLM response...</span>
+            </div>
+          )}
+
+          {/* Error State */}
+          {result && !result.success && (
+            <div className="rounded-md bg-red-500/10 border border-red-500/20 p-3">
+              <p className="text-sm text-red-600 dark:text-red-400">
+                {result.error || 'Unknown error'}
+              </p>
+              {result.latencyMs !== undefined && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Failed after {(result.latencyMs / 1000).toFixed(1)}s
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Success State */}
+          {result?.success && (
+            <>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">LLM Response:</p>
+                <pre className="text-sm bg-background rounded border border-border p-3 overflow-x-auto max-h-64 overflow-y-auto font-mono whitespace-pre-wrap break-words">
+                  {result.format === 'json'
+                    ? (() => {
+                        try {
+                          return JSON.stringify(JSON.parse(result.response!), null, 2);
+                        } catch {
+                          return result.response;
+                        }
+                      })()
+                    : result.response}
+                </pre>
+              </div>
+
+              {/* Stats Bar */}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground border-t border-border pt-2">
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {result.latencyMs !== undefined
+                    ? result.latencyMs < 1000
+                      ? `${result.latencyMs}ms`
+                      : `${(result.latencyMs / 1000).toFixed(1)}s`
+                    : '-'}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Zap className="h-3 w-3" />
+                  {result.tokens?.total ?? 0} tokens
+                </span>
+                <span
+                  className={cn(
+                    'px-1.5 py-0.5 rounded text-xs font-mono',
+                    result.format === 'json'
+                      ? 'bg-emerald-500/10 text-emerald-600'
+                      : 'bg-blue-500/10 text-blue-600',
+                  )}
+                >
+                  {result.format === 'json' ? 'Valid JSON' : 'Plain Text'}
+                </span>
+                {result.model && (
+                  <span className="text-xs text-muted-foreground">
+                    Model: {result.model}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AiPromptsTab({
   values,
   onChange,
@@ -2083,8 +2250,14 @@ export function AiPromptsTab({
                   />
                 </div>
 
-                {/* Reset to Default */}
-                <div className="flex justify-end">
+                {/* Test Prompt & Reset to Default */}
+                <div className="flex items-center justify-between">
+                  <PromptTestPanel
+                    feature={feature.key}
+                    systemPrompt={promptValue}
+                    model={modelValue}
+                    temperature={tempValue}
+                  />
                   <button
                     type="button"
                     onClick={() => resetToDefault(feature.key)}

@@ -399,6 +399,13 @@ export const LlmTestConnectionBodySchema = z.object({
   ollamaUrl: z.string().optional(),
 });
 
+export const LlmTestPromptBodySchema = z.object({
+  feature: z.string().min(1),
+  systemPrompt: z.string().min(1),
+  model: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+});
+
 export const LlmTracesQuerySchema = z.object({
   limit: z.coerce.number().optional().default(50),
 });
