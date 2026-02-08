@@ -4,8 +4,11 @@ import { createSession, invalidateSession } from '../services/session-store.js';
 import { signJwt } from '../utils/crypto.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
+import { getConfig } from '../config/index.js';
 
 export async function oidcRoutes(fastify: FastifyInstance) {
+  const config = getConfig();
+
   // Get OIDC status (public — no auth required)
   fastify.get('/api/auth/oidc/status', {
     schema: {
@@ -50,7 +53,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     },
     config: {
       rateLimit: {
-        max: 10,
+        max: config.LOGIN_RATE_LIMIT,
         timeWindow: '1 minute',
       },
     },

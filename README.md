@@ -616,6 +616,7 @@ ai-portainer-dashboard/
 | `CACHE_ENABLED` | Enable response caching | `true` |
 | `CACHE_TTL_SECONDS` | Cache time-to-live | `900` |
 | `PORTAINER_VERIFY_SSL` | Verify Portainer SSL certificates | `false` |
+| `API_RATE_LIMIT` | Global API requests per minute per IP | `600` (prod) / `1200` (dev) |
 | `LOGIN_RATE_LIMIT` | Login attempts per minute | `5` (prod) / `30` (dev) |
 | `KIBANA_ENDPOINT` | Elasticsearch/Kibana URL | *(optional)* |
 | `KIBANA_API_KEY` | Kibana API key | *(optional)* |

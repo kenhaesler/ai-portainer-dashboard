@@ -143,6 +143,9 @@ export const envSchema = z.object({
   TRACES_INGESTION_API_KEY: z.string().default(''),
 
   // Rate Limiting
+  API_RATE_LIMIT: z.coerce.number().int().min(10).default(
+    process.env.NODE_ENV === 'production' ? 600 : 1200
+  ),
   LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(
     process.env.NODE_ENV === 'production' ? 5 : 30
   ),
