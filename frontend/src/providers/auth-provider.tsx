@@ -64,13 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState<string | null>(() => getStoredAuth().username);
   const [role, setRole] = useState<UserRole>(() => getStoredAuth().role);
 
-  // Initialize API client with stored token on mount
-  useEffect(() => {
-    if (token) {
-      api.setToken(token);
-    }
-  }, []);
-
   const login = useCallback(async (user: string, password: string) => {
     const data = await api.post<{ token: string; username: string; defaultLandingPage?: string }>(
       '/api/auth/login',
