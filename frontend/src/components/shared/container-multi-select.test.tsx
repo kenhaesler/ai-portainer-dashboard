@@ -78,6 +78,7 @@ describe('ContainerMultiSelect', () => {
       const searchWrapper = searchInput.parentElement;
       expect(searchWrapper).toBeTruthy();
       expect(searchWrapper).toHaveClass('focus-within:ring-2');
+      expect(searchWrapper).toHaveClass('focus-within:ring-inset');
     });
 
     it('closes dropdown on outside click', () => {
