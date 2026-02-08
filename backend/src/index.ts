@@ -10,6 +10,7 @@ import { startScheduler, stopScheduler } from './scheduler/setup.js';
 import { setMonitoringNamespace } from './services/monitoring-service.js';
 import { setInvestigationNamespace } from './services/investigation-service.js';
 import { ensureModel } from './services/llm-client.js';
+import { autoConnectAll, disconnectAll } from './services/mcp-manager.js';
 
 const log = createChildLogger('server');
 
@@ -43,6 +44,7 @@ async function main() {
     log.info({ signal }, 'Received shutdown signal');
     try {
       stopScheduler();
+      await disconnectAll();
       await app.close();
       closeDb();
       await closeMetricsDb();
@@ -64,6 +66,9 @@ async function main() {
 
     // Pull configured Ollama model in the background (non-blocking)
     ensureModel().catch(() => {});
+
+    // Auto-connect enabled MCP servers in the background (non-blocking)
+    autoConnectAll().catch(() => {});
   } catch (err) {
     log.fatal({ err }, 'Failed to start server');
     process.exit(1);

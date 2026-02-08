@@ -247,6 +247,22 @@ export async function getContainer(endpointId: number, containerId: string): Pro
   };
 }
 
+export interface InspectHostConfig {
+  NetworkMode?: string;
+  Privileged?: boolean;
+  CapAdd?: string[] | null;
+  CapDrop?: string[] | null;
+  PidMode?: string;
+}
+
+/** Fetch only the HostConfig from a container inspect call. */
+export async function getContainerHostConfig(endpointId: number, containerId: string): Promise<InspectHostConfig> {
+  const raw = await portainerFetch<{ HostConfig?: InspectHostConfig }>(
+    `/api/endpoints/${endpointId}/docker/containers/${containerId}/json`,
+  );
+  return raw.HostConfig ?? {};
+}
+
 export async function startContainer(endpointId: number, containerId: string): Promise<void> {
   await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/start`, {
     method: 'POST',

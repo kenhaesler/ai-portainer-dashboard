@@ -27,6 +27,7 @@
     "fastify-type-provider-zod": "^4.0.2",
     "jose": "^6.0.8",
     "nodemailer": "^8.0.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "ollama": "^0.5.12",
     "openid-client": "^6.1.0",
     "p-limit": "^3.1.0",
