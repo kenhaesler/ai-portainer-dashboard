@@ -280,7 +280,7 @@ export function ContainerMultiSelect({
         >
           {/* Search input */}
           <div className="border-b border-border p-2">
-            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2">
+            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2 ring-offset-background transition-shadow focus-within:border-transparent focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 ref={searchInputRef}
@@ -289,7 +289,7 @@ export function ContainerMultiSelect({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search containers..."
                 aria-label="Search containers"
-                className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:shadow-none"
               />
               {search && (
                 <button
