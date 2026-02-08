@@ -51,7 +51,7 @@ interface ContainerOverviewProps {
 
 export function ContainerOverview({ container }: ContainerOverviewProps) {
   const ports = container.ports || [];
-  const networks = Object.keys(container.networks || {});
+  const networks = Array.isArray(container.networks) ? container.networks : Object.keys(container.networks || {});
   const labels = container.labels || {};
   const labelEntries = Object.entries(labels);
 
@@ -106,35 +106,60 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
         </div>
       </div>
 
-      {/* Image Information Card */}
-      <div className="rounded-lg border bg-card p-6 shadow-sm">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <HardDrive className="h-5 w-5" />
-          Image Information
-        </h3>
-        <div className="space-y-2">
-          <div>
-            <p className="text-xs text-muted-foreground">Full Image</p>
-            <p className="text-sm font-mono">{container.image}</p>
+      {/* Image, Endpoint & Networks row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Image Information Card */}
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <HardDrive className="h-5 w-5" />
+            Image Information
+          </h3>
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs text-muted-foreground">Full Image</p>
+              <p className="text-sm font-mono">{container.image}</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Endpoint Information Card */}
-      <div className="rounded-lg border bg-card p-6 shadow-sm">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Server className="h-5 w-5" />
-          Endpoint Information
-        </h3>
-        <div className="space-y-2">
-          <div>
-            <p className="text-xs text-muted-foreground">Name</p>
-            <p className="text-sm font-medium">{container.endpointName}</p>
+        {/* Endpoint Information Card */}
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Server className="h-5 w-5" />
+            Endpoint Information
+          </h3>
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs text-muted-foreground">Name</p>
+              <p className="text-sm font-medium">{container.endpointName}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">ID</p>
+              <p className="text-sm font-mono">{container.endpointId}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">ID</p>
-            <p className="text-sm font-mono">{container.endpointId}</p>
-          </div>
+        </div>
+
+        {/* Networks Card */}
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Network className="h-5 w-5" />
+            Networks
+          </h3>
+          {networks.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {networks.map((network) => (
+                <span
+                  key={network}
+                  className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                >
+                  {network}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No networks attached</p>
+          )}
         </div>
       </div>
 
@@ -166,26 +191,6 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* Networks Card */}
-      {networks.length > 0 && (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Network className="h-5 w-5" />
-            Networks
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {networks.map((network) => (
-              <span
-                key={network}
-                className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-              >
-                {network}
-              </span>
-            ))}
           </div>
         </div>
       )}
