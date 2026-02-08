@@ -38,7 +38,7 @@ vi.mock('@/components/shared/connection-orb', () => ({
 
 describe('Header', () => {
   beforeEach(() => {
-    globalThis.__APP_COMMIT__ = 'abc1234';
+    vi.stubEnv('VITE_GIT_COMMIT', 'abc1234');
   });
 
   it('renders commit hash in the top header', () => {

@@ -32,9 +32,9 @@ export function Header() {
   const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
-  const appCommit = typeof __APP_COMMIT__ !== 'undefined'
-    ? __APP_COMMIT__
-    : (import.meta.env.VITE_GIT_COMMIT || import.meta.env.VITE_APP_COMMIT || 'dev');
+  const appCommit = import.meta.env.VITE_GIT_COMMIT
+    || import.meta.env.VITE_APP_COMMIT
+    || 'dev';
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 

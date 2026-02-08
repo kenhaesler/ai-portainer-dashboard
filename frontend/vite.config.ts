@@ -7,7 +7,9 @@ import { execSync } from 'node:child_process';
 
 const appCommit = (() => {
   try {
-    return execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim();
+    return execSync('git rev-parse --short HEAD', { cwd: path.resolve(__dirname, '..') })
+      .toString()
+      .trim();
   } catch {
     return process.env.VITE_GIT_COMMIT || process.env.GIT_COMMIT || 'dev';
   }
@@ -15,7 +17,7 @@ const appCommit = (() => {
 
 export default defineConfig({
   define: {
-    __APP_COMMIT__: JSON.stringify(appCommit),
+    'import.meta.env.VITE_GIT_COMMIT': JSON.stringify(appCommit),
   },
   plugins: [
     react({
