@@ -17,6 +17,15 @@ vi.mock('../db/sqlite.js', () => ({
   }),
 }));
 
+vi.mock('../utils/logger.js', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 describe('monitoring insights cursor pagination', () => {
   let app: FastifyInstance;
 
@@ -145,6 +154,59 @@ describe('monitoring insights cursor pagination', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ success: true });
+  });
+});
+
+describe('monitoring error handling', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(monitoringRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns 500 when insights query throws', async () => {
+    mockAll.mockImplementationOnce(() => { throw new Error('DB locked'); });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights?limit=10',
+    });
+
+    expect(response.statusCode).toBe(500);
+    const body = response.json();
+    expect(body.error).toBe('Failed to query insights');
+    expect(body.details).toContain('DB locked');
+  });
+
+  it('returns 500 when acknowledge throws', async () => {
+    mockRun.mockImplementationOnce(() => { throw new Error('DB readonly'); });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/monitoring/insights/i1/acknowledge',
+    });
+
+    expect(response.statusCode).toBe(500);
+    const body = response.json();
+    expect(body.error).toBe('Failed to acknowledge insight');
   });
 });
 

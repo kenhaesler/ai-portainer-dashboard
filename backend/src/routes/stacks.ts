@@ -3,6 +3,9 @@ import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeStack } from '../services/portainer-normalizers.js';
 import { StackIdParamsSchema } from '../models/api-schemas.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('route:stacks');
 
 export async function stacksRoutes(fastify: FastifyInstance) {
   fastify.get('/api/stacks', {
@@ -12,13 +15,19 @@ export async function stacksRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
-    const stacks = await cachedFetch(
-      getCacheKey('stacks'),
-      TTL.STACKS,
-      () => portainer.getStacks(),
-    );
-    return stacks.map(normalizeStack);
+  }, async (_request, reply) => {
+    try {
+      const stacks = await cachedFetch(
+        getCacheKey('stacks'),
+        TTL.STACKS,
+        () => portainer.getStacks(),
+      );
+      return stacks.map(normalizeStack);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err }, 'Failed to fetch stacks from Portainer');
+      return reply.code(502).send({ error: 'Unable to fetch stacks from Portainer', details: msg });
+    }
   });
 
   fastify.get('/api/stacks/:id', {
@@ -29,9 +38,15 @@ export async function stacksRoutes(fastify: FastifyInstance) {
       params: StackIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: number };
-    const stack = await portainer.getStack(id);
-    return normalizeStack(stack);
+    try {
+      const stack = await portainer.getStack(id);
+      return normalizeStack(stack);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, stackId: id }, 'Failed to fetch stack details from Portainer');
+      return reply.code(502).send({ error: 'Unable to fetch stack details from Portainer', details: msg });
+    }
   });
 }

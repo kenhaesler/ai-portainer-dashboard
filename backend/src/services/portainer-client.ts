@@ -1,4 +1,5 @@
 import { Agent, fetch as undiciFetch } from 'undici';
+import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
@@ -13,14 +14,34 @@ import {
 
 const log = createChildLogger('portainer-client');
 
-let unsafeDispatcher: Agent | undefined;
+// Concurrency limiter — lazily initialized from config
+let limiter: ReturnType<typeof pLimit> | undefined;
+function getLimiter(): ReturnType<typeof pLimit> {
+  if (!limiter) {
+    const config = getConfig();
+    limiter = pLimit(config.PORTAINER_CONCURRENCY);
+  }
+  return limiter;
+}
+
+/** Exported for testing — resets the cached limiter and dispatcher */
+export function _resetClientState(): void {
+  limiter = undefined;
+  pooledDispatcher = undefined;
+}
+
+// Connection-pooled dispatcher (used for both SSL-bypass and normal connections)
+let pooledDispatcher: Agent | undefined;
 function getDispatcher(): Agent | undefined {
   const config = getConfig();
-  if (config.PORTAINER_VERIFY_SSL) return undefined;
-  if (!unsafeDispatcher) {
-    unsafeDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
-  }
-  return unsafeDispatcher;
+  if (pooledDispatcher) return pooledDispatcher;
+  const poolOptions = {
+    connections: config.PORTAINER_MAX_CONNECTIONS,
+    pipelining: 1,
+    ...(!config.PORTAINER_VERIFY_SSL && { connect: { rejectUnauthorized: false } }),
+  };
+  pooledDispatcher = new Agent(poolOptions);
+  return pooledDispatcher;
 }
 
 type ErrorKind = 'network' | 'auth' | 'rate-limit' | 'server' | 'unknown';
@@ -117,8 +138,10 @@ async function portainerFetch<T>(
   } = {},
 ): Promise<T> {
   const { method = 'GET' } = options;
-  return withSpan(`${method} ${path}`, 'portainer-api', 'client', () =>
-    portainerFetchInner<T>(path, options),
+  return getLimiter()(() =>
+    withSpan(`${method} ${path}`, 'portainer-api', 'client', () =>
+      portainerFetchInner<T>(path, options),
+    ),
   );
 }
 

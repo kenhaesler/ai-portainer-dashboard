@@ -60,22 +60,28 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       },
     );
 
-    // Get recent containers from first few endpoints
+    // Get recent containers from first few endpoints (parallel)
     const recentContainers = [];
     const errors: string[] = [];
     const upEndpoints = normalized.filter((e) => e.status === 'up').slice(0, 5);
-    for (const ep of upEndpoints) {
-      try {
-        const containers = await cachedFetch(
+    const settled = await Promise.allSettled(
+      upEndpoints.map((ep) =>
+        cachedFetch(
           getCacheKey('containers', ep.id),
           TTL.CONTAINERS,
           () => portainer.getContainers(ep.id),
-        );
-        const norm = containers.map((c) => normalizeContainer(c, ep.id, ep.name));
-        recentContainers.push(...norm);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        log.warn({ endpointId: ep.id, endpointName: ep.name, err }, 'Failed to fetch containers for endpoint');
+        ).then((containers) => ({ ep, containers })),
+      ),
+    );
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      if (result.status === 'fulfilled') {
+        const { ep, containers } = result.value;
+        recentContainers.push(...containers.map((c) => normalizeContainer(c, ep.id, ep.name)));
+      } else {
+        const ep = upEndpoints[i];
+        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+        log.warn({ endpointId: ep.id, endpointName: ep.name, err: result.reason }, 'Failed to fetch containers for endpoint');
         errors.push(`${ep.name}: ${msg}`);
       }
     }

@@ -42,7 +42,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       response: { 200: MetricsResponseSchema },
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { endpointId, containerId } = request.params as { endpointId: number; containerId: string };
     const query = request.query as {
       metricType?: string;
@@ -56,66 +56,71 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     const metricType = query.metricType || query.metric_type;
     const timeRange = query.timeRange || '1h';
 
-    const db = await getMetricsDb();
+    try {
+      const db = await getMetricsDb();
 
-    // Parse timeRange or use explicit from/to
-    let fromDate: Date;
-    let toDate: Date;
-    if (query.from) {
-      fromDate = new Date(query.from);
-      toDate = query.to ? new Date(query.to) : new Date();
-    } else {
-      const parsed = parseTimeRange(timeRange);
-      fromDate = parsed.from;
-      toDate = parsed.to;
-    }
+      // Parse timeRange or use explicit from/to
+      let fromDate: Date;
+      let toDate: Date;
+      if (query.from) {
+        fromDate = new Date(query.from);
+        toDate = query.to ? new Date(query.to) : new Date();
+      } else {
+        const parsed = parseTimeRange(timeRange);
+        fromDate = parsed.from;
+        toDate = parsed.to;
+      }
 
-    // Auto-select rollup table
-    const rollup = selectRollupTable(fromDate, toDate);
+      // Auto-select rollup table
+      const rollup = selectRollupTable(fromDate, toDate);
 
-    const conditions = [`endpoint_id = $1`, `(container_id = $2 OR container_id LIKE $3)`];
-    const params: unknown[] = [endpointId, containerId, `${containerId}%`];
-    let paramIdx = 4;
+      const conditions = [`endpoint_id = $1`, `(container_id = $2 OR container_id LIKE $3)`];
+      const params: unknown[] = [endpointId, containerId, `${containerId}%`];
+      let paramIdx = 4;
 
-    if (metricType) {
-      conditions.push(`metric_type = $${paramIdx}`);
-      params.push(metricType);
+      if (metricType) {
+        conditions.push(`metric_type = $${paramIdx}`);
+        params.push(metricType);
+        paramIdx++;
+      }
+
+      conditions.push(`${rollup.timestampCol} >= $${paramIdx}`);
+      params.push(fromDate.toISOString());
       paramIdx++;
+
+      conditions.push(`${rollup.timestampCol} <= $${paramIdx}`);
+      params.push(toDate.toISOString());
+
+      const where = conditions.join(' AND ');
+      const { rows: metrics } = await db.query<{ timestamp: string; value: number }>(
+        `SELECT ${rollup.timestampCol} as timestamp, ${rollup.valueCol}::double precision as value
+         FROM ${rollup.table} WHERE ${where}
+         ORDER BY ${rollup.timestampCol} ASC
+         LIMIT 5000`,
+        params,
+      );
+
+      // Apply LTTB decimation for raw data
+      const decimated = !rollup.isRollup
+        ? decimateLTTB(metrics as Array<{ timestamp: string; value: number }>, 500)
+        : metrics;
+
+      if (decimated.length === 0) {
+        log.debug({ endpointId, containerId, metricType, timeRange }, 'Metrics query returned zero rows');
+      }
+
+      // Return in format expected by frontend
+      return {
+        containerId,
+        endpointId,
+        metricType: metricType || 'cpu',
+        timeRange,
+        data: decimated,
+      };
+    } catch (err) {
+      log.error({ err, endpointId, containerId }, 'Failed to query metrics');
+      return (reply as any).code(500).send({ error: 'Failed to query metrics', details: err instanceof Error ? err.message : 'Unknown error' });
     }
-
-    conditions.push(`${rollup.timestampCol} >= $${paramIdx}`);
-    params.push(fromDate.toISOString());
-    paramIdx++;
-
-    conditions.push(`${rollup.timestampCol} <= $${paramIdx}`);
-    params.push(toDate.toISOString());
-
-    const where = conditions.join(' AND ');
-    const { rows: metrics } = await db.query<{ timestamp: string; value: number }>(
-      `SELECT ${rollup.timestampCol} as timestamp, ${rollup.valueCol}::double precision as value
-       FROM ${rollup.table} WHERE ${where}
-       ORDER BY ${rollup.timestampCol} ASC
-       LIMIT 5000`,
-      params,
-    );
-
-    // Apply LTTB decimation for raw data
-    const decimated = !rollup.isRollup
-      ? decimateLTTB(metrics as Array<{ timestamp: string; value: number }>, 500)
-      : metrics;
-
-    if (decimated.length === 0) {
-      log.debug({ endpointId, containerId, metricType, timeRange }, 'Metrics query returned zero rows');
-    }
-
-    // Return in format expected by frontend
-    return {
-      containerId,
-      endpointId,
-      metricType: metricType || 'cpu',
-      timeRange,
-      data: decimated,
-    };
   });
 
   fastify.get('/api/metrics/anomalies', {
@@ -126,25 +131,31 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       querystring: AnomaliesQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { limit = 50 } = request.query as { limit?: number };
-    const db = await getMetricsDb();
+    try {
+      const db = await getMetricsDb();
 
-    const { rows: recentMetrics } = await db.query(
-      `SELECT m1.*,
-        (SELECT AVG(value) FROM metrics m2
-         WHERE m2.container_id = m1.container_id
-         AND m2.metric_type = m1.metric_type
-         AND m2.timestamp > m1.timestamp - INTERVAL '1 hour'
-        ) as avg_value
-      FROM metrics m1
-      WHERE m1.timestamp > NOW() - INTERVAL '24 hours'
-      ORDER BY m1.timestamp DESC
-      LIMIT $1`,
-      [limit],
-    );
+      const { rows: recentMetrics } = await db.query(
+        `SELECT m1.*,
+          (SELECT AVG(value) FROM metrics m2
+           WHERE m2.container_id = m1.container_id
+           AND m2.metric_type = m1.metric_type
+           AND m2.timestamp > m1.timestamp - INTERVAL '1 hour'
+          ) as avg_value
+        FROM metrics m1
+        WHERE m1.timestamp > NOW() - INTERVAL '24 hours'
+        ORDER BY m1.timestamp DESC
+        LIMIT $1`,
+        [limit],
+      );
 
-    return { anomalies: recentMetrics };
+      return { anomalies: recentMetrics };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err }, 'Failed to query anomalies');
+      return reply.code(500).send({ error: 'Failed to query anomalies', details: msg });
+    }
   });
 
   fastify.get('/api/metrics/network-rates/:endpointId', {
@@ -154,10 +165,16 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { endpointId } = request.params as { endpointId: string };
-    const rates = await getNetworkRates(Number(endpointId));
-    return { rates };
+    try {
+      const rates = await getNetworkRates(Number(endpointId));
+      return { rates };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, endpointId }, 'Failed to fetch network rates');
+      return reply.code(500).send({ error: 'Failed to fetch network rates', details: msg });
+    }
   });
 
   // AI-powered metrics summary (SSE streaming)
