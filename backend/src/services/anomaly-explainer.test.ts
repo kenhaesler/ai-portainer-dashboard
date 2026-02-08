@@ -101,10 +101,53 @@ describe('anomaly-explainer', () => {
   });
 
   describe('explainAnomalies', () => {
+    it('uses single call for 1 anomaly', async () => {
+      mockChatStream.mockImplementation(
+        async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
+          onChunk('Single explanation');
+          return '';
+        },
+      );
+
+      const anomalies = [
+        { insight: makeInsight({ id: 'a1' }), description: 'desc 1' },
+      ];
+
+      const result = await explainAnomalies(anomalies, 5);
+
+      expect(result.size).toBe(1);
+      expect(result.get('a1')).toBe('Single explanation');
+      expect(mockChatStream).toHaveBeenCalledOnce();
+    });
+
+    it('batches multiple anomalies into one LLM call', async () => {
+      mockChatStream.mockImplementation(
+        async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
+          onChunk('[1] CPU spike from a runaway process.\n[2] Memory leak detected.\n[3] Disk IO contention.');
+          return '';
+        },
+      );
+
+      const anomalies = [
+        { insight: makeInsight({ id: 'a1' }), description: 'desc 1' },
+        { insight: makeInsight({ id: 'a2' }), description: 'desc 2' },
+        { insight: makeInsight({ id: 'a3' }), description: 'desc 3' },
+      ];
+
+      const result = await explainAnomalies(anomalies, 5);
+
+      // One batch call, all 3 explained
+      expect(mockChatStream).toHaveBeenCalledOnce();
+      expect(result.size).toBe(3);
+      expect(result.get('a1')).toBe('CPU spike from a runaway process.');
+      expect(result.get('a2')).toBe('Memory leak detected.');
+      expect(result.get('a3')).toBe('Disk IO contention.');
+    });
+
     it('respects maxExplanations limit', async () => {
       mockChatStream.mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
-          onChunk('Explanation text');
+          onChunk('[1] Explanation one.\n[2] Explanation two.');
           return '';
         },
       );
@@ -117,18 +160,20 @@ describe('anomaly-explainer', () => {
 
       const result = await explainAnomalies(anomalies, 2);
 
+      // Only 2 anomalies sent to LLM, 1 batch call
+      expect(mockChatStream).toHaveBeenCalledOnce();
       expect(result.size).toBe(2);
-      expect(mockChatStream).toHaveBeenCalledTimes(2);
     });
 
-    it('prioritizes critical over warning', async () => {
-      const callOrder: string[] = [];
+    it('prioritizes critical over warning in batch', async () => {
       mockChatStream.mockImplementation(
         async (msgs: Array<{ content: string }>, _sys: unknown, onChunk: (c: string) => void) => {
           const content = msgs[0]?.content ?? '';
-          if (content.includes('critical-container')) callOrder.push('critical');
-          if (content.includes('warning-container')) callOrder.push('warning');
-          onChunk('Explanation');
+          // Verify critical container appears before warning in the batch prompt
+          const criticalIdx = content.indexOf('critical-container');
+          const warningIdx = content.indexOf('warning-container');
+          expect(criticalIdx).toBeLessThan(warningIdx);
+          onChunk('[1] Critical explanation.\n[2] Warning explanation.');
           return '';
         },
       );
@@ -144,19 +189,23 @@ describe('anomaly-explainer', () => {
         },
       ];
 
-      await explainAnomalies(anomalies, 2);
+      const result = await explainAnomalies(anomalies, 5);
 
-      expect(callOrder[0]).toBe('critical');
-      expect(callOrder[1]).toBe('warning');
+      expect(result.size).toBe(2);
     });
 
-    it('skips failed explanations but continues', async () => {
+    it('falls back to individual calls when batch parsing fails partially', async () => {
       let callCount = 0;
       mockChatStream.mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           callCount++;
-          if (callCount === 1) throw new Error('LLM error');
-          onChunk('Working explanation');
+          if (callCount === 1) {
+            // Batch response only has [1], missing [2]
+            onChunk('[1] First explanation.');
+            return '';
+          }
+          // Fallback individual call for the second anomaly
+          onChunk('Fallback explanation for second.');
           return '';
         },
       );
@@ -166,10 +215,42 @@ describe('anomaly-explainer', () => {
         { insight: makeInsight({ id: 'a2' }), description: 'desc 2' },
       ];
 
-      const result = await explainAnomalies(anomalies, 2);
+      const result = await explainAnomalies(anomalies, 5);
 
-      expect(result.size).toBe(1);
-      expect(result.has('a2')).toBe(true);
+      // 1 batch call + 1 fallback individual call
+      expect(mockChatStream).toHaveBeenCalledTimes(2);
+      expect(result.size).toBe(2);
+      expect(result.get('a1')).toBe('First explanation.');
+      expect(result.get('a2')).toBe('Fallback explanation for second.');
+    });
+
+    it('falls back entirely to individual calls when batch fails', async () => {
+      let callCount = 0;
+      mockChatStream.mockImplementation(
+        async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
+          callCount++;
+          if (callCount === 1) throw new Error('Batch LLM error');
+          onChunk('Individual explanation');
+          return '';
+        },
+      );
+
+      const anomalies = [
+        { insight: makeInsight({ id: 'a1' }), description: 'desc 1' },
+        { insight: makeInsight({ id: 'a2' }), description: 'desc 2' },
+      ];
+
+      const result = await explainAnomalies(anomalies, 5);
+
+      // 1 failed batch + 2 individual calls
+      expect(mockChatStream).toHaveBeenCalledTimes(3);
+      expect(result.size).toBe(2);
+    });
+
+    it('returns empty map for empty input', async () => {
+      const result = await explainAnomalies([], 5);
+      expect(result.size).toBe(0);
+      expect(mockChatStream).not.toHaveBeenCalled();
     });
   });
 });

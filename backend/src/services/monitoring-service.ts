@@ -211,6 +211,50 @@ export async function runMonitoringCycle(): Promise<void> {
       }
     }
 
+    // 4.05. Threshold-based detection — flag values above ANOMALY_THRESHOLD_PCT (e.g. 80%)
+    // This catches high values that z-score misses (e.g. container consistently at 100%)
+    for (const container of runningContainers) {
+      const containerName =
+        container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
+
+      for (const metricType of ['cpu', 'memory'] as const) {
+        const metric = metricsToInsert.find(
+          (m) => m.container_id === container.raw.Id && m.metric_type === metricType,
+        );
+        if (!metric || metric.value <= config.ANOMALY_THRESHOLD_PCT) continue;
+
+        // Skip if already flagged by statistical detection
+        if (anomalyInsights.some(
+          (a) => a.container_id === container.raw.Id && a.title.toLowerCase().includes(metricType),
+        )) continue;
+
+        // Cooldown check
+        const cooldownKey = `${container.raw.Id}:${metricType}:threshold`;
+        const cooldownMs = config.ANOMALY_COOLDOWN_MINUTES * 60_000;
+        const lastAlerted = anomalyCooldowns.get(cooldownKey);
+        if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) continue;
+        anomalyCooldowns.set(cooldownKey, Date.now());
+
+        anomalyInsights.push({
+          id: uuidv4(),
+          endpoint_id: container.endpointId,
+          endpoint_name: container.endpointName,
+          container_id: container.raw.Id,
+          container_name: containerName,
+          severity: metric.value > 95 ? 'critical' : 'warning',
+          category: 'anomaly',
+          title: `High ${metricType} usage on "${containerName}"`,
+          description:
+            `Current ${metricType}: ${metric.value.toFixed(1)}% ` +
+            `(threshold: ${config.ANOMALY_THRESHOLD_PCT}%). ` +
+            `Value exceeds the configured warning threshold.`,
+          suggested_action: metricType === 'memory'
+            ? 'Check for memory leaks or increase memory limit'
+            : 'Check for runaway processes or increase CPU allocation',
+        });
+      }
+    }
+
     // 4.1. Isolation Forest anomaly detection — multivariate ML-based detection
     if (config.ISOLATION_FOREST_ENABLED) {
       for (const container of runningContainers) {

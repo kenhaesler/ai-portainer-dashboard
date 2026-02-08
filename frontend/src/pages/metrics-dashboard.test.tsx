@@ -86,6 +86,7 @@ vi.mock('@/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),
   useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
+  useAnomalyExplanations: vi.fn().mockReturnValue({ data: null }),
 }));
 
 vi.mock('@/hooks/use-forecasts', () => ({

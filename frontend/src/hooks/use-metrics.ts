@@ -57,6 +57,33 @@ export function useAnomalies() {
   });
 }
 
+export interface AnomalyExplanation {
+  id: string;
+  severity: 'critical' | 'warning' | 'info';
+  category: string;
+  title: string;
+  description: string;
+  aiExplanation: string | null;
+  suggestedAction: string | null;
+  timestamp: string;
+}
+
+export function useAnomalyExplanations(
+  containerId: string | undefined,
+  timeRange?: string,
+) {
+  return useQuery<{ explanations: AnomalyExplanation[] }>({
+    queryKey: ['anomaly-explanations', containerId, timeRange],
+    queryFn: () =>
+      api.get(`/api/monitoring/insights/container/${containerId}`, {
+        params: { timeRange },
+      }),
+    enabled: Boolean(containerId),
+    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
+    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes (matches monitoring cycle)
+  });
+}
+
 export interface NetworkRate {
   rxBytesPerSec: number;
   txBytesPerSec: number;

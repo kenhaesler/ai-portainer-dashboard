@@ -1,4 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
+const AUTH_TOKEN_KEY = 'auth_token';
 
 function describeHttpError(status: number): string {
   switch (status) {
@@ -15,6 +16,18 @@ interface RequestOptions extends RequestInit {
 
 class ApiClient {
   private token: string | null = null;
+
+  constructor() {
+    this.token = this.readStoredToken();
+  }
+
+  private readStoredToken(): string | null {
+    try {
+      return window.localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  }
 
   setToken(token: string | null) {
     this.token = token;
