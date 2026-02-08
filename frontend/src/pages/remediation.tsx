@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  Shield,
   CheckCircle2,
   XCircle,
   Play,
@@ -225,12 +224,6 @@ function ActionRow({
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
       <td className="p-4">
-        <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-primary" />
-          <span className="font-mono text-xs">{action.id.slice(0, 8)}</span>
-        </div>
-      </td>
-      <td className="p-4">
         <span className="font-medium">
           {ACTION_TYPE_LABELS[actionType] || actionType}
         </span>
@@ -238,14 +231,9 @@ function ActionRow({
       <td className="p-4">
         <div className="flex items-center gap-2">
           <Box className="h-4 w-4 text-muted-foreground" />
-          <div>
-            <p className="font-medium">{containerName}</p>
-            {containerId && (
-              <p className="font-mono text-[11px] text-muted-foreground">
-                ID: {containerId.slice(0, 8)}
-              </p>
-            )}
-          </div>
+          <p className="font-medium" title={containerId ? `Container ID: ${containerId}` : undefined}>
+            {containerName}
+          </p>
         </div>
       </td>
       <td className="p-4">
@@ -602,7 +590,7 @@ export default function RemediationPage() {
         <SkeletonCard className="h-[400px]" />
       ) : actions.length === 0 ? (
         <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <Shield className="mx-auto h-12 w-12 text-muted-foreground" />
+          <Box className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-semibold">No remediation actions</h3>
           <p className="mt-2 text-sm text-muted-foreground">
             {statusFilter === 'all'
@@ -616,7 +604,6 @@ export default function RemediationPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">ID</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Action Type</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Container</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
