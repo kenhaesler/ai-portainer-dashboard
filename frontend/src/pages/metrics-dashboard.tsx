@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Bot,
@@ -21,7 +22,7 @@ import { ThemedSelect } from '@/components/shared/themed-select';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useStacks } from '@/hooks/use-stacks';
-import { useContainerMetrics, useAnomalies, useAnomalyExplanations } from '@/hooks/use-metrics';
+import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations } from '@/hooks/use-metrics';
 import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/hooks/use-forecasts';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
@@ -35,12 +36,16 @@ import { useLlmModels } from '@/hooks/use-llm-models';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
 import {
+  BarChart,
+  Bar,
+  CartesianGrid,
   AreaChart,
   Area,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  Legend,
   ReferenceLine,
 } from 'recharts';
 import { formatDate } from '@/lib/utils';
@@ -105,6 +110,7 @@ function getForecastRiskScore(forecast: CapacityForecast): number {
 }
 
 export default function MetricsDashboardPage() {
+  const navigate = useNavigate();
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | null>(null);
   const [selectedStack, setSelectedStack] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
@@ -122,6 +128,7 @@ export default function MetricsDashboardPage() {
 
   // Fetch containers
   const { data: allContainers, isLoading: containersLoading, refetch, isFetching } = useContainers();
+  const { data: networkRatesData } = useNetworkRates(selectedEndpoint ?? undefined);
   const { data: stacks } = useStacks();
 
   // Filter containers by selected endpoint
@@ -154,12 +161,30 @@ export default function MetricsDashboardPage() {
     () => buildStackGroupedContainerOptions(filteredContainers, stackNamesForEndpoint),
     [filteredContainers, stackNamesForEndpoint],
   );
-
   // Get selected container details
   const selectedContainerData = useMemo(() => {
     if (!allContainers || !selectedContainer) return null;
     return allContainers.find((c) => c.id === selectedContainer);
   }, [allContainers, selectedContainer]);
+  const networkTrafficData = useMemo(() => {
+    if (!selectedContainerData) return [];
+    const connectedNetworks = selectedContainerData.networks ?? [];
+    if (!connectedNetworks.length) return [];
+
+    const rate = networkRatesData?.rates?.[selectedContainerData.id];
+    const split = connectedNetworks.length;
+    const perNetworkRx = split > 0 ? (rate?.rxBytesPerSec ?? 0) / split : 0;
+    const perNetworkTx = split > 0 ? (rate?.txBytesPerSec ?? 0) / split : 0;
+
+    return connectedNetworks
+      .map((networkName) => ({
+        network: networkName,
+        rx: perNetworkRx,
+        tx: perNetworkTx,
+        total: perNetworkRx + perNetworkTx,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [selectedContainerData, networkRatesData]);
 
   // Fetch metrics for each type
   const {
@@ -301,6 +326,10 @@ export default function MetricsDashboardPage() {
     setSelectedContainer(null);
   };
 
+  const handleRefresh = () => {
+    refetch();
+  };
+
   const drillIntoForecast = (containerId: string) => {
     const match = allContainers?.find((container) => container.id === containerId);
     if (match) {
@@ -336,7 +365,7 @@ export default function MetricsDashboardPage() {
             </button>
           )}
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
+          <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
         </div>
       </div>
 
@@ -442,6 +471,73 @@ export default function MetricsDashboardPage() {
           </button>
         </div>
       </div>
+
+      {hasSelection && (
+        <div className="rounded-lg border bg-card p-4 md:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Network className="h-5 w-5 text-blue-500" />
+              <div>
+                <h3 className="text-lg font-semibold">Network RX/TX by Network</h3>
+                <p className="text-xs text-muted-foreground">
+                  Selected container: <span className="font-medium text-foreground">{selectedContainerData?.name}</span>
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate(selectedEndpoint ? `/topology?endpoint=${selectedEndpoint}` : '/topology')}
+              className="rounded-md border border-border/70 bg-background/70 px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
+            >
+              Open Full Topology Map
+            </button>
+          </div>
+
+          {networkTrafficData.length === 0 ? (
+            <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-8 text-center">
+              <div>
+                <p className="font-medium">No connected networks found for this container</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Select a different container or check container network attachments.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={networkTrafficData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                    <XAxis dataKey="network" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => formatBytes(Number(value))} />
+                    <Tooltip
+                      formatter={(value: number, key: string) => [
+                        `${formatBytes(value)} MB/s`,
+                        key === 'rx' ? 'RX' : 'TX',
+                      ]}
+                    />
+                    <Legend />
+                    <Bar dataKey="rx" name="RX" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="tx" name="TX" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
+                  {networkTrafficData.length} networks
+                </span>
+                <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
+                  RX/TX source: container-level network rates
+                </span>
+                <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
+                  Per-network values are estimated (evenly split)
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Loading State */}
       {isLoading && (
