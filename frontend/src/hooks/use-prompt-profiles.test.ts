@@ -17,6 +17,7 @@ vi.mock('@/lib/api', () => ({
     post: (...args: unknown[]) => mockPost(...args),
     put: (...args: unknown[]) => mockPut(...args),
     delete: (...args: unknown[]) => mockDelete(...args),
+    getToken: () => 'test-token',
   },
 }));
 
@@ -34,6 +35,8 @@ import {
   useDuplicateProfile,
   useSwitchProfile,
   useUpdateProfile,
+  useImportPreview,
+  useImportApply,
 } from './use-prompt-profiles';
 
 const DEFAULT_PROFILE = {
@@ -260,6 +263,125 @@ describe('useUpdateProfile', () => {
     });
     expect(mockSuccess).toHaveBeenCalledWith('Profile updated', {
       description: '"Updated Name" saved.',
+    });
+  });
+});
+
+// ── Import Preview / Apply Tests ────────────────────────────────────
+
+const VALID_IMPORT_DATA = {
+  version: 1,
+  exportedAt: '2026-02-08T14:30:00Z',
+  exportedFrom: 'dashboard-prod-01',
+  profile: 'Security Audit',
+  features: {
+    chat_assistant: { systemPrompt: 'Imported security prompt', model: 'llama3.2:70b', temperature: 0.3 },
+  },
+};
+
+const MOCK_PREVIEW_RESPONSE = {
+  valid: true,
+  profile: 'Security Audit',
+  exportedAt: '2026-02-08T14:30:00Z',
+  exportedFrom: 'dashboard-prod-01',
+  summary: { added: 0, modified: 1, unchanged: 0 },
+  featureCount: 1,
+  changes: {
+    chat_assistant: {
+      status: 'modified' as const,
+      before: { systemPrompt: 'Original prompt' },
+      after: { systemPrompt: 'Imported security prompt', model: 'llama3.2:70b', temperature: 0.3 },
+      tokenDelta: 20,
+    },
+  },
+};
+
+describe('useImportPreview', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('posts import data and returns preview', async () => {
+    mockPost.mockResolvedValue(MOCK_PREVIEW_RESPONSE);
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useImportPreview(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    let preview: typeof MOCK_PREVIEW_RESPONSE | undefined;
+    await act(async () => {
+      preview = await result.current.mutateAsync(VALID_IMPORT_DATA);
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/api/prompt-profiles/import/preview', VALID_IMPORT_DATA);
+    expect(preview?.valid).toBe(true);
+    expect(preview?.summary.modified).toBe(1);
+  });
+
+  it('shows error toast on validation failure', async () => {
+    mockPost.mockRejectedValue(new Error('Invalid import file format'));
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useImportPreview(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    try {
+      await act(async () => {
+        await result.current.mutateAsync(VALID_IMPORT_DATA);
+      });
+    } catch {
+      // Expected
+    }
+
+    expect(mockError).toHaveBeenCalledWith('Invalid import file', {
+      description: 'Invalid import file format',
+    });
+  });
+});
+
+describe('useImportApply', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('applies import and shows success toast', async () => {
+    mockPost.mockResolvedValue({ success: true, profile: CUSTOM_PROFILE });
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useImportApply(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(VALID_IMPORT_DATA);
+    });
+
+    expect(mockPost).toHaveBeenCalledWith('/api/prompt-profiles/import', VALID_IMPORT_DATA);
+    expect(mockSuccess).toHaveBeenCalledWith('Prompts imported', {
+      description: 'All changes applied to active profile.',
+    });
+  });
+
+  it('shows error toast on failure', async () => {
+    mockPost.mockRejectedValue(new Error('Failed to apply import'));
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useImportApply(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    try {
+      await act(async () => {
+        await result.current.mutateAsync(VALID_IMPORT_DATA);
+      });
+    } catch {
+      // Expected
+    }
+
+    expect(mockError).toHaveBeenCalledWith('Failed to import prompts', {
+      description: 'Failed to apply import',
     });
   });
 });

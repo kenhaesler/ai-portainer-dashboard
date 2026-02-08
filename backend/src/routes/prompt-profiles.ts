@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import os from 'node:os';
 import {
   getAllProfiles,
   getProfileById,
@@ -10,6 +11,7 @@ import {
   getActiveProfileId,
   switchProfile,
 } from '../services/prompt-profile-store.js';
+import { PROMPT_FEATURES, estimateTokens } from '../services/prompt-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 
 // ── Zod Schemas ──────────────────────────────────────────────────────
@@ -45,6 +47,29 @@ const DuplicateProfileBodySchema = z.object({
 const SwitchProfileBodySchema = z.object({
   id: z.string().min(1),
 });
+
+const ExportQuerySchema = z.object({
+  profileId: z.string().optional(),
+});
+
+const VALID_FEATURE_KEYS = new Set<string>(PROMPT_FEATURES.map((f) => f.key));
+
+const ImportFeatureConfigSchema = z.object({
+  systemPrompt: z.string(),
+  model: z.string().nullable().optional(),
+  temperature: z.number().min(0).max(2).nullable().optional(),
+});
+
+const ImportFileSchema = z.object({
+  version: z.number().int().min(1).max(1),
+  exportedAt: z.string(),
+  exportedFrom: z.string(),
+  profile: z.string(),
+  features: z.record(z.string(), ImportFeatureConfigSchema),
+}).refine(
+  (data) => Object.keys(data.features).every((k) => VALID_FEATURE_KEYS.has(k)),
+  { message: 'Import contains invalid feature keys' },
+);
 
 // ── Routes ───────────────────────────────────────────────────────────
 
@@ -270,5 +295,187 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     });
 
     return { success: true, activeProfileId: id };
+  });
+
+  // ── Export profile ──────────────────────────────────────────────────
+
+  fastify.get('/api/prompt-profiles/export', {
+    schema: {
+      tags: ['Prompt Profiles'],
+      summary: 'Export a prompt profile as JSON',
+      security: [{ bearerAuth: [] }],
+      querystring: ExportQuerySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const { profileId } = request.query as z.infer<typeof ExportQuerySchema>;
+    const targetId = profileId ?? getActiveProfileId();
+    const profile = getProfileById(targetId);
+
+    if (!profile) {
+      return reply.code(404).send({ error: 'Profile not found' });
+    }
+
+    const exportData = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      exportedFrom: os.hostname(),
+      profile: profile.name,
+      features: profile.prompts,
+    };
+
+    const filename = `prompts-${profile.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'prompt_profile.export',
+      target_type: 'prompt_profile',
+      target_id: targetId,
+      details: { name: profile.name },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return reply
+      .header('Content-Type', 'application/json')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(JSON.stringify(exportData, null, 2));
+  });
+
+  // ── Import preview ────────────────────────────────────────────────
+
+  fastify.post('/api/prompt-profiles/import/preview', {
+    schema: {
+      tags: ['Prompt Profiles'],
+      summary: 'Validate an import file and return a diff preview',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const parseResult = ImportFileSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({
+        error: 'Invalid import file format',
+        details: parseResult.error.issues.map((i) => i.message),
+      });
+    }
+
+    const importData = parseResult.data;
+    const activeId = getActiveProfileId();
+    const currentProfile = getProfileById(activeId);
+    const currentPrompts = currentProfile?.prompts ?? {};
+
+    const changes: Record<string, {
+      status: 'added' | 'modified' | 'unchanged';
+      before?: { systemPrompt: string; model?: string | null; temperature?: number | null };
+      after: { systemPrompt: string; model?: string | null; temperature?: number | null };
+      tokenDelta?: number;
+    }> = {};
+
+    let added = 0;
+    let modified = 0;
+    let unchanged = 0;
+
+    for (const [featureKey, importedConfig] of Object.entries(importData.features)) {
+      const existing = currentPrompts[featureKey];
+      const afterTokens = estimateTokens(importedConfig.systemPrompt);
+
+      if (!existing) {
+        changes[featureKey] = {
+          status: 'added',
+          after: importedConfig,
+          tokenDelta: afterTokens,
+        };
+        added++;
+      } else {
+        const samePrompt = existing.systemPrompt === importedConfig.systemPrompt;
+        const sameModel = (existing.model ?? null) === (importedConfig.model ?? null);
+        const sameTemp = (existing.temperature ?? null) === (importedConfig.temperature ?? null);
+
+        if (samePrompt && sameModel && sameTemp) {
+          changes[featureKey] = { status: 'unchanged', after: importedConfig };
+          unchanged++;
+        } else {
+          const beforeTokens = estimateTokens(existing.systemPrompt);
+          changes[featureKey] = {
+            status: 'modified',
+            before: existing,
+            after: importedConfig,
+            tokenDelta: afterTokens - beforeTokens,
+          };
+          modified++;
+        }
+      }
+    }
+
+    return {
+      valid: true,
+      profile: importData.profile,
+      exportedAt: importData.exportedAt,
+      exportedFrom: importData.exportedFrom,
+      summary: { added, modified, unchanged },
+      featureCount: Object.keys(importData.features).length,
+      changes,
+    };
+  });
+
+  // ── Import apply ──────────────────────────────────────────────────
+
+  fastify.post('/api/prompt-profiles/import', {
+    schema: {
+      tags: ['Prompt Profiles'],
+      summary: 'Import prompt configurations into the active profile',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const parseResult = ImportFileSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.code(400).send({
+        error: 'Invalid import file format',
+        details: parseResult.error.issues.map((i) => i.message),
+      });
+    }
+
+    const importData = parseResult.data;
+    const activeId = getActiveProfileId();
+    const currentProfile = getProfileById(activeId);
+
+    if (!currentProfile) {
+      return reply.code(404).send({ error: 'Active profile not found' });
+    }
+
+    // Merge imported features into the active profile
+    const mergedPrompts = { ...currentProfile.prompts };
+    for (const [featureKey, config] of Object.entries(importData.features)) {
+      mergedPrompts[featureKey] = {
+        systemPrompt: config.systemPrompt,
+        ...(config.model != null ? { model: config.model } : {}),
+        ...(config.temperature != null ? { temperature: config.temperature } : {}),
+      };
+    }
+
+    const updated = updateProfile(activeId, { prompts: mergedPrompts });
+    if (!updated) {
+      return reply.code(500).send({ error: 'Failed to apply import' });
+    }
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'prompt_profile.import',
+      target_type: 'prompt_profile',
+      target_id: activeId,
+      details: {
+        name: currentProfile.name,
+        importedFrom: importData.exportedFrom,
+        featuresImported: Object.keys(importData.features).length,
+      },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, profile: updated };
   });
 }

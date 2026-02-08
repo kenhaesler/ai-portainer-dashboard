@@ -25,6 +25,31 @@ interface ProfileListResponse {
   activeProfileId: string;
 }
 
+export interface PromptExportData {
+  version: number;
+  exportedAt: string;
+  exportedFrom: string;
+  profile: string;
+  features: Record<string, { systemPrompt: string; model?: string | null; temperature?: number | null }>;
+}
+
+export interface ImportPreviewChange {
+  status: 'added' | 'modified' | 'unchanged';
+  before?: { systemPrompt: string; model?: string | null; temperature?: number | null };
+  after: { systemPrompt: string; model?: string | null; temperature?: number | null };
+  tokenDelta?: number;
+}
+
+export interface ImportPreviewResponse {
+  valid: boolean;
+  profile: string;
+  exportedAt: string;
+  exportedFrom: string;
+  summary: { added: number; modified: number; unchanged: number };
+  featureCount: number;
+  changes: Record<string, ImportPreviewChange>;
+}
+
 // ── Query Keys ───────────────────────────────────────────────────────
 
 const PROFILE_KEYS = {
@@ -133,6 +158,73 @@ export function useSwitchProfile() {
     },
     onError: (error) => {
       toast.error('Failed to switch profile', { description: error.message });
+    },
+  });
+}
+
+// ── Export / Import ─────────────────────────────────────────────────
+
+export function useExportProfile() {
+  return useMutation<void, Error, { profileId?: string }>({
+    mutationFn: async ({ profileId }) => {
+      const params = profileId ? `?profileId=${encodeURIComponent(profileId)}` : '';
+      const token = api.getToken();
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${baseUrl}/api/prompt-profiles/export${params}`, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+        throw new Error(err.error ?? `Export failed: HTTP ${response.status}`);
+      }
+      const disposition = response.headers.get('Content-Disposition');
+      const filenameMatch = disposition?.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? 'prompts-export.json';
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    },
+    onSuccess: () => {
+      toast.success('Profile exported', { description: 'JSON file downloaded.' });
+    },
+    onError: (error) => {
+      toast.error('Failed to export profile', { description: error.message });
+    },
+  });
+}
+
+export function useImportPreview() {
+  return useMutation<ImportPreviewResponse, Error, PromptExportData>({
+    mutationFn: async (data) => {
+      return api.post<ImportPreviewResponse>('/api/prompt-profiles/import/preview', data);
+    },
+    onError: (error) => {
+      toast.error('Invalid import file', { description: error.message });
+    },
+  });
+}
+
+export function useImportApply() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean; profile: PromptProfile }, Error, PromptExportData>({
+    mutationFn: async (data) => {
+      return api.post<{ success: boolean; profile: PromptProfile }>('/api/prompt-profiles/import', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      toast.success('Prompts imported', { description: 'All changes applied to active profile.' });
+    },
+    onError: (error) => {
+      toast.error('Failed to import prompts', { description: error.message });
     },
   });
 }
