@@ -432,8 +432,10 @@ function ToolCallIndicator({ events }: { events: ToolCallEvent[] }) {
 function normalizeMarkdown(raw: string): string {
   let text = raw;
 
-  // Fix code blocks: normalize ```language to have a newline after the opening fence
-  text = text.replace(/```(\w+)([^\n])/g, '```$1\n$2');
+  // Fix code blocks: if language tag and code are on the same line separated by space,
+  // split them. The space delimiter prevents greedy backtracking from eating into the
+  // language name (e.g., "```bash\n" was incorrectly split into "```bas\nh" by the old regex).
+  text = text.replace(/^(```\w+) +(.+)$/gm, '$1\n$2');
 
   // Fix unclosed code fences — count triple backticks, if odd close the last one
   const fenceCount = (text.match(/```/g) || []).length;

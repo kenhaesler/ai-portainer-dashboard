@@ -37,7 +37,7 @@ describe('LlmSettingsSection', () => {
     'llm.model': 'llama3.2',
     'llm.temperature': '0.7',
     'llm.ollama_url': 'http://host.docker.internal:11434',
-    'llm.max_tokens': '2048',
+    'llm.max_tokens': '20000',
     'llm.custom_endpoint_enabled': 'false',
     'llm.custom_endpoint_url': '',
     'llm.custom_endpoint_token': '',
