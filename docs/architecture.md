@@ -31,13 +31,6 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 
 ```mermaid
 graph TB
-    subgraph External["&nbsp;&nbsp; External Services &nbsp;&nbsp;"]
-        direction LR
-        Portainer(["Portainer API<br/><i>Container Management</i>"])
-        Ollama(["Ollama<br/><i>Local LLM — llama3.2</i>"])
-        Kibana(["Elasticsearch / Kibana<br/><i>Log Aggregation — optional</i>"])
-    end
-
     subgraph Frontend["&nbsp;&nbsp; Frontend — React 19 + Vite 6 &nbsp;&nbsp; :5173 &nbsp;&nbsp;"]
         direction TB
         Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
@@ -119,6 +112,13 @@ graph TB
         T5["actions"]
         T6["spans"]
         T7["audit_log"]
+    end
+
+    subgraph External["&nbsp;&nbsp; External Services &nbsp;&nbsp;"]
+        direction LR
+        Portainer(["Portainer API<br/><i>Container Management</i>"])
+        Ollama(["Ollama<br/><i>Local LLM — llama3.2</i>"])
+        Kibana(["Elasticsearch / Kibana<br/><i>Log Aggregation — optional</i>"])
     end
 
     %% Frontend to Backend
