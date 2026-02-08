@@ -13,9 +13,9 @@ services:
       - LOG_LEVEL=debug
       - PORT=3051
       - SQLITE_PATH=/app/data/dashboard.db
-      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin}
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme123}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production-must-be-at-least-32-chars}
+      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin} # DEV ONLY - do not use in production
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme123} # DEV ONLY - do not use in production
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production-must-be-at-least-32-chars} # DEV ONLY - do not use in production
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
       - PORTAINER_VERIFY_SSL=${PORTAINER_VERIFY_SSL:-false}
@@ -28,7 +28,7 @@ services:
       - CACHE_ENABLED=${CACHE_ENABLED:-true}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-900}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme-redis} # DEV ONLY - do not use in production
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-aidash:cache:}
       # Packet Capture (PCAP)
       - PCAP_ENABLED=${PCAP_ENABLED:-false}
@@ -41,7 +41,7 @@ services:
       - TRACES_INGESTION_ENABLED=${TRACES_INGESTION_ENABLED:-false}
       - TRACES_INGESTION_API_KEY=${TRACES_INGESTION_API_KEY:-}
       # TimescaleDB Metrics Storage
-      - TIMESCALE_URL=postgresql://metrics_user:${TIMESCALE_PASSWORD:-changeme-timescale}@timescaledb:5432/metrics
+      - TIMESCALE_URL=postgresql://metrics_user:${TIMESCALE_PASSWORD:-changeme-timescale}@timescaledb:5432/metrics # DEV ONLY - do not use in production
       - TIMESCALE_MAX_CONNECTIONS=${TIMESCALE_MAX_CONNECTIONS:-20}
       - METRICS_RAW_RETENTION_DAYS=${METRICS_RAW_RETENTION_DAYS:-7}
       - METRICS_ROLLUP_5MIN_RETENTION_DAYS=${METRICS_ROLLUP_5MIN_RETENTION_DAYS:-30}
@@ -143,7 +143,7 @@ services:
     environment:
       POSTGRES_DB: metrics
       POSTGRES_USER: metrics_user
-      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-changeme-timescale}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-changeme-timescale} # DEV ONLY - do not use in production
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
       interval: 15s

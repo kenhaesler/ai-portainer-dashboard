@@ -99,4 +99,82 @@ describe('config validation', () => {
       expect(() => getConfig()).toThrowError(/JWT_PRIVATE_KEY_PATH.*file not found/i);
     });
   });
+
+  describe('service credential hardening (production)', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+      // Provide strong defaults so individual tests can override one at a time
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:strong-ts-password@timescaledb:5432/metrics';
+    });
+
+    it('rejects weak Redis password in production', async () => {
+      process.env.REDIS_PASSWORD = 'changeme-redis';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/REDIS_PASSWORD.*weak Redis password/i);
+    });
+
+    it('rejects weak TimescaleDB password in production', async () => {
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:changeme-timescale@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/TIMESCALE_URL.*weak TimescaleDB password/i);
+    });
+
+    it('rejects common weak passwords for Redis in production', async () => {
+      process.env.REDIS_PASSWORD = 'password123';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/REDIS_PASSWORD.*weak Redis password/i);
+    });
+
+    it('accepts strong Redis password in production', async () => {
+      process.env.REDIS_PASSWORD = 'a-very-secure-redis-password-2024';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.REDIS_PASSWORD).toBe('a-very-secure-redis-password-2024');
+    });
+
+    it('accepts strong TimescaleDB password in production', async () => {
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:super-secure-ts-pw@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.TIMESCALE_URL).toContain('super-secure-ts-pw');
+    });
+  });
+
+  describe('service credential hardening (development)', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'development';
+    });
+
+    it('accepts weak Redis password in development', async () => {
+      process.env.REDIS_PASSWORD = 'changeme-redis';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.REDIS_PASSWORD).toBe('changeme-redis');
+    });
+
+    it('accepts weak TimescaleDB password in development', async () => {
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:changeme-timescale@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.TIMESCALE_URL).toContain('changeme-timescale');
+    });
+  });
+
+  describe('WEAK_PASSWORDS export', () => {
+    it('exports the WEAK_PASSWORDS set', async () => {
+      const { WEAK_PASSWORDS } = await import('./index.js');
+      expect(WEAK_PASSWORDS).toBeInstanceOf(Set);
+      expect(WEAK_PASSWORDS.has('changeme-redis')).toBe(true);
+      expect(WEAK_PASSWORDS.has('changeme-timescale')).toBe(true);
+      expect(WEAK_PASSWORDS.has('password')).toBe(true);
+      expect(WEAK_PASSWORDS.has('a-strong-password')).toBe(false);
+    });
+  });
 });
