@@ -73,13 +73,10 @@ describe('ContainerMultiSelect', () => {
       expect(screen.getByRole('listbox')).toBeInTheDocument();
       const searchInput = screen.getByPlaceholderText('Search containers...');
       expect(searchInput).toBeInTheDocument();
-      expect(searchInput).toHaveClass('focus-visible:shadow-none');
 
       const searchWrapper = searchInput.parentElement;
       expect(searchWrapper).toBeTruthy();
-      expect(searchWrapper).toHaveClass('focus-within:ring-2');
-      expect(searchWrapper).toHaveClass('focus-within:ring-inset');
-      expect(searchWrapper).toHaveClass('w-full');
+      expect(searchWrapper).toHaveClass('relative');
     });
 
     it('closes dropdown on outside click', () => {

@@ -923,32 +923,6 @@ aside nav:hover {
   }
 }
 
-/* Log viewer search inputs: wrapper owns the glass and focus ring */
-.log-viewer-search {
-  background: color-mix(in srgb, var(--color-background) 70%, transparent) !important;
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-}
-
-.log-viewer-search__input {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-.log-viewer-search__input:focus,
-.log-viewer-search__input:focus-visible {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-.log-viewer-search__input[type='text'] {
-  border: none !important;
-}
-
 /* ====== GLASS POPOVERS & DROPDOWNS ====== */
 
 .apple-light {

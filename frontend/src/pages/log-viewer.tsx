@@ -316,11 +316,11 @@ export default function LogViewerPage() {
 
           <label className="text-sm lg:col-span-2">
             <span className="mb-1 block text-muted-foreground">Regex Search</span>
-            <div className="log-viewer-search flex h-9 w-full items-center gap-2 rounded-md border border-input bg-background px-2 transition-shadow focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring">
-              <Search className="h-4 w-4 text-muted-foreground" />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
-                className="log-viewer-search__input h-full w-full bg-transparent outline-none focus-visible:shadow-none"
+                className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="/error|timeout/i"
                 value={searchPattern}
                 onChange={(e) => setSearchPattern(e.target.value)}

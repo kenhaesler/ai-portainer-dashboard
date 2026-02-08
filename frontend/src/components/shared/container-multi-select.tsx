@@ -280,8 +280,8 @@ export function ContainerMultiSelect({
         >
           {/* Search input */}
           <div className="border-b border-border p-2">
-            <div className="log-viewer-search flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 transition-shadow focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -289,14 +289,14 @@ export function ContainerMultiSelect({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search containers..."
                 aria-label="Search containers"
-                className="log-viewer-search__input h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:shadow-none"
+                className="h-9 w-full rounded-md border border-input bg-background pl-10 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {search && (
                 <button
                   type="button"
                   onClick={() => setSearch('')}
                   aria-label="Clear search"
-                  className="rounded p-0.5 hover:bg-accent"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 hover:bg-accent"
                 >
                   <X className="h-3 w-3" />
                 </button>
