@@ -45,6 +45,8 @@ import {
   X,
   FileText,
   Zap,
+  Copy,
+  Layers,
 } from 'lucide-react';
 import {
   useThemeStore,
@@ -64,6 +66,16 @@ import {
 } from '@/stores/theme-store';
 import { ICON_SETS, ICON_SET_MAP, type AppIconId } from '@/components/icons/icon-sets';
 import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
+import {
+  usePromptProfiles,
+  useCreateProfile,
+  useUpdateProfile,
+  useDeleteProfile,
+  useDuplicateProfile,
+  useSwitchProfile,
+  type PromptProfile,
+  type PromptProfileFeatureConfig,
+} from '@/hooks/use-prompt-profiles';
 import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
 import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/hooks/use-llm-models';
 import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/hooks/use-security-audit';
@@ -1783,6 +1795,230 @@ interface PromptFeatureInfo {
   defaultPrompt: string;
 }
 
+// ─── Profile Selector ──────────────────────────────────────────────
+
+function ProfileSelector({
+  onProfileSwitch,
+}: {
+  onProfileSwitch: () => void;
+}) {
+  const { data: profileData, isLoading } = usePromptProfiles();
+  const createProfile = useCreateProfile();
+  const deleteProfileMut = useDeleteProfile();
+  const duplicateProfile = useDuplicateProfile();
+  const switchProfileMut = useSwitchProfile();
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+
+  const profiles = profileData?.profiles ?? [];
+  const activeId = profileData?.activeProfileId ?? 'default';
+  const activeProfile = profiles.find((p) => p.id === activeId);
+
+  const handleSwitch = async (id: string) => {
+    if (id === activeId) return;
+    await switchProfileMut.mutateAsync({ id });
+    onProfileSwitch();
+  };
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    await createProfile.mutateAsync({
+      name: newName.trim(),
+      description: newDescription.trim(),
+      prompts: {},
+    });
+    setNewName('');
+    setNewDescription('');
+    setShowNewDialog(false);
+  };
+
+  const handleDuplicate = async () => {
+    if (!newName.trim() || !activeProfile) return;
+    await duplicateProfile.mutateAsync({
+      sourceId: activeId,
+      name: newName.trim(),
+    });
+    setNewName('');
+    setShowDuplicateDialog(false);
+  };
+
+  const handleDelete = async () => {
+    if (!activeProfile || activeProfile.isBuiltIn) return;
+    await deleteProfileMut.mutateAsync({ id: activeId, name: activeProfile.name });
+    setShowDeleteConfirm(false);
+    onProfileSwitch();
+  };
+
+  if (isLoading) {
+    return <div className="h-10 animate-pulse rounded bg-muted" />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Active Profile:</span>
+        </div>
+
+        <ThemedSelect
+          value={activeId}
+          onValueChange={(val) => void handleSwitch(val)}
+          options={profiles.map((p) => ({
+            value: p.id,
+            label: `${p.name}${p.isBuiltIn ? ' (built-in)' : ''}`,
+          }))}
+          className="min-w-[200px]"
+        />
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => { setNewName(''); setNewDescription(''); setShowNewDialog(true); }}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground border border-input rounded-md px-2.5 py-1.5 hover:bg-accent transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New
+          </button>
+          <button
+            type="button"
+            onClick={() => { setNewName(`${activeProfile?.name ?? 'Profile'} (Copy)`); setShowDuplicateDialog(true); }}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground border border-input rounded-md px-2.5 py-1.5 hover:bg-accent transition-colors"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            Duplicate
+          </button>
+          {activeProfile && !activeProfile.isBuiltIn && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-1 text-sm text-red-600 hover:text-red-500 border border-red-200 dark:border-red-900 rounded-md px-2.5 py-1.5 hover:bg-red-500/10 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+
+      {activeProfile && (
+        <p className="text-xs text-muted-foreground pl-6">
+          {activeProfile.description || 'No description'}
+        </p>
+      )}
+
+      {/* New Profile Dialog */}
+      {showNewDialog && (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <h4 className="text-sm font-medium">Create New Profile</h4>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Name</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="My Custom Profile"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">Description</label>
+            <input
+              type="text"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Brief description of this profile's focus"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowNewDialog(false)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCreate()}
+              disabled={!newName.trim() || createProfile.isPending}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {createProfile.isPending ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Dialog */}
+      {showDuplicateDialog && (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <h4 className="text-sm font-medium">Duplicate "{activeProfile?.name}"</h4>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1">New Name</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Profile name"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDuplicateDialog(false)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDuplicate()}
+              disabled={!newName.trim() || duplicateProfile.isPending}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {duplicateProfile.isPending ? 'Duplicating...' : 'Duplicate'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation */}
+      {showDeleteConfirm && activeProfile && (
+        <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-500/5 p-4 space-y-3">
+          <p className="text-sm">
+            Are you sure you want to delete "<strong>{activeProfile.name}</strong>"? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDelete()}
+              disabled={deleteProfileMut.isPending}
+              className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleteProfileMut.isPending ? 'Deleting...' : 'Delete Profile'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
@@ -1970,6 +2206,8 @@ export function AiPromptsTab({
   const [loading, setLoading] = useState(true);
   const [expandedFeatures, setExpandedFeatures] = useState<Set<string>>(new Set());
   const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  const queryClient = useQueryClient();
   const [savedValues, setSavedValues] = useState<Record<string, string>>({});
   const updateSetting = useUpdateSetting();
   const [isSaving, setIsSaving] = useState(false);
@@ -1993,7 +2231,14 @@ export function AiPromptsTab({
       }
     };
     void loadFeatures();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileRefreshKey]);
+
+  const handleProfileSwitch = useCallback(() => {
+    // After switching profiles, refresh settings and feature data
+    queryClient.invalidateQueries({ queryKey: ['settings'] });
+    setProfileRefreshKey((k) => k + 1);
+  }, [queryClient]);
 
   // Initialize drafts from server values
   useEffect(() => {
@@ -2113,6 +2358,11 @@ export function AiPromptsTab({
 
   return (
     <div className="space-y-4">
+      {/* Profile Selector */}
+      <ProfileSelector onProfileSwitch={handleProfileSwitch} />
+
+      <div className="border-t border-border" />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

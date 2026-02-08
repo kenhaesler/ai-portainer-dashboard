@@ -31,6 +31,25 @@ vi.mock('@/hooks/use-settings', () => ({
   }),
 }));
 
+const mockSwitchProfileAsync = vi.fn();
+vi.mock('@/hooks/use-prompt-profiles', () => ({
+  usePromptProfiles: () => ({
+    data: {
+      profiles: [
+        { id: 'default', name: 'Default', description: 'Standard balanced prompts', isBuiltIn: true, prompts: {}, createdAt: '2025-01-01', updatedAt: '2025-01-01' },
+        { id: 'security-audit', name: 'Security Audit', description: 'Security focus', isBuiltIn: true, prompts: {}, createdAt: '2025-01-01', updatedAt: '2025-01-01' },
+      ],
+      activeProfileId: 'default',
+    },
+    isLoading: false,
+  }),
+  useCreateProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDuplicateProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSwitchProfile: () => ({ mutateAsync: (...args: unknown[]) => mockSwitchProfileAsync(...args), isPending: false }),
+}));
+
 const mockTestPromptMutate = vi.fn();
 vi.mock('@/hooks/use-llm-models', () => ({
   useLlmModels: () => ({
@@ -413,5 +432,77 @@ describe('AiPromptsTab', () => {
 
     const [payload] = mockTestPromptMutate.mock.calls[0];
     expect(payload.systemPrompt).toBe('Custom test prompt');
+  });
+
+  it('renders profile selector with Active Profile label', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Active Profile:')).toBeInTheDocument();
+    });
+  });
+
+  it('shows New and Duplicate buttons', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('New')).toBeInTheDocument();
+      expect(screen.getByText('Duplicate')).toBeInTheDocument();
+    });
+  });
+
+  it('does not show Delete button for built-in profile', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Active Profile:')).toBeInTheDocument();
+    });
+
+    // Default is a built-in profile, so Delete should not be shown
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+  });
+
+  it('opens New Profile dialog on click', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('New')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('New'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Create New Profile')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('My Custom Profile')).toBeInTheDocument();
+    });
+  });
+
+  it('opens Duplicate dialog on click', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Duplicate')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Duplicate'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Duplicate/)).toBeInTheDocument();
+    });
   });
 });

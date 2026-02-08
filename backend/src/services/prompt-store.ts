@@ -1,5 +1,6 @@
 import { getSetting } from './settings-store.js';
 import { getEffectiveLlmConfig as getGlobalLlmConfig } from './settings-store.js';
+import { getProfilePromptConfig, getActiveProfileId } from './prompt-profile-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('prompt-store');
@@ -106,36 +107,78 @@ INFRASTRUCTURE CONTEXT:`,
 
 /**
  * Returns the effective system prompt for a given feature.
- * Checks the settings DB first; falls back to the hardcoded default.
+ * Resolution order:
+ * 1. Per-feature setting in the settings DB (individual override)
+ * 2. Active profile's prompt for this feature
+ * 3. Hardcoded default
  */
 export function getEffectivePrompt(feature: PromptFeature): string {
+  // 1. Check per-feature individual override in settings
   const settingKey = `prompts.${feature}.system_prompt`;
   const stored = getSetting(settingKey)?.value;
   if (stored && stored.trim().length > 0) {
     return stored;
   }
+
+  // 2. Check active profile (skip for 'default' profile which uses empty prompts)
+  const activeProfileId = getActiveProfileId();
+  if (activeProfileId !== 'default') {
+    const profileConfig = getProfilePromptConfig(feature);
+    if (profileConfig?.systemPrompt && profileConfig.systemPrompt.trim().length > 0) {
+      return profileConfig.systemPrompt;
+    }
+  }
+
+  // 3. Fall back to hardcoded default
   return DEFAULT_PROMPTS[feature];
 }
 
 /**
  * Returns LLM config for a specific feature, allowing per-feature model
- * and temperature overrides. Falls back to the global LLM config.
+ * and temperature overrides.
+ * Resolution order:
+ * 1. Per-feature settings in the settings DB
+ * 2. Active profile's model/temperature for this feature
+ * 3. Global LLM config
  */
 export function getEffectiveLlmConfig(feature?: PromptFeature) {
   const global = getGlobalLlmConfig();
 
   if (!feature) return global;
 
+  // 1. Check per-feature individual overrides in settings
   const modelOverride = getSetting(`prompts.${feature}.model`)?.value;
   const tempOverride = getSetting(`prompts.${feature}.temperature`)?.value;
 
-  const model = modelOverride && modelOverride.trim().length > 0
-    ? modelOverride.trim()
-    : global.model;
+  let model = global.model;
+  let temperature: number | undefined;
 
-  const temperature = tempOverride && tempOverride.trim().length > 0
-    ? parseFloat(tempOverride)
-    : undefined; // undefined means "use whatever the caller/global default is"
+  // Per-feature settings take highest priority
+  if (modelOverride && modelOverride.trim().length > 0) {
+    model = modelOverride.trim();
+  } else {
+    // 2. Check active profile
+    const activeProfileId = getActiveProfileId();
+    if (activeProfileId !== 'default') {
+      const profileConfig = getProfilePromptConfig(feature);
+      if (profileConfig?.model && profileConfig.model.trim().length > 0) {
+        model = profileConfig.model.trim();
+      }
+    }
+  }
+
+  if (tempOverride && tempOverride.trim().length > 0) {
+    temperature = parseFloat(tempOverride);
+  } else {
+    // 2. Check active profile
+    const activeProfileId = getActiveProfileId();
+    if (activeProfileId !== 'default') {
+      const profileConfig = getProfilePromptConfig(feature);
+      if (profileConfig?.temperature !== undefined) {
+        temperature = profileConfig.temperature;
+      }
+    }
+  }
 
   return {
     ...global,
