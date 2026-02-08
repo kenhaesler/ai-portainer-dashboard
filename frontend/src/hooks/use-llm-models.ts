@@ -36,6 +36,34 @@ export function useLlmModels(host?: string) {
   });
 }
 
+// ─── Test Prompt ─────────────────────────────────────────────────────
+
+export interface LlmTestPromptRequest {
+  feature: string;
+  systemPrompt: string;
+  model?: string;
+  temperature?: number;
+}
+
+export interface LlmTestPromptResponse {
+  success: boolean;
+  response?: string;
+  sampleInput?: string;
+  sampleLabel?: string;
+  model?: string;
+  tokens?: { prompt: number; completion: number; total: number };
+  latencyMs?: number;
+  format?: 'json' | 'text';
+  error?: string;
+}
+
+export function useLlmTestPrompt() {
+  return useMutation<LlmTestPromptResponse, Error, LlmTestPromptRequest>({
+    mutationFn: (body) =>
+      api.post<LlmTestPromptResponse>('/api/llm/test-prompt', body),
+  });
+}
+
 export function useLlmTestConnection() {
   const queryClient = useQueryClient();
 

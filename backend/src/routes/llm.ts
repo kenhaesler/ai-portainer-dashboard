@@ -6,9 +6,10 @@ import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { getEffectiveLlmConfig } from '../services/settings-store.js';
-import { getEffectivePrompt } from '../services/prompt-store.js';
+import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
-import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema } from '../models/api-schemas.js';
+import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
+import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 
 const log = createChildLogger('route:llm');
 
@@ -280,6 +281,148 @@ export async function llmRoutes(fastify: FastifyInstance) {
       log.error({ err }, 'LLM connection test failed');
       const message = err instanceof Error ? err.message : 'Connection failed';
       return { ok: false, error: message };
+    }
+  });
+
+  // Test a system prompt against a feature-specific sample payload
+  fastify.post<{ Body: { feature: string; systemPrompt: string; model?: string; temperature?: number } }>('/api/llm/test-prompt', {
+    schema: {
+      tags: ['LLM'],
+      summary: 'Test a system prompt with a sample payload for a specific feature',
+      security: [{ bearerAuth: [] }],
+      body: LlmTestPromptBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { feature, systemPrompt, model, temperature } = request.body;
+    const startTime = Date.now();
+
+    // Validate feature key
+    const validFeature = PROMPT_FEATURES.find((f) => f.key === feature);
+    if (!validFeature) {
+      return { success: false, error: `Unknown feature: ${feature}` };
+    }
+
+    const fixture = PROMPT_TEST_FIXTURES[feature as PromptFeature];
+    if (!fixture) {
+      return { success: false, error: `No test fixture for feature: ${feature}` };
+    }
+
+    const llmConfig = getEffectiveLlmConfig();
+    const effectiveModel = model && model.trim() ? model.trim() : llmConfig.model;
+
+    const messages = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: fixture.sampleInput },
+    ];
+
+    try {
+      let fullResponse = '';
+
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+        const response = await fetch(llmConfig.customEndpointUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(llmConfig.customEndpointToken),
+          },
+          body: JSON.stringify({
+            model: effectiveModel,
+            messages,
+            stream: false,
+            ...(temperature !== undefined ? { temperature } : {}),
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json() as any;
+        fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
+      } else {
+        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const response = await ollama.chat({
+          model: effectiveModel,
+          messages,
+          stream: false,
+          ...(temperature !== undefined ? { options: { temperature } } : {}),
+        });
+        fullResponse = response.message?.content || '';
+      }
+
+      const latencyMs = Date.now() - startTime;
+      const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
+      const completionTokens = estimateTokens(fullResponse);
+
+      // Detect output format
+      let format: 'json' | 'text' = 'text';
+      try {
+        JSON.parse(fullResponse.trim());
+        format = 'json';
+      } catch {
+        // Not JSON — plain text
+      }
+
+      // Record trace
+      try {
+        insertLlmTrace({
+          trace_id: randomUUID(),
+          model: effectiveModel,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+          latency_ms: latencyMs,
+          status: 'success',
+          user_query: `[test-prompt:${feature}] ${fixture.sampleInput.slice(0, 400)}`,
+          response_preview: fullResponse.slice(0, 500),
+        });
+      } catch (traceErr) {
+        log.warn({ err: traceErr }, 'Failed to record test-prompt trace');
+      }
+
+      return {
+        success: true,
+        response: fullResponse,
+        sampleInput: fixture.sampleInput,
+        sampleLabel: fixture.label,
+        model: effectiveModel,
+        tokens: {
+          prompt: promptTokens,
+          completion: completionTokens,
+          total: promptTokens + completionTokens,
+        },
+        latencyMs,
+        format,
+      };
+    } catch (err) {
+      const latencyMs = Date.now() - startTime;
+      log.error({ err, feature }, 'Test prompt failed');
+
+      // Record error trace
+      try {
+        insertLlmTrace({
+          trace_id: randomUUID(),
+          model: effectiveModel,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+          latency_ms: latencyMs,
+          status: 'error',
+          user_query: `[test-prompt:${feature}]`,
+          response_preview: err instanceof Error ? err.message.slice(0, 500) : 'Unknown error',
+        });
+      } catch (traceErr) {
+        log.warn({ err: traceErr }, 'Failed to record test-prompt error trace');
+      }
+
+      const message = err instanceof Error ? err.message : 'Test failed';
+      return {
+        success: false,
+        error: message,
+        latencyMs,
+      };
     }
   });
 

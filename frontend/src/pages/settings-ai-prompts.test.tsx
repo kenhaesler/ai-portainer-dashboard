@@ -31,6 +31,7 @@ vi.mock('@/hooks/use-settings', () => ({
   }),
 }));
 
+const mockTestPromptMutate = vi.fn();
 vi.mock('@/hooks/use-llm-models', () => ({
   useLlmModels: () => ({
     data: {
@@ -40,6 +41,10 @@ vi.mock('@/hooks/use-llm-models', () => ({
       ],
       default: 'llama3.2',
     },
+  }),
+  useLlmTestPrompt: () => ({
+    mutate: (...args: unknown[]) => mockTestPromptMutate(...args),
+    isPending: false,
   }),
 }));
 
@@ -317,5 +322,96 @@ describe('AiPromptsTab', () => {
     await waitFor(() => {
       expect(screen.getByText(/Customize the system prompt/)).toBeInTheDocument();
     });
+  });
+
+  it('shows Test Prompt button when accordion is expanded', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Chat Assistant')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Chat Assistant'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Prompt')).toBeInTheDocument();
+    });
+  });
+
+  it('clicking Test Prompt calls mutate with feature and prompt', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Chat Assistant')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Chat Assistant'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Prompt')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Test Prompt'));
+
+    expect(mockTestPromptMutate).toHaveBeenCalledTimes(1);
+    const [payload] = mockTestPromptMutate.mock.calls[0];
+    expect(payload.feature).toBe('chat_assistant');
+    expect(payload.systemPrompt).toBe('You are a helpful assistant.');
+  });
+
+  it('shows test results panel after clicking Test Prompt', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Chat Assistant')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Chat Assistant'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Prompt')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Test Prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Results')).toBeInTheDocument();
+    });
+  });
+
+  it('uses draft (unsaved) prompt for testing', async () => {
+    render(
+      <AiPromptsTab values={defaultValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Chat Assistant')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Chat Assistant'));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('You are a helpful assistant.')).toBeInTheDocument();
+    });
+
+    // Modify the prompt first
+    const textarea = screen.getByDisplayValue('You are a helpful assistant.');
+    fireEvent.change(textarea, { target: { value: 'Custom test prompt' } });
+
+    // Now test - should use the modified draft value
+    fireEvent.click(screen.getByText('Test Prompt'));
+
+    const [payload] = mockTestPromptMutate.mock.calls[0];
+    expect(payload.systemPrompt).toBe('Custom test prompt');
   });
 });
