@@ -10,4 +10,4 @@ COPY . .
 # Default target — backend on Docker Desktop host
 ENV BASE_URL=http://host.docker.internal:3051
 ENV DASHBOARD_USER=admin
-ENV DASHBOARD_PASS=admin
+ENV DASHBOARD_PASS=changeme123

@@ -1,19 +1,21 @@
 # Artillery REST API load test
 #
 # Simulates 10 concurrent users navigating the dashboard:
-#   login → dashboard summary → containers → metrics → stacks → networks → insights
+#   dashboard summary → containers → metrics → stacks → networks → insights
+#
+# Logs in once before the test starts and shares the JWT token
+# across all virtual users to avoid hitting the login rate limit.
 #
 # Usage:
 #   npm run loadtest:rest
-#   artillery run loadtests/artillery-rest.yml
 #
-# Env vars (with defaults):
-#   BASE_URL          http://localhost:3051
+# Env vars (set by docker-compose.loadtest.yml):
+#   BASE_URL          http://backend:3051
 #   DASHBOARD_USER    admin
-#   DASHBOARD_PASS    admin
+#   DASHBOARD_PASS    changeme123
 
 config:
-  target: "{{ $processEnvironment.BASE_URL || 'http://localhost:3051' }}"
+  target: "{{ $processEnvironment.BASE_URL }}"
   processor: "./artillery-helpers.cjs"
   phases:
     # Ramp from 1 to 5 users over 10 seconds
@@ -41,21 +43,9 @@ config:
 
 scenarios:
   - name: "Dashboard navigation flow"
+    beforeScenario: "setToken"
     flow:
-      # Step 1: Login and capture JWT
-      - post:
-          url: "/api/auth/login"
-          json:
-            username: "{{ $processEnvironment.DASHBOARD_USER || 'admin' }}"
-            password: "{{ $processEnvironment.DASHBOARD_PASS || 'admin' }}"
-          capture:
-            - json: "$.token"
-              as: "token"
-          afterResponse: "logToken"
-
-      - think: 1
-
-      # Step 2: Dashboard summary (main page load)
+      # Step 1: Dashboard summary (main page load)
       - get:
           url: "/api/dashboard/summary"
           headers:
@@ -63,7 +53,7 @@ scenarios:
 
       - think: 1
 
-      # Step 3: KPI history sparklines
+      # Step 2: KPI history sparklines
       - get:
           url: "/api/dashboard/kpi-history?hours=24"
           headers:
@@ -71,7 +61,7 @@ scenarios:
 
       - think: 1
 
-      # Step 4: Container list
+      # Step 3: Container list
       - get:
           url: "/api/containers"
           headers:
@@ -79,7 +69,7 @@ scenarios:
 
       - think: 1
 
-      # Step 5: Anomalies list
+      # Step 4: Anomalies list
       - get:
           url: "/api/metrics/anomalies?limit=50"
           headers:
@@ -87,7 +77,7 @@ scenarios:
 
       - think: 1
 
-      # Step 6: Stacks
+      # Step 5: Stacks
       - get:
           url: "/api/stacks"
           headers:
@@ -95,7 +85,7 @@ scenarios:
 
       - think: 1
 
-      # Step 7: Networks
+      # Step 6: Networks
       - get:
           url: "/api/networks"
           headers:
@@ -103,7 +93,7 @@ scenarios:
 
       - think: 1
 
-      # Step 8: Monitoring insights
+      # Step 7: Monitoring insights
       - get:
           url: "/api/monitoring/insights?limit=50"
           headers:
