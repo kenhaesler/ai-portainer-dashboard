@@ -35,7 +35,7 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 graph LR
     subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 :5173 &nbsp;"]
         direction TB
-        Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
+        Router["React Router v7<br/><i>28 lazy-loaded pages</i>"]
 
         subgraph Pages["&nbsp; Pages &nbsp;"]
             direction LR
@@ -47,6 +47,10 @@ graph LR
             P6["Remediation<br/>Trace Explorer"]
             P7["LLM Assistant<br/>Edge Logs"]
             P8["Packet Capture<br/>Settings"]
+            P9["Investigations<br/>Security Audit"]
+            P10["LLM Observability<br/>Status Page"]
+            P11["Webhooks<br/>Users"]
+            P12["Backups<br/>Reports"]
         end
 
         subgraph FState["&nbsp; State &nbsp;"]
@@ -71,7 +75,7 @@ graph LR
 
     subgraph Backend["&nbsp; Backend — Fastify 5 + TypeScript :3001 &nbsp;"]
         direction TB
-        API["REST API<br/><i>15 route modules</i>"]
+        API["REST API<br/><i>34 route modules</i>"]
 
         subgraph Sockets["&nbsp; Socket.IO &nbsp;"]
             direction LR
@@ -85,14 +89,38 @@ graph LR
             subgraph SvcRow1[" "]
                 direction LR
                 PortClient["Portainer Client"]
-                Cache["Cache"]
+                HybridCache["Hybrid Cache"]
                 LLMClient["LLM Client"]
             end
             subgraph SvcRow2[" "]
                 direction LR
                 AnomalyDet["Anomaly Detection"]
+                IsoForest["Isolation Forest"]
+                LogNLP["NLP Log Analyzer"]
+            end
+            subgraph SvcRow3[" "]
+                direction LR
                 MonService["Monitoring"]
                 MetricsCol["Metrics Collector"]
+                Predictor["Predictive Alerting"]
+            end
+            subgraph SvcRow4[" "]
+                direction LR
+                IncidentCorr["Incident Correlator"]
+                InvestSvc["Investigation"]
+                AnomalyExp["Anomaly Explainer"]
+            end
+            subgraph SvcRow5[" "]
+                direction LR
+                PcapSvc["PCAP Service"]
+                SecurityScan["Security Scanner"]
+                NotifSvc["Notifications"]
+            end
+            subgraph SvcRow6[" "]
+                direction LR
+                OidcSvc["OIDC"]
+                WebhookSvc["Webhooks"]
+                LttbSvc["LTTB Decimator"]
             end
         end
 
@@ -114,22 +142,50 @@ graph LR
     subgraph Bottom[" "]
         direction TB
 
-        subgraph Schema["&nbsp; DB Schema — 7 tables &nbsp;"]
-            direction LR
-            T1["sessions"]
-            T2["settings"]
-            T3["insights"]
-            T4["metrics"]
-            T5["actions"]
-            T6["spans"]
-            T7["audit_log"]
+        subgraph Schema["&nbsp; DB Schema — 20+ tables &nbsp;"]
+            direction TB
+            subgraph SchemaRow1[" "]
+                direction LR
+                T1["sessions"]
+                T2["settings"]
+                T3["insights"]
+                T4["metrics"]
+            end
+            subgraph SchemaRow2[" "]
+                direction LR
+                T5["actions"]
+                T6["spans"]
+                T7["audit_log"]
+                T8["investigations"]
+            end
+            subgraph SchemaRow3[" "]
+                direction LR
+                T9["incidents"]
+                T10["pcap_captures"]
+                T11["webhooks"]
+                T12["users"]
+            end
+            subgraph SchemaRow4[" "]
+                direction LR
+                T13["notification_log"]
+                T14["kpi_snapshots"]
+                T15["llm_traces"]
+                T16["network_metrics"]
+            end
         end
 
         subgraph External["&nbsp; External Services &nbsp;"]
-            direction LR
-            Portainer(["Portainer API"])
-            Ollama(["Ollama LLM"])
-            Kibana(["Elasticsearch"])
+            direction TB
+            subgraph ExtRow1[" "]
+                direction LR
+                Portainer(["Portainer API"])
+                Ollama(["Ollama LLM"])
+            end
+            subgraph ExtRow2[" "]
+                direction LR
+                Redis(["Redis"])
+                Kibana(["Elasticsearch"])
+            end
         end
     end
 
@@ -140,6 +196,7 @@ graph LR
     %% Backend to External
     PortClient -- "REST" --> Portainer
     LLMClient -- "API" --> Ollama
+    HybridCache -- "cache" --> Redis
     API -. "optional" .-> Kibana
 
     %% Database
@@ -153,12 +210,13 @@ graph LR
     classDef data fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
     classDef invisible fill:none,stroke:none
 
-    class Portainer,Ollama,Kibana external
-    class Router,P1,P2,P3,P4,P5,P6,P7,P8,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
-    class API,NSllm,NSmon,NSrem,PortClient,Cache,LLMClient,AnomalyDet,MonService,MetricsCol backend
+    class Portainer,Ollama,Kibana,Redis external
+    class Router,P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,RQ,Zustand,SIOClient,Radix,Recharts,XYFlow,Tailwind frontend
+    class API,NSllm,NSmon,NSrem backend
+    class PortClient,HybridCache,LLMClient,AnomalyDet,IsoForest,LogNLP,MonService,MetricsCol,Predictor,IncidentCorr,InvestSvc,AnomalyExp,PcapSvc,SecurityScan,NotifSvc,OidcSvc,WebhookSvc,LttbSvc backend
     class J1,J2,J3 scheduler
-    class DB,T1,T2,T3,T4,T5,T6,T7 data
-    class Bottom,SvcRow1,SvcRow2 invisible
+    class DB,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16 data
+    class Bottom,SvcRow1,SvcRow2,SvcRow3,SvcRow4,SvcRow5,SvcRow6,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,ExtRow1,ExtRow2 invisible
 ```
 
 </div>
