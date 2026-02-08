@@ -27,7 +27,7 @@ export const EndpointSchema = z.object({
   EdgeID: z.string().optional(),
   EdgeKey: z.string().optional(),
   LastCheckInDate: z.number().optional(),
-  Agent: z.object({ Version: z.string() }).optional(),
+  Agent: z.object({ Version: z.string().optional() }).optional(),
 }).passthrough();
 
 export const ContainerSchema = z.object({
