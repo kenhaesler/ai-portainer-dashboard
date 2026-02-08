@@ -32,7 +32,7 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 <div align="left">
 
 ```mermaid
-graph TB
+graph LR
     subgraph Frontend["&nbsp; Frontend — React 19 + Vite 6 :5173 &nbsp;"]
         direction TB
         Router["React Router v7<br/><i>18 lazy-loaded pages</i>"]
@@ -112,7 +112,7 @@ graph TB
     end
 
     subgraph Bottom[" "]
-        direction LR
+        direction TB
 
         subgraph Schema["&nbsp; DB Schema — 7 tables &nbsp;"]
             direction LR
