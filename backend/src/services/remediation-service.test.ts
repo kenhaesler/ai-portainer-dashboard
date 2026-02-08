@@ -203,6 +203,33 @@ describe('remediation-service', () => {
     expect(String(stored)).toContain('OOM due to connection pool leak');
     expect(mockBroadcastActionUpdate).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps fallback rationale when LLM output is unstructured', async () => {
+    mockIsOllamaAvailable.mockResolvedValue(true);
+    mockChatStream.mockImplementation(async (_messages, _system, onChunk) => {
+      onChunk('container looks unhealthy, maybe restart');
+      return '';
+    });
+
+    const result = suggestAction({
+      id: 'insight-7',
+      title: 'Container unhealthy',
+      description: 'health check failing',
+      suggested_action: '',
+      container_id: 'container-7',
+      container_name: 'api',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+
+    await flushMicrotasks();
+
+    expect(mockGetContainerLogs).toHaveBeenCalledWith(1, 'container-7', { tail: 50, timestamps: true });
+    expect(mockGetLatestMetrics).toHaveBeenCalledWith('container-7');
+    expect(mockUpdateActionRationale).not.toHaveBeenCalled();
+    expect(mockBroadcastActionUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe('parseRemediationAnalysis', () => {

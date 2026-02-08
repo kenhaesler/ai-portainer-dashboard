@@ -72,6 +72,31 @@ export interface RemediationAnalysisResult {
   confidence_score: number;
 }
 
+function tryParseAnalysisPayload(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // try code-fence extraction below
+  }
+
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (!fenceMatch) return null;
+
+  try {
+    const parsed = JSON.parse(fenceMatch[1]);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // fall through to null
+  }
+
+  return null;
+}
+
 function pickActionPattern(text: string): ActionPattern | null {
   for (const pattern of ACTION_PATTERNS) {
     if (pattern.keywords.test(text)) return pattern;
@@ -123,25 +148,9 @@ function validateParsedAnalysis(parsed: Record<string, unknown>): RemediationAna
 }
 
 export function parseRemediationAnalysis(raw: string): RemediationAnalysisResult {
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      return validateParsedAnalysis(parsed as Record<string, unknown>);
-    }
-  } catch {
-    // try code-fence extraction below
-  }
-
-  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenceMatch) {
-    try {
-      const parsed = JSON.parse(fenceMatch[1]);
-      if (parsed && typeof parsed === 'object') {
-        return validateParsedAnalysis(parsed as Record<string, unknown>);
-      }
-    } catch {
-      // fall through to fallback
-    }
+  const parsedPayload = tryParseAnalysisPayload(raw);
+  if (parsedPayload) {
+    return validateParsedAnalysis(parsedPayload);
   }
 
   const fallback = raw.trim();
@@ -152,6 +161,12 @@ export function parseRemediationAnalysis(raw: string): RemediationAnalysisResult
     log_analysis: '',
     confidence_score: 0.35,
   };
+}
+
+export function tryParseRemediationAnalysis(raw: string): RemediationAnalysisResult | null {
+  const parsedPayload = tryParseAnalysisPayload(raw);
+  if (!parsedPayload) return null;
+  return validateParsedAnalysis(parsedPayload);
 }
 
 export function buildRemediationPrompt(insight: Insight, evidence: RemediationEvidence): string {
@@ -261,7 +276,11 @@ async function enrichActionWithLlmAnalysis(
       },
     );
 
-    const parsed = parseRemediationAnalysis(rawResponse);
+    const parsed = tryParseRemediationAnalysis(rawResponse);
+    if (!parsed) {
+      log.warn({ actionId, insightId: insight.id }, 'Skipping remediation rationale enrichment due to unstructured LLM output');
+      return;
+    }
     const updated = updateActionRationale(actionId, toStoredAnalysis(parsed));
     if (!updated) return;
 
