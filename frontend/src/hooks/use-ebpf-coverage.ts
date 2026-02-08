@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 export interface CoverageRecord {
   endpoint_id: number;
   endpoint_name: string;
-  status: 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown';
+  status: 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown' | 'not_deployed' | 'unreachable' | 'incompatible';
   exclusion_reason: string | null;
   deployment_profile: string | null;
   last_trace_at: string | null;
@@ -21,6 +21,9 @@ export interface CoverageSummary {
   excluded: number;
   failed: number;
   unknown: number;
+  not_deployed: number;
+  unreachable: number;
+  incompatible: number;
   coveragePercent: number;
 }
 

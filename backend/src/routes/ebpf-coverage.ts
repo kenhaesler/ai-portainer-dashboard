@@ -17,7 +17,7 @@ const EndpointIdParamsSchema = z.object({
 });
 
 const UpdateCoverageBodySchema = z.object({
-  status: z.enum(['planned', 'deployed', 'excluded', 'failed', 'unknown']),
+  status: z.enum(['planned', 'deployed', 'excluded', 'failed', 'unknown', 'not_deployed', 'unreachable', 'incompatible']),
   reason: z.string().optional(),
 });
 

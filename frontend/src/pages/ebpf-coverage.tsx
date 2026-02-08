@@ -7,6 +7,8 @@ import {
   ShieldCheck,
   ShieldOff,
   ShieldQuestion,
+  Unplug,
+  Ban,
 } from 'lucide-react';
 import {
   useEbpfCoverage,
@@ -19,6 +21,25 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate } from '@/lib/utils';
 
+/** Human-readable labels for coverage statuses */
+const STATUS_LABELS: Record<string, string> = {
+  deployed: 'Deployed',
+  planned: 'Planned',
+  excluded: 'Excluded',
+  failed: 'Failed',
+  unknown: 'Unknown',
+  not_deployed: 'Not Deployed',
+  unreachable: 'Unreachable',
+  incompatible: 'Incompatible',
+};
+
+/** Hint text shown below the status badge */
+const STATUS_HINTS: Record<string, string> = {
+  not_deployed: 'Endpoint reachable but no Beyla container found',
+  unreachable: 'Could not connect to endpoint to check for Beyla',
+  incompatible: 'Endpoint type not supported (Edge Agent, ACI, etc.)',
+};
+
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'deployed':
@@ -29,6 +50,12 @@ function StatusIcon({ status }: { status: string }) {
       return <ShieldOff className="h-4 w-4 text-gray-500" />;
     case 'failed':
       return <AlertTriangle className="h-4 w-4 text-red-500" />;
+    case 'not_deployed':
+      return <ShieldQuestion className="h-4 w-4 text-blue-500" />;
+    case 'unreachable':
+      return <Unplug className="h-4 w-4 text-orange-500" />;
+    case 'incompatible':
+      return <Ban className="h-4 w-4 text-gray-400" />;
     default:
       return <ShieldQuestion className="h-4 w-4 text-yellow-500" />;
   }
@@ -66,12 +93,29 @@ function SummaryBar() {
       <span className="text-sm text-muted-foreground">
         Planned: {summary.planned}
       </span>
+      {(summary.unreachable > 0) && (
+        <>
+          <span className="text-sm text-muted-foreground">|</span>
+          <span className="text-sm text-orange-600 dark:text-orange-400">
+            Unreachable: {summary.unreachable}
+          </span>
+        </>
+      )}
+      {(summary.incompatible > 0) && (
+        <>
+          <span className="text-sm text-muted-foreground">|</span>
+          <span className="text-sm text-muted-foreground">
+            Incompatible: {summary.incompatible}
+          </span>
+        </>
+      )}
     </div>
   );
 }
 
 function CoverageRow({ record }: { record: CoverageRecord }) {
   const verifyMutation = useVerifyCoverage();
+  const hint = STATUS_HINTS[record.status];
 
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
@@ -83,7 +127,19 @@ function CoverageRow({ record }: { record: CoverageRecord }) {
         </div>
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={record.status} />
+        <div className="flex flex-col gap-1">
+          <StatusBadge status={record.status} label={STATUS_LABELS[record.status]} />
+          {hint && (
+            <span className="text-xs text-muted-foreground" data-testid="status-hint">
+              {hint}
+            </span>
+          )}
+          {record.status === 'excluded' && record.exclusion_reason && (
+            <span className="text-xs text-muted-foreground">
+              {record.exclusion_reason}
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatDate(record.last_trace_at)}
@@ -94,9 +150,10 @@ function CoverageRow({ record }: { record: CoverageRecord }) {
       <td className="px-4 py-3">
         <button
           onClick={() => verifyMutation.mutate(record.endpoint_id)}
-          disabled={verifyMutation.isPending}
+          disabled={verifyMutation.isPending || record.status === 'incompatible'}
           className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
           data-testid="verify-btn"
+          title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
         >
           <CheckCircle2 className="h-3 w-3" />
           Verify
@@ -167,7 +224,7 @@ export default function EbpfCoveragePage() {
               ) : (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No endpoints found. Click "Sync Endpoints" to load endpoints from Portainer.
+                    No endpoints found. Click &quot;Sync Endpoints&quot; to load endpoints from Portainer.
                   </td>
                 </tr>
               )}

@@ -106,6 +106,9 @@ describe('ebpf-coverage routes', () => {
         excluded: 0,
         failed: 0,
         unknown: 1,
+        not_deployed: 0,
+        unreachable: 0,
+        incompatible: 0,
         coveragePercent: 75,
       });
 

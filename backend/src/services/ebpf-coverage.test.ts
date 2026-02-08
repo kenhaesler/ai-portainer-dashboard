@@ -42,14 +42,82 @@ import {
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
+  detectBeylaOnEndpoint,
+  BEYLA_COMPATIBLE_TYPES,
 } from './ebpf-coverage.js';
-import { getContainers } from './portainer-client.js';
+import { getEndpoints, getContainers } from './portainer-client.js';
 
 const mockGetContainers = vi.mocked(getContainers);
+const mockGetEndpoints = vi.mocked(getEndpoints);
 
 describe('ebpf-coverage service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('BEYLA_COMPATIBLE_TYPES', () => {
+    it('should include Docker Standalone (1) and Swarm (2)', () => {
+      expect(BEYLA_COMPATIBLE_TYPES.has(1)).toBe(true);
+      expect(BEYLA_COMPATIBLE_TYPES.has(2)).toBe(true);
+    });
+
+    it('should exclude Edge Agent (4) and other types', () => {
+      expect(BEYLA_COMPATIBLE_TYPES.has(4)).toBe(false);
+      expect(BEYLA_COMPATIBLE_TYPES.has(3)).toBe(false);
+      expect(BEYLA_COMPATIBLE_TYPES.has(5)).toBe(false);
+    });
+  });
+
+  describe('detectBeylaOnEndpoint', () => {
+    it('should return deployed when beyla container is running', async () => {
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'c1', Names: ['/beyla'], Image: 'grafana/beyla:latest', State: 'running', Status: 'Up', Created: 0, Ports: [], Labels: {}, NetworkSettings: { Networks: {} } },
+      ] as any);
+      const result = await detectBeylaOnEndpoint(1);
+      expect(result).toBe('deployed');
+    });
+
+    it('should return failed when beyla container is stopped', async () => {
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'c1', Names: ['/beyla'], Image: 'grafana/beyla:latest', State: 'exited', Status: 'Exited', Created: 0, Ports: [], Labels: {}, NetworkSettings: { Networks: {} } },
+      ] as any);
+      const result = await detectBeylaOnEndpoint(1);
+      expect(result).toBe('failed');
+    });
+
+    it('should return not_found when no beyla container exists', async () => {
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'c1', Names: ['/nginx'], Image: 'nginx:latest', State: 'running', Status: 'Up', Created: 0, Ports: [], Labels: {}, NetworkSettings: { Networks: {} } },
+      ] as any);
+      const result = await detectBeylaOnEndpoint(1);
+      expect(result).toBe('not_found');
+    });
+
+    it('should return unreachable when API call fails', async () => {
+      mockGetContainers.mockRejectedValueOnce(new Error('Connection refused'));
+      const result = await detectBeylaOnEndpoint(1);
+      expect(result).toBe('unreachable');
+    });
+
+    it('should return incompatible for Edge Agent endpoints (type 4)', async () => {
+      const result = await detectBeylaOnEndpoint(1, 4);
+      expect(result).toBe('incompatible');
+      expect(mockGetContainers).not.toHaveBeenCalled();
+    });
+
+    it('should proceed with detection for Docker Standalone (type 1)', async () => {
+      mockGetContainers.mockResolvedValueOnce([]);
+      const result = await detectBeylaOnEndpoint(1, 1);
+      expect(result).toBe('not_found');
+      expect(mockGetContainers).toHaveBeenCalledWith(1, true);
+    });
+
+    it('should proceed with detection when no type is provided', async () => {
+      mockGetContainers.mockResolvedValueOnce([]);
+      const result = await detectBeylaOnEndpoint(1);
+      expect(result).toBe('not_found');
+      expect(mockGetContainers).toHaveBeenCalledWith(1, true);
+    });
   });
 
   describe('getEndpointCoverage', () => {
@@ -59,7 +127,6 @@ describe('ebpf-coverage service', () => {
         { endpoint_id: 2, endpoint_name: 'remote', status: 'unknown' },
       ];
       mockAll.mockReturnValueOnce(mockRecords);
-
       const result = getEndpointCoverage();
       expect(result).toEqual(mockRecords);
     });
@@ -81,13 +148,20 @@ describe('ebpf-coverage service', () => {
       updateCoverageStatus(2, 'excluded', 'Development-only endpoint');
       expect(mockRun).toHaveBeenCalledWith('excluded', 'Development-only endpoint', 2);
     });
+
+    it('should accept new status types', () => {
+      updateCoverageStatus(3, 'not_deployed');
+      expect(mockRun).toHaveBeenCalledWith('not_deployed', null, 3);
+      updateCoverageStatus(4, 'unreachable');
+      expect(mockRun).toHaveBeenCalledWith('unreachable', null, 4);
+      updateCoverageStatus(5, 'incompatible', 'Edge Agent');
+      expect(mockRun).toHaveBeenCalledWith('incompatible', 'Edge Agent', 5);
+    });
   });
 
   describe('syncEndpointCoverage', () => {
     it('should sync endpoints from Portainer', async () => {
-      // Simulate that both are new insertions
       mockRun.mockReturnValue({ changes: 1 });
-
       const added = await syncEndpointCoverage();
       expect(mockTransaction).toHaveBeenCalled();
       expect(typeof added).toBe('number');
@@ -103,10 +177,33 @@ describe('ebpf-coverage service', () => {
         return [];
       });
       mockRun.mockReturnValue({ changes: 1 });
-
       await syncEndpointCoverage();
-      expect(mockGetContainers).toHaveBeenCalledTimes(2); // once per endpoint
+      expect(mockGetContainers).toHaveBeenCalledTimes(2);
       expect(mockTransaction).toHaveBeenCalled();
+    });
+
+    it('should mark Edge Agent endpoints as incompatible', async () => {
+      mockGetEndpoints.mockResolvedValueOnce([
+        { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
+        { Id: 3, Name: 'edge-agent', Type: 4, URL: 'tcp://edge', Status: 1, Snapshots: [] },
+      ] as any);
+      mockGetContainers.mockResolvedValue([]);
+      mockRun.mockReturnValue({ changes: 1 });
+      await syncEndpointCoverage();
+      expect(mockGetContainers).toHaveBeenCalledTimes(1);
+      expect(mockGetContainers).toHaveBeenCalledWith(1, true);
+    });
+
+    it('should mark down endpoints as unreachable', async () => {
+      mockGetEndpoints.mockResolvedValueOnce([
+        { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
+        { Id: 2, Name: 'down-host', Type: 1, URL: 'tcp://down', Status: 2, Snapshots: [] },
+      ] as any);
+      mockGetContainers.mockResolvedValue([]);
+      mockRun.mockReturnValue({ changes: 1 });
+      await syncEndpointCoverage();
+      expect(mockGetContainers).toHaveBeenCalledTimes(1);
+      expect(mockGetContainers).toHaveBeenCalledWith(1, true);
     });
   });
 
@@ -115,11 +212,8 @@ describe('ebpf-coverage service', () => {
       mockGetContainers.mockResolvedValueOnce([
         { Id: 'c1', Names: ['/beyla'], Image: 'grafana/beyla:latest', State: 'running', Status: 'Up', Created: 0, Ports: [], Labels: {}, NetworkSettings: { Networks: {} } },
       ] as any);
-      // Table exists
       mockGet.mockReturnValueOnce({ name: 'spans' });
-      // Recent span found
       mockGet.mockReturnValueOnce({ start_time: '2025-01-01T12:00:00' });
-
       const result = await verifyCoverage(1);
       expect(result.verified).toBe(true);
       expect(result.beylaRunning).toBe(true);
@@ -128,11 +222,8 @@ describe('ebpf-coverage service', () => {
 
     it('should return verified=false when no beyla and no spans', async () => {
       mockGetContainers.mockResolvedValueOnce([]);
-      // Table exists
       mockGet.mockReturnValueOnce({ name: 'spans' });
-      // No recent span
       mockGet.mockReturnValueOnce(undefined);
-
       const result = await verifyCoverage(1);
       expect(result.verified).toBe(false);
       expect(result.beylaRunning).toBe(false);
@@ -141,9 +232,7 @@ describe('ebpf-coverage service', () => {
 
     it('should handle missing spans table', async () => {
       mockGetContainers.mockResolvedValueOnce([]);
-      // Table does not exist
       mockGet.mockReturnValueOnce(undefined);
-
       const result = await verifyCoverage(1);
       expect(result.verified).toBe(false);
       expect(result.lastTraceAt).toBeNull();
@@ -155,7 +244,15 @@ describe('ebpf-coverage service', () => {
       ] as any);
       mockGet.mockReturnValueOnce({ name: 'spans' });
       mockGet.mockReturnValueOnce(undefined);
+      const result = await verifyCoverage(1);
+      expect(result.beylaRunning).toBe(false);
+      expect(result.verified).toBe(false);
+    });
 
+    it('should handle unreachable endpoint during verify', async () => {
+      mockGetContainers.mockRejectedValueOnce(new Error('Connection refused'));
+      mockGet.mockReturnValueOnce({ name: 'spans' });
+      mockGet.mockReturnValueOnce(undefined);
       const result = await verifyCoverage(1);
       expect(result.beylaRunning).toBe(false);
       expect(result.verified).toBe(false);
@@ -163,29 +260,35 @@ describe('ebpf-coverage service', () => {
   });
 
   describe('getCoverageSummary', () => {
-    it('should return aggregate stats', () => {
+    it('should return aggregate stats including new statuses', () => {
       mockAll.mockReturnValueOnce([
         { status: 'deployed', count: 5 },
         { status: 'planned', count: 2 },
         { status: 'excluded', count: 1 },
         { status: 'failed', count: 0 },
-        { status: 'unknown', count: 2 },
+        { status: 'unknown', count: 1 },
+        { status: 'not_deployed', count: 3 },
+        { status: 'unreachable', count: 2 },
+        { status: 'incompatible', count: 1 },
       ]);
-
       const summary = getCoverageSummary();
-      expect(summary.total).toBe(10);
+      expect(summary.total).toBe(15);
       expect(summary.deployed).toBe(5);
       expect(summary.planned).toBe(2);
-      expect(summary.excluded).toBe(1);
-      expect(summary.coveragePercent).toBe(50);
+      expect(summary.not_deployed).toBe(3);
+      expect(summary.unreachable).toBe(2);
+      expect(summary.incompatible).toBe(1);
+      expect(summary.coveragePercent).toBe(33);
     });
 
     it('should handle empty coverage', () => {
       mockAll.mockReturnValueOnce([]);
-
       const summary = getCoverageSummary();
       expect(summary.total).toBe(0);
       expect(summary.coveragePercent).toBe(0);
+      expect(summary.not_deployed).toBe(0);
+      expect(summary.unreachable).toBe(0);
+      expect(summary.incompatible).toBe(0);
     });
   });
 });
