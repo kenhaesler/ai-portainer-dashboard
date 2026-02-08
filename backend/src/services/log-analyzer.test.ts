@@ -9,6 +9,10 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
+vi.mock('./prompt-store.js', () => ({
+  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
+}));
+
 const mockChatStream = vi.fn();
 vi.mock('./llm-client.js', () => ({
   chatStream: (...args: unknown[]) => mockChatStream(...args),
