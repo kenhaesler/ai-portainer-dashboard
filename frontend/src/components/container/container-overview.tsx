@@ -51,7 +51,7 @@ interface ContainerOverviewProps {
 
 export function ContainerOverview({ container }: ContainerOverviewProps) {
   const ports = container.ports || [];
-  const networks = Array.isArray(container.networks) ? container.networks : Object.keys(container.networks || {});
+  const networks = container.networks || [];
   const labels = container.labels || {};
   const labelEntries = Object.entries(labels);
 
@@ -106,8 +106,7 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
         </div>
       </div>
 
-      {/* Image, Endpoint & Networks row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Image Information Card */}
         <div className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -141,12 +140,12 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
         </div>
 
         {/* Networks Card */}
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Network className="h-5 w-5" />
-            Networks
-          </h3>
-          {networks.length > 0 ? (
+        {networks.length > 0 && (
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Network className="h-5 w-5" />
+              Networks
+            </h3>
             <div className="flex flex-wrap gap-2">
               {networks.map((network) => (
                 <span
@@ -157,10 +156,8 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
                 </span>
               ))}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No networks attached</p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Port Mappings Card */}
