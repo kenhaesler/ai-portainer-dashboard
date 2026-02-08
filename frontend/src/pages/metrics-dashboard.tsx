@@ -454,7 +454,7 @@ export default function MetricsDashboardPage() {
             <button
               type="button"
               onClick={() => navigate(selectedEndpoint ? `/topology?endpoint=${selectedEndpoint}` : '/topology')}
-              className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+              className="rounded-md border border-border/70 bg-background/70 px-3 py-1.5 text-xs font-medium hover:bg-muted/60"
             >
               Open Full Topology Map
             </button>
