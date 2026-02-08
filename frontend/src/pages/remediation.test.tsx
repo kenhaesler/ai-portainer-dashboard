@@ -22,7 +22,19 @@ vi.mock('@/hooks/use-remediation', () => ({
       status: 'pending',
       container_id: 'container-1',
       endpoint_id: 1,
-      rationale: 'Container is consuming too many resources',
+      rationale: JSON.stringify({
+        root_cause: 'Connection pool leak is exhausting memory over time.',
+        severity: 'critical',
+        recommended_actions: [
+          {
+            action: 'Restart container to recover service',
+            priority: 'high',
+            rationale: 'Immediately reclaims leaked memory',
+          },
+        ],
+        log_analysis: 'Repeated pool exhaustion warnings precede malloc failures.',
+        confidence_score: 0.82,
+      }),
       suggested_by: 'AI Monitor',
       created_at: '2026-02-06T00:00:00Z',
     }],
@@ -63,9 +75,17 @@ describe('RemediationPage', () => {
     vi.clearAllMocks();
   });
 
-  it('shows rationale and routes Discuss with AI with context', () => {
+  it('renders structured remediation analysis from rationale JSON', () => {
     renderPage();
-    expect(screen.getByText('Container is consuming too many resources')).toBeInTheDocument();
+    expect(screen.getByText('Critical')).toBeInTheDocument();
+    expect(screen.getByText('Confidence: 82%')).toBeInTheDocument();
+    expect(screen.getByText(/Root Cause:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Connection pool leak is exhausting memory over time\./)).toBeInTheDocument();
+    expect(screen.getByText(/HIGH:/)).toBeInTheDocument();
+  });
+
+  it('routes Discuss with AI with context', () => {
+    renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /Discuss with AI/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/assistant', expect.objectContaining({

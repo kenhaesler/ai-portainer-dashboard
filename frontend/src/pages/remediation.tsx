@@ -86,6 +86,57 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
+type AnalysisPriority = 'high' | 'medium' | 'low';
+type AnalysisSeverity = 'critical' | 'warning' | 'info';
+
+interface ParsedAnalysis {
+  root_cause: string;
+  severity: AnalysisSeverity;
+  log_analysis: string;
+  confidence_score: number;
+  recommended_actions: Array<{
+    action: string;
+    priority: AnalysisPriority;
+    rationale: string;
+  }>;
+}
+
+function parseActionAnalysis(raw: string | undefined): ParsedAnalysis | null {
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.root_cause !== 'string' || typeof parsed.confidence_score !== 'number') return null;
+    if (!['critical', 'warning', 'info'].includes(String(parsed.severity))) return null;
+    if (!Array.isArray(parsed.recommended_actions)) return null;
+
+    const recommendedActions = parsed.recommended_actions
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const entry = item as Record<string, unknown>;
+        const action = typeof entry.action === 'string' ? entry.action : '';
+        const priority = entry.priority === 'high' || entry.priority === 'medium' || entry.priority === 'low'
+          ? entry.priority
+          : 'medium';
+        const rationale = typeof entry.rationale === 'string' ? entry.rationale : '';
+        if (!action) return null;
+        return { action, priority, rationale };
+      })
+      .filter((item): item is ParsedAnalysis['recommended_actions'][number] => item !== null);
+
+    return {
+      root_cause: parsed.root_cause,
+      severity: parsed.severity as AnalysisSeverity,
+      log_analysis: typeof parsed.log_analysis === 'string' ? parsed.log_analysis : '',
+      confidence_score: Math.max(0, Math.min(1, parsed.confidence_score)),
+      recommended_actions: recommendedActions,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function ConfirmDialog({
   open,
   title,
@@ -160,6 +211,15 @@ function ActionRow({
   const createdAt = action.created_at || action.createdAt || '';
   const suggestedBy = action.suggested_by || action.suggestedBy || 'AI Monitor';
   const rationale = action.rationale || action.description || 'No rationale provided';
+  const parsedAnalysis = parseActionAnalysis(rationale);
+  const severityLabel = parsedAnalysis?.severity
+    ? `${parsedAnalysis.severity.charAt(0).toUpperCase()}${parsedAnalysis.severity.slice(1)}`
+    : null;
+  const severityClasses = parsedAnalysis?.severity === 'critical'
+    ? 'text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-300'
+    : parsedAnalysis?.severity === 'warning'
+      ? 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'text-blue-700 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300';
 
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
@@ -195,9 +255,44 @@ function ActionRow({
         </span>
       </td>
       <td className="p-4 max-w-sm">
-        <p className="text-xs text-muted-foreground line-clamp-3" title={rationale}>
-          {rationale}
-        </p>
+        {parsedAnalysis ? (
+          <div className="space-y-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
+                {severityLabel}
+              </span>
+              <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
+                Confidence: {(parsedAnalysis.confidence_score * 100).toFixed(0)}%
+              </span>
+            </div>
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">Root Cause:</span> {parsedAnalysis.root_cause}
+            </p>
+            {parsedAnalysis.log_analysis && (
+              <p className="text-muted-foreground">
+                <span className="font-medium text-foreground">Log Analysis:</span> {parsedAnalysis.log_analysis}
+              </p>
+            )}
+            {parsedAnalysis.recommended_actions.length > 0 && (
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Recommended Actions:</p>
+                {parsedAnalysis.recommended_actions.map((recommendation, index) => (
+                  <p key={`${recommendation.action}-${index}`} className="text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {recommendation.priority.toUpperCase()}:
+                    </span>{' '}
+                    {recommendation.action}
+                    {recommendation.rationale ? ` - ${recommendation.rationale}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground line-clamp-3" title={rationale}>
+            {rationale}
+          </p>
+        )}
       </td>
       <td className="p-4">
         <div className="flex items-center gap-2">
