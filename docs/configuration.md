@@ -69,7 +69,7 @@ All configuration is done via environment variables. Copy [`.env.example`](../.e
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | Backend server port | `3001` |
+| `PORT` | Backend server port | `3051` |
 | `LOG_LEVEL` | Pino log level | `info` |
 | `SQLITE_PATH` | Database file path | `./data/dashboard.db` |
 | `CACHE_ENABLED` | Enable response caching | `true` |

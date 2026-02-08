@@ -7,7 +7,7 @@ const isDev = import.meta.env.DEV;
 const defaultHandler: ReportHandler = (metric) => {
   if (isDev) {
     const color = metric.rating === 'good' ? '\x1b[32m' : metric.rating === 'needs-improvement' ? '\x1b[33m' : '\x1b[31m';
-    // eslint-disable-next-line no-console
+     
     console.log(
       `${color}[Web Vitals] ${metric.name}: ${Math.round(metric.value * 100) / 100} (${metric.rating})\x1b[0m`,
     );

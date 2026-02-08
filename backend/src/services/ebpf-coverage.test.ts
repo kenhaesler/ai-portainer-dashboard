@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockAll = vi.fn((): any[] => []);
 const mockGet = vi.fn();
 const mockRun = vi.fn(() => ({ changes: 1 }));

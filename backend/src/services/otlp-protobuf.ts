@@ -112,7 +112,7 @@ function nanosToString(value: number | Long | bigint): string {
   return String(value);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function convertAnyValue(av: any): { stringValue?: string; intValue?: string | number; doubleValue?: number; boolValue?: boolean } {
   if (!av) return {};
   if (av.stringValue !== undefined && av.stringValue !== null) return { stringValue: av.stringValue };
@@ -122,7 +122,7 @@ function convertAnyValue(av: any): { stringValue?: string; intValue?: string | n
   return {};
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function convertKeyValues(kvs: any[]): Array<{ key: string; value: any }> {
   if (!kvs) return [];
   return kvs.map((kv) => ({
@@ -140,7 +140,7 @@ export function decodeOtlpProtobuf(buffer: Buffer): OtlpExportRequest {
     longs: String,
     bytes: Buffer,
     defaults: true,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   }) as any;
 
   const resourceSpans = (obj.resourceSpans || []).map((rs: any) => ({

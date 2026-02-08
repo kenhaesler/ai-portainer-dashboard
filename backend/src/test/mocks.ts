@@ -146,7 +146,7 @@ export function createMockImage(overrides: Partial<DockerImage> = {}): DockerIma
 // Mock configuration for tests
 export function createMockConfig() {
   return {
-    PORT: 3001,
+    PORT: 3051,
     HOST: '0.0.0.0',
     NODE_ENV: 'test' as const,
     PORTAINER_API_URL: 'http://localhost:9000',
