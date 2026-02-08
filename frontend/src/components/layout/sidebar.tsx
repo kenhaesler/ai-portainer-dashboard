@@ -71,6 +71,7 @@ const navigation: NavGroup[] = [
       { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
       { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
+      { label: 'eBPF Coverage', to: '/ebpf-coverage', icon: Radio },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
       { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
       { label: 'Remediation', to: '/remediation', icon: Shield },

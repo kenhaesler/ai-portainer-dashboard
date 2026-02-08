@@ -43,6 +43,7 @@ import { llmRoutes } from './routes/llm.js';
 import { llmObservabilityRoutes } from './routes/llm-observability.js';
 import { forecastRoutes } from './routes/forecasts.js';
 import { correlationRoutes } from './routes/correlations.js';
+import { ebpfCoverageRoutes } from './routes/ebpf-coverage.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -128,6 +129,7 @@ export async function buildApp() {
   await app.register(llmObservabilityRoutes);
   await app.register(forecastRoutes);
   await app.register(correlationRoutes);
+  await app.register(ebpfCoverageRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);
