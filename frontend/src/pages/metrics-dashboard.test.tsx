@@ -89,9 +89,12 @@ vi.mock('@/hooks/use-metrics', () => ({
   useAnomalyExplanations: vi.fn().mockReturnValue({ data: null }),
 }));
 
+const mockUseAiForecastNarrative = vi.fn();
+const mockUseContainerForecast = vi.fn();
 vi.mock('@/hooks/use-forecasts', () => ({
-  useContainerForecast: vi.fn().mockReturnValue({ data: null }),
+  useContainerForecast: (...args: unknown[]) => mockUseContainerForecast(...args),
   useForecasts: (...args: unknown[]) => mockUseForecasts(...args),
+  useAiForecastNarrative: (...args: unknown[]) => mockUseAiForecastNarrative(...args),
 }));
 
 vi.mock('@/hooks/use-auto-refresh', () => ({
@@ -158,6 +161,7 @@ describe('MetricsDashboardPage', () => {
       isLoading: false,
       error: null,
     });
+    mockUseContainerForecast.mockReturnValue({ data: null });
     mockUseNetworkRates.mockReturnValue({
       data: {
         rates: {
@@ -166,9 +170,12 @@ describe('MetricsDashboardPage', () => {
         },
       },
     });
-
     mockUseLlmModels.mockReturnValue({
       data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    });
+    mockUseAiForecastNarrative.mockReturnValue({
+      data: null,
+      isLoading: false,
     });
   });
 
@@ -350,5 +357,83 @@ describe('MetricsDashboardPage', () => {
     // Click Ask AI
     fireEvent.click(screen.getByText('Ask AI'));
     expect(screen.getByTestId('inline-chat-panel')).toBeInTheDocument();
+  });
+
+  describe('AI Forecast Narrative', () => {
+    const mockForecast = {
+      containerId: 'c1',
+      containerName: 'api-1',
+      metricType: 'cpu',
+      currentValue: 75,
+      trend: 'increasing' as const,
+      slope: 2.5,
+      r_squared: 0.85,
+      forecast: [],
+      timeToThreshold: 6,
+      confidence: 'high' as const,
+    };
+
+    function selectContainer() {
+      const endpointSelect = screen.getAllByRole('combobox')[0];
+      fireEvent.click(endpointSelect);
+      fireEvent.click(screen.getByRole('option', { name: 'local' }));
+      const containerSelect = screen.getAllByRole('combobox')[2];
+      fireEvent.click(containerSelect);
+      fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
+    }
+
+    it('renders AI narrative text in forecast card', () => {
+      mockUseContainerForecast.mockReturnValue({ data: mockForecast });
+      mockUseAiForecastNarrative.mockReturnValue({
+        data: { narrative: 'CPU is rising steadily. Consider scaling before it hits 90%.' },
+        isLoading: false,
+      });
+
+      renderPage();
+      selectContainer();
+
+      // Both CPU and memory cards render with AI Analysis
+      const labels = screen.getAllByText('AI Analysis');
+      expect(labels.length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('CPU is rising steadily. Consider scaling before it hits 90%.').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('shows skeleton while narrative is loading', () => {
+      mockUseContainerForecast.mockReturnValue({ data: mockForecast });
+      mockUseAiForecastNarrative.mockReturnValue({
+        data: null,
+        isLoading: true,
+      });
+
+      renderPage();
+      selectContainer();
+
+      const labels = screen.getAllByText('AI Analysis');
+      expect(labels.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('hides narrative section when LLM is unavailable', () => {
+      mockUseLlmModels.mockReturnValue({ data: { models: [], default: '' } });
+      mockUseContainerForecast.mockReturnValue({ data: mockForecast });
+
+      renderPage();
+      selectContainer();
+
+      expect(screen.queryByText('AI Analysis')).not.toBeInTheDocument();
+    });
+
+    it('shows fallback when narrative is null', () => {
+      mockUseContainerForecast.mockReturnValue({ data: mockForecast });
+      mockUseAiForecastNarrative.mockReturnValue({
+        data: { narrative: null },
+        isLoading: false,
+      });
+
+      renderPage();
+      selectContainer();
+
+      const fallbacks = screen.getAllByText('Narrative unavailable');
+      expect(fallbacks.length).toBeGreaterThanOrEqual(1);
+    });
   });
 });

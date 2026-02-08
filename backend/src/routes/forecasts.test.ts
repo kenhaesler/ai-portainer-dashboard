@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { forecastRoutes } from './forecasts.js';
+import { forecastRoutes, buildForecastPrompt, clearNarrativeCache } from './forecasts.js';
 
 vi.mock('../config/index.js', () => ({
   getConfig: vi.fn().mockReturnValue({}),
@@ -15,6 +15,11 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
   lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
+}));
+
+const mockChatStream = vi.fn();
+vi.mock('../services/llm-client.js', () => ({
+  chatStream: (...args: unknown[]) => mockChatStream(...args),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -31,6 +36,7 @@ describe('Forecast Routes', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    clearNarrativeCache();
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
@@ -146,5 +152,119 @@ describe('Forecast Routes', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.error).toBe('Insufficient data for forecast');
+  });
+
+  describe('GET /api/forecasts/:containerId/narrative', () => {
+    const mockForecast = {
+      containerId: 'abc123',
+      containerName: 'web-server',
+      metricType: 'cpu',
+      currentValue: 75,
+      trend: 'increasing',
+      slope: 2.5,
+      r_squared: 0.85,
+      forecast: [],
+      timeToThreshold: 6,
+      confidence: 'high',
+    };
+
+    it('returns AI-generated narrative for a forecast', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(mockForecast);
+      mockChatStream.mockResolvedValue('CPU is rising steadily. Consider scaling soon.');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative?metricType=cpu',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.narrative).toBe('CPU is rising steadily. Consider scaling soon.');
+      expect(mockChatStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns null narrative when forecast data is insufficient', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative?metricType=cpu',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ narrative: null });
+      expect(mockChatStream).not.toHaveBeenCalled();
+    });
+
+    it('returns null narrative when LLM fails', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(mockForecast);
+      mockChatStream.mockRejectedValue(new Error('Ollama down'));
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative?metricType=cpu',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ narrative: null });
+    });
+
+    it('defaults metricType to cpu', async () => {
+      mockLookupContainerName.mockResolvedValue('web-server');
+      mockGenerateForecast.mockResolvedValue(mockForecast);
+      mockChatStream.mockResolvedValue('All good.');
+
+      await app.inject({
+        method: 'GET',
+        url: '/api/forecasts/abc123/narrative',
+      });
+
+      expect(mockGenerateForecast).toHaveBeenCalledWith(
+        'abc123', 'web-server', 'cpu', 90, 24, 24,
+      );
+    });
+  });
+});
+
+describe('buildForecastPrompt', () => {
+  it('includes all forecast fields in the prompt', () => {
+    const prompt = buildForecastPrompt({
+      containerName: 'api-server',
+      metricType: 'memory',
+      currentValue: 82.5,
+      trend: 'increasing',
+      slope: 1.2,
+      r_squared: 0.91,
+      timeToThreshold: 4,
+      confidence: 'high',
+    });
+
+    expect(prompt).toContain('api-server');
+    expect(prompt).toContain('memory');
+    expect(prompt).toContain('82.5%');
+    expect(prompt).toContain('increasing');
+    expect(prompt).toContain('1.20%/hour');
+    expect(prompt).toContain('0.910');
+    expect(prompt).toContain('~4 hours');
+    expect(prompt).toContain('high');
+  });
+
+  it('handles null timeToThreshold', () => {
+    const prompt = buildForecastPrompt({
+      containerName: 'worker',
+      metricType: 'cpu',
+      currentValue: 10,
+      trend: 'stable',
+      slope: 0.01,
+      r_squared: 0.15,
+      timeToThreshold: null,
+      confidence: 'low',
+    });
+
+    expect(prompt).toContain('not predicted to breach 90%');
+    expect(prompt).not.toContain('~null');
   });
 });
