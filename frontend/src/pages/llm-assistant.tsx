@@ -9,6 +9,7 @@ import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { useMcpServers } from '@/hooks/use-mcp';
+import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',
@@ -374,9 +375,18 @@ function MessageBubble({ message }: MessageBubbleProps) {
             <MarkdownContent content={message.content} />
           )}
         </div>
-        <p className={`text-xs text-muted-foreground px-1 ${isUser ? 'text-right' : ''}`}>
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </p>
+        <div className={`flex items-center gap-3 px-1 ${isUser ? 'justify-end' : ''}`}>
+          <p className="text-xs text-muted-foreground">
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+          {!isUser && (
+            <LlmFeedbackButtons
+              feature="chat_assistant"
+              messageId={message.id}
+              compact
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
+import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
 import { cn } from '@/lib/utils';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -352,6 +353,13 @@ function CompactMessage({ message }: CompactMessageProps) {
             <CompactMarkdown content={message.content} />
           )}
         </div>
+        {!isUser && (
+          <LlmFeedbackButtons
+            feature="chat_assistant"
+            messageId={message.id}
+            compact
+          />
+        )}
       </div>
     </div>
   );

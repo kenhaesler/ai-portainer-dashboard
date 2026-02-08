@@ -36,6 +36,21 @@ vi.mock('@/providers/socket-provider', () => ({
   useSockets: () => ({ llmSocket: null }),
 }));
 
+vi.mock('@/hooks/use-llm-feedback', () => ({
+  useSubmitFeedback: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
 import LlmAssistantPage from './llm-assistant';
 import { useLlmChat } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';

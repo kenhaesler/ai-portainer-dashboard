@@ -48,6 +48,7 @@ import {
   Copy,
   Layers,
   Upload,
+  ThumbsUp,
 } from 'lucide-react';
 import {
   useThemeStore,
@@ -112,6 +113,7 @@ import { useSearchParams } from 'react-router-dom';
 
 const LazyUsersPanel = lazy(() => import('@/pages/users').then((m) => ({ default: m.UsersPanel })));
 const LazyWebhooksPanel = lazy(() => import('@/pages/webhooks').then((m) => ({ default: m.WebhooksPanel })));
+const LazyAiFeedbackPanel = lazy(() => import('@/pages/settings-ai-feedback').then((m) => ({ default: m.AiFeedbackPanel })));
 const REDACTED_SECRET = '••••••••';
 
 // Default settings definitions
@@ -3156,6 +3158,15 @@ export default function SettingsPage() {
               AI Prompts
             </Tabs.Trigger>
           )}
+          {role === 'admin' && (
+            <Tabs.Trigger
+              value="ai-feedback"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+            >
+              <ThumbsUp className="h-4 w-4" />
+              AI Feedback
+            </Tabs.Trigger>
+          )}
         </Tabs.List>
 
         {/* General Tab */}
@@ -3718,6 +3729,14 @@ export default function SettingsPage() {
         {role === 'admin' && (
           <Tabs.Content value="ai-prompts" className="space-y-6 focus:outline-none">
             <AiPromptsTab values={editedValues} onChange={handleChange} />
+          </Tabs.Content>
+        )}
+
+        {role === 'admin' && (
+          <Tabs.Content value="ai-feedback" className="space-y-6 focus:outline-none">
+            <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+              <LazyAiFeedbackPanel />
+            </Suspense>
           </Tabs.Content>
         )}
       </Tabs.Root>
