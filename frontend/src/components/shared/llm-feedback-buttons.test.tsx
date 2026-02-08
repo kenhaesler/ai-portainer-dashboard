@@ -44,8 +44,19 @@ describe('LlmFeedbackButtons', () => {
     expect(screen.getByTestId('feedback-thumbs-down')).toBeInTheDocument();
   });
 
-  it('submits positive feedback on thumbs up click', () => {
-    // Simulate successful mutation with onSuccess callback
+  it('shows comment input on thumbs up click', () => {
+    render(
+      <LlmFeedbackButtons feature="chat_assistant" />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.click(screen.getByTestId('feedback-thumbs-up'));
+
+    expect(screen.getByTestId('feedback-comment-form')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/What was good/)).toBeInTheDocument();
+  });
+
+  it('submits positive feedback via comment form', () => {
     mockMutate.mockImplementation((params: unknown, options?: { onSuccess?: () => void }) => {
       options?.onSuccess?.();
     });
@@ -56,6 +67,7 @@ describe('LlmFeedbackButtons', () => {
     );
 
     fireEvent.click(screen.getByTestId('feedback-thumbs-up'));
+    fireEvent.click(screen.getByTestId('feedback-submit-negative'));
 
     expect(mockMutate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -77,7 +89,6 @@ describe('LlmFeedbackButtons', () => {
     fireEvent.click(screen.getByTestId('feedback-thumbs-down'));
 
     expect(screen.getByTestId('feedback-comment-form')).toBeInTheDocument();
-    expect(screen.getByTestId('feedback-comment-input')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/What went wrong/)).toBeInTheDocument();
   });
 
@@ -158,6 +169,7 @@ describe('LlmFeedbackButtons', () => {
     );
 
     fireEvent.click(screen.getByTestId('feedback-thumbs-up'));
+    fireEvent.click(screen.getByTestId('feedback-submit-negative'));
 
     await waitFor(() => {
       expect(screen.getByTestId('feedback-submitted')).toBeInTheDocument();
@@ -194,6 +206,7 @@ describe('LlmFeedbackButtons', () => {
     );
 
     fireEvent.click(screen.getByTestId('feedback-thumbs-up'));
+    fireEvent.click(screen.getByTestId('feedback-submit-negative'));
 
     await waitFor(() => {
       expect(screen.queryByTestId('feedback-buttons')).not.toBeInTheDocument();
@@ -241,5 +254,32 @@ describe('LlmFeedbackButtons', () => {
     fireEvent.keyDown(input, { key: 'Escape' });
 
     expect(screen.queryByTestId('feedback-comment-form')).not.toBeInTheDocument();
+  });
+
+  it('passes responsePreview and userQuery to mutation', () => {
+    mockMutate.mockImplementation((params: unknown, options?: { onSuccess?: () => void }) => {
+      options?.onSuccess?.();
+    });
+
+    render(
+      <LlmFeedbackButtons
+        feature="chat_assistant"
+        responsePreview="The container is running normally."
+        userQuery="Is my container healthy?"
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.click(screen.getByTestId('feedback-thumbs-up'));
+    fireEvent.click(screen.getByTestId('feedback-submit-negative'));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rating: 'positive',
+        responsePreview: 'The container is running normally.',
+        userQuery: 'Is my container healthy?',
+      }),
+      expect.any(Object),
+    );
   });
 });

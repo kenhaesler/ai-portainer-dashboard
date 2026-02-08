@@ -32,6 +32,8 @@ const SubmitFeedbackSchema = z.object({
   feature: z.string().min(1).max(100),
   rating: z.enum(['positive', 'negative']),
   comment: z.string().max(2000).optional(),
+  responsePreview: z.string().max(2000).optional(),
+  userQuery: z.string().max(1000).optional(),
 });
 
 const ListFeedbackQuerySchema = z.object({
@@ -107,6 +109,8 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
       rating: body.rating,
       comment: body.comment,
       user_id: userId,
+      response_preview: body.responsePreview,
+      user_query: body.userQuery,
     });
 
     return reply.code(201).send(feedback);

@@ -10,6 +10,10 @@ interface LlmFeedbackButtonsProps {
   traceId?: string;
   /** Message ID for chat messages */
   messageId?: string;
+  /** Preview of the LLM response for admin review */
+  responsePreview?: string;
+  /** The user query that triggered this LLM response */
+  userQuery?: string;
   /** Compact mode for inline displays */
   compact?: boolean;
   /** Additional CSS classes */
@@ -20,54 +24,57 @@ export function LlmFeedbackButtons({
   feature,
   traceId,
   messageId,
+  responsePreview,
+  userQuery,
   compact = false,
   className,
 }: LlmFeedbackButtonsProps) {
   const [submitted, setSubmitted] = useState<'positive' | 'negative' | null>(null);
-  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [pendingRating, setPendingRating] = useState<'positive' | 'negative' | null>(null);
   const [comment, setComment] = useState('');
   const submitFeedback = useSubmitFeedback();
 
-  const handleThumbsUp = useCallback(() => {
+  const handleThumbClick = useCallback((rating: 'positive' | 'negative') => {
     if (submitted) return;
-    submitFeedback.mutate(
-      { feature, traceId, messageId, rating: 'positive' },
-      { onSuccess: () => setSubmitted('positive') },
-    );
-  }, [submitted, feature, traceId, messageId, submitFeedback]);
-
-  const handleThumbsDown = useCallback(() => {
-    if (submitted) return;
-    setShowCommentInput(true);
+    setPendingRating(rating);
   }, [submitted]);
 
-  const handleSubmitNegative = useCallback(() => {
+  const handleSubmitFeedback = useCallback(() => {
+    if (!pendingRating) return;
     submitFeedback.mutate(
-      { feature, traceId, messageId, rating: 'negative', comment: comment.trim() || undefined },
+      {
+        feature,
+        traceId,
+        messageId,
+        rating: pendingRating,
+        comment: comment.trim() || undefined,
+        responsePreview,
+        userQuery,
+      },
       {
         onSuccess: () => {
-          setSubmitted('negative');
-          setShowCommentInput(false);
+          setSubmitted(pendingRating);
+          setPendingRating(null);
           setComment('');
         },
       },
     );
-  }, [feature, traceId, messageId, comment, submitFeedback]);
+  }, [feature, traceId, messageId, pendingRating, comment, responsePreview, userQuery, submitFeedback]);
 
   const handleCancelComment = useCallback(() => {
-    setShowCommentInput(false);
+    setPendingRating(null);
     setComment('');
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmitNegative();
+      handleSubmitFeedback();
     }
     if (e.key === 'Escape') {
       handleCancelComment();
     }
-  }, [handleSubmitNegative, handleCancelComment]);
+  }, [handleSubmitFeedback, handleCancelComment]);
 
   // After feedback is submitted, show a minimal confirmation
   if (submitted) {
@@ -95,13 +102,14 @@ export function LlmFeedbackButtons({
       {/* Thumbs buttons */}
       <div className="flex items-center gap-1" data-testid="feedback-buttons">
         <button
-          onClick={handleThumbsUp}
+          onClick={() => handleThumbClick('positive')}
           disabled={submitFeedback.isPending}
           className={cn(
             'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors',
             'hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
             'disabled:opacity-50 disabled:cursor-not-allowed',
+            pendingRating === 'positive' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
           )}
           aria-label="Good response"
           title="Good response"
@@ -110,13 +118,14 @@ export function LlmFeedbackButtons({
           <ThumbsUp className={cn('h-3 w-3', compact ? '' : 'h-3.5 w-3.5')} />
         </button>
         <button
-          onClick={handleThumbsDown}
+          onClick={() => handleThumbClick('negative')}
           disabled={submitFeedback.isPending}
           className={cn(
             'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors',
             'hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
             'disabled:opacity-50 disabled:cursor-not-allowed',
+            pendingRating === 'negative' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
           )}
           aria-label="Poor response"
           title="Poor response"
@@ -126,8 +135,8 @@ export function LlmFeedbackButtons({
         </button>
       </div>
 
-      {/* Comment input for negative feedback */}
-      {showCommentInput && (
+      {/* Comment input (shown for both positive and negative) */}
+      {pendingRating && (
         <div
           className="flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
           data-testid="feedback-comment-form"
@@ -137,7 +146,7 @@ export function LlmFeedbackButtons({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="What went wrong? (optional)"
+            placeholder={pendingRating === 'negative' ? 'What went wrong? (optional)' : 'What was good? (optional)'}
             autoFocus
             className={cn(
               'flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs',
@@ -149,9 +158,14 @@ export function LlmFeedbackButtons({
             data-testid="feedback-comment-input"
           />
           <button
-            onClick={handleSubmitNegative}
+            onClick={handleSubmitFeedback}
             disabled={submitFeedback.isPending}
-            className="inline-flex items-center justify-center rounded-md bg-amber-500/10 border border-amber-500/20 p-1 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+            className={cn(
+              'inline-flex items-center justify-center rounded-md border p-1 transition-colors disabled:opacity-50',
+              pendingRating === 'negative'
+                ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20',
+            )}
             aria-label="Submit feedback"
             data-testid="feedback-submit-negative"
           >

@@ -198,8 +198,16 @@ export default function LlmAssistantPage() {
               </div>
             )}
 
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+            {messages.map((message, index) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                userQuery={
+                  message.role === 'assistant' && index > 0 && messages[index - 1].role === 'user'
+                    ? messages[index - 1].content
+                    : undefined
+                }
+              />
             ))}
 
             {/* Loading indicator - shown while waiting for response */}
@@ -313,9 +321,10 @@ interface MessageBubbleProps {
     timestamp: string;
     toolCalls?: ToolCallEvent[];
   };
+  userQuery?: string;
 }
 
-function MessageBubble({ message }: MessageBubbleProps) {
+function MessageBubble({ message, userQuery }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
 
@@ -383,6 +392,8 @@ function MessageBubble({ message }: MessageBubbleProps) {
             <LlmFeedbackButtons
               feature="chat_assistant"
               messageId={message.id}
+              responsePreview={message.content.slice(0, 2000)}
+              userQuery={userQuery?.slice(0, 1000)}
               compact
             />
           )}

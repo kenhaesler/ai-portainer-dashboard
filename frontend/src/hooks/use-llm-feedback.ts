@@ -17,6 +17,9 @@ export interface LlmFeedback {
   effective_rating: 'positive' | 'negative' | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  response_preview: string | null;
+  user_query: string | null;
+  username: string | null;
   created_at: string;
 }
 
@@ -69,6 +72,8 @@ export function useSubmitFeedback() {
     feature: string;
     rating: 'positive' | 'negative';
     comment?: string;
+    responsePreview?: string;
+    userQuery?: string;
   }>({
     mutationFn: async (params) => {
       return api.post<LlmFeedback>('/api/llm/feedback', params);

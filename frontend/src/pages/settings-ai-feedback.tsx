@@ -18,6 +18,7 @@ import {
   Copy,
   Check,
   Eye,
+  Send,
 } from 'lucide-react';
 import {
   useFeedbackStats,
@@ -262,6 +263,17 @@ function FeatureStatRow({ stat }: { stat: FeedbackStats }) {
 
 function NegativeFeedbackRow({ feedback }: { feedback: LlmFeedback }) {
   const reviewFeedback = useReviewFeedback();
+  const [pendingAction, setPendingAction] = useState<'approved' | 'rejected' | 'overruled' | null>(null);
+  const [adminNote, setAdminNote] = useState('');
+  const [showContext, setShowContext] = useState(false);
+
+  const handleConfirmAction = useCallback(() => {
+    if (!pendingAction) return;
+    reviewFeedback.mutate(
+      { id: feedback.id, action: pendingAction, note: adminNote.trim() || undefined },
+      { onSuccess: () => { setPendingAction(null); setAdminNote(''); } },
+    );
+  }, [feedback.id, pendingAction, adminNote, reviewFeedback]);
 
   return (
     <div className="px-4 py-3 space-y-1.5">
@@ -270,6 +282,9 @@ function NegativeFeedbackRow({ feedback }: { feedback: LlmFeedback }) {
           {featureLabel(feedback.feature)}
         </span>
         <StatusBadge status={feedback.admin_status} />
+        <span className="text-[10px] text-muted-foreground">
+          by {feedback.username ?? feedback.user_id}
+        </span>
         <span className="text-[10px] text-muted-foreground ml-auto">
           {formatDate(feedback.created_at)}
         </span>
@@ -280,10 +295,24 @@ function NegativeFeedbackRow({ feedback }: { feedback: LlmFeedback }) {
       {!feedback.comment && (
         <p className="text-xs text-muted-foreground italic">No comment provided</p>
       )}
-      {feedback.admin_status === 'pending' && (
+      {/* Context toggle */}
+      {(feedback.user_query || feedback.response_preview) && (
+        <button
+          onClick={() => setShowContext(!showContext)}
+          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="toggle-context"
+        >
+          <Eye className="h-2.5 w-2.5" />
+          {showContext ? 'Hide' : 'Show'} context
+        </button>
+      )}
+      {showContext && (
+        <FeedbackContext userQuery={feedback.user_query} responsePreview={feedback.response_preview} />
+      )}
+      {feedback.admin_status === 'pending' && !pendingAction && (
         <div className="flex items-center gap-1.5 pt-1">
           <button
-            onClick={() => reviewFeedback.mutate({ id: feedback.id, action: 'approved' })}
+            onClick={() => setPendingAction('approved')}
             disabled={reviewFeedback.isPending}
             className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
           >
@@ -291,7 +320,7 @@ function NegativeFeedbackRow({ feedback }: { feedback: LlmFeedback }) {
             Approve
           </button>
           <button
-            onClick={() => reviewFeedback.mutate({ id: feedback.id, action: 'rejected' })}
+            onClick={() => setPendingAction('rejected')}
             disabled={reviewFeedback.isPending}
             className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
           >
@@ -299,7 +328,7 @@ function NegativeFeedbackRow({ feedback }: { feedback: LlmFeedback }) {
             Reject
           </button>
           <button
-            onClick={() => reviewFeedback.mutate({ id: feedback.id, action: 'overruled', note: 'Admin override' })}
+            onClick={() => setPendingAction('overruled')}
             disabled={reviewFeedback.isPending}
             className="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
           >
@@ -307,6 +336,16 @@ function NegativeFeedbackRow({ feedback }: { feedback: LlmFeedback }) {
             Overrule
           </button>
         </div>
+      )}
+      {pendingAction && (
+        <AdminNoteForm
+          action={pendingAction}
+          note={adminNote}
+          onNoteChange={setAdminNote}
+          onConfirm={handleConfirmAction}
+          onCancel={() => { setPendingAction(null); setAdminNote(''); }}
+          isPending={reviewFeedback.isPending}
+        />
       )}
     </div>
   );
@@ -325,6 +364,115 @@ function StatusBadge({ status }: { status: string }) {
     <span className={cn('text-[10px] font-medium rounded-full px-1.5 py-0.5', c.className)}>
       {c.label}
     </span>
+  );
+}
+
+// ── Shared Components ────────────────────────────────────────────────
+
+function FeedbackContext({ userQuery, responsePreview }: { userQuery: string | null; responsePreview: string | null }) {
+  const [expandedPreview, setExpandedPreview] = useState(false);
+
+  if (!userQuery && !responsePreview) return null;
+
+  const previewTruncateLength = 300;
+  const isLongPreview = responsePreview && responsePreview.length > previewTruncateLength;
+  const displayPreview = responsePreview
+    ? (expandedPreview ? responsePreview : responsePreview.slice(0, previewTruncateLength))
+    : null;
+
+  return (
+    <div className="space-y-1.5 rounded-md border border-border/50 bg-muted/20 p-2" data-testid="feedback-context">
+      {userQuery && (
+        <div>
+          <span className="text-[10px] font-medium text-muted-foreground">User asked:</span>
+          <p className="text-xs text-foreground/80 mt-0.5">{userQuery}</p>
+        </div>
+      )}
+      {displayPreview && (
+        <div>
+          <span className="text-[10px] font-medium text-muted-foreground">LLM responded:</span>
+          <p className="text-xs text-foreground/70 mt-0.5 whitespace-pre-wrap">
+            {displayPreview}
+            {isLongPreview && !expandedPreview && '...'}
+          </p>
+          {isLongPreview && (
+            <button
+              onClick={() => setExpandedPreview(!expandedPreview)}
+              className="text-[10px] text-primary hover:underline mt-0.5"
+            >
+              {expandedPreview ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminNoteForm({
+  action,
+  note,
+  onNoteChange,
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
+  action: 'approved' | 'rejected' | 'overruled';
+  note: string;
+  onNoteChange: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const actionLabels: Record<string, string> = {
+    approved: 'Approve',
+    rejected: 'Reject',
+    overruled: 'Overrule',
+  };
+
+  const actionColors: Record<string, string> = {
+    approved: 'bg-emerald-600 hover:bg-emerald-700',
+    rejected: 'bg-red-600 hover:bg-red-700',
+    overruled: 'bg-purple-600 hover:bg-purple-700',
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 pt-1 animate-in fade-in slide-in-from-top-1 duration-150" data-testid="admin-note-form">
+      <input
+        type="text"
+        value={note}
+        onChange={(e) => onNoteChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); onConfirm(); }
+          if (e.key === 'Escape') onCancel();
+        }}
+        placeholder="Admin note (optional)"
+        autoFocus
+        className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[250px]"
+        maxLength={1000}
+        data-testid="admin-note-input"
+      />
+      <button
+        onClick={onConfirm}
+        disabled={isPending}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-white transition-colors disabled:opacity-50',
+          actionColors[action],
+        )}
+        data-testid="admin-note-confirm"
+      >
+        <Send className="h-2.5 w-2.5" />
+        {actionLabels[action]}
+      </button>
+      <button
+        onClick={onCancel}
+        className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-muted transition-colors"
+        aria-label="Cancel"
+        data-testid="admin-note-cancel"
+      >
+        <XCircle className="h-3 w-3" />
+      </button>
+    </div>
   );
 }
 
@@ -486,6 +634,15 @@ function FeedbackRow({
   reviewing: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'approved' | 'rejected' | 'overruled' | null>(null);
+  const [adminNote, setAdminNote] = useState('');
+
+  const handleConfirmAction = useCallback(() => {
+    if (!pendingAction) return;
+    onReview(pendingAction, adminNote.trim() || undefined);
+    setPendingAction(null);
+    setAdminNote('');
+  }, [pendingAction, adminNote, onReview]);
 
   return (
     <div className={cn('px-4 py-2.5', selected && 'bg-muted/30')}>
@@ -521,7 +678,7 @@ function FeedbackRow({
       {expanded && (
         <div className="mt-2 ml-14 space-y-2">
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div><span className="text-muted-foreground">User:</span> {feedback.user_id}</div>
+            <div><span className="text-muted-foreground">User:</span> {feedback.username ?? feedback.user_id}</div>
             <div><span className="text-muted-foreground">Effective:</span> {feedback.effective_rating ?? 'N/A'}</div>
             {feedback.admin_note && (
               <div className="col-span-2"><span className="text-muted-foreground">Admin note:</span> {feedback.admin_note}</div>
@@ -530,30 +687,42 @@ function FeedbackRow({
               <div><span className="text-muted-foreground">Reviewed by:</span> {feedback.reviewed_by}</div>
             )}
           </div>
-          {feedback.admin_status === 'pending' && (
+          {/* Response context */}
+          <FeedbackContext userQuery={feedback.user_query} responsePreview={feedback.response_preview} />
+          {feedback.admin_status === 'pending' && !pendingAction && (
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => onReview('approved')}
+                onClick={() => setPendingAction('approved')}
                 disabled={reviewing}
                 className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
               >
                 <CheckCircle2 className="h-2.5 w-2.5" /> Approve
               </button>
               <button
-                onClick={() => onReview('rejected')}
+                onClick={() => setPendingAction('rejected')}
                 disabled={reviewing}
                 className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
               >
                 <XCircle className="h-2.5 w-2.5" /> Reject
               </button>
               <button
-                onClick={() => onReview('overruled', 'Admin override')}
+                onClick={() => setPendingAction('overruled')}
                 disabled={reviewing}
                 className="inline-flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
               >
                 <RotateCcw className="h-2.5 w-2.5" /> Overrule
               </button>
             </div>
+          )}
+          {pendingAction && (
+            <AdminNoteForm
+              action={pendingAction}
+              note={adminNote}
+              onNoteChange={setAdminNote}
+              onConfirm={handleConfirmAction}
+              onCancel={() => { setPendingAction(null); setAdminNote(''); }}
+              isPending={reviewing}
+            />
           )}
         </div>
       )}

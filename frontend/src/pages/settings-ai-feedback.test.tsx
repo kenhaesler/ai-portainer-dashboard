@@ -85,7 +85,10 @@ describe('AiFeedbackPanel', () => {
         rating: 'negative',
         comment: 'Response was too generic',
         user_id: 'user-1',
+        username: 'alice',
         admin_status: 'pending',
+        response_preview: 'The container is running fine.',
+        user_query: 'Is my app down?',
         created_at: '2025-01-15T10:00:00Z',
       },
     ]);
@@ -97,8 +100,11 @@ describe('AiFeedbackPanel', () => {
           rating: 'positive',
           comment: 'Great response!',
           user_id: 'user-1',
+          username: 'alice',
           admin_status: 'pending',
           effective_rating: 'positive',
+          response_preview: 'Here are your containers...',
+          user_query: 'Show me my containers',
           created_at: '2025-01-15T10:00:00Z',
         },
       ],
@@ -136,11 +142,12 @@ describe('AiFeedbackPanel', () => {
     expect(screen.getByText('60%')).toBeInTheDocument();
   });
 
-  it('shows recent negative feedback', () => {
+  it('shows recent negative feedback with username', () => {
     render(<AiFeedbackPanel />, { wrapper: createWrapper() });
 
     expect(screen.getByText('Recent Negative Feedback')).toBeInTheDocument();
     expect(screen.getByText('Response was too generic')).toBeInTheDocument();
+    expect(screen.getByText('by alice')).toBeInTheDocument();
   });
 
   it('shows empty state when no feedback exists', () => {
@@ -189,7 +196,7 @@ describe('AiFeedbackPanel', () => {
     expect(screen.getByText('Chat Assistant')).toBeInTheDocument();
   });
 
-  it('shows admin action buttons on pending feedback', () => {
+  it('shows admin action buttons on pending feedback in overview', () => {
     render(<AiFeedbackPanel />, { wrapper: createWrapper() });
 
     // Recent negative section shows action buttons for pending
@@ -200,15 +207,78 @@ describe('AiFeedbackPanel', () => {
     expect(rejectButtons.length).toBeGreaterThan(0);
   });
 
-  it('calls review mutation on approve click', () => {
+  it('shows admin note form when clicking Approve in overview', () => {
     render(<AiFeedbackPanel />, { wrapper: createWrapper() });
 
     const approveButtons = screen.getAllByText('Approve');
     fireEvent.click(approveButtons[0]);
 
+    expect(screen.getByTestId('admin-note-form')).toBeInTheDocument();
+    expect(screen.getByTestId('admin-note-input')).toBeInTheDocument();
+  });
+
+  it('submits review with admin note from overview', () => {
+    render(<AiFeedbackPanel />, { wrapper: createWrapper() });
+
+    const approveButtons = screen.getAllByText('Approve');
+    fireEvent.click(approveButtons[0]);
+
+    const noteInput = screen.getByTestId('admin-note-input');
+    fireEvent.change(noteInput, { target: { value: 'Looks good' } });
+    fireEvent.click(screen.getByTestId('admin-note-confirm'));
+
     expect(mockReviewMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'fb-1', action: 'approved' }),
+      expect.objectContaining({ id: 'fb-1', action: 'approved', note: 'Looks good' }),
+      expect.any(Object),
     );
+  });
+
+  it('shows context toggle for negative feedback with response data', () => {
+    render(<AiFeedbackPanel />, { wrapper: createWrapper() });
+
+    expect(screen.getByTestId('toggle-context')).toBeInTheDocument();
+  });
+
+  it('shows context when toggled', () => {
+    render(<AiFeedbackPanel />, { wrapper: createWrapper() });
+
+    fireEvent.click(screen.getByTestId('toggle-context'));
+
+    expect(screen.getByTestId('feedback-context')).toBeInTheDocument();
+    expect(screen.getByText('Is my app down?')).toBeInTheDocument();
+    expect(screen.getByText('The container is running fine.')).toBeInTheDocument();
+  });
+
+  it('shows username in expanded feedback row', () => {
+    render(<AiFeedbackPanel />, { wrapper: createWrapper() });
+
+    fireEvent.click(screen.getByText('All Feedback'));
+
+    // Expand the first row
+    const expandButtons = screen.getAllByRole('button');
+    const chevronButton = expandButtons.find(b => b.querySelector('svg'));
+    if (chevronButton) fireEvent.click(chevronButton);
+
+    // The expanded section should show username
+    expect(screen.getByText(/alice/)).toBeInTheDocument();
+  });
+
+  it('shows admin note input when clicking action in expanded feedback row', () => {
+    render(<AiFeedbackPanel />, { wrapper: createWrapper() });
+
+    fireEvent.click(screen.getByText('All Feedback'));
+
+    // Expand the first row by clicking the chevron
+    const expandButtons = screen.getAllByRole('button');
+    const chevronButton = expandButtons.find(b => b.querySelector('svg'));
+    if (chevronButton) fireEvent.click(chevronButton);
+
+    // Click Approve in the expanded row
+    const approveButton = screen.getByText('Approve');
+    fireEvent.click(approveButton);
+
+    // Should show admin note form
+    expect(screen.getByTestId('admin-note-form')).toBeInTheDocument();
   });
 
   it('shows existing suggestions when available', () => {

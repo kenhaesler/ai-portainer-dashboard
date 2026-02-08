@@ -75,6 +75,34 @@ describe('use-llm-feedback hooks', () => {
         );
       });
     });
+
+    it('includes responsePreview and userQuery when provided', async () => {
+      mockApiPost.mockResolvedValue({
+        id: 'fb-2',
+        feature: 'chat_assistant',
+        rating: 'negative',
+      });
+
+      const { result } = renderHook(() => useSubmitFeedback(), { wrapper: createWrapper() });
+
+      result.current.mutate({
+        feature: 'chat_assistant',
+        rating: 'negative',
+        comment: 'Bad answer',
+        responsePreview: 'Container is healthy...',
+        userQuery: 'Is my app down?',
+      });
+
+      await waitFor(() => {
+        expect(mockApiPost).toHaveBeenCalledWith(
+          '/api/llm/feedback',
+          expect.objectContaining({
+            responsePreview: 'Container is healthy...',
+            userQuery: 'Is my app down?',
+          }),
+        );
+      });
+    });
   });
 
   describe('useFeedbackStats', () => {

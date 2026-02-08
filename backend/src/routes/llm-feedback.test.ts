@@ -146,6 +146,40 @@ describe('LLM Feedback Routes', () => {
       expect(res.json().rating).toBe('negative');
     });
 
+    it('submits feedback with responsePreview and userQuery', async () => {
+      const mockFeedback = {
+        id: 'fb-3',
+        feature: 'chat_assistant',
+        rating: 'negative',
+        comment: 'Wrong answer',
+        user_id: 'user-1',
+        admin_status: 'pending',
+        response_preview: 'The container is healthy...',
+        user_query: 'Is my container down?',
+      };
+      mockInsertFeedback.mockReturnValue(mockFeedback);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/feedback',
+        payload: {
+          feature: 'chat_assistant',
+          rating: 'negative',
+          comment: 'Wrong answer',
+          responsePreview: 'The container is healthy...',
+          userQuery: 'Is my container down?',
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(mockInsertFeedback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          response_preview: 'The container is healthy...',
+          user_query: 'Is my container down?',
+        }),
+      );
+    });
+
     it('rejects invalid feature', async () => {
       mockIsValidFeature.mockReturnValue(false);
 

@@ -19,6 +19,9 @@ export interface LlmFeedback {
   effective_rating: 'positive' | 'negative' | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  response_preview: string | null;
+  user_query: string | null;
+  username: string | null;
   created_at: string;
 }
 
@@ -29,6 +32,8 @@ export interface FeedbackInsert {
   rating: 'positive' | 'negative';
   comment?: string;
   user_id: string;
+  response_preview?: string;
+  user_query?: string;
 }
 
 export interface FeedbackStats {
@@ -83,8 +88,8 @@ export function insertFeedback(data: FeedbackInsert): LlmFeedback {
   const effectiveRating = data.rating; // Initially the effective rating equals the user's rating
 
   db.prepare(`
-    INSERT INTO llm_feedback (id, trace_id, message_id, feature, rating, comment, user_id, effective_rating)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO llm_feedback (id, trace_id, message_id, feature, rating, comment, user_id, effective_rating, response_preview, user_query)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     data.trace_id ?? null,
@@ -94,6 +99,8 @@ export function insertFeedback(data: FeedbackInsert): LlmFeedback {
     data.comment ?? null,
     data.user_id,
     effectiveRating,
+    data.response_preview ?? null,
+    data.user_query ?? null,
   );
 
   log.debug({ id, feature: data.feature, rating: data.rating }, 'Feedback recorded');
@@ -118,15 +125,15 @@ export function listFeedback(options: {
   const params: unknown[] = [];
 
   if (options.feature) {
-    conditions.push('feature = ?');
+    conditions.push('f.feature = ?');
     params.push(options.feature);
   }
   if (options.rating) {
-    conditions.push('rating = ?');
+    conditions.push('f.rating = ?');
     params.push(options.rating);
   }
   if (options.adminStatus) {
-    conditions.push('admin_status = ?');
+    conditions.push('f.admin_status = ?');
     params.push(options.adminStatus);
   }
 
@@ -134,8 +141,8 @@ export function listFeedback(options: {
   const limit = options.limit ?? 50;
   const offset = options.offset ?? 0;
 
-  const total = (db.prepare(`SELECT COUNT(*) as count FROM llm_feedback ${where}`).get(...params) as { count: number }).count;
-  const items = db.prepare(`SELECT * FROM llm_feedback ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as LlmFeedback[];
+  const total = (db.prepare(`SELECT COUNT(*) as count FROM llm_feedback f ${where}`).get(...params) as { count: number }).count;
+  const items = db.prepare(`SELECT f.*, u.username FROM llm_feedback f LEFT JOIN users u ON f.user_id = u.id ${where} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as LlmFeedback[];
 
   return { items, total };
 }
@@ -215,9 +222,10 @@ export function getFeedbackStats(): FeedbackStats[] {
 export function getRecentNegativeFeedback(limit: number = 20): LlmFeedback[] {
   const db = getDb();
   return db.prepare(`
-    SELECT * FROM llm_feedback
-    WHERE effective_rating = 'negative'
-    ORDER BY created_at DESC
+    SELECT f.*, u.username FROM llm_feedback f
+    LEFT JOIN users u ON f.user_id = u.id
+    WHERE f.effective_rating = 'negative'
+    ORDER BY f.created_at DESC
     LIMIT ?
   `).all(limit) as LlmFeedback[];
 }
