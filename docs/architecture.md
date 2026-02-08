@@ -1,5 +1,68 @@
 # Architecture
 
+## System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              EXTERNAL SERVICES                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────────┐   │
+│  │  Portainer   │    │    Ollama     │    │  Elasticsearch / Kibana      │   │
+│  │  REST API    │    │  Local LLM   │    │  (optional)                  │   │
+│  └──────┬───────┘    └──────┬───────┘    └──────────────┬───────────────┘   │
+└─────────┼───────────────────┼───────────────────────────┼───────────────────┘
+          │ REST              │ Ollama API                │ optional
+          ▼                   ▼                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    BACKEND — Fastify 5 + TypeScript :3001                    │
+│                                                                             │
+│  ┌─ REST API ────────────────────────────────────────────────────────────┐   │
+│  │  Auth · Containers · Metrics · Monitoring · Remediation · Settings   │   │
+│  │  Images · Networks · Stacks · Traces · Search · PCAP · Backup        │   │
+│  └───────────────────────────────────┬───────────────────────────────────┘   │
+│                                      │                                      │
+│  ┌─ Socket.IO ──────────┐    ┌───────┴──── Services ─────────────────┐      │
+│  │  /llm       Chat     │    │  Portainer Client   (retry + backoff) │      │
+│  │  /monitoring Insights│───▶│  Response Cache     (TTL-based)       │      │
+│  │  /remediation Actions│    │  LLM Client         (Ollama SDK)      │      │
+│  └──────────────────────┘    │  Anomaly Detection  (Z/BB/Adaptive/IF)│      │
+│                              │  Monitoring Service  (orchestration)   │      │
+│  ┌─ Scheduler ──────────┐    │  Metrics Collector   (CPU/memory)     │      │
+│  │  Metrics     60s     │───▶│  Log Analyzer        (NLP)            │      │
+│  │  Monitoring  5min    │    │  Alert Similarity    (Jaccard)         │      │
+│  │  Cleanup     daily   │    │  Incident Correlator (grouping)        │      │
+│  └──────────────────────┘    └───────────────┬───────────────────────┘      │
+│                                              │                              │
+│                                    ┌─────────▼─────────┐                    │
+│                                    │  SQLite + WAL      │                    │
+│                                    │  (better-sqlite3)  │                    │
+│                                    └─────────┬─────────┘                    │
+└──────────────────────────────────────────────┼──────────────────────────────┘
+                                               │
+          ┌────────────────────────────────────┼────────────────────┐
+          │             DATABASE SCHEMA (7 tables)                  │
+          │  sessions · settings · insights · metrics               │
+          │  actions  · spans    · audit_log                        │
+          └─────────────────────────────────────────────────────────┘
+                                               ▲
+                                               │ HTTP /api/* + WebSocket
+                                               │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   FRONTEND — React 19 + Vite 6 :5173                        │
+│                                                                             │
+│  ┌─ Pages (18 lazy-loaded) ──────────────────────────────────────────────┐   │
+│  │  Home · Fleet Overview · Workload Explorer · Stack Overview           │   │
+│  │  Container Detail/Health · Image Footprint · Network Topology         │   │
+│  │  AI Monitor · Metrics · Remediation · Trace Explorer · LLM Assistant  │   │
+│  │  Edge Logs · Packet Capture · Settings                                │   │
+│  └───────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─ State ──────────────┐  ┌─ UI Layer ─────────────────────────────────┐   │
+│  │  TanStack Query 5    │  │  Radix UI · Recharts · XYFlow              │   │
+│  │  Zustand 5           │  │  Tailwind CSS v4 (Glassmorphism)           │   │
+│  └──────────────────────┘  └─────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Architecture Map (Route → Service/Data)
 
 Backend request flow is organized by route modules, with most Portainer-facing routes using the Portainer client + cache/normalizers. Monitoring and metrics read/write directly to SQLite.
