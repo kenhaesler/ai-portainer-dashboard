@@ -79,6 +79,7 @@ describe('ContainerMultiSelect', () => {
       expect(searchWrapper).toBeTruthy();
       expect(searchWrapper).toHaveClass('focus-within:ring-2');
       expect(searchWrapper).toHaveClass('focus-within:ring-inset');
+      expect(searchWrapper).toHaveClass('w-full');
     });
 
     it('closes dropdown on outside click', () => {

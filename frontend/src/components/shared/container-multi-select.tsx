@@ -280,7 +280,7 @@ export function ContainerMultiSelect({
         >
           {/* Search input */}
           <div className="border-b border-border p-2">
-            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2 transition-shadow focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring">
+            <div className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 transition-shadow focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 ref={searchInputRef}
