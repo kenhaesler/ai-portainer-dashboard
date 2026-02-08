@@ -755,8 +755,37 @@ export function setupLlmNamespace(ns: Namespace) {
         }
 
         if (!finalResponse && toolIteration >= llmConfig.maxToolIterations) {
-          finalResponse = 'I was unable to complete the request within the allowed number of tool calls. Please try a more specific question.';
-          socket.emit('chat:chunk', finalResponse);
+          // Graceful degradation: ask the LLM to summarize whatever tool
+          // results have been accumulated so far instead of a hard error.
+          log.info({ userId, toolIteration, maxIterations: llmConfig.maxToolIterations }, 'Tool iteration limit reached, generating partial summary');
+          try {
+            const summaryMessages: ChatMessage[] = [
+              ...messages,
+              {
+                role: 'system',
+                content: 'You have run out of tool calls. Summarize the information you have gathered so far into a clear, helpful answer for the user. Do not attempt any more tool calls. Do not output tool_calls JSON.',
+              },
+            ];
+            finalResponse = await streamLlmCall(
+              llmConfig,
+              selectedModel,
+              summaryMessages,
+              (text) => { socket.emit('chat:chunk', text); },
+              abortController.signal,
+            );
+          } catch (summaryErr) {
+            log.warn({ err: summaryErr, userId }, 'Failed to generate partial summary after tool limit');
+            if (lastToolResults.length > 0) {
+              finalResponse = `Here is the raw data I was able to gather:\n\n${formatToolResults(lastToolResults)}`;
+            } else {
+              finalResponse = 'I was unable to complete the request within the allowed number of tool calls. Please try a more specific question.';
+            }
+            socket.emit('chat:chunk', finalResponse);
+          }
+          // Append a visible notice so the user knows the response was truncated
+          const limitNotice = `\n\n---\n*This response was truncated because the tool call limit (${llmConfig.maxToolIterations}) was reached. You can increase \`LLM_MAX_TOOL_ITERATIONS\` in your environment configuration to allow more tool calls per question.*`;
+          finalResponse += limitNotice;
+          socket.emit('chat:chunk', limitNotice);
         }
         if (!finalResponse.trim()) {
           if (lastToolResults.length > 0) {

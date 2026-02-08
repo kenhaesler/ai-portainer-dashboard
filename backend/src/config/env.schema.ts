@@ -142,7 +142,7 @@ export const envSchema = z.object({
 
   // MCP (Model Context Protocol)
   MCP_TOOL_TIMEOUT: z.coerce.number().int().min(1).max(600).default(60),
-  LLM_MAX_TOOL_ITERATIONS: z.coerce.number().int().min(1).max(20).default(3),
+  LLM_MAX_TOOL_ITERATIONS: z.coerce.number().int().min(1).max(20).default(10),
 
   // eBPF Trace Ingestion (Grafana Beyla)
   TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
