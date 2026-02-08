@@ -22,7 +22,7 @@ vi.mock('@/hooks/use-endpoints', () => ({
 
 vi.mock('@/hooks/use-containers', () => ({
   useContainers: () => ({
-    data: [{ id: 'c1', name: 'api', endpointId: 1 }],
+    data: [{ id: 'c1', name: 'api', endpointId: 1, state: 'running', labels: {} }],
   }),
 }));
 

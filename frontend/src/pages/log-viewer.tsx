@@ -5,6 +5,7 @@ import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
+import { ContainerMultiSelect } from '@/components/shared/container-multi-select';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
 
@@ -275,14 +276,6 @@ export default function LogViewerPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const toggleContainer = (containerId: string) => {
-    setSelectedContainers((prev) => (
-      prev.includes(containerId)
-        ? prev.filter((id) => id !== containerId)
-        : [...prev, containerId]
-    ));
-  };
-
   const exportLogs = (kind: 'log' | 'json') => {
     const filenameTime = new Date().toISOString().replace(/[:.]/g, '-');
     const payload = kind === 'json'
@@ -346,19 +339,13 @@ export default function LogViewerPage() {
           </label>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          {containers.map((container, idx) => {
-            const selected = selectedContainers.includes(container.id);
-            return (
-              <button
-                key={container.id}
-                onClick={() => toggleContainer(container.id)}
-                className={`rounded-full border px-3 py-1 text-xs ${selected ? 'border-primary bg-primary/15' : 'border-border bg-background'}`}
-              >
-                <span className={CONTAINER_COLORS[idx % CONTAINER_COLORS.length]}>{container.name}</span>
-              </button>
-            );
-          })}
+        <div className="mt-3">
+          <span className="mb-1 block text-sm text-muted-foreground">Containers</span>
+          <ContainerMultiSelect
+            containers={containers}
+            selected={selectedContainers}
+            onChange={setSelectedContainers}
+          />
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
