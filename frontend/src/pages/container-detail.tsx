@@ -169,6 +169,7 @@ export default function ContainerDetailPage() {
             <ContainerMetricsViewer
               endpointId={container.endpointId}
               containerId={container.id}
+              containerNetworks={container.networks}
             />
           ) : (
             <div className="rounded-lg border bg-card p-8 text-center">

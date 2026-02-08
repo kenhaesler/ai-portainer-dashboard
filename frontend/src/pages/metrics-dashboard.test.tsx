@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
 const mockUseForecasts = vi.fn();
+const mockUseNetworkRates = vi.fn();
 
 // Mock all hooks
 vi.mock('@/hooks/use-endpoints', () => ({
@@ -16,26 +17,54 @@ vi.mock('@/hooks/use-containers', () => ({
       {
         id: 'c1',
         name: 'api-1',
+        image: 'nginx:latest',
+        state: 'running',
+        status: 'Up',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: { 'com.docker.compose.project': 'alpha' },
+        networks: ['frontend'],
       },
       {
         id: 'c2',
         name: 'worker-1',
+        image: 'nginx:latest',
+        state: 'running',
+        status: 'Up',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: { 'com.docker.compose.project': 'alpha' },
+        networks: ['frontend', 'jobs'],
       },
       {
         id: 'c4',
         name: 'beta-api-1',
+        image: 'nginx:latest',
+        state: 'running',
+        status: 'Up',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: { 'com.docker.compose.project': 'beta' },
+        networks: ['beta-net'],
       },
       {
         id: 'c3',
         name: 'standalone-1',
+        image: 'nginx:latest',
+        state: 'stopped',
+        status: 'Exited',
         endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
         labels: {},
+        networks: ['standalone-net'],
       },
     ],
     isLoading: false,
@@ -56,6 +85,7 @@ vi.mock('@/hooks/use-stacks', () => ({
 vi.mock('@/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),
+  useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
   useAnomalyExplanations: vi.fn().mockReturnValue({ data: null }),
 }));
 
@@ -70,6 +100,9 @@ vi.mock('@/hooks/use-auto-refresh', () => ({
 
 // Mock recharts to avoid canvas issues in jsdom
 vi.mock('recharts', () => ({
+  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
+  Bar: () => null,
+  CartesianGrid: () => null,
   AreaChart: ({ children }: { children: React.ReactNode }) => <div data-testid="area-chart">{children}</div>,
   Area: () => null,
   XAxis: () => null,
@@ -89,6 +122,10 @@ vi.mock('@/components/charts/metrics-line-chart', () => ({
 
 vi.mock('@/components/charts/anomaly-sparkline', () => ({
   AnomalySparkline: () => <div data-testid="sparkline" />,
+}));
+
+vi.mock('@/components/metrics/ai-metrics-summary', () => ({
+  AiMetricsSummary: () => <div data-testid="ai-metrics-summary" />,
 }));
 
 const mockUseLlmModels = vi.fn();
@@ -121,6 +158,15 @@ describe('MetricsDashboardPage', () => {
       isLoading: false,
       error: null,
     });
+    mockUseNetworkRates.mockReturnValue({
+      data: {
+        rates: {
+          c1: { rxBytesPerSec: 1024, txBytesPerSec: 2048 },
+          c2: { rxBytesPerSec: 4096, txBytesPerSec: 512 },
+        },
+      },
+    });
+
     mockUseLlmModels.mockReturnValue({
       data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
     });
@@ -140,6 +186,27 @@ describe('MetricsDashboardPage', () => {
     renderPage();
     const select = screen.getAllByRole('combobox')[0];
     expect(select).toBeTruthy();
+  });
+
+  it('renders network rx/tx chart for selected container', () => {
+    renderPage();
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    const stackSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.click(stackSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'alpha' }));
+
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'worker-1' }));
+
+    expect(screen.getByText('Network RX/TX by Network')).toBeInTheDocument();
+    expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
+    expect(screen.getByText('2 networks')).toBeInTheDocument();
+    expect(screen.getByText('Per-network values are estimated (evenly split)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Full Topology Map' })).toBeInTheDocument();
   });
 
   it('groups container selector options by stack with a No Stack group', () => {

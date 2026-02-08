@@ -47,6 +47,8 @@ interface TopologyGraphProps {
   networks: NetworkData[];
   onNodeClick?: (nodeId: string) => void;
   networkRates?: Record<string, NetworkRate>;
+  selectedNodeId?: string;
+  relatedNodeIds?: string[];
 }
 
 // --- Sorting helpers (pure functions, exported for testing) ---
@@ -238,7 +240,16 @@ interface StackBlueprint {
   inlineNets: NetworkData[];
 }
 
-export function TopologyGraph({ containers, networks, onNodeClick, networkRates }: TopologyGraphProps) {
+export function TopologyGraph({
+  containers,
+  networks,
+  onNodeClick,
+  networkRates,
+  selectedNodeId,
+  relatedNodeIds,
+}: TopologyGraphProps) {
+  const relatedSet = useMemo(() => new Set(relatedNodeIds ?? []), [relatedNodeIds]);
+
   // Phase 1: Categorize stacks, classify inline/external networks, sort everything
   const { blueprints, externalNets } = useMemo(() => {
     const stackMap = new Map<string, ContainerData[]>();
@@ -382,7 +393,13 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
           position: { x: childPos.x, y: childPos.y },
           parentId: bp.groupId,
           extent: 'parent' as const,
-          data: { label: net.name, driver: net.driver, subnet: net.subnet },
+          data: {
+            label: net.name,
+            driver: net.driver,
+            subnet: net.subnet,
+            selected: childId === selectedNodeId,
+            related: relatedSet.has(childId),
+          },
         });
         nodeAbsolutePositions.set(childId, {
           x: groupPos.x + childPos.x,
@@ -401,7 +418,13 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
           position: { x: childPos.x, y: childPos.y },
           parentId: bp.groupId,
           extent: 'parent' as const,
-          data: { label: container.name, state: container.state, image: container.image },
+          data: {
+            label: container.name,
+            state: container.state,
+            image: container.image,
+            selected: childId === selectedNodeId,
+            related: relatedSet.has(childId),
+          },
         });
         nodeAbsolutePositions.set(childId, {
           x: groupPos.x + childPos.x,
@@ -419,7 +442,13 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
         id: netId,
         type: 'network',
         position: { x: pos.x, y: pos.y },
-        data: { label: net.name, driver: net.driver, subnet: net.subnet },
+        data: {
+          label: net.name,
+          driver: net.driver,
+          subnet: net.subnet,
+          selected: netId === selectedNodeId,
+          related: relatedSet.has(netId),
+        },
       });
       nodeAbsolutePositions.set(netId, { x: pos.x, y: pos.y });
     }
@@ -438,6 +467,8 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
           : { sourceHandle: 'bottom' as HandleDirection, targetHandle: 'top' as HandleDirection };
 
         const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
+        const rate = networkRates?.[container.id];
+        const edgeLabel = rate ? `↓${formatRate(rate.rxBytesPerSec)} ↑${formatRate(rate.txBytesPerSec)}` : undefined;
         edges.push({
           id: `e-${container.id}-${net.id}`,
           source: sourceId,
@@ -451,12 +482,17 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
             strokeWidth: edgeStyle.strokeWidth,
             opacity: 0.7,
           },
+          label: edgeLabel,
+          labelStyle: { fontSize: 10, fill: '#94a3b8' },
+          labelBgStyle: { fill: 'rgba(15, 23, 42, 0.85)', opacity: 0.9 },
+          labelBgPadding: [4, 2],
+          labelBgBorderRadius: 4,
         });
       }
     }
 
     return { nodes, edges };
-  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates]);
+  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -613,4 +649,10 @@ export function TopologyGraph({ containers, networks, onNodeClick, networkRates 
       </ReactFlow>
     </div>
   );
+}
+
+function formatRate(bytesPerSec: number): string {
+  if (bytesPerSec >= 1_048_576) return `${(bytesPerSec / 1_048_576).toFixed(1)}MB/s`;
+  if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)}KB/s`;
+  return `${Math.round(bytesPerSec)}B/s`;
 }
