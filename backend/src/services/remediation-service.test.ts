@@ -46,6 +46,10 @@ vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
 }));
 
+vi.mock('./prompt-store.js', () => ({
+  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
+}));
+
 import {
   suggestAction,
   parseRemediationAnalysis,
