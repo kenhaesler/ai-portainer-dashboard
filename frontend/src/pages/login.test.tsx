@@ -70,7 +70,7 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('Username')).toHaveValue('admin');
     expect(screen.getByLabelText('Password')).toHaveValue('changeme123');
     expect(document.querySelectorAll('.login-particle')).toHaveLength(10);
-    expect(screen.getByRole('img', { name: 'AI brain logo' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Brain logo' })).toBeInTheDocument();
   });
 
   it('respects reduced motion by disabling decorative particles', () => {
