@@ -339,7 +339,7 @@ export default function LogViewerPage() {
           </label>
         </div>
 
-        <div className="mt-3">
+        <div className="relative z-20 mt-3">
           <span className="mb-1 block text-sm text-muted-foreground">Containers</span>
           <ContainerMultiSelect
             containers={containers}
