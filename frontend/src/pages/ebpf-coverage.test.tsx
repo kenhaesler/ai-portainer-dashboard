@@ -68,10 +68,6 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
     },
     isLoading: false,
   })),
-  useUpdateCoverageStatus: vi.fn(() => ({
-    mutate: vi.fn(),
-    isPending: false,
-  })),
   useSyncCoverage: vi.fn(() => ({
     mutate: vi.fn(),
     isPending: false,
@@ -135,22 +131,15 @@ describe('EbpfCoveragePage', () => {
     expect(screen.getByText('failed')).toBeTruthy();
   });
 
-  it('renders exclusion reason for excluded endpoint', () => {
-    renderWithProviders(<EbpfCoveragePage />);
-    expect(screen.getByText('Development only')).toBeTruthy();
-  });
-
   it('renders sync button', () => {
     renderWithProviders(<EbpfCoveragePage />);
     expect(screen.getByTestId('sync-btn')).toBeTruthy();
     expect(screen.getByText('Sync Endpoints')).toBeTruthy();
   });
 
-  it('renders action buttons for each endpoint', () => {
+  it('renders verify buttons for each endpoint', () => {
     renderWithProviders(<EbpfCoveragePage />);
-    const editButtons = screen.getAllByTestId('edit-status-btn');
     const verifyButtons = screen.getAllByTestId('verify-btn');
-    expect(editButtons.length).toBe(4);
     expect(verifyButtons.length).toBe(4);
   });
 
@@ -158,7 +147,6 @@ describe('EbpfCoveragePage', () => {
     renderWithProviders(<EbpfCoveragePage />);
     expect(screen.getByText('Endpoint')).toBeTruthy();
     expect(screen.getByText('Status')).toBeTruthy();
-    expect(screen.getByText('Exclusion Reason')).toBeTruthy();
     expect(screen.getByText('Last Trace')).toBeTruthy();
     expect(screen.getByText('Last Verified')).toBeTruthy();
     expect(screen.getByText('Actions')).toBeTruthy();
