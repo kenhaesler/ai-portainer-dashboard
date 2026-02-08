@@ -91,6 +91,16 @@ vi.mock('@/components/charts/anomaly-sparkline', () => ({
   AnomalySparkline: () => <div data-testid="sparkline" />,
 }));
 
+const mockUseLlmModels = vi.fn();
+vi.mock('@/hooks/use-llm-models', () => ({
+  useLlmModels: (...args: unknown[]) => mockUseLlmModels(...args),
+}));
+
+vi.mock('@/components/metrics/inline-chat-panel', () => ({
+  InlineChatPanel: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="inline-chat-panel">Chat Panel</div> : null,
+}));
+
 import MetricsDashboardPage from './metrics-dashboard';
 
 function renderPage() {
@@ -110,6 +120,9 @@ describe('MetricsDashboardPage', () => {
       data: [],
       isLoading: false,
       error: null,
+    });
+    mockUseLlmModels.mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
     });
   });
 
@@ -218,5 +231,57 @@ describe('MetricsDashboardPage', () => {
     renderPage();
     expect(screen.getByText('Failed to load forecast overview')).toBeTruthy();
     expect(screen.getByText('Forecast API unavailable')).toBeTruthy();
+  });
+
+  it('shows Ask AI button when container selected and LLM available', () => {
+    renderPage();
+
+    // Select endpoint
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+
+    // Select container
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
+
+    expect(screen.getByText('Ask AI')).toBeInTheDocument();
+  });
+
+  it('hides Ask AI button when LLM unavailable', () => {
+    mockUseLlmModels.mockReturnValue({ data: { models: [], default: '' } });
+    renderPage();
+
+    // Select endpoint + container
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
+
+    expect(screen.queryByText('Ask AI')).not.toBeInTheDocument();
+  });
+
+  it('hides Ask AI button when no container selected', () => {
+    renderPage();
+    expect(screen.queryByText('Ask AI')).not.toBeInTheDocument();
+  });
+
+  it('opens inline chat panel when Ask AI is clicked', () => {
+    renderPage();
+
+    // Select endpoint + container
+    const endpointSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.click(endpointSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'local' }));
+    const containerSelect = screen.getAllByRole('combobox')[2];
+    fireEvent.click(containerSelect);
+    fireEvent.click(screen.getByRole('option', { name: 'api-1' }));
+
+    // Click Ask AI
+    fireEvent.click(screen.getByText('Ask AI'));
+    expect(screen.getByTestId('inline-chat-panel')).toBeInTheDocument();
   });
 });

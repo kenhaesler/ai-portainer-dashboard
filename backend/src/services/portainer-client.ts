@@ -59,6 +59,43 @@ export function sanitizeContainerLabels(labels: Record<string, string>): Record<
   return sanitized;
 }
 
+export function decodeDockerLogPayload(payload: Buffer): string {
+  // Docker can return multiplexed stream frames:
+  // 1 byte stream type, 3 bytes padding, 4 bytes payload length, then payload bytes.
+  if (payload.length < 8) {
+    return payload.toString('utf8');
+  }
+
+  const chunks: Buffer[] = [];
+  let offset = 0;
+  let framed = false;
+
+  while (offset + 8 <= payload.length) {
+    const streamType = payload[offset];
+    const hasPadding = payload[offset + 1] === 0 && payload[offset + 2] === 0 && payload[offset + 3] === 0;
+    if (!hasPadding || (streamType !== 1 && streamType !== 2 && streamType !== 0)) {
+      break;
+    }
+
+    const size = payload.readUInt32BE(offset + 4);
+    const start = offset + 8;
+    const end = start + size;
+    if (end > payload.length) {
+      break;
+    }
+
+    chunks.push(payload.subarray(start, end));
+    framed = true;
+    offset = end;
+  }
+
+  if (framed && offset === payload.length) {
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
+  return payload.toString('utf8');
+}
+
 function classifyError(status: number): ErrorKind {
   if (status === 401 || status === 403) return 'auth';
   if (status === 429) return 'rate-limit';
@@ -229,7 +266,8 @@ export async function getContainerLogs(
 
   const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
   if (!res.ok) throw new PortainerError(`Log fetch failed: ${res.status}`, classifyError(res.status), res.status);
-  return res.text();
+  const raw = Buffer.from(await res.arrayBuffer());
+  return decodeDockerLogPayload(raw);
 }
 
 export async function getContainerStats(endpointId: number, containerId: string): Promise<ContainerStats> {
