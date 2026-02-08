@@ -71,7 +71,13 @@ describe('ContainerMultiSelect', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /select containers/i }));
       expect(screen.getByRole('listbox')).toBeInTheDocument();
-      expect(screen.getByPlaceholderText('Search containers...')).toBeInTheDocument();
+      const searchInput = screen.getByPlaceholderText('Search containers...');
+      expect(searchInput).toBeInTheDocument();
+
+      const searchWrapper = searchInput.parentElement;
+      expect(searchWrapper).toBeTruthy();
+      expect(searchWrapper).toHaveClass('relative');
+
     });
 
     it('closes dropdown on outside click', () => {

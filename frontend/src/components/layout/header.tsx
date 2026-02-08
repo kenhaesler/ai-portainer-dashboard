@@ -32,6 +32,11 @@ export function Header() {
   const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
+  const [appCommit, setAppCommit] = useState(
+    import.meta.env.VITE_GIT_COMMIT
+      || import.meta.env.VITE_APP_COMMIT
+      || 'dev'
+  );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -69,6 +74,21 @@ export function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let isMounted = true;
+    fetch('/__commit')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { commit?: string } | null) => {
+        if (!isMounted) return;
+        if (data?.commit) setAppCommit(data.commit);
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <header
       data-animated-bg={hasAnimatedBg || undefined}
@@ -95,6 +115,15 @@ export function Header() {
             )}
           </span>
         ))}
+        {appCommit && (
+          <span
+            className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            aria-label={`Build ${appCommit}`}
+            title={`Build ${appCommit}`}
+          >
+            {appCommit}
+          </span>
+        )}
       </nav>
 
       {/* Right-side actions */}

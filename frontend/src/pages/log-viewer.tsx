@@ -5,6 +5,7 @@ import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { ContainerMultiSelect } from '@/components/shared/container-multi-select';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -316,11 +317,11 @@ export default function LogViewerPage() {
 
           <label className="text-sm lg:col-span-2">
             <span className="mb-1 block text-muted-foreground">Regex Search</span>
-            <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
-                className="h-full w-full bg-transparent outline-none"
+                className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="/error|timeout/i"
                 value={searchPattern}
                 onChange={(e) => setSearchPattern(e.target.value)}
@@ -349,11 +350,23 @@ export default function LogViewerPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <button onClick={() => setLiveTail((v) => !v)} className="rounded-md border px-2 py-1">
+          <button
+            onClick={() => setLiveTail((v) => !v)}
+            className={cn(
+              'rounded-md border px-2 py-1 transition-colors',
+              liveTail && 'log-toggle-on border-emerald-500/70 bg-emerald-500/15 text-emerald-300',
+            )}
+          >
             <Activity className="mr-1 inline h-4 w-4" />
             Live Tail {liveTail ? 'ON' : 'OFF'}
           </button>
-          <button onClick={() => setLineWrap((v) => !v)} className="rounded-md border px-2 py-1">
+          <button
+            onClick={() => setLineWrap((v) => !v)}
+            className={cn(
+              'rounded-md border px-2 py-1 transition-colors',
+              lineWrap && 'log-toggle-on border-emerald-500/70 bg-emerald-500/15 text-emerald-300',
+            )}
+          >
             <WrapText className="mr-1 inline h-4 w-4" />
             Wrap {lineWrap ? 'ON' : 'OFF'}
           </button>
@@ -368,7 +381,7 @@ export default function LogViewerPage() {
           <label className="ml-auto inline-flex items-center text-sm">
             <span className="mr-2 text-muted-foreground">Buffer</span>
             <ThemedSelect
-              className="h-8"
+              className="h-9"
               value={String(bufferSize)}
               onValueChange={(val) => setBufferSize(Number(val))}
               options={BUFFER_OPTIONS.map((size) => ({ value: String(size), label: String(size) }))}
