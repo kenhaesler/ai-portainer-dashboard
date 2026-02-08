@@ -112,7 +112,7 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
-    const result = verifyCoverage(endpointId);
+    const result = await verifyCoverage(endpointId);
     return result;
   });
 }

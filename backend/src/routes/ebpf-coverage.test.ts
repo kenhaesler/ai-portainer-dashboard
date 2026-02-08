@@ -14,7 +14,7 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   getEndpointCoverage: vi.fn(() => []),
   updateCoverageStatus: vi.fn(),
   syncEndpointCoverage: vi.fn(async () => 0),
-  verifyCoverage: vi.fn(() => ({ verified: false, lastTraceAt: null })),
+  verifyCoverage: vi.fn(async () => ({ verified: false, lastTraceAt: null, beylaRunning: false })),
   getCoverageSummary: vi.fn(() => ({
     total: 0,
     deployed: 0,
@@ -196,10 +196,11 @@ describe('ebpf-coverage routes', () => {
   });
 
   describe('POST /api/ebpf/coverage/:endpointId/verify', () => {
-    it('should verify coverage with traces found', async () => {
-      mockedVerifyCoverage.mockReturnValue({
+    it('should verify coverage with beyla running and traces found', async () => {
+      mockedVerifyCoverage.mockResolvedValue({
         verified: true,
         lastTraceAt: '2025-01-01T12:00:00',
+        beylaRunning: true,
       });
 
       const response = await app.inject({
@@ -210,13 +211,15 @@ describe('ebpf-coverage routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.verified).toBe(true);
+      expect(body.beylaRunning).toBe(true);
       expect(body.lastTraceAt).toBe('2025-01-01T12:00:00');
     });
 
-    it('should verify coverage with no traces', async () => {
-      mockedVerifyCoverage.mockReturnValue({
+    it('should verify coverage with no beyla and no traces', async () => {
+      mockedVerifyCoverage.mockResolvedValue({
         verified: false,
         lastTraceAt: null,
+        beylaRunning: false,
       });
 
       const response = await app.inject({
@@ -227,6 +230,7 @@ describe('ebpf-coverage routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.verified).toBe(false);
+      expect(body.beylaRunning).toBe(false);
       expect(body.lastTraceAt).toBeNull();
     });
   });

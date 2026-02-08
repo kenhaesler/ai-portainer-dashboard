@@ -1,5 +1,5 @@
 import { getDb, prepareStmt } from '../db/sqlite.js';
-import { getEndpoints } from './portainer-client.js';
+import { getEndpoints, getContainers } from './portainer-client.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('ebpf-coverage');
@@ -55,8 +55,30 @@ export function updateCoverageStatus(
 }
 
 /**
+ * Detect Beyla status on a single endpoint by checking its containers.
+ * Returns 'deployed' if a running beyla container exists, 'failed' if
+ * one exists but is not running, or null if no beyla container found.
+ */
+async function detectBeylaOnEndpoint(endpointId: number): Promise<CoverageStatus | null> {
+  try {
+    const containers = await getContainers(endpointId, true);
+    const beyla = containers.find((c) =>
+      c.Image.toLowerCase().includes('grafana/beyla') ||
+      c.Image.toLowerCase().includes('beyla'),
+    );
+    if (!beyla) return null;
+    return beyla.State === 'running' ? 'deployed' : 'failed';
+  } catch {
+    // Endpoint unreachable — can't detect
+    return null;
+  }
+}
+
+/**
  * Sync coverage table with current endpoint inventory.
- * Adds new endpoints as 'unknown', preserves existing states.
+ * Adds new endpoints and auto-detects Beyla deployment status by
+ * checking for grafana/beyla containers on each endpoint.
+ * Preserves manually set 'excluded' and 'planned' states.
  * Returns the number of new endpoints added.
  */
 export async function syncEndpointCoverage(): Promise<number> {
@@ -64,9 +86,27 @@ export async function syncEndpointCoverage(): Promise<number> {
   const db = getDb();
   let added = 0;
 
+  // Only query healthy (Status=1) endpoints for Beyla containers
+  const upEndpoints = endpoints.filter((ep) => ep.Status === 1);
+
+  // Detect Beyla on all up endpoints in parallel
+  const detectionResults = await Promise.allSettled(
+    upEndpoints.map(async (ep) => ({
+      id: ep.Id,
+      detected: await detectBeylaOnEndpoint(ep.Id),
+    })),
+  );
+
+  const detectedMap = new Map<number, CoverageStatus>();
+  for (const result of detectionResults) {
+    if (result.status === 'fulfilled' && result.value.detected) {
+      detectedMap.set(result.value.id, result.value.detected);
+    }
+  }
+
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO ebpf_coverage (endpoint_id, endpoint_name)
-    VALUES (?, ?)
+    INSERT OR IGNORE INTO ebpf_coverage (endpoint_id, endpoint_name, status)
+    VALUES (?, ?, ?)
   `);
 
   const updateNameStmt = db.prepare(`
@@ -74,32 +114,50 @@ export async function syncEndpointCoverage(): Promise<number> {
     WHERE endpoint_id = ? AND endpoint_name != ?
   `);
 
+  // Auto-update status only for endpoints currently 'unknown' or auto-detected states
+  // Never overwrite manually set 'excluded' or 'planned'
+  const autoUpdateStmt = db.prepare(`
+    UPDATE ebpf_coverage
+    SET status = ?, updated_at = datetime('now')
+    WHERE endpoint_id = ? AND status IN ('unknown', 'deployed', 'failed')
+  `);
+
   const txn = db.transaction(() => {
     for (const ep of endpoints) {
-      const result = insertStmt.run(ep.Id, ep.Name);
+      const detected = detectedMap.get(ep.Id) ?? 'unknown';
+      const result = insertStmt.run(ep.Id, ep.Name, detected);
       if (result.changes > 0) {
         added++;
       } else {
-        // Update name if it changed
         updateNameStmt.run(ep.Name, ep.Id, ep.Name);
+        // Auto-update status if we detected something
+        if (detectedMap.has(ep.Id)) {
+          autoUpdateStmt.run(detected, ep.Id);
+        }
       }
     }
   });
 
   txn();
 
-  log.info({ total: endpoints.length, added }, 'Endpoint coverage synced');
+  log.info({ total: endpoints.length, added, detected: detectedMap.size }, 'Endpoint coverage synced');
   return added;
 }
 
 /**
- * Verify that traces have been received from an endpoint recently.
- * Looks for spans in the last 10 minutes associated with this endpoint.
+ * Verify coverage for an endpoint by checking:
+ * 1. Whether a Beyla container is running (live container check)
+ * 2. Whether eBPF traces have been received recently (span query)
+ * Updates status automatically based on findings.
  */
-export function verifyCoverage(endpointId: number): { verified: boolean; lastTraceAt: string | null } {
+export async function verifyCoverage(endpointId: number): Promise<{ verified: boolean; lastTraceAt: string | null; beylaRunning: boolean }> {
   const db = getDb();
 
-  // Check if the spans table exists — it may not if traces feature is unused
+  // 1. Check for Beyla container on this endpoint
+  const beylaStatus = await detectBeylaOnEndpoint(endpointId);
+  const beylaRunning = beylaStatus === 'deployed';
+
+  // 2. Check for recent eBPF spans
   const tableExists = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='spans'",
   ).get();
@@ -107,12 +165,10 @@ export function verifyCoverage(endpointId: number): { verified: boolean; lastTra
   let lastTraceAt: string | null = null;
 
   if (tableExists) {
-    // Look for recent spans. Spans don't have an endpoint_id column directly,
-    // but we can look for any recent span activity as a proxy.
-    // In a real deployment, the service_name or resource attributes would map to endpoints.
     const recentSpan = db.prepare(`
       SELECT start_time FROM spans
-      WHERE start_time > datetime('now', '-10 minutes')
+      WHERE trace_source = 'ebpf'
+        AND start_time > datetime('now', '-10 minutes')
       ORDER BY start_time DESC
       LIMIT 1
     `).get() as { start_time: string } | undefined;
@@ -120,18 +176,39 @@ export function verifyCoverage(endpointId: number): { verified: boolean; lastTra
     lastTraceAt = recentSpan?.start_time ?? null;
   }
 
-  // Update the coverage record
-  const verified = lastTraceAt !== null;
-  prepareStmt(`
-    UPDATE ebpf_coverage
-    SET last_trace_at = COALESCE(?, last_trace_at),
-        last_verified_at = datetime('now'),
-        updated_at = datetime('now')
-    WHERE endpoint_id = ?
-  `).run(lastTraceAt, endpointId);
+  // 3. Determine status: deployed (running + traces), failed (container found but no traces or stopped), unknown (nothing found)
+  let newStatus: CoverageStatus | null = null;
+  if (beylaRunning) {
+    newStatus = 'deployed';
+  } else if (beylaStatus === 'failed') {
+    newStatus = 'failed';
+  }
 
-  log.debug({ endpointId, verified, lastTraceAt }, 'Coverage verified');
-  return { verified, lastTraceAt };
+  // Update coverage record
+  const verified = beylaRunning || lastTraceAt !== null;
+
+  if (newStatus) {
+    // Auto-update status (but don't overwrite 'excluded' or 'planned')
+    prepareStmt(`
+      UPDATE ebpf_coverage
+      SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed') THEN ? ELSE status END,
+          last_trace_at = COALESCE(?, last_trace_at),
+          last_verified_at = datetime('now'),
+          updated_at = datetime('now')
+      WHERE endpoint_id = ?
+    `).run(newStatus, lastTraceAt, endpointId);
+  } else {
+    prepareStmt(`
+      UPDATE ebpf_coverage
+      SET last_trace_at = COALESCE(?, last_trace_at),
+          last_verified_at = datetime('now'),
+          updated_at = datetime('now')
+      WHERE endpoint_id = ?
+    `).run(lastTraceAt, endpointId);
+  }
+
+  log.debug({ endpointId, verified, beylaRunning, lastTraceAt }, 'Coverage verified');
+  return { verified, lastTraceAt, beylaRunning };
 }
 
 /**
