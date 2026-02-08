@@ -2231,7 +2231,6 @@ export function AiPromptsTab({
       }
     };
     void loadFeatures();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileRefreshKey]);
 
   const handleProfileSwitch = useCallback(() => {

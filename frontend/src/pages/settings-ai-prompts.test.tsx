@@ -502,7 +502,7 @@ describe('AiPromptsTab', () => {
     fireEvent.click(screen.getByText('Duplicate'));
 
     await waitFor(() => {
-      expect(screen.getByText(/Duplicate/)).toBeInTheDocument();
+      expect(screen.getByText(/Duplicate "Default"/)).toBeInTheDocument();
     });
   });
 });
