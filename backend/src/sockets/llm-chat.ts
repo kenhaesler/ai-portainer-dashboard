@@ -9,6 +9,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
+import { collectAllTools, routeToolCalls, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -416,6 +417,49 @@ export function formatChatContext(ctx: Record<string, unknown>): string {
   return '';
 }
 
+/**
+ * Call Ollama with native tool calling (non-streaming).
+ * Returns the response message which may contain tool_calls.
+ */
+async function callOllamaWithNativeTools(
+  llmConfig: ReturnType<typeof getEffectiveLlmConfig>,
+  selectedModel: string,
+  messages: ChatMessage[],
+): Promise<{ content: string; toolCalls: OllamaToolCall[] }> {
+  const tools = collectAllTools();
+
+  if (tools.length === 0) {
+    return { content: '', toolCalls: [] };
+  }
+
+  const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+  const response = await ollama.chat({
+    model: selectedModel,
+    messages,
+    tools: tools.map(t => ({
+      type: 'function' as const,
+      function: t.function,
+    })),
+    stream: false,
+  });
+
+  const content = response.message?.content || '';
+  const rawCalls = response.message?.tool_calls;
+
+  if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
+    return { content, toolCalls: [] };
+  }
+
+  const toolCalls: OllamaToolCall[] = rawCalls.map((call: any) => ({
+    function: {
+      name: call.function?.name || '',
+      arguments: call.function?.arguments || {},
+    },
+  }));
+
+  return { content, toolCalls };
+}
+
 export function setupLlmNamespace(ns: Namespace) {
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
@@ -467,6 +511,65 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
         let finalResponse = '';
         let toolIteration = 0;
 
+        // ── Phase 1: Try native Ollama tool calling (non-streaming) ──
+        // This only works with local Ollama (not custom endpoints).
+        if (!llmConfig.customEnabled && toolsEnabled) {
+          try {
+            const nativeResult = await callOllamaWithNativeTools(llmConfig, selectedModel, messages);
+            if (nativeResult.toolCalls.length > 0) {
+              // Native tool calls detected — execute them
+              const toolNames = nativeResult.toolCalls.map(tc => tc.function.name);
+              log.debug({ userId, tools: toolNames }, 'Native Ollama tool calls detected');
+              socket.emit('chat:tool_call', { tools: toolNames, status: 'executing' });
+
+              const results = await routeToolCalls(nativeResult.toolCalls);
+              lastToolResults = results;
+
+              socket.emit('chat:tool_call', {
+                tools: toolNames,
+                status: 'complete',
+                results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
+              });
+
+              // Add tool context and get final streamed response
+              messages = [
+                ...messages,
+                { role: 'assistant', content: nativeResult.content || `Calling tools: ${toolNames.join(', ')}` },
+                {
+                  role: 'system',
+                  content: `## Tool Results\n\n${formatToolResults(results)}`,
+                },
+              ];
+              toolIteration++;
+              // Fall through to streaming loop for final response
+            } else if (nativeResult.content) {
+              // No tool calls, just content — stream it to client and finish
+              socket.emit('chat:chunk', nativeResult.content);
+              finalResponse = nativeResult.content;
+              history.push({ role: 'assistant', content: finalResponse });
+              socket.emit('chat:end', { id: randomUUID(), content: finalResponse });
+
+              const latencyMs = Date.now() - startTime;
+              const promptTokens = estimateTokens(messages.map(m => m.content).join(''));
+              const completionTokens = estimateTokens(finalResponse);
+              try {
+                insertLlmTrace({
+                  trace_id: randomUUID(), session_id: socket.id, model: selectedModel,
+                  prompt_tokens: promptTokens, completion_tokens: completionTokens,
+                  total_tokens: promptTokens + completionTokens, latency_ms: latencyMs,
+                  status: 'success', user_query: data.text.slice(0, 500),
+                  response_preview: finalResponse.slice(0, 500),
+                });
+              } catch (traceErr) { log.warn({ err: traceErr }, 'Failed to record LLM trace'); }
+              return; // Done — skip streaming loop
+            }
+          } catch (nativeErr) {
+            log.warn({ err: nativeErr, userId }, 'Native Ollama tool calling failed, falling back to text-based');
+            // Fall through to text-based streaming
+          }
+        }
+
+        // ── Phase 2: Text-based streaming with tool call parsing (fallback) ──
         // Tool calling loop: stream response, check for tool calls, execute, repeat.
         // Every iteration streams chunks to the client. If tool calls are detected,
         // we emit chat:tool_response_pending to clear the streamed tool-call JSON,
