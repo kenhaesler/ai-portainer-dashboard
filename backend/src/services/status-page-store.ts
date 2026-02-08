@@ -42,8 +42,8 @@ export function getOverallUptime(hours: number): number {
       COALESCE(SUM(containers_running), 0) as total_running,
       COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy), 0) as total_all
     FROM monitoring_snapshots
-    WHERE created_at >= datetime('now', ? || ' hours')
-  `).get(`-${hours}`) as { total_running: number; total_all: number } | undefined;
+    WHERE created_at >= datetime('now', ?)
+  `).get(`-${hours} hours`) as { total_running: number; total_all: number } | undefined;
 
   if (!row || row.total_all === 0) return 100;
   return Math.round((row.total_running / row.total_all) * 10000) / 100;
@@ -56,8 +56,8 @@ export function getEndpointUptime(hours: number): number {
       COALESCE(SUM(endpoints_up), 0) as total_up,
       COALESCE(SUM(endpoints_up + endpoints_down), 0) as total_all
     FROM monitoring_snapshots
-    WHERE created_at >= datetime('now', ? || ' hours')
-  `).get(`-${hours}`) as { total_up: number; total_all: number } | undefined;
+    WHERE created_at >= datetime('now', ?)
+  `).get(`-${hours} hours`) as { total_up: number; total_all: number } | undefined;
 
   if (!row || row.total_all === 0) return 100;
   return Math.round((row.total_up / row.total_all) * 10000) / 100;
@@ -106,10 +106,10 @@ export function getDailyUptimeBuckets(days: number): UptimeDayBucket[] {
       SUM(containers_running) as total_running,
       SUM(containers_running + containers_stopped + containers_unhealthy) as total_all
     FROM monitoring_snapshots
-    WHERE created_at >= datetime('now', ? || ' days')
+    WHERE created_at >= datetime('now', ?)
     GROUP BY date(created_at)
     ORDER BY date ASC
-  `).all(`-${days}`) as Array<{
+  `).all(`-${days} days`) as Array<{
     date: string;
     total_running: number;
     total_all: number;
