@@ -63,7 +63,7 @@ export function parseTcpdumpOutput(raw: string): PcapSummary {
     }
 
     // Top talkers: extract "src > dst" pairs (IP-based lines)
-    const flowMatch = line.match(/(\d+\.\d+\.\d+\.\d+)[\.\d]* > (\d+\.\d+\.\d+\.\d+)[\.\d]*/);
+    const flowMatch = line.match(/(\d+\.\d+\.\d+\.\d+)[.\d]* > (\d+\.\d+\.\d+\.\d+)[.\d]*/);
     if (flowMatch) {
       const key = `${flowMatch[1]} > ${flowMatch[2]}`;
       talkerMap.set(key, (talkerMap.get(key) || 0) + 1);
