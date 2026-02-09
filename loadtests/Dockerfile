@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM dhi.io/node:24-alpine3.23-dev
 
 WORKDIR /loadtests
 

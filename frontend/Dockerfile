@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM dhi.io/node:24-alpine3.23-dev AS builder
 
 ARG VITE_API_URL=""
 ARG VITE_SOCKET_URL=""
@@ -13,7 +13,9 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 RUN npm run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM dhi.io/nginx:1.28-alpine3.23 AS runtime
+
+USER root
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
 

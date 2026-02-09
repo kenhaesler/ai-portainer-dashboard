@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM dhi.io/node:24-alpine3.23-dev AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -7,7 +7,7 @@ COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM dhi.io/node:24-alpine3.23-dev AS runtime
 
 RUN apk add --no-cache dumb-init wget tcpdump && \
     addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
