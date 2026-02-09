@@ -62,6 +62,9 @@ npm run test:watch         # Watch mode
 npx vitest run src/utils/crypto.test.ts --config backend/vitest.config.ts
 npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 
+# Bundle size check (runs after build, enforced in CI)
+cd frontend && npx tsx scripts/check-bundle-size.ts
+
 # Docker development (preferred)
 docker compose -f docker/docker-compose.dev.yml up -d
 ```

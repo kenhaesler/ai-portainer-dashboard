@@ -54,6 +54,71 @@ describe('config validation', () => {
     expect(config.JWT_SECRET).toBe(process.env.JWT_SECRET);
   });
 
+  describe('service password validation (production only)', () => {
+    it('rejects weak Redis password in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.REDIS_PASSWORD = 'changeme-redis';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/weak Redis password/i);
+    });
+
+    it('rejects weak TimescaleDB password in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:changeme-timescale@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/weak TimescaleDB password/i);
+    });
+
+    it('accepts weak Redis password in development', async () => {
+      process.env.NODE_ENV = 'development';
+      process.env.REDIS_PASSWORD = 'changeme-redis';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.REDIS_PASSWORD).toBe('changeme-redis');
+    });
+
+    it('accepts weak TimescaleDB password in development', async () => {
+      process.env.NODE_ENV = 'development';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:changeme-timescale@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.TIMESCALE_URL).toContain('changeme-timescale');
+    });
+
+    it('accepts strong Redis password in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.REDIS_PASSWORD = 'a-very-strong-redis-password-2024';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.REDIS_PASSWORD).toBe('a-very-strong-redis-password-2024');
+    });
+
+    it('accepts strong TimescaleDB password in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.TIMESCALE_URL).toContain('str0ng-ts-p4ss');
+    });
+
+    it('skips TimescaleDB check when URL has no password', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.REDIS_PASSWORD = 'a-very-strong-redis-password-2024';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.TIMESCALE_URL).toBeDefined();
+    });
+  });
+
   describe('JWT_ALGORITHM validation', () => {
     it('defaults to HS256 when JWT_ALGORITHM is not set', async () => {
       const { getConfig } = await import('./index.js');

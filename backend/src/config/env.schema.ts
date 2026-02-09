@@ -22,6 +22,8 @@ export const envSchema = z.object({
   PORTAINER_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(10),
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
+  PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
+  PORTAINER_CB_RESET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
 
   // Ollama
   OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),
@@ -154,6 +156,18 @@ export const envSchema = z.object({
   OTEL_EXPORTER_HEADERS: z.string().optional(),
   OTEL_EXPORTER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
   OTEL_EXPORTER_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).max(60000).default(5000),
+
+  // Log Shipping (Elasticsearch)
+  LOG_SHIPPING_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+  LOG_SHIPPING_ENDPOINT: z.string().url().optional(),
+  LOG_SHIPPING_INDEX_PREFIX: z.string().default('dashboard-logs'),
+  LOG_SHIPPING_USERNAME: z.string().optional(),
+  LOG_SHIPPING_PASSWORD: z.string().optional(),
+  LOG_SHIPPING_BATCH_SIZE: z.coerce.number().int().min(1).default(100),
+  LOG_SHIPPING_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
 
   // Rate Limiting
   API_RATE_LIMIT: z.coerce.number().int().min(10).default(

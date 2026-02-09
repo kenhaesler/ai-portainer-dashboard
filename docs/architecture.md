@@ -26,6 +26,7 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 | Backup | `/api/backup*` | `services/audit-logger.ts`, filesystem |
 | Cache Admin | `/api/admin/cache/*` | `services/portainer-cache.ts`, `services/audit-logger.ts` |
 | PCAP | `/api/pcap/*` | `services/pcap-service.ts`, `services/audit-logger.ts` |
+| Health | `/health`, `/health/ready`, `/health/ready/detail` | `db/sqlite.ts`, `db/timescale.ts`, `services/portainer-cache.ts` (Redis ping) |
 
 ## System Overview
 
@@ -295,6 +296,8 @@ ai-portainer-dashboard/
 │       │   ├── portainer-client.ts #   Portainer API (retry + backoff + circuit breaker)
 │       │   ├── circuit-breaker.ts #   Generic circuit breaker (CLOSED→OPEN→HALF_OPEN)
 │       │   ├── portainer-cache.ts  #   Response caching (TTL)
+│       │   ├── portainer-client.ts #   Portainer API (retry + backoff)
+│       │   ├── portainer-cache.ts  #   Hybrid cache (L1 in-memory + Redis L2, exponential backoff)
 │       │   ├── llm-client.ts       #   Ollama LLM integration
 │       │   ├── adaptive-anomaly-detector.ts # Multi-method anomaly detection
 │       │   ├── isolation-forest.ts #   Isolation Forest ML algorithm
@@ -305,6 +308,7 @@ ai-portainer-dashboard/
 │       │   ├── incident-summarizer.ts # LLM incident summaries
 │       │   ├── monitoring-service.ts#  Monitoring cycle orchestration
 │       │   ├── metrics-collector.ts#   CPU/memory collection
+│       │   ├── otel-exporter.ts   #   OTLP/HTTP JSON span export to external collectors
 │       │   └── ...                 #   Sessions, settings, audit, backup
 │       ├── sockets/                # Socket.IO namespaces
 │       │   ├── llm-chat.ts         #   /llm — streaming chat
@@ -319,6 +323,9 @@ ai-portainer-dashboard/
 │       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino)
 │       └── plugins/                # Fastify plugins
 ├── frontend/                       # React SPA
+│   ├── scripts/
+│   │   └── check-bundle-size.ts   # Gzip budget checker (CI enforced)
+│   ├── bundle-size.config.json    # Per-chunk gzip budgets
 │   └── src/
 │       ├── pages/                  # 18 lazy-loaded page components
 │       ├── components/
