@@ -142,6 +142,9 @@ export const envSchema = z.object({
   IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
   IMAGE_STALENESS_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
 
+  // Prompt Injection Guard
+  LLM_PROMPT_GUARD_STRICT: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+
   // MCP (Model Context Protocol)
   MCP_TOOL_TIMEOUT: z.coerce.number().int().min(1).max(600).default(60),
   LLM_MAX_TOOL_ITERATIONS: z.coerce.number().int().min(1).max(20).default(10),

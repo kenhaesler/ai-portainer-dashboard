@@ -157,10 +157,11 @@ export function DataTable<T>({
   );
 
   return (
-    <div className="space-y-4">
+    <div data-testid="data-table" className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         {searchKey && (
           <input
+            data-testid="data-table-search"
             type="text"
             placeholder={searchPlaceholder}
             value={searchValue}

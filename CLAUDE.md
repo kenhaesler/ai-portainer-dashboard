@@ -66,6 +66,8 @@ npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 # E2E tests (requires running backend + frontend)
 npx playwright test                  # Run all E2E tests
 npx playwright test e2e/auth.spec.ts # Run a single E2E spec
+# Bundle size check (runs after build, enforced in CI)
+cd frontend && npx tsx scripts/check-bundle-size.ts
 
 # Docker development (preferred)
 docker compose -f docker/docker-compose.dev.yml up -d
@@ -130,6 +132,7 @@ All code changes must follow these security rules. Violations block PRs.
 - Sanitize all user-provided content rendered in the frontend to prevent XSS
 - Content Security Policy headers should be configured for production deployments
 - Never use `dangerouslySetInnerHTML` unless content is sanitized with a trusted library
+- **LLM Prompt Injection Guard** (`services/prompt-guard.ts`): 3-layer defense — regex patterns (25+), heuristic scoring (role-play, base64, multilingual), output sanitization (system prompt leaks, sentinel phrases, tool definitions). Applied to both REST `/api/llm/query` and WebSocket `chat:message`. Configurable via `LLM_PROMPT_GUARD_STRICT` env var
 
 ### Secrets & Credentials
 - Never commit `.env`, credentials, API keys, or passwords
@@ -147,6 +150,13 @@ All code changes must follow these security rules. Violations block PRs.
 - All external API calls (Portainer, Ollama) should respect `PORTAINER_VERIFY_SSL` setting
 - WebSocket connections authenticated via the same JWT mechanism as REST
 - CORS configured via `@fastify/cors` — do not use wildcard origins in production
+
+### Security Regression Tests
+- `backend/src/routes/security-regression.test.ts` — centralized security test suite (36 tests)
+- **Auth Enforcement Sweep**: Dynamically discovers all routes and verifies no `/api/*` route returns 2xx without auth
+- **Prompt Injection Vectors**: 22 tests against LLM query endpoint (system prompt extraction, ignore-instructions, case variations)
+- **False Positive Checks**: 8 tests ensuring benign dashboard queries are not blocked by the injection guard
+- **Rate Limiting**: Verifies `LOGIN_RATE_LIMIT` enforcement and `retry-after` header presence
 
 ## UI/UX Design Vision
 
@@ -213,7 +223,7 @@ Purple (purple-500):  AI-generated insight, recommendation
 ## Code Quality Standards
 
 - **Readability first** — Clear naming, logical grouping, consistent formatting. Prefer explicit over clever.
-- **Document all changes** — Update relevant documentation when behavior changes.
+- **Document all changes** — Every feature implementation must include documentation updates in the same PR. Update `docs/architecture.md` (route table, project structure, Mermaid diagrams), `.env.example` (new env vars), and `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` (new build commands or workflow rules). Do not merge code without corresponding docs.
 - **Test coverage required** — See "Mandatory Rules" section above. This is non-negotiable.
 - ESLint config is in each workspace's `eslint.config.js`. TypeScript strict mode is on in both.
 - Do not add unnecessary abstractions, over-engineer, or add features beyond what is requested.

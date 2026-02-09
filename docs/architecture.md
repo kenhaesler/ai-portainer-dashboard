@@ -26,6 +26,7 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 | Backup | `/api/backup*` | `services/audit-logger.ts`, filesystem |
 | Cache Admin | `/api/admin/cache/*` | `services/portainer-cache.ts`, `services/audit-logger.ts` |
 | PCAP | `/api/pcap/*` | `services/pcap-service.ts`, `services/audit-logger.ts` |
+| Health | `/health`, `/health/ready`, `/health/ready/detail` | `db/sqlite.ts`, `db/timescale.ts`, `services/portainer-cache.ts` (Redis ping) |
 
 ## System Overview
 
@@ -90,7 +91,7 @@ graph LR
             direction TB
             subgraph SvcRow1[" "]
                 direction LR
-                SvcCore["<b>Core</b><br/>Portainer Client · Normalizers<br/>Hybrid Cache · LLM Client<br/>LLM Tools · Event Bus"]
+                SvcCore["<b>Core</b><br/>Portainer Client · Circuit Breaker<br/>Normalizers · Hybrid Cache<br/>LLM Client · LLM Tools · Event Bus"]
                 SvcAI["<b>AI &amp; Detection</b><br/>Anomaly Detection · Isolation Forest<br/>Anomaly Explainer · NLP Log Analyzer<br/>Predictive Alerting"]
                 SvcMetrics["<b>Monitoring &amp; Metrics</b><br/>Monitoring · Metrics Collector<br/>Metric Correlator · LTTB Decimator<br/>Capacity Forecaster"]
             end
@@ -273,7 +274,7 @@ sequenceDiagram
 | **Backend** | Fastify 5, TypeScript 5.7, Socket.IO 4, Zod, Jose (JWT), bcrypt |
 | **Database** | SQLite (better-sqlite3, WAL mode) |
 | **AI** | Ollama (local LLM), optional OpenWebUI support |
-| **Logging** | Pino (backend), optional Elasticsearch/Kibana integration |
+| **Logging** | Pino (backend), optional Elasticsearch log shipping via `_bulk` API (batched, retry with backoff) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions CI |
 | **Testing** | Vitest, Testing Library, jsdom, Playwright (E2E) |
 
@@ -290,11 +291,16 @@ ai-portainer-dashboard/
 │       │   ├── monitoring.ts       #   Insights & acknowledgments
 │       │   ├── remediation.ts      #   Action approval workflow
 │       │   ├── settings.ts         #   Configuration & audit log
+│       │   ├── security-regression.test.ts # Auth sweep, injection vectors, rate limits
 │       │   └── ...                 #   Dashboard, endpoints, images, etc.
 │       ├── services/               # Business logic
-│       │   ├── portainer-client.ts #   Portainer API (retry + backoff)
+│       │   ├── portainer-client.ts #   Portainer API (retry + backoff + circuit breaker)
+│       │   ├── circuit-breaker.ts #   Generic circuit breaker (CLOSED→OPEN→HALF_OPEN)
 │       │   ├── portainer-cache.ts  #   Response caching (TTL)
+│       │   ├── portainer-client.ts #   Portainer API (retry + backoff)
+│       │   ├── portainer-cache.ts  #   Hybrid cache (L1 in-memory + Redis L2, exponential backoff)
 │       │   ├── llm-client.ts       #   Ollama LLM integration
+│       │   ├── prompt-guard.ts    #   3-layer prompt injection defense (regex + heuristic + output)
 │       │   ├── adaptive-anomaly-detector.ts # Multi-method anomaly detection
 │       │   ├── isolation-forest.ts #   Isolation Forest ML algorithm
 │       │   ├── isolation-forest-detector.ts # IF model caching + detection
@@ -304,6 +310,7 @@ ai-portainer-dashboard/
 │       │   ├── incident-summarizer.ts # LLM incident summaries
 │       │   ├── monitoring-service.ts#  Monitoring cycle orchestration
 │       │   ├── metrics-collector.ts#   CPU/memory collection
+│       │   ├── otel-exporter.ts   #   OTLP/HTTP JSON span export to external collectors
 │       │   └── ...                 #   Sessions, settings, audit, backup
 │       ├── sockets/                # Socket.IO namespaces
 │       │   ├── llm-chat.ts         #   /llm — streaming chat
@@ -315,9 +322,12 @@ ai-portainer-dashboard/
 │       │   ├── sqlite.ts           #   Database init (WAL mode)
 │       │   └── migrations/         #   7 SQL migrations
 │       ├── models/                 # Zod schemas & DB queries
-│       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino)
+│       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino + ES transport)
 │       └── plugins/                # Fastify plugins
 ├── frontend/                       # React SPA
+│   ├── scripts/
+│   │   └── check-bundle-size.ts   # Gzip budget checker (CI enforced)
+│   ├── bundle-size.config.json    # Per-chunk gzip budgets
 │   └── src/
 │       ├── pages/                  # 18 lazy-loaded page components
 │       ├── components/
@@ -371,3 +381,13 @@ ai-portainer-dashboard/
 │   └── issue-simulators.yml         #   Issue containers + heavy-load stress
 └── .github/workflows/ci.yml        # CI: typecheck → lint → test → build
 ```
+
+---
+
+## External Agent System Architecture
+
+For documentation related to the underlying AI agent framework, which includes components like the `ModularStrategy`, multi-strategy code execution environments, and the generic model abstraction layer, please refer to the separate architecture document:
+
+-   **[Agent System Architecture (`/ARCHITECTURE.md`)](<../ARCHITECTURE.md>)**
+
+*Note: This document describes the general-purpose agent framework, while the documentation above describes the specific architecture of the AI Portainer Dashboard application.*

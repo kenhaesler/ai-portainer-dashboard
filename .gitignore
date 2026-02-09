@@ -40,6 +40,7 @@ coverage/
 # Playwright
 test-results/
 playwright-report/
+e2e/.auth/
 
 # Temp
 tmp/

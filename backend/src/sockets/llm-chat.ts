@@ -11,6 +11,7 @@ import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
+import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -494,6 +495,17 @@ export function setupLlmNamespace(ns: Namespace) {
     let abortController: AbortController | null = null;
 
     socket.on('chat:message', async (data: { text: string; context?: any; model?: string }) => {
+      // ── Input guard: block prompt injection attempts ──
+      const guardResult = isPromptInjection(data.text);
+      if (guardResult.blocked) {
+        log.warn({ userId, reason: guardResult.reason, score: guardResult.score }, 'Chat message blocked by prompt guard');
+        socket.emit('chat:blocked', {
+          reason: 'Your message was flagged as a potential prompt injection attempt.',
+          score: guardResult.score,
+        });
+        return;
+      }
+
       const llmConfig = getEffectiveLlmConfig();
       const selectedModel = data.model || llmConfig.model;
 
@@ -617,8 +629,8 @@ export function setupLlmNamespace(ns: Namespace) {
                 // Fall through to streaming loop
               } else {
                 // No tool calls at all — send content as final response
-                socket.emit('chat:chunk', nativeResult.content);
-                finalResponse = nativeResult.content;
+                finalResponse = sanitizeLlmOutput(nativeResult.content);
+                socket.emit('chat:chunk', finalResponse);
                 history.push({ role: 'assistant', content: finalResponse });
                 socket.emit('chat:end', { id: randomUUID(), content: finalResponse });
 
@@ -794,6 +806,9 @@ export function setupLlmNamespace(ns: Namespace) {
             finalResponse = 'I could not generate a complete response for that request. Please try again.';
           }
         }
+
+        // Sanitize final output before sending
+        finalResponse = sanitizeLlmOutput(finalResponse);
 
         history.push({ role: 'assistant', content: finalResponse });
 
