@@ -31,6 +31,9 @@ jobs:
             type=raw,value=dev-nightly
             type=raw,value=dev-nightly-${{ github.run_id }}
 
+      - name: Copy root lockfile into workspace
+        run: cp package-lock.json backend/
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -69,6 +72,9 @@ jobs:
           tags: |
             type=raw,value=dev-nightly
             type=raw,value=dev-nightly-${{ github.run_id }}
+
+      - name: Copy root lockfile into workspace
+        run: cp package-lock.json frontend/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
