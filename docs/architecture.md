@@ -319,6 +319,9 @@ ai-portainer-dashboard/
 │       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino)
 │       └── plugins/                # Fastify plugins
 ├── frontend/                       # React SPA
+│   ├── scripts/
+│   │   └── check-bundle-size.ts   # Gzip budget checker (CI enforced)
+│   ├── bundle-size.config.json    # Per-chunk gzip budgets
 │   └── src/
 │       ├── pages/                  # 18 lazy-loaded page components
 │       ├── components/
