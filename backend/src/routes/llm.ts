@@ -10,37 +10,9 @@ import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../serv
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
+import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
 
 const log = createChildLogger('route:llm');
-
-// Command palette system prompt is now configurable via Settings > AI Prompts.
-// Default stored in prompt-store.ts under 'command_palette' feature key.
-
-const PROMPT_INJECTION_PATTERNS = [
-  /system prompt/i,
-  /initial instructions/i,
-  /repeat (the )?(prompt|instructions)/i,
-  /ignore (all |the )?(previous|prior|system) instructions/i,
-  /developer message/i,
-];
-
-function isPromptInjectionAttempt(query: string): boolean {
-  return PROMPT_INJECTION_PATTERNS.some((pattern) => pattern.test(query));
-}
-
-function sanitizeLlmOutput(text: string): string {
-  const normalized = text.toLowerCase();
-  const leaksSystemPrompt =
-    normalized.includes('you are a dashboard query interpreter') ||
-    normalized.includes('available pages and their routes') ||
-    normalized.includes('infrastructure context');
-
-  if (leaksSystemPrompt) {
-    return 'I cannot provide internal system instructions. Ask about dashboard data or navigation.';
-  }
-
-  return text;
-}
 
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
@@ -108,7 +80,8 @@ export async function llmRoutes(fastify: FastifyInstance) {
     const { query } = request.body;
     const startTime = Date.now();
 
-    if (isPromptInjectionAttempt(query)) {
+    const guardResult = isPromptInjection(query);
+    if (guardResult.blocked) {
       return {
         action: 'answer',
         text: 'I cannot provide internal system instructions. Ask about dashboard data or navigation.',
