@@ -36,9 +36,13 @@ Auto-instrument applications running on Portainer-managed containers using kerne
               │         │           │
               │    batch INSERT     │
               │    into SQLite      │
-              └─────────┬───────────┘
-                        │
-                        ▼
+              │         │           │
+              │    queueSpanFor     │
+              │    Export() ────────┼──→  ┌─────────────────┐
+              │    (if enabled)     │     │ External OTLP   │
+              └─────────┬───────────┘     │ Jaeger / Tempo  │
+                        │                 │ Datadog / etc.  │
+                        ▼                 └─────────────────┘
               ┌─────────────────────┐
               │   Trace Explorer    │
               │   (source: eBPF)    │
@@ -236,7 +240,8 @@ curl -X POST http://localhost:3051/api/traces/otlp \
    - Flattens nested OTLP attributes to a JSON object
    - Tags all spans with `trace_source: 'ebpf'`
 5. Spans are **batch-inserted** into SQLite within a single transaction for performance
-6. The **Trace Explorer** UI can filter by source: HTTP Requests, Background Jobs, or eBPF (Apps)
+6. If the **OTLP exporter** is enabled (`OTEL_EXPORTER_ENABLED=true`), spans are also queued for export to an external collector (Jaeger, Tempo, Datadog) via OTLP/HTTP JSON. See [Span Export to External Collectors](#span-export-to-external-collectors)
+7. The **Trace Explorer** UI can filter by source: HTTP Requests, Background Jobs, or eBPF (Apps)
 
 ### File Map
 
@@ -246,6 +251,8 @@ curl -X POST http://localhost:3051/api/traces/otlp \
 | `backend/src/services/otlp-transformer.ts` | Converts OTLP JSON → `SpanInsert[]`. Handles timestamp conversion, attribute flattening, kind/status mapping |
 | `backend/src/services/otlp-protobuf.ts` | Decodes OTLP protobuf binary → OTLP JSON using inline proto schema (no external `.proto` files) |
 | `backend/src/services/trace-store.ts` | `insertSpans()` batch insert, `getTraces()` with `source` filter |
+| `backend/src/services/otel-exporter.ts` | OTLP/HTTP JSON batch exporter — `queueSpanForExport()`, retry with backoff, graceful shutdown |
+| `backend/src/services/trace-context.ts` | `withSpan()` hooks into `queueSpanForExport()` after SQLite insert |
 | `backend/src/db/migrations/017_trace_source.sql` | Adds `trace_source` column and index to `spans` table |
 | `backend/src/config/env.schema.ts` | `TRACES_INGESTION_ENABLED` and `TRACES_INGESTION_API_KEY` env vars |
 | `docker/beyla/beyla.yml` | Standalone Beyla Compose fragment for instrumenting dashboard-adjacent services |
@@ -493,16 +500,89 @@ Beyla enriches spans with resource and span-level attributes:
 - `server.address`, `server.port` — Server details
 - `http.request.body.size`, `http.response.body.size` — Payload sizes
 
+## Span Export to External Collectors
+
+Optionally forward spans to external observability platforms (Jaeger, Grafana Tempo, Datadog) via OTLP/HTTP JSON. When enabled, spans are stored locally in SQLite **and** batched to an external collector — the dashboard remains fully functional even if the collector is unreachable.
+
+### Quick Start
+
+Add to your `.env`:
+
+```env
+OTEL_EXPORTER_ENABLED=true
+OTEL_EXPORTER_ENDPOINT=http://jaeger:4318/v1/traces
+```
+
+Restart the backend. Spans will start flowing to the external collector within 5 seconds.
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `OTEL_EXPORTER_ENABLED` | `false` | Enable span export to external collector |
+| `OTEL_EXPORTER_ENDPOINT` | — | OTLP/HTTP JSON endpoint (e.g., `http://jaeger:4318/v1/traces`) |
+| `OTEL_EXPORTER_HEADERS` | — | Optional auth headers as JSON string (e.g., `{"Authorization":"Bearer token"}`) |
+| `OTEL_EXPORTER_BATCH_SIZE` | `100` | Max spans per batch before flush |
+| `OTEL_EXPORTER_FLUSH_INTERVAL_MS` | `5000` | Flush interval in milliseconds |
+
+### How It Works
+
+1. After each span is inserted into SQLite, `queueSpanForExport()` adds it to an in-memory buffer
+2. The buffer flushes when it reaches `OTEL_EXPORTER_BATCH_SIZE` **or** `OTEL_EXPORTER_FLUSH_INTERVAL_MS` elapses (whichever comes first)
+3. Spans are converted from the internal `SpanInsert` format to standard OTLP/HTTP JSON (`resourceSpans` structure)
+4. On flush failure: exponential backoff retry (1s, 2s, 4s — max 3 attempts), then the batch is dropped with a warning log
+5. Non-retryable 4xx errors (except 429) are dropped immediately without retry
+6. Buffer overflow protection: max 1000 pending spans; oldest are dropped when full
+7. On shutdown: remaining spans are flushed before the process exits
+
+### Collector Examples
+
+**Jaeger** (all-in-one):
+```yaml
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "4318:4318"   # OTLP HTTP
+      - "16686:16686" # Jaeger UI
+    networks:
+      - dashboard-net
+```
+
+```env
+OTEL_EXPORTER_ENABLED=true
+OTEL_EXPORTER_ENDPOINT=http://jaeger:4318/v1/traces
+```
+
+**Grafana Tempo**:
+```env
+OTEL_EXPORTER_ENABLED=true
+OTEL_EXPORTER_ENDPOINT=http://tempo:4318/v1/traces
+```
+
+**Datadog**:
+```env
+OTEL_EXPORTER_ENABLED=true
+OTEL_EXPORTER_ENDPOINT=https://trace.agent.datadoghq.com/v1/traces
+OTEL_EXPORTER_HEADERS={"DD-API-KEY":"your-datadog-api-key"}
+```
+
+### Zero Overhead When Disabled
+
+When `OTEL_EXPORTER_ENABLED=false` (the default), the exporter singleton is never initialized. `queueSpanForExport()` is a no-op — no buffer allocation, no timers, no network calls.
+
 ## Test Coverage
 
 | Test File | Tests | Description |
 |---|---|---|
 | `traces-ingest.test.ts` | 10 | Route tests: JSON + protobuf ingestion, API key auth, feature flag, error handling |
 | `otlp-transformer.test.ts` | 11 | Transformer tests: OTLP conversion, timestamp math, kind/status mapping, attribute flattening |
+| `otel-exporter.test.ts` | 17 | Exporter tests: batching, interval flush, exponential backoff retry, 4xx drop, graceful shutdown, OTLP format, singleton lifecycle |
 
 Run tests:
 ```bash
 cd backend
 npx vitest run src/routes/traces-ingest.test.ts
 npx vitest run src/services/otlp-transformer.test.ts
+npx vitest run src/services/otel-exporter.test.ts
 ```
