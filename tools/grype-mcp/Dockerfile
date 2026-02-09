@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates curl \
     && curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin \
