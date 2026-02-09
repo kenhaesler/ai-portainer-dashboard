@@ -19,7 +19,7 @@ KALI_MCP_ALLOWED_COMMANDS=whoami,id,uname,ip,df,free,ps,ss,ls,cat
 ### 2. Start (or restart) the stack
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d --build
+docker compose -f docker/docker-compose.dev.yml up -d --build
 ```
 
 ### 3. Register MCP in Claude Code
@@ -41,7 +41,7 @@ Use the `kali-lab` MCP tool `run_allowed` for black-box smoke tests from Claude 
 1. Ensure the app stack is running:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
 2. In Claude Code, ask it to run checks with `kali-lab`:

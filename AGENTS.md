@@ -41,6 +41,10 @@ No `.env` files, API keys, passwords, or credentials in commits.
 
 Do not pick up, implement, or modify code for any GitHub issue labeled `NO AI`. These issues are reserved for human developers only. If assigned or asked to work on a `NO AI` issue, refuse and explain that the issue is marked for human-only work.
 
+### 6. Ask Before Assuming
+
+If a request is ambiguous, under-specified, or could be interpreted in multiple ways, **stop and ask the user for clarification** before proceeding. Do not guess intent, pick a default approach silently, or make assumptions about scope. A quick clarifying question is always cheaper than reworking a wrong implementation.
+
 ## Build & Development Commands
 
 ```bash
@@ -59,12 +63,12 @@ npx vitest run src/utils/crypto.test.ts --config backend/vitest.config.ts
 npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
 
 # Docker development (preferred)
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
 ## Local Runtime Dependencies
 
-- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend and frontend run as containers.
+- **Docker runtime** — Required for `docker/docker-compose.dev.yml`. Backend and frontend run as containers.
 - **Ollama** — LLM backend for AI features. Must be running externally (not bundled in Docker Compose). The default `OLLAMA_BASE_URL` is `http://host.docker.internal:11434`, which connects to Ollama running on the host machine.
 - When running outside Docker (`npm run dev`), ensure Ollama is available at `OLLAMA_BASE_URL` (default `http://localhost:11434`) and Portainer at `PORTAINER_API_URL`.
 
