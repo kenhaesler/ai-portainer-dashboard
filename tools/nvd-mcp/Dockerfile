@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM dhi.io/python:3.13-debian13-dev
 
 RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates \
     && rm -rf /var/lib/apt/lists/*
