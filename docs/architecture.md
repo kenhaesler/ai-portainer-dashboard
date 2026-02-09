@@ -90,7 +90,7 @@ graph LR
             direction TB
             subgraph SvcRow1[" "]
                 direction LR
-                SvcCore["<b>Core</b><br/>Portainer Client · Normalizers<br/>Hybrid Cache · LLM Client<br/>LLM Tools · Event Bus"]
+                SvcCore["<b>Core</b><br/>Portainer Client · Circuit Breaker<br/>Normalizers · Hybrid Cache<br/>LLM Client · LLM Tools · Event Bus"]
                 SvcAI["<b>AI &amp; Detection</b><br/>Anomaly Detection · Isolation Forest<br/>Anomaly Explainer · NLP Log Analyzer<br/>Predictive Alerting"]
                 SvcMetrics["<b>Monitoring &amp; Metrics</b><br/>Monitoring · Metrics Collector<br/>Metric Correlator · LTTB Decimator<br/>Capacity Forecaster"]
             end
@@ -292,7 +292,8 @@ ai-portainer-dashboard/
 │       │   ├── settings.ts         #   Configuration & audit log
 │       │   └── ...                 #   Dashboard, endpoints, images, etc.
 │       ├── services/               # Business logic
-│       │   ├── portainer-client.ts #   Portainer API (retry + backoff)
+│       │   ├── portainer-client.ts #   Portainer API (retry + backoff + circuit breaker)
+│       │   ├── circuit-breaker.ts #   Generic circuit breaker (CLOSED→OPEN→HALF_OPEN)
 │       │   ├── portainer-cache.ts  #   Response caching (TTL)
 │       │   ├── llm-client.ts       #   Ollama LLM integration
 │       │   ├── adaptive-anomaly-detector.ts # Multi-method anomaly detection
