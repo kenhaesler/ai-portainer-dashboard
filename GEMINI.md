@@ -146,6 +146,13 @@ All code changes must follow these security rules. Violations block PRs.
 - WebSocket connections authenticated via the same JWT mechanism as REST
 - CORS configured via `@fastify/cors` — do not use wildcard origins in production
 
+### Security Regression Tests
+- `backend/src/routes/security-regression.test.ts` — centralized security test suite (36 tests)
+- **Auth Enforcement Sweep**: Dynamically discovers all routes and verifies no `/api/*` route returns 2xx without auth
+- **Prompt Injection Vectors**: 22 tests against LLM query endpoint (system prompt extraction, ignore-instructions, case variations)
+- **False Positive Checks**: 8 tests ensuring benign dashboard queries are not blocked by the injection guard
+- **Rate Limiting**: Verifies `LOGIN_RATE_LIMIT` enforcement and `retry-after` header presence
+
 ## UI/UX Design Vision
 
 This dashboard aims for a **state-of-the-art, premium visual experience** that creates immediate "wow" impact while maintaining exceptional usability. Every UI change should move toward this vision.
