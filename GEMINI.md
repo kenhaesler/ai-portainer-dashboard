@@ -128,6 +128,7 @@ All code changes must follow these security rules. Violations block PRs.
 - Sanitize all user-provided content rendered in the frontend to prevent XSS
 - Content Security Policy headers should be configured for production deployments
 - Never use `dangerouslySetInnerHTML` unless content is sanitized with a trusted library
+- **LLM Prompt Injection Guard** (`services/prompt-guard.ts`): 3-layer defense — regex patterns (25+), heuristic scoring (role-play, base64, multilingual), output sanitization (system prompt leaks, sentinel phrases, tool definitions). Applied to both REST `/api/llm/query` and WebSocket `chat:message`. Configurable via `LLM_PROMPT_GUARD_STRICT` env var
 
 ### Secrets & Credentials
 - Never commit `.env`, credentials, API keys, or passwords
