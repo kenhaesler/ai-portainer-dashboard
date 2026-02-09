@@ -110,7 +110,9 @@ class HybridCache {
   private redisClient: RedisClient | null = null;
   private redisConnectPromise: Promise<void> | null = null;
   private redisDisabledUntil = 0;
-  private readonly redisRetryMs = 30_000;
+  private redisFailureCount = 0;
+  private static readonly BACKOFF_BASE_MS = 2_000;
+  private static readonly BACKOFF_CAP_MS = 300_000; // 5 minutes
 
   /**
    * Check L1 (in-memory) cache with stale info — synchronous, no Redis round-trip.
@@ -144,11 +146,24 @@ class HybridCache {
   }
 
   private disableRedisTemporarily(reason: string, err?: unknown): void {
-    this.redisDisabledUntil = Date.now() + this.redisRetryMs;
+    this.redisFailureCount++;
+    const delayMs = Math.min(
+      HybridCache.BACKOFF_BASE_MS * Math.pow(2, this.redisFailureCount - 1),
+      HybridCache.BACKOFF_CAP_MS,
+    );
+    this.redisDisabledUntil = Date.now() + delayMs;
     if (err) {
-      log.warn({ err, reason }, 'Redis cache unavailable, using in-memory cache');
+      log.warn({ err, reason, attempt: this.redisFailureCount, backoffMs: delayMs }, 'Redis cache unavailable, using in-memory cache');
     } else {
-      log.warn({ reason }, 'Redis cache unavailable, using in-memory cache');
+      log.warn({ reason, attempt: this.redisFailureCount, backoffMs: delayMs }, 'Redis cache unavailable, using in-memory cache');
+    }
+  }
+
+  private resetRedisBackoff(): void {
+    if (this.redisFailureCount > 0) {
+      log.info({ previousFailures: this.redisFailureCount }, 'Redis recovered, resetting backoff');
+      this.redisFailureCount = 0;
+      this.redisDisabledUntil = 0;
     }
   }
 
@@ -226,6 +241,7 @@ class HybridCache {
             const parsed = JSON.parse(decompressed.toString('utf8')) as T;
             this.memory.set(key, parsed, this.l1TtlSeconds);
             this.hits++;
+            this.resetRedisBackoff();
             return parsed;
           }
 
@@ -234,8 +250,11 @@ class HybridCache {
             const parsed = JSON.parse(raw) as T;
             this.memory.set(key, parsed, this.l1TtlSeconds);
             this.hits++;
+            this.resetRedisBackoff();
             return parsed;
           }
+          // Successful Redis operation (miss is still success)
+          this.resetRedisBackoff();
         } catch (err) {
           this.disableRedisTemporarily('redis-get-failed', err);
         }
@@ -276,6 +295,7 @@ class HybridCache {
             await client.set(redisKey, json, { EX: ttlSeconds });
             await client.del(redisKey + ':gz');
           }
+          this.resetRedisBackoff();
         } catch (err) {
           this.disableRedisTemporarily('redis-set-failed', err);
         }
@@ -291,6 +311,7 @@ class HybridCache {
     if (client) {
       try {
         await client.del(this.getRedisKey(key));
+        this.resetRedisBackoff();
       } catch (err) {
         this.disableRedisTemporarily('redis-invalidate-failed', err);
       }
@@ -369,6 +390,7 @@ class HybridCache {
       try {
         const redisKeys = keys.map((k) => this.getRedisKey(k));
         const results = await client.mGet(redisKeys);
+        this.resetRedisBackoff();
         return results.map((raw) => {
           if (raw == null) {
             this.misses++;
@@ -493,6 +515,36 @@ class HybridCache {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Ping Redis to check connectivity. Returns true if Redis responds, false otherwise.
+   * Returns false when Redis is not configured (memory-only mode).
+   */
+  async ping(): Promise<boolean> {
+    if (!this.isRedisConfigured()) {
+      return false;
+    }
+    try {
+      const client = await this.ensureRedisClient();
+      if (!client) return false;
+      await client.ping();
+      this.resetRedisBackoff();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get the current backoff state for diagnostics and health checks.
+   */
+  getBackoffState(): { failureCount: number; disabledUntil: number; configured: boolean } {
+    return {
+      failureCount: this.redisFailureCount,
+      disabledUntil: this.redisDisabledUntil,
+      configured: this.isRedisConfigured(),
+    };
   }
 
   async getStats() {

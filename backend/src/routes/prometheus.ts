@@ -251,6 +251,14 @@ export async function prometheusRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Prometheus metrics endpoint is disabled' });
     }
 
+    // In production, require a bearer token of at least 16 characters
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction && (!config.PROMETHEUS_BEARER_TOKEN || config.PROMETHEUS_BEARER_TOKEN.length < 16)) {
+      return reply
+        .code(500)
+        .send({ error: 'Prometheus metrics require PROMETHEUS_BEARER_TOKEN (min 16 chars) in production' });
+    }
+
     if (config.PROMETHEUS_BEARER_TOKEN) {
       const authHeader = request.headers.authorization;
       const expected = `Bearer ${config.PROMETHEUS_BEARER_TOKEN}`;

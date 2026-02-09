@@ -64,6 +64,18 @@ function validateJwtAlgorithm(data: EnvConfig): void {
   }
 }
 
+function validatePrometheusToken(data: EnvConfig): void {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    data.PROMETHEUS_METRICS_ENABLED &&
+    (!data.PROMETHEUS_BEARER_TOKEN || data.PROMETHEUS_BEARER_TOKEN.length < 16)
+  ) {
+    throw new Error(
+      'Invalid environment configuration:\n  PROMETHEUS_BEARER_TOKEN: must be at least 16 characters when Prometheus metrics are enabled in production'
+    );
+  }
+}
+
 function validateDashboardCredentials(username: string, password: string): void {
   const normalizedPassword = password.toLowerCase();
   if (username === 'admin' && normalizedPassword === 'changeme123') {
@@ -116,6 +128,7 @@ export function getConfig(): EnvConfig {
     validateJwtAlgorithm(result.data);
     validateDashboardCredentials(result.data.DASHBOARD_USERNAME, result.data.DASHBOARD_PASSWORD);
     validateServicePasswords(result.data);
+    validatePrometheusToken(result.data);
     config = result.data;
   }
   return config;

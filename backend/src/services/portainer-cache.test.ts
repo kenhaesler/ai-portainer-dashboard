@@ -57,6 +57,7 @@ function createMockRedisClient() {
       return [...(sets.get(key) ?? [])];
     }),
     expire: vi.fn(async () => 1),
+    ping: vi.fn(async () => 'PONG'),
     info: vi.fn(async () => [
       '# Server',
       'uptime_in_seconds:86400',
@@ -881,5 +882,243 @@ describe('tag-based cache invalidation (#385)', () => {
     expect(await cache.get('endpoint:5:networks')).toBeUndefined();
     // endpoint:6 should remain
     expect(await cache.get('endpoint:6:containers')).toBe('data3');
+  });
+});
+
+describe('exponential backoff (#429)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('first failure uses 2s backoff', async () => {
+    const redisClient = createMockRedisClient();
+    redisClient.get = vi.fn(async () => { throw new Error('ECONNRESET'); });
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Trigger a failure via get()
+    await cache.get('backoff-test');
+
+    const state = cache.getBackoffState();
+    expect(state.failureCount).toBe(1);
+    // First failure: 2000 * 2^0 = 2000ms
+    expect(state.disabledUntil).toBeGreaterThan(Date.now());
+    expect(state.disabledUntil).toBeLessThanOrEqual(Date.now() + 2100);
+  });
+
+  it('backoff doubles with each failure via error events', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Trigger initial connection to register event handlers
+    await cache.get('init');
+
+    // Get the error handler from client.on('error', handler)
+    const errorHandler = redisClient.on.mock.calls.find(
+      (c: unknown[]) => c[0] === 'error',
+    )?.[1] as ((err: Error) => void) | undefined;
+    expect(errorHandler).toBeDefined();
+
+    // First failure
+    errorHandler!(new Error('Redis error 1'));
+    expect(cache.getBackoffState().failureCount).toBe(1);
+
+    // Second failure
+    errorHandler!(new Error('Redis error 2'));
+    expect(cache.getBackoffState().failureCount).toBe(2);
+
+    // Third failure
+    errorHandler!(new Error('Redis error 3'));
+    expect(cache.getBackoffState().failureCount).toBe(3);
+  });
+
+  it('backoff caps at 5 minutes (300s)', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Trigger initial connection
+    await cache.get('init-cap');
+
+    const errorHandler = redisClient.on.mock.calls.find(
+      (c: unknown[]) => c[0] === 'error',
+    )?.[1] as ((err: Error) => void) | undefined;
+    expect(errorHandler).toBeDefined();
+
+    // Trigger 20 failures (2^19 * 2000 = way above cap)
+    for (let i = 0; i < 20; i++) {
+      errorHandler!(new Error('Redis error'));
+    }
+
+    const state = cache.getBackoffState();
+    expect(state.failureCount).toBe(20);
+    // Backoff should be capped at 300_000ms from now
+    expect(state.disabledUntil).toBeLessThanOrEqual(Date.now() + 300_100);
+    expect(state.disabledUntil).toBeGreaterThan(Date.now() + 299_000);
+  });
+
+  it('failure count accumulates with each error event', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+
+    // Trigger initial connection
+    await cache.get('init-reset');
+
+    const errorHandler = redisClient.on.mock.calls.find(
+      (c: unknown[]) => c[0] === 'error',
+    )?.[1] as ((err: Error) => void) | undefined;
+    expect(errorHandler).toBeDefined();
+
+    // Trigger failures and verify accumulation
+    errorHandler!(new Error('Redis error 1'));
+    expect(cache.getBackoffState().failureCount).toBe(1);
+
+    errorHandler!(new Error('Redis error 2'));
+    expect(cache.getBackoffState().failureCount).toBe(2);
+
+    errorHandler!(new Error('Redis error 3'));
+    expect(cache.getBackoffState().failureCount).toBe(3);
+
+    // disabledUntil should be set in the future
+    expect(cache.getBackoffState().disabledUntil).toBeGreaterThan(Date.now());
+  });
+});
+
+describe('ping() (#429)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('returns true when Redis is healthy', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const result = await cache.ping();
+    expect(result).toBe(true);
+    expect(redisClient.ping).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns false when Redis is not configured', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const result = await cache.ping();
+    expect(result).toBe(false);
+  });
+
+  it('returns false when Redis ping throws', async () => {
+    const redisClient = createMockRedisClient();
+    redisClient.ping = vi.fn(async () => { throw new Error('Connection lost'); });
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const result = await cache.ping();
+    expect(result).toBe(false);
+  });
+});
+
+describe('getBackoffState() (#429)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('returns configured: true when Redis URL is set', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const state = cache.getBackoffState();
+    expect(state.configured).toBe(true);
+    expect(state.failureCount).toBe(0);
+    expect(state.disabledUntil).toBe(0);
+  });
+
+  it('returns configured: false when Redis URL is not set', async () => {
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({ ...baseConfig }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(),
+    }));
+
+    const { cache } = await import('./portainer-cache.js');
+    const state = cache.getBackoffState();
+    expect(state.configured).toBe(false);
+    expect(state.failureCount).toBe(0);
   });
 });
