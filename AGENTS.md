@@ -20,8 +20,9 @@ AI-powered container monitoring dashboard that extends Portainer with real-time 
 - PRs without tests WILL be blocked by CI — do not attempt to bypass this
 - Never use `--no-verify`, skip hooks, or circumvent test requirements
 - If you cannot write tests for a change, stop and explain why before proceeding
-- Backend tests: `backend/src/**/*.test.ts` — Frontend tests: `frontend/src/**/*.test.{ts,tsx}`
+- Backend tests: `backend/src/**/*.test.ts` — Frontend tests: `frontend/src/**/*.test.{ts,tsx}` — E2E tests: `e2e/*.spec.ts`
 - Both workspaces use Vitest. Frontend tests use jsdom environment with `@testing-library/react`
+- E2E tests use Playwright with cached auth state. They require a running backend + frontend
 - **Test before committing. Test before pushing. Test before creating a PR.**
 - **DO NOT create pull requests without passing tests. CI will reject them.**
 
@@ -61,6 +62,10 @@ npm run test:watch         # Watch mode
 # Single test file
 npx vitest run src/utils/crypto.test.ts --config backend/vitest.config.ts
 npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
+
+# E2E tests (requires running backend + frontend)
+npx playwright test                  # Run all E2E tests
+npx playwright test e2e/auth.spec.ts # Run a single E2E spec
 
 # Docker development (preferred)
 docker compose -f docker/docker-compose.dev.yml up -d
