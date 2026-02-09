@@ -363,3 +363,13 @@ ai-portainer-dashboard/
 │   └── issue-simulators.yml         #   Issue containers + heavy-load stress
 └── .github/workflows/ci.yml        # CI: typecheck → lint → test → build
 ```
+
+---
+
+## External Agent System Architecture
+
+For documentation related to the underlying AI agent framework, which includes components like the `ModularStrategy`, multi-strategy code execution environments, and the generic model abstraction layer, please refer to the separate architecture document:
+
+-   **[Agent System Architecture (`/ARCHITECTURE.md`)](<../ARCHITECTURE.md>)**
+
+*Note: This document describes the general-purpose agent framework, while the documentation above describes the specific architecture of the AI Portainer Dashboard application.*
