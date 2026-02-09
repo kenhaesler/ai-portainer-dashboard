@@ -24,6 +24,14 @@ describe('Dockerfile security best practices', () => {
       expect(fromStatements?.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('runtime stage uses non-dev DHI image', () => {
+      // The final runtime stage must use a hardened (non-dev) DHI image
+      expect(content).toMatch(/FROM\s+dhi\.io\/node:\S+\s+AS\s+runtime/m);
+      // Runtime image must NOT be a -dev variant
+      const runtimeFrom = content.match(/FROM\s+(dhi\.io\/node:\S+)\s+AS\s+runtime/m);
+      expect(runtimeFrom?.[1]).not.toMatch(/-dev/);
+    });
+
     it('runs as non-root user', () => {
       expect(content).toMatch(/^USER\s+\S+/m);
     });
@@ -53,8 +61,18 @@ describe('Dockerfile security best practices', () => {
       expect(fromStatements?.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('runs as non-root user', () => {
-      expect(content).toMatch(/^USER\s+\S+/m);
+    it('runtime stage uses non-dev DHI image', () => {
+      expect(content).toMatch(/FROM\s+dhi\.io\/nginx:\S+\s+AS\s+runtime/m);
+      const runtimeFrom = content.match(/FROM\s+(dhi\.io\/nginx:\S+)\s+AS\s+runtime/m);
+      expect(runtimeFrom?.[1]).not.toMatch(/-dev/);
+    });
+
+    it('runs as non-root user (explicit USER or DHI nonroot default)', () => {
+      // DHI hardened images run as nonroot by default — an explicit USER
+      // directive is not required when the runtime base is a DHI image.
+      const hasUserDirective = /^USER\s+\S+/m.test(content);
+      const usesDhiRuntime = /FROM\s+dhi\.io\/\S+\s+AS\s+runtime/m.test(content);
+      expect(hasUserDirective || usesDhiRuntime).toBe(true);
     });
 
     it('has a healthcheck', () => {

@@ -34,7 +34,7 @@ services:
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-aidash:cache:}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3051/health"]
+      test: ["CMD", "/usr/bin/wget", "--spider", "--quiet", "http://127.0.0.1:3051/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -62,7 +62,7 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
+      test: ["CMD", "/usr/bin/wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
       interval: 30s
       timeout: 5s
       retries: 3

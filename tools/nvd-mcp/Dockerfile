@@ -1,7 +1,6 @@
-FROM dhi.io/python:3.13-debian13-dev
-
-RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# syntax=docker/dockerfile:1
+# Build stage — install Python dependencies
+FROM dhi.io/python:3.13-debian13-dev AS builder
 
 WORKDIR /app
 
@@ -11,8 +10,15 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Runtime stage — minimal DHI image
+FROM dhi.io/python:3.13-debian13 AS runtime
+
+COPY --from=builder /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
 COPY server.py .
 
 EXPOSE 8000
-ENTRYPOINT ["tini", "--"]
 CMD ["python", "server.py"]
