@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import Fastify, { FastifyInstance } from 'fastify';
 import { prometheusRoutes, resetPrometheusMetricsCacheForTests } from './prometheus.js';
@@ -139,6 +139,72 @@ describe('Prometheus Routes', () => {
       headers: { authorization: 'Bearer metrics-token' },
     });
     expect(response.statusCode).toBe(200);
+  });
+
+  describe('production auth enforcement', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+    });
+
+    it('returns 500 config error in production when no token is set', async () => {
+      process.env.NODE_ENV = 'production';
+      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+      mockConfig.PROMETHEUS_BEARER_TOKEN = undefined;
+
+      const response = await app.inject({ method: 'GET', url: '/metrics' });
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error).toContain('PROMETHEUS_BEARER_TOKEN');
+    });
+
+    it('returns 500 config error in production when token is too short', async () => {
+      process.env.NODE_ENV = 'production';
+      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+      mockConfig.PROMETHEUS_BEARER_TOKEN = 'short';
+
+      const response = await app.inject({ method: 'GET', url: '/metrics' });
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error).toContain('min 16 chars');
+    });
+
+    it('serves metrics in production when valid token is provided', async () => {
+      process.env.NODE_ENV = 'production';
+      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+      mockConfig.PROMETHEUS_BEARER_TOKEN = 'a-valid-token-that-is-long-enough';
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/metrics',
+        headers: { authorization: 'Bearer a-valid-token-that-is-long-enough' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+    });
+
+    it('serves metrics in development without a token', async () => {
+      process.env.NODE_ENV = 'development';
+      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+      mockConfig.PROMETHEUS_BEARER_TOKEN = undefined;
+
+      const response = await app.inject({ method: 'GET', url: '/metrics' });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+    });
+
+    it('serves metrics in development with a valid token', async () => {
+      process.env.NODE_ENV = 'development';
+      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+      mockConfig.PROMETHEUS_BEARER_TOKEN = 'dev-token-1234567890';
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/metrics',
+        headers: { authorization: 'Bearer dev-token-1234567890' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+    });
   });
 
   it('caches sqlite aggregations for 15 seconds', async () => {

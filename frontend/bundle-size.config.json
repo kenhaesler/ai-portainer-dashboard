@@ -1,0 +1,7 @@
+{
+  "budgets": {
+    "total": { "maxGzipKB": 1450 },
+    "individual": { "maxGzipKB": 550 }
+  },
+  "allowedGrowthPercent": 10
+}
