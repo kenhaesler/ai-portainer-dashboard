@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { insertSpan } from './trace-store.js';
+import { queueSpanForExport } from './otel-exporter.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('trace-context');
@@ -72,23 +73,26 @@ export async function withSpan<T>(
   } finally {
     const endMs = Date.now();
     const durationMs = endMs - startMs;
+    const spanData = {
+      id: spanId,
+      trace_id: traceId,
+      parent_span_id: parentSpanId,
+      name,
+      kind,
+      status,
+      start_time: new Date(startMs).toISOString(),
+      end_time: new Date(endMs).toISOString(),
+      duration_ms: durationMs,
+      service_name: serviceName,
+      attributes: '{}',
+      trace_source: source,
+    };
     try {
-      insertSpan({
-        id: spanId,
-        trace_id: traceId,
-        parent_span_id: parentSpanId,
-        name,
-        kind,
-        status,
-        start_time: new Date(startMs).toISOString(),
-        end_time: new Date(endMs).toISOString(),
-        duration_ms: durationMs,
-        service_name: serviceName,
-        attributes: '{}',
-        trace_source: source,
-      });
+      insertSpan(spanData);
     } catch (insertErr) {
       log.warn({ err: insertErr, spanId, traceId }, 'Failed to insert child span');
     }
+    // Queue for OTLP export if exporter is enabled (no-op when disabled)
+    queueSpanForExport(spanData);
   }
 }

@@ -9,7 +9,7 @@
 # Usage:
 #   npm run loadtest:rest
 #
-# Env vars (set by docker-compose.loadtest.yml):
+# Env vars (set by docker/docker-compose.loadtest.yml):
 #   BASE_URL          http://backend:3051
 #   DASHBOARD_USER    admin
 #   DASHBOARD_PASS    changeme123

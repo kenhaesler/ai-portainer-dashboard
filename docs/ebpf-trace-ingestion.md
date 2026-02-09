@@ -248,7 +248,7 @@ curl -X POST http://localhost:3051/api/traces/otlp \
 | `backend/src/services/trace-store.ts` | `insertSpans()` batch insert, `getTraces()` with `source` filter |
 | `backend/src/db/migrations/017_trace_source.sql` | Adds `trace_source` column and index to `spans` table |
 | `backend/src/config/env.schema.ts` | `TRACES_INGESTION_ENABLED` and `TRACES_INGESTION_API_KEY` env vars |
-| `docker/beyla.yml` | Standalone Beyla Compose fragment for instrumenting dashboard-adjacent services |
+| `docker/beyla/beyla.yml` | Standalone Beyla Compose fragment for instrumenting dashboard-adjacent services |
 | `workloads/web-platform.yml` | Example workload stack with Beyla integrated |
 | `frontend/src/pages/trace-explorer.tsx` | Source filter dropdown in the Trace Explorer UI |
 | `frontend/src/hooks/use-traces.ts` | `source` parameter in `TracesOptions` |
@@ -273,10 +273,10 @@ See the `workloads/web-platform.yml` file for a complete example.
 
 ### Option B: Beyla as a dashboard sidecar
 
-Use the provided `docker/beyla.yml` Compose fragment:
+Use the provided `docker/beyla/beyla.yml` Compose fragment:
 
 ```bash
-docker compose -f docker-compose.dev.yml -f docker/beyla.yml up
+docker compose -f docker/docker-compose.dev.yml -f docker/beyla/beyla.yml up
 # Or with profile:
 docker compose --profile ebpf up
 ```

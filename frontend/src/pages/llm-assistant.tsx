@@ -9,6 +9,7 @@ import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { useMcpServers } from '@/hooks/use-mcp';
+import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',
@@ -197,8 +198,16 @@ export default function LlmAssistantPage() {
               </div>
             )}
 
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+            {messages.map((message, index) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                userQuery={
+                  message.role === 'assistant' && index > 0 && messages[index - 1].role === 'user'
+                    ? messages[index - 1].content
+                    : undefined
+                }
+              />
             ))}
 
             {/* Loading indicator - shown while waiting for response */}
@@ -312,9 +321,10 @@ interface MessageBubbleProps {
     timestamp: string;
     toolCalls?: ToolCallEvent[];
   };
+  userQuery?: string;
 }
 
-function MessageBubble({ message }: MessageBubbleProps) {
+function MessageBubble({ message, userQuery }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
 
@@ -374,9 +384,20 @@ function MessageBubble({ message }: MessageBubbleProps) {
             <MarkdownContent content={message.content} />
           )}
         </div>
-        <p className={`text-xs text-muted-foreground px-1 ${isUser ? 'text-right' : ''}`}>
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </p>
+        <div className={`flex items-center gap-3 px-1 ${isUser ? 'justify-end' : ''}`}>
+          <p className="text-xs text-muted-foreground">
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+          {!isUser && (
+            <LlmFeedbackButtons
+              feature="chat_assistant"
+              messageId={message.id}
+              responsePreview={message.content.slice(0, 2000)}
+              userQuery={userQuery?.slice(0, 1000)}
+              compact
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -208,7 +208,7 @@ export function ContainerMultiSelect({
         aria-expanded={isOpen}
         aria-label={`Select containers, ${selected.length} of ${containers.length} selected`}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm',
+          'inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs',
           'ring-offset-background transition-colors',
           'hover:bg-accent hover:text-accent-foreground',
           'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1',
@@ -273,15 +273,15 @@ export function ContainerMultiSelect({
           aria-multiselectable="true"
           aria-label="Container list"
           className={cn(
-            'absolute left-0 z-50 mt-1 w-full min-w-[280px] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md',
+            'container-multi-select-solid absolute left-0 z-50 mt-1 w-full min-w-[280px] overflow-hidden rounded-md border text-popover-foreground shadow-md',
             'animate-in fade-in-0 zoom-in-95 slide-in-from-top-2',
           )}
           onKeyDown={handleKeyDown}
         >
           {/* Search input */}
           <div className="border-b border-border p-2">
-            <div className="flex items-center gap-2 rounded-md border border-input bg-background px-2">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -289,14 +289,14 @@ export function ContainerMultiSelect({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search containers..."
                 aria-label="Search containers"
-                className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="container-multi-select-solid-input h-9 w-full rounded-md border border-input pl-10 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {search && (
                 <button
                   type="button"
                   onClick={() => setSearch('')}
                   aria-label="Clear search"
-                  className="rounded p-0.5 hover:bg-accent"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 hover:bg-accent"
                 >
                   <X className="h-3 w-3" />
                 </button>

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
+import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
 import { cn } from '@/lib/utils';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -193,8 +194,16 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
           )}
 
           {/* Message list */}
-          {messages.map((msg) => (
-            <CompactMessage key={msg.id} message={msg} />
+          {messages.map((msg, index) => (
+            <CompactMessage
+              key={msg.id}
+              message={msg}
+              userQuery={
+                msg.role === 'assistant' && index > 0 && messages[index - 1].role === 'user'
+                  ? messages[index - 1].content
+                  : undefined
+              }
+            />
           ))}
 
           {/* Thinking indicator */}
@@ -294,9 +303,10 @@ interface CompactMessageProps {
     content: string;
     toolCalls?: ToolCallEvent[];
   };
+  userQuery?: string;
 }
 
-function CompactMessage({ message }: CompactMessageProps) {
+function CompactMessage({ message, userQuery }: CompactMessageProps) {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
@@ -352,6 +362,15 @@ function CompactMessage({ message }: CompactMessageProps) {
             <CompactMarkdown content={message.content} />
           )}
         </div>
+        {!isUser && (
+          <LlmFeedbackButtons
+            feature="chat_assistant"
+            messageId={message.id}
+            responsePreview={message.content.slice(0, 2000)}
+            userQuery={userQuery?.slice(0, 1000)}
+            compact
+          />
+        )}
       </div>
     </div>
   );

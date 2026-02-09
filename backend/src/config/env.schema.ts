@@ -148,6 +148,13 @@ export const envSchema = z.object({
   TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
   TRACES_INGESTION_API_KEY: z.string().default(''),
 
+  // OpenTelemetry Span Export (OTLP/HTTP JSON)
+  OTEL_EXPORTER_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
+  OTEL_EXPORTER_ENDPOINT: z.string().url().optional(),
+  OTEL_EXPORTER_HEADERS: z.string().optional(),
+  OTEL_EXPORTER_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
+  OTEL_EXPORTER_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).max(60000).default(5000),
+
   // Log Shipping (Elasticsearch)
   LOG_SHIPPING_ENABLED: z
     .string()

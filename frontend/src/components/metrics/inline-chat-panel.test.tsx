@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { InlineChatPanel } from './inline-chat-panel';
 
 const mockSendMessage = vi.fn();
@@ -18,12 +19,35 @@ vi.mock('@/hooks/use-llm-chat', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-llm-feedback', () => ({
+  useSubmitFeedback: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 // Minimal mock for react-markdown (renders children as text)
 vi.mock('react-markdown', () => ({
   default: ({ children }: { children: string }) => <div data-testid="markdown">{children}</div>,
 }));
 vi.mock('rehype-highlight', () => ({ default: () => {} }));
 vi.mock('remark-gfm', () => ({ default: () => {} }));
+
+function createWrapper() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  };
+}
 
 const defaultContext = {
   containerId: 'abc123',
@@ -43,6 +67,7 @@ describe('InlineChatPanel', () => {
   it('renders nothing when closed', () => {
     render(
       <InlineChatPanel open={false} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
     expect(screen.queryByTestId('inline-chat-panel')).not.toBeInTheDocument();
   });
@@ -50,6 +75,7 @@ describe('InlineChatPanel', () => {
   it('renders panel when open', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
     expect(screen.getByTestId('inline-chat-panel')).toBeInTheDocument();
     expect(screen.getByText('Ask AI')).toBeInTheDocument();
@@ -59,6 +85,7 @@ describe('InlineChatPanel', () => {
   it('shows suggested questions when no messages', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
     expect(screen.getByText('Why is CPU usage high?')).toBeInTheDocument();
     expect(screen.getByText('Show recent error logs')).toBeInTheDocument();
@@ -69,6 +96,7 @@ describe('InlineChatPanel', () => {
   it('sends message with container context on suggestion click', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     fireEvent.click(screen.getByText('Why is CPU usage high?'));
@@ -88,6 +116,7 @@ describe('InlineChatPanel', () => {
   it('sends user input with context on form submit', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     const input = screen.getByPlaceholderText('Ask about this container...');
@@ -107,6 +136,7 @@ describe('InlineChatPanel', () => {
     const onClose = vi.fn();
     render(
       <InlineChatPanel open={true} onClose={onClose} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     fireEvent.click(screen.getByLabelText('Close chat panel'));
@@ -117,6 +147,7 @@ describe('InlineChatPanel', () => {
     const onClose = vi.fn();
     render(
       <InlineChatPanel open={true} onClose={onClose} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     fireEvent.keyDown(screen.getByTestId('inline-chat-panel'), { key: 'Escape' });
@@ -127,6 +158,7 @@ describe('InlineChatPanel', () => {
     const onClose = vi.fn();
     render(
       <InlineChatPanel open={true} onClose={onClose} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     fireEvent.click(screen.getByTestId('chat-backdrop'));
@@ -136,6 +168,7 @@ describe('InlineChatPanel', () => {
   it('renders as a dialog with accessible label', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     expect(screen.getByRole('dialog', { name: 'Ask AI' })).toBeInTheDocument();
@@ -144,6 +177,7 @@ describe('InlineChatPanel', () => {
   it('does not send empty messages', () => {
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     const input = screen.getByPlaceholderText('Ask about this container...');
@@ -170,6 +204,7 @@ describe('InlineChatPanel', () => {
 
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     expect(screen.getByText('Hello')).toBeInTheDocument();
@@ -191,6 +226,7 @@ describe('InlineChatPanel', () => {
 
     render(
       <InlineChatPanel open={true} onClose={vi.fn()} context={defaultContext} />,
+      { wrapper: createWrapper() },
     );
 
     const stopButton = screen.getByText('Stop');

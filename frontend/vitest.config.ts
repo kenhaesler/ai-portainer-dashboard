@@ -26,4 +26,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    fs: {
+      // Allow importing from scripts/ directory (used by bundle-size tests)
+      allow: ['.'],
+    },
+  },
 });

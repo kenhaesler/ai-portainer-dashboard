@@ -46,6 +46,7 @@ import { correlationRoutes } from './routes/correlations.js';
 import { ebpfCoverageRoutes } from './routes/ebpf-coverage.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { promptProfileRoutes } from './routes/prompt-profiles.js';
+import { llmFeedbackRoutes } from './routes/llm-feedback.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -134,6 +135,7 @@ export async function buildApp() {
   await app.register(ebpfCoverageRoutes);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
+  await app.register(llmFeedbackRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);

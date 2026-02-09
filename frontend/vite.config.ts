@@ -3,8 +3,22 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { execSync } from 'node:child_process';
+
+const appCommit = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: __dirname })
+      .toString()
+      .trim();
+  } catch {
+    return process.env.VITE_GIT_COMMIT || process.env.GIT_COMMIT || 'dev';
+  }
+})();
 
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_GIT_COMMIT': JSON.stringify(appCommit),
+  },
   plugins: [
     react({
       babel: {
@@ -65,6 +79,12 @@ export default defineConfig({
   },
   server: {
     port: 5273,
+    configureServer(server) {
+      server.middlewares.use('/__commit', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ commit: appCommit || 'dev' }));
+      });
+    },
     proxy: {
       '/api': {
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',

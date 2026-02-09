@@ -1,5 +1,5 @@
 # Security MCP Servers — NVD, Grype, Snyk
-# Usage: docker compose -f docker-compose.security-mcp.yml up -d --build
+# Usage: docker compose -f docker/docker-compose.security-mcp.yml up -d --build
 # Requires: dashboard-net network (created by main docker-compose)
 #
 # Register in dashboard Settings > MCP Servers:
@@ -10,7 +10,8 @@
 services:
   nvd-mcp:
     build:
-      context: ./tools/nvd-mcp
+      context: ../tools/nvd-mcp
+      dockerfile: ../docker/nvd-mcp/Dockerfile
     restart: unless-stopped
     ports:
       - "9090:8000"
@@ -28,7 +29,8 @@ services:
 
   grype-mcp:
     build:
-      context: ./tools/grype-mcp
+      context: ../tools/grype-mcp
+      dockerfile: ../docker/grype-mcp/Dockerfile
     restart: unless-stopped
     ports:
       - "8788:8000"
@@ -45,7 +47,8 @@ services:
 
   snyk-mcp:
     build:
-      context: ./tools/snyk-mcp
+      context: ../tools/snyk-mcp
+      dockerfile: ../docker/snyk-mcp/Dockerfile
     restart: unless-stopped
     ports:
       - "8789:8000"

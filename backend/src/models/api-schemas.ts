@@ -67,15 +67,35 @@ export const DependencyCheckSchema = z.object({
   error: z.string().optional(),
 });
 
+export const RedactedDependencyCheckSchema = z.object({
+  status: z.string(),
+});
+
 export const ReadinessResponseSchema = z.object({
   status: z.string(),
   checks: z.object({
-    database: DependencyCheckSchema,
-    portainer: DependencyCheckSchema,
-    ollama: DependencyCheckSchema,
+    database: RedactedDependencyCheckSchema,
+    metricsDb: RedactedDependencyCheckSchema,
+    portainer: RedactedDependencyCheckSchema,
+    ollama: RedactedDependencyCheckSchema,
+    redis: RedactedDependencyCheckSchema.optional(),
   }),
   timestamp: z.string(),
 });
+
+export const ReadinessDetailResponseSchema = z.object({
+  status: z.string(),
+  checks: z.object({
+    database: DependencyCheckSchema,
+    metricsDb: DependencyCheckSchema,
+    portainer: DependencyCheckSchema,
+    ollama: DependencyCheckSchema,
+    redis: DependencyCheckSchema.optional(),
+  }),
+  timestamp: z.string(),
+});
+
+// ─── Version schema ──────────────────────────────────────────────────
 
 // ─── Container schemas ──────────────────────────────────────────────
 export const NormalizedContainerSchema = z.object({

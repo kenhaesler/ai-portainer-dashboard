@@ -14,12 +14,12 @@
     "lint:bash": "bash scripts/lint-bash.sh",
     "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
     "test": "npm run test -w backend && npm run test -w frontend",
-    "loadtest:build": "docker compose -f docker-compose.loadtest.yml build",
-    "loadtest:rest": "docker compose -f docker-compose.loadtest.yml run --rm rest",
-    "loadtest:socketio": "docker compose -f docker-compose.loadtest.yml run --rm socketio",
-    "loadtest:bench": "docker compose -f docker-compose.loadtest.yml run --rm bench",
-    "loadtest:llm": "docker compose -f docker-compose.loadtest.yml run --rm llm",
-    "loadtest:all": "docker compose -f docker-compose.loadtest.yml run --rm all",
+    "loadtest:build": "docker compose -f docker/docker-compose.loadtest.yml build",
+    "loadtest:rest": "docker compose -f docker/docker-compose.loadtest.yml run --rm rest",
+    "loadtest:socketio": "docker compose -f docker/docker-compose.loadtest.yml run --rm socketio",
+    "loadtest:bench": "docker compose -f docker/docker-compose.loadtest.yml run --rm bench",
+    "loadtest:llm": "docker compose -f docker/docker-compose.loadtest.yml run --rm llm",
+    "loadtest:all": "docker compose -f docker/docker-compose.loadtest.yml run --rm all",
     "test:e2e": "npx playwright test"
   },
   "devDependencies": {
