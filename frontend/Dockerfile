@@ -15,8 +15,6 @@ RUN npm run build
 
 FROM dhi.io/nginx:1.28-alpine3.23 AS runtime
 
-USER root
-
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
 
 COPY --from=builder /app/dist /usr/share/nginx/html
