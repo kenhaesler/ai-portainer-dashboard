@@ -11,9 +11,9 @@ services:
       - NODE_ENV=production
       - PORT=3051
       - SQLITE_PATH=/app/data/dashboard.db
-      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin}
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme123}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production-must-be-at-least-32-chars}
+      - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:?DASHBOARD_USERNAME is required}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?DASHBOARD_PASSWORD is required}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required (min 32 chars)}
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
       - PORTAINER_VERIFY_SSL=${PORTAINER_VERIFY_SSL:-false}
@@ -30,7 +30,7 @@ services:
       - CACHE_ENABLED=${CACHE_ENABLED:-true}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-900}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-aidash:cache:}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     healthcheck:
@@ -91,9 +91,9 @@ services:
       --maxmemory-samples 5
       --save ""
       --appendonly no
-      --requirepass ${REDIS_PASSWORD:-changeme-redis}
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme-redis}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
       interval: 15s
       timeout: 5s
       retries: 5
