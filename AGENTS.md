@@ -211,7 +211,7 @@ Purple (purple-500):  AI-generated insight, recommendation
 ## Code Quality Standards
 
 - **Readability first** — Clear naming, logical grouping, consistent formatting. Prefer explicit over clever.
-- **Document all changes** — Update relevant documentation when behavior changes.
+- **Document all changes** — Every feature implementation must include documentation updates in the same PR. Update `docs/architecture.md` (route table, project structure, Mermaid diagrams), `.env.example` (new env vars), and `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` (new build commands or workflow rules). Do not merge code without corresponding docs.
 - **Test coverage required** — See "Mandatory Rules" section above. This is non-negotiable.
 - ESLint config is in each workspace's `eslint.config.js`. TypeScript strict mode is on in both.
 - Do not add unnecessary abstractions, over-engineer, or add features beyond what is requested.
