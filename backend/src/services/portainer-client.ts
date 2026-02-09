@@ -3,6 +3,7 @@ import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
+import { CircuitBreaker } from './circuit-breaker.js';
 import {
   EndpointSchema, ContainerSchema, StackSchema,
   ContainerStatsSchema, NetworkSchema, ImageSchema,
@@ -24,10 +25,11 @@ function getLimiter(): ReturnType<typeof pLimit> {
   return limiter;
 }
 
-/** Exported for testing — resets the cached limiter and dispatcher */
+/** Exported for testing — resets the cached limiter, dispatcher, and circuit breaker */
 export function _resetClientState(): void {
   limiter = undefined;
   pooledDispatcher = undefined;
+  breaker = undefined;
 }
 
 // Connection-pooled dispatcher (used for both SSL-bypass and normal connections)
@@ -55,6 +57,39 @@ class PortainerError extends Error {
     super(message);
     this.name = 'PortainerError';
   }
+}
+
+/**
+ * Only 5xx and network errors should trip the circuit breaker.
+ * 4xx errors (auth, not-found, rate-limit) are client-side issues
+ * and should NOT count as infrastructure failures.
+ */
+function isPortainerFailure(error: unknown): boolean {
+  if (error instanceof PortainerError) {
+    return error.kind === 'server' || error.kind === 'network';
+  }
+  // Non-PortainerError exceptions are network-level failures (ECONNREFUSED, etc.)
+  return true;
+}
+
+// Circuit breaker — lazily initialized from config
+let breaker: CircuitBreaker | undefined;
+function getBreaker(): CircuitBreaker {
+  if (!breaker) {
+    const config = getConfig();
+    breaker = new CircuitBreaker({
+      name: 'portainer-api',
+      failureThreshold: config.PORTAINER_CB_FAILURE_THRESHOLD,
+      resetTimeoutMs: config.PORTAINER_CB_RESET_TIMEOUT_MS,
+      isFailure: isPortainerFailure,
+    });
+  }
+  return breaker;
+}
+
+/** Returns the current circuit breaker stats (for health/status endpoints). */
+export function getCircuitBreakerStats() {
+  return getBreaker().getStats();
 }
 
 const SENSITIVE_LABEL_KEYS = new Set([
@@ -140,7 +175,7 @@ async function portainerFetch<T>(
   const { method = 'GET' } = options;
   return getLimiter()(() =>
     withSpan(`${method} ${path}`, 'portainer-api', 'client', () =>
-      portainerFetchInner<T>(path, options),
+      getBreaker().execute(() => portainerFetchInner<T>(path, options)),
     ),
   );
 }
