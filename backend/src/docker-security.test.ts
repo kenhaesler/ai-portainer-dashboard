@@ -54,7 +54,11 @@ describe('Dockerfile security best practices', () => {
     });
 
     it('runs as non-root user', () => {
-      expect(content).toMatch(/^USER\s+\S+/m);
+      // DHI images (dhi.io/nginx) run as non-root by default (UID 65532),
+      // so an explicit USER directive is not required when using them.
+      const hasUserDirective = /^USER\s+\S+/m.test(content);
+      const usesDhiNginx = /dhi\.io\/nginx/m.test(content);
+      expect(hasUserDirective || usesDhiNginx).toBe(true);
     });
 
     it('has a healthcheck', () => {
@@ -105,6 +109,45 @@ describe('Dockerfile security best practices', () => {
     it('has a healthcheck', () => {
       expect(content).toMatch(/^HEALTHCHECK\s/m);
     });
+  });
+});
+
+describe('Docker Hardened Images (DHI) consistency', () => {
+  const backendProd = readFile('backend/Dockerfile');
+  const backendDev = readFile('backend/Dockerfile.dev');
+  const frontendProd = readFile('frontend/Dockerfile');
+  const frontendDev = readFile('frontend/Dockerfile.dev');
+
+  it('backend production uses DHI node image', () => {
+    expect(backendProd).toMatch(/FROM\s+dhi\.io\/node:/m);
+  });
+
+  it('backend dev uses DHI node image', () => {
+    expect(backendDev).toMatch(/FROM\s+dhi\.io\/node:/m);
+  });
+
+  it('frontend production uses DHI images', () => {
+    expect(frontendProd).toMatch(/FROM\s+dhi\.io\/node:/m);
+    expect(frontendProd).toMatch(/FROM\s+dhi\.io\/nginx:/m);
+  });
+
+  it('frontend dev uses DHI node image', () => {
+    expect(frontendDev).toMatch(/FROM\s+dhi\.io\/node:/m);
+  });
+
+  it('dev and production use same DHI node base image', () => {
+    const extractNodeTag = (content: string) => {
+      const match = content.match(/FROM\s+dhi\.io\/node:(\S+)/);
+      return match?.[1];
+    };
+    const backendProdTag = extractNodeTag(backendProd);
+    const backendDevTag = extractNodeTag(backendDev);
+    const frontendProdTag = extractNodeTag(frontendProd);
+    const frontendDevTag = extractNodeTag(frontendDev);
+
+    expect(backendProdTag).toBe(backendDevTag);
+    expect(frontendProdTag).toBe(frontendDevTag);
+    expect(backendProdTag).toBe(frontendProdTag);
   });
 });
 

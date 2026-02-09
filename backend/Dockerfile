@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM dhi.io/node:22-alpine3.22-dev AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -7,10 +7,9 @@ COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM dhi.io/node:22-alpine3.22-dev AS runtime
 
-RUN apk add --no-cache dumb-init wget tcpdump && \
-    addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
+RUN apk add --no-cache dumb-init wget tcpdump
 
 WORKDIR /app
 COPY --from=builder /app/package.json /app/package-lock.json ./
@@ -18,9 +17,9 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist/ dist/
 COPY --from=builder /app/src/db/migrations/ dist/db/migrations/
 
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app
+RUN mkdir -p /app/data && chown -R node:node /app
 
-USER appuser
+USER node
 
 ENV NODE_ENV=production
 ENV PORT=3051
