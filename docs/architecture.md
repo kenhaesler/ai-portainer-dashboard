@@ -290,6 +290,7 @@ ai-portainer-dashboard/
 │       │   ├── monitoring.ts       #   Insights & acknowledgments
 │       │   ├── remediation.ts      #   Action approval workflow
 │       │   ├── settings.ts         #   Configuration & audit log
+│       │   ├── security-regression.test.ts # Auth sweep, injection vectors, rate limits
 │       │   └── ...                 #   Dashboard, endpoints, images, etc.
 │       ├── services/               # Business logic
 │       │   ├── portainer-client.ts #   Portainer API (retry + backoff)
