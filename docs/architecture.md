@@ -304,6 +304,7 @@ ai-portainer-dashboard/
 │       │   ├── incident-summarizer.ts # LLM incident summaries
 │       │   ├── monitoring-service.ts#  Monitoring cycle orchestration
 │       │   ├── metrics-collector.ts#   CPU/memory collection
+│       │   ├── otel-exporter.ts   #   OTLP/HTTP JSON span export to external collectors
 │       │   └── ...                 #   Sessions, settings, audit, backup
 │       ├── sockets/                # Socket.IO namespaces
 │       │   ├── llm-chat.ts         #   /llm — streaming chat
