@@ -274,7 +274,7 @@ sequenceDiagram
 | **Backend** | Fastify 5, TypeScript 5.7, Socket.IO 4, Zod, Jose (JWT), bcrypt |
 | **Database** | SQLite (better-sqlite3, WAL mode) |
 | **AI** | Ollama (local LLM), optional OpenWebUI support |
-| **Logging** | Pino (backend), optional Elasticsearch/Kibana integration |
+| **Logging** | Pino (backend), optional Elasticsearch log shipping via `_bulk` API (batched, retry with backoff) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions CI |
 | **Testing** | Vitest, Testing Library, jsdom |
 
@@ -320,7 +320,7 @@ ai-portainer-dashboard/
 │       │   ├── sqlite.ts           #   Database init (WAL mode)
 │       │   └── migrations/         #   7 SQL migrations
 │       ├── models/                 # Zod schemas & DB queries
-│       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino)
+│       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino + ES transport)
 │       └── plugins/                # Fastify plugins
 ├── frontend/                       # React SPA
 │   ├── scripts/
