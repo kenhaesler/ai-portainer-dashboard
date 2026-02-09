@@ -2,7 +2,7 @@
 
 ## Use with Docker Compose (repo stack)
 
-`kali-mcp` is already included in `docker-compose.dev.yml` and `docker-compose.local.yml`.
+`kali-mcp` is already included in `docker/docker-compose.dev.yml` and `docker/docker-compose.yml`.
 
 1. Set command policy in `.env`:
 
@@ -17,7 +17,7 @@ KALI_MCP_ALLOWED_COMMANDS=whoami,id,uname,ip,df,free,ps,ss,ls,cat
 2. Start service with the stack:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d --build kali-mcp
+docker compose -f docker/docker-compose.dev.yml up -d --build kali-mcp
 ```
 
 3. Register in Claude Code:
@@ -80,7 +80,7 @@ Return pass/fail checklist.
 ## Build (standalone)
 
 ```bash
-docker build -t kali-mcp:latest tools/kali-mcp
+docker build -t kali-mcp:latest -f docker/kali-mcp/Dockerfile tools/kali-mcp
 ```
 
 ## Run

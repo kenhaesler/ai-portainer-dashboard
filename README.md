@@ -60,7 +60,7 @@ docker compose up -d
 **Development** (hot-reload on ports 5273 + 3051):
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
 **Without Docker:**
@@ -142,7 +142,7 @@ npm run test:watch         # Watch mode
 Docker development (preferred):
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
 See [Test Workloads](docs/test-workloads.md) for deploying realistic test containers.

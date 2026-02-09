@@ -1,6 +1,6 @@
 # Grafana Beyla - eBPF auto-instrumentation sidecar
 # Usage:
-#   docker compose -f docker-compose.dev.yml -f docker/beyla.yml up
+#   docker compose -f docker/docker-compose.dev.yml -f docker/beyla/beyla.yml up
 #   OR with profile: docker compose --profile ebpf up
 #
 # Prerequisites:

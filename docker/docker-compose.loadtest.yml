@@ -1,7 +1,7 @@
 ## Load Testing Suite
 #
 # Requires the dev stack to be running first:
-#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker/docker-compose.dev.yml up -d
 #
 # Build once, then run any test:
 #   npm run loadtest:build
@@ -12,10 +12,12 @@
 #   npm run loadtest:all
 #
 # Or directly:
-#   docker compose -f docker-compose.loadtest.yml run --rm rest
+#   docker compose -f docker/docker-compose.loadtest.yml run --rm rest
 
 x-loadtest: &loadtest
-  build: ./loadtests
+  build:
+    context: ../loadtests
+    dockerfile: ../docker/loadtests/Dockerfile
   image: aidash-loadtest
   environment: &loadtest-env
     BASE_URL: http://backend:3051

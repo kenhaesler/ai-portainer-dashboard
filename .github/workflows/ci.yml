@@ -133,7 +133,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Start application
-        run: docker compose -f docker-compose.dev.yml up -d --wait
+        run: docker compose -f docker/docker-compose.dev.yml up -d --wait
         env:
           DASHBOARD_USERNAME: admin
           DASHBOARD_PASSWORD: changeme123
@@ -155,4 +155,4 @@ jobs:
 
       - name: Stop application
         if: always()
-        run: docker compose -f docker-compose.dev.yml down
+        run: docker compose -f docker/docker-compose.dev.yml down

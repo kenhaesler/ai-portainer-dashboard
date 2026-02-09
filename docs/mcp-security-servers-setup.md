@@ -12,7 +12,7 @@ Three security-focused MCP servers for vulnerability scanning and CVE intelligen
 
 ### Required
 
-- Main dashboard stack running (`docker compose -f docker-compose.dev.yml up -d`) — this creates the `dashboard-net` network
+- Main dashboard stack running (`docker compose -f docker/docker-compose.dev.yml up -d`) — this creates the `dashboard-net` network
 
 ### Optional API Keys
 
@@ -32,10 +32,10 @@ SNYK_TOKEN=your-token-here
 
 ```bash
 # 1. Start the main dashboard stack (creates dashboard-net)
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker/docker-compose.dev.yml up -d
 
 # 2. Start security MCP servers
-docker compose -f docker-compose.security-mcp.yml up -d --build
+docker compose -f docker/docker-compose.security-mcp.yml up -d --build
 
 # 3. Verify all servers respond
 curl http://localhost:9090/mcp    # NVD
@@ -121,13 +121,13 @@ For our nginx:latest container:
 ## Stopping the Servers
 
 ```bash
-docker compose -f docker-compose.security-mcp.yml down
+docker compose -f docker/docker-compose.security-mcp.yml down
 ```
 
 To also remove built images:
 
 ```bash
-docker compose -f docker-compose.security-mcp.yml down --rmi local
+docker compose -f docker/docker-compose.security-mcp.yml down --rmi local
 ```
 
 ## Resource Limits
@@ -161,5 +161,5 @@ Ensure the container has internet access. If behind a proxy, set `HTTP_PROXY`/`H
 Start the main dashboard stack first — it creates the `dashboard-net` network:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker/docker-compose.dev.yml up -d
 ```

@@ -332,8 +332,29 @@ ai-portainer-dashboard/
 │       └── lib/                    # API client, socket manager, CSV export
 ├── scripts/
 │   └── deploy-workload.sh          # Test workload deployment script
-├── docker-compose.yml              # Production (Nginx + Node)
-├── docker-compose.dev.yml          # Development (hot-reload)
+├── docker/                          # All Dockerfiles and compose files
+│   ├── docker-compose.yml          # Production (Nginx + Node)
+│   ├── docker-compose.dev.yml      # Development (hot-reload)
+│   ├── docker-compose.loadtest.yml # Load testing suite
+│   ├── docker-compose.security-mcp.yml # Security MCP servers
+│   ├── backend/
+│   │   ├── Dockerfile              # Backend production image
+│   │   └── Dockerfile.dev          # Backend dev image (hot-reload)
+│   ├── frontend/
+│   │   ├── Dockerfile              # Frontend production image
+│   │   └── Dockerfile.dev          # Frontend dev image (hot-reload)
+│   ├── loadtests/
+│   │   └── Dockerfile              # Load testing image
+│   ├── kali-mcp/
+│   │   └── Dockerfile              # Kali MCP server image
+│   ├── grype-mcp/
+│   │   └── Dockerfile              # Grype MCP server image
+│   ├── nvd-mcp/
+│   │   └── Dockerfile              # NVD MCP server image
+│   ├── snyk-mcp/
+│   │   └── Dockerfile              # Snyk MCP server image
+│   └── beyla/
+│       └── beyla.yml               # eBPF auto-instrumentation sidecar
 ├── workloads/                       # Multi-stack test workload compose files
 │   ├── data-services.yml            #   Postgres, Redis, RabbitMQ
 │   ├── web-platform.yml             #   Web tier + API gateway + cron

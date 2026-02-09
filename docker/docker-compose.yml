@@ -1,8 +1,8 @@
 services:
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: ../backend
+      dockerfile: ../docker/backend/Dockerfile
     ports:
       - "3051:3051"
     extra_hosts:
@@ -57,8 +57,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: ../frontend
+      dockerfile: ../docker/frontend/Dockerfile
     ports:
       - "8080:8080"
     healthcheck:
@@ -102,8 +102,8 @@ services:
 
   kali-mcp:
     build:
-      context: ./tools/kali-mcp
-      dockerfile: Dockerfile
+      context: ../tools/kali-mcp
+      dockerfile: ../docker/kali-mcp/Dockerfile
     restart: unless-stopped
     ports:
       - "8787:8000"
