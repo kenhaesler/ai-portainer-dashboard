@@ -1,4 +1,6 @@
-FROM node:22-alpine AS builder
+# syntax=docker/dockerfile:1
+# Build stage — compile React app with Vite
+FROM dhi.io/node:24-alpine3.23-dev AS builder
 
 ARG VITE_API_URL=""
 ARG VITE_SOCKET_URL=""
@@ -13,21 +15,24 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 RUN npm run build
 
-FROM nginx:1.27-alpine AS runtime
+# Tools stage — grab wget for healthcheck
+FROM dhi.io/nginx:1.29-alpine3.23-dev AS tools
+RUN apk add --no-cache wget
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
+# Runtime stage — hardened nginx serves static files
+FROM dhi.io/nginx:1.29-alpine3.23 AS runtime
+
+# Copy wget for healthcheck from tools stage
+COPY --from=tools /usr/bin/wget /usr/bin/wget
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/nginx.conf
 
-RUN chown -R appuser:appgroup /usr/share/nginx/html /var/cache/nginx /var/log/nginx \
-    && touch /tmp/nginx.pid && chown appuser:appgroup /tmp/nginx.pid
-
-USER appuser
-
 EXPOSE 8080
 
+# DHI nginx runs as nginx user by default — no USER directive needed
+# DHI nginx entrypoint is already [nginx], so CMD provides only the arguments
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --spider --quiet http://127.0.0.1:8080/ || exit 1
+  CMD ["/usr/bin/wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["-g", "daemon off;"]
