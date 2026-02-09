@@ -10,15 +10,25 @@ COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
 
+# Separate stage to build production dependencies
+FROM dhi.io/node:24-alpine3.23-dev AS prod-deps
+
+# Install build dependencies for native modules (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
 FROM dhi.io/node:24-alpine3.23-dev AS runtime
 
-# Install build dependencies for native modules (better-sqlite3) and runtime tools
-RUN apk add --no-cache python3 make g++ dumb-init wget tcpdump && \
+RUN apk add --no-cache dumb-init wget tcpdump && \
     addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
 
 WORKDIR /app
 COPY --from=builder /app/package.json /app/package-lock.json ./
-RUN npm ci --omit=dev
+# Copy production node_modules with pre-built native bindings from prod-deps
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist/ dist/
 COPY --from=builder /app/src/db/migrations/ dist/db/migrations/
 
