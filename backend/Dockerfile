@@ -12,7 +12,8 @@ RUN npm run build
 
 FROM dhi.io/node:24-alpine3.23-dev AS runtime
 
-RUN apk add --no-cache dumb-init wget tcpdump && \
+# Install build dependencies for native modules (better-sqlite3) and runtime tools
+RUN apk add --no-cache python3 make g++ dumb-init wget tcpdump && \
     addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
 
 WORKDIR /app
