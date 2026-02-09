@@ -276,7 +276,7 @@ sequenceDiagram
 | **AI** | Ollama (local LLM), optional OpenWebUI support |
 | **Logging** | Pino (backend), optional Elasticsearch log shipping via `_bulk` API (batched, retry with backoff) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions CI |
-| **Testing** | Vitest, Testing Library, jsdom |
+| **Testing** | Vitest, Testing Library, jsdom, Playwright (E2E) |
 
 ## Project Structure
 
@@ -365,6 +365,14 @@ ai-portainer-dashboard/
 │   │   └── Dockerfile              # Snyk MCP server image
 │   └── beyla/
 │       └── beyla.yml               # eBPF auto-instrumentation sidecar
+├── e2e/                               # Playwright E2E tests
+│   ├── auth.spec.ts                   #   Login, logout, session redirect
+│   ├── navigation.spec.ts            #   Sidebar navigation, breadcrumbs, 404
+│   ├── containers.spec.ts            #   Container list, search, detail nav
+│   ├── settings.spec.ts              #   Theme persistence, tab navigation
+│   ├── global-setup.ts               #   Auth state caching (→ .auth/user.json)
+│   └── helpers/
+│       └── login.ts                   #   Shared login helper
 ├── workloads/                       # Multi-stack test workload compose files
 │   ├── data-services.yml            #   Postgres, Redis, RabbitMQ
 │   ├── web-platform.yml             #   Web tier + API gateway + cron
