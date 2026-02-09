@@ -23,6 +23,18 @@ const WEAK_DASHBOARD_PASSWORDS = new Set([
   'password123',
   'password12345',
 ]);
+const WEAK_SERVICE_PASSWORDS = new Set([
+  'changeme',
+  'changeme-redis',
+  'changeme-timescale',
+  'changeme123',
+  'password',
+  'password123',
+  'secret',
+  'redis',
+  'postgres',
+  'default',
+]);
 
 function validateJwtSecret(secret: string): void {
   if (WEAK_JWT_SECRETS.has(secret.toLowerCase())) {
@@ -79,6 +91,30 @@ function validateDashboardCredentials(username: string, password: string): void 
   }
 }
 
+function validateServicePasswords(data: EnvConfig): void {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  if (data.REDIS_PASSWORD && WEAK_SERVICE_PASSWORDS.has(data.REDIS_PASSWORD.toLowerCase())) {
+    throw new Error(
+      'Invalid environment configuration:\n  REDIS_PASSWORD: weak Redis password is not allowed in production'
+    );
+  }
+
+  // Extract password from TIMESCALE_URL (format: postgresql://user:password@host:port/db)
+  try {
+    const url = new URL(data.TIMESCALE_URL);
+    const tsPassword = decodeURIComponent(url.password);
+    if (tsPassword && WEAK_SERVICE_PASSWORDS.has(tsPassword.toLowerCase())) {
+      throw new Error(
+        'Invalid environment configuration:\n  TIMESCALE_URL: weak TimescaleDB password is not allowed in production'
+      );
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('TIMESCALE_URL')) throw e;
+    // URL parsing failed — non-standard format, skip password check
+  }
+}
+
 export function getConfig(): EnvConfig {
   if (!config) {
     const result = envSchema.safeParse(process.env);
@@ -91,6 +127,7 @@ export function getConfig(): EnvConfig {
     validateJwtSecret(result.data.JWT_SECRET);
     validateJwtAlgorithm(result.data);
     validateDashboardCredentials(result.data.DASHBOARD_USERNAME, result.data.DASHBOARD_PASSWORD);
+    validateServicePasswords(result.data);
     validatePrometheusToken(result.data);
     config = result.data;
   }
