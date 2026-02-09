@@ -295,6 +295,7 @@ ai-portainer-dashboard/
 │       │   ├── portainer-client.ts #   Portainer API (retry + backoff)
 │       │   ├── portainer-cache.ts  #   Response caching (TTL)
 │       │   ├── llm-client.ts       #   Ollama LLM integration
+│       │   ├── prompt-guard.ts    #   3-layer prompt injection defense (regex + heuristic + output)
 │       │   ├── adaptive-anomaly-detector.ts # Multi-method anomaly detection
 │       │   ├── isolation-forest.ts #   Isolation Forest ML algorithm
 │       │   ├── isolation-forest-detector.ts # IF model caching + detection
@@ -363,3 +364,13 @@ ai-portainer-dashboard/
 │   └── issue-simulators.yml         #   Issue containers + heavy-load stress
 └── .github/workflows/ci.yml        # CI: typecheck → lint → test → build
 ```
+
+---
+
+## External Agent System Architecture
+
+For documentation related to the underlying AI agent framework, which includes components like the `ModularStrategy`, multi-strategy code execution environments, and the generic model abstraction layer, please refer to the separate architecture document:
+
+-   **[Agent System Architecture (`/ARCHITECTURE.md`)](<../ARCHITECTURE.md>)**
+
+*Note: This document describes the general-purpose agent framework, while the documentation above describes the specific architecture of the AI Portainer Dashboard application.*
