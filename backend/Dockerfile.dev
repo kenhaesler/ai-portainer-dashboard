@@ -1,6 +1,7 @@
 FROM dhi.io/node:24-alpine3.23-dev
 
-RUN apk add --no-cache dumb-init su-exec tcpdump
+# Install build dependencies for native modules (better-sqlite3) and runtime tools
+RUN apk add --no-cache python3 make g++ dumb-init su-exec tcpdump wget
 
 WORKDIR /app
 

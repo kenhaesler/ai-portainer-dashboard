@@ -15,17 +15,8 @@ RUN npm run build
 
 FROM dhi.io/nginx:1.28-alpine3.23 AS runtime
 
-USER root
-
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 1001
-
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/nginx.conf
-
-RUN chown -R appuser:appgroup /usr/share/nginx/html /var/cache/nginx /var/log/nginx \
-    && touch /tmp/nginx.pid && chown appuser:appgroup /tmp/nginx.pid
-
-USER appuser
 
 EXPOSE 8080
 
