@@ -382,6 +382,17 @@ describe('llm-client', () => {
       const expected = Buffer.from('admin:secret').toString('base64');
       expect(result).toEqual({ Authorization: `Basic ${expected}` });
     });
+
+    it('strips non-Latin1 characters from token to prevent ByteString errors', () => {
+      // Simulate a token with invisible Unicode characters (e.g. copy-pasted from web UI)
+      const tokenWithUnicode = 'sk-test\u204Akey';
+      const result = getAuthHeaders(tokenWithUnicode);
+      expect(result).toEqual({ Authorization: 'Bearer sk-testkey' });
+    });
+
+    it('returns empty object when token is entirely non-Latin1', () => {
+      expect(getAuthHeaders('\u204A\u2050')).toEqual({});
+    });
   });
 
   describe('ensureModel', () => {
