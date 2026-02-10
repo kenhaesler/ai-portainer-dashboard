@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, getLlmDispatcher } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -203,7 +203,7 @@ async function streamLlmCall(
   let fullResponse = '';
 
   if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-    const response = await fetch(llmConfig.customEndpointUrl, {
+    const response = await llmFetch(llmConfig.customEndpointUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -216,8 +216,7 @@ async function streamLlmCall(
         max_tokens: llmConfig.maxTokens,
       }),
       signal,
-      dispatcher: getLlmDispatcher(),
-    } as RequestInit);
+    });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -286,7 +285,7 @@ async function streamOllamaRawCall(
   signal?: AbortSignal,
 ): Promise<string> {
   const baseUrl = llmConfig.ollamaUrl.replace(/\/$/, '');
-  const response = await fetch(`${baseUrl}/api/chat`, {
+  const response = await llmFetch(`${baseUrl}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -299,8 +298,7 @@ async function streamOllamaRawCall(
       options: { num_predict: llmConfig.maxTokens },
     }),
     signal,
-    dispatcher: getLlmDispatcher(),
-  } as RequestInit);
+  });
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);

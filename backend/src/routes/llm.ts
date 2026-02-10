@@ -11,7 +11,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, getLlmDispatcher } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -94,7 +94,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       let fullResponse = '';
 
       if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await fetch(llmConfig.customEndpointUrl, {
+        const response = await llmFetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -106,8 +106,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
             stream: false,
             format: 'json',
           }),
-          dispatcher: getLlmDispatcher(),
-        } as RequestInit);
+        });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -216,11 +215,10 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const baseUrl = new URL(url);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
 
-        const response = await fetch(modelsUrl, {
+        const response = await llmFetch(modelsUrl, {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
           signal: AbortSignal.timeout(10_000),
-          dispatcher: getLlmDispatcher(),
-        } as RequestInit);
+        });
 
         if (!response.ok) {
           return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
@@ -280,7 +278,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       let fullResponse = '';
 
       if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await fetch(llmConfig.customEndpointUrl, {
+        const response = await llmFetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -293,8 +291,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
             ...(temperature !== undefined ? { temperature } : {}),
           }),
           signal: AbortSignal.timeout(60_000),
-          dispatcher: getLlmDispatcher(),
-        } as RequestInit);
+        });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -411,7 +408,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
           ...getAuthHeaders(llmConfig.customEndpointToken),
         };
 
-        const response = await fetch(modelsUrl, { headers, dispatcher: getLlmDispatcher() } as RequestInit);
+        const response = await llmFetch(modelsUrl, { headers });
         if (response.ok) {
           const data = await response.json() as { data?: Array<{ id: string }> };
           return {
