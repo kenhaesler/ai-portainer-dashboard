@@ -22,7 +22,7 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
       - LLM_OPENAI_ENDPOINT=${LLM_OPENAI_ENDPOINT:-}
-      - OLLAMA_BEARER_TOKEN=${OLLAMA_BEARER_TOKEN:-}
+      - LLM_BEARER_TOKEN=${LLM_BEARER_TOKEN:-}
       - LLM_VERIFY_SSL=${LLM_VERIFY_SSL:-true}
       - NODE_OPTIONS=--use-system-ca
       - MONITORING_ENABLED=${MONITORING_ENABLED:-true}

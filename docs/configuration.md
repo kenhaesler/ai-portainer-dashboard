@@ -24,7 +24,7 @@ All configuration is done via environment variables. Copy [`.env.example`](../.e
 | `OLLAMA_BASE_URL` | Ollama server URL (used by native Ollama SDK) | `http://host.docker.internal:11434` |
 | `OLLAMA_MODEL` | LLM model name | `llama3.2` |
 | `LLM_OPENAI_ENDPOINT` | Custom OpenAI-compatible chat completions endpoint (e.g. OpenWebUI, LiteLLM). When set, bypasses the Ollama SDK and uses direct HTTP requests | *(optional)* |
-| `OLLAMA_BEARER_TOKEN` | Auth token or `user:pass` for Basic auth (used for both Ollama and custom endpoints) | *(optional)* |
+| `LLM_BEARER_TOKEN` | Auth token or `user:pass` for Basic auth (used for both Ollama and custom endpoints) | *(optional)* |
 | `LLM_VERIFY_SSL` | Verify TLS certificates for LLM endpoints. Set to `false` for self-signed or internal CA certificates. When `false`, sets `NODE_TLS_REJECT_UNAUTHORIZED=0` globally at startup and creates an undici Agent with `rejectUnauthorized: false` | `true` |
 | `LLM_MAX_TOOL_ITERATIONS` | Maximum MCP tool call iterations per LLM request | `10` |
 
