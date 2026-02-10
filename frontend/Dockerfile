@@ -23,8 +23,10 @@ RUN apk add --no-cache wget
 # Runtime stage — hardened nginx serves static files
 FROM dhi.io/nginx:1.29-alpine3.23 AS runtime
 
-# Copy wget for healthcheck from tools stage
+# Copy wget + shared libraries needed on the minimal runtime image
 COPY --from=tools /usr/bin/wget /usr/bin/wget
+COPY --from=tools /usr/lib/libidn2* /usr/lib/
+COPY --from=tools /usr/lib/libunistring* /usr/lib/
 
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
