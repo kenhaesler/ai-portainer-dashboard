@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chatStream, isOllamaAvailable, ensureModel } from './llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 
 // Mock settings-store
@@ -207,6 +207,92 @@ describe('llm-client', () => {
       fetchSpy.mockRestore();
     });
 
+    it('strips SSE "data: " prefix from OpenAI-compatible streaming responses', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'gpt-4',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
+        customEndpointToken: 'sk-test',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      // Simulate OpenAI SSE format: "data: {json}\n\ndata: {json}\n\ndata: [DONE]\n\n"
+      const ssePayload = [
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+        '',
+        'data: {"choices":[{"delta":{"content":" world"}}]}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n');
+
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(ssePayload));
+          controller.close();
+        },
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      const chunks: string[] = [];
+      const result = await chatStream(
+        [{ role: 'user', content: 'test' }],
+        'system prompt',
+        (chunk) => chunks.push(chunk),
+      );
+
+      expect(result).toBe('Hello world');
+      expect(chunks).toEqual(['Hello', ' world']);
+
+      fetchSpy.mockRestore();
+    });
+
+    it('handles mixed SSE formats (with and without data: prefix)', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'gpt-4',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
+        customEndpointToken: '',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      // Some APIs send raw NDJSON without data: prefix
+      const payload = [
+        '{"choices":[{"delta":{"content":"Raw"}}]}',
+        'data: {"choices":[{"delta":{"content":" SSE"}}]}',
+      ].join('\n');
+
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(payload));
+          controller.close();
+        },
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      const chunks: string[] = [];
+      const result = await chatStream(
+        [{ role: 'user', content: 'test' }],
+        'system prompt',
+        (chunk) => chunks.push(chunk),
+      );
+
+      expect(result).toBe('Raw SSE');
+      expect(chunks).toEqual(['Raw', ' SSE']);
+
+      fetchSpy.mockRestore();
+    });
+
     it('translates ByteString error to helpful message', async () => {
       mockGetConfig.mockReturnValue({
         ollamaUrl: 'http://localhost:11434',
@@ -278,6 +364,23 @@ describe('llm-client', () => {
       expect(result).toBe(false);
 
       vi.restoreAllMocks();
+    });
+  });
+
+  describe('getAuthHeaders', () => {
+    it('returns empty object for undefined/empty token', () => {
+      expect(getAuthHeaders(undefined)).toEqual({});
+      expect(getAuthHeaders('')).toEqual({});
+    });
+
+    it('returns Bearer header for plain token', () => {
+      expect(getAuthHeaders('sk-my-token')).toEqual({ Authorization: 'Bearer sk-my-token' });
+    });
+
+    it('returns Basic header for user:pass format', () => {
+      const result = getAuthHeaders('admin:secret');
+      const expected = Buffer.from('admin:secret').toString('base64');
+      expect(result).toEqual({ Authorization: `Basic ${expected}` });
     });
   });
 
