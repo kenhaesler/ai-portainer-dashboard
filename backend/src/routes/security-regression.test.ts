@@ -48,7 +48,7 @@ vi.mock('../config/index.js', () => ({
     PORTAINER_MAX_CONNECTIONS: 20,
     OLLAMA_BASE_URL: 'http://localhost:11434',
     OLLAMA_MODEL: 'llama3.2',
-    OLLAMA_API_ENDPOINT: undefined,
+    LLM_OPENAI_ENDPOINT: undefined,
     OLLAMA_BEARER_TOKEN: undefined,
     JWT_SECRET: 'a'.repeat(32),
     JWT_ALGORITHM: 'HS256',

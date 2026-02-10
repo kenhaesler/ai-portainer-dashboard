@@ -23,7 +23,7 @@ All configuration is done via environment variables. Copy [`.env.example`](../.e
 |----------|-------------|---------|
 | `OLLAMA_BASE_URL` | Ollama server URL (used by native Ollama SDK) | `http://host.docker.internal:11434` |
 | `OLLAMA_MODEL` | LLM model name | `llama3.2` |
-| `OLLAMA_API_ENDPOINT` | Custom OpenAI-compatible chat completions endpoint (e.g. OpenWebUI, LiteLLM). When set, bypasses the Ollama SDK and uses direct HTTP requests | *(optional)* |
+| `LLM_OPENAI_ENDPOINT` | Custom OpenAI-compatible chat completions endpoint (e.g. OpenWebUI, LiteLLM). When set, bypasses the Ollama SDK and uses direct HTTP requests | *(optional)* |
 | `OLLAMA_BEARER_TOKEN` | Auth token or `user:pass` for Basic auth (used for both Ollama and custom endpoints) | *(optional)* |
 | `LLM_VERIFY_SSL` | Verify TLS certificates for LLM endpoints. Set to `false` for self-signed or internal CA certificates. When `false`, sets `NODE_TLS_REJECT_UNAUTHORIZED=0` globally at startup and creates an undici Agent with `rejectUnauthorized: false` | `true` |
 | `LLM_MAX_TOOL_ITERATIONS` | Maximum MCP tool call iterations per LLM request | `10` |
@@ -32,8 +32,8 @@ All configuration is done via environment variables. Copy [`.env.example`](../.e
 
 The dashboard supports two LLM connection modes:
 
-1. **Native Ollama SDK** (default) — Used when `OLLAMA_API_ENDPOINT` is not set and the Settings UI "Custom endpoint" toggle is off. Connects to `OLLAMA_BASE_URL` using the Ollama SDK with model pulling support.
-2. **OpenAI-compatible HTTP** — Used when `OLLAMA_API_ENDPOINT` is set (or the Settings UI toggle is on). Sends standard `/v1/chat/completions` requests via `undici` fetch with SSL and auth handling. Works with OpenWebUI, LiteLLM, vLLM, or any OpenAI-compatible API.
+1. **Native Ollama SDK** (default) — Used when `LLM_OPENAI_ENDPOINT` is not set and the Settings UI "Custom endpoint" toggle is off. Connects to `OLLAMA_BASE_URL` using the Ollama SDK with model pulling support.
+2. **OpenAI-compatible HTTP** — Used when `LLM_OPENAI_ENDPOINT` is set (or the Settings UI toggle is on). Sends standard `/v1/chat/completions` requests via `undici` fetch with SSL and auth handling. Works with OpenWebUI, LiteLLM, vLLM, or any OpenAI-compatible API.
 
 ### SSL bypass details
 
