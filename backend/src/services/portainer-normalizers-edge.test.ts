@@ -168,4 +168,57 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
     expect(result.containersRunning).toBe(3);
     expect(result.agentVersion).toBe('2.19.0');
   });
+
+  describe('Edge status detection (heartbeat-based)', () => {
+    it('marks Edge endpoint as "up" when Status=1', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-1',
+        Status: 1,
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 10,
+      });
+      expect(normalizeEndpoint(ep).status).toBe('up');
+    });
+
+    it('marks Edge endpoint as "up" when Status!=1 but checked in recently', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-2',
+        Status: 2, // Portainer says "down"
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 10, // 10s ago
+        EdgeCheckinInterval: 5,
+      });
+      // 10s < max(5*3=15, 60) = 60s threshold → should be up
+      expect(normalizeEndpoint(ep).status).toBe('up');
+    });
+
+    it('marks Edge endpoint as "down" when Status!=1 and last check-in too old', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-3',
+        Status: 2,
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 300, // 5 min ago
+        EdgeCheckinInterval: 5,
+      });
+      // 300s > max(5*3=15, 60) = 60s threshold → should be down
+      expect(normalizeEndpoint(ep).status).toBe('down');
+    });
+
+    it('marks Edge endpoint as "down" when Status!=1 and no LastCheckInDate', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-4',
+        Status: 2,
+      });
+      expect(normalizeEndpoint(ep).status).toBe('down');
+    });
+
+    it('non-Edge endpoint trusts Status field directly', () => {
+      const down = makeEndpoint({ Type: 1, Status: 2 });
+      expect(normalizeEndpoint(down).status).toBe('down');
+
+      const up = makeEndpoint({ Type: 1, Status: 1 });
+      expect(normalizeEndpoint(up).status).toBe('up');
+    });
+  });
 });

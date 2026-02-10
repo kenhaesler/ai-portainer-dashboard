@@ -77,6 +77,25 @@ function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilit
   return { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true };
 }
 
+/**
+ * Determine if an Edge endpoint is reachable based on its last check-in.
+ * Portainer may report Edge endpoints with Status !== 1 even when they're
+ * actively checking in. We infer "up" if the last check-in was within
+ * 3× the check-in interval (minimum 60s), matching the Streamlit dashboard.
+ */
+function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
+  if (ep.Status === 1) return 'up';
+
+  const lastCheckIn = ep.LastCheckInDate;
+  if (!lastCheckIn) return 'down';
+
+  const interval = ep.EdgeCheckinInterval ?? 5;
+  const threshold = Math.max(interval * 3, 60);
+  const elapsed = (Date.now() / 1000) - lastCheckIn;
+
+  return elapsed <= threshold ? 'up' : 'down';
+}
+
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   const snapshot = ep.Snapshots?.[0];
   const raw = snapshot?.DockerSnapshotRaw;
@@ -86,13 +105,14 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     : null;
   const snapshotTime = snapshot?.Time;
   const snapshotAge = snapshotTime ? Date.now() - snapshotTime * 1000 : null;
+  const status = isEdge ? determineEdgeStatus(ep) : (ep.Status === 1 ? 'up' : 'down');
 
   return {
     id: ep.Id,
     name: ep.Name,
     type: ep.Type,
     url: ep.URL,
-    status: ep.Status === 1 ? 'up' : 'down',
+    status,
     containersRunning: snapshot?.RunningContainerCount ?? raw?.ContainersRunning ?? 0,
     containersStopped: snapshot?.StoppedContainerCount ?? raw?.ContainersStopped ?? 0,
     containersHealthy: snapshot?.HealthyContainerCount ?? 0,
