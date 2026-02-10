@@ -1,8 +1,8 @@
 services:
   backend:
     build:
-      context: ../backend
-      dockerfile: ../docker/backend/Dockerfile
+      context: ..
+      dockerfile: backend/Dockerfile
     ports:
       - "3051:3051"
     extra_hosts:
@@ -33,8 +33,25 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-aidash:cache:}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Packet Capture (PCAP)
+      - PCAP_ENABLED=${PCAP_ENABLED:-false}
+      - PCAP_MAX_DURATION_SECONDS=${PCAP_MAX_DURATION_SECONDS:-300}
+      - PCAP_MAX_FILE_SIZE_MB=${PCAP_MAX_FILE_SIZE_MB:-50}
+      - PCAP_MAX_CONCURRENT=${PCAP_MAX_CONCURRENT:-2}
+      - PCAP_RETENTION_DAYS=${PCAP_RETENTION_DAYS:-7}
+      - PCAP_STORAGE_DIR=${PCAP_STORAGE_DIR:-./data/pcap}
+      # eBPF Trace Ingestion (Grafana Beyla)
+      - TRACES_INGESTION_ENABLED=${TRACES_INGESTION_ENABLED:-false}
+      - TRACES_INGESTION_API_KEY=${TRACES_INGESTION_API_KEY:-}
+      # TimescaleDB Metrics Storage
+      - TIMESCALE_URL=postgresql://metrics_user:${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}@timescaledb:5432/metrics
+      - TIMESCALE_MAX_CONNECTIONS=${TIMESCALE_MAX_CONNECTIONS:-20}
+      - METRICS_RAW_RETENTION_DAYS=${METRICS_RAW_RETENTION_DAYS:-7}
+      - METRICS_ROLLUP_5MIN_RETENTION_DAYS=${METRICS_ROLLUP_5MIN_RETENTION_DAYS:-30}
+      - METRICS_ROLLUP_1HOUR_RETENTION_DAYS=${METRICS_ROLLUP_1HOUR_RETENTION_DAYS:-90}
+      - METRICS_ROLLUP_1DAY_RETENTION_DAYS=${METRICS_ROLLUP_1DAY_RETENTION_DAYS:-365}
     healthcheck:
-      test: ["CMD", "/usr/bin/wget", "--spider", "--quiet", "http://127.0.0.1:3051/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3051/health').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -43,6 +60,8 @@ services:
       - backend-data:/app/data
     depends_on:
       redis:
+        condition: service_healthy
+      timescaledb:
         condition: service_healthy
     networks:
       - dashboard-net
@@ -57,8 +76,8 @@ services:
 
   frontend:
     build:
-      context: ../frontend
-      dockerfile: ../docker/frontend/Dockerfile
+      context: ..
+      dockerfile: frontend/Dockerfile
     ports:
       - "8080:8080"
     healthcheck:
@@ -100,10 +119,28 @@ services:
     networks:
       - dashboard-net
 
+  timescaledb:
+    image: timescale/timescaledb-ha:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: metrics
+      POSTGRES_USER: metrics_user
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - timescale-data:/home/postgres/pgdata/data
+    networks:
+      - dashboard-net
+
   kali-mcp:
     build:
       context: ../tools/kali-mcp
-      dockerfile: ../docker/kali-mcp/Dockerfile
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8787:8000"
@@ -121,6 +158,7 @@ services:
 
 volumes:
   backend-data:
+  timescale-data:
 
 networks:
   dashboard-net:

@@ -468,3 +468,4 @@ In `path/to/file.ts` line XX:
 5. Be **specific** — every issue must have enough detail for someone to start implementation
 6. **One concern per issue** — unless bugs are tightly related (same page/component)
 7. **No duplicates** — check existing issues with `gh issue list --state open` before creating
+8. **Ask before creating** — if the request is vague, ambiguous, or missing key details (scope, affected components, expected behavior), ask clarifying questions before writing the issue. A well-scoped issue saves more time than a quick but wrong one
