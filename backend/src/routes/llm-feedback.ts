@@ -17,7 +17,7 @@ import {
 } from '../services/feedback-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-import { getAuthHeaders, llmFetch } from '../services/llm-client.js';
+import { getAuthHeaders, llmFetch, createOllamaClient } from '../services/llm-client.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
@@ -272,7 +272,6 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     try {
       // Dynamically import to avoid circular dependencies
       const { getEffectiveLlmConfig } = await import('../services/settings-store.js');
-      const { Ollama } = await import('ollama');
 
       const llmConfig = getEffectiveLlmConfig();
 
@@ -305,7 +304,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
         responseText = data.choices?.[0]?.message?.content ?? '';
       } else {
         // Ollama
-        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const ollama = createOllamaClient(llmConfig.ollamaUrl);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages: [

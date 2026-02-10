@@ -216,7 +216,7 @@ describe('LLM Routes', () => {
       expect(body.ok).toBe(true);
       expect(body.models).toContain('gemma2');
       // Verify Ollama was instantiated with the custom host
-      expect(Ollama).toHaveBeenCalledWith({ host: 'http://custom-ollama:11434' });
+      expect(Ollama).toHaveBeenCalledWith(expect.objectContaining({ host: 'http://custom-ollama:11434' }));
     });
   });
 
