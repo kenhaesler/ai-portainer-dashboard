@@ -28,7 +28,7 @@ export function getAuthHeaders(token: string | undefined): Record<string, string
   // Strip non-Latin1 characters (code > 255) that break HTTP headers.
   // These commonly appear when tokens are copy-pasted from web UIs with
   // smart quotes, zero-width spaces, or other invisible Unicode characters.
-  const sanitized = token.replace(/[^\x00-\xFF]/g, '');
+  const sanitized = token.replace(/[^\x20-\xFF]/g, '');
 
   if (!sanitized) return {};
 
