@@ -93,7 +93,7 @@ function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () =
         <div className="mt-4 space-y-1.5">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-              Edge {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
+              Edge Agent {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
             </span>
             {endpoint.agentVersion && <span>v{endpoint.agentVersion}</span>}
           </div>
@@ -175,7 +175,7 @@ export default function FleetOverviewPage() {
       header: 'Type',
       cell: ({ row }) => row.original.isEdge ? (
         <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-          Edge {row.original.edgeMode === 'async' ? 'Async' : 'Standard'}
+          Edge Agent {row.original.edgeMode === 'async' ? 'Async' : 'Standard'}
         </span>
       ) : (
         <span className="text-xs text-muted-foreground">Agent</span>

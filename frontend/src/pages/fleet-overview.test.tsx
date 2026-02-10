@@ -64,7 +64,7 @@ describe('FleetOverviewPage — Edge metadata', () => {
     vi.clearAllMocks();
   });
 
-  it('renders Edge Standard badge for Edge endpoints', () => {
+  it('renders Edge Agent Standard badge for Edge endpoints', () => {
     mockUseEndpoints.mockReturnValue({
       data: [
         makeEndpoint({
@@ -86,12 +86,12 @@ describe('FleetOverviewPage — Edge metadata', () => {
 
     renderPage();
 
-    expect(screen.getByText(/Edge Standard/)).toBeInTheDocument();
+    expect(screen.getByText(/Edge Agent Standard/)).toBeInTheDocument();
     expect(screen.getByText(/Check-in:/)).toBeInTheDocument();
     expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
   });
 
-  it('renders Edge Async badge for async endpoints', () => {
+  it('renders Edge Agent Async badge for async endpoints', () => {
     mockUseEndpoints.mockReturnValue({
       data: [
         makeEndpoint({
@@ -113,7 +113,7 @@ describe('FleetOverviewPage — Edge metadata', () => {
 
     renderPage();
 
-    expect(screen.getByText(/Edge Async/)).toBeInTheDocument();
+    expect(screen.getByText(/Edge Agent Async/)).toBeInTheDocument();
   });
 
   it('does not render Edge badge for non-Edge endpoints', () => {
@@ -130,8 +130,8 @@ describe('FleetOverviewPage — Edge metadata', () => {
 
     renderPage();
 
-    expect(screen.queryByText(/Edge Standard/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Edge Async/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Edge Agent Standard/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Edge Agent Async/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Check-in:/)).not.toBeInTheDocument();
   });
 
