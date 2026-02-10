@@ -122,6 +122,17 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg17
     restart: unless-stopped
+    # PostgreSQL entrypoint requires root → postgres privilege transition (gosu)
+    # so no-new-privileges is NOT compatible. Instead, drop all caps and add
+    # back only the minimum set needed for entrypoint init + runtime.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN        # chown data directory to postgres
+      - DAC_OVERRIDE # access files during init regardless of perms
+      - FOWNER       # set ownership on data files
+      - SETUID       # gosu: switch from root to postgres
+      - SETGID       # gosu: switch group
     environment:
       POSTGRES_DB: metrics
       POSTGRES_USER: metrics_user
