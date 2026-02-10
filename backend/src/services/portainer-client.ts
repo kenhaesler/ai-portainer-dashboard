@@ -359,6 +359,12 @@ export async function getStacks(): Promise<Stack[]> {
   return StackArraySchema.parse(raw);
 }
 
+export async function getStacksByEndpoint(endpointId: number): Promise<Stack[]> {
+  const filter = JSON.stringify({ EndpointID: endpointId });
+  const raw = await portainerFetch<unknown[]>(`/api/stacks?filters=${encodeURIComponent(filter)}`);
+  return StackArraySchema.parse(raw);
+}
+
 export async function getStack(id: number): Promise<Stack> {
   const raw = await portainerFetch<unknown>(`/api/stacks/${id}`);
   return StackSchema.parse(raw);
