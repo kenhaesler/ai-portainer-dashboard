@@ -88,9 +88,9 @@ import {
   isRecoverableToolCallParseError,
   looksLikeToolCallAttempt,
   formatChatContext,
-  getAuthHeaders,
   setupLlmNamespace,
 } from './llm-chat.js';
+import { getAuthHeaders } from '../services/llm-client.js';
 
 // ── Pure utility function tests (unchanged) ──
 
