@@ -49,10 +49,9 @@ export function getEffectiveLlmConfig() {
   const ollamaUrl = getSetting('llm.ollama_url')?.value || config.OLLAMA_BASE_URL;
   const model = getSetting('llm.model')?.value || config.OLLAMA_MODEL;
   const customEndpointUrl = getSetting('llm.custom_endpoint_url')?.value || config.OLLAMA_API_ENDPOINT;
-  // Auto-enable custom mode when any endpoint URL is available.
-  // This bypasses the Ollama SDK entirely and uses llmFetch() for all
-  // LLM calls, which properly respects LLM_VERIFY_SSL for SSL bypass.
-  const customEnabled = !!(getSetting('llm.custom_endpoint_enabled')?.value === 'true' || customEndpointUrl);
+  // Custom mode: enabled via Settings UI toggle OR when OLLAMA_API_ENDPOINT env var is set.
+  // When disabled, the Ollama SDK is used for native Ollama access.
+  const customEnabled = getSetting('llm.custom_endpoint_enabled')?.value === 'true' || !!config.OLLAMA_API_ENDPOINT;
   const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.OLLAMA_BEARER_TOKEN;
   const maxTokens = parseInt(getSetting('llm.max_tokens')?.value || '20000', 10) || 20000;
   const maxToolIterations = parseInt(getSetting('llm.max_tool_iterations')?.value || '', 10) || config.LLM_MAX_TOOL_ITERATIONS;
