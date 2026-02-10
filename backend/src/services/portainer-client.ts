@@ -9,8 +9,9 @@ import {
   ContainerStatsSchema, NetworkSchema, ImageSchema,
   EndpointArraySchema, ContainerArraySchema, StackArraySchema,
   NetworkArraySchema, ImageArraySchema,
+  EdgeJobSchema, EdgeJobArraySchema,
   type Endpoint, type Container, type Stack,
-  type ContainerStats, type Network, type DockerImage,
+  type ContainerStats, type Network, type DockerImage, type EdgeJob,
 } from '../models/portainer.js';
 
 const log = createChildLogger('portainer-client');
@@ -457,4 +458,41 @@ export async function getArchive(
 
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+// Edge Jobs
+export interface CreateEdgeJobPayload {
+  name: string;
+  cronExpression: string;
+  recurring: boolean;
+  endpoints: number[];
+  fileContent: string;
+}
+
+export async function getEdgeJobs(): Promise<EdgeJob[]> {
+  const raw = await portainerFetch<unknown[]>('/api/edge_jobs');
+  return EdgeJobArraySchema.parse(raw);
+}
+
+export async function getEdgeJob(id: number): Promise<EdgeJob> {
+  const raw = await portainerFetch<unknown>(`/api/edge_jobs/${id}`);
+  return EdgeJobSchema.parse(raw);
+}
+
+export async function createEdgeJob(data: CreateEdgeJobPayload): Promise<EdgeJob> {
+  const raw = await portainerFetch<unknown>('/api/edge_jobs?method=string', {
+    method: 'POST',
+    body: {
+      Name: data.name,
+      CronExpression: data.cronExpression,
+      Recurring: data.recurring,
+      Endpoints: data.endpoints,
+      FileContent: data.fileContent,
+    },
+  });
+  return EdgeJobSchema.parse(raw);
+}
+
+export async function deleteEdgeJob(id: number): Promise<void> {
+  await portainerFetch(`/api/edge_jobs/${id}`, { method: 'DELETE' });
 }

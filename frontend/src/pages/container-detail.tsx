@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/hooks/use-container-detail';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
@@ -10,6 +10,7 @@ import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerOverview } from '@/components/container/container-overview';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
 import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
+import { useEndpoints } from '@/hooks/use-endpoints';
 
 const TIME_RANGES = [
   { value: '15m', label: '15 min' },
@@ -40,6 +41,11 @@ export default function ContainerDetailPage() {
     isFetching
   } = useContainerDetail(parsedEndpointId!, containerId!);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
+
+  // Look up endpoint for Edge staleness banner
+  const { data: endpoints } = useEndpoints();
+  const currentEndpoint = endpoints?.find(ep => ep.id === parsedEndpointId);
+  const isEdgeStale = currentEndpoint?.isEdge && currentEndpoint.snapshotAge != null && currentEndpoint.snapshotAge > 5 * 60 * 1000;
 
   // Handle tab change
   const handleTabChange = (value: string) => {
@@ -156,6 +162,22 @@ export default function ContainerDetailPage() {
           <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
       </div>
+
+      {/* Edge staleness warning */}
+      {isEdgeStale && currentEndpoint && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-3">
+          <Wifi className="h-5 w-5 text-amber-500 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              Edge Agent — Data may be stale
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Last check-in: {currentEndpoint.lastCheckIn ? `${Math.round((Date.now() - currentEndpoint.lastCheckIn * 1000) / 1000)}s ago` : 'unknown'}.
+              {' '}Snapshot age: {currentEndpoint.snapshotAge != null ? `${Math.round(currentEndpoint.snapshotAge / 1000)}s` : 'unknown'}.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs.Root

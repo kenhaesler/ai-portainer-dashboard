@@ -1,5 +1,12 @@
 import type { Endpoint, Container, Stack, Network } from '../models/portainer.js';
 
+export interface EdgeCapabilities {
+  exec: boolean;
+  realtimeLogs: boolean;
+  liveStats: boolean;
+  immediateActions: boolean;
+}
+
 export interface NormalizedEndpoint {
   id: number;
   name: string;
@@ -15,6 +22,10 @@ export interface NormalizedEndpoint {
   totalCpu: number;
   totalMemory: number;
   isEdge: boolean;
+  edgeMode: 'standard' | 'async' | null;
+  snapshotAge: number | null;
+  checkInInterval: number | null;
+  capabilities: EdgeCapabilities;
   agentVersion?: string;
   lastCheckIn?: number;
 }
@@ -58,9 +69,24 @@ export interface NormalizedNetwork {
   containers: string[];
 }
 
+function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilities {
+  if (edgeMode === 'async') {
+    return { exec: false, realtimeLogs: false, liveStats: false, immediateActions: false };
+  }
+  // Edge Standard and non-edge both support all interactive features
+  return { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true };
+}
+
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   const snapshot = ep.Snapshots?.[0];
   const raw = snapshot?.DockerSnapshotRaw;
+  const isEdge = !!ep.EdgeID;
+  const edgeMode: 'standard' | 'async' | null = isEdge
+    ? ((ep as Record<string, unknown>).QueryDate ? 'async' : 'standard')
+    : null;
+  const snapshotTime = snapshot?.Time;
+  const snapshotAge = snapshotTime ? Date.now() - snapshotTime * 1000 : null;
+
   return {
     id: ep.Id,
     name: ep.Name,
@@ -77,7 +103,11 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     stackCount: snapshot?.StackCount ?? 0,
     totalCpu: snapshot?.TotalCPU ?? 0,
     totalMemory: snapshot?.TotalMemory ?? 0,
-    isEdge: !!ep.EdgeID,
+    isEdge,
+    edgeMode,
+    snapshotAge,
+    checkInInterval: ep.EdgeCheckinInterval ?? null,
+    capabilities: buildCapabilities(edgeMode),
     agentVersion: ep.Agent?.Version,
     lastCheckIn: ep.LastCheckInDate,
   };

@@ -1,6 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
+export interface EdgeCapabilities {
+  exec: boolean;
+  realtimeLogs: boolean;
+  liveStats: boolean;
+  immediateActions: boolean;
+}
+
 export interface Endpoint {
   id: number;
   name: string;
@@ -16,6 +23,10 @@ export interface Endpoint {
   totalCpu: number;
   totalMemory: number;
   isEdge: boolean;
+  edgeMode: 'standard' | 'async' | null;
+  snapshotAge: number | null;
+  checkInInterval: number | null;
+  capabilities: EdgeCapabilities;
   agentVersion?: string;
   lastCheckIn?: number;
 }
