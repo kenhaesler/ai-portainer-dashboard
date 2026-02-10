@@ -1,4 +1,7 @@
 import type { Endpoint, Container, Stack, Network } from '../models/portainer.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('normalizers');
 
 export interface EdgeCapabilities {
   exec: boolean;
@@ -79,27 +82,57 @@ function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilit
 
 /**
  * Determine if an Edge endpoint is reachable based on its last check-in.
- * Portainer may report Edge endpoints with Status !== 1 even when they're
- * actively checking in. We infer "up" if the last check-in was within
- * 3× the check-in interval (minimum 60s), matching the Streamlit dashboard.
+ * Portainer uses: (interval * 2) + 20 seconds as the heartbeat threshold.
+ * We use a more generous formula: max((interval * 2) + 20, 60) to avoid
+ * flapping for endpoints with short intervals.
+ * If Portainer already reports Status === 1, trust it immediately.
  */
 function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
   if (ep.Status === 1) return 'up';
 
   const lastCheckIn = ep.LastCheckInDate;
-  if (!lastCheckIn) return 'down';
+  if (lastCheckIn == null || lastCheckIn <= 0) {
+    log.debug({ endpointId: ep.Id, name: ep.Name, status: ep.Status, lastCheckIn }, 'Edge endpoint has no LastCheckInDate — marking down');
+    return 'down';
+  }
 
   const interval = ep.EdgeCheckinInterval ?? 5;
-  const threshold = Math.max(interval * 3, 60);
-  const elapsed = (Date.now() / 1000) - lastCheckIn;
+  // Portainer formula: (interval * 2) + 20. We add a generous minimum of 60s.
+  const threshold = Math.max((interval * 2) + 20, 60);
+  const elapsed = Math.floor((Date.now() / 1000) - lastCheckIn);
+  const result = elapsed <= threshold ? 'up' : 'down';
 
-  return elapsed <= threshold ? 'up' : 'down';
+  log.debug({
+    endpointId: ep.Id,
+    name: ep.Name,
+    portainerStatus: ep.Status,
+    lastCheckIn,
+    interval,
+    threshold,
+    elapsed,
+    result,
+  }, `Edge endpoint heartbeat check: ${result}`);
+
+  return result;
 }
 
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
+  const isEdge = !!ep.EdgeID;
+  if (isEdge) {
+    log.info({
+      endpointId: ep.Id,
+      name: ep.Name,
+      type: ep.Type,
+      portainerStatus: ep.Status,
+      edgeId: ep.EdgeID,
+      lastCheckInDate: ep.LastCheckInDate,
+      edgeCheckinInterval: ep.EdgeCheckinInterval,
+      hasSnapshots: (ep.Snapshots?.length ?? 0) > 0,
+      snapshotTime: ep.Snapshots?.[0]?.Time,
+    }, 'Normalizing Edge endpoint');
+  }
   const snapshot = ep.Snapshots?.[0];
   const raw = snapshot?.DockerSnapshotRaw;
-  const isEdge = !!ep.EdgeID;
   const edgeMode: 'standard' | 'async' | null = isEdge
     ? ((ep as Record<string, unknown>).QueryDate ? 'async' : 'standard')
     : null;

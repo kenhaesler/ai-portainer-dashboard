@@ -188,7 +188,7 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
         LastCheckInDate: Math.floor(Date.now() / 1000) - 10, // 10s ago
         EdgeCheckinInterval: 5,
       });
-      // 10s < max(5*3=15, 60) = 60s threshold → should be up
+      // 10s < max((5*2)+20=30, 60) = 60s threshold → should be up
       expect(normalizeEndpoint(ep).status).toBe('up');
     });
 
@@ -200,7 +200,7 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
         LastCheckInDate: Math.floor(Date.now() / 1000) - 300, // 5 min ago
         EdgeCheckinInterval: 5,
       });
-      // 300s > max(5*3=15, 60) = 60s threshold → should be down
+      // 300s > max((5*2)+20=30, 60) = 60s threshold → should be down
       expect(normalizeEndpoint(ep).status).toBe('down');
     });
 
@@ -209,6 +209,16 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
         Type: 4,
         EdgeID: 'edge-4',
         Status: 2,
+      });
+      expect(normalizeEndpoint(ep).status).toBe('down');
+    });
+
+    it('marks Edge endpoint as "down" when LastCheckInDate is 0', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-5',
+        Status: 2,
+        LastCheckInDate: 0,
       });
       expect(normalizeEndpoint(ep).status).toBe('down');
     });
