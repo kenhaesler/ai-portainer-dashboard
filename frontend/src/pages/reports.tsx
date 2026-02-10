@@ -10,6 +10,10 @@ import {
   Server,
   Clock,
   Lightbulb,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  Box,
 } from 'lucide-react';
 import {
   useUtilizationReport,
@@ -17,6 +21,9 @@ import {
 } from '@/hooks/use-reports';
 import type { ContainerReport } from '@/hooks/use-reports';
 import { useEndpoints } from '@/hooks/use-endpoints';
+import { useContainers } from '@/hooks/use-containers';
+import type { Endpoint } from '@/hooks/use-endpoints';
+import type { Container } from '@/hooks/use-containers';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
@@ -110,6 +117,190 @@ function StatCard({
   );
 }
 
+interface DienststelleGroup {
+  endpoint: Endpoint;
+  containers: Container[];
+}
+
+function groupContainersByDienststelle(
+  endpoints: Endpoint[] | undefined,
+  containers: Container[] | undefined,
+): DienststelleGroup[] {
+  if (!endpoints) return [];
+  const containersByEndpoint = new Map<number, Container[]>();
+  for (const c of containers ?? []) {
+    const list = containersByEndpoint.get(c.endpointId) ?? [];
+    list.push(c);
+    containersByEndpoint.set(c.endpointId, list);
+  }
+  return endpoints
+    .map((ep) => ({
+      endpoint: ep,
+      containers: containersByEndpoint.get(ep.id) ?? [],
+    }))
+    .sort((a, b) => a.endpoint.name.localeCompare(b.endpoint.name));
+}
+
+export function DienststellenOverview({
+  endpoints,
+  containers,
+}: {
+  endpoints: Endpoint[] | undefined;
+  containers: Container[] | undefined;
+}) {
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const groups = useMemo(
+    () => groupContainersByDienststelle(endpoints, containers),
+    [endpoints, containers],
+  );
+
+  const totalDienststellen = groups.length;
+  const totalContainers = groups.reduce((sum, g) => sum + g.containers.length, 0);
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  if (!endpoints || endpoints.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Dienststellen KPIs */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Total Dienststellen</p>
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">{totalDienststellen}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Total Containers</p>
+            <Box className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">{totalContainers}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Avg Containers / Dienststelle</p>
+            <Server className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">
+            {totalDienststellen > 0 ? (totalContainers / totalDienststellen).toFixed(1) : '0'}
+          </p>
+        </div>
+      </div>
+
+      {/* Grouped table */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            <h3 className="text-lg font-semibold">Containers per Dienststelle</h3>
+          </div>
+          <span className="text-sm text-muted-foreground">
+            {totalDienststellen} Dienststelle{totalDienststellen !== 1 ? 'n' : ''}
+          </span>
+        </div>
+        <div className="divide-y">
+          {groups.map(({ endpoint: ep, containers: epContainers }) => {
+            const isExpanded = expandedIds.has(ep.id);
+            const running = epContainers.filter((c) => c.state === 'running').length;
+            const stopped = epContainers.filter((c) => c.state === 'stopped').length;
+            const other = epContainers.length - running - stopped;
+
+            return (
+              <div key={ep.id}>
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(ep.id)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+                >
+                  {isExpanded
+                    ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{ep.name}</span>
+                      <span className={cn(
+                        'inline-flex h-2 w-2 rounded-full shrink-0',
+                        ep.status === 'up' ? 'bg-emerald-500' : 'bg-red-500',
+                      )} />
+                      {ep.isEdge && (
+                        <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                          Edge
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                    <span className="text-emerald-600 dark:text-emerald-400">{running} running</span>
+                    {stopped > 0 && <span className="text-red-500">{stopped} stopped</span>}
+                    {other > 0 && <span>{other} other</span>}
+                    <span className="font-medium text-foreground">{epContainers.length} total</span>
+                  </div>
+                </button>
+                {isExpanded && epContainers.length > 0 && (
+                  <div className="border-t bg-muted/10">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/30 text-left">
+                          <th className="px-4 py-2 pl-12 font-medium">Container</th>
+                          <th className="px-4 py-2 font-medium">Image</th>
+                          <th className="px-4 py-2 font-medium">State</th>
+                          <th className="px-4 py-2 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {epContainers
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((c) => (
+                            <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20">
+                              <td className="px-4 py-2 pl-12 font-medium truncate max-w-[200px]" title={c.name}>
+                                {c.name}
+                              </td>
+                              <td className="px-4 py-2 text-muted-foreground truncate max-w-[250px]" title={c.image}>
+                                {c.image}
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className={cn(
+                                  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                                  c.state === 'running' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                                  c.state === 'stopped' && 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                                  c.state === 'paused' && 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                                  c.state !== 'running' && c.state !== 'stopped' && c.state !== 'paused' && 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+                                )}>
+                                  {c.state}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-muted-foreground text-xs">{c.status}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {isExpanded && epContainers.length === 0 && (
+                  <div className="border-t bg-muted/10 px-4 py-3 pl-12 text-sm text-muted-foreground italic">
+                    No containers on this Dienststelle
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState('24h');
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
@@ -117,6 +308,7 @@ export default function ReportsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const { data: endpoints } = useEndpoints();
+  const { data: allContainers } = useContainers();
   const {
     data: report,
     isLoading: reportLoading,
@@ -227,6 +419,9 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+
+      {/* Dienststellen Overview */}
+      <DienststellenOverview endpoints={endpoints} containers={allContainers} />
 
       {isLoading && (
         <div className="grid gap-4 md:grid-cols-4">
