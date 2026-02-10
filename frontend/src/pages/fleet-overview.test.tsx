@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import FleetOverviewPage from './fleet-overview';
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 // Mock the hooks
 vi.mock('@/hooks/use-endpoints', () => ({
@@ -62,6 +68,7 @@ function renderPage() {
 describe('FleetOverviewPage — Edge metadata', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockNavigate.mockClear();
   });
 
   it('renders Edge Agent Standard badge for Edge endpoints', () => {
@@ -133,6 +140,24 @@ describe('FleetOverviewPage — Edge metadata', () => {
     expect(screen.queryByText(/Edge Agent Standard/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Edge Agent Async/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Check-in:/)).not.toBeInTheDocument();
+  });
+
+  it('navigates to /workloads?endpoint=<id> when endpoint card is clicked', () => {
+    mockUseEndpoints.mockReturnValue({
+      data: [makeEndpoint({ id: 7, name: 'click-env' })],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    const card = screen.getByRole('button', { name: /click-env/ });
+    fireEvent.click(card);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/workloads?endpoint=7');
   });
 
   it('shows snapshot age with color coding for stale endpoints', () => {

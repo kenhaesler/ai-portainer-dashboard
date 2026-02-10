@@ -123,7 +123,7 @@ export default function FleetOverviewPage() {
   const { interval, setInterval } = useAutoRefresh(30);
 
   const handleEndpointClick = (endpointId: number) => {
-    navigate(`/workload-explorer?endpoint=${endpointId}`);
+    navigate(`/workloads?endpoint=${endpointId}`);
   };
 
   const columns: ColumnDef<Endpoint, unknown>[] = useMemo(() => [
