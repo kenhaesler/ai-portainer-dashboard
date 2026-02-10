@@ -17,6 +17,7 @@ import {
 } from '../services/feedback-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { getAuthHeaders } from '../services/llm-client.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
@@ -277,13 +278,13 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
 
       let responseText = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
-        // Custom endpoint
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+        // Custom endpoint (token is optional — some endpoints don't require auth)
         const response = await fetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${llmConfig.customEndpointToken}`,
+            ...getAuthHeaders(llmConfig.customEndpointToken),
           },
           body: JSON.stringify({
             model: llmConfig.model,

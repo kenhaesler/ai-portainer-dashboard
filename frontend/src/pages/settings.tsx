@@ -654,12 +654,13 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   const customUrl = values['llm.custom_endpoint_url'] || '';
   const customToken = values['llm.custom_endpoint_token'] || '';
 
-  // Fetch models from the user's configured Ollama URL
-  const { data: modelsData, isLoading: modelsLoading, refetch: refetchModels } = useLlmModels(ollamaUrl);
+  // Only pass host to useLlmModels when using Ollama — when custom is enabled,
+  // pass undefined so the backend uses the configured custom endpoint
+  const modelsHost = customEnabled ? undefined : ollamaUrl;
+  const { data: modelsData, isLoading: modelsLoading, refetch: refetchModels } = useLlmModels(modelsHost);
   const testConnection = useLlmTestConnection();
   const queryClient = useQueryClient();
   const [showToken, setShowToken] = useState(false);
-  // Connection status is driven by explicit Test Connection, not by the models query
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'ok' | 'error'>('idle');
   const [connectionError, setConnectionError] = useState<string>();
 
@@ -672,20 +673,20 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   const llmConfigured = Boolean(selectedModel.trim()) && (customEnabled ? Boolean(customUrl.trim()) : Boolean(ollamaUrl.trim()));
 
   const handleScanModels = () => {
-    void queryClient.invalidateQueries({ queryKey: ['llm-models', ollamaUrl] });
+    void queryClient.invalidateQueries({ queryKey: ['llm-models', modelsHost] });
     void refetchModels();
   };
 
   const handleTestConnection = () => {
     if (customEnabled && !customUrl.trim()) {
       setConnectionStatus('error');
-      setConnectionError('Custom endpoint URL is required when custom mode is enabled.');
-      toast.error('Set a custom endpoint URL before testing connection');
+      setConnectionError('API endpoint URL is required.');
+      toast.error('Set an API endpoint URL before testing connection');
       return;
     }
 
-    const body = customEnabled && customUrl.trim()
-      ? { url: customUrl.trim(), token: customToken }
+    const body = customEnabled
+      ? { url: customUrl.trim(), token: customToken || undefined }
       : { ollamaUrl: ollamaUrl };
     testConnection.mutate(body, {
       onSuccess: (data) => {
@@ -719,12 +720,14 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
       ? 'Connection Failed'
       : 'Not tested';
 
+  const activeBackendUrl = customEnabled ? customUrl || 'No URL set' : ollamaUrl;
+
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5" />
-          <h2 className="text-lg font-semibold">LLM / Ollama</h2>
+          <h2 className="text-lg font-semibold">LLM Configuration</h2>
         </div>
         <div className="flex items-center gap-2">
           <span className={cn(
@@ -745,8 +748,111 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Backend Selection — Ollama or Custom API */}
+        <div className="space-y-3">
+          <div>
+            <label className="font-medium">LLM Backend</label>
+            <p className="text-sm text-muted-foreground mt-0.5">Choose how to connect to your LLM</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => onChange('llm.custom_endpoint_enabled', 'false')}
+              disabled={disabled}
+              className={cn(
+                'flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-colors',
+                !customEnabled
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-muted-foreground/30',
+                disabled && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <span className="text-sm font-medium">Ollama (Local)</span>
+              <span className="text-xs text-muted-foreground">Connect to a local or remote Ollama instance</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange('llm.custom_endpoint_enabled', 'true')}
+              disabled={disabled}
+              className={cn(
+                'flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-colors',
+                customEnabled
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-muted-foreground/30',
+                disabled && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <span className="text-sm font-medium">Custom API</span>
+              <span className="text-xs text-muted-foreground">OpenAI-compatible endpoint (Open WebUI, vLLM, etc.)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Backend-specific configuration */}
+        <div className="rounded-lg border border-border p-4 bg-muted/30 space-y-4">
+          {!customEnabled ? (
+            /* Ollama configuration */
+            <div>
+              <label htmlFor="ollama-url" className="text-sm font-medium">Ollama URL</label>
+              <p className="text-xs text-muted-foreground mb-1.5">URL of the Ollama server</p>
+              <input
+                id="ollama-url"
+                type="text"
+                value={ollamaUrl}
+                onChange={(e) => onChange('llm.ollama_url', e.target.value)}
+                disabled={disabled}
+                placeholder="http://host.docker.internal:11434"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+              />
+            </div>
+          ) : (
+            /* Custom API configuration */
+            <>
+              <div>
+                <label htmlFor="custom-endpoint-url" className="text-sm font-medium">API Endpoint URL</label>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  OpenAI-compatible chat completions URL (e.g., http://host.docker.internal:3000/api/chat/completions)
+                </p>
+                <input
+                  id="custom-endpoint-url"
+                  type="text"
+                  value={customUrl}
+                  onChange={(e) => onChange('llm.custom_endpoint_url', e.target.value)}
+                  disabled={disabled}
+                  placeholder="https://api.example.com/v1/chat/completions"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                />
+              </div>
+              <div>
+                <label htmlFor="custom-endpoint-token" className="text-sm font-medium">API Key / Bearer Token</label>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  Optional — leave empty if the endpoint doesn't require authentication
+                </p>
+                <div className="relative">
+                  <input
+                    id="custom-endpoint-token"
+                    type={showToken ? 'text' : 'password'}
+                    value={customToken}
+                    onChange={(e) => onChange('llm.custom_endpoint_token', e.target.value)}
+                    disabled={disabled}
+                    placeholder="sk-... (optional)"
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Model Selection */}
-        <div className="space-y-2">
+        <div className="space-y-2 border-t border-border pt-4">
           <div className="flex items-center justify-between">
             <div>
               <label htmlFor="llm-model-select" className="font-medium">Model</label>
@@ -800,23 +906,6 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           )}
         </div>
 
-        {/* Ollama URL */}
-        <div className="flex items-center justify-between py-4 border-t border-border">
-          <div className="flex-1 pr-4">
-            <label className="font-medium">Ollama URL</label>
-            <p className="text-sm text-muted-foreground mt-0.5">URL of the Ollama server</p>
-          </div>
-          <div className="shrink-0 w-72">
-            <input
-              type="text"
-              value={ollamaUrl}
-              onChange={(e) => onChange('llm.ollama_url', e.target.value)}
-              disabled={disabled}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-            />
-          </div>
-        </div>
-
         {/* Temperature */}
         <div className="flex items-center justify-between py-4 border-t border-border">
           <div className="flex-1 pr-4">
@@ -859,80 +948,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           </div>
         </div>
 
-        {/* Custom API Endpoint */}
-        <div className="border-t border-border pt-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="font-medium">Custom API Endpoint</label>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Use an OpenAI-compatible API instead of the Ollama SDK
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onChange('llm.custom_endpoint_enabled', customEnabled ? 'false' : 'true')}
-              disabled={disabled}
-              className={cn(
-                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                customEnabled ? 'bg-primary' : 'bg-muted',
-                disabled && 'opacity-50 cursor-not-allowed'
-              )}
-              aria-label="Toggle custom API endpoint"
-            >
-              <span
-                className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                  customEnabled ? 'translate-x-6' : 'translate-x-1'
-                )}
-              />
-            </button>
-          </div>
-
-          {customEnabled && (
-            <div className="space-y-4 rounded-lg border border-border p-4 bg-muted/30">
-              <div>
-                <label htmlFor="custom-endpoint-url" className="text-sm font-medium">API Endpoint URL</label>
-                <p className="text-xs text-muted-foreground mb-1.5">
-                  OpenAI-compatible chat completions URL (e.g., https://api.openai.com/v1/chat/completions)
-                </p>
-                <input
-                  id="custom-endpoint-url"
-                  type="text"
-                  value={customUrl}
-                  onChange={(e) => onChange('llm.custom_endpoint_url', e.target.value)}
-                  disabled={disabled}
-                  placeholder="https://api.example.com/v1/chat/completions"
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                />
-              </div>
-              <div>
-                <label htmlFor="custom-endpoint-token" className="text-sm font-medium">API Key / Bearer Token</label>
-                <p className="text-xs text-muted-foreground mb-1.5">
-                  Authentication token for the custom endpoint
-                </p>
-                <div className="relative">
-                  <input
-                    id="custom-endpoint-token"
-                    type={showToken ? 'text' : 'password'}
-                    value={customToken}
-                    onChange={(e) => onChange('llm.custom_endpoint_token', e.target.value)}
-                    disabled={disabled}
-                    placeholder="sk-..."
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
+        {/* Test Connection */}
         <div className="border-t border-border pt-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -946,7 +962,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
                 <p className="text-xs text-muted-foreground">
                   {connectionStatus === 'error' && connectionError
                     ? connectionError
-                    : customEnabled ? customUrl || 'No custom URL set' : ollamaUrl}
+                    : activeBackendUrl}
                 </p>
               </div>
             </div>

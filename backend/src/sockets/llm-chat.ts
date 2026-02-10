@@ -248,16 +248,24 @@ async function streamLlmCall(
       const chunk = decoder.decode(value);
       const lines = chunk.split('\n').filter((line) => line.trim() !== '');
 
-      for (const line of lines) {
+      for (const raw of lines) {
+        // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
+        let payload = raw.trim();
+        if (payload.startsWith('data: ')) payload = payload.slice(6);
+        else if (payload.startsWith('data:')) payload = payload.slice(5);
+
+        // Skip SSE end sentinel and comment lines
+        if (payload === '[DONE]' || payload.startsWith(':')) continue;
+
         try {
-          const json = JSON.parse(line);
+          const json = JSON.parse(payload);
           const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
           if (text) {
             fullResponse += text;
             onChunk(text);
           }
         } catch {
-          // Skip invalid JSON lines
+          // Skip non-JSON lines (e.g. SSE event types)
         }
       }
     }
