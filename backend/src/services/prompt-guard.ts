@@ -50,14 +50,14 @@ export function normalizeUnicode(input: string): string {
 
 const INJECTION_PATTERNS: RegExp[] = [
   // Direct instruction override
-  /ignore\s+(all\s+)?(previous|prior|above|earlier|preceding)\s+(instructions?|prompts?|rules?|context)/i,
-  /disregard\s+(all\s+)?(previous|prior|above|earlier|preceding)\s+(instructions?|prompts?|rules?|context)/i,
-  /forget\s+(all\s+)?(previous|prior|above|earlier|preceding)\s+(instructions?|prompts?|rules?|context)/i,
+  /ignore\s+(all\s+|the\s+)?(previous|prior|above|earlier|preceding|system)\s+(instructions?|prompts?|rules?|context)/i,
+  /disregard\s+(all\s+|the\s+)?(previous|prior|above|earlier|preceding|system)\s+(instructions?|prompts?|rules?|context)/i,
+  /forget\s+(all\s+|the\s+)?(previous|prior|above|earlier|preceding|system)\s+(instructions?|prompts?|rules?|context)/i,
   /override\s+(all\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)/i,
 
   // System prompt extraction (allow intermediate words like "me", "us")
-  /(?:show|reveal|display|print|output|repeat|echo|tell)\s+(?:\w+\s+)*(the\s+)?(system\s+prompt|initial\s+instructions?|hidden\s+prompt|original\s+prompt|secret\s+instructions?|prompt|instructions?)/i,
-  /what\s+(are|were)\s+(your|the)\s+(system\s+)?(instructions?|prompt|rules)/i,
+  /(?:show|reveal|display|print|output|repeat|echo|tell)\s+(?:\w+\s+)*(the\s+)?(system\s+prompt|initial\s+instructions?|hidden\s+prompt|original\s+prompt|secret\s+instructions?|developer\s+message|prompt|instructions?)/i,
+  /what\s+(is|are|were)\s+(?:\w+\s+)*(your|the)\s+(system\s+)?(instructions?|prompt|rules|developer\s+message)/i,
 
   // Role hijacking
   /you\s+are\s+now\s+(?:a|an|in)\s/i,
