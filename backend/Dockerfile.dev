@@ -23,4 +23,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --spider --quiet http://127.0.0.1:3051/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--", "/app/backend/docker-entrypoint.sh"]
-CMD ["npx", "tsx", "watch", "backend/src/index.ts"]
+CMD ["npx", "tsx", "watch", "--node-arg=--use-system-ca", "backend/src/index.ts"]
