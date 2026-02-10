@@ -25,14 +25,21 @@ function estimateTokens(text: string): number {
 export function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 
+  // Strip non-Latin1 characters (code > 255) that break HTTP headers.
+  // These commonly appear when tokens are copy-pasted from web UIs with
+  // smart quotes, zero-width spaces, or other invisible Unicode characters.
+  const sanitized = token.replace(/[^\x20-\xFF]/g, '');
+
+  if (!sanitized) return {};
+
   // Check if token is in username:password format (Basic auth)
-  if (token.includes(':')) {
-    const base64Credentials = Buffer.from(token).toString('base64');
+  if (sanitized.includes(':')) {
+    const base64Credentials = Buffer.from(sanitized).toString('base64');
     return { 'Authorization': `Basic ${base64Credentials}` };
   }
 
   // Otherwise use Bearer token
-  return { 'Authorization': `Bearer ${token}` };
+  return { 'Authorization': `Bearer ${sanitized}` };
 }
 
 interface ChatMessage {
@@ -848,10 +855,13 @@ export function setupLlmNamespace(ns: Namespace) {
 
         log.debug({ userId, messageLength: data.text.length, responseLength: finalResponse.length, toolIterations: toolIteration }, 'LLM chat completed');
       } catch (err) {
+        // Translate cryptic ByteString error (non-Latin1 characters in HTTP headers/responses)
+        let errorMessage = err instanceof Error ? err.message : 'LLM unavailable';
+        if (err instanceof Error && /bytestring/i.test(err.message)) {
+          errorMessage = 'LLM endpoint returned invalid characters. Check that the API URL points to a valid OpenAI-compatible endpoint (not a web UI page), and that the API token does not contain special characters.';
+        }
         log.error({ err, userId }, 'LLM chat error');
-        socket.emit('chat:error', {
-          message: err instanceof Error ? err.message : 'LLM unavailable',
-        });
+        socket.emit('chat:error', { message: errorMessage });
 
         // Record error trace
         try {

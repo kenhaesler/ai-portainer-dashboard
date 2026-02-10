@@ -17,14 +17,21 @@ function estimateTokens(text: string): number {
 export function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 
+  // Strip non-Latin1 characters (code > 255) that break HTTP headers.
+  // These commonly appear when tokens are copy-pasted from web UIs with
+  // smart quotes, zero-width spaces, or other invisible Unicode characters.
+  const sanitized = token.replace(/[^\x20-\xFF]/g, '');
+
+  if (!sanitized) return {};
+
   // Check if token is in username:password format (Basic auth)
-  if (token.includes(':')) {
-    const base64Credentials = Buffer.from(token).toString('base64');
+  if (sanitized.includes(':')) {
+    const base64Credentials = Buffer.from(sanitized).toString('base64');
     return { 'Authorization': `Basic ${base64Credentials}` };
   }
 
   // Otherwise use Bearer token
-  return { 'Authorization': `Bearer ${token}` };
+  return { 'Authorization': `Bearer ${sanitized}` };
 }
 
 export interface ChatMessage {
