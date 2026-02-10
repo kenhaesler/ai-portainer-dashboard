@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage } from './llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 
 // Mock settings-store
@@ -14,6 +14,12 @@ const mockGetConfig = vi.fn().mockReturnValue({
 });
 vi.mock('./settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
+}));
+
+// Mock config (for getLlmDispatcher)
+const mockEnvConfig = vi.fn().mockReturnValue({ LLM_VERIFY_SSL: true });
+vi.mock('../config/index.js', () => ({
+  getConfig: (...args: unknown[]) => mockEnvConfig(...args),
 }));
 
 // Mock llm-trace-store
@@ -434,6 +440,14 @@ describe('llm-client', () => {
     it('returns generic message for non-Error values', () => {
       expect(getFetchErrorMessage('string error')).toBe('Unknown connection error');
       expect(getFetchErrorMessage(null)).toBe('Unknown connection error');
+    });
+  });
+
+  describe('getLlmDispatcher', () => {
+    it('returns undefined when LLM_VERIFY_SSL is true', () => {
+      mockEnvConfig.mockReturnValue({ LLM_VERIFY_SSL: true });
+      const dispatcher = getLlmDispatcher();
+      expect(dispatcher).toBeUndefined();
     });
   });
 });

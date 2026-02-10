@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, getLlmDispatcher } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -216,7 +216,8 @@ async function streamLlmCall(
         max_tokens: llmConfig.maxTokens,
       }),
       signal,
-    });
+      dispatcher: getLlmDispatcher(),
+    } as RequestInit);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -298,7 +299,8 @@ async function streamOllamaRawCall(
       options: { num_predict: llmConfig.maxTokens },
     }),
     signal,
-  });
+    dispatcher: getLlmDispatcher(),
+  } as RequestInit);
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
