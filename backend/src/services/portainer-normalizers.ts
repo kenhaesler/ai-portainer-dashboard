@@ -80,13 +80,43 @@ function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilit
   return { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true };
 }
 
+/**
+ * Determine Edge endpoint status using a cache-aware heartbeat check.
+ *
+ * For Edge Agent Standard, Portainer's API `Status` field represents the
+ * **tunnel state** (usually 2 = closed), NOT the agent's connectivity.
+ * Portainer's own UI uses `LastCheckInDate` to show the green dot.
+ *
+ * We use the heartbeat with a generous threshold: the Portainer heartbeat
+ * window PLUS the cache TTL (15 min). This ensures that an endpoint which
+ * was "up" when cached won't drift to "down" before the cache expires.
+ */
+function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
+  // If Portainer explicitly says up, trust it
+  if (ep.Status === 1) return 'up';
+
+  const lastCheckIn = ep.LastCheckInDate;
+  if (!lastCheckIn || lastCheckIn <= 0) return 'down';
+
+  const interval = ep.EdgeCheckinInterval ?? 5;
+  // Portainer's heartbeat formula: (interval * 2) + 20, minimum 60s
+  const heartbeatThreshold = Math.max((interval * 2) + 20, 60);
+  // Add cache TTL so the status doesn't drift to "down" while cached
+  const CACHE_TTL_SECONDS = 900;
+  const generousThreshold = heartbeatThreshold + CACHE_TTL_SECONDS;
+
+  const elapsed = Math.floor(Date.now() / 1000) - lastCheckIn;
+  return elapsed <= generousThreshold ? 'up' : 'down';
+}
+
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   const isEdge = !!ep.EdgeID;
-  // Trust Portainer's own Status field for all endpoints (including Edge).
-  // Portainer already runs its own heartbeat check — re-deriving status from
-  // LastCheckInDate caused false "down" readings when the cached data grew stale
-  // (see issue #489).
-  const status: 'up' | 'down' = ep.Status === 1 ? 'up' : 'down';
+  // Non-Edge: trust Portainer's Status field directly.
+  // Edge: Status=2 means "tunnel closed" (normal for Edge Standard),
+  // so we use a cache-aware heartbeat check instead (see issue #489).
+  const status: 'up' | 'down' = isEdge
+    ? determineEdgeStatus(ep)
+    : (ep.Status === 1 ? 'up' : 'down');
 
   if (isEdge) {
     log.debug({

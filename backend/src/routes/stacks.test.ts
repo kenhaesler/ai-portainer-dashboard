@@ -112,11 +112,11 @@ describe('stacks routes', () => {
     expect(body).toHaveLength(1);
   });
 
-  it('includes stacks from Edge endpoints with Status=1 (up)', async () => {
+  it('includes stacks from Edge endpoints with recent check-in (Status=2, tunnel closed)', async () => {
     const recentCheckIn = Math.floor(Date.now() / 1000) - 10;
     mockGetEndpoints.mockResolvedValue([
       fakeEndpoint(1, 'local'),
-      fakeEdgeEndpoint(2, 'edge-node', recentCheckIn, 1),
+      fakeEdgeEndpoint(2, 'edge-node', recentCheckIn, 2), // Status=2 is normal for Edge Standard
     ] as any);
     mockGetStacksByEndpoint
       .mockResolvedValueOnce([fakeStack(1, 'local-stack', 1)] as any)
