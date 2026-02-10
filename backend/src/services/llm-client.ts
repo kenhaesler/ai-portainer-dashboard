@@ -14,6 +14,20 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Extract a human-readable message from Node.js fetch errors.
+ * Native fetch wraps the real cause (DNS, connection refused, SSL) inside err.cause.
+ */
+export function getFetchErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return 'Unknown connection error';
+  const cause = (err as Error & { cause?: Error }).cause;
+  if (cause instanceof Error) {
+    // e.g. "getaddrinfo ENOTFOUND my-host" or "connect ECONNREFUSED 127.0.0.1:8080"
+    return cause.message;
+  }
+  return err.message;
+}
+
 export function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 

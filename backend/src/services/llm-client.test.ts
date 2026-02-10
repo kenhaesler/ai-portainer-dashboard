@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders } from './llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 
 // Mock settings-store
@@ -410,6 +410,30 @@ describe('llm-client', () => {
       // If it tried to use Ollama, it would call ollama.list() which is mocked
       // but we want to verify it returns immediately without calling Ollama
       await expect(ensureModel()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('getFetchErrorMessage', () => {
+    it('extracts cause message from fetch TypeError', () => {
+      const cause = new Error('getaddrinfo ENOTFOUND my-host');
+      const err = new TypeError('fetch failed', { cause });
+      expect(getFetchErrorMessage(err)).toBe('getaddrinfo ENOTFOUND my-host');
+    });
+
+    it('extracts ECONNREFUSED cause', () => {
+      const cause = new Error('connect ECONNREFUSED 127.0.0.1:8080');
+      const err = new TypeError('fetch failed', { cause });
+      expect(getFetchErrorMessage(err)).toBe('connect ECONNREFUSED 127.0.0.1:8080');
+    });
+
+    it('falls back to error message when no cause', () => {
+      const err = new Error('some other error');
+      expect(getFetchErrorMessage(err)).toBe('some other error');
+    });
+
+    it('returns generic message for non-Error values', () => {
+      expect(getFetchErrorMessage('string error')).toBe('Unknown connection error');
+      expect(getFetchErrorMessage(null)).toBe('Unknown connection error');
     });
   });
 });

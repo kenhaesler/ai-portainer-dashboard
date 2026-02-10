@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -836,11 +836,7 @@ export function setupLlmNamespace(ns: Namespace) {
 
         log.debug({ userId, messageLength: data.text.length, responseLength: finalResponse.length, toolIterations: toolIteration }, 'LLM chat completed');
       } catch (err) {
-        // Translate cryptic ByteString error (non-Latin1 characters in HTTP headers/responses)
-        let errorMessage = err instanceof Error ? err.message : 'LLM unavailable';
-        if (err instanceof Error && /bytestring/i.test(err.message)) {
-          errorMessage = 'LLM endpoint returned invalid characters. Check that the API URL points to a valid OpenAI-compatible endpoint (not a web UI page), and that the API token does not contain special characters.';
-        }
+        const errorMessage = getFetchErrorMessage(err);
         log.error({ err, userId }, 'LLM chat error');
         socket.emit('chat:error', { message: errorMessage });
 

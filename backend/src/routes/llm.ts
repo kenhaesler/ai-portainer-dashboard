@@ -11,7 +11,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -238,8 +238,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       return { ok: true, models };
     } catch (err) {
       log.error({ err }, 'LLM connection test failed');
-      const message = err instanceof Error ? err.message : 'Connection failed';
-      return { ok: false, error: message };
+      return { ok: false, error: getFetchErrorMessage(err) };
     }
   });
 
