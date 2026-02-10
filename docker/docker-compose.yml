@@ -122,6 +122,8 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg17
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     # PostgreSQL entrypoint requires root → postgres privilege transition (gosu)
     # so no-new-privileges is NOT compatible. Instead, drop all caps and add
     # back only the minimum set needed for entrypoint init + runtime.
