@@ -21,10 +21,27 @@ All configuration is done via environment variables. Copy [`.env.example`](../.e
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OLLAMA_BASE_URL` | Ollama server URL | `http://host.docker.internal:11434` |
+| `OLLAMA_BASE_URL` | Ollama server URL (used by native Ollama SDK) | `http://host.docker.internal:11434` |
 | `OLLAMA_MODEL` | LLM model name | `llama3.2` |
-| `OLLAMA_API_ENDPOINT` | Custom chat completions endpoint (OpenWebUI) | *(optional)* |
-| `OLLAMA_BEARER_TOKEN` | Auth token or `user:pass` for Basic auth | *(optional)* |
+| `OLLAMA_API_ENDPOINT` | Custom OpenAI-compatible chat completions endpoint (e.g. OpenWebUI, LiteLLM). When set, bypasses the Ollama SDK and uses direct HTTP requests | *(optional)* |
+| `OLLAMA_BEARER_TOKEN` | Auth token or `user:pass` for Basic auth (used for both Ollama and custom endpoints) | *(optional)* |
+| `LLM_VERIFY_SSL` | Verify TLS certificates for LLM endpoints. Set to `false` for self-signed or internal CA certificates. When `false`, sets `NODE_TLS_REJECT_UNAUTHORIZED=0` globally at startup and creates an undici Agent with `rejectUnauthorized: false` | `true` |
+| `LLM_MAX_TOOL_ITERATIONS` | Maximum MCP tool call iterations per LLM request | `10` |
+
+### Endpoint selection logic
+
+The dashboard supports two LLM connection modes:
+
+1. **Native Ollama SDK** (default) — Used when `OLLAMA_API_ENDPOINT` is not set and the Settings UI "Custom endpoint" toggle is off. Connects to `OLLAMA_BASE_URL` using the Ollama SDK with model pulling support.
+2. **OpenAI-compatible HTTP** — Used when `OLLAMA_API_ENDPOINT` is set (or the Settings UI toggle is on). Sends standard `/v1/chat/completions` requests via `undici` fetch with SSL and auth handling. Works with OpenWebUI, LiteLLM, vLLM, or any OpenAI-compatible API.
+
+### SSL bypass details
+
+When `LLM_VERIFY_SSL=false`:
+- `NODE_TLS_REJECT_UNAUTHORIZED=0` is set at process startup (before any imports), disabling TLS verification globally for all connections including the Ollama SDK's internal fetch
+- An `undici.Agent` with `connect: { rejectUnauthorized: false }` is created for direct HTTP calls via `llmFetch()`
+- The Ollama SDK is initialized with the custom `llmFetch` function to ensure it also respects SSL settings
+- The `--use-system-ca` Node.js flag is set in Docker images to trust system CA certificates
 
 ## Monitoring & Metrics
 
