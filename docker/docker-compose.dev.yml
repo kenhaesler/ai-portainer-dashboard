@@ -1,9 +1,9 @@
 services:
   backend:
     build:
-      context: ../backend
-      dockerfile: ../docker/backend/Dockerfile.dev
-    command: ["npx", "tsx", "watch", "src/index.ts"]
+      context: ..
+      dockerfile: backend/Dockerfile.dev
+    command: ["npx", "tsx", "watch", "backend/src/index.ts"]
     ports:
       - "3051:3051"
     extra_hosts:
@@ -54,7 +54,7 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ../backend/src:/app/src
+      - ../backend/src:/app/backend/src
       - backend-data:/app/data
     depends_on:
       redis:
@@ -72,8 +72,8 @@ services:
 
   frontend:
     build:
-      context: ../frontend
-      dockerfile: ../docker/frontend/Dockerfile.dev
+      context: ..
+      dockerfile: frontend/Dockerfile.dev
     ports:
       - "5273:5273"
     environment:
@@ -87,8 +87,8 @@ services:
       retries: 3
       start_period: 15s
     volumes:
-      - ../frontend/src:/app/src
-      - ../frontend/index.html:/app/index.html
+      - ../frontend/src:/app/frontend/src
+      - ../frontend/index.html:/app/frontend/index.html
       - ../.git:/app/.git:ro
     depends_on:
       backend:
@@ -123,8 +123,8 @@ services:
 
   kali-mcp:
     build:
-      context: ../tools/kali-mcp
-      dockerfile: ../docker/kali-mcp/Dockerfile
+      context: kali-mcp
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8787:8000"
