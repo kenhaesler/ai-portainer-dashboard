@@ -234,6 +234,15 @@ vi.mock('@/hooks/use-endpoints', () => ({
   })),
 }));
 
+vi.mock('@/hooks/use-containers', () => ({
+  useContainers: vi.fn(() => ({
+    data: [
+      { id: 'c1', name: 'test-web', image: 'nginx:latest', state: 'running', status: 'Up 2h', endpointId: 1, endpointName: 'local', ports: [], created: 0, labels: {}, networks: [] },
+    ],
+    isLoading: false,
+  })),
+}));
+
 // Mock chart components that use canvas/SVG (not relevant to a11y structure)
 vi.mock('@/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: () => <div data-testid="metrics-line-chart" />,

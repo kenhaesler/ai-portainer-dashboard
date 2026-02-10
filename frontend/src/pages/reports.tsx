@@ -127,8 +127,9 @@ function groupContainersByDienststelle(
   containers: Container[] | undefined,
 ): DienststelleGroup[] {
   if (!endpoints) return [];
+  const safeContainers = Array.isArray(containers) ? containers : [];
   const containersByEndpoint = new Map<number, Container[]>();
-  for (const c of containers ?? []) {
+  for (const c of safeContainers) {
     const list = containersByEndpoint.get(c.endpointId) ?? [];
     list.push(c);
     containersByEndpoint.set(c.endpointId, list);
