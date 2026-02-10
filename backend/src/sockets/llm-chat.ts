@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
+import { getAuthHeaders } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -20,26 +21,6 @@ const log = createChildLogger('socket:llm');
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
-}
-
-export function getAuthHeaders(token: string | undefined): Record<string, string> {
-  if (!token) return {};
-
-  // Strip non-Latin1 characters (code > 255) that break HTTP headers.
-  // These commonly appear when tokens are copy-pasted from web UIs with
-  // smart quotes, zero-width spaces, or other invisible Unicode characters.
-  const sanitized = token.replace(/[^\x20-\xFF]/g, '');
-
-  if (!sanitized) return {};
-
-  // Check if token is in username:password format (Basic auth)
-  if (sanitized.includes(':')) {
-    const base64Credentials = Buffer.from(sanitized).toString('base64');
-    return { 'Authorization': `Basic ${base64Credentials}` };
-  }
-
-  // Otherwise use Bearer token
-  return { 'Authorization': `Bearer ${sanitized}` };
 }
 
 interface ChatMessage {

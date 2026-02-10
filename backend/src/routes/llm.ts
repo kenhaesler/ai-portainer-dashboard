@@ -11,20 +11,13 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
+import { getAuthHeaders } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
-}
-
-function getAuthHeaders(token: string | undefined): Record<string, string> {
-  if (!token) return {};
-  if (token.includes(':')) {
-    return { 'Authorization': `Basic ${Buffer.from(token).toString('base64')}` };
-  }
-  return { 'Authorization': `Bearer ${token}` };
 }
 
 async function getInfrastructureSummary(): Promise<string> {
