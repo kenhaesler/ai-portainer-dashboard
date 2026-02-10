@@ -22,6 +22,14 @@ vi.mock('../config/index.js', () => ({
   getConfig: (...args: unknown[]) => mockEnvConfig(...args),
 }));
 
+// Mock undici — llmFetch uses undici's fetch (not global fetch) so
+// the `dispatcher` option is honored for SSL bypass.
+const mockUndiciFetch = vi.fn();
+vi.mock('undici', () => ({
+  Agent: vi.fn(),
+  fetch: (...args: unknown[]) => mockUndiciFetch(...args),
+}));
+
 // Mock llm-trace-store
 const mockInsertLlmTrace = vi.fn();
 vi.mock('./llm-trace-store.js', () => ({
@@ -149,7 +157,7 @@ describe('llm-client', () => {
         },
       });
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockUndiciFetch.mockResolvedValue(
         new Response(mockResponseBody, { status: 200 }),
       );
 
@@ -161,18 +169,16 @@ describe('llm-client', () => {
       );
 
       // Should call custom endpoint, not Ollama
-      expect(fetchSpy).toHaveBeenCalledWith(
+      expect(mockUndiciFetch).toHaveBeenCalledWith(
         'http://localhost:3000/api/chat/completions',
         expect.objectContaining({ method: 'POST' }),
       );
       // Should NOT have Authorization header when token is empty
-      const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+      const callHeaders = mockUndiciFetch.mock.calls[0][1]?.headers as Record<string, string>;
       expect(callHeaders['Authorization']).toBeUndefined();
       // Ollama SDK should NOT have been called
       expect(mockChat).not.toHaveBeenCalled();
       expect(chunks).toContain('Hello');
-
-      fetchSpy.mockRestore();
     });
 
     it('includes Bearer token when customEndpointToken is set', async () => {
@@ -197,7 +203,7 @@ describe('llm-client', () => {
         },
       });
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockUndiciFetch.mockResolvedValue(
         new Response(mockResponseBody, { status: 200 }),
       );
 
@@ -207,10 +213,8 @@ describe('llm-client', () => {
         () => {},
       );
 
-      const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+      const callHeaders = mockUndiciFetch.mock.calls[0][1]?.headers as Record<string, string>;
       expect(callHeaders['Authorization']).toBe('Bearer my-secret');
-
-      fetchSpy.mockRestore();
     });
 
     it('strips SSE "data: " prefix from OpenAI-compatible streaming responses', async () => {
@@ -241,7 +245,7 @@ describe('llm-client', () => {
         },
       });
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockUndiciFetch.mockResolvedValue(
         new Response(mockResponseBody, { status: 200 }),
       );
 
@@ -254,8 +258,6 @@ describe('llm-client', () => {
 
       expect(result).toBe('Hello world');
       expect(chunks).toEqual(['Hello', ' world']);
-
-      fetchSpy.mockRestore();
     });
 
     it('handles mixed SSE formats (with and without data: prefix)', async () => {
@@ -282,7 +284,7 @@ describe('llm-client', () => {
         },
       });
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockUndiciFetch.mockResolvedValue(
         new Response(mockResponseBody, { status: 200 }),
       );
 
@@ -295,8 +297,6 @@ describe('llm-client', () => {
 
       expect(result).toBe('Raw SSE');
       expect(chunks).toEqual(['Raw', ' SSE']);
-
-      fetchSpy.mockRestore();
     });
 
     it('translates ByteString error to helpful message', async () => {
@@ -336,21 +336,19 @@ describe('llm-client', () => {
         maxToolIterations: 5,
       });
 
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      mockUndiciFetch.mockResolvedValue(
         new Response(JSON.stringify({ data: [{ id: 'gpt-4' }] }), { status: 200 }),
       );
 
       const result = await isOllamaAvailable();
 
       expect(result).toBe(true);
-      expect(fetchSpy).toHaveBeenCalledWith(
+      expect(mockUndiciFetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/models',
         expect.objectContaining({
           signal: expect.any(AbortSignal),
         }),
       );
-
-      fetchSpy.mockRestore();
     });
 
     it('returns false when custom endpoint is unreachable', async () => {
@@ -364,12 +362,10 @@ describe('llm-client', () => {
         maxToolIterations: 5,
       });
 
-      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+      mockUndiciFetch.mockRejectedValue(new Error('ECONNREFUSED'));
 
       const result = await isOllamaAvailable();
       expect(result).toBe(false);
-
-      vi.restoreAllMocks();
     });
   });
 

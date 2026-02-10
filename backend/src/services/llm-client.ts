@@ -1,5 +1,5 @@
 import { Ollama } from 'ollama';
-import { Agent } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
@@ -44,6 +44,18 @@ export function getFetchErrorMessage(err: unknown): string {
     return cause.message;
   }
   return err.message;
+}
+
+/**
+ * Fetch wrapper that uses undici's fetch so the `dispatcher` option is
+ * actually honored.  Global fetch() silently ignores `dispatcher`, which
+ * means LLM_VERIFY_SSL=false had no effect.
+ */
+export function llmFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+  return undiciFetch(url, {
+    ...init,
+    dispatcher: getLlmDispatcher(),
+  } as any) as unknown as Promise<Response>;
 }
 
 export function getAuthHeaders(token: string | undefined): Record<string, string> {
@@ -103,7 +115,7 @@ async function chatStreamInner(
     // Use authenticated fetch if custom endpoint is enabled and configured
     // Token is optional — some endpoints (e.g. Open WebUI on internal networks) don't require auth
     if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-      const response = await fetch(llmConfig.customEndpointUrl, {
+      const response = await llmFetch(llmConfig.customEndpointUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -114,8 +126,7 @@ async function chatStreamInner(
           messages: fullMessages,
           stream: true,
         }),
-        dispatcher: getLlmDispatcher(),
-      } as RequestInit);
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -284,13 +295,12 @@ export async function isOllamaAvailable(): Promise<boolean> {
     if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
       const baseUrl = new URL(llmConfig.customEndpointUrl);
       const modelsUrl = `${baseUrl.origin}/v1/models`;
-      const response = await fetch(modelsUrl, {
+      const response = await llmFetch(modelsUrl, {
         headers: {
           ...getAuthHeaders(llmConfig.customEndpointToken),
         },
         signal: AbortSignal.timeout(5000),
-        dispatcher: getLlmDispatcher(),
-      } as RequestInit);
+      });
       return response.ok;
     }
 
