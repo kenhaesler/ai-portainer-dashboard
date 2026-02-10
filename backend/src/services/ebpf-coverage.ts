@@ -6,8 +6,8 @@ const log = createChildLogger('ebpf-coverage');
 
 export type CoverageStatus = 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown' | 'not_deployed' | 'unreachable' | 'incompatible';
 
-/** Portainer endpoint types compatible with Beyla eBPF tracing (Docker Standalone=1, Swarm=2) */
-export const BEYLA_COMPATIBLE_TYPES = new Set([1, 2]);
+/** Portainer endpoint types compatible with Beyla eBPF tracing (Docker Standalone=1, Swarm=2, Edge Agent Standard=4, Edge Agent Async=7) */
+export const BEYLA_COMPATIBLE_TYPES = new Set([1, 2, 4, 7]);
 
 /** Detection result from checking a single endpoint for Beyla */
 export type DetectionResult = 'deployed' | 'failed' | 'not_found' | 'unreachable' | 'incompatible';

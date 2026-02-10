@@ -56,15 +56,17 @@ describe('ebpf-coverage service', () => {
   });
 
   describe('BEYLA_COMPATIBLE_TYPES', () => {
-    it('should include Docker Standalone (1) and Swarm (2)', () => {
+    it('should include Docker Standalone (1), Swarm (2), Edge Agent Standard (4), and Edge Agent Async (7)', () => {
       expect(BEYLA_COMPATIBLE_TYPES.has(1)).toBe(true);
       expect(BEYLA_COMPATIBLE_TYPES.has(2)).toBe(true);
+      expect(BEYLA_COMPATIBLE_TYPES.has(4)).toBe(true);
+      expect(BEYLA_COMPATIBLE_TYPES.has(7)).toBe(true);
     });
 
-    it('should exclude Edge Agent (4) and other types', () => {
-      expect(BEYLA_COMPATIBLE_TYPES.has(4)).toBe(false);
+    it('should exclude ACI (3) and other unsupported types', () => {
       expect(BEYLA_COMPATIBLE_TYPES.has(3)).toBe(false);
       expect(BEYLA_COMPATIBLE_TYPES.has(5)).toBe(false);
+      expect(BEYLA_COMPATIBLE_TYPES.has(6)).toBe(false);
     });
   });
 
@@ -99,10 +101,17 @@ describe('ebpf-coverage service', () => {
       expect(result).toBe('unreachable');
     });
 
-    it('should return incompatible for Edge Agent endpoints (type 4)', async () => {
-      const result = await detectBeylaOnEndpoint(1, 4);
+    it('should return incompatible for ACI endpoints (type 3)', async () => {
+      const result = await detectBeylaOnEndpoint(1, 3);
       expect(result).toBe('incompatible');
       expect(mockGetContainers).not.toHaveBeenCalled();
+    });
+
+    it('should proceed with detection for Edge Agent Standard (type 4)', async () => {
+      mockGetContainers.mockResolvedValueOnce([]);
+      const result = await detectBeylaOnEndpoint(1, 4);
+      expect(result).toBe('not_found');
+      expect(mockGetContainers).toHaveBeenCalledWith(1, true);
     });
 
     it('should proceed with detection for Docker Standalone (type 1)', async () => {
@@ -182,10 +191,23 @@ describe('ebpf-coverage service', () => {
       expect(mockTransaction).toHaveBeenCalled();
     });
 
-    it('should mark Edge Agent endpoints as incompatible', async () => {
+    it('should detect Beyla on Edge Agent endpoints (type 4 is compatible)', async () => {
       mockGetEndpoints.mockResolvedValueOnce([
         { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
         { Id: 3, Name: 'edge-agent', Type: 4, URL: 'tcp://edge', Status: 1, Snapshots: [] },
+      ] as any);
+      mockGetContainers.mockResolvedValue([]);
+      mockRun.mockReturnValue({ changes: 1 });
+      await syncEndpointCoverage();
+      expect(mockGetContainers).toHaveBeenCalledTimes(2);
+      expect(mockGetContainers).toHaveBeenCalledWith(1, true);
+      expect(mockGetContainers).toHaveBeenCalledWith(3, true);
+    });
+
+    it('should mark ACI endpoints (type 3) as incompatible', async () => {
+      mockGetEndpoints.mockResolvedValueOnce([
+        { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
+        { Id: 3, Name: 'aci-endpoint', Type: 3, URL: 'tcp://aci', Status: 1, Snapshots: [] },
       ] as any);
       mockGetContainers.mockResolvedValue([]);
       mockRun.mockReturnValue({ changes: 1 });

@@ -166,7 +166,7 @@ describe('EbpfCoveragePage', () => {
     expect(hints.length).toBe(3); // not_deployed, unreachable, incompatible
     expect(screen.getByText('Endpoint reachable but no Beyla container found')).toBeTruthy();
     expect(screen.getByText('Could not connect to endpoint to check for Beyla')).toBeTruthy();
-    expect(screen.getByText('Endpoint type not supported (Edge Agent, ACI, etc.)')).toBeTruthy();
+    expect(screen.getByText('Endpoint type not supported (ACI, Kubernetes, etc.)')).toBeTruthy();
   });
 
   it('renders unreachable and incompatible counts in summary', () => {

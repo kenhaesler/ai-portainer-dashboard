@@ -37,7 +37,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_HINTS: Record<string, string> = {
   not_deployed: 'Endpoint reachable but no Beyla container found',
   unreachable: 'Could not connect to endpoint to check for Beyla',
-  incompatible: 'Endpoint type not supported (Edge Agent, ACI, etc.)',
+  incompatible: 'Endpoint type not supported (ACI, Kubernetes, etc.)',
 };
 
 function StatusIcon({ status }: { status: string }) {
