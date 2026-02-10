@@ -16,8 +16,8 @@ function readLines(relativePath: string): string[] {
 }
 
 describe('Dockerfile security best practices', () => {
-  describe('docker/backend/Dockerfile (production)', () => {
-    const content = readFile('docker/backend/Dockerfile');
+  describe('backend/Dockerfile (production)', () => {
+    const content = readFile('backend/Dockerfile');
 
     it('uses multi-stage build', () => {
       const fromStatements = content.match(/^FROM\s/gm);
@@ -53,8 +53,8 @@ describe('Dockerfile security best practices', () => {
     });
   });
 
-  describe('docker/frontend/Dockerfile (production)', () => {
-    const content = readFile('docker/frontend/Dockerfile');
+  describe('frontend/Dockerfile (production)', () => {
+    const content = readFile('frontend/Dockerfile');
 
     it('uses multi-stage build', () => {
       const fromStatements = content.match(/^FROM\s/gm);
@@ -84,8 +84,8 @@ describe('Dockerfile security best practices', () => {
     });
   });
 
-  describe('docker/backend/Dockerfile.dev', () => {
-    const content = readFile('docker/backend/Dockerfile.dev');
+  describe('backend/Dockerfile.dev', () => {
+    const content = readFile('backend/Dockerfile.dev');
 
     it('drops privileges via entrypoint (su-exec to node user)', () => {
       expect(content).toMatch(/su-exec/);
@@ -113,8 +113,8 @@ describe('Dockerfile security best practices', () => {
     });
   });
 
-  describe('docker/frontend/Dockerfile.dev', () => {
-    const content = readFile('docker/frontend/Dockerfile.dev');
+  describe('frontend/Dockerfile.dev', () => {
+    const content = readFile('frontend/Dockerfile.dev');
 
     it('runs as non-root user', () => {
       expect(content).toMatch(/^USER\s+\S+/m);

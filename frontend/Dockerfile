@@ -7,13 +7,14 @@ ARG VITE_SOCKET_URL=""
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
-COPY index.html vite.config.ts tsconfig.json tsconfig.node.json components.json ./
-COPY public/ public/
-COPY src/ src/
+COPY frontend/package.json ./frontend/
+RUN npm ci -w frontend
+COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json frontend/tsconfig.node.json frontend/components.json ./frontend/
+COPY frontend/public/ frontend/public/
+COPY frontend/src/ frontend/src/
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
-RUN npm run build
+RUN npm run build -w frontend
 
 # Tools stage — grab wget for healthcheck
 FROM dhi.io/nginx:1.29-alpine3.23-dev AS tools
@@ -25,8 +26,8 @@ FROM dhi.io/nginx:1.29-alpine3.23 AS runtime
 # Copy wget for healthcheck from tools stage
 COPY --from=tools /usr/bin/wget /usr/bin/wget
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 8080
 
