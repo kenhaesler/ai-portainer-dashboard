@@ -1,0 +1,42 @@
+# Local Edge Agent Standard for testing
+#
+# SETUP (one-time):
+#   1. Open Portainer UI → Environments → Add environment
+#   2. Select "Docker Standalone" → "Edge Agent"
+#   3. Name: "local-edge-test"
+#   4. Portainer server URL: host.docker.internal:9000
+#   5. Click "Create" and copy EDGE_ID + EDGE_KEY from the generated command
+#   6. Paste them into docker/.env (or export them):
+#        EDGE_AGENT_ID=<paste EDGE_ID>
+#        EDGE_AGENT_KEY=<paste EDGE_KEY>
+#
+# IMPORTANT: Your Portainer must expose port 8000 for Edge tunnels.
+#   If it doesn't, recreate Portainer with:  -p 8000:8000 -p 9000:9000
+#
+# RUN:
+#   docker compose -f docker/docker-compose.edge-agent.yml up -d
+#
+# VERIFY:
+#   - Portainer UI → Environments → "local-edge-test" should show as connected
+#   - Dashboard → Fleet Overview → should show a second endpoint with Edge Agent Standard badge
+#
+# STOP:
+#   docker compose -f docker/docker-compose.edge-agent.yml down
+
+services:
+  edge-agent:
+    image: portainer/agent:2.21.0
+    container_name: portainer_edge_agent
+    restart: unless-stopped
+    environment:
+      EDGE: "1"
+      EDGE_ID: ${EDGE_AGENT_ID:?Set EDGE_AGENT_ID in .env (from Portainer UI)}
+      EDGE_KEY: ${EDGE_AGENT_KEY:?Set EDGE_AGENT_KEY in .env (from Portainer UI)}
+      EDGE_INSECURE_POLL: "1"
+      CAP_HOST_MANAGEMENT: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

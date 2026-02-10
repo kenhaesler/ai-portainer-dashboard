@@ -347,6 +347,24 @@ sequenceDiagram
 | **DevOps** | Docker, Docker Compose, GitHub Actions CI |
 | **Testing** | Vitest, Testing Library, jsdom, Playwright (E2E) |
 
+## Docker Development
+
+### Standard Development Stack
+```bash
+docker compose -f docker/docker-compose.dev.yml up -d
+```
+
+Runs backend (Fastify) and frontend (Vite) in hot-reload containers with auto-refresh on code changes.
+
+### Edge Agent Testing
+```bash
+docker compose -f docker/docker-compose.edge-agent.yml up -d
+```
+
+Runs a **Portainer Edge Agent Standard** container locally for testing Edge features (e.g., endpoints registered as edge agents). Requires `EDGE_AGENT_ID` and `EDGE_AGENT_KEY` environment variables in `docker/.env` (obtained from Portainer UI when enrolling an edge agent). Port 8000 must be exposed on the Portainer instance for Edge tunnels.
+
+---
+
 ## Project Structure
 
 ```
