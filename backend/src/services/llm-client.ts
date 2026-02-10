@@ -1,6 +1,8 @@
 import { Ollama } from 'ollama';
+import { Agent } from 'undici';
 import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../config/index.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
 import { withSpan } from './trace-context.js';
@@ -8,6 +10,22 @@ import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normal
 import type { Insight } from '../models/monitoring.js';
 
 const log = createChildLogger('llm-client');
+
+/**
+ * Cached undici Agent for LLM fetch calls.
+ * When LLM_VERIFY_SSL=false, disables certificate verification so that
+ * self-signed or internal-CA endpoints (e.g. OpenWebUI behind a reverse proxy) work.
+ */
+let llmDispatcher: Agent | undefined;
+export function getLlmDispatcher(): Agent | undefined {
+  if (llmDispatcher) return llmDispatcher;
+  const config = getConfig();
+  if (!config.LLM_VERIFY_SSL) {
+    llmDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+    return llmDispatcher;
+  }
+  return undefined;
+}
 
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
@@ -96,7 +114,8 @@ async function chatStreamInner(
           messages: fullMessages,
           stream: true,
         }),
-      });
+        dispatcher: getLlmDispatcher(),
+      } as RequestInit);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -270,7 +289,8 @@ export async function isOllamaAvailable(): Promise<boolean> {
           ...getAuthHeaders(llmConfig.customEndpointToken),
         },
         signal: AbortSignal.timeout(5000),
-      });
+        dispatcher: getLlmDispatcher(),
+      } as RequestInit);
       return response.ok;
     }
 
