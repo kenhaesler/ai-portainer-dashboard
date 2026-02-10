@@ -80,55 +80,22 @@ function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilit
   return { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true };
 }
 
-/**
- * Determine if an Edge endpoint is reachable based on its last check-in.
- * Portainer uses: (interval * 2) + 20 seconds as the heartbeat threshold.
- * We use a more generous formula: max((interval * 2) + 20, 60) to avoid
- * flapping for endpoints with short intervals.
- * If Portainer already reports Status === 1, trust it immediately.
- */
-function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
-  if (ep.Status === 1) return 'up';
-
-  const lastCheckIn = ep.LastCheckInDate;
-  if (lastCheckIn == null || lastCheckIn <= 0) {
-    log.debug({ endpointId: ep.Id, name: ep.Name, status: ep.Status, lastCheckIn }, 'Edge endpoint has no LastCheckInDate — marking down');
-    return 'down';
-  }
-
-  const interval = ep.EdgeCheckinInterval ?? 5;
-  // Portainer formula: (interval * 2) + 20. We add a generous minimum of 60s.
-  const threshold = Math.max((interval * 2) + 20, 60);
-  const elapsed = Math.floor((Date.now() / 1000) - lastCheckIn);
-  const result = elapsed <= threshold ? 'up' : 'down';
-
-  log.debug({
-    endpointId: ep.Id,
-    name: ep.Name,
-    portainerStatus: ep.Status,
-    lastCheckIn,
-    interval,
-    threshold,
-    elapsed,
-    result,
-  }, `Edge endpoint heartbeat check: ${result}`);
-
-  return result;
-}
-
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   const isEdge = !!ep.EdgeID;
+  // Trust Portainer's own Status field for all endpoints (including Edge).
+  // Portainer already runs its own heartbeat check — re-deriving status from
+  // LastCheckInDate caused false "down" readings when the cached data grew stale
+  // (see issue #489).
+  const status: 'up' | 'down' = ep.Status === 1 ? 'up' : 'down';
+
   if (isEdge) {
-    log.info({
+    log.debug({
       endpointId: ep.Id,
       name: ep.Name,
-      type: ep.Type,
       portainerStatus: ep.Status,
-      edgeId: ep.EdgeID,
+      resolvedStatus: status,
       lastCheckInDate: ep.LastCheckInDate,
       edgeCheckinInterval: ep.EdgeCheckinInterval,
-      hasSnapshots: (ep.Snapshots?.length ?? 0) > 0,
-      snapshotTime: ep.Snapshots?.[0]?.Time,
     }, 'Normalizing Edge endpoint');
   }
   const snapshot = ep.Snapshots?.[0];
@@ -138,7 +105,6 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     : null;
   const snapshotTime = snapshot?.Time;
   const snapshotAge = snapshotTime ? Date.now() - snapshotTime * 1000 : null;
-  const status = isEdge ? determineEdgeStatus(ep) : (ep.Status === 1 ? 'up' : 'down');
 
   return {
     id: ep.Id,
