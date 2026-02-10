@@ -56,7 +56,7 @@ const INJECTION_PATTERNS: RegExp[] = [
   /override\s+(all\s+)?(previous|prior|above|system)\s+(instructions?|prompts?|rules?)/i,
 
   // System prompt extraction (allow intermediate words like "me", "us")
-  /(?:show|reveal|display|print|output|repeat|echo|tell)\s+(?:\w+\s+)*(the\s+)?(system\s+prompt|initial\s+instructions?|hidden\s+prompt|original\s+prompt|secret\s+instructions?)/i,
+  /(?:show|reveal|display|print|output|repeat|echo|tell)\s+(?:\w+\s+)*(the\s+)?(system\s+prompt|initial\s+instructions?|hidden\s+prompt|original\s+prompt|secret\s+instructions?|prompt|instructions?)/i,
   /what\s+(are|were)\s+(your|the)\s+(system\s+)?(instructions?|prompt|rules)/i,
 
   // Role hijacking
