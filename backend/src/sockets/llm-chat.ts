@@ -214,7 +214,7 @@ async function streamLlmCall(
 ): Promise<string> {
   let fullResponse = '';
 
-  if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+  if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
     const response = await fetch(llmConfig.customEndpointUrl, {
       method: 'POST',
       headers: {

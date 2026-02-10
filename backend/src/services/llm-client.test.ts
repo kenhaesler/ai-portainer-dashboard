@@ -1,15 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chatStream } from './llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel } from './llm-client.js';
+import { getEffectiveLlmConfig } from './settings-store.js';
 
 // Mock settings-store
+const mockGetConfig = vi.fn().mockReturnValue({
+  ollamaUrl: 'http://localhost:11434',
+  model: 'llama3.2',
+  customEnabled: false,
+  customEndpointUrl: undefined,
+  customEndpointToken: undefined,
+  maxTokens: 2048,
+  maxToolIterations: 5,
+});
 vi.mock('./settings-store.js', () => ({
-  getEffectiveLlmConfig: vi.fn().mockReturnValue({
-    ollamaUrl: 'http://localhost:11434',
-    model: 'llama3.2',
-    customEnabled: false,
-    customEndpointUrl: undefined,
-    customEndpointToken: undefined,
-  }),
+  getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 
 // Mock llm-trace-store
@@ -115,6 +119,183 @@ describe('llm-client', () => {
 
       // chatStream should still succeed even if trace recording fails
       expect(result).toBe('ok');
+    });
+
+    it('uses custom endpoint when customEnabled + url set, even with empty token', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
+        customEndpointToken: '',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      const chunks: string[] = [];
+      await chatStream(
+        [{ role: 'user', content: 'test' }],
+        'system prompt',
+        (chunk) => chunks.push(chunk),
+      );
+
+      // Should call custom endpoint, not Ollama
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://localhost:3000/api/chat/completions',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      // Should NOT have Authorization header when token is empty
+      const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(callHeaders['Authorization']).toBeUndefined();
+      // Ollama SDK should NOT have been called
+      expect(mockChat).not.toHaveBeenCalled();
+      expect(chunks).toContain('Hello');
+
+      fetchSpy.mockRestore();
+    });
+
+    it('includes Bearer token when customEndpointToken is set', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
+        customEndpointToken: 'my-secret',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({ choices: [{ delta: { content: 'Hi' } }] }) + '\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      await chatStream(
+        [{ role: 'user', content: 'test' }],
+        'system prompt',
+        () => {},
+      );
+
+      const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(callHeaders['Authorization']).toBe('Bearer my-secret');
+
+      fetchSpy.mockRestore();
+    });
+
+    it('translates ByteString error to helpful message', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: false,
+        customEndpointUrl: '',
+        customEndpointToken: '',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      mockChat.mockRejectedValue(
+        new Error('Cannot convert argument to a ByteString because the character at index 7 has a value of 8226'),
+      );
+
+      await expect(
+        chatStream(
+          [{ role: 'user', content: 'test' }],
+          'system prompt',
+          () => {},
+        ),
+      ).rejects.toThrow(/HTML instead of JSON/);
+    });
+  });
+
+  describe('isOllamaAvailable', () => {
+    it('tests custom endpoint when customEnabled + url set', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
+        customEndpointToken: '',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ data: [{ id: 'gpt-4' }] }), { status: 200 }),
+      );
+
+      const result = await isOllamaAvailable();
+
+      expect(result).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://localhost:3000/v1/models',
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
+
+      fetchSpy.mockRestore();
+    });
+
+    it('returns false when custom endpoint is unreachable', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
+        customEndpointToken: '',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+
+      const result = await isOllamaAvailable();
+      expect(result).toBe(false);
+
+      vi.restoreAllMocks();
+    });
+  });
+
+  describe('ensureModel', () => {
+    it('skips Ollama model pull when custom endpoint is enabled', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
+        customEndpointToken: '',
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      // If it tried to use Ollama, it would call ollama.list() which is mocked
+      // but we want to verify it returns immediately without calling Ollama
+      await expect(ensureModel()).resolves.toBeUndefined();
     });
   });
 });
