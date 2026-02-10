@@ -55,6 +55,7 @@ USER node
 
 ENV NODE_ENV=production
 ENV PORT=3051
+ENV NODE_OPTIONS=--use-system-ca
 
 EXPOSE 3051
 
