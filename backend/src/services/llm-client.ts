@@ -58,6 +58,15 @@ export function llmFetch(url: string | URL, init?: RequestInit): Promise<Respons
   } as any) as unknown as Promise<Response>;
 }
 
+/**
+ * Create an Ollama SDK client that respects LLM_VERIFY_SSL.
+ * The Ollama SDK uses its own internal fetch by default, which ignores
+ * our dispatcher. Passing `llmFetch` ensures self-signed certs work.
+ */
+export function createOllamaClient(host: string): Ollama {
+  return new Ollama({ host, fetch: llmFetch as any });
+}
+
 export function getAuthHeaders(token: string | undefined): Record<string, string> {
   if (!token) return {};
 
@@ -168,7 +177,7 @@ async function chatStreamInner(
       }
     } else {
       // Use Ollama SDK for local/unauthenticated access
-      const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+      const ollama = createOllamaClient(llmConfig.ollamaUrl);
       const response = await ollama.chat({
         model: llmConfig.model,
         messages: fullMessages,
@@ -304,7 +313,7 @@ export async function isOllamaAvailable(): Promise<boolean> {
       return response.ok;
     }
 
-    const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+    const ollama = createOllamaClient(llmConfig.ollamaUrl);
     await ollama.list();
     return true;
   } catch {
@@ -328,7 +337,7 @@ export async function ensureModel(): Promise<void> {
   }
 
   try {
-    const ollama = new Ollama({ host: ollamaUrl });
+    const ollama = createOllamaClient(ollamaUrl);
     const { models } = await ollama.list();
     const installed = models.some((m) => m.name === model || m.name.startsWith(`${model}:`));
 

@@ -1,5 +1,4 @@
 import { FastifyInstance } from 'fastify';
-import { Ollama } from 'ollama';
 import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
 import * as portainer from '../services/portainer-client.js';
@@ -11,7 +10,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -115,7 +114,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const data = await response.json() as any;
         fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
       } else {
-        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const ollama = createOllamaClient(llmConfig.ollamaUrl);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages,
@@ -232,7 +231,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       // Test Ollama connection using provided URL or fallback to settings/config
       const effectiveConfig = getEffectiveLlmConfig();
       const host = ollamaUrl || effectiveConfig.ollamaUrl;
-      const ollama = new Ollama({ host });
+      const ollama = createOllamaClient(host);
       const response = await ollama.list();
       const models = response.models.map((m) => m.name);
       return { ok: true, models };
@@ -300,7 +299,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const data = await response.json() as any;
         fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
       } else {
-        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const ollama = createOllamaClient(llmConfig.ollamaUrl);
         const response = await ollama.chat({
           model: effectiveModel,
           messages,
@@ -421,7 +420,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       }
 
       // Default: use Ollama SDK (prefer custom host from query over settings/env)
-      const ollama = new Ollama({ host: customHost || llmConfig.ollamaUrl });
+      const ollama = createOllamaClient(customHost || llmConfig.ollamaUrl);
       const response = await ollama.list();
       return {
         models: response.models.map((m) => ({
