@@ -62,7 +62,8 @@ async function chatStreamInner(
 
   try {
     // Use authenticated fetch if custom endpoint is enabled and configured
-    if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+    // Token is optional — some endpoints (e.g. Open WebUI on internal networks) don't require auth
+    if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
       const response = await fetch(llmConfig.customEndpointUrl, {
         method: 'POST',
         headers: {
@@ -164,7 +165,16 @@ async function chatStreamInner(
       log.warn({ err: traceErr }, 'Failed to record LLM error trace');
     }
 
-    log.error({ err }, 'Ollama chat stream failed');
+    // Translate cryptic ByteString error (occurs when Ollama SDK receives HTML instead of JSON)
+    if (err instanceof Error && err.message.includes('ByteString')) {
+      const translated = new Error(
+        'LLM endpoint returned HTML instead of JSON. Check that the configured URL points to a valid Ollama or OpenAI-compatible API endpoint (e.g. /api/chat/completions, not a web UI page).',
+      );
+      log.error({ err: translated, originalMessage: err.message }, 'LLM chat stream failed — ByteString error translated');
+      throw translated;
+    }
+
+    log.error({ err }, 'LLM chat stream failed');
     throw err;
   }
 }
@@ -221,11 +231,25 @@ Provide concise, actionable recommendations. When suggesting changes, always exp
 export async function isOllamaAvailable(): Promise<boolean> {
   try {
     const llmConfig = getEffectiveLlmConfig();
+
+    // When custom endpoint is enabled, test that instead of Ollama
+    if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+      const baseUrl = new URL(llmConfig.customEndpointUrl);
+      const modelsUrl = `${baseUrl.origin}/v1/models`;
+      const response = await fetch(modelsUrl, {
+        headers: {
+          ...getAuthHeaders(llmConfig.customEndpointToken),
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      return response.ok;
+    }
+
     const ollama = new Ollama({ host: llmConfig.ollamaUrl });
     await ollama.list();
     return true;
   } catch {
-    log.warn('Ollama is not available');
+    log.warn('LLM backend is not available');
     return false;
   }
 }
@@ -237,6 +261,12 @@ export async function isOllamaAvailable(): Promise<boolean> {
 export async function ensureModel(): Promise<void> {
   const llmConfig = getEffectiveLlmConfig();
   const { model, ollamaUrl } = llmConfig;
+
+  // Custom endpoints manage their own models — skip Ollama pull
+  if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+    log.info({ model, customEndpoint: llmConfig.customEndpointUrl }, 'Custom LLM endpoint configured — skipping Ollama model pull');
+    return;
+  }
 
   try {
     const ollama = new Ollama({ host: ollamaUrl });

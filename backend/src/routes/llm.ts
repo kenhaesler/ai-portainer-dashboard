@@ -100,7 +100,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
       let fullResponse = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
         const response = await fetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
@@ -217,20 +217,13 @@ export async function llmRoutes(fastify: FastifyInstance) {
     const { url, token, ollamaUrl } = request.body;
 
     try {
-      if (url && token) {
-        // Test custom OpenAI-compatible endpoint
+      if (url) {
+        // Test custom OpenAI-compatible endpoint (token is optional)
         const baseUrl = new URL(url);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
 
-        const authHeaders: Record<string, string> = {};
-        if (token.includes(':')) {
-          authHeaders['Authorization'] = `Basic ${Buffer.from(token).toString('base64')}`;
-        } else {
-          authHeaders['Authorization'] = `Bearer ${token}`;
-        }
-
         const response = await fetch(modelsUrl, {
-          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token) },
           signal: AbortSignal.timeout(10_000),
         });
 
@@ -292,7 +285,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
     try {
       let fullResponse = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
         const response = await fetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
@@ -414,7 +407,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
     try {
       // If using custom API endpoint, try OpenAI-compatible /v1/models
-      if (!customHost && llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+      if (!customHost && llmConfig.customEnabled && llmConfig.customEndpointUrl) {
         const baseUrl = new URL(llmConfig.customEndpointUrl);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
 
