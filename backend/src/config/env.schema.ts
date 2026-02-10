@@ -28,8 +28,8 @@ export const envSchema = z.object({
   // Ollama / LLM
   OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),
   OLLAMA_MODEL: z.string().default('llama3.2'),
-  OLLAMA_API_ENDPOINT: z.string().url().optional(), // OpenAI-compatible endpoint (e.g., OpenWebUI)
-  OLLAMA_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
+  LLM_OPENAI_ENDPOINT: z.string().url().optional(), // OpenAI-compatible endpoint (e.g., OpenWebUI)
+  LLM_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
   LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
 
   // Kibana (optional)
