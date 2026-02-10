@@ -191,6 +191,10 @@ const DEFAULT_SETTINGS = {
     { key: 'portainer_backup.max_count', label: 'Max Backups to Retain', description: 'Maximum number of Portainer backups to keep (oldest deleted first)', type: 'number', defaultValue: '10', min: 1, max: 50 },
     { key: 'portainer_backup.password', label: 'Backup Password', description: 'Optional encryption password for Portainer backups', type: 'password', defaultValue: '' },
   ],
+  edgeAgent: [
+    { key: 'edge.staleness_threshold_minutes', label: 'Staleness Threshold', description: 'Minutes since last Edge Agent check-in before data is marked stale', type: 'number', defaultValue: '5', min: 1, max: 60 },
+    { key: 'edge.checkin_warning_multiplier', label: 'Check-in Warning Multiplier', description: 'Show warning when time since last check-in exceeds this multiple of the check-in interval', type: 'number', defaultValue: '3', min: 2, max: 10 },
+  ],
 } as const;
 
 type SettingCategory = keyof typeof DEFAULT_SETTINGS;
@@ -3295,6 +3299,18 @@ export default function SettingsPage() {
 
       {/* Elasticsearch Settings */}
       <ElasticsearchSettingsSection
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={handleChange}
+        disabled={isSaving}
+      />
+
+      {/* Edge Agent Settings */}
+      <SettingsSection
+        title="Edge Agent"
+        icon={<Wifi className="h-5 w-5" />}
+        category="edgeAgent"
+        settings={DEFAULT_SETTINGS.edgeAgent}
         values={editedValues}
         originalValues={originalValues}
         onChange={handleChange}

@@ -1,0 +1,164 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
+import FleetOverviewPage from './fleet-overview';
+
+// Mock the hooks
+vi.mock('@/hooks/use-endpoints', () => ({
+  useEndpoints: vi.fn(),
+}));
+
+vi.mock('@/hooks/use-auto-refresh', () => ({
+  useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
+}));
+
+vi.mock('@/hooks/use-force-refresh', () => ({
+  useForceRefresh: () => ({ forceRefresh: vi.fn(), isForceRefreshing: false }),
+}));
+
+import { useEndpoints } from '@/hooks/use-endpoints';
+import type { Endpoint } from '@/hooks/use-endpoints';
+
+const mockUseEndpoints = vi.mocked(useEndpoints);
+
+function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
+  return {
+    id: 1,
+    name: 'test-endpoint',
+    type: 1,
+    url: 'tcp://10.0.0.1:9001',
+    status: 'up',
+    containersRunning: 5,
+    containersStopped: 1,
+    containersHealthy: 4,
+    containersUnhealthy: 0,
+    totalContainers: 6,
+    stackCount: 2,
+    totalCpu: 4,
+    totalMemory: 8589934592,
+    isEdge: false,
+    edgeMode: null,
+    snapshotAge: null,
+    checkInInterval: null,
+    capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
+    ...overrides,
+  };
+}
+
+function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <FleetOverviewPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe('FleetOverviewPage — Edge metadata', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders Edge Standard badge for Edge endpoints', () => {
+    mockUseEndpoints.mockReturnValue({
+      data: [
+        makeEndpoint({
+          id: 1,
+          name: 'edge-env',
+          isEdge: true,
+          edgeMode: 'standard',
+          snapshotAge: 30000,
+          lastCheckIn: Math.floor(Date.now() / 1000) - 30,
+          checkInInterval: 5,
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByText(/Edge Standard/)).toBeInTheDocument();
+    expect(screen.getByText(/Check-in:/)).toBeInTheDocument();
+    expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
+  });
+
+  it('renders Edge Async badge for async endpoints', () => {
+    mockUseEndpoints.mockReturnValue({
+      data: [
+        makeEndpoint({
+          id: 2,
+          name: 'async-env',
+          isEdge: true,
+          edgeMode: 'async',
+          snapshotAge: 120000,
+          lastCheckIn: Math.floor(Date.now() / 1000) - 120,
+          checkInInterval: 60,
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByText(/Edge Async/)).toBeInTheDocument();
+  });
+
+  it('does not render Edge badge for non-Edge endpoints', () => {
+    mockUseEndpoints.mockReturnValue({
+      data: [
+        makeEndpoint({ id: 3, name: 'standard-env', isEdge: false, edgeMode: null }),
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.queryByText(/Edge Standard/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Edge Async/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Check-in:/)).not.toBeInTheDocument();
+  });
+
+  it('shows snapshot age with color coding for stale endpoints', () => {
+    const staleAge = 10 * 60 * 1000; // 10 minutes, > 5min threshold
+    mockUseEndpoints.mockReturnValue({
+      data: [
+        makeEndpoint({
+          id: 4,
+          name: 'stale-env',
+          isEdge: true,
+          edgeMode: 'standard',
+          snapshotAge: staleAge,
+          lastCheckIn: Math.floor(Date.now() / 1000) - 600,
+          checkInInterval: 5,
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    // Should show snapshot info
+    expect(screen.getByText(/Snapshot:/)).toBeInTheDocument();
+  });
+});

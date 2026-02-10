@@ -62,6 +62,10 @@ vi.mock('@/components/container/container-metrics-viewer', () => ({
   ContainerMetricsViewer: () => <div>Metrics</div>,
 }));
 
+vi.mock('@/hooks/use-endpoints', () => ({
+  useEndpoints: () => ({ data: [], isLoading: false }),
+}));
+
 import ContainerDetailPage from './container-detail';
 
 describe('ContainerDetailPage', () => {

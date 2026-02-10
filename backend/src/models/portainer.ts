@@ -27,6 +27,8 @@ export const EndpointSchema = z.object({
   EdgeID: z.string().optional(),
   EdgeKey: z.string().optional(),
   LastCheckInDate: z.number().optional(),
+  EdgeCheckinInterval: z.number().optional(),
+  QueryDate: z.number().optional(),
   Agent: z.object({ Version: z.string().optional() }).optional(),
 }).passthrough();
 
@@ -137,12 +139,27 @@ export const ImageSchema = z.object({
   Created: z.number().optional(),
 }).passthrough();
 
+export const EdgeJobSchema = z.object({
+  Id: z.number(),
+  Created: z.number(),
+  CronExpression: z.string(),
+  Name: z.string(),
+  ScriptPath: z.string().optional(),
+  Recurring: z.boolean(),
+  Version: z.number().optional(),
+  Endpoints: z.record(z.object({
+    LogsStatus: z.number().optional(),
+    CollectLogs: z.boolean().optional(),
+  })).optional(),
+}).passthrough();
+
 // Pre-compiled array schemas (parsed once at module level for Zod internal caching)
 export const EndpointArraySchema = z.array(EndpointSchema);
 export const ContainerArraySchema = z.array(ContainerSchema);
 export const StackArraySchema = z.array(StackSchema);
 export const NetworkArraySchema = z.array(NetworkSchema);
 export const ImageArraySchema = z.array(ImageSchema);
+export const EdgeJobArraySchema = z.array(EdgeJobSchema);
 
 export type Endpoint = z.infer<typeof EndpointSchema>;
 export type Container = z.infer<typeof ContainerSchema>;
@@ -150,3 +167,4 @@ export type Stack = z.infer<typeof StackSchema>;
 export type ContainerStats = z.infer<typeof ContainerStatsSchema>;
 export type Network = z.infer<typeof NetworkSchema>;
 export type DockerImage = z.infer<typeof ImageSchema>;
+export type EdgeJob = z.infer<typeof EdgeJobSchema>;

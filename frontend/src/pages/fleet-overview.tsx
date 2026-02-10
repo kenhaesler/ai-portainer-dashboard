@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, LayoutGrid, List, AlertTriangle, Boxes, Activity } from 'lucide-react';
+import { Server, LayoutGrid, List, AlertTriangle, Boxes, Activity, Clock } from 'lucide-react';
 import { useEndpoints, type Endpoint } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { DataTable } from '@/components/shared/data-table';
@@ -13,6 +13,24 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 
 type ViewMode = 'grid' | 'table';
+
+function formatRelativeTime(ms: number | null | undefined): string {
+  if (ms == null) return 'N/A';
+  const seconds = Math.floor(Math.abs(ms) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function getSnapshotAgeColor(snapshotAge: number | null, thresholdMs = 5 * 60 * 1000): string {
+  if (snapshotAge == null) return 'text-muted-foreground';
+  if (snapshotAge < thresholdMs) return 'text-emerald-600 dark:text-emerald-400';
+  if (snapshotAge < thresholdMs * 3) return 'text-amber-600 dark:text-amber-400';
+  return 'text-red-600 dark:text-red-400';
+}
 
 function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () => void }) {
   const memoryGB = (endpoint.totalMemory / (1024 * 1024 * 1024)).toFixed(1);
@@ -72,11 +90,22 @@ function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () =
       </div>
 
       {endpoint.isEdge && (
-        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-            Edge
-          </span>
-          {endpoint.agentVersion && <span>v{endpoint.agentVersion}</span>}
+        <div className="mt-4 space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+              Edge {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
+            </span>
+            {endpoint.agentVersion && <span>v{endpoint.agentVersion}</span>}
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              Check-in: {formatRelativeTime(endpoint.lastCheckIn ? Date.now() - endpoint.lastCheckIn * 1000 : null)}
+            </span>
+            <span className={cn('flex items-center gap-1', getSnapshotAgeColor(endpoint.snapshotAge))}>
+              Snapshot: {formatRelativeTime(endpoint.snapshotAge)}
+            </span>
+          </div>
         </div>
       )}
 
@@ -144,12 +173,34 @@ export default function FleetOverviewPage() {
     {
       accessorKey: 'isEdge',
       header: 'Type',
-      cell: ({ getValue }) => getValue<boolean>() ? (
+      cell: ({ row }) => row.original.isEdge ? (
         <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-          Edge
+          Edge {row.original.edgeMode === 'async' ? 'Async' : 'Standard'}
         </span>
       ) : (
-        <span className="text-xs text-muted-foreground">Standard</span>
+        <span className="text-xs text-muted-foreground">Agent</span>
+      ),
+    },
+    {
+      id: 'lastCheckIn',
+      header: 'Last Check-in',
+      cell: ({ row }) => row.original.isEdge ? (
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTime(row.original.lastCheckIn ? Date.now() - row.original.lastCheckIn * 1000 : null)}
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">-</span>
+      ),
+    },
+    {
+      id: 'snapshotAge',
+      header: 'Snapshot Age',
+      cell: ({ row }) => row.original.isEdge ? (
+        <span className={cn('text-xs', getSnapshotAgeColor(row.original.snapshotAge))}>
+          {formatRelativeTime(row.original.snapshotAge)}
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">-</span>
       ),
     },
     {
