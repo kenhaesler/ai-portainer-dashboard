@@ -38,3 +38,29 @@ export function useEndpoints() {
     staleTime: 60 * 1000,
   });
 }
+
+const FULL_CAPABILITIES: EdgeCapabilities = {
+  exec: true,
+  realtimeLogs: true,
+  liveStats: true,
+  immediateActions: true,
+};
+
+/**
+ * Look up the capabilities of a specific endpoint by ID.
+ * Returns full capabilities if the endpoint is not found (safe default).
+ */
+export function useEndpointCapabilities(endpointId: number | undefined): {
+  capabilities: EdgeCapabilities;
+  isEdgeAsync: boolean;
+  endpoint: Endpoint | undefined;
+} {
+  const { data: endpoints } = useEndpoints();
+  const endpoint = endpoints?.find((ep) => ep.id === endpointId);
+
+  return {
+    capabilities: endpoint?.capabilities ?? FULL_CAPABILITIES,
+    isEdgeAsync: endpoint?.edgeMode === 'async',
+    endpoint,
+  };
+}

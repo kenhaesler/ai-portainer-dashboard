@@ -5,6 +5,11 @@ vi.mock('@/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn().mockReturnValue({
     data: [{ id: 1, name: 'local' }],
   }),
+  useEndpointCapabilities: vi.fn().mockReturnValue({
+    capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
+    isEdgeAsync: false,
+    endpoint: undefined,
+  }),
 }));
 
 vi.mock('@/hooks/use-containers', () => ({
