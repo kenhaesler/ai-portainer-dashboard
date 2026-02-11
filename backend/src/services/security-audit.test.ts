@@ -13,6 +13,7 @@ const mockGetContainers = vi.fn();
 const mockGetContainerHostConfig = vi.fn();
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
+const mockCachedFetch = vi.fn();
 
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
@@ -26,6 +27,12 @@ vi.mock('./portainer-client.js', () => ({
   getContainerHostConfig: (...args: unknown[]) => mockGetContainerHostConfig(...args),
 }));
 
+vi.mock('./portainer-cache.js', () => ({
+  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args),
+  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+  TTL: { ENDPOINTS: 900, CONTAINERS: 300, CONTAINER_INSPECT: 300 },
+}));
+
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
@@ -35,6 +42,8 @@ describe('security-audit service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSetting.mockReturnValue(undefined);
+    // cachedFetch delegates to the fetcher function (3rd arg)
+    mockCachedFetch.mockImplementation((_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
 
     mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
     // List endpoint returns sparse HostConfig (only NetworkMode in practice)
@@ -124,6 +133,30 @@ describe('security-audit service', () => {
     const api = entries.find((entry) => entry.containerName === 'api');
     expect(api?.posture.capAdd).toEqual(['NET_ADMIN']);
     expect(api?.posture.privileged).toBe(false);
+  });
+
+  it('uses cachedFetch for endpoints, containers, and inspect calls', async () => {
+    await getSecurityAudit();
+
+    const calls = mockCachedFetch.mock.calls;
+    // 1 endpoints call + 1 containers call + 2 inspect calls (c1, c2) = 4
+    expect(calls).toHaveLength(4);
+
+    // Endpoints: key='endpoints', TTL=900
+    expect(calls[0][0]).toBe('endpoints');
+    expect(calls[0][1]).toBe(900);
+
+    // Containers: key='containers:1', TTL=300
+    expect(calls[1][0]).toBe('containers:1');
+    expect(calls[1][1]).toBe(300);
+
+    // Inspect: key='inspect:1:c1', TTL=300
+    expect(calls[2][0]).toBe('inspect:1:c1');
+    expect(calls[2][1]).toBe(300);
+
+    // Inspect: key='inspect:1:c2', TTL=300
+    expect(calls[3][0]).toBe('inspect:1:c2');
+    expect(calls[3][1]).toBe(300);
   });
 
   it('computes audit summary counts', () => {

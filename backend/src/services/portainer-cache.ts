@@ -610,6 +610,7 @@ export const cache = new HybridCache();
 export const TTL = {
   ENDPOINTS: 900,    // 15 minutes
   CONTAINERS: 300,   // 5 minutes
+  CONTAINER_INSPECT: 300, // 5 minutes — host config changes very infrequently
   STACKS: 600,       // 10 minutes
   IMAGES: 600,       // 10 minutes
   NETWORKS: 600,     // 10 minutes
