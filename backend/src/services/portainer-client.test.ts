@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState } from './portainer-client.js';
+import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats } from './portainer-client.js';
 import pLimit from 'p-limit';
 
 describe('sanitizeContainerLabels', () => {
@@ -83,5 +83,29 @@ describe('concurrency limiter', () => {
   it('_resetClientState clears cached limiter and dispatcher', () => {
     // Just verify it doesn't throw — internal state is private
     expect(() => _resetClientState()).not.toThrow();
+  });
+});
+
+describe('per-endpoint circuit breaker stats', () => {
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  it('returns CLOSED with zero counts when no requests have been made', () => {
+    _resetClientState();
+    const stats = getCircuitBreakerStats();
+    expect(stats.state).toBe('CLOSED');
+    expect(stats.failures).toBe(0);
+    expect(stats.successes).toBe(0);
+    expect(stats.lastFailure).toBeUndefined();
+    expect(stats.byEndpoint).toEqual({});
+  });
+
+  it('_resetClientState clears per-endpoint breakers', () => {
+    const stats1 = getCircuitBreakerStats();
+    expect(stats1.byEndpoint).toEqual({});
+    _resetClientState();
+    const stats2 = getCircuitBreakerStats();
+    expect(stats2.byEndpoint).toEqual({});
   });
 });
