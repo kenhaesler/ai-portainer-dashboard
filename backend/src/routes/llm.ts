@@ -210,22 +210,40 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
     try {
       if (url) {
-        // Test custom OpenAI-compatible endpoint (token is optional)
+        // Test custom endpoint — try OpenAI-compatible /v1/models first,
+        // then fall back to Ollama-native /api/tags for proxies (e.g. ParisNeo)
+        // that don't implement the OpenAI compatibility layer.
         const baseUrl = new URL(url);
-        const modelsUrl = `${baseUrl.origin}/v1/models`;
-
-        const response = await llmFetch(modelsUrl, {
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token, getEffectiveLlmConfig().authType) },
+        const authHeaders = getAuthHeaders(token, getEffectiveLlmConfig().authType);
+        const fetchOpts = {
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           signal: AbortSignal.timeout(10_000),
-        });
+        };
 
-        if (!response.ok) {
-          return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
+        // Try OpenAI-compatible /v1/models
+        const modelsUrl = `${baseUrl.origin}/v1/models`;
+        const response = await llmFetch(modelsUrl, fetchOpts);
+
+        if (response.ok) {
+          const data = await response.json() as { data?: Array<{ id: string }> };
+          const models = (data.data ?? []).map((m) => m.id);
+          return { ok: true, models };
         }
 
-        const data = await response.json() as { data?: Array<{ id: string }> };
-        const models = (data.data ?? []).map((m) => m.id);
-        return { ok: true, models };
+        // Fallback: try Ollama-native /api/tags (for proxies like ParisNeo Ollama Proxy)
+        const tagsUrl = `${baseUrl.origin}/api/tags`;
+        try {
+          const fallbackResponse = await llmFetch(tagsUrl, fetchOpts);
+          if (fallbackResponse.ok) {
+            const data = await fallbackResponse.json() as { models?: Array<{ name: string }> };
+            const models = (data.models ?? []).map((m) => m.name);
+            return { ok: true, models };
+          }
+        } catch {
+          // Fallback also failed — report the original error
+        }
+
+        return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
       }
 
       // Test Ollama connection using provided URL or fallback to settings/config
