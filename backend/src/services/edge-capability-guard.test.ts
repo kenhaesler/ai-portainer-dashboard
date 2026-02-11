@@ -70,11 +70,10 @@ describe('edge-capability-guard', () => {
       });
     });
 
-    it('returns no capabilities for Edge Async endpoint', async () => {
+    it('returns no capabilities for Edge Async endpoint (Type 7)', async () => {
       mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
-        Type: 4,
+        Type: 7,
         EdgeID: 'edge-async-456',
-        QueryDate: Math.floor(Date.now() / 1000) - 300,
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
         EdgeCheckinInterval: 60,
       }) as any);
@@ -96,9 +95,8 @@ describe('edge-capability-guard', () => {
 
     it('throws 422 for Edge Async endpoint missing exec capability', async () => {
       mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
-        Type: 4,
+        Type: 7,
         EdgeID: 'edge-async',
-        QueryDate: Math.floor(Date.now() / 1000),
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
         EdgeCheckinInterval: 60,
       }) as any);
@@ -115,9 +113,8 @@ describe('edge-capability-guard', () => {
 
     it('throws 422 for each capability type on Edge Async', async () => {
       const asyncEndpoint = makeRawEndpoint({
-        Type: 4,
+        Type: 7,
         EdgeID: 'edge-async',
-        QueryDate: Math.floor(Date.now() / 1000),
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
         EdgeCheckinInterval: 60,
       });
@@ -135,11 +132,10 @@ describe('edge-capability-guard', () => {
       expect(await supportsLiveFeatures(1)).toBe(true);
     });
 
-    it('returns false for Edge Async endpoint', async () => {
+    it('returns false for Edge Async endpoint (Type 7)', async () => {
       mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
-        Type: 4,
+        Type: 7,
         EdgeID: 'edge-async',
-        QueryDate: Math.floor(Date.now() / 1000),
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
         EdgeCheckinInterval: 60,
       }) as any);
