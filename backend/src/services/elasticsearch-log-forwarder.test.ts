@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  resetElasticsearchLogForwarderState,
-  runElasticsearchLogForwardingCycle,
-} from './elasticsearch-log-forwarder.js';
 
 const mockGetElasticsearchConfig = vi.fn();
 const mockGetEndpoints = vi.fn();
 const mockGetContainers = vi.fn();
 const mockGetContainerLogs = vi.fn();
+const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
 
 vi.mock('./elasticsearch-config.js', () => ({
   getElasticsearchConfig: (...args: unknown[]) => mockGetElasticsearchConfig(...args),
@@ -19,6 +16,12 @@ vi.mock('./portainer-client.js', () => ({
   getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
 }));
 
+vi.mock('./portainer-cache.js', () => ({
+  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
+  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
+}));
+
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
     debug: vi.fn(),
@@ -27,6 +30,11 @@ vi.mock('../utils/logger.js', () => ({
     error: vi.fn(),
   }),
 }));
+
+const {
+  resetElasticsearchLogForwarderState,
+  runElasticsearchLogForwardingCycle,
+} = await import('./elasticsearch-log-forwarder.js');
 
 describe('elasticsearch-log-forwarder', () => {
   const mockFetch = vi.fn();
@@ -112,6 +120,15 @@ describe('elasticsearch-log-forwarder', () => {
     expect(secondDoc.containerState).toBe('running');
     expect(secondDoc.containerStatus).toBe('Up 10 minutes');
     expect(secondDoc.containerImage).toBe('api:latest');
+  });
+
+  it('uses cachedFetchSWR for endpoints and containers', async () => {
+    await runElasticsearchLogForwardingCycle();
+
+    // cachedFetchSWR should be called for endpoints (1) + containers (1 per endpoint)
+    expect(mockCachedFetchSWR).toHaveBeenCalledTimes(2);
+    expect(mockCachedFetchSWR).toHaveBeenCalledWith('endpoints', 900, expect.any(Function));
+    expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
   });
 
   it('halts work when elasticsearch gets disabled mid-cycle', async () => {

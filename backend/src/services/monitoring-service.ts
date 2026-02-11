@@ -3,6 +3,7 @@ import type { Namespace } from 'socket.io';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getEndpoints, getContainers } from './portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.js';
 import { scanContainer } from './security-scanner.js';
 import { collectMetrics } from './metrics-collector.js';
@@ -59,8 +60,12 @@ export async function runMonitoringCycle(): Promise<void> {
   const startTime = Date.now();
 
   try {
-    // 1. Collect snapshot of all endpoints and containers
-    const rawEndpoints = await getEndpoints();
+    // 1. Collect snapshot of all endpoints and containers (cached to avoid duplicating scheduler fetches)
+    const rawEndpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
     const endpoints = rawEndpoints.map(normalizeEndpoint);
 
     const allContainers: Array<{
@@ -71,7 +76,11 @@ export async function runMonitoringCycle(): Promise<void> {
 
     for (const ep of rawEndpoints) {
       try {
-        const containers = await getContainers(ep.Id);
+        const containers = await cachedFetchSWR(
+          getCacheKey('containers', ep.Id),
+          TTL.CONTAINERS,
+          () => getContainers(ep.Id),
+        );
         for (const c of containers) {
           allContainers.push({ raw: c, endpointId: ep.Id, endpointName: ep.Name });
         }

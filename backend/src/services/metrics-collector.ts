@@ -1,4 +1,5 @@
 import { getContainerStats } from './portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metrics-collector');
@@ -15,7 +16,11 @@ export async function collectMetrics(
   endpointId: number,
   containerId: string,
 ): Promise<CollectedMetrics> {
-  const stats = await getContainerStats(endpointId, containerId);
+  const stats = await cachedFetch(
+    getCacheKey('stats', endpointId, containerId),
+    TTL.STATS,
+    () => getContainerStats(endpointId, containerId),
+  );
 
   // CPU % calculation: (cpu_delta / system_delta) * num_cpus * 100
   const cpuDelta =

@@ -34,6 +34,13 @@ vi.mock('./portainer-client.js', () => ({
   getContainers: (...args: unknown[]) => mockGetContainers(...args),
 }));
 
+const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
+vi.mock('./portainer-cache.js', () => ({
+  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
+  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
+}));
+
 vi.mock('./portainer-normalizers.js', () => ({
   normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0 }),
   normalizeContainer: (c: unknown, endpointId: number, endpointName: string) => ({
@@ -349,6 +356,37 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       expect(mockExplainAnomalies).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('caching', () => {
+    it('uses cachedFetchSWR for endpoints and containers', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
+      ]);
+
+      await runMonitoringCycle();
+
+      // Should use cachedFetchSWR for endpoints
+      expect(mockCachedFetchSWR).toHaveBeenCalledWith('endpoints', 900, expect.any(Function));
+      // Should use cachedFetchSWR for containers
+      expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
+    });
+
+    it('uses cachedFetchSWR for each endpoint containers', async () => {
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'prod' },
+        { Id: 2, Name: 'staging' },
+      ]);
+      mockGetContainers.mockResolvedValue([]);
+
+      await runMonitoringCycle();
+
+      // 1 endpoints call + 2 containers calls (one per endpoint)
+      expect(mockCachedFetchSWR).toHaveBeenCalledTimes(3);
+      expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
+      expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:2', 300, expect.any(Function));
     });
   });
 });
