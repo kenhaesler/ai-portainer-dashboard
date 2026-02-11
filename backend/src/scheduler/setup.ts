@@ -4,6 +4,7 @@ import { runMonitoringCycle } from '../services/monitoring-service.js';
 import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
 import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
 import { getSetting } from '../services/settings-store.js';
@@ -25,12 +26,20 @@ async function runMetricsCollection(): Promise<void> {
   log.debug('Running metrics collection cycle');
 
   try {
-    const endpoints = await getEndpoints();
+    const endpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
     const metricsToInsert: MetricInsert[] = [];
 
     for (const ep of endpoints) {
       try {
-        const containers = await getContainers(ep.Id);
+        const containers = await cachedFetchSWR(
+          getCacheKey('containers', ep.Id),
+          TTL.CONTAINERS,
+          () => getContainers(ep.Id),
+        );
         const running = containers.filter((c) => c.State === 'running');
 
         // Collect stats in parallel batches to avoid ~1.3s per container sequentially
@@ -108,7 +117,11 @@ async function runMetricsCollection(): Promise<void> {
 async function runKpiSnapshotCollection(): Promise<void> {
   log.debug('Running KPI snapshot collection');
   try {
-    const endpoints = await getEndpoints();
+    const endpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
     const normalized = endpoints.map(normalizeEndpoint);
 
     const totals = normalized.reduce(
@@ -144,7 +157,11 @@ async function runMonitoringWithErrorHandling(): Promise<void> {
 async function runImageStalenessCheck(): Promise<void> {
   log.debug('Running image staleness check');
   try {
-    const endpoints = await getEndpoints();
+    const endpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
     const allImages: Array<{ name: string; tags: string[]; registry: string; id: string }> = [];
 
     for (const ep of endpoints) {

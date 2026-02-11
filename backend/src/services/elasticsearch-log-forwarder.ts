@@ -1,11 +1,12 @@
 import { Agent } from 'undici';
 import { getContainers, getContainerLogs, getEndpoints } from './portainer-client.js';
 import { getElasticsearchConfig, type ElasticsearchConfig } from './elasticsearch-config.js';
+import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('es-log-forwarder');
 
-const FORWARD_INTERVAL_MS = 5000;
+const FORWARD_INTERVAL_MS = Number(process.env.ES_LOG_FORWARD_INTERVAL_MS) || 30_000;
 const MAX_LOG_LINES_PER_CONTAINER = 200;
 const MAX_DOCS_PER_BATCH = 200;
 const START_LOOKBACK_SECONDS = 60;
@@ -163,7 +164,11 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
       return;
     }
 
-    const endpoints = await getEndpoints();
+    const endpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
 
     for (const endpoint of endpoints) {
       const endpointConfig = getElasticsearchConfig();
@@ -172,7 +177,11 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
         return;
       }
 
-      const containers = await getContainers(endpoint.Id, true);
+      const containers = await cachedFetchSWR(
+        getCacheKey('containers', endpoint.Id),
+        TTL.CONTAINERS,
+        () => getContainers(endpoint.Id, true),
+      );
       const runningContainers = containers.filter((container) => container.State === 'running');
 
       for (const container of runningContainers) {
