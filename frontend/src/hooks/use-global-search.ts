@@ -48,12 +48,12 @@ export interface GlobalSearchResponse {
   logs: LogSearchResult[];
 }
 
-export function useGlobalSearch(query: string, enabled = true) {
+export function useGlobalSearch(query: string, enabled = true, includeLogs = false) {
   return useQuery<GlobalSearchResponse>({
-    queryKey: ['global-search', query],
+    queryKey: ['global-search', query, includeLogs],
     enabled: enabled && query.trim().length >= 2,
     queryFn: async () => api.get<GlobalSearchResponse>('/api/search', {
-      params: { query, limit: 8, logLimit: 6 },
+      params: { query, limit: 8, logLimit: 6, includeLogs },
     }),
   });
 }

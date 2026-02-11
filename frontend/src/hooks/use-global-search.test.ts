@@ -36,7 +36,7 @@ describe('useGlobalSearch', () => {
     expect(mockApi.get).not.toHaveBeenCalled();
   });
 
-  it('should fetch when query is 2+ characters and enabled', async () => {
+  it('should fetch without includeLogs by default', async () => {
     const mockResponse = {
       query: 'web',
       containers: [],
@@ -53,9 +53,31 @@ describe('useGlobalSearch', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockApi.get).toHaveBeenCalledWith('/api/search', {
-      params: { query: 'web', limit: 8, logLimit: 6 },
+      params: { query: 'web', limit: 8, logLimit: 6, includeLogs: false },
     });
     expect(result.current.data).toEqual(mockResponse);
+  });
+
+  it('should pass includeLogs=true when specified', async () => {
+    const mockResponse = {
+      query: 'web',
+      containers: [],
+      images: [],
+      stacks: [],
+      logs: [{ id: '1:abc:0', endpointId: 1, endpointName: 'prod', containerId: 'abc', containerName: 'web', message: 'web log', timestamp: '2024-01-01T10:00:00Z' }],
+    };
+    mockApi.get.mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(() => useGlobalSearch('web', true, true), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockApi.get).toHaveBeenCalledWith('/api/search', {
+      params: { query: 'web', limit: 8, logLimit: 6, includeLogs: true },
+    });
+    expect(result.current.data?.logs).toHaveLength(1);
   });
 
   it('should not fetch when query is only whitespace', () => {

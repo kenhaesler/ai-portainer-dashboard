@@ -82,9 +82,10 @@ export function CommandPalette() {
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const { theme, setTheme } = useThemeStore();
   const [query, setQuery] = useState('');
+  const [includeLogs, setIncludeLogs] = useState(false);
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const debouncedQuery = useDebouncedValue(query, 250);
-  const { data, isLoading } = useGlobalSearch(debouncedQuery, open);
+  const { data, isLoading } = useGlobalSearch(debouncedQuery, open, includeLogs);
   const { recent, addRecent } = useSearch();
   const nlQuery = useNlQuery();
 
@@ -234,6 +235,18 @@ export function CommandPalette() {
                 Ask AI
               </button>
             )}
+          </div>
+          <div className="mx-3 mb-1 flex items-center">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={includeLogs}
+                onChange={(e) => setIncludeLogs(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-border accent-primary"
+              />
+              <ScrollText className="h-3 w-3" />
+              Search logs
+            </label>
           </div>
 
           {/* AI Result */}
