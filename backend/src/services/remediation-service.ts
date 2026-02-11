@@ -15,6 +15,7 @@ import { getLatestMetrics } from './metrics-store.js';
 import { chatStream, isOllamaAvailable } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
+import { getConfig } from '../config/index.js';
 
 const log = createChildLogger('remediation-service');
 
@@ -23,6 +24,38 @@ type ActionPattern = {
   actionType: string;
   rationale: string;
 };
+
+/** Action types that directly modify container state. */
+const DESTRUCTIVE_ACTION_TYPES = new Set([
+  'STOP_CONTAINER',
+  'RESTART_CONTAINER',
+]);
+
+const DEFAULT_PROTECTED_CONTAINERS = [
+  'portainer', 'portainer-agent', 'portainer_agent',
+  'redis', 'postgres', 'mysql', 'mariadb', 'mongo', 'mongodb',
+  'traefik', 'nginx', 'haproxy', 'caddy',
+  'etcd', 'consul', 'vault',
+];
+
+export function getProtectedContainerNames(): string[] {
+  try {
+    const config = getConfig();
+    const envValue = (config as Record<string, unknown>).REMEDIATION_PROTECTED_CONTAINERS as string | undefined;
+    if (typeof envValue === 'string' && envValue.trim()) {
+      return envValue.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    }
+  } catch {
+    // Config not yet initialized (e.g. during tests); fall through to defaults
+  }
+  return DEFAULT_PROTECTED_CONTAINERS;
+}
+
+export function isProtectedContainer(containerName: string): boolean {
+  const protectedNames = getProtectedContainerNames();
+  const normalized = containerName.toLowerCase();
+  return protectedNames.some((name) => normalized === name || normalized.startsWith(`${name}-`) || normalized.startsWith(`${name}_`));
+}
 
 const ACTION_PATTERNS: Array<{
   keywords: RegExp;
@@ -36,8 +69,8 @@ const ACTION_PATTERNS: Array<{
   },
   {
     keywords: /oom|out\s*of\s*memory|memory\s*limit/i,
-    actionType: 'STOP_CONTAINER',
-    rationale: 'Container hit memory limit (OOM). Stop it to prevent repeated crashes while investigating.',
+    actionType: 'INVESTIGATE',
+    rationale: 'Container may be experiencing memory pressure. Check memory limits and usage patterns before taking action.',
   },
   {
     keywords: /restart\s*(loop|count|crash)/i,
@@ -46,8 +79,8 @@ const ACTION_PATTERNS: Array<{
   },
   {
     keywords: /high\s*cpu|cpu\s*spike|runaway\s*process/i,
-    actionType: 'STOP_CONTAINER',
-    rationale: 'High CPU usage detected. Stop the container to mitigate impact while you investigate.',
+    actionType: 'INVESTIGATE',
+    rationale: 'High CPU usage detected. Check for runaway processes and review resource allocation before taking action.',
   },
   {
     keywords: /stopped|exited|not\s*running/i,
@@ -213,7 +246,8 @@ export function buildRemediationPrompt(insight: Insight, evidence: RemediationEv
     '}',
     '',
     'Rules:',
-    '- Recommendations must stay advisory/read-only.',
+    '- NEVER recommend stopping or restarting containers. Suggest only diagnostic and investigation actions.',
+    '- Recommendations must stay advisory/read-only — this system is observer-first.',
     '- Mention uncertainty when evidence is weak.',
     '- Keep output concise and actionable.',
   );
@@ -298,7 +332,7 @@ export function suggestAction(
   insight: Insight,
 ): { actionId: string; actionType: string } | null {
   const textToMatch = `${insight.title} ${insight.description} ${insight.suggested_action || ''}`;
-  const pattern = pickActionPattern(textToMatch);
+  let pattern = pickActionPattern(textToMatch);
   if (!pattern) return null;
 
   if (!insight.container_id || !insight.endpoint_id) {
@@ -307,6 +341,21 @@ export function suggestAction(
       'Insight matches action pattern but has no container/endpoint context',
     );
     return null;
+  }
+
+  // Safety check: block destructive actions on protected/critical containers
+  const containerName = insight.container_name || 'unknown';
+  if (DESTRUCTIVE_ACTION_TYPES.has(pattern.actionType) && isProtectedContainer(containerName)) {
+    log.warn(
+      { containerId: insight.container_id, containerName, actionType: pattern.actionType },
+      'Blocked destructive action on protected container — downgrading to INVESTIGATE',
+    );
+    // Downgrade to investigation instead of blocking entirely
+    pattern = {
+      ...pattern,
+      actionType: 'INVESTIGATE',
+      rationale: `Original suggestion (${pattern.actionType}) was blocked because "${containerName}" is a protected infrastructure container. Investigate the issue manually.`,
+    };
   }
 
   if (hasPendingAction(insight.container_id, pattern.actionType)) {

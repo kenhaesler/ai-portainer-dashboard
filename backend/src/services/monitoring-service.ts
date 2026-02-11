@@ -225,8 +225,8 @@ export async function runMonitoringCycle(): Promise<void> {
               `method: ${anomaly.method ?? 'zscore'}). ` +
               `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
             suggested_action: metricType === 'memory'
-              ? 'Check for memory leaks or increase memory limit'
-              : 'Check for runaway processes or increase CPU allocation',
+              ? 'Investigate memory usage patterns and check container configuration'
+              : 'Investigate CPU usage patterns and check for process anomalies',
           });
         }
       }

@@ -102,6 +102,9 @@ export const envSchema = z.object({
   PCAP_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   PCAP_STORAGE_DIR: z.string().default('./data/pcap'),
 
+  // Remediation Safety
+  REMEDIATION_PROTECTED_CONTAINERS: z.string().optional(),
+
   // Cache
   CACHE_ENABLED: z.coerce.boolean().default(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
