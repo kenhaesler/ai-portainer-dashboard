@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Download, ScrollText, Clock, Search, AlertTriangle } from 'lucide-react';
-import { useContainerLogs } from '@/hooks/use-container-logs';
+import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff } from 'lucide-react';
+import { useContainerLogs, type ContainerLogsError } from '@/hooks/use-container-logs';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 
@@ -99,6 +99,60 @@ function VirtualizedContainerLogs({
   );
 }
 
+function EdgeErrorState({ error, onRetry }: { error: ContainerLogsError; onRetry: () => void }) {
+  if (error.code === 'EDGE_ASYNC_UNSUPPORTED') {
+    return (
+      <div className="rounded-lg border border-amber-500/50 bg-amber-50 dark:bg-amber-900/20 p-8 text-center">
+        <WifiOff className="mx-auto h-10 w-10 text-amber-600 dark:text-amber-400" />
+        <p className="mt-4 font-medium text-amber-800 dark:text-amber-200">
+          Logs unavailable for Edge Async endpoints
+        </p>
+        <p className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
+          This endpoint uses asynchronous communication without a persistent tunnel.
+          Live log streaming is not supported.
+        </p>
+      </div>
+    );
+  }
+
+  if (error.code === 'EDGE_TUNNEL_TIMEOUT') {
+    return (
+      <div className="rounded-lg border border-orange-500/50 bg-orange-50 dark:bg-orange-900/20 p-8 text-center">
+        <Radio className="mx-auto h-10 w-10 text-orange-600 dark:text-orange-400" />
+        <p className="mt-4 font-medium text-orange-800 dark:text-orange-200">
+          Edge agent tunnel timed out
+        </p>
+        <p className="mt-1 text-sm text-orange-700/80 dark:text-orange-300/80">
+          The Edge agent tunnel could not be established within the timeout period.
+          The agent may be offline or experiencing connectivity issues.
+        </p>
+        <button
+          onClick={onRetry}
+          className="mt-4 inline-flex items-center gap-2 rounded-md border border-orange-300 dark:border-orange-600 bg-white dark:bg-orange-900/40 px-3 py-2 text-sm font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/60"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
+      <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
+      <p className="mt-4 font-medium text-destructive">Failed to load logs</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {error.message || 'An unknown error occurred'}
+      </p>
+      <button
+        onClick={onRetry}
+        className="mt-4 inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 interface ContainerLogsViewerProps {
   endpointId: number;
   containerId: string;
@@ -121,6 +175,7 @@ export function ContainerLogsViewer({
   const {
     data: logsData,
     isLoading: logsLoading,
+    isFetching,
     isError,
     error,
     refetch,
@@ -156,23 +211,9 @@ export function ContainerLogsViewer({
     URL.revokeObjectURL(url);
   };
 
-  // Error state
-  if (isError) {
-    return (
-      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-        <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
-        <p className="mt-4 font-medium text-destructive">Failed to load logs</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {error?.message || 'An unknown error occurred'}
-        </p>
-        <button
-          onClick={() => refetch()}
-          className="mt-4 inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
-        >
-          Try again
-        </button>
-      </div>
-    );
+  // Error state — delegate to Edge-specific component
+  if (isError && error) {
+    return <EdgeErrorState error={error} onRetry={() => refetch()} />;
   }
 
   return (
@@ -263,7 +304,13 @@ export function ContainerLogsViewer({
 
       {/* Log Viewer */}
       {logsLoading ? (
-        <SkeletonCard className="h-[600px]" />
+        <div className="relative">
+          <SkeletonCard className="h-[600px]" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <Radio className="h-8 w-8 text-muted-foreground animate-pulse" />
+            <p className="mt-2 text-sm text-muted-foreground">Loading logs...</p>
+          </div>
+        </div>
       ) : displayLogs.length === 0 ? (
         <div className="rounded-lg border bg-card p-8 text-center">
           <ScrollText className="mx-auto h-10 w-10 text-muted-foreground" />
