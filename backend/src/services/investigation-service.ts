@@ -3,6 +3,7 @@ import type { Namespace } from 'socket.io';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getContainerLogs, getContainers } from './portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { getMetrics, getMovingAverage } from './metrics-store.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
@@ -281,7 +282,11 @@ async function gatherEvidence(insight: Insight): Promise<{
     promises.push(
       (async () => {
         try {
-          const containers = await getContainers(insight.endpoint_id!);
+          const containers = await cachedFetchSWR(
+            getCacheKey('containers', insight.endpoint_id!),
+            TTL.CONTAINERS,
+            () => getContainers(insight.endpoint_id!),
+          );
           const related = containers
             .filter((c) => c.Id !== insight.container_id)
             .slice(0, 10)
