@@ -330,7 +330,7 @@ export default function HomePage() {
           <MotionReveal>
             <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
-              <div className="flex flex-1 items-center justify-center">
+              <div className="flex-1 min-h-0">
                 <ContainerStatePie
                   running={data.kpis.running}
                   stopped={data.kpis.stopped}
@@ -344,7 +344,7 @@ export default function HomePage() {
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Endpoint Status
               </h3>
-              <div className="flex flex-1 items-center justify-center">
+              <div className="flex-1 min-h-0">
                 <EndpointStatusBar data={endpointBarData} />
               </div>
             </div>
@@ -354,7 +354,7 @@ export default function HomePage() {
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Workload Distribution
               </h3>
-              <div className="flex flex-1 items-stretch justify-start">
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 <WorkloadDistribution data={workloadData} />
               </div>
             </div>
