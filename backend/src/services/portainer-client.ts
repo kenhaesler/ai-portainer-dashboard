@@ -26,11 +26,11 @@ function getLimiter(): ReturnType<typeof pLimit> {
   return limiter;
 }
 
-/** Exported for testing — resets the cached limiter, dispatcher, and circuit breaker */
+/** Exported for testing — resets the cached limiter, dispatcher, and circuit breakers */
 export function _resetClientState(): void {
   limiter = undefined;
   pooledDispatcher = undefined;
-  breaker = undefined;
+  breakers.clear();
 }
 
 // Connection-pooled dispatcher (used for both SSL-bypass and normal connections)
@@ -73,24 +73,51 @@ function isPortainerFailure(error: unknown): boolean {
   return true;
 }
 
-// Circuit breaker — lazily initialized from config
-let breaker: CircuitBreaker | undefined;
-function getBreaker(): CircuitBreaker {
+// Per-endpoint circuit breakers — prevents one failing endpoint from cascading to all
+const breakers = new Map<string, CircuitBreaker>();
+const ENDPOINT_PATH_RE = /\/api\/endpoints\/(\d+)\//;
+
+function extractBreakerKey(path: string): string {
+  const match = path.match(ENDPOINT_PATH_RE);
+  return match ? `endpoint-${match[1]}` : 'global';
+}
+
+function getBreaker(path: string): CircuitBreaker {
+  const key = extractBreakerKey(path);
+  let breaker = breakers.get(key);
   if (!breaker) {
     const config = getConfig();
     breaker = new CircuitBreaker({
-      name: 'portainer-api',
+      name: `portainer-api:${key}`,
       failureThreshold: config.PORTAINER_CB_FAILURE_THRESHOLD,
       resetTimeoutMs: config.PORTAINER_CB_RESET_TIMEOUT_MS,
       isFailure: isPortainerFailure,
     });
+    breakers.set(key, breaker);
   }
   return breaker;
 }
 
-/** Returns the current circuit breaker stats (for health/status endpoints). */
+/** Returns circuit breaker stats aggregated across all endpoints. */
 export function getCircuitBreakerStats() {
-  return getBreaker().getStats();
+  const allStats: Record<string, ReturnType<CircuitBreaker['getStats']>> = {};
+  for (const [key, breaker] of breakers) {
+    allStats[key] = breaker.getStats();
+  }
+  // Return the worst state as the top-level summary
+  const states = Object.values(allStats);
+  const hasOpen = states.some((s) => s.state === 'OPEN');
+  const hasHalfOpen = states.some((s) => s.state === 'HALF_OPEN');
+  return {
+    state: hasOpen ? 'OPEN' as const : hasHalfOpen ? 'HALF_OPEN' as const : 'CLOSED' as const,
+    failures: states.reduce((sum, s) => sum + s.failures, 0),
+    successes: states.reduce((sum, s) => sum + s.successes, 0),
+    lastFailure: states.reduce<Date | undefined>(
+      (latest, s) => (!s.lastFailure ? latest : !latest ? s.lastFailure : s.lastFailure > latest ? s.lastFailure : latest),
+      undefined,
+    ),
+    byEndpoint: allStats,
+  };
 }
 
 const SENSITIVE_LABEL_KEYS = new Set([
@@ -176,7 +203,7 @@ async function portainerFetch<T>(
   const { method = 'GET' } = options;
   return getLimiter()(() =>
     withSpan(`${method} ${path}`, 'portainer-api', 'client', () =>
-      getBreaker().execute(() => portainerFetchInner<T>(path, options)),
+      getBreaker(path).execute(() => portainerFetchInner<T>(path, options)),
     ),
   );
 }
@@ -340,7 +367,16 @@ export async function getContainerLogs(
   }
 
   const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
-  if (!res.ok) throw new PortainerError(`Log fetch failed: ${res.status}`, classifyError(res.status), res.status);
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new PortainerError(
+        'Container logs unavailable — Docker daemon on this endpoint may be unreachable',
+        'server',
+        502,
+      );
+    }
+    throw new PortainerError(`Log fetch failed: ${res.status}`, classifyError(res.status), res.status);
+  }
   const raw = Buffer.from(await res.arrayBuffer());
   return decodeDockerLogPayload(raw);
 }
@@ -431,6 +467,13 @@ export async function startExec(endpointId: number, execId: string): Promise<voi
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    if (res.status === 404) {
+      throw new PortainerError(
+        'Exec failed — Docker daemon on this endpoint may be unreachable',
+        'server',
+        502,
+      );
+    }
     throw new PortainerError(`Exec start failed: ${res.status} ${body}`.trim(), classifyError(res.status), res.status);
   }
 }

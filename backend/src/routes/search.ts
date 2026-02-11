@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint, normalizeStack } from '../services/portainer-normalizers.js';
+import { supportsLiveFeatures } from '../services/edge-capability-guard.js';
 import { createChildLogger } from '../utils/logger.js';
 import { SearchQuerySchema } from '../models/api-schemas.js';
 
@@ -106,8 +107,18 @@ async function searchContainerLogs(
 
   const queryLower = query.toLowerCase();
 
+  // Pre-check which endpoints support live logs to avoid 404s on Edge Async
+  const liveCapableEndpoints = new Set<number>();
+  const endpointIds = new Set(candidates.map((c) => c.endpointId));
+  for (const epId of endpointIds) {
+    if (await supportsLiveFeatures(epId)) {
+      liveCapableEndpoints.add(epId);
+    }
+  }
+
   for (const container of candidates) {
     if (results.length >= limit) break;
+    if (!liveCapableEndpoints.has(container.endpointId)) continue;
     try {
       const logs = await portainer.getContainerLogs(container.endpointId, container.id, {
         tail,
