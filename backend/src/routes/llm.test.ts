@@ -70,6 +70,22 @@ vi.mock('../services/prompt-test-fixtures.js', () => ({
   },
 }));
 
+// Mock llm-client (llmFetch, getAuthHeaders, etc.)
+const mockLlmFetch = vi.fn();
+vi.mock('../services/llm-client.js', () => ({
+  getAuthHeaders: vi.fn().mockReturnValue({}),
+  getFetchErrorMessage: vi.fn((err: unknown) => err instanceof Error ? err.message : 'Unknown error'),
+  llmFetch: (...args: unknown[]) => mockLlmFetch(...args),
+  createOllamaClient: vi.fn().mockImplementation(() => ({
+    chat: mockChat,
+    list: mockList,
+  })),
+  createConfiguredOllamaClient: vi.fn().mockImplementation(() => ({
+    chat: mockChat,
+    list: mockList,
+  })),
+}));
+
 // Mock logger
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
@@ -200,7 +216,7 @@ describe('LLM Routes', () => {
     });
 
     it('uses ollamaUrl when provided', async () => {
-      const { Ollama } = await import('ollama');
+      const { createConfiguredOllamaClient } = await import('../services/llm-client.js');
       mockList.mockResolvedValue({
         models: [{ name: 'gemma2', size: 5_000_000_000, modified_at: '2024-04-01T00:00:00Z' }],
       });
@@ -215,8 +231,74 @@ describe('LLM Routes', () => {
       const body = res.json();
       expect(body.ok).toBe(true);
       expect(body.models).toContain('gemma2');
-      // Verify Ollama was instantiated with the custom host
-      expect(Ollama).toHaveBeenCalledWith(expect.objectContaining({ host: 'http://custom-ollama:11434' }));
+      // Verify createConfiguredOllamaClient was called with the custom host
+      expect(createConfiguredOllamaClient).toHaveBeenCalledWith(
+        expect.objectContaining({ ollamaUrl: 'http://custom-ollama:11434' }),
+      );
+    });
+
+    it('returns ok from custom endpoint when /v1/models succeeds', async () => {
+      mockLlmFetch.mockResolvedValue(
+        new Response(JSON.stringify({ data: [{ id: 'gpt-4' }, { id: 'gpt-3.5-turbo' }] }), { status: 200 }),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: { url: 'http://my-api:3000/v1/chat/completions' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.models).toEqual(['gpt-4', 'gpt-3.5-turbo']);
+      // Should have called /v1/models
+      expect(mockLlmFetch).toHaveBeenCalledTimes(1);
+      expect(mockLlmFetch.mock.calls[0][0]).toBe('http://my-api:3000/v1/models');
+    });
+
+    it('falls back to /api/tags when /v1/models returns 405 (Ollama proxy)', async () => {
+      // First call (/v1/models) returns 405
+      mockLlmFetch
+        .mockResolvedValueOnce(new Response('Method Not Allowed', { status: 405, statusText: 'Method Not Allowed' }))
+        // Second call (/api/tags) returns Ollama-native model list
+        .mockResolvedValueOnce(new Response(
+          JSON.stringify({ models: [{ name: 'llama3.2' }, { name: 'mistral' }] }),
+          { status: 200 },
+        ));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: { url: 'http://ollama-proxy:8080/api/chat', token: 'user:apikey' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.models).toEqual(['llama3.2', 'mistral']);
+      // Should have tried both endpoints
+      expect(mockLlmFetch).toHaveBeenCalledTimes(2);
+      expect(mockLlmFetch.mock.calls[0][0]).toBe('http://ollama-proxy:8080/v1/models');
+      expect(mockLlmFetch.mock.calls[1][0]).toBe('http://ollama-proxy:8080/api/tags');
+    });
+
+    it('returns error when both /v1/models and /api/tags fallback fail', async () => {
+      // Both endpoints fail
+      mockLlmFetch
+        .mockResolvedValueOnce(new Response('Not Found', { status: 404, statusText: 'Not Found' }))
+        .mockResolvedValueOnce(new Response('Forbidden', { status: 403, statusText: 'Forbidden' }));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/test-connection',
+        payload: { url: 'http://bad-host:8080/api/chat' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.ok).toBe(false);
+      expect(body.error).toBe('HTTP 404: Not Found');
     });
   });
 
