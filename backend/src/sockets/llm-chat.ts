@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -206,7 +206,7 @@ async function streamLlmCall(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(llmConfig.customEndpointToken),
+        ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
       },
       body: JSON.stringify({
         model: selectedModel,
@@ -257,7 +257,7 @@ async function streamLlmCall(
       }
     }
   } else {
-    const ollama = createOllamaClient(llmConfig.ollamaUrl);
+    const ollama = createConfiguredOllamaClient(llmConfig);
     const response = await ollama.chat({
       model: selectedModel,
       messages,
@@ -288,7 +288,7 @@ async function streamOllamaRawCall(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(llmConfig.customEndpointToken),
+      ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
     },
     body: JSON.stringify({
       model: selectedModel,
@@ -453,7 +453,7 @@ async function callOllamaWithNativeTools(
     return { content: '', toolCalls: [] };
   }
 
-  const ollama = createOllamaClient(llmConfig.ollamaUrl);
+  const ollama = createConfiguredOllamaClient(llmConfig);
   const response = await ollama.chat({
     model: selectedModel,
     messages,

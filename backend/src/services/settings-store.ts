@@ -53,9 +53,10 @@ export function getEffectiveLlmConfig() {
   // When disabled, the Ollama SDK is used for native Ollama access.
   const customEnabled = getSetting('llm.custom_endpoint_enabled')?.value === 'true' || !!config.LLM_OPENAI_ENDPOINT;
   const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.LLM_BEARER_TOKEN;
+  const authType = (getSetting('llm.auth_type')?.value as 'bearer' | 'basic') || config.LLM_AUTH_TYPE;
   const maxTokens = parseInt(getSetting('llm.max_tokens')?.value || '20000', 10) || 20000;
   const maxToolIterations = parseInt(getSetting('llm.max_tool_iterations')?.value || '', 10) || config.LLM_MAX_TOOL_ITERATIONS;
-  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, maxTokens, maxToolIterations };
+  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, authType, maxTokens, maxToolIterations };
 }
 
 /**

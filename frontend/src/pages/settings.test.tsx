@@ -41,6 +41,7 @@ describe('LlmSettingsSection', () => {
     'llm.custom_endpoint_enabled': 'false',
     'llm.custom_endpoint_url': '',
     'llm.custom_endpoint_token': '',
+    'llm.auth_type': 'bearer',
   };
 
   let onChange: ReturnType<typeof vi.fn>;

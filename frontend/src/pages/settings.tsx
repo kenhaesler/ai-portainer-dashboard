@@ -152,6 +152,7 @@ const DEFAULT_SETTINGS = {
     { key: 'llm.custom_endpoint_enabled', label: 'Custom Endpoint Enabled', description: 'Use a custom OpenAI-compatible API endpoint', type: 'boolean', defaultValue: 'false' },
     { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'OpenAI-compatible chat completions URL', type: 'string', defaultValue: '' },
     { key: 'llm.custom_endpoint_token', label: 'Custom Endpoint Token', description: 'Bearer token for custom endpoint', type: 'password', defaultValue: '' },
+    { key: 'llm.auth_type', label: 'Auth Type', description: 'Authentication header type (Bearer for most LLM proxies including ParisNeo Ollama Proxy)', type: 'string', defaultValue: 'bearer' },
   ],
   authentication: [
     { key: 'oidc.enabled', label: 'Enable OIDC/SSO', description: 'Enable OpenID Connect single sign-on authentication', type: 'boolean', defaultValue: 'false' },
@@ -653,6 +654,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   const customEnabled = values['llm.custom_endpoint_enabled'] === 'true';
   const customUrl = values['llm.custom_endpoint_url'] || '';
   const customToken = values['llm.custom_endpoint_token'] || '';
+  const authType = values['llm.auth_type'] || 'bearer';
 
   // Only pass host to useLlmModels when using Ollama — when custom is enabled,
   // pass undefined so the backend uses the configured custom endpoint
@@ -668,7 +670,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
 
   const hasChanges = [
     'llm.model', 'llm.temperature', 'llm.ollama_url', 'llm.max_tokens',
-    'llm.custom_endpoint_enabled', 'llm.custom_endpoint_url', 'llm.custom_endpoint_token',
+    'llm.custom_endpoint_enabled', 'llm.custom_endpoint_url', 'llm.custom_endpoint_token', 'llm.auth_type',
   ].some((key) => values[key] !== originalValues[key]);
   const llmConfigured = Boolean(selectedModel.trim()) && (customEnabled ? Boolean(customUrl.trim()) : Boolean(ollamaUrl.trim()));
 
@@ -846,6 +848,22 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
                     {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+              </div>
+              <div>
+                <label htmlFor="auth-type-select" className="text-sm font-medium">Auth Header Type</label>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  Bearer works with most proxies including ParisNeo Ollama Proxy (user:token format). Use Basic only for endpoints that require HTTP Basic auth.
+                </p>
+                <select
+                  id="auth-type-select"
+                  value={authType}
+                  onChange={(e) => onChange('llm.auth_type', e.target.value)}
+                  disabled={disabled}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                >
+                  <option value="bearer">Bearer (default)</option>
+                  <option value="basic">Basic</option>
+                </select>
               </div>
             </>
           )}
@@ -2919,6 +2937,7 @@ export default function SettingsPage() {
     'llm.custom_endpoint_enabled',
     'llm.custom_endpoint_url',
     'llm.custom_endpoint_token',
+    'llm.auth_type',
     'oidc.enabled',
     'oidc.issuer_url',
     'oidc.client_id',
