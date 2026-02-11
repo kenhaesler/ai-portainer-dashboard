@@ -17,7 +17,7 @@ import {
 } from '../services/feedback-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-import { getAuthHeaders, llmFetch, createOllamaClient } from '../services/llm-client.js';
+import { getAuthHeaders, llmFetch, createConfiguredOllamaClient } from '../services/llm-client.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
@@ -283,7 +283,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken),
+            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
           },
           body: JSON.stringify({
             model: llmConfig.model,
@@ -304,7 +304,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
         responseText = data.choices?.[0]?.message?.content ?? '';
       } else {
         // Ollama
-        const ollama = createOllamaClient(llmConfig.ollamaUrl);
+        const ollama = createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages: [

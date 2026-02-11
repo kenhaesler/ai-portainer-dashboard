@@ -109,8 +109,15 @@ describe('getAuthHeaders', () => {
     });
   });
 
-  it('returns Basic header for username:password format', () => {
-    const result = getAuthHeaders('admin:secret123');
+  it('returns Bearer header for colon-containing token with default authType', () => {
+    // ParisNeo Ollama Proxy format: Bearer user:token
+    expect(getAuthHeaders('admin:secret123')).toEqual({
+      Authorization: 'Bearer admin:secret123',
+    });
+  });
+
+  it('returns Basic header when authType is explicitly basic', () => {
+    const result = getAuthHeaders('admin:secret123', 'basic');
     const expected = Buffer.from('admin:secret123').toString('base64');
     expect(result).toEqual({
       Authorization: `Basic ${expected}`,

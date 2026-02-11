@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher } from './llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, type LlmAuthType } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 
 // Mock settings-store
@@ -9,6 +9,7 @@ const mockGetConfig = vi.fn().mockReturnValue({
   customEnabled: false,
   customEndpointUrl: undefined,
   customEndpointToken: undefined,
+  authType: 'bearer' as LlmAuthType,
   maxTokens: 2048,
   maxToolIterations: 5,
 });
@@ -142,6 +143,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/api/chat/completions',
         customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -188,6 +190,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/api/chat/completions',
         customEndpointToken: 'my-secret',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -224,6 +227,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
         customEndpointToken: 'sk-test',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -267,6 +271,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
         customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -306,6 +311,7 @@ describe('llm-client', () => {
         customEnabled: false,
         customEndpointUrl: '',
         customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -332,6 +338,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/api/chat/completions',
         customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -358,6 +365,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/api/chat/completions',
         customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });
@@ -375,13 +383,28 @@ describe('llm-client', () => {
       expect(getAuthHeaders('')).toEqual({});
     });
 
-    it('returns Bearer header for plain token', () => {
+    it('returns Bearer header for plain token (default authType)', () => {
       expect(getAuthHeaders('sk-my-token')).toEqual({ Authorization: 'Bearer sk-my-token' });
     });
 
-    it('returns Basic header for user:pass format', () => {
-      const result = getAuthHeaders('admin:secret');
+    it('returns Bearer header for colon-containing token with default authType', () => {
+      // ParisNeo Ollama Proxy uses "user:token" format with Bearer auth
+      expect(getAuthHeaders('myuser:abc123key')).toEqual({ Authorization: 'Bearer myuser:abc123key' });
+    });
+
+    it('returns Bearer header when authType is explicitly bearer', () => {
+      expect(getAuthHeaders('user:token', 'bearer')).toEqual({ Authorization: 'Bearer user:token' });
+    });
+
+    it('returns Basic header when authType is explicitly basic', () => {
+      const result = getAuthHeaders('admin:secret', 'basic');
       const expected = Buffer.from('admin:secret').toString('base64');
+      expect(result).toEqual({ Authorization: `Basic ${expected}` });
+    });
+
+    it('returns Basic header for plain token when authType is basic', () => {
+      const result = getAuthHeaders('my-api-key', 'basic');
+      const expected = Buffer.from('my-api-key').toString('base64');
       expect(result).toEqual({ Authorization: `Basic ${expected}` });
     });
 
@@ -405,6 +428,7 @@ describe('llm-client', () => {
         customEnabled: true,
         customEndpointUrl: 'http://localhost:3000/api/chat/completions',
         customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
         maxTokens: 2048,
         maxToolIterations: 5,
       });

@@ -30,6 +30,7 @@ export const envSchema = z.object({
   OLLAMA_MODEL: z.string().default('llama3.2'),
   LLM_OPENAI_ENDPOINT: z.string().url().optional(), // OpenAI-compatible endpoint (e.g., OpenWebUI)
   LLM_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
+  LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'), // Auth header type for LLM endpoint tokens
   LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
 
   // Kibana (optional)

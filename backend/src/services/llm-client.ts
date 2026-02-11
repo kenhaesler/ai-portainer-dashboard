@@ -59,15 +59,46 @@ export function llmFetch(url: string | URL, init?: RequestInit): Promise<Respons
 }
 
 /**
- * Create an Ollama SDK client that respects LLM_VERIFY_SSL.
- * The Ollama SDK uses its own internal fetch by default, which ignores
- * our dispatcher. Passing `llmFetch` ensures self-signed certs work.
+ * Create a fetch wrapper that injects auth headers into every request.
+ * Used by createOllamaClient to authenticate Ollama SDK calls with proxies
+ * like ParisNeo Ollama Proxy Server that require Bearer tokens.
  */
-export function createOllamaClient(host: string): Ollama {
-  return new Ollama({ host, fetch: llmFetch as any });
+function createAuthenticatedFetch(authHeaders: Record<string, string>): typeof llmFetch {
+  return (url: string | URL, init?: RequestInit) => {
+    const mergedHeaders = {
+      ...(init?.headers as Record<string, string> | undefined),
+      ...authHeaders,
+    };
+    return llmFetch(url, { ...init, headers: mergedHeaders });
+  };
 }
 
-export function getAuthHeaders(token: string | undefined): Record<string, string> {
+/**
+ * Create an Ollama SDK client that respects LLM_VERIFY_SSL and optionally
+ * injects authentication headers. When auth headers are provided (e.g. for
+ * ParisNeo Ollama Proxy), every SDK request will include them.
+ */
+export function createOllamaClient(host: string, authHeaders?: Record<string, string>): Ollama {
+  const fetchFn = authHeaders && Object.keys(authHeaders).length > 0
+    ? createAuthenticatedFetch(authHeaders)
+    : llmFetch;
+  return new Ollama({ host, fetch: fetchFn as any });
+}
+
+/**
+ * Create an Ollama SDK client using the current LLM configuration.
+ * Automatically injects auth headers when a token is configured,
+ * enabling compatibility with authenticated Ollama proxies.
+ */
+export function createConfiguredOllamaClient(llmConfig?: { ollamaUrl: string; customEndpointToken?: string; authType?: LlmAuthType }): Ollama {
+  const config = llmConfig ?? getEffectiveLlmConfig();
+  const authHeaders = getAuthHeaders(config.customEndpointToken, config.authType);
+  return createOllamaClient(config.ollamaUrl, authHeaders);
+}
+
+export type LlmAuthType = 'bearer' | 'basic';
+
+export function getAuthHeaders(token: string | undefined, authType: LlmAuthType = 'bearer'): Record<string, string> {
   if (!token) return {};
 
   // Strip non-Latin1 characters (code > 255) that break HTTP headers.
@@ -77,13 +108,12 @@ export function getAuthHeaders(token: string | undefined): Record<string, string
 
   if (!sanitized) return {};
 
-  // Check if token is in username:password format (Basic auth)
-  if (sanitized.includes(':')) {
+  if (authType === 'basic') {
     const base64Credentials = Buffer.from(sanitized).toString('base64');
     return { 'Authorization': `Basic ${base64Credentials}` };
   }
 
-  // Otherwise use Bearer token
+  // Default: Bearer token (works with ParisNeo Ollama Proxy "user:token" format)
   return { 'Authorization': `Bearer ${sanitized}` };
 }
 
@@ -128,7 +158,7 @@ async function chatStreamInner(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(llmConfig.customEndpointToken),
+          ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
         },
         body: JSON.stringify({
           model: llmConfig.model,
@@ -176,8 +206,8 @@ async function chatStreamInner(
         }
       }
     } else {
-      // Use Ollama SDK for local/unauthenticated access
-      const ollama = createOllamaClient(llmConfig.ollamaUrl);
+      // Use Ollama SDK with auth headers injected for proxy compatibility
+      const ollama = createConfiguredOllamaClient(llmConfig);
       const response = await ollama.chat({
         model: llmConfig.model,
         messages: fullMessages,
@@ -306,14 +336,14 @@ export async function isOllamaAvailable(): Promise<boolean> {
       const modelsUrl = `${baseUrl.origin}/v1/models`;
       const response = await llmFetch(modelsUrl, {
         headers: {
-          ...getAuthHeaders(llmConfig.customEndpointToken),
+          ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
         },
         signal: AbortSignal.timeout(5000),
       });
       return response.ok;
     }
 
-    const ollama = createOllamaClient(llmConfig.ollamaUrl);
+    const ollama = createConfiguredOllamaClient(llmConfig);
     await ollama.list();
     return true;
   } catch {
@@ -337,7 +367,7 @@ export async function ensureModel(): Promise<void> {
   }
 
   try {
-    const ollama = createOllamaClient(ollamaUrl);
+    const ollama = createConfiguredOllamaClient(llmConfig);
     const { models } = await ollama.list();
     const installed = models.some((m) => m.name === model || m.name.startsWith(`${model}:`));
 
@@ -347,8 +377,19 @@ export async function ensureModel(): Promise<void> {
     }
 
     log.info({ model }, 'Pulling Ollama model (this may take a few minutes on first run)...');
-    await ollama.pull({ model });
-    log.info({ model }, 'Ollama model pulled successfully');
+    try {
+      await ollama.pull({ model });
+      log.info({ model }, 'Ollama model pulled successfully');
+    } catch (pullErr) {
+      // Ollama proxies (e.g. ParisNeo) block /api/pull by default.
+      // Log a warning instead of failing — proxied environments manage models server-side.
+      const msg = pullErr instanceof Error ? pullErr.message : String(pullErr);
+      if (msg.includes('403') || msg.includes('405') || msg.includes('Forbidden') || msg.includes('Not Allowed')) {
+        log.warn({ model }, 'Model pull blocked by proxy (403/405) — ensure the model is available on the Ollama server');
+      } else {
+        throw pullErr;
+      }
+    }
   } catch (err) {
     log.warn({ err, model }, 'Failed to ensure Ollama model — LLM features may be unavailable');
   }
