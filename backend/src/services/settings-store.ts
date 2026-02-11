@@ -48,12 +48,15 @@ export function getEffectiveLlmConfig() {
   const config = getConfig();
   const ollamaUrl = getSetting('llm.ollama_url')?.value || config.OLLAMA_BASE_URL;
   const model = getSetting('llm.model')?.value || config.OLLAMA_MODEL;
-  const customEnabled = getSetting('llm.custom_endpoint_enabled')?.value === 'true';
-  const customEndpointUrl = getSetting('llm.custom_endpoint_url')?.value || config.OLLAMA_API_ENDPOINT;
-  const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.OLLAMA_BEARER_TOKEN;
+  const customEndpointUrl = getSetting('llm.custom_endpoint_url')?.value || config.LLM_OPENAI_ENDPOINT;
+  // Custom mode: enabled via Settings UI toggle OR when LLM_OPENAI_ENDPOINT env var is set.
+  // When disabled, the Ollama SDK is used for native Ollama access.
+  const customEnabled = getSetting('llm.custom_endpoint_enabled')?.value === 'true' || !!config.LLM_OPENAI_ENDPOINT;
+  const customEndpointToken = getSetting('llm.custom_endpoint_token')?.value || config.LLM_BEARER_TOKEN;
+  const authType = (getSetting('llm.auth_type')?.value as 'bearer' | 'basic') || config.LLM_AUTH_TYPE;
   const maxTokens = parseInt(getSetting('llm.max_tokens')?.value || '20000', 10) || 20000;
   const maxToolIterations = parseInt(getSetting('llm.max_tool_iterations')?.value || '', 10) || config.LLM_MAX_TOOL_ITERATIONS;
-  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, maxTokens, maxToolIterations };
+  return { ollamaUrl, model, customEnabled, customEndpointUrl, customEndpointToken, authType, maxTokens, maxToolIterations };
 }
 
 /**

@@ -10,6 +10,11 @@ import {
   Server,
   Clock,
   Lightbulb,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  Box,
+  Tag,
 } from 'lucide-react';
 import {
   useUtilizationReport,
@@ -17,6 +22,8 @@ import {
 } from '@/hooks/use-reports';
 import type { ContainerReport } from '@/hooks/use-reports';
 import { useEndpoints } from '@/hooks/use-endpoints';
+import { useContainers } from '@/hooks/use-containers';
+import type { Container } from '@/hooks/use-containers';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
@@ -110,6 +117,289 @@ function StatCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Stack naming convention parser
+// Format: <department>_<dienststelle>_<stackname>-<prod|test>
+// The -prod/-test suffix is optional.
+// ---------------------------------------------------------------------------
+
+export interface ParsedStack {
+  department: string;
+  dienststelle: string;
+  stackName: string;
+  environment: 'prod' | 'test' | null;
+  raw: string;
+}
+
+export function parseStackName(raw: string): ParsedStack | null {
+  if (!raw) return null;
+
+  const parts = raw.split('_');
+  if (parts.length < 2) return null; // doesn't follow convention
+
+  const department = parts[0];
+  const dienststelle = parts[1];
+
+  // Everything after the second _ is the stack name (may contain more underscores)
+  let stackPart = parts.slice(2).join('_');
+  let environment: 'prod' | 'test' | null = null;
+
+  // Check for -prod or -test suffix
+  if (stackPart.endsWith('-prod')) {
+    environment = 'prod';
+    stackPart = stackPart.slice(0, -5);
+  } else if (stackPart.endsWith('-test')) {
+    environment = 'test';
+    stackPart = stackPart.slice(0, -5);
+  }
+
+  return {
+    department,
+    dienststelle,
+    stackName: stackPart || dienststelle, // fallback if no third segment
+    environment,
+    raw,
+  };
+}
+
+interface ContainerWithStack extends Container {
+  parsedStack: ParsedStack | null;
+}
+
+interface DienststelleGroup {
+  dienststelle: string;
+  departments: string[];
+  containers: ContainerWithStack[];
+}
+
+function groupContainersByDienststelle(
+  containers: Container[] | undefined,
+): DienststelleGroup[] {
+  const safeContainers = Array.isArray(containers) ? containers : [];
+
+  const groups = new Map<string, {
+    departments: Set<string>;
+    containers: ContainerWithStack[];
+  }>();
+
+  for (const c of safeContainers) {
+    const stackLabel = c.labels?.['com.docker.compose.project'] ?? '';
+    const parsed = parseStackName(stackLabel);
+    const key = parsed?.dienststelle ?? 'Standalone';
+
+    if (!groups.has(key)) {
+      groups.set(key, { departments: new Set(), containers: [] });
+    }
+    const group = groups.get(key)!;
+    if (parsed?.department) group.departments.add(parsed.department);
+    group.containers.push({ ...c, parsedStack: parsed });
+  }
+
+  return Array.from(groups.entries())
+    .map(([dienststelle, { departments, containers: cs }]) => ({
+      dienststelle,
+      departments: Array.from(departments).sort(),
+      containers: cs,
+    }))
+    .sort((a, b) => {
+      // "Standalone" goes last
+      if (a.dienststelle === 'Standalone') return 1;
+      if (b.dienststelle === 'Standalone') return -1;
+      return a.dienststelle.localeCompare(b.dienststelle);
+    });
+}
+
+export function DienststellenOverview({
+  containers,
+}: {
+  containers: Container[] | undefined;
+}) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const groups = useMemo(
+    () => groupContainersByDienststelle(containers),
+    [containers],
+  );
+
+  const totalDienststellen = groups.filter((g) => g.dienststelle !== 'Standalone').length;
+  const totalContainers = groups.reduce((sum, g) => sum + g.containers.length, 0);
+  const uniqueDepartments = new Set(groups.flatMap((g) => g.departments));
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  if (!containers || containers.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Dienststellen KPIs */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Total Dienststellen</p>
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">{totalDienststellen}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Total Containers</p>
+            <Box className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">{totalContainers}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Departments</p>
+            <Tag className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">{uniqueDepartments.size}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Avg Containers / Dienststelle</p>
+            <Server className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-2 text-2xl font-bold">
+            {totalDienststellen > 0 ? (totalContainers / totalDienststellen).toFixed(1) : '0'}
+          </p>
+        </div>
+      </div>
+
+      {/* Grouped table */}
+      <div className="rounded-lg border bg-card">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            <h3 className="text-lg font-semibold">Containers per Dienststelle</h3>
+          </div>
+          <span className="text-sm text-muted-foreground">
+            {totalDienststellen} Dienststelle{totalDienststellen !== 1 ? 'n' : ''}
+          </span>
+        </div>
+        <div className="divide-y">
+          {groups.map(({ dienststelle, departments, containers: grpContainers }) => {
+            const isExpanded = expandedIds.has(dienststelle);
+            const running = grpContainers.filter((c) => c.state === 'running').length;
+            const stopped = grpContainers.filter((c) => c.state === 'stopped').length;
+            const other = grpContainers.length - running - stopped;
+            const envCounts = { prod: 0, test: 0 };
+            for (const c of grpContainers) {
+              if (c.parsedStack?.environment === 'prod') envCounts.prod++;
+              if (c.parsedStack?.environment === 'test') envCounts.test++;
+            }
+
+            return (
+              <div key={dienststelle}>
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(dienststelle)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+                >
+                  {isExpanded
+                    ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{dienststelle}</span>
+                      {departments.map((dept) => (
+                        <span key={dept} className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                          {dept}
+                        </span>
+                      ))}
+                      {envCounts.prod > 0 && (
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          prod
+                        </span>
+                      )}
+                      {envCounts.test > 0 && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                          test
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                    <span className="text-emerald-600 dark:text-emerald-400">{running} running</span>
+                    {stopped > 0 && <span className="text-red-500">{stopped} stopped</span>}
+                    {other > 0 && <span>{other} other</span>}
+                    <span className="font-medium text-foreground">{grpContainers.length} total</span>
+                  </div>
+                </button>
+                {isExpanded && grpContainers.length > 0 && (
+                  <div className="border-t bg-muted/10">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/30 text-left">
+                          <th className="px-4 py-2 pl-12 font-medium">Container</th>
+                          <th className="px-4 py-2 font-medium">Stack</th>
+                          <th className="px-4 py-2 font-medium">Env</th>
+                          <th className="px-4 py-2 font-medium">Image</th>
+                          <th className="px-4 py-2 font-medium">State</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grpContainers
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((c) => (
+                            <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20">
+                              <td className="px-4 py-2 pl-12 font-medium truncate max-w-[200px]" title={c.name}>
+                                {c.name}
+                              </td>
+                              <td className="px-4 py-2 text-muted-foreground truncate max-w-[150px]" title={c.parsedStack?.raw}>
+                                {c.parsedStack?.stackName ?? '—'}
+                              </td>
+                              <td className="px-4 py-2">
+                                {c.parsedStack?.environment && (
+                                  <span className={cn(
+                                    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                                    c.parsedStack.environment === 'prod' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                                    c.parsedStack.environment === 'test' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                                  )}>
+                                    {c.parsedStack.environment}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-muted-foreground truncate max-w-[250px]" title={c.image}>
+                                {c.image}
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className={cn(
+                                  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                                  c.state === 'running' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+                                  c.state === 'stopped' && 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                                  c.state === 'paused' && 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                                  c.state !== 'running' && c.state !== 'stopped' && c.state !== 'paused' && 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+                                )}>
+                                  {c.state}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {isExpanded && grpContainers.length === 0 && (
+                  <div className="border-t bg-muted/10 px-4 py-3 pl-12 text-sm text-muted-foreground italic">
+                    No containers on this Dienststelle
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState('24h');
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
@@ -117,6 +407,7 @@ export default function ReportsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const { data: endpoints } = useEndpoints();
+  const { data: allContainers } = useContainers();
   const {
     data: report,
     isLoading: reportLoading,
@@ -227,6 +518,9 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+
+      {/* Dienststellen Overview */}
+      <DienststellenOverview containers={allContainers} />
 
       {isLoading && (
         <div className="grid gap-4 md:grid-cols-4">

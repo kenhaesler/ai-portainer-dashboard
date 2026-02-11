@@ -41,6 +41,7 @@ describe('LlmSettingsSection', () => {
     'llm.custom_endpoint_enabled': 'false',
     'llm.custom_endpoint_url': '',
     'llm.custom_endpoint_token': '',
+    'llm.auth_type': 'bearer',
   };
 
   let onChange: ReturnType<typeof vi.fn>;
@@ -64,7 +65,7 @@ describe('LlmSettingsSection', () => {
       { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText('LLM / Ollama')).toBeInTheDocument();
+    expect(screen.getByText('LLM Configuration')).toBeInTheDocument();
   });
 
   it('renders model dropdown populated from API', async () => {
@@ -137,13 +138,13 @@ describe('LlmSettingsSection', () => {
     expect(screen.getByLabelText(/api key/i)).toBeInTheDocument();
   });
 
-  it('calls onChange when custom endpoint toggle is clicked', async () => {
+  it('calls onChange when Custom API card is clicked', async () => {
     render(
       <LlmSettingsSection values={defaultValues} originalValues={defaultValues} onChange={onChange} />,
       { wrapper: createWrapper() },
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /toggle custom api endpoint/i }));
+    fireEvent.click(screen.getByText('Custom API'));
     expect(onChange).toHaveBeenCalledWith('llm.custom_endpoint_enabled', 'true');
   });
 
@@ -194,7 +195,7 @@ describe('LlmSettingsSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /test connection/i }));
 
-    expect(mockError).toHaveBeenCalledWith('Set a custom endpoint URL before testing connection');
+    expect(mockError).toHaveBeenCalledWith('Set an API endpoint URL before testing connection');
     expect(mockPost).not.toHaveBeenCalled();
   });
 });

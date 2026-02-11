@@ -17,6 +17,7 @@ import {
 } from '../services/feedback-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { getAuthHeaders, llmFetch, createConfiguredOllamaClient } from '../services/llm-client.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
@@ -271,19 +272,18 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     try {
       // Dynamically import to avoid circular dependencies
       const { getEffectiveLlmConfig } = await import('../services/settings-store.js');
-      const { Ollama } = await import('ollama');
 
       const llmConfig = getEffectiveLlmConfig();
 
       let responseText = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
-        // Custom endpoint
-        const response = await fetch(llmConfig.customEndpointUrl, {
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+        // Custom endpoint (token is optional — some endpoints don't require auth)
+        const response = await llmFetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${llmConfig.customEndpointToken}`,
+            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
           },
           body: JSON.stringify({
             model: llmConfig.model,
@@ -304,7 +304,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
         responseText = data.choices?.[0]?.message?.content ?? '';
       } else {
         // Ollama
-        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const ollama = createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages: [

@@ -1,5 +1,4 @@
 import { FastifyInstance } from 'fastify';
-import { Ollama } from 'ollama';
 import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
 import * as portainer from '../services/portainer-client.js';
@@ -11,20 +10,13 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '../models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
-}
-
-function getAuthHeaders(token: string | undefined): Record<string, string> {
-  if (!token) return {};
-  if (token.includes(':')) {
-    return { 'Authorization': `Basic ${Buffer.from(token).toString('base64')}` };
-  }
-  return { 'Authorization': `Bearer ${token}` };
 }
 
 async function getInfrastructureSummary(): Promise<string> {
@@ -100,12 +92,12 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
       let fullResponse = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
-        const response = await fetch(llmConfig.customEndpointUrl, {
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+        const response = await llmFetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken),
+            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
           },
           body: JSON.stringify({
             model: llmConfig.model,
@@ -122,7 +114,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const data = await response.json() as any;
         fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
       } else {
-        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const ollama = createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages,
@@ -217,20 +209,13 @@ export async function llmRoutes(fastify: FastifyInstance) {
     const { url, token, ollamaUrl } = request.body;
 
     try {
-      if (url && token) {
-        // Test custom OpenAI-compatible endpoint
+      if (url) {
+        // Test custom OpenAI-compatible endpoint (token is optional)
         const baseUrl = new URL(url);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
 
-        const authHeaders: Record<string, string> = {};
-        if (token.includes(':')) {
-          authHeaders['Authorization'] = `Basic ${Buffer.from(token).toString('base64')}`;
-        } else {
-          authHeaders['Authorization'] = `Bearer ${token}`;
-        }
-
-        const response = await fetch(modelsUrl, {
-          headers: { 'Content-Type': 'application/json', ...authHeaders },
+        const response = await llmFetch(modelsUrl, {
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(token, getEffectiveLlmConfig().authType) },
           signal: AbortSignal.timeout(10_000),
         });
 
@@ -246,14 +231,13 @@ export async function llmRoutes(fastify: FastifyInstance) {
       // Test Ollama connection using provided URL or fallback to settings/config
       const effectiveConfig = getEffectiveLlmConfig();
       const host = ollamaUrl || effectiveConfig.ollamaUrl;
-      const ollama = new Ollama({ host });
+      const ollama = createConfiguredOllamaClient({ ...effectiveConfig, ollamaUrl: host });
       const response = await ollama.list();
       const models = response.models.map((m) => m.name);
       return { ok: true, models };
     } catch (err) {
       log.error({ err }, 'LLM connection test failed');
-      const message = err instanceof Error ? err.message : 'Connection failed';
-      return { ok: false, error: message };
+      return { ok: false, error: getFetchErrorMessage(err) };
     }
   });
 
@@ -292,12 +276,12 @@ export async function llmRoutes(fastify: FastifyInstance) {
     try {
       let fullResponse = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
-        const response = await fetch(llmConfig.customEndpointUrl, {
+      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+        const response = await llmFetch(llmConfig.customEndpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken),
+            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
           },
           body: JSON.stringify({
             model: effectiveModel,
@@ -315,7 +299,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const data = await response.json() as any;
         fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
       } else {
-        const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+        const ollama = createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: effectiveModel,
           messages,
@@ -414,16 +398,16 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
     try {
       // If using custom API endpoint, try OpenAI-compatible /v1/models
-      if (!customHost && llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
+      if (!customHost && llmConfig.customEnabled && llmConfig.customEndpointUrl) {
         const baseUrl = new URL(llmConfig.customEndpointUrl);
         const modelsUrl = `${baseUrl.origin}/v1/models`;
 
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(llmConfig.customEndpointToken),
+          ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
         };
 
-        const response = await fetch(modelsUrl, { headers });
+        const response = await llmFetch(modelsUrl, { headers });
         if (response.ok) {
           const data = await response.json() as { data?: Array<{ id: string }> };
           return {
@@ -436,7 +420,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       }
 
       // Default: use Ollama SDK (prefer custom host from query over settings/env)
-      const ollama = new Ollama({ host: customHost || llmConfig.ollamaUrl });
+      const ollama = createConfiguredOllamaClient({ ...llmConfig, ollamaUrl: customHost || llmConfig.ollamaUrl });
       const response = await ollama.list();
       return {
         models: response.models.map((m) => ({

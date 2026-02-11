@@ -49,12 +49,12 @@ const fakeEndpoint = (id: number, name: string, status = 1) => ({
   TagIds: [],
 });
 
-const fakeEdgeEndpoint = (id: number, name: string, lastCheckIn: number) => ({
+const fakeEdgeEndpoint = (id: number, name: string, lastCheckIn: number, status = 1) => ({
   Id: id,
   Name: name,
   Type: 4,
   URL: 'tcp://10.0.0.2:9001',
-  Status: 2, // Portainer reports "down"
+  Status: status,
   Snapshots: [],
   TagIds: [],
   EdgeID: `edge-${id}`,
@@ -112,11 +112,11 @@ describe('stacks routes', () => {
     expect(body).toHaveLength(1);
   });
 
-  it('includes stacks from Edge endpoints that checked in recently', async () => {
-    const recentCheckIn = Math.floor(Date.now() / 1000) - 10; // 10s ago
+  it('includes stacks from Edge endpoints with recent check-in (Status=2, tunnel closed)', async () => {
+    const recentCheckIn = Math.floor(Date.now() / 1000) - 10;
     mockGetEndpoints.mockResolvedValue([
       fakeEndpoint(1, 'local'),
-      fakeEdgeEndpoint(2, 'edge-node', recentCheckIn),
+      fakeEdgeEndpoint(2, 'edge-node', recentCheckIn, 2), // Status=2 is normal for Edge Standard
     ] as any);
     mockGetStacksByEndpoint
       .mockResolvedValueOnce([fakeStack(1, 'local-stack', 1)] as any)

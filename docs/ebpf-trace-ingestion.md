@@ -419,7 +419,7 @@ Use the **eBPF Coverage** page (`/ebpf-coverage`) to track deployment progress:
 2. For each endpoint, update the status:
    - `deployed` — Beyla is running and sending traces
    - `planned` — Beyla deployment is scheduled but not yet done
-   - `excluded` — Endpoint intentionally excluded (e.g., edge agent with no kernel access)
+   - `excluded` — Endpoint intentionally excluded (e.g., no kernel access)
    - `failed` — Deployment attempted but Beyla is not sending traces
 3. The summary bar shows overall coverage percentage
 
@@ -429,7 +429,7 @@ Not all endpoints can run Beyla. Mark these as `excluded` with a reason:
 
 | Reason | Example |
 |---|---|
-| **No kernel access** | Edge agents, Windows endpoints, Kubernetes without privileged DaemonSets |
+| **No kernel access** | Windows endpoints, Kubernetes without privileged DaemonSets |
 | **ARM architecture** | Beyla requires x86_64 (ARM support is experimental) |
 | **Compliance restriction** | Endpoints in regulated environments that prohibit privileged containers |
 | **No HTTP workloads** | Endpoints running only databases or message brokers with no HTTP traffic |

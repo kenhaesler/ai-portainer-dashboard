@@ -1,6 +1,5 @@
 import { Namespace } from 'socket.io';
 import { createChildLogger } from '../utils/logger.js';
-import { Ollama } from 'ollama';
 import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
@@ -12,6 +11,7 @@ import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -20,19 +20,6 @@ const log = createChildLogger('socket:llm');
 /** Rough token estimate: ~4 chars per token for English text */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
-}
-
-export function getAuthHeaders(token: string | undefined): Record<string, string> {
-  if (!token) return {};
-
-  // Check if token is in username:password format (Basic auth)
-  if (token.includes(':')) {
-    const base64Credentials = Buffer.from(token).toString('base64');
-    return { 'Authorization': `Basic ${base64Credentials}` };
-  }
-
-  // Otherwise use Bearer token
-  return { 'Authorization': `Bearer ${token}` };
 }
 
 interface ChatMessage {
@@ -214,12 +201,12 @@ async function streamLlmCall(
 ): Promise<string> {
   let fullResponse = '';
 
-  if (llmConfig.customEnabled && llmConfig.customEndpointUrl && llmConfig.customEndpointToken) {
-    const response = await fetch(llmConfig.customEndpointUrl, {
+  if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+    const response = await llmFetch(llmConfig.customEndpointUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeaders(llmConfig.customEndpointToken),
+        ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
       },
       body: JSON.stringify({
         model: selectedModel,
@@ -248,21 +235,29 @@ async function streamLlmCall(
       const chunk = decoder.decode(value);
       const lines = chunk.split('\n').filter((line) => line.trim() !== '');
 
-      for (const line of lines) {
+      for (const raw of lines) {
+        // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
+        let payload = raw.trim();
+        if (payload.startsWith('data: ')) payload = payload.slice(6);
+        else if (payload.startsWith('data:')) payload = payload.slice(5);
+
+        // Skip SSE end sentinel and comment lines
+        if (payload === '[DONE]' || payload.startsWith(':')) continue;
+
         try {
-          const json = JSON.parse(line);
+          const json = JSON.parse(payload);
           const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
           if (text) {
             fullResponse += text;
             onChunk(text);
           }
         } catch {
-          // Skip invalid JSON lines
+          // Skip non-JSON lines (e.g. SSE event types)
         }
       }
     }
   } else {
-    const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+    const ollama = createConfiguredOllamaClient(llmConfig);
     const response = await ollama.chat({
       model: selectedModel,
       messages,
@@ -289,11 +284,11 @@ async function streamOllamaRawCall(
   signal?: AbortSignal,
 ): Promise<string> {
   const baseUrl = llmConfig.ollamaUrl.replace(/\/$/, '');
-  const response = await fetch(`${baseUrl}/api/chat`, {
+  const response = await llmFetch(`${baseUrl}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(llmConfig.customEndpointToken),
+      ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
     },
     body: JSON.stringify({
       model: selectedModel,
@@ -458,7 +453,7 @@ async function callOllamaWithNativeTools(
     return { content: '', toolCalls: [] };
   }
 
-  const ollama = new Ollama({ host: llmConfig.ollamaUrl });
+  const ollama = createConfiguredOllamaClient(llmConfig);
   const response = await ollama.chat({
     model: selectedModel,
     messages,
@@ -840,10 +835,9 @@ export function setupLlmNamespace(ns: Namespace) {
 
         log.debug({ userId, messageLength: data.text.length, responseLength: finalResponse.length, toolIterations: toolIteration }, 'LLM chat completed');
       } catch (err) {
+        const errorMessage = getFetchErrorMessage(err);
         log.error({ err, userId }, 'LLM chat error');
-        socket.emit('chat:error', {
-          message: err instanceof Error ? err.message : 'LLM unavailable',
-        });
+        socket.emit('chat:error', { message: errorMessage });
 
         // Record error trace
         try {
