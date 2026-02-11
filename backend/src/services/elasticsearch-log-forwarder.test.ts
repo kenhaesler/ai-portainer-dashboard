@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetElasticsearchConfig = vi.fn();
 const mockGetEndpoints = vi.fn();
@@ -34,6 +34,8 @@ vi.mock('../utils/logger.js', () => ({
 const {
   resetElasticsearchLogForwarderState,
   runElasticsearchLogForwardingCycle,
+  startElasticsearchLogForwarder,
+  stopElasticsearchLogForwarder,
 } = await import('./elasticsearch-log-forwarder.js');
 
 describe('elasticsearch-log-forwarder', () => {
@@ -179,5 +181,33 @@ describe('elasticsearch-log-forwarder', () => {
     await runElasticsearchLogForwardingCycle();
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  describe('startElasticsearchLogForwarder', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      stopElasticsearchLogForwarder();
+      vi.useRealTimers();
+    });
+
+    it('does not create timer when elasticsearch is disabled', () => {
+      mockGetElasticsearchConfig.mockReturnValue(null);
+
+      startElasticsearchLogForwarder();
+
+      // Advance past the interval — no cycle should run
+      vi.advanceTimersByTime(60_000);
+      expect(mockGetEndpoints).not.toHaveBeenCalled();
+    });
+
+    it('creates timer when elasticsearch is enabled', () => {
+      startElasticsearchLogForwarder();
+
+      // The immediate cycle should have triggered endpoint fetch
+      expect(mockGetEndpoints).toHaveBeenCalled();
+    });
   });
 });

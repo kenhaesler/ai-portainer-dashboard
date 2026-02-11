@@ -251,6 +251,12 @@ export function startElasticsearchLogForwarder(): void {
     return;
   }
 
+  const config = getElasticsearchConfig();
+  if (!config?.enabled || !config.endpoint) {
+    log.info('Elasticsearch integration not enabled — skipping log forwarder');
+    return;
+  }
+
   forwarderTimer = setInterval(() => {
     void runElasticsearchLogForwardingCycle();
   }, FORWARD_INTERVAL_MS);
