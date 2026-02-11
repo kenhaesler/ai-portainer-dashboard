@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+/** Optional URL that treats empty strings as undefined (common in Docker Compose env defaults). */
+const optionalUrl = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.string().url().optional(),
+);
+
 export const envSchema = z.object({
   // Auth
   DASHBOARD_USERNAME: z.string().min(1),
@@ -28,7 +34,7 @@ export const envSchema = z.object({
   // Ollama / LLM
   OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),
   OLLAMA_MODEL: z.string().default('llama3.2'),
-  LLM_OPENAI_ENDPOINT: z.string().url().optional(), // OpenAI-compatible endpoint (e.g., OpenWebUI)
+  LLM_OPENAI_ENDPOINT: optionalUrl, // OpenAI-compatible endpoint (e.g., OpenWebUI)
   LLM_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
   LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'), // Auth header type for LLM endpoint tokens
   LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
