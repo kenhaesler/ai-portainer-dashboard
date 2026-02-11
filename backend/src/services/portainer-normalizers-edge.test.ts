@@ -55,20 +55,35 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
     expect(result.lastCheckIn).toBeDefined();
   });
 
-  it('returns edgeMode: "async" for Edge Async endpoint (QueryDate set)', () => {
+  it('returns edgeMode: "async" for Edge Async endpoint (Type 7)', () => {
     const ep = makeEndpoint({
-      Type: 4,
+      Type: 7,
       EdgeID: 'edge-async-456',
       EdgeKey: 'key456',
       LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
       EdgeCheckinInterval: 60,
-      QueryDate: Math.floor(Date.now() / 1000) - 300,
-    } as any);
+    });
     const result = normalizeEndpoint(ep);
 
     expect(result.isEdge).toBe(true);
     expect(result.edgeMode).toBe('async');
     expect(result.checkInInterval).toBe(60);
+  });
+
+  it('returns edgeMode: "standard" for Type 4 Edge endpoint even with QueryDate set', () => {
+    const ep = makeEndpoint({
+      Type: 4,
+      EdgeID: 'edge-std-with-qd',
+      EdgeKey: 'key789',
+      LastCheckInDate: Math.floor(Date.now() / 1000) - 30,
+      EdgeCheckinInterval: 5,
+      QueryDate: Math.floor(Date.now() / 1000) - 300,
+    } as any);
+    const result = normalizeEndpoint(ep);
+
+    expect(result.isEdge).toBe(true);
+    expect(result.edgeMode).toBe('standard');
+    expect(result.capabilities.realtimeLogs).toBe(true);
   });
 
   it('computes snapshotAge from snapshot Time field', () => {
@@ -140,12 +155,11 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
       });
     });
 
-    it('returns all false for Edge Async endpoint', () => {
+    it('returns all false for Edge Async endpoint (Type 7)', () => {
       const ep = makeEndpoint({
-        Type: 4,
+        Type: 7,
         EdgeID: 'edge-async',
-        QueryDate: Math.floor(Date.now() / 1000),
-      } as any);
+      });
       const result = normalizeEndpoint(ep);
       expect(result.capabilities).toEqual({
         exec: false,

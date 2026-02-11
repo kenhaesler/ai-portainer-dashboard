@@ -130,8 +130,12 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   }
   const snapshot = ep.Snapshots?.[0];
   const raw = snapshot?.DockerSnapshotRaw;
+  // Portainer Type 7 = Edge Agent Async (poll-based, no Docker tunnel).
+  // Type 4 = Edge Agent Standard (persistent tunnel, supports live features).
+  // Previously we used QueryDate presence as a heuristic, but that field can
+  // also be set on standard edge agents, causing false negatives.
   const edgeMode: 'standard' | 'async' | null = isEdge
-    ? ((ep as Record<string, unknown>).QueryDate ? 'async' : 'standard')
+    ? (ep.Type === 7 ? 'async' : 'standard')
     : null;
   const snapshotTime = snapshot?.Time;
   const snapshotAge = snapshotTime ? Date.now() - snapshotTime * 1000 : null;
