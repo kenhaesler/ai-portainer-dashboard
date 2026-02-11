@@ -42,7 +42,7 @@ vi.mock('./portainer-cache.js', () => ({
 }));
 
 vi.mock('./portainer-normalizers.js', () => ({
-  normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0 }),
+  normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0, capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true } }),
   normalizeContainer: (c: unknown, endpointId: number, endpointName: string) => ({
     ...(c as Record<string, unknown>), endpointId, endpointName, state: 'running',
   }),

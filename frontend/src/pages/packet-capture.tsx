@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { RefreshButton } from '@/components/shared/refresh-button';
-import { useEndpoints } from '@/hooks/use-endpoints';
+import { useEndpoints, useEndpointCapabilities } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { useStacks } from '@/hooks/use-stacks';
 import {
@@ -81,6 +81,7 @@ export default function PacketCapture() {
   const deleteCapture = useDeleteCapture();
   const analyzeMutation = useAnalyzeCapture();
 
+  const { isEdgeAsync } = useEndpointCapabilities(selectedEndpoint);
   const captures = capturesData?.captures ?? [];
   const activeCaptures = captures.filter(
     (c) => c.status === 'capturing' || c.status === 'pending' || c.status === 'processing',
@@ -146,6 +147,21 @@ export default function PacketCapture() {
         </div>
         <RefreshButton onClick={() => refetch()} isLoading={isFetching} />
       </div>
+
+      {/* Edge Async warning */}
+      {isEdgeAsync && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              Edge Async Agent — Packet capture unavailable
+            </p>
+            <p className="text-xs text-muted-foreground">
+              This endpoint uses asynchronous communication without a persistent tunnel. Docker exec operations (required for tcpdump) are not supported.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* New Capture Form */}
       <div className="rounded-lg border bg-card p-6">
@@ -257,7 +273,7 @@ export default function PacketCapture() {
           <div className="flex items-end">
             <button
               onClick={handleStartCapture}
-              disabled={!selectedEndpoint || !selectedContainer || startCapture.isPending}
+              disabled={!selectedEndpoint || !selectedContainer || startCapture.isPending || isEdgeAsync}
               className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Play className="h-4 w-4" />

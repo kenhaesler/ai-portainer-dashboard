@@ -10,6 +10,7 @@ const mockListCaptures = vi.fn();
 const mockDeleteCaptureById = vi.fn();
 const mockGetCaptureFilePath = vi.fn();
 const mockAnalyzeCapture = vi.fn();
+const mockAssertCapability = vi.fn();
 
 vi.mock('../services/pcap-service.js', () => ({
   startCapture: (...args: unknown[]) => mockStartCapture(...args),
@@ -22,6 +23,10 @@ vi.mock('../services/pcap-service.js', () => ({
 
 vi.mock('../services/pcap-analysis-service.js', () => ({
   analyzeCapture: (...args: unknown[]) => mockAnalyzeCapture(...args),
+}));
+
+vi.mock('../services/edge-capability-guard.js', () => ({
+  assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 
 vi.mock('../services/audit-logger.js', () => ({
@@ -145,6 +150,28 @@ describe('PCAP Routes', () => {
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
       expect(body.error).toBe('PCAP not enabled');
+    });
+
+    it('should return 422 when Edge Async endpoint lacks exec capability', async () => {
+      const capErr = new Error('Edge Async endpoints do not support "exec" operations.');
+      (capErr as any).statusCode = 422;
+      mockAssertCapability.mockRejectedValue(capErr);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          endpointId: 5,
+          containerId: 'abc123',
+          containerName: 'web',
+        },
+      });
+
+      expect(response.statusCode).toBe(422);
+      const body = JSON.parse(response.body);
+      expect(body.error).toContain('Edge Async');
+      expect(mockStartCapture).not.toHaveBeenCalled();
     });
   });
 

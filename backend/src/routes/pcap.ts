@@ -12,6 +12,7 @@ import {
 } from '../services/pcap-service.js';
 import { analyzeCapture } from '../services/pcap-analysis-service.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { assertCapability } from '../services/edge-capability-guard.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('pcap-route');
@@ -33,6 +34,9 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     }
 
     try {
+      // Edge Async endpoints cannot use Docker exec — reject early with a clear error
+      await assertCapability(parsed.data.endpointId, 'exec');
+
       const capture = await startCapture(parsed.data);
 
       writeAuditLog({
@@ -54,9 +58,12 @@ export async function pcapRoutes(fastify: FastifyInstance) {
 
       return capture;
     } catch (err) {
+      const statusCode = (err as any).statusCode ?? 400;
       const message = err instanceof Error ? err.message : 'Failed to start capture';
-      log.error({ err }, 'Failed to start capture');
-      return reply.status(400).send({ error: message });
+      if (statusCode !== 422) {
+        log.error({ err }, 'Failed to start capture');
+      }
+      return reply.status(statusCode).send({ error: message });
     }
   });
 

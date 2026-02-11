@@ -10,7 +10,7 @@ import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/p
 import { getSetting } from '../services/settings-store.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
 import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.js';
-import { normalizeEndpoint } from '../services/portainer-normalizers.js';
+import { normalizeEndpoint, type NormalizedEndpoint } from '../services/portainer-normalizers.js';
 import { runStalenessChecks } from '../services/image-staleness.js';
 import { getImages } from '../services/portainer-client.js';
 import { runWithTraceContext } from '../services/trace-context.js';
@@ -33,7 +33,21 @@ async function runMetricsCollection(): Promise<void> {
     );
     const metricsToInsert: MetricInsert[] = [];
 
-    for (const ep of endpoints) {
+    // Skip Edge Async endpoints — they lack persistent tunnels for live stats
+    const normalized = endpoints.map(normalizeEndpoint);
+    const liveCapableEndpoints = endpoints.filter((_ep, i) => {
+      const n = normalized[i];
+      return n.capabilities.liveStats;
+    });
+
+    if (liveCapableEndpoints.length < endpoints.length) {
+      log.debug(
+        { skipped: endpoints.length - liveCapableEndpoints.length },
+        'Skipping Edge Async endpoints for metrics collection',
+      );
+    }
+
+    for (const ep of liveCapableEndpoints) {
       try {
         const containers = await cachedFetchSWR(
           getCacheKey('containers', ep.Id),

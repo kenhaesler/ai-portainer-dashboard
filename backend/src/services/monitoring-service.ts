@@ -101,9 +101,21 @@ export async function runMonitoringCycle(): Promise<void> {
       endpointsDown: endpoints.filter((endpoint) => endpoint.status === 'down').length,
     });
 
-    // 2. Collect metrics for running containers
+    // 2. Collect metrics for running containers (skip Edge Async — no live stats)
+    const edgeAsyncEndpointIds = new Set(
+      endpoints.filter((ep) => !ep.capabilities.liveStats).map((ep) => ep.id),
+    );
     const metricsToInsert: MetricInsert[] = [];
-    const runningContainers = allContainers.filter((c) => c.raw.State === 'running');
+    const runningContainers = allContainers.filter(
+      (c) => c.raw.State === 'running' && !edgeAsyncEndpointIds.has(c.endpointId),
+    );
+
+    if (edgeAsyncEndpointIds.size > 0) {
+      log.debug(
+        { edgeAsyncEndpoints: edgeAsyncEndpointIds.size },
+        'Skipping Edge Async endpoints for live metrics collection',
+      );
+    }
 
     for (const container of runningContainers) {
       try {

@@ -10,7 +10,7 @@ import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerOverview } from '@/components/container/container-overview';
 import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
 import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
-import { useEndpoints } from '@/hooks/use-endpoints';
+import { useEndpoints, useEndpointCapabilities } from '@/hooks/use-endpoints';
 
 const TIME_RANGES = [
   { value: '15m', label: '15 min' },
@@ -46,6 +46,7 @@ export default function ContainerDetailPage() {
   const { data: endpoints } = useEndpoints();
   const currentEndpoint = endpoints?.find(ep => ep.id === parsedEndpointId);
   const isEdgeStale = currentEndpoint?.isEdge && currentEndpoint.snapshotAge != null && currentEndpoint.snapshotAge > 5 * 60 * 1000;
+  const { isEdgeAsync, capabilities } = useEndpointCapabilities(parsedEndpointId);
 
   // Handle tab change
   const handleTabChange = (value: string) => {
@@ -163,8 +164,23 @@ export default function ContainerDetailPage() {
         </div>
       </div>
 
-      {/* Edge staleness warning */}
-      {isEdgeStale && currentEndpoint && (
+      {/* Edge Async capability warning */}
+      {isEdgeAsync && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-3">
+          <Wifi className="h-5 w-5 text-amber-500 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              Edge Async Agent — Live features unavailable
+            </p>
+            <p className="text-xs text-muted-foreground">
+              This endpoint uses asynchronous communication. Real-time logs and live metrics are not available. Overview data is from the last snapshot.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Edge staleness warning (non-async Edge agents with stale data) */}
+      {!isEdgeAsync && isEdgeStale && currentEndpoint && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-center gap-3">
           <Wifi className="h-5 w-5 text-amber-500 shrink-0" />
           <div>
@@ -214,14 +230,32 @@ export default function ContainerDetailPage() {
         </Tabs.Content>
 
         <Tabs.Content value="logs" className="focus:outline-none">
-          <ContainerLogsViewer
-            endpointId={container.endpointId}
-            containerId={container.id}
-          />
+          {capabilities.realtimeLogs ? (
+            <ContainerLogsViewer
+              endpointId={container.endpointId}
+              containerId={container.id}
+            />
+          ) : (
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <Wifi className="mx-auto h-10 w-10 text-muted-foreground" />
+              <p className="mt-4 font-medium">Real-time logs unavailable</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This Edge Async endpoint does not support real-time log streaming
+              </p>
+            </div>
+          )}
         </Tabs.Content>
 
         <Tabs.Content value="metrics" className="focus:outline-none">
-          {container.state === 'running' ? (
+          {!capabilities.liveStats ? (
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <Wifi className="mx-auto h-10 w-10 text-muted-foreground" />
+              <p className="mt-4 font-medium">Live metrics unavailable</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This Edge Async endpoint does not support live container stats
+              </p>
+            </div>
+          ) : container.state === 'running' ? (
             <ContainerMetricsViewer
               endpointId={container.endpointId}
               containerId={container.id}

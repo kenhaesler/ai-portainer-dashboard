@@ -64,6 +64,11 @@ vi.mock('@/components/container/container-metrics-viewer', () => ({
 
 vi.mock('@/hooks/use-endpoints', () => ({
   useEndpoints: () => ({ data: [], isLoading: false }),
+  useEndpointCapabilities: () => ({
+    capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },
+    isEdgeAsync: false,
+    endpoint: undefined,
+  }),
 }));
 
 import ContainerDetailPage from './container-detail';
