@@ -54,6 +54,13 @@ vi.mock('./investigation-store.js', () => ({
   getRecentInvestigationForContainer: (...args: unknown[]) => mockGetRecentInvestigationForContainer(...args),
 }));
 
+const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
+vi.mock('./portainer-cache.js', () => ({
+  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
+  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+  TTL: { CONTAINERS: 300 },
+}));
+
 const mockGenerateForecast = vi.fn();
 vi.mock('./capacity-forecaster.js', () => ({
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
@@ -455,6 +462,33 @@ Hope this helps!`;
       await triggerInvestigation(insight);
 
       expect(mockInsertInvestigation).not.toHaveBeenCalled();
+    });
+
+    it('should use cachedFetchSWR for getContainers during evidence gathering', async () => {
+      mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"info","recommended_actions":[],"confidence_score":0.5}');
+      mockGetContainerLogs.mockResolvedValue('some logs');
+      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 10, sample_count: 30 });
+      mockGetMetrics.mockReturnValue([{ value: 60 }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'cache-test-1', Names: ['/web-app'], State: 'running' },
+        { Id: 'def456', Names: ['/redis'], State: 'running' },
+      ]);
+      mockGetInvestigation.mockReturnValue({ id: 'inv-1', status: 'complete' });
+
+      // Use unique container_id to avoid in-memory cooldown collision with other tests
+      const insight = makeInsight({ container_id: 'cache-test-1' });
+      await triggerInvestigation(insight);
+
+      // Wait for fire-and-forget investigation to complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockCachedFetchSWR).toHaveBeenCalledWith(
+        'containers:1',
+        300,
+        expect.any(Function),
+      );
     });
 
     it('should create investigation when all guards pass', async () => {
