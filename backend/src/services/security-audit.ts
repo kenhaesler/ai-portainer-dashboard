@@ -1,4 +1,5 @@
 import { getEndpoints, getContainers, getContainerHostConfig } from './portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import type { Container } from '../models/portainer.js';
 import { getSetting, setSetting } from './settings-store.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -106,7 +107,11 @@ export function isIgnoredContainer(containerName: string, patterns: string[]): b
 
 export async function getSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
   const ignorePatterns = getSecurityAuditIgnoreList();
-  const endpoints = await getEndpoints();
+  const endpoints = await cachedFetch(
+    getCacheKey('endpoints'),
+    TTL.ENDPOINTS,
+    () => getEndpoints(),
+  );
   const scopedEndpoints = endpointId
     ? endpoints.filter((endpoint) => endpoint.Id === endpointId)
     : endpoints;
@@ -114,12 +119,22 @@ export async function getSecurityAudit(endpointId?: number): Promise<SecurityAud
   const entries: SecurityAuditEntry[] = [];
 
   for (const endpoint of scopedEndpoints) {
-    const containers = await getContainers(endpoint.Id, true);
+    const containers = await cachedFetch(
+      getCacheKey('containers', endpoint.Id),
+      TTL.CONTAINERS,
+      () => getContainers(endpoint.Id, true),
+    );
 
     // Inspect containers in parallel to get full HostConfig (CapAdd, Privileged, PidMode)
     // — the list endpoint only returns NetworkMode.
     const inspectResults = await Promise.allSettled(
-      containers.map((c) => getContainerHostConfig(endpoint.Id, c.Id)),
+      containers.map((c) =>
+        cachedFetch(
+          getCacheKey('inspect', endpoint.Id, c.Id),
+          TTL.CONTAINER_INSPECT,
+          () => getContainerHostConfig(endpoint.Id, c.Id),
+        ),
+      ),
     );
 
     for (let i = 0; i < containers.length; i++) {
