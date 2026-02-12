@@ -230,20 +230,11 @@ export default function ContainerDetailPage() {
         </Tabs.Content>
 
         <Tabs.Content value="logs" className="focus:outline-none">
-          {capabilities.realtimeLogs ? (
-            <ContainerLogsViewer
-              endpointId={container.endpointId}
-              containerId={container.id}
-            />
-          ) : (
-            <div className="rounded-lg border bg-card p-8 text-center">
-              <Wifi className="mx-auto h-10 w-10 text-muted-foreground" />
-              <p className="mt-4 font-medium">Real-time logs unavailable</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                This Edge Async endpoint does not support real-time log streaming
-              </p>
-            </div>
-          )}
+          <ContainerLogsViewer
+            endpointId={container.endpointId}
+            containerId={container.id}
+            isEdgeAsync={isEdgeAsync}
+          />
         </Tabs.Content>
 
         <Tabs.Content value="metrics" className="focus:outline-none">

@@ -153,6 +153,15 @@ export const EdgeJobSchema = z.object({
   })).optional(),
 }).passthrough();
 
+export const EdgeJobTaskSchema = z.object({
+  Id: z.string(),
+  EndpointId: z.number(),
+  LogsStatus: z.number().optional(),
+  CollectLogs: z.boolean().optional(),
+}).passthrough();
+
+export const EdgeJobTaskArraySchema = z.array(EdgeJobTaskSchema);
+
 // Pre-compiled array schemas (parsed once at module level for Zod internal caching)
 export const EndpointArraySchema = z.array(EndpointSchema);
 export const ContainerArraySchema = z.array(ContainerSchema);
@@ -168,3 +177,4 @@ export type ContainerStats = z.infer<typeof ContainerStatsSchema>;
 export type Network = z.infer<typeof NetworkSchema>;
 export type DockerImage = z.infer<typeof ImageSchema>;
 export type EdgeJob = z.infer<typeof EdgeJobSchema>;
+export type EdgeJobTask = z.infer<typeof EdgeJobTaskSchema>;
