@@ -66,9 +66,10 @@ describe('TraceExplorerPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('source: ebpf')).toBeTruthy();
+    expect(screen.getAllByText('source: ebpf').length).toBeGreaterThan(0);
     expect(screen.getByText('endpoint: unknown')).toBeTruthy();
     expect(screen.getByText('container: unknown')).toBeTruthy();
+    expect(screen.getByText('Showing all trace sources. Use source filter to inspect HTTP vs eBPF behavior.')).toBeTruthy();
   });
 
   it('shows missing client span explanation and drawer JSON details', () => {
@@ -111,6 +112,7 @@ describe('TraceExplorerPage', () => {
             status: 'ok',
             trace_source: 'ebpf',
             attributes: JSON.stringify({
+              'http.method': 'GET',
               'service.namespace': 'prod',
               'service.instance.id': 'api-1',
               'container.name': 'api-container',
@@ -130,6 +132,9 @@ describe('TraceExplorerPage', () => {
 
     expect(screen.getByText('Missing client span detected')).toBeTruthy();
     expect(screen.getByText('Trace Details Drawer')).toBeTruthy();
+    expect(screen.getByText('Key Attributes')).toBeTruthy();
+    expect(screen.getByText('HTTP Method')).toBeTruthy();
+    expect(screen.getByText('GET')).toBeTruthy();
     expect(screen.getByText('Raw span attributes JSON')).toBeTruthy();
     expect(screen.getByText('Resource attributes JSON')).toBeTruthy();
   });
