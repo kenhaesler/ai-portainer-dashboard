@@ -34,7 +34,7 @@ describe('useContainerLogs', () => {
     vi.clearAllMocks();
   });
 
-  it('disables automatic retries for logs requests', async () => {
+  it('retries transient errors once before surfacing the error', async () => {
     mockApi.get.mockRejectedValue(new Error('Too Many Requests'));
 
     const { result } = renderHook(
@@ -42,8 +42,24 @@ describe('useContainerLogs', () => {
       { wrapper: createWrapper() },
     );
 
+    await waitFor(() => expect(result.current.isError).toBe(true), { timeout: 10000 });
+    expect(mockApi.get).toHaveBeenCalledTimes(2); // initial + 1 retry
+  });
+
+  it('does not retry EDGE_ASYNC_UNSUPPORTED errors', async () => {
+    mockApi.get.mockRejectedValue({
+      message: 'Edge Async endpoints do not support live logs',
+      code: 'EDGE_ASYNC_UNSUPPORTED',
+      status: 422,
+    });
+
+    const { result } = renderHook(
+      () => useContainerLogs(1, 'c1', { tail: 100, timestamps: true }),
+      { wrapper: createWrapper() },
+    );
+
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(mockApi.get).toHaveBeenCalledTimes(1);
+    expect(mockApi.get).toHaveBeenCalledTimes(1); // no retry for permanent errors
   });
 
   it('passes timestamps=false to the API request', async () => {
