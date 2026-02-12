@@ -17,6 +17,21 @@ export interface SpanInsert {
   service_name: string;
   attributes: string;
   trace_source?: string;
+  http_method?: string | null;
+  http_route?: string | null;
+  http_status_code?: number | null;
+  service_namespace?: string | null;
+  service_instance_id?: string | null;
+  service_version?: string | null;
+  deployment_environment?: string | null;
+  container_id?: string | null;
+  container_name?: string | null;
+  k8s_namespace?: string | null;
+  k8s_pod_name?: string | null;
+  k8s_container_name?: string | null;
+  server_address?: string | null;
+  server_port?: number | null;
+  client_address?: string | null;
 }
 
 export function insertSpan(span: SpanInsert): void {
@@ -24,8 +39,14 @@ export function insertSpan(span: SpanInsert): void {
   db.prepare(`
     INSERT INTO spans (
       id, trace_id, parent_span_id, name, kind, status,
-      start_time, end_time, duration_ms, service_name, attributes, trace_source, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      start_time, end_time, duration_ms, service_name, attributes, trace_source,
+      http_method, http_route, http_status_code,
+      service_namespace, service_instance_id, service_version, deployment_environment,
+      container_id, container_name,
+      k8s_namespace, k8s_pod_name, k8s_container_name,
+      server_address, server_port, client_address,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     span.id,
     span.trace_id,
@@ -39,6 +60,21 @@ export function insertSpan(span: SpanInsert): void {
     span.service_name,
     span.attributes,
     span.trace_source ?? 'http',
+    span.http_method ?? null,
+    span.http_route ?? null,
+    span.http_status_code ?? null,
+    span.service_namespace ?? null,
+    span.service_instance_id ?? null,
+    span.service_version ?? null,
+    span.deployment_environment ?? null,
+    span.container_id ?? null,
+    span.container_name ?? null,
+    span.k8s_namespace ?? null,
+    span.k8s_pod_name ?? null,
+    span.k8s_container_name ?? null,
+    span.server_address ?? null,
+    span.server_port ?? null,
+    span.client_address ?? null,
   );
 
   log.debug({ spanId: span.id, traceId: span.trace_id }, 'Span inserted');
@@ -51,8 +87,14 @@ export function insertSpans(spans: SpanInsert[]): number {
   const stmt = db.prepare(`
     INSERT INTO spans (
       id, trace_id, parent_span_id, name, kind, status,
-      start_time, end_time, duration_ms, service_name, attributes, trace_source, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      start_time, end_time, duration_ms, service_name, attributes, trace_source,
+      http_method, http_route, http_status_code,
+      service_namespace, service_instance_id, service_version, deployment_environment,
+      container_id, container_name,
+      k8s_namespace, k8s_pod_name, k8s_container_name,
+      server_address, server_port, client_address,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `);
 
   const insertMany = db.transaction((items: SpanInsert[]) => {
@@ -71,6 +113,21 @@ export function insertSpans(spans: SpanInsert[]): number {
         span.service_name,
         span.attributes,
         span.trace_source ?? 'ebpf',
+        span.http_method ?? null,
+        span.http_route ?? null,
+        span.http_status_code ?? null,
+        span.service_namespace ?? null,
+        span.service_instance_id ?? null,
+        span.service_version ?? null,
+        span.deployment_environment ?? null,
+        span.container_id ?? null,
+        span.container_name ?? null,
+        span.k8s_namespace ?? null,
+        span.k8s_pod_name ?? null,
+        span.k8s_container_name ?? null,
+        span.server_address ?? null,
+        span.server_port ?? null,
+        span.client_address ?? null,
       );
       count++;
     }

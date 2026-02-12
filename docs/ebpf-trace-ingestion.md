@@ -237,6 +237,7 @@ curl -X POST http://localhost:3051/api/traces/otlp \
    - Extracts `service.name` from resource attributes
    - Converts nanosecond timestamps to ISO 8601
    - Maps OTLP `kind` (1=internal, 2=server, 3=client) and `status.code` (0=unset, 1=ok, 2=error)
+   - Promotes common OTLP attributes into typed `spans` columns (`http_*`, service/container/k8s/network fields) for indexed filtering
    - Flattens nested OTLP attributes to a JSON object
    - Tags all spans with `trace_source: 'ebpf'`
 5. Spans are **batch-inserted** into SQLite within a single transaction for performance
@@ -258,7 +259,7 @@ curl -X POST http://localhost:3051/api/traces/otlp \
 | `docker/beyla/beyla.yml` | Standalone Beyla Compose fragment for instrumenting dashboard-adjacent services |
 | `workloads/web-platform.yml` | Example workload stack with Beyla integrated |
 | `frontend/src/pages/trace-explorer.tsx` | Source filter dropdown in the Trace Explorer UI |
-| `frontend/src/hooks/use-traces.ts` | `source` parameter in `TracesOptions` |
+| `frontend/src/hooks/use-traces.ts` | Source/time + advanced typed filter params in `TracesOptions` |
 
 ### Database Schema Change
 
@@ -269,6 +270,30 @@ CREATE INDEX idx_spans_source ON spans(trace_source);
 ```
 
 Values: `'http'` (dashboard's own request tracing), `'scheduler'` (background jobs), `'ebpf'` (Beyla/external).
+
+Migration `029_trace_typed_otlp_attributes.sql`:
+```sql
+ALTER TABLE spans ADD COLUMN http_method TEXT;
+ALTER TABLE spans ADD COLUMN http_route TEXT;
+ALTER TABLE spans ADD COLUMN http_status_code INTEGER;
+ALTER TABLE spans ADD COLUMN service_namespace TEXT;
+ALTER TABLE spans ADD COLUMN service_instance_id TEXT;
+ALTER TABLE spans ADD COLUMN service_version TEXT;
+ALTER TABLE spans ADD COLUMN deployment_environment TEXT;
+ALTER TABLE spans ADD COLUMN container_id TEXT;
+ALTER TABLE spans ADD COLUMN container_name TEXT;
+ALTER TABLE spans ADD COLUMN k8s_namespace TEXT;
+ALTER TABLE spans ADD COLUMN k8s_pod_name TEXT;
+ALTER TABLE spans ADD COLUMN k8s_container_name TEXT;
+ALTER TABLE spans ADD COLUMN server_address TEXT;
+ALTER TABLE spans ADD COLUMN server_port INTEGER;
+ALTER TABLE spans ADD COLUMN client_address TEXT;
+```
+
+Index and performance notes:
+- Adds `idx_spans_source_time` for source + time window scans used by Trace Explorer summary/service-map.
+- Adds targeted indexes for high-frequency filters: `http_method`, `http_status_code`, `service_namespace`, `container_name`, `k8s_namespace`.
+- `attributes` JSON remains the canonical full payload for backward compatibility; typed columns are a query acceleration layer.
 
 ## Deployment Options
 
@@ -477,6 +502,18 @@ The Trace Explorer provides a source filter dropdown with these options:
 | HTTP Requests | `http` | Dashboard's own request tracing |
 | Background Jobs | `scheduler` | Traces from scheduled background tasks |
 | eBPF (Apps) | `ebpf` | Traces from Beyla-instrumented applications |
+
+## Trace Explorer Advanced Filters
+
+Trace Explorer now supports optional/collapsible advanced filters backed by typed columns:
+- `httpMethod`
+- `httpRoute`
+- `httpStatusCode`
+- `serviceNamespace`
+- `containerName`
+- `k8sNamespace`
+
+Summary responses also include source-scoped counters (`http`, `ebpf`, `scheduler`, `unknown`) so operators can quickly compare ingestion sources in a selected time range.
 
 ## Span Attributes from Beyla
 

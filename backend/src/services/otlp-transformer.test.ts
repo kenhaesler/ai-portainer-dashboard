@@ -8,6 +8,15 @@ function makePayload(overrides?: Partial<OtlpExportRequest>): OtlpExportRequest 
         resource: {
           attributes: [
             { key: 'service.name', value: { stringValue: 'my-app' } },
+            { key: 'service.namespace', value: { stringValue: 'prod-eu-1' } },
+            { key: 'service.instance.id', value: { stringValue: 'api-1' } },
+            { key: 'service.version', value: { stringValue: '1.2.3' } },
+            { key: 'deployment.environment', value: { stringValue: 'production' } },
+            { key: 'container.id', value: { stringValue: 'container-123' } },
+            { key: 'container.name', value: { stringValue: 'api-container' } },
+            { key: 'k8s.namespace.name', value: { stringValue: 'payments' } },
+            { key: 'k8s.pod.name', value: { stringValue: 'api-pod-1' } },
+            { key: 'k8s.container.name', value: { stringValue: 'api' } },
           ],
         },
         scopeSpans: [
@@ -26,6 +35,10 @@ function makePayload(overrides?: Partial<OtlpExportRequest>): OtlpExportRequest 
                 attributes: [
                   { key: 'http.method', value: { stringValue: 'GET' } },
                   { key: 'http.status_code', value: { intValue: 200 } },
+                  { key: 'http.route', value: { stringValue: '/api/users/:id' } },
+                  { key: 'server.address', value: { stringValue: 'api.internal' } },
+                  { key: 'server.port', value: { intValue: 8443 } },
+                  { key: 'client.address', value: { stringValue: '10.0.0.5' } },
                 ],
               },
             ],
@@ -54,6 +67,21 @@ describe('transformOtlpToSpans', () => {
     expect(span.start_time).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(span.end_time).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(span.duration_ms).toBe(150);
+    expect(span.http_method).toBe('GET');
+    expect(span.http_route).toBe('/api/users/:id');
+    expect(span.http_status_code).toBe(200);
+    expect(span.service_namespace).toBe('prod-eu-1');
+    expect(span.service_instance_id).toBe('api-1');
+    expect(span.service_version).toBe('1.2.3');
+    expect(span.deployment_environment).toBe('production');
+    expect(span.container_id).toBe('container-123');
+    expect(span.container_name).toBe('api-container');
+    expect(span.k8s_namespace).toBe('payments');
+    expect(span.k8s_pod_name).toBe('api-pod-1');
+    expect(span.k8s_container_name).toBe('api');
+    expect(span.server_address).toBe('api.internal');
+    expect(span.server_port).toBe(8443);
+    expect(span.client_address).toBe('10.0.0.5');
 
     const attrs = JSON.parse(span.attributes);
     expect(attrs['http.method']).toBe('GET');
@@ -147,6 +175,9 @@ describe('transformOtlpToSpans', () => {
     expect(span.kind).toBe('internal');
     expect(span.status).toBe('unset');
     expect(span.service_name).toBe('unknown');
+    expect(span.http_method).toBeNull();
+    expect(span.container_name).toBeNull();
+    expect(span.k8s_namespace).toBeNull();
     expect(JSON.parse(span.attributes)).toEqual({});
   });
 
