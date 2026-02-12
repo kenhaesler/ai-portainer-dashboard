@@ -50,10 +50,15 @@ vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
+vi.mock('../config/index.js', () => ({
+  getConfig: () => ({}),
+}));
+
 import {
   suggestAction,
   parseRemediationAnalysis,
   buildRemediationPrompt,
+  isProtectedContainer,
 } from './remediation-service.js';
 
 async function flushMicrotasks() {
@@ -77,7 +82,7 @@ describe('remediation-service', () => {
     mockChatStream.mockResolvedValue('');
   });
 
-  it('maps OOM insights to STOP_CONTAINER and broadcasts', () => {
+  it('maps OOM insights to INVESTIGATE (not STOP_CONTAINER) and broadcasts', () => {
     const result = suggestAction({
       id: 'insight-1',
       title: 'OOM detected',
@@ -88,8 +93,8 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'STOP_CONTAINER' });
-    expect(mockInsertAction).toHaveBeenCalledWith(expect.objectContaining({ action_type: 'STOP_CONTAINER' }));
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'INVESTIGATE' });
+    expect(mockInsertAction).toHaveBeenCalledWith(expect.objectContaining({ action_type: 'INVESTIGATE' }));
     expect(mockBroadcastNewAction).toHaveBeenCalledTimes(1);
   });
 
@@ -109,7 +114,7 @@ describe('remediation-service', () => {
     expect(result).toBeNull();
     expect(mockInsertAction).not.toHaveBeenCalled();
     expect(mockBroadcastNewAction).not.toHaveBeenCalled();
-    expect(mockHasPendingAction).toHaveBeenCalledWith('container-1', 'STOP_CONTAINER');
+    expect(mockHasPendingAction).toHaveBeenCalledWith('container-1', 'INVESTIGATE');
   });
 
   it('creates action when no pending duplicate exists', () => {
@@ -149,7 +154,7 @@ describe('remediation-service', () => {
     expect(mockBroadcastNewAction).not.toHaveBeenCalled();
   });
 
-  it('allows different action types for same container', () => {
+  it('maps high CPU to INVESTIGATE (not STOP_CONTAINER)', () => {
     mockHasPendingAction.mockReturnValue(false);
 
     const result = suggestAction({
@@ -163,7 +168,8 @@ describe('remediation-service', () => {
     } as any);
 
     expect(result).not.toBeNull();
-    expect(mockHasPendingAction).toHaveBeenCalledWith('container-1', 'STOP_CONTAINER');
+    expect(result!.actionType).toBe('INVESTIGATE');
+    expect(mockHasPendingAction).toHaveBeenCalledWith('container-1', 'INVESTIGATE');
   });
 
   it('enriches rationale with structured LLM analysis when available', async () => {
@@ -195,7 +201,7 @@ describe('remediation-service', () => {
       endpoint_id: 1,
     } as any);
 
-    expect(result).toEqual({ actionId: 'action-123', actionType: 'STOP_CONTAINER' });
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'INVESTIGATE' });
 
     await flushMicrotasks();
 
@@ -236,6 +242,143 @@ describe('remediation-service', () => {
   });
 });
 
+describe('isProtectedContainer', () => {
+  it('identifies portainer as protected', () => {
+    expect(isProtectedContainer('portainer')).toBe(true);
+  });
+
+  it('identifies portainer-agent variant as protected', () => {
+    expect(isProtectedContainer('portainer-agent')).toBe(true);
+  });
+
+  it('identifies redis as protected', () => {
+    expect(isProtectedContainer('redis')).toBe(true);
+  });
+
+  it('identifies postgres as protected', () => {
+    expect(isProtectedContainer('postgres')).toBe(true);
+  });
+
+  it('identifies traefik as protected', () => {
+    expect(isProtectedContainer('traefik')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isProtectedContainer('Portainer')).toBe(true);
+    expect(isProtectedContainer('REDIS')).toBe(true);
+  });
+
+  it('does not flag regular app containers', () => {
+    expect(isProtectedContainer('my-web-app')).toBe(false);
+    expect(isProtectedContainer('api-server')).toBe(false);
+    expect(isProtectedContainer('worker')).toBe(false);
+  });
+});
+
+describe('protected container safety', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsertAction.mockReturnValue(true);
+    mockHasPendingAction.mockReturnValue(false);
+    mockIsOllamaAvailable.mockResolvedValue(false);
+  });
+
+  it('never suggests STOP_CONTAINER — OOM maps to INVESTIGATE', () => {
+    const result = suggestAction({
+      id: 'insight-oom',
+      title: 'OOM detected',
+      description: 'Container hit memory limit (OOM)',
+      suggested_action: '',
+      container_id: 'container-portainer',
+      container_name: 'portainer',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).not.toBeNull();
+    expect(result!.actionType).toBe('INVESTIGATE');
+    expect(result!.actionType).not.toBe('STOP_CONTAINER');
+  });
+
+  it('downgrades RESTART_CONTAINER to INVESTIGATE for protected containers', () => {
+    const result = suggestAction({
+      id: 'insight-unhealthy-redis',
+      title: 'Container is unhealthy',
+      description: 'health check failing on redis',
+      suggested_action: '',
+      container_id: 'container-redis',
+      container_name: 'redis',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).not.toBeNull();
+    expect(result!.actionType).toBe('INVESTIGATE');
+  });
+
+  it('allows RESTART_CONTAINER for non-protected containers', () => {
+    const result = suggestAction({
+      id: 'insight-unhealthy-app',
+      title: 'Container is unhealthy',
+      description: 'health check failing on my-app',
+      suggested_action: '',
+      container_id: 'container-app',
+      container_name: 'my-app',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).not.toBeNull();
+    expect(result!.actionType).toBe('RESTART_CONTAINER');
+  });
+
+  it('allows START_CONTAINER for protected containers (non-destructive)', () => {
+    const result = suggestAction({
+      id: 'insight-stopped-portainer',
+      title: 'Container stopped',
+      description: 'Container is not running',
+      suggested_action: '',
+      container_id: 'container-portainer',
+      container_name: 'portainer',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).not.toBeNull();
+    expect(result!.actionType).toBe('START_CONTAINER');
+  });
+
+  it('blocks destructive actions on portainer-agent variant', () => {
+    const result = suggestAction({
+      id: 'insight-agent',
+      title: 'Container is unhealthy',
+      description: 'health check failing',
+      suggested_action: '',
+      container_id: 'container-agent',
+      container_name: 'portainer-agent',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).not.toBeNull();
+    expect(result!.actionType).toBe('INVESTIGATE');
+  });
+
+  it('reproduces issue #450 scenario: certificate error should not suggest Stop Container', () => {
+    // Simulates the cascade: cert error → false memory anomaly → suggested_action with "memory" keywords
+    const result = suggestAction({
+      id: 'insight-450',
+      title: 'Anomalous memory usage on "portainer"',
+      description: 'Current memory: 45.2% (mean: 42.1%, z-score: 3.10). This is 3.1 standard deviations from the moving average.',
+      suggested_action: 'Investigate memory usage patterns and check container configuration',
+      container_id: 'container-portainer',
+      container_name: 'portainer',
+      endpoint_id: 1,
+    } as any);
+
+    // Should NEVER suggest STOP_CONTAINER for portainer
+    if (result) {
+      expect(result.actionType).not.toBe('STOP_CONTAINER');
+      expect(result.actionType).toBe('INVESTIGATE');
+    }
+  });
+});
+
 describe('parseRemediationAnalysis', () => {
   it('parses fenced json payload', () => {
     const result = parseRemediationAnalysis('```json\n{"root_cause":"a","severity":"info","recommended_actions":[],"log_analysis":"","confidence_score":0.9}\n```');
@@ -272,5 +415,22 @@ describe('buildRemediationPrompt', () => {
     expect(prompt).toContain('cpu: 90.10');
     expect(prompt).toContain('warn: pool exhausted');
     expect(prompt).toContain('"root_cause"');
+  });
+
+  it('includes observer-first constraints prohibiting destructive actions', () => {
+    const prompt = buildRemediationPrompt({
+      id: 'insight-1',
+      title: 'Test',
+      description: 'test',
+      severity: 'warning',
+      container_id: 'c1',
+      container_name: 'api',
+      endpoint_id: 1,
+      endpoint_name: 'prod',
+      suggested_action: null,
+    } as any, {});
+
+    expect(prompt).toContain('NEVER recommend stopping or restarting containers');
+    expect(prompt).toContain('observer-first');
   });
 });

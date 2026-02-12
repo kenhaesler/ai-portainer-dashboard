@@ -47,6 +47,7 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   RESTART_CONTAINER: 'Restart Container',
   STOP_CONTAINER: 'Stop Container',
   START_CONTAINER: 'Start Container',
+  INVESTIGATE: 'Investigate',
   SCALE_UP: 'Scale Up',
   SCALE_DOWN: 'Scale Down',
 };
