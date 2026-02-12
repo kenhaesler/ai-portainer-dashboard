@@ -346,6 +346,7 @@ export const SearchQuerySchema = z.object({
   query: z.string().optional(),
   limit: z.coerce.number().default(8),
   logLimit: z.coerce.number().default(8),
+  includeLogs: QueryBooleanSchema.optional().default(false),
 });
 
 // ─── Notification schemas ───────────────────────────────────────────

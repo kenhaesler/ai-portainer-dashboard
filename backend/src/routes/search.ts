@@ -7,6 +7,7 @@ import { createChildLogger } from '../utils/logger.js';
 import { SearchQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('search-route');
+const TTL_LOG_SEARCH = 30; // 30 seconds — short cache for repeated/refined searches
 
 interface NormalizedImage {
   id: string;
@@ -120,10 +121,15 @@ async function searchContainerLogs(
     if (results.length >= limit) break;
     if (!liveCapableEndpoints.has(container.endpointId)) continue;
     try {
-      const logs = await portainer.getContainerLogs(container.endpointId, container.id, {
-        tail,
-        timestamps: true,
-      });
+      const logCacheKey = getCacheKey('search-logs', container.endpointId, container.id, query);
+      const logs = await cachedFetch(
+        logCacheKey,
+        TTL_LOG_SEARCH,
+        () => portainer.getContainerLogs(container.endpointId, container.id, {
+          tail,
+          timestamps: true,
+        }),
+      );
       const lines = logs.split('\n').filter((line) => line.trim().length > 0);
       for (const line of lines) {
         if (results.length >= limit) break;
@@ -161,10 +167,11 @@ export async function searchRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { query, limit = 8, logLimit = 8 } = request.query as {
+    const { query, limit = 8, logLimit = 8, includeLogs = false } = request.query as {
       query?: string;
       limit?: number;
       logLimit?: number;
+      includeLogs?: boolean;
     };
 
     if (!query || query.trim().length < 2) {
@@ -255,7 +262,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
       matchesValue(stack.status, normalized)
     )).slice(0, limitSafe);
 
-    const logs = await searchContainerLogs(normalized, logLimitSafe, 6, 200);
+    const logs = includeLogs
+      ? await searchContainerLogs(normalized, logLimitSafe, 3, 200)
+      : [];
 
     return {
       query,
