@@ -101,6 +101,22 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
     mutate: vi.fn(),
     isPending: false,
   })),
+  useDeployBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useDisableBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useEnableBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useRemoveBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
 }));
 
 vi.mock('@/components/shared/loading-skeleton', () => ({
@@ -185,6 +201,14 @@ describe('EbpfCoveragePage', () => {
     renderWithProviders(<EbpfCoveragePage />);
     const verifyButtons = screen.getAllByTestId('verify-btn');
     expect(verifyButtons.length).toBe(6);
+  });
+
+  it('renders lifecycle action buttons based on endpoint status', () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    expect(screen.getByTestId('disable-btn')).toBeTruthy();
+    expect(screen.getByTestId('enable-btn')).toBeTruthy();
+    expect(screen.getByTestId('deploy-btn')).toBeTruthy();
+    expect(screen.getAllByTestId('remove-btn').length).toBeGreaterThanOrEqual(2);
   });
 
   it('renders table headers', () => {

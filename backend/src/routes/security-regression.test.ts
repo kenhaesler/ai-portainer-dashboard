@@ -280,6 +280,12 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   syncEndpointCoverage: vi.fn().mockResolvedValue(undefined),
   verifyCoverage: vi.fn().mockResolvedValue(undefined),
   getCoverageSummary: vi.fn().mockResolvedValue({ total: 0, deployed: 0 }),
+  deployBeyla: vi.fn().mockResolvedValue(undefined),
+  disableBeyla: vi.fn().mockResolvedValue(undefined),
+  enableBeyla: vi.fn().mockResolvedValue(undefined),
+  removeBeylaFromEndpoint: vi.fn().mockResolvedValue(undefined),
+  deployBeylaBulk: vi.fn().mockResolvedValue([]),
+  removeBeylaBulk: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../services/mcp-manager.js', () => ({

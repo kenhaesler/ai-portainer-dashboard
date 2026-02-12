@@ -126,8 +126,12 @@ class ApiClient {
     });
   }
 
-  delete<T>(path: string) {
-    return this.request<T>(path, { method: 'DELETE' });
+  delete<T>(path: string, options?: { body?: unknown; params?: Record<string, string | number | boolean | undefined> }) {
+    return this.request<T>(path, {
+      method: 'DELETE',
+      params: options?.params,
+      body: options?.body ? JSON.stringify(options.body) : undefined,
+    });
   }
 }
 

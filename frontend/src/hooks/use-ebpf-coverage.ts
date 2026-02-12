@@ -6,6 +6,10 @@ export interface CoverageRecord {
   endpoint_id: number;
   endpoint_name: string;
   status: 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown' | 'not_deployed' | 'unreachable' | 'incompatible';
+  beyla_enabled?: number;
+  beyla_container_id?: string | null;
+  beyla_managed?: number;
+  drifted?: boolean;
   exclusion_reason: string | null;
   deployment_profile: string | null;
   last_trace_at: string | null;
@@ -114,6 +118,72 @@ export function useVerifyCoverage() {
       toast.error('Verification failed', {
         description: error.message,
       });
+    },
+  });
+}
+
+export function useDeployBeyla() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean; result: { status: string } }, Error, number>({
+    mutationFn: async (endpointId) => api.post(`/api/ebpf/deploy/${endpointId}`),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage', 'summary'] });
+      toast.success('Beyla deployed', {
+        description: `Action: ${data.result.status}`,
+      });
+    },
+    onError: (error) => {
+      toast.error('Deploy failed', { description: error.message });
+    },
+  });
+}
+
+export function useDisableBeyla() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean; result: { status: string } }, Error, number>({
+    mutationFn: async (endpointId) => api.post(`/api/ebpf/disable/${endpointId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage', 'summary'] });
+      toast.success('Beyla disabled');
+    },
+    onError: (error) => {
+      toast.error('Disable failed', { description: error.message });
+    },
+  });
+}
+
+export function useEnableBeyla() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean; result: { status: string } }, Error, number>({
+    mutationFn: async (endpointId) => api.post(`/api/ebpf/enable/${endpointId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage', 'summary'] });
+      toast.success('Beyla enabled');
+    },
+    onError: (error) => {
+      toast.error('Enable failed', { description: error.message });
+    },
+  });
+}
+
+export function useRemoveBeyla() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean; result: { status: string } }, Error, { endpointId: number; force?: boolean }>({
+    mutationFn: async ({ endpointId, force }) => api.delete(`/api/ebpf/remove/${endpointId}`, { params: { force: !!force } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage', 'summary'] });
+      toast.success('Beyla removed');
+    },
+    onError: (error) => {
+      toast.error('Remove failed', { description: error.message });
     },
   });
 }

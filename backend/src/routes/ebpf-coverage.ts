@@ -6,9 +6,16 @@ import {
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
+  deployBeyla,
+  disableBeyla,
+  enableBeyla,
+  removeBeylaFromEndpoint,
+  deployBeylaBulk,
+  removeBeylaBulk,
 } from '../services/ebpf-coverage.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../config/index.js';
 
 const log = createChildLogger('ebpf-coverage-route');
 
@@ -20,6 +27,28 @@ const UpdateCoverageBodySchema = z.object({
   status: z.enum(['planned', 'deployed', 'excluded', 'failed', 'unknown', 'not_deployed', 'unreachable', 'incompatible']),
   reason: z.string().optional(),
 });
+
+const BulkBodySchema = z.object({
+  endpointIds: z.array(z.coerce.number().int().positive()).min(1),
+});
+
+const RemoveQuerySchema = z.object({
+  force: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .default(false)
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      return value === 'true' || value === '1';
+    }),
+});
+
+function resolveOtlpEndpoint(request: { headers: Record<string, unknown>; protocol: string }): string {
+  const config = getConfig();
+  const proto = String(request.headers['x-forwarded-proto'] || request.protocol || 'http').split(',')[0].trim();
+  const host = String(request.headers['x-forwarded-host'] || request.headers.host || `localhost:${config.PORT}`).split(',')[0].trim();
+  return `${proto}://${host}/api/traces/otlp`;
+}
 
 export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
   // List all endpoints with eBPF coverage status
@@ -114,5 +143,167 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
     const result = await verifyCoverage(endpointId);
     return result;
+  });
+
+  // Deploy Beyla to one endpoint (admin only)
+  fastify.post('/api/ebpf/deploy/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Deploy Beyla to an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const config = getConfig();
+    const result = await deployBeyla(endpointId, {
+      otlpEndpoint: resolveOtlpEndpoint({ headers: request.headers as Record<string, unknown>, protocol: request.protocol }),
+      tracesApiKey: config.TRACES_INGESTION_API_KEY,
+    });
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.deploy',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, result };
+  });
+
+  // Deploy Beyla to multiple endpoints (admin only)
+  fastify.post('/api/ebpf/deploy/bulk', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Deploy Beyla to multiple endpoints',
+      security: [{ bearerAuth: [] }],
+      body: BulkBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointIds } = request.body as z.infer<typeof BulkBodySchema>;
+    const config = getConfig();
+    const results = await deployBeylaBulk(endpointIds, {
+      otlpEndpoint: resolveOtlpEndpoint({ headers: request.headers as Record<string, unknown>, protocol: request.protocol }),
+      tracesApiKey: config.TRACES_INGESTION_API_KEY,
+    });
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.deploy.bulk',
+      details: { endpointIds, results },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, results };
+  });
+
+  // Disable Beyla on an endpoint (admin only)
+  fastify.post('/api/ebpf/disable/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Disable Beyla on an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const result = await disableBeyla(endpointId);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.disable',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, result };
+  });
+
+  // Enable Beyla on an endpoint (admin only)
+  fastify.post('/api/ebpf/enable/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Enable Beyla on an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const result = await enableBeyla(endpointId);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.enable',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, result };
+  });
+
+  // Remove Beyla from one endpoint (admin only)
+  fastify.delete('/api/ebpf/remove/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Remove Beyla from an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+      querystring: RemoveQuerySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const { force } = request.query as z.infer<typeof RemoveQuerySchema>;
+    const result = await removeBeylaFromEndpoint(endpointId, force);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.remove',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { force, ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, result };
+  });
+
+  // Remove Beyla from multiple endpoints (admin only)
+  fastify.delete('/api/ebpf/remove/bulk', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Remove Beyla from multiple endpoints',
+      security: [{ bearerAuth: [] }],
+      querystring: RemoveQuerySchema,
+      body: BulkBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { force } = request.query as z.infer<typeof RemoveQuerySchema>;
+    const { endpointIds } = request.body as z.infer<typeof BulkBodySchema>;
+    const results = await removeBeylaBulk(endpointIds, force);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.remove.bulk',
+      details: { force, endpointIds, results },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, results };
   });
 }

@@ -29,7 +29,13 @@ vi.mock('./portainer-client.js', () => ({
     { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
     { Id: 2, Name: 'remote', Type: 1, URL: 'tcp://remote', Status: 1, Snapshots: [] },
   ]),
+  getEndpoint: vi.fn(async (id: number) => ({ Id: id, Name: `endpoint-${id}`, Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] })),
   getContainers: vi.fn(async () => []),
+  pullImage: vi.fn(async () => {}),
+  createContainer: vi.fn(async () => ({ Id: 'new-beyla-id' })),
+  startContainer: vi.fn(async () => {}),
+  stopContainer: vi.fn(async () => {}),
+  removeContainer: vi.fn(async () => {}),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -44,11 +50,30 @@ import {
   getCoverageSummary,
   detectBeylaOnEndpoint,
   BEYLA_COMPATIBLE_TYPES,
+  deployBeyla,
+  disableBeyla,
+  enableBeyla,
+  removeBeylaFromEndpoint,
 } from './ebpf-coverage.js';
-import { getEndpoints, getContainers } from './portainer-client.js';
+import {
+  getEndpoints,
+  getContainers,
+  getEndpoint,
+  pullImage,
+  createContainer,
+  startContainer,
+  stopContainer,
+  removeContainer,
+} from './portainer-client.js';
 
 const mockGetContainers = vi.mocked(getContainers);
 const mockGetEndpoints = vi.mocked(getEndpoints);
+const mockGetEndpoint = vi.mocked(getEndpoint);
+const mockPullImage = vi.mocked(pullImage);
+const mockCreateContainer = vi.mocked(createContainer);
+const mockStartContainer = vi.mocked(startContainer);
+const mockStopContainer = vi.mocked(stopContainer);
+const mockRemoveContainer = vi.mocked(removeContainer);
 
 describe('ebpf-coverage service', () => {
   beforeEach(() => {
@@ -132,8 +157,8 @@ describe('ebpf-coverage service', () => {
   describe('getEndpointCoverage', () => {
     it('should return all coverage records', () => {
       const mockRecords = [
-        { endpoint_id: 1, endpoint_name: 'local', status: 'deployed' },
-        { endpoint_id: 2, endpoint_name: 'remote', status: 'unknown' },
+        { endpoint_id: 1, endpoint_name: 'local', status: 'deployed', drifted: false },
+        { endpoint_id: 2, endpoint_name: 'remote', status: 'unknown', drifted: false },
       ];
       mockAll.mockReturnValueOnce(mockRecords);
       const result = getEndpointCoverage();
@@ -278,6 +303,85 @@ describe('ebpf-coverage service', () => {
       const result = await verifyCoverage(1);
       expect(result.beylaRunning).toBe(false);
       expect(result.verified).toBe(false);
+    });
+  });
+
+  describe('beyla lifecycle actions', () => {
+    it('deployBeyla creates and starts container when missing', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'prod-1',
+        Type: 1,
+        URL: 'tcp://prod-1',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+
+      expect(result.status).toBe('deployed');
+      expect(mockPullImage).toHaveBeenCalledWith(1, 'grafana/beyla', 'latest');
+      expect(mockCreateContainer).toHaveBeenCalled();
+      expect(mockStartContainer).toHaveBeenCalledWith(1, 'beyla-1');
+    });
+
+    it('disableBeyla stops existing container', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'prod-1',
+        Type: 1,
+        URL: 'tcp://prod-1',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'beyla-1', Image: 'grafana/beyla:latest', State: 'running', Labels: { 'managed-by': 'ai-portainer-dashboard' } },
+      ] as any);
+
+      const result = await disableBeyla(1);
+      expect(result.status).toBe('disabled');
+      expect(mockStopContainer).toHaveBeenCalledWith(1, 'beyla-1');
+    });
+
+    it('enableBeyla starts stopped container', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'prod-1',
+        Type: 1,
+        URL: 'tcp://prod-1',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'beyla-1', Image: 'grafana/beyla:latest', State: 'exited', Labels: {} },
+      ] as any);
+
+      const result = await enableBeyla(1);
+      expect(result.status).toBe('enabled');
+      expect(mockStartContainer).toHaveBeenCalledWith(1, 'beyla-1');
+    });
+
+    it('removeBeylaFromEndpoint removes non-managed Beyla containers', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 2,
+        Name: 'prod-2',
+        Type: 1,
+        URL: 'tcp://prod-2',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'manual-beyla', Image: 'grafana/beyla:latest', State: 'running', Labels: { owner: 'manual' } },
+      ] as any);
+
+      const result = await removeBeylaFromEndpoint(2, true);
+      expect(result.status).toBe('removed');
+      expect(mockRemoveContainer).toHaveBeenCalledWith(2, 'manual-beyla', true);
     });
   });
 

@@ -15,6 +15,10 @@ import {
   useEbpfCoverageSummary,
   useSyncCoverage,
   useVerifyCoverage,
+  useDeployBeyla,
+  useDisableBeyla,
+  useEnableBeyla,
+  useRemoveBeyla,
 } from '@/hooks/use-ebpf-coverage';
 import type { CoverageRecord } from '@/hooks/use-ebpf-coverage';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -115,7 +119,117 @@ function SummaryBar() {
 
 function CoverageRow({ record }: { record: CoverageRecord }) {
   const verifyMutation = useVerifyCoverage();
+  const deployMutation = useDeployBeyla();
+  const disableMutation = useDisableBeyla();
+  const enableMutation = useEnableBeyla();
+  const removeMutation = useRemoveBeyla();
   const hint = STATUS_HINTS[record.status];
+  const mutationPending =
+    verifyMutation.isPending ||
+    deployMutation.isPending ||
+    disableMutation.isPending ||
+    enableMutation.isPending ||
+    removeMutation.isPending;
+
+  const confirmAndRun = (action: 'deploy' | 'disable' | 'enable' | 'remove') => {
+    if (action === 'deploy') {
+      const ok = window.confirm(
+        `Deploy Beyla to ${record.endpoint_name}?\n\n` +
+        'This will create/start a privileged grafana/beyla container.\n' +
+        'OTLP endpoint: derived from current dashboard URL\n' +
+        'Ports: 80,443,3000-9999',
+      );
+      if (ok) deployMutation.mutate(record.endpoint_id);
+      return;
+    }
+
+    if (action === 'disable') {
+      const ok = window.confirm(
+        `Disable Beyla on ${record.endpoint_name}?\n\n` +
+        'This will stop the existing Beyla container but keep it for later re-enable.',
+      );
+      if (ok) disableMutation.mutate(record.endpoint_id);
+      return;
+    }
+
+    if (action === 'enable') {
+      const ok = window.confirm(
+        `Enable Beyla on ${record.endpoint_name}?\n\n` +
+        'This will start the existing Beyla container.',
+      );
+      if (ok) enableMutation.mutate(record.endpoint_id);
+      return;
+    }
+
+    const ok = window.confirm(
+      `Remove Beyla from ${record.endpoint_name}?\n\n` +
+      'This will stop and remove the Beyla container from this endpoint.',
+    );
+    if (ok) removeMutation.mutate({ endpointId: record.endpoint_id, force: true });
+  };
+
+  const actionButtons = (() => {
+    if (record.status === 'not_deployed' || record.drifted) {
+      return (
+        <button
+          onClick={() => confirmAndRun('deploy')}
+          disabled={mutationPending}
+          className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+          data-testid="deploy-btn"
+        >
+          Deploy
+        </button>
+      );
+    }
+
+    if (record.status === 'deployed') {
+      return (
+        <>
+          <button
+            onClick={() => confirmAndRun('disable')}
+            disabled={mutationPending}
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            data-testid="disable-btn"
+          >
+            Disable
+          </button>
+          <button
+            onClick={() => confirmAndRun('remove')}
+            disabled={mutationPending}
+            className="rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+            data-testid="remove-btn"
+          >
+            Remove
+          </button>
+        </>
+      );
+    }
+
+    if (record.status === 'failed') {
+      return (
+        <>
+          <button
+            onClick={() => confirmAndRun('enable')}
+            disabled={mutationPending}
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            data-testid="enable-btn"
+          >
+            Enable
+          </button>
+          <button
+            onClick={() => confirmAndRun('remove')}
+            disabled={mutationPending}
+            className="rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+            data-testid="remove-btn"
+          >
+            Remove
+          </button>
+        </>
+      );
+    }
+
+    return null;
+  })();
 
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
@@ -150,7 +264,7 @@ function CoverageRow({ record }: { record: CoverageRecord }) {
       <td className="px-4 py-3">
         <button
           onClick={() => verifyMutation.mutate(record.endpoint_id)}
-          disabled={verifyMutation.isPending || record.status === 'incompatible'}
+          disabled={mutationPending || record.status === 'incompatible'}
           className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
           data-testid="verify-btn"
           title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
@@ -158,6 +272,11 @@ function CoverageRow({ record }: { record: CoverageRecord }) {
           <CheckCircle2 className="h-3 w-3" />
           Verify
         </button>
+        {actionButtons && (
+          <div className="mt-2 flex items-center gap-2">
+            {actionButtons}
+          </div>
+        )}
       </td>
     </tr>
   );

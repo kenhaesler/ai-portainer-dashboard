@@ -8,6 +8,12 @@ import {
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
+  deployBeyla,
+  disableBeyla,
+  enableBeyla,
+  removeBeylaFromEndpoint,
+  deployBeylaBulk,
+  removeBeylaBulk,
 } from '../services/ebpf-coverage.js';
 
 vi.mock('../services/ebpf-coverage.js', () => ({
@@ -24,10 +30,23 @@ vi.mock('../services/ebpf-coverage.js', () => ({
     unknown: 0,
     coveragePercent: 0,
   })),
+  deployBeyla: vi.fn(async () => ({ endpointId: 1, endpointName: 'local', containerId: 'b1', status: 'deployed' })),
+  disableBeyla: vi.fn(async () => ({ endpointId: 1, endpointName: 'local', containerId: 'b1', status: 'disabled' })),
+  enableBeyla: vi.fn(async () => ({ endpointId: 1, endpointName: 'local', containerId: 'b1', status: 'enabled' })),
+  removeBeylaFromEndpoint: vi.fn(async () => ({ endpointId: 1, endpointName: 'local', containerId: 'b1', status: 'removed' })),
+  deployBeylaBulk: vi.fn(async () => []),
+  removeBeylaBulk: vi.fn(async () => []),
 }));
 
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
+}));
+
+vi.mock('../config/index.js', () => ({
+  getConfig: vi.fn(() => ({
+    PORT: 3051,
+    TRACES_INGESTION_API_KEY: 'ingest-key',
+  })),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -39,6 +58,12 @@ const mockedUpdateCoverageStatus = vi.mocked(updateCoverageStatus);
 const mockedSyncEndpointCoverage = vi.mocked(syncEndpointCoverage);
 const mockedVerifyCoverage = vi.mocked(verifyCoverage);
 const mockedGetCoverageSummary = vi.mocked(getCoverageSummary);
+const mockedDeployBeyla = vi.mocked(deployBeyla);
+const mockedDisableBeyla = vi.mocked(disableBeyla);
+const mockedEnableBeyla = vi.mocked(enableBeyla);
+const mockedRemoveBeylaFromEndpoint = vi.mocked(removeBeylaFromEndpoint);
+const mockedDeployBeylaBulk = vi.mocked(deployBeylaBulk);
+const mockedRemoveBeylaBulk = vi.mocked(removeBeylaBulk);
 
 describe('ebpf-coverage routes', () => {
   let app: ReturnType<typeof Fastify>;
@@ -62,6 +87,10 @@ describe('ebpf-coverage routes', () => {
           endpoint_id: 1,
           endpoint_name: 'local',
           status: 'deployed' as const,
+          beyla_enabled: 1,
+          beyla_container_id: 'b1',
+          beyla_managed: 1,
+          drifted: false,
           exclusion_reason: null,
           deployment_profile: null,
           last_trace_at: null,
@@ -235,6 +264,81 @@ describe('ebpf-coverage routes', () => {
       expect(body.verified).toBe(false);
       expect(body.beylaRunning).toBe(false);
       expect(body.lastTraceAt).toBeNull();
+    });
+  });
+
+  describe('Beyla lifecycle routes', () => {
+    it('POST /api/ebpf/deploy/:endpointId deploys beyla', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        headers: { host: 'dashboard.example.com' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeyla).toHaveBeenCalledWith(1, {
+        otlpEndpoint: 'http://dashboard.example.com/api/traces/otlp',
+        tracesApiKey: 'ingest-key',
+      });
+    });
+
+    it('POST /api/ebpf/disable/:endpointId disables beyla', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/disable/1',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDisableBeyla).toHaveBeenCalledWith(1);
+    });
+
+    it('POST /api/ebpf/enable/:endpointId enables beyla', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/enable/1',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedEnableBeyla).toHaveBeenCalledWith(1);
+    });
+
+    it('DELETE /api/ebpf/remove/:endpointId removes beyla', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/ebpf/remove/1?force=true',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedRemoveBeylaFromEndpoint).toHaveBeenCalledWith(1, true);
+    });
+
+    it('POST /api/ebpf/deploy/bulk deploys to multiple endpoints', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/bulk',
+        payload: { endpointIds: [1, 2] },
+        headers: { host: 'dashboard.example.com' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeylaBulk).toHaveBeenCalledWith(
+        [1, 2],
+        {
+          otlpEndpoint: 'http://dashboard.example.com/api/traces/otlp',
+          tracesApiKey: 'ingest-key',
+        },
+      );
+    });
+
+    it('DELETE /api/ebpf/remove/bulk removes from multiple endpoints', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/ebpf/remove/bulk?force=false',
+        payload: { endpointIds: [1, 2] },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedRemoveBeylaBulk).toHaveBeenCalledWith([1, 2], false);
     });
   });
 });

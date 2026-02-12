@@ -259,28 +259,35 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
 // ---------------------------------------------------------------------------
 vi.mock('@/hooks/use-ebpf-coverage', () => ({
   useEbpfCoverage: () => ({
-    data: [
-      {
-        container_id: 'c1',
-        container_name: 'test-web',
-        endpoint_id: 1,
-        endpoint_name: 'local',
-        status: 'deployed',
-        beyla_container_id: 'b1',
-        last_verified: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ],
+    data: {
+      coverage: [
+        {
+          endpoint_id: 1,
+          endpoint_name: 'local',
+          status: 'deployed',
+          beyla_container_id: 'b1',
+          last_trace_at: new Date().toISOString(),
+          last_verified_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          exclusion_reason: null,
+          deployment_profile: null,
+        },
+      ],
+    },
     isLoading: false,
     refetch: vi.fn(),
   }),
   useEbpfCoverageSummary: () => ({
-    data: { total: 1, deployed: 1, planned: 0, excluded: 0, failed: 0, unknown: 0 },
+    data: { total: 1, deployed: 1, planned: 0, excluded: 0, failed: 0, unknown: 0, not_deployed: 0, unreachable: 0, incompatible: 0, coveragePercent: 100 },
     isLoading: false,
   }),
   useSyncCoverage: () => ({ mutate: vi.fn(), isPending: false }),
   useVerifyCoverage: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeployBeyla: () => ({ mutate: vi.fn(), isPending: false }),
+  useDisableBeyla: () => ({ mutate: vi.fn(), isPending: false }),
+  useEnableBeyla: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveBeyla: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ---------------------------------------------------------------------------
