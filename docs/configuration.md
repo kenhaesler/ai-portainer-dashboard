@@ -58,13 +58,13 @@ When `LLM_VERIFY_SSL=false`:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ANOMALY_ZSCORE_THRESHOLD` | Z-score threshold for anomaly flag | `2.5` |
-| `ANOMALY_MOVING_AVERAGE_WINDOW` | Moving average window size | `30` |
+| `ANOMALY_MOVING_AVERAGE_WINDOW` | Moving average window size | `20` |
 | `ANOMALY_MIN_SAMPLES` | Minimum samples before detection | `10` |
 | `ISOLATION_FOREST_ENABLED` | Enable Isolation Forest ML anomaly detection | `true` |
 | `ISOLATION_FOREST_TREES` | Number of trees in the forest (10-500) | `100` |
 | `ISOLATION_FOREST_SAMPLE_SIZE` | Subsample size per tree (32-512) | `256` |
 | `ISOLATION_FOREST_CONTAMINATION` | Expected anomaly proportion (0.01-0.5) | `0.1` |
-| `ISOLATION_FOREST_RETRAIN_INTERVAL` | Hours between model retraining | `6` |
+| `ISOLATION_FOREST_RETRAIN_HOURS` | Hours between model retraining | `6` |
 
 ## NLP Log Analysis
 

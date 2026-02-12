@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useSockets } from '@/providers/socket-provider';
 
 interface MetricDataPoint {
   timestamp: string;
@@ -72,6 +74,22 @@ export function useAnomalyExplanations(
   containerId: string | undefined,
   timeRange?: string,
 ) {
+  const { monitoringSocket } = useSockets();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!monitoringSocket) return;
+
+    const handleCycleComplete = () => {
+      queryClient.invalidateQueries({ queryKey: ['anomaly-explanations'] });
+    };
+
+    monitoringSocket.on('cycle:complete', handleCycleComplete);
+    return () => {
+      monitoringSocket.off('cycle:complete', handleCycleComplete);
+    };
+  }, [monitoringSocket, queryClient]);
+
   return useQuery<{ explanations: AnomalyExplanation[] }>({
     queryKey: ['anomaly-explanations', containerId, timeRange],
     queryFn: () =>
@@ -79,8 +97,8 @@ export function useAnomalyExplanations(
         params: { timeRange },
       }),
     enabled: Boolean(containerId),
-    staleTime: 2 * 60 * 1000, // Cache for 2 minutes
-    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes (matches monitoring cycle)
+    staleTime: 60 * 1000, // Cache for 1 minute
+    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes (fallback for users without Socket.IO)
   });
 }
 

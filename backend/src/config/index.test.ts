@@ -119,6 +119,33 @@ describe('config validation', () => {
     });
   });
 
+  describe('monitoring timing defaults', () => {
+    it('defaults ANOMALY_MIN_SAMPLES to 10', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_MIN_SAMPLES).toBe(10);
+    });
+
+    it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 20', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_MOVING_AVERAGE_WINDOW).toBe(20);
+    });
+
+    it('defaults ANOMALY_COOLDOWN_MINUTES to 10', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_COOLDOWN_MINUTES).toBe(10);
+    });
+
+    it('defaults INVESTIGATION_COOLDOWN_MINUTES to 20', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().INVESTIGATION_COOLDOWN_MINUTES).toBe(20);
+    });
+
+    it('defaults ISOLATION_FOREST_RETRAIN_HOURS to 6', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ISOLATION_FOREST_RETRAIN_HOURS).toBe(6);
+    });
+  });
+
   describe('JWT_ALGORITHM validation', () => {
     it('defaults to HS256 when JWT_ALGORITHM is not set', async () => {
       const { getConfig } = await import('./index.js');

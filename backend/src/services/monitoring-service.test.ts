@@ -125,7 +125,7 @@ vi.mock('./incident-correlator.js', () => ({
 }));
 
 const { getConfig } = await import('../config/index.js');
-const { runMonitoringCycle } = await import('./monitoring-service.js');
+const { runMonitoringCycle, setMonitoringNamespace } = await import('./monitoring-service.js');
 
 describe('monitoring-service', () => {
   beforeEach(() => {
@@ -387,6 +387,33 @@ describe('monitoring-service', () => {
       expect(mockCachedFetchSWR).toHaveBeenCalledTimes(3);
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:2', 300, expect.any(Function));
+    });
+  });
+
+  describe('cycle:complete emission', () => {
+    it('emits cycle:complete with stats when namespace is set', async () => {
+      const mockEmit = vi.fn();
+      setMonitoringNamespace({ emit: mockEmit, to: vi.fn() } as unknown as import('socket.io').Namespace);
+
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
+      ]);
+
+      await runMonitoringCycle();
+
+      expect(mockEmit).toHaveBeenCalledWith('cycle:complete', expect.objectContaining({
+        duration: expect.any(Number),
+        endpoints: 1,
+        containers: 1,
+        totalInsights: expect.any(Number),
+      }));
+    });
+
+    it('does not throw when namespace is not set', async () => {
+      // Default state: no namespace set (other tests don't set it)
+      // runMonitoringCycle should complete without error
+      await expect(runMonitoringCycle()).resolves.not.toThrow();
     });
   });
 });

@@ -580,6 +580,15 @@ export async function runMonitoringCycle(): Promise<void> {
       },
       'Monitoring cycle completed',
     );
+
+    if (monitoringNamespace) {
+      monitoringNamespace.emit('cycle:complete', {
+        duration,
+        endpoints: endpoints.length,
+        containers: allContainers.length,
+        totalInsights: allInsights.length,
+      });
+    }
   } catch (err) {
     log.error({ err }, 'Monitoring cycle failed');
     throw err;
