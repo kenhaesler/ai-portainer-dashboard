@@ -324,7 +324,7 @@ describe('container-logs routes', () => {
 
     expect(res.statusCode).toBe(502);
     const body = JSON.parse(res.body);
-    expect(body.error).toContain('log stream');
+    expect(body.error).toContain('Log stream failed');
     await app.close();
   });
 

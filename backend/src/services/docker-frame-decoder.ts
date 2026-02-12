@@ -11,14 +11,14 @@
  * partial frames across `push()` calls and only yields complete lines.
  */
 export class IncrementalDockerFrameDecoder {
-  private buffer = Buffer.alloc(0);
+  private buffer = Buffer.alloc(0) as Buffer;
   private isFramed: boolean | null = null; // null = undetermined
 
   /**
    * Append a chunk and return any complete log lines extracted.
    */
   push(chunk: Buffer): string[] {
-    this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
+    this.buffer = (this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])) as Buffer;
 
     // First chunk — determine if the stream uses Docker framing
     if (this.isFramed === null) {
@@ -44,7 +44,7 @@ export class IncrementalDockerFrameDecoder {
     if (this.buffer.length === 0) return [];
 
     const text = this.buffer.toString('utf8');
-    this.buffer = Buffer.alloc(0);
+    this.buffer = Buffer.alloc(0) as Buffer;
 
     return text
       .split('\n')
@@ -100,7 +100,7 @@ export class IncrementalDockerFrameDecoder {
     }
 
     // Keep unprocessed bytes in the buffer
-    this.buffer = offset > 0 ? this.buffer.subarray(offset) : this.buffer;
+    this.buffer = (offset > 0 ? this.buffer.subarray(offset) : this.buffer) as Buffer;
     return lines;
   }
 
@@ -118,7 +118,7 @@ export class IncrementalDockerFrameDecoder {
 
     const complete = text.substring(0, lastNewline);
     const remainder = text.substring(lastNewline + 1);
-    this.buffer = Buffer.from(remainder, 'utf8');
+    this.buffer = Buffer.from(remainder, 'utf8') as Buffer;
 
     return complete
       .split('\n')
