@@ -168,7 +168,7 @@ async function runMonitoringWithErrorHandling(): Promise<void> {
   }
 }
 
-async function runImageStalenessCheck(): Promise<void> {
+export async function runImageStalenessCheck(): Promise<void> {
   log.debug('Running image staleness check');
   try {
     const endpoints = await cachedFetchSWR(
@@ -180,7 +180,11 @@ async function runImageStalenessCheck(): Promise<void> {
 
     for (const ep of endpoints) {
       try {
-        const images = await getImages(ep.Id);
+        const images = await cachedFetchSWR(
+          getCacheKey('images', ep.Id),
+          TTL.IMAGES,
+          () => getImages(ep.Id),
+        );
         for (const img of images) {
           const tags = img.RepoTags?.filter((t: string) => t !== '<none>:<none>') ?? [];
           const firstTag = tags[0] || '<none>';
