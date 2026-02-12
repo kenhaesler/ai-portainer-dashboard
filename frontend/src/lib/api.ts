@@ -12,6 +12,7 @@ function describeHttpError(status: number): string {
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
+  timeoutMs?: number;
 }
 
 class ApiClient {
@@ -53,7 +54,7 @@ class ApiClient {
     path: string,
     options: RequestOptions = {}
   ): Promise<T> {
-    const { params, ...fetchOptions } = options;
+    const { params, timeoutMs = 30000, ...fetchOptions } = options;
     const headers = new Headers(fetchOptions.headers);
     if (fetchOptions.body) {
       headers.set('Content-Type', 'application/json');
@@ -67,7 +68,7 @@ class ApiClient {
     const url = this.buildUrl(path, params);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     let response: Response;
     try {
@@ -105,10 +106,11 @@ class ApiClient {
     return this.request<T>(path, { method: 'GET', ...options });
   }
 
-  post<T>(path: string, body?: unknown) {
+  post<T>(path: string, body?: unknown, options?: { timeoutMs?: number }) {
     return this.request<T>(path, {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
+      timeoutMs: options?.timeoutMs,
     });
   }
 
@@ -126,8 +128,12 @@ class ApiClient {
     });
   }
 
-  delete<T>(path: string) {
-    return this.request<T>(path, { method: 'DELETE' });
+  delete<T>(path: string, options?: { body?: unknown; params?: Record<string, string | number | boolean | undefined> }) {
+    return this.request<T>(path, {
+      method: 'DELETE',
+      params: options?.params,
+      body: options?.body ? JSON.stringify(options.body) : undefined,
+    });
   }
 }
 

@@ -1,14 +1,24 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { networkInterfaces } from 'node:os';
 import {
   getEndpointCoverage,
   updateCoverageStatus,
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
+  deployBeyla,
+  disableBeyla,
+  enableBeyla,
+  removeBeylaFromEndpoint,
+  deployBeylaBulk,
+  removeBeylaBulk,
+  getEndpointOtlpOverride,
+  setEndpointOtlpOverride,
 } from '../services/ebpf-coverage.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../config/index.js';
 
 const log = createChildLogger('ebpf-coverage-route');
 
@@ -20,6 +30,137 @@ const UpdateCoverageBodySchema = z.object({
   status: z.enum(['planned', 'deployed', 'excluded', 'failed', 'unknown', 'not_deployed', 'unreachable', 'incompatible']),
   reason: z.string().optional(),
 });
+
+const UpdateOtlpOverrideBodySchema = z.object({
+  otlpEndpointOverride: z.string().url().nullable(),
+});
+const DeployBodySchema = z.object({
+  otlpEndpoint: z.string().optional(),
+}).default({});
+
+const BulkBodySchema = z.object({
+  endpointIds: z.array(z.coerce.number().int().positive()).min(1),
+});
+
+const RemoveQuerySchema = z.object({
+  force: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .default(false)
+    .transform((value) => {
+      if (typeof value === 'boolean') return value;
+      return value === 'true' || value === '1';
+    }),
+});
+
+function resolveOtlpEndpoint(request: { headers: Record<string, unknown>; protocol: string }): string {
+  const config = getConfig();
+  if (config.DASHBOARD_EXTERNAL_URL) {
+    const base = config.DASHBOARD_EXTERNAL_URL.replace(/\/+$/, '');
+    return `${base}/api/traces/otlp`;
+  }
+  const proto = String(request.headers['x-forwarded-proto'] || request.protocol || 'http').split(',')[0].trim();
+  const rawHost = String(request.headers['x-forwarded-host'] || request.headers.host || `localhost:${config.PORT}`).split(',')[0].trim();
+  const host = resolveReachableHost(rawHost, config.PORT);
+  return `${proto}://${host}/api/traces/otlp`;
+}
+
+function parseHostAndPort(host: string): { hostname: string; port: string | null } {
+  const normalized = host.replace(/^\[|\]$/g, '');
+  const lastColon = normalized.lastIndexOf(':');
+  if (lastColon > -1 && normalized.indexOf(':') === lastColon) {
+    return { hostname: normalized.slice(0, lastColon), port: normalized.slice(lastColon + 1) };
+  }
+  return { hostname: normalized, port: null };
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  return ip.startsWith('10.') || ip.startsWith('192.168.') || /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip);
+}
+
+function detectLocalIpv4(): string | null {
+  const interfaces = networkInterfaces();
+  const candidates: string[] = [];
+
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.family === 'IPv4' && !entry.internal) {
+        candidates.push(entry.address);
+      }
+    }
+  }
+
+  const preferred = candidates.find(isPrivateIpv4);
+  return preferred || candidates[0] || null;
+}
+
+function resolveReachableHost(rawHost: string, fallbackPort: number): string {
+  const { hostname, port } = parseHostAndPort(rawHost);
+  if (!isLoopbackHost(hostname)) {
+    return rawHost;
+  }
+
+  const detectedIp = detectLocalIpv4();
+  if (!detectedIp) {
+    return rawHost;
+  }
+
+  return `${detectedIp}:${port || fallbackPort}`;
+}
+
+function resolveDefaultOtlpEndpoint(request: { headers: Record<string, unknown>; protocol: string }): string {
+  return resolveOtlpEndpoint(request);
+}
+
+function ensureOtlpPath(url: URL): string {
+  const normalizedPath = url.pathname.replace(/\/+$/, '');
+  if (!normalizedPath || normalizedPath === '') {
+    url.pathname = '/api/traces/otlp';
+  } else if (normalizedPath !== '/api/traces/otlp') {
+    url.pathname = '/api/traces/otlp';
+  }
+  return `${url.origin}${url.pathname}`;
+}
+
+function normalizeManualOtlpEndpoint(
+  rawValue: string,
+  request: { headers: Record<string, unknown>; protocol: string },
+): string {
+  const value = rawValue.trim();
+  const defaultUrl = new URL(resolveDefaultOtlpEndpoint(request));
+
+  if (value.includes('://')) {
+    const parsed = new URL(value);
+    return ensureOtlpPath(parsed);
+  }
+
+  const hostPart = value.split('/')[0].trim();
+  if (!hostPart) {
+    throw new Error('Invalid OTLP endpoint override');
+  }
+
+  if (hostPart.includes(':')) {
+    defaultUrl.host = hostPart;
+  } else {
+    defaultUrl.hostname = hostPart;
+  }
+
+  return ensureOtlpPath(defaultUrl);
+}
+
+function resolveEndpointOtlpEndpoint(
+  endpointId: number,
+  request: { headers: Record<string, unknown>; protocol: string },
+): string {
+  const override = getEndpointOtlpOverride(endpointId);
+  if (override) return override;
+  return resolveDefaultOtlpEndpoint(request);
+}
 
 export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
   // List all endpoints with eBPF coverage status
@@ -78,6 +219,35 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     return { success: true };
   });
 
+  // Update endpoint-specific OTLP override URL (admin only)
+  fastify.put('/api/ebpf/coverage/:endpointId/otlp-endpoint', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Set or clear endpoint-specific OTLP endpoint override',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+      body: UpdateOtlpOverrideBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const { otlpEndpointOverride } = request.body as z.infer<typeof UpdateOtlpOverrideBodySchema>;
+    setEndpointOtlpOverride(endpointId, otlpEndpointOverride);
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf_coverage.otlp_override.update',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { otlpEndpointOverride },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true };
+  });
+
   // Trigger endpoint sync (admin only)
   fastify.post('/api/ebpf/coverage/sync', {
     schema: {
@@ -114,5 +284,189 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
     const result = await verifyCoverage(endpointId);
     return result;
+  });
+
+  // Deploy Beyla to one endpoint (admin only)
+  fastify.post('/api/ebpf/deploy/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Deploy Beyla to an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+      body: DeployBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const body = request.body as z.infer<typeof DeployBodySchema>;
+    const config = getConfig();
+    const requestedOtlpEndpointRaw = body?.otlpEndpoint?.trim();
+    const requestedOtlpEndpoint = requestedOtlpEndpointRaw
+      ? normalizeManualOtlpEndpoint(requestedOtlpEndpointRaw, {
+        headers: request.headers as Record<string, unknown>,
+        protocol: request.protocol,
+      })
+      : undefined;
+    const resolvedOtlpEndpoint = requestedOtlpEndpoint || resolveEndpointOtlpEndpoint(endpointId, {
+      headers: request.headers as Record<string, unknown>,
+      protocol: request.protocol,
+    });
+
+    if (requestedOtlpEndpoint) {
+      setEndpointOtlpOverride(endpointId, requestedOtlpEndpoint);
+    }
+
+    const result = await deployBeyla(endpointId, {
+      otlpEndpoint: resolvedOtlpEndpoint,
+      tracesApiKey: config.TRACES_INGESTION_API_KEY,
+      recreateExisting: Boolean(requestedOtlpEndpoint),
+    });
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.deploy',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { otlpEndpoint: resolvedOtlpEndpoint, ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, result };
+  });
+
+  // Deploy Beyla to multiple endpoints (admin only)
+  fastify.post('/api/ebpf/deploy/bulk', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Deploy Beyla to multiple endpoints',
+      security: [{ bearerAuth: [] }],
+      body: BulkBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointIds } = request.body as z.infer<typeof BulkBodySchema>;
+    const config = getConfig();
+    const results = await deployBeylaBulk(endpointIds, {
+      tracesApiKey: config.TRACES_INGESTION_API_KEY,
+      resolveOtlpEndpoint: async (endpointId: number) => resolveEndpointOtlpEndpoint(endpointId, {
+        headers: request.headers as Record<string, unknown>,
+        protocol: request.protocol,
+      }),
+    });
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.deploy.bulk',
+      details: { endpointIds, results },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, results };
+  });
+
+  // Disable Beyla on an endpoint (admin only)
+  fastify.post('/api/ebpf/disable/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Disable Beyla on an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const result = await disableBeyla(endpointId);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.disable',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, result };
+  });
+
+  // Enable Beyla on an endpoint (admin only)
+  fastify.post('/api/ebpf/enable/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Enable Beyla on an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const result = await enableBeyla(endpointId);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.enable',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, result };
+  });
+
+  // Remove Beyla from one endpoint (admin only)
+  fastify.delete('/api/ebpf/remove/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Remove Beyla from an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+      querystring: RemoveQuerySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const { force } = request.query as z.infer<typeof RemoveQuerySchema>;
+    const result = await removeBeylaFromEndpoint(endpointId, force);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.remove',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { force, ...result },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, result };
+  });
+
+  // Remove Beyla from multiple endpoints (admin only)
+  fastify.delete('/api/ebpf/remove/bulk', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Remove Beyla from multiple endpoints',
+      security: [{ bearerAuth: [] }],
+      querystring: RemoveQuerySchema,
+      body: BulkBodySchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request) => {
+    const { force } = request.query as z.infer<typeof RemoveQuerySchema>;
+    const { endpointIds } = request.body as z.infer<typeof BulkBodySchema>;
+    const results = await removeBeylaBulk(endpointIds, force);
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf.remove.bulk',
+      details: { force, endpointIds, results },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+    return { success: true, results };
   });
 }

@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  demo-app:
+    image: hashicorp/http-echo:1.0.0
+    container_name: ebpf-demo-app
+    restart: unless-stopped
+    command:
+      - "-text=ebpf-test-ok"
+      - "-listen=:3000"
+    ports:
+      - "3000:3000"
+
+  traffic-generator:
+    image: curlimages/curl:8.12.1
+    container_name: ebpf-demo-traffic
+    restart: unless-stopped
+    depends_on:
+      - demo-app
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl -sS -o /dev/null http://demo-app:3000/ || true
+          sleep 1
+        done

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import EbpfCoveragePage from './ebpf-coverage';
@@ -97,11 +97,23 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
     mutate: vi.fn(),
     isPending: false,
   })),
-  useUpdateCoverageStatus: vi.fn(() => ({
+  useVerifyCoverage: vi.fn(() => ({
     mutate: vi.fn(),
     isPending: false,
   })),
-  useVerifyCoverage: vi.fn(() => ({
+  useDeployBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useDisableBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useEnableBeyla: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
+  useRemoveBeyla: vi.fn(() => ({
     mutate: vi.fn(),
     isPending: false,
   })),
@@ -191,35 +203,13 @@ describe('EbpfCoveragePage', () => {
     expect(verifyButtons.length).toBe(6);
   });
 
-  it('renders deploy/remove and enable/disable action buttons', () => {
+  it('shows lifecycle action buttons without selecting rows', () => {
     renderWithProviders(<EbpfCoveragePage />);
-    const deployRemoveButtons = screen.getAllByTestId('deploy-remove-btn');
-    const enableDisableButtons = screen.getAllByTestId('enable-disable-btn');
-
-    expect(deployRemoveButtons.length).toBe(6);
-    expect(enableDisableButtons.length).toBe(6);
-    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: 'Deploy' }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Enable' })).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: 'Disable' }).length).toBeGreaterThan(0);
-  });
-
-  it('wires deploy/remove and enable/disable actions to coverage update mutation', async () => {
-    const { useUpdateCoverageStatus } = await import('@/hooks/use-ebpf-coverage');
-    const mutate = vi.fn();
-    vi.mocked(useUpdateCoverageStatus).mockReturnValueOnce({ mutate, isPending: false });
-
-    renderWithProviders(<EbpfCoveragePage />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    fireEvent.click(screen.getAllByTestId('enable-disable-btn')[0]);
-
-    expect(mutate).toHaveBeenCalledWith({ endpointId: 1, status: 'not_deployed' });
-    expect(mutate).toHaveBeenCalledWith({
-      endpointId: 1,
-      status: 'excluded',
-      reason: 'Manually disabled from coverage page',
-    });
+    expect(screen.getAllByTestId('disable-btn').length).toBe(6);
+    expect(screen.getAllByTestId('enable-btn').length).toBe(6);
+    // deploy shown for non-deployed-ish rows, remove shown for deployed/failed rows
+    expect(screen.getAllByTestId('deploy-btn').length).toBe(4);
+    expect(screen.getAllByTestId('remove-btn').length).toBe(2);
   });
 
   it('renders table headers', () => {

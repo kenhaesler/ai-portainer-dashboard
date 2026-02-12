@@ -1,0 +1,19 @@
+version: '3.2'
+
+services:
+  portainer:
+    image: portainer/portainer-ee
+    ports:
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - agent_network
+
+networks:
+  agent_network:
+
+volumes:
+  portainer_data:
