@@ -237,7 +237,7 @@ curl -X POST http://localhost:3051/api/traces/otlp \
    - Extracts `service.name` from resource attributes
    - Converts nanosecond timestamps to ISO 8601
    - Maps OTLP `kind` (1=internal, 2=server, 3=client) and `status.code` (0=unset, 1=ok, 2=error)
-   - Promotes common OTLP attributes into typed `spans` columns (`http_*`, service/container/k8s/network fields) for indexed filtering
+   - Promotes common OTLP attributes into typed `spans` columns (`http_*`, service/container/k8s/network fields) for indexed filtering, including semantic-convention variants (e.g. `http.method` and `http.request.method`)
    - Flattens nested OTLP attributes to a JSON object
    - Tags all spans with `trace_source: 'ebpf'`
 5. Spans are **batch-inserted** into SQLite within a single transaction for performance
@@ -507,11 +507,11 @@ The Trace Explorer provides a source filter dropdown with these options:
 
 Trace Explorer now supports optional/collapsible advanced filters backed by typed columns:
 - `httpMethod`
-- `httpRoute`
+- `httpRoute` (`exact` or `contains` match mode)
 - `httpStatusCode`
-- `serviceNamespace`
-- `containerName`
-- `k8sNamespace`
+- `serviceNamespace` (`exact` or `contains` match mode)
+- `containerName` (`exact` or `contains` match mode)
+- `k8sNamespace` (`exact` or `contains` match mode)
 
 Summary responses also include source-scoped counters (`http`, `ebpf`, `scheduler`, `unknown`) so operators can quickly compare ingestion sources in a selected time range.
 

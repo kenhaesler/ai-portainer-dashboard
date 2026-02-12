@@ -113,11 +113,13 @@ describe('TraceExplorerPage', () => {
     render(<TraceExplorerPage />);
 
     fireEvent.click(screen.getByText('Show advanced filters'));
+    fireEvent.change(screen.getByDisplayValue('Exact match'), { target: { value: 'contains' } });
     fireEvent.change(screen.getByPlaceholderText('/api/users/:id'), { target: { value: '/health' } });
     fireEvent.change(screen.getByPlaceholderText('500'), { target: { value: '200' } });
 
     const lastCall = mockUseTraces.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(lastCall.httpRoute).toBe('/health');
+    expect(lastCall.httpRouteMatch).toBe('contains');
     expect(lastCall.httpStatusCode).toBe(200);
   });
 });

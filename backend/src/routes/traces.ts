@@ -11,20 +11,41 @@ type TraceFilters = {
   minDuration?: number;
   httpMethod?: string;
   httpRoute?: string;
+  httpRouteMatch?: 'exact' | 'contains';
   httpStatusCode?: number;
   serviceNamespace?: string;
+  serviceNamespaceMatch?: 'exact' | 'contains';
   serviceInstanceId?: string;
   serviceVersion?: string;
   deploymentEnvironment?: string;
   containerId?: string;
   containerName?: string;
+  containerNameMatch?: 'exact' | 'contains';
   k8sNamespace?: string;
+  k8sNamespaceMatch?: 'exact' | 'contains';
   k8sPodName?: string;
   k8sContainerName?: string;
   serverAddress?: string;
   serverPort?: number;
   clientAddress?: string;
 };
+
+function pushTextCondition(
+  conditions: string[],
+  params: unknown[],
+  column: string,
+  value: string | undefined,
+  matchMode: 'exact' | 'contains' | undefined,
+) {
+  if (!value) return;
+  if (matchMode === 'contains') {
+    conditions.push(`${column} LIKE ?`);
+    params.push(`%${value}%`);
+    return;
+  }
+  conditions.push(`${column} = ?`);
+  params.push(value);
+}
 
 function buildSpanConditions(filters: TraceFilters, alias: string) {
   const conditions: string[] = [];
@@ -37,15 +58,15 @@ function buildSpanConditions(filters: TraceFilters, alias: string) {
   if (filters.source) { conditions.push(`${alias}.trace_source = ?`); params.push(filters.source); }
   if (filters.minDuration !== undefined) { conditions.push(`${alias}.duration_ms >= ?`); params.push(filters.minDuration); }
   if (filters.httpMethod) { conditions.push(`${alias}.http_method = ?`); params.push(filters.httpMethod); }
-  if (filters.httpRoute) { conditions.push(`${alias}.http_route = ?`); params.push(filters.httpRoute); }
+  pushTextCondition(conditions, params, `${alias}.http_route`, filters.httpRoute, filters.httpRouteMatch);
   if (filters.httpStatusCode !== undefined) { conditions.push(`${alias}.http_status_code = ?`); params.push(filters.httpStatusCode); }
-  if (filters.serviceNamespace) { conditions.push(`${alias}.service_namespace = ?`); params.push(filters.serviceNamespace); }
+  pushTextCondition(conditions, params, `${alias}.service_namespace`, filters.serviceNamespace, filters.serviceNamespaceMatch);
   if (filters.serviceInstanceId) { conditions.push(`${alias}.service_instance_id = ?`); params.push(filters.serviceInstanceId); }
   if (filters.serviceVersion) { conditions.push(`${alias}.service_version = ?`); params.push(filters.serviceVersion); }
   if (filters.deploymentEnvironment) { conditions.push(`${alias}.deployment_environment = ?`); params.push(filters.deploymentEnvironment); }
   if (filters.containerId) { conditions.push(`${alias}.container_id = ?`); params.push(filters.containerId); }
-  if (filters.containerName) { conditions.push(`${alias}.container_name = ?`); params.push(filters.containerName); }
-  if (filters.k8sNamespace) { conditions.push(`${alias}.k8s_namespace = ?`); params.push(filters.k8sNamespace); }
+  pushTextCondition(conditions, params, `${alias}.container_name`, filters.containerName, filters.containerNameMatch);
+  pushTextCondition(conditions, params, `${alias}.k8s_namespace`, filters.k8sNamespace, filters.k8sNamespaceMatch);
   if (filters.k8sPodName) { conditions.push(`${alias}.k8s_pod_name = ?`); params.push(filters.k8sPodName); }
   if (filters.k8sContainerName) { conditions.push(`${alias}.k8s_container_name = ?`); params.push(filters.k8sContainerName); }
   if (filters.serverAddress) { conditions.push(`${alias}.server_address = ?`); params.push(filters.serverAddress); }
@@ -79,14 +100,18 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       minDuration,
       httpMethod,
       httpRoute,
+      httpRouteMatch,
       httpStatusCode,
       serviceNamespace,
+      serviceNamespaceMatch,
       serviceInstanceId,
       serviceVersion,
       deploymentEnvironment,
       containerId,
       containerName,
+      containerNameMatch,
       k8sNamespace,
+      k8sNamespaceMatch,
       k8sPodName,
       k8sContainerName,
       serverAddress,
@@ -105,14 +130,18 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       minDuration,
       httpMethod,
       httpRoute,
+      httpRouteMatch,
       httpStatusCode,
       serviceNamespace,
+      serviceNamespaceMatch,
       serviceInstanceId,
       serviceVersion,
       deploymentEnvironment,
       containerId,
       containerName,
+      containerNameMatch,
       k8sNamespace,
+      k8sNamespaceMatch,
       k8sPodName,
       k8sContainerName,
       serverAddress,
@@ -182,14 +211,18 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       minDuration,
       httpMethod,
       httpRoute,
+      httpRouteMatch,
       httpStatusCode,
       serviceNamespace,
+      serviceNamespaceMatch,
       serviceInstanceId,
       serviceVersion,
       deploymentEnvironment,
       containerId,
       containerName,
+      containerNameMatch,
       k8sNamespace,
+      k8sNamespaceMatch,
       k8sPodName,
       k8sContainerName,
       serverAddress,
@@ -207,14 +240,18 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       minDuration,
       httpMethod,
       httpRoute,
+      httpRouteMatch,
       httpStatusCode,
       serviceNamespace,
+      serviceNamespaceMatch,
       serviceInstanceId,
       serviceVersion,
       deploymentEnvironment,
       containerId,
       containerName,
+      containerNameMatch,
       k8sNamespace,
+      k8sNamespaceMatch,
       k8sPodName,
       k8sContainerName,
       serverAddress,
@@ -269,14 +306,18 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       minDuration,
       httpMethod,
       httpRoute,
+      httpRouteMatch,
       httpStatusCode,
       serviceNamespace,
+      serviceNamespaceMatch,
       serviceInstanceId,
       serviceVersion,
       deploymentEnvironment,
       containerId,
       containerName,
+      containerNameMatch,
       k8sNamespace,
+      k8sNamespaceMatch,
       k8sPodName,
       k8sContainerName,
       serverAddress,

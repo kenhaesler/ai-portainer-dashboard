@@ -258,6 +258,39 @@ describe('transformOtlpToSpans', () => {
     expect(transformOtlpToSpans(payload)).toEqual([]);
   });
 
+  it('maps alternate HTTP semantic keys used by newer OTEL conventions', () => {
+    const payload: OtlpExportRequest = {
+      resourceSpans: [
+        {
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: 't-new',
+                  spanId: 's-new',
+                  name: 'GET /v2/orders',
+                  startTimeUnixNano: '1700000000000000000',
+                  endTimeUnixNano: '1700000000020000000',
+                  attributes: [
+                    { key: 'http.request.method', value: { stringValue: 'GET' } },
+                    { key: 'http.response.status_code', value: { intValue: 201 } },
+                    { key: 'url.path', value: { stringValue: '/v2/orders' } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const [span] = transformOtlpToSpans(payload);
+    expect(span.http_method).toBe('GET');
+    expect(span.http_status_code).toBe(201);
+    expect(span.http_route).toBe('/v2/orders');
+  });
+
   it('flattens various attribute value types', () => {
     const payload: OtlpExportRequest = {
       resourceSpans: [{

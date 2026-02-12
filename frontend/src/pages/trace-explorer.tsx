@@ -210,6 +210,7 @@ export default function TraceExplorerPage() {
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [showServiceMap, setShowServiceMap] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [textFilterMode, setTextFilterMode] = useState<'exact' | 'contains'>('exact');
   const [httpMethodFilter, setHttpMethodFilter] = useState('');
   const [httpRouteFilter, setHttpRouteFilter] = useState('');
   const [httpStatusCodeFilter, setHttpStatusCodeFilter] = useState('');
@@ -228,10 +229,14 @@ export default function TraceExplorerPage() {
     limit: 200,
     httpMethod: httpMethodFilter || undefined,
     httpRoute: httpRouteFilter || undefined,
+    httpRouteMatch: textFilterMode,
     httpStatusCode: httpStatusCodeFilter ? Number(httpStatusCodeFilter) : undefined,
     serviceNamespace: serviceNamespaceFilter || undefined,
+    serviceNamespaceMatch: textFilterMode,
     containerName: containerNameFilter || undefined,
+    containerNameMatch: textFilterMode,
     k8sNamespace: k8sNamespaceFilter || undefined,
+    k8sNamespaceMatch: textFilterMode,
   }), [
     serviceFilter,
     sourceFilter,
@@ -239,6 +244,7 @@ export default function TraceExplorerPage() {
     fromTime,
     httpMethodFilter,
     httpRouteFilter,
+    textFilterMode,
     httpStatusCodeFilter,
     serviceNamespaceFilter,
     containerNameFilter,
@@ -399,7 +405,7 @@ export default function TraceExplorerPage() {
 
   const sourceCounts = summary?.sourceCounts ?? { http: 0, ebpf: 0, scheduler: 0, unknown: 0 };
   const hasAdvancedFiltersApplied = Boolean(
-    httpMethodFilter || httpRouteFilter || httpStatusCodeFilter || serviceNamespaceFilter || containerNameFilter || k8sNamespaceFilter
+    httpMethodFilter || httpRouteFilter || httpStatusCodeFilter || serviceNamespaceFilter || containerNameFilter || k8sNamespaceFilter || textFilterMode !== 'exact'
   );
 
   if (isError) {
@@ -579,6 +585,7 @@ export default function TraceExplorerPage() {
                 setServiceNamespaceFilter('');
                 setContainerNameFilter('');
                 setK8sNamespaceFilter('');
+                setTextFilterMode('exact');
               }}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
@@ -589,6 +596,19 @@ export default function TraceExplorerPage() {
 
         {showAdvancedFilters && (
           <div className="grid gap-3 rounded-md border bg-background/60 p-3 md:grid-cols-2 xl:grid-cols-3">
+            <div>
+              <p className="mb-1 text-xs text-muted-foreground">Text Match Mode</p>
+              <ThemedSelect
+                value={textFilterMode}
+                onValueChange={(val) => setTextFilterMode(val as 'exact' | 'contains')}
+                options={[
+                  { value: 'exact', label: 'Exact match' },
+                  { value: 'contains', label: 'Contains' },
+                ]}
+                className="text-sm"
+              />
+            </div>
+
             <div>
               <p className="mb-1 text-xs text-muted-foreground">HTTP Method</p>
               <ThemedSelect

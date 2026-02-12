@@ -33,14 +33,18 @@ export interface TracesOptions {
   limit?: number;
   httpMethod?: string;
   httpRoute?: string;
+  httpRouteMatch?: 'exact' | 'contains';
   httpStatusCode?: number;
   serviceNamespace?: string;
+  serviceNamespaceMatch?: 'exact' | 'contains';
   serviceInstanceId?: string;
   serviceVersion?: string;
   deploymentEnvironment?: string;
   containerId?: string;
   containerName?: string;
+  containerNameMatch?: 'exact' | 'contains';
   k8sNamespace?: string;
+  k8sNamespaceMatch?: 'exact' | 'contains';
   k8sPodName?: string;
   k8sContainerName?: string;
   serverAddress?: string;

@@ -154,7 +154,7 @@ describe('traces routes', () => {
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/traces?httpMethod=GET&serviceNamespace=prod-eu-1&containerName=api-1&k8sNamespace=payments',
+      url: '/api/traces?httpMethod=GET&httpRoute=users&httpRouteMatch=contains&serviceNamespace=prod&serviceNamespaceMatch=contains&containerName=api&containerNameMatch=contains&k8sNamespace=pay&k8sNamespaceMatch=contains',
       headers: { authorization: 'Bearer test' },
     });
 
