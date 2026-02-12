@@ -75,6 +75,17 @@ function pickString(attrs: Record<string, unknown>, keys: string[]): string | nu
   return null;
 }
 
+const MODERN_CONTAINER_NAME_KEYS = ['container.name', 'k8s.container.name'];
+const CONTAINER_NAME_FALLBACK_KEYS = ['k8s.pod.name', 'service.instance.id'];
+
+function deriveContainerName(attrs: Record<string, unknown>): string | null {
+  return pickString(attrs, MODERN_CONTAINER_NAME_KEYS) ?? pickString(attrs, CONTAINER_NAME_FALLBACK_KEYS);
+}
+
+function deriveK8sContainerName(attrs: Record<string, unknown>): string | null {
+  return pickString(attrs, ['k8s.container.name', 'k8s.pod.name']);
+}
+
 function pickInt(attrs: Record<string, unknown>, keys: string[]): number | null {
   for (const key of keys) {
     const value = attrs[key];
@@ -127,6 +138,8 @@ export function transformOtlpToSpans(payload: OtlpExportRequest): SpanInsert[] {
         const spanAttrs = flattenAttributes(otlpSpan.attributes);
         const resourceAttrs = flattenAttributes(resourceSpan.resource?.attributes);
         const allAttributes = { ...resourceAttrs, ...spanAttrs };
+        const containerName = deriveContainerName(allAttributes);
+        const k8sContainerName = deriveK8sContainerName(allAttributes);
 
         spans.push({
           id: otlpSpan.spanId,
@@ -149,10 +162,10 @@ export function transformOtlpToSpans(payload: OtlpExportRequest): SpanInsert[] {
           service_version: pickString(allAttributes, ['service.version']),
           deployment_environment: pickString(allAttributes, ['deployment.environment']),
           container_id: pickString(allAttributes, ['container.id']),
-          container_name: pickString(allAttributes, ['container.name', 'k8s.container.name']),
+          container_name: containerName,
           k8s_namespace: pickString(allAttributes, ['k8s.namespace.name']),
           k8s_pod_name: pickString(allAttributes, ['k8s.pod.name']),
-          k8s_container_name: pickString(allAttributes, ['k8s.container.name']),
+          k8s_container_name: k8sContainerName,
           server_address: pickString(allAttributes, ['server.address', 'net.host.name']),
           server_port: pickInt(allAttributes, ['server.port', 'net.host.port']),
           client_address: pickString(allAttributes, ['client.address', 'net.sock.peer.addr']),

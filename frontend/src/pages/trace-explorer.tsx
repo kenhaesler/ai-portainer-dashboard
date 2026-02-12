@@ -142,8 +142,12 @@ interface TraceListItemProps {
     start_time?: string;
     startTime?: string;
     status: string;
-    trace_source?: string;
-  };
+  trace_source?: string;
+  container_name?: string;
+  containerName?: string;
+  k8s_container_name?: string;
+  k8sContainerName?: string;
+};
   isSelected: boolean;
   onClick: () => void;
 }
@@ -156,6 +160,8 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
   const spanCount = trace.span_count ?? trace.spans?.length ?? 0;
   const serviceCount = trace.services?.length ?? 1;
   const startTime = trace.startTime || trace.start_time || '';
+  const containerLabel = (trace.containerName || trace.container_name
+    || trace.k8sContainerName || trace.k8s_container_name || 'unknown');
 
   return (
     <button
@@ -194,7 +200,14 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
       </div>
       <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
         <span>{formatDate(startTime)}</span>
-        <span className="rounded border bg-muted/40 px-1.5 py-0.5">source: {trace.trace_source || 'unknown'}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded border bg-muted/40 px-1.5 py-0.5">
+            source: {trace.trace_source || 'unknown'}
+          </span>
+          <span className="rounded border bg-muted/40 px-1.5 py-0.5">
+            container: {containerLabel}
+          </span>
+        </div>
       </div>
     </button>
   );
@@ -471,6 +484,7 @@ export default function TraceExplorerPage() {
             <span className="rounded border border-sky-500/40 bg-sky-500/15 px-2 py-1">HTTP: {sourceCounts.http}</span>
             <span className="rounded border border-violet-500/40 bg-violet-500/15 px-2 py-1">Scheduler: {sourceCounts.scheduler}</span>
             <span className="rounded border bg-muted/40 px-2 py-1">Unknown: {sourceCounts.unknown}</span>
+            <span className="text-muted-foreground">Tip: select a source below to focus this list.</span>
           </div>
         </>
       )}
@@ -568,13 +582,18 @@ export default function TraceExplorerPage() {
         </div>
 
         <div className="flex items-center justify-between border-t pt-3">
-          <button
-            type="button"
-            onClick={() => setShowAdvancedFilters((prev) => !prev)}
-            className="text-sm font-medium text-primary hover:underline"
-          >
-            {showAdvancedFilters ? 'Hide advanced filters' : 'Show advanced filters'}
-          </button>
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFilters((prev) => !prev)}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              {showAdvancedFilters ? 'Hide advanced filters' : 'Show advanced filters'}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              Need precision? Filter by HTTP route/status or service and container namespaces.
+            </p>
+          </div>
           {hasAdvancedFiltersApplied && (
             <button
               type="button"

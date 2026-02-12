@@ -13,6 +13,7 @@ import {
 import {
   useEbpfCoverage,
   useEbpfCoverageSummary,
+  useUpdateCoverageStatus,
   useSyncCoverage,
   useVerifyCoverage,
 } from '@/hooks/use-ebpf-coverage';
@@ -114,8 +115,27 @@ function SummaryBar() {
 }
 
 function CoverageRow({ record }: { record: CoverageRecord }) {
+  const updateMutation = useUpdateCoverageStatus();
   const verifyMutation = useVerifyCoverage();
   const hint = STATUS_HINTS[record.status];
+  const deploymentActionLabel = record.status === 'deployed' ? 'Remove' : 'Deploy';
+  const enablementActionLabel = record.status === 'excluded' ? 'Enable' : 'Disable';
+  const isIncompatible = record.status === 'incompatible';
+
+  function handleDeploymentAction() {
+    updateMutation.mutate({
+      endpointId: record.endpoint_id,
+      status: record.status === 'deployed' ? 'not_deployed' : 'deployed',
+    });
+  }
+
+  function handleEnablementAction() {
+    updateMutation.mutate({
+      endpointId: record.endpoint_id,
+      status: record.status === 'excluded' ? 'planned' : 'excluded',
+      reason: record.status === 'excluded' ? undefined : 'Manually disabled from coverage page',
+    });
+  }
 
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
@@ -148,16 +168,35 @@ function CoverageRow({ record }: { record: CoverageRecord }) {
         {formatDate(record.last_verified_at)}
       </td>
       <td className="px-4 py-3">
-        <button
-          onClick={() => verifyMutation.mutate(record.endpoint_id)}
-          disabled={verifyMutation.isPending || record.status === 'incompatible'}
-          className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-          data-testid="verify-btn"
-          title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
-        >
-          <CheckCircle2 className="h-3 w-3" />
-          Verify
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleDeploymentAction}
+            disabled={updateMutation.isPending || isIncompatible}
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            data-testid="deploy-remove-btn"
+            title={isIncompatible ? 'Cannot deploy to incompatible endpoints' : undefined}
+          >
+            {deploymentActionLabel}
+          </button>
+          <button
+            onClick={handleEnablementAction}
+            disabled={updateMutation.isPending}
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            data-testid="enable-disable-btn"
+          >
+            {enablementActionLabel}
+          </button>
+          <button
+            onClick={() => verifyMutation.mutate(record.endpoint_id)}
+            disabled={verifyMutation.isPending || isIncompatible}
+            className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            data-testid="verify-btn"
+            title={isIncompatible ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            Verify
+          </button>
+        </div>
       </td>
     </tr>
   );

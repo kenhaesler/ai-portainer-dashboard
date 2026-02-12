@@ -181,6 +181,71 @@ describe('transformOtlpToSpans', () => {
     expect(JSON.parse(span.attributes)).toEqual({});
   });
 
+  it('falls back to k8s pod name when container name is missing', () => {
+    const payload: OtlpExportRequest = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: 'my-app' } },
+              { key: 'k8s.pod.name', value: { stringValue: 'fallback-pod' } },
+              { key: 'service.instance.id', value: { stringValue: 'instance-abc' } },
+            ],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: 'abc123def456',
+                  spanId: 'span001',
+                  name: 'GET /fallback',
+                  startTimeUnixNano: '1700000000000000000',
+                  endTimeUnixNano: '1700000000100000000',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = transformOtlpToSpans(payload);
+    expect(result[0].container_name).toBe('fallback-pod');
+    expect(result[0].k8s_container_name).toBe('fallback-pod');
+  });
+
+  it('uses service.instance.id when no pod name is available', () => {
+    const payload: OtlpExportRequest = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: 'my-app' } },
+              { key: 'service.instance.id', value: { stringValue: 'instance-abc' } },
+            ],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: 'abc123def456',
+                  spanId: 'span002',
+                  name: 'GET /fallback',
+                  startTimeUnixNano: '1700000000000000000',
+                  endTimeUnixNano: '1700000000100000000',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = transformOtlpToSpans(payload);
+    expect(result[0].container_name).toBe('instance-abc');
+    expect(result[0].k8s_container_name).toBeNull();
+  });
+
   it('maps all 3 kind values correctly', () => {
     const makeSpanWithKind = (kind: number) => ({
       resourceSpans: [{

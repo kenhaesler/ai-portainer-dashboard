@@ -279,6 +279,7 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
     data: { total: 1, deployed: 1, planned: 0, excluded: 0, failed: 0, unknown: 0 },
     isLoading: false,
   }),
+  useUpdateCoverageStatus: () => ({ mutate: vi.fn(), isPending: false }),
   useSyncCoverage: () => ({ mutate: vi.fn(), isPending: false }),
   useVerifyCoverage: () => ({ mutate: vi.fn(), isPending: false }),
 }));
