@@ -1,5 +1,7 @@
 import * as portainer from './portainer-client.js';
 import { getContainerLogsWithRetry } from './edge-log-fetcher.js';
+import { isEdgeAsync } from './edge-capability-guard.js';
+import { getEdgeAsyncContainerLogs } from './edge-async-log-fetcher.js';
 import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.js';
 import { getDb } from '../db/sqlite.js';
@@ -449,10 +451,20 @@ async function executeGetContainerLogs(
     }
 
     const tail = Math.min(parseInt(String(args.tail || '50'), 10) || 50, 200);
-    const logs = await getContainerLogsWithRetry(match.endpointId, match.id, {
-      tail,
-      timestamps: true,
-    });
+
+    const edgeAsync = await isEdgeAsync(match.endpointId);
+    let logs: string;
+    let disclaimer = '';
+
+    if (edgeAsync) {
+      logs = await getEdgeAsyncContainerLogs(match.endpointId, match.id, { tail });
+      disclaimer = '\n\n_Note: These logs were collected asynchronously via an Edge Job. They may not reflect the very latest output._';
+    } else {
+      logs = await getContainerLogsWithRetry(match.endpointId, match.id, {
+        tail,
+        timestamps: true,
+      });
+    }
 
     let lines = logs.split('\n').filter((line) => line.trim().length > 0);
 
@@ -467,7 +479,7 @@ async function executeGetContainerLogs(
       data: {
         containerName: match.name,
         lineCount: lines.length,
-        logs: lines.slice(-100).join('\n'),
+        logs: lines.slice(-100).join('\n') + disclaimer,
       },
     };
   } catch (err) {

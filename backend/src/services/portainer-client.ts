@@ -9,9 +9,9 @@ import {
   ContainerStatsSchema, NetworkSchema, ImageSchema,
   EndpointArraySchema, ContainerArraySchema, StackArraySchema,
   NetworkArraySchema, ImageArraySchema,
-  EdgeJobSchema, EdgeJobArraySchema,
+  EdgeJobSchema, EdgeJobArraySchema, EdgeJobTaskArraySchema,
   type Endpoint, type Container, type Stack,
-  type ContainerStats, type Network, type DockerImage, type EdgeJob,
+  type ContainerStats, type Network, type DockerImage, type EdgeJob, type EdgeJobTask,
 } from '../models/portainer.js';
 
 const log = createChildLogger('portainer-client');
@@ -544,4 +544,29 @@ export async function createEdgeJob(data: CreateEdgeJobPayload): Promise<EdgeJob
 
 export async function deleteEdgeJob(id: number): Promise<void> {
   await portainerFetch(`/api/edge_jobs/${id}`, { method: 'DELETE' });
+}
+
+export async function getEdgeJobTasks(jobId: number): Promise<EdgeJobTask[]> {
+  const raw = await portainerFetch<unknown[]>(`/api/edge_jobs/${jobId}/tasks`);
+  return EdgeJobTaskArraySchema.parse(raw);
+}
+
+export async function collectEdgeJobTaskLogs(jobId: number, taskId: string): Promise<void> {
+  await portainerFetch(`/api/edge_jobs/${jobId}/tasks/${taskId}/logs`, { method: 'POST' });
+}
+
+export async function getEdgeJobTaskLogs(jobId: number, taskId: string): Promise<string> {
+  const config = getConfig();
+  const url = `${config.PORTAINER_API_URL}/api/edge_jobs/${jobId}/tasks/${taskId}/logs`;
+
+  const headers: Record<string, string> = {};
+  if (config.PORTAINER_API_KEY) {
+    headers['X-API-Key'] = config.PORTAINER_API_KEY;
+  }
+
+  const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
+  if (!res.ok) {
+    throw new PortainerError(`Edge job task logs fetch failed: ${res.status}`, classifyError(res.status), res.status);
+  }
+  return await res.text();
 }

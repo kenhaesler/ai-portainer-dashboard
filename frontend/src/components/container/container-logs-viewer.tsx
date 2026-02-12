@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff } from 'lucide-react';
+import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Play, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { useContainerLogs, type ContainerLogsError } from '@/hooks/use-container-logs';
+import { useEdgeAsyncLogs } from '@/hooks/use-edge-async-logs';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 
@@ -153,11 +154,173 @@ function EdgeErrorState({ error, onRetry }: { error: ContainerLogsError; onRetry
   );
 }
 
+// ─── Edge Async Log Collector ──────────────────────────────────────
+
+function EdgeAsyncLogCollector({
+  endpointId,
+  containerId,
+}: {
+  endpointId: number;
+  containerId: string;
+}) {
+  const { status, logs, durationMs, error, collect, reset } = useEdgeAsyncLogs(endpointId, containerId);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logViewerRef = useRef<HTMLDivElement>(null);
+
+  const displayLogs = useMemo(() => {
+    if (!logs) return [];
+    const lines = logs.split('\n').filter(line => line.trim());
+    if (!searchTerm) return lines;
+    const searchLower = searchTerm.toLowerCase();
+    return lines.filter(line => line.toLowerCase().includes(searchLower));
+  }, [logs, searchTerm]);
+
+  if (status === 'idle') {
+    return (
+      <div className="rounded-lg border border-amber-500/50 bg-amber-50 dark:bg-amber-900/20 p-8 text-center">
+        <WifiOff className="mx-auto h-10 w-10 text-amber-600 dark:text-amber-400" />
+        <p className="mt-4 font-medium text-amber-800 dark:text-amber-200">
+          Edge Async Endpoint — On-Demand Log Collection
+        </p>
+        <p className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
+          This endpoint uses asynchronous communication. Logs are collected via an Edge Job
+          and may take 30-120 seconds depending on the agent check-in interval.
+        </p>
+        <button
+          onClick={() => collect({ tail: 100 })}
+          className="mt-4 inline-flex items-center gap-2 rounded-md border border-amber-300 dark:border-amber-600 bg-white dark:bg-amber-900/40 px-4 py-2 text-sm font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/60"
+        >
+          <Play className="h-4 w-4" />
+          Collect Logs
+        </button>
+      </div>
+    );
+  }
+
+  if (status === 'initiating' || status === 'collecting') {
+    return (
+      <div className="rounded-lg border border-blue-500/50 bg-blue-50 dark:bg-blue-900/20 p-8 text-center">
+        <Radio className="mx-auto h-10 w-10 text-blue-600 dark:text-blue-400 animate-pulse" />
+        <p className="mt-4 font-medium text-blue-800 dark:text-blue-200">
+          {status === 'initiating' ? 'Starting log collection...' : 'Collecting logs from Edge agent...'}
+        </p>
+        <p className="mt-1 text-sm text-blue-700/80 dark:text-blue-300/80">
+          {status === 'initiating'
+            ? 'Creating Edge Job to run on the agent'
+            : 'Waiting for the Edge agent to check in and execute the log collection job. This may take up to 2 minutes.'}
+        </p>
+        <div className="mt-4 flex justify-center">
+          <div className="h-1.5 w-48 rounded-full bg-blue-200 dark:bg-blue-800 overflow-hidden">
+            <div className="h-full w-full bg-blue-500 rounded-full animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
+        <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
+        <p className="mt-4 font-medium text-destructive">Log collection failed</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {error || 'An unknown error occurred'}
+        </p>
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <button
+            onClick={() => collect({ tail: 100 })}
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Retry
+          </button>
+          <button
+            onClick={reset}
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // status === 'complete'
+  return (
+    <div className="space-y-4">
+      {/* Success banner */}
+      <div className="rounded-lg border border-emerald-500/50 bg-emerald-50 dark:bg-emerald-900/20 p-3 flex items-center gap-3">
+        <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+            Logs collected via Edge Job
+          </p>
+          <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+            {durationMs != null ? `Completed in ${Math.round(durationMs / 1000)}s` : 'Collection complete'}
+            {' '}&bull; {displayLogs.length} {displayLogs.length === 1 ? 'line' : 'lines'}
+          </p>
+        </div>
+        <button
+          onClick={() => collect({ tail: 100 })}
+          className="inline-flex items-center gap-2 rounded-md border border-emerald-300 dark:border-emerald-600 bg-white dark:bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/60"
+        >
+          <RotateCcw className="h-3 w-3" />
+          Re-collect
+        </button>
+      </div>
+
+      {/* Search */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2 flex-1 max-w-md">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search logs..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        {logs && (
+          <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              {displayLogs.length} {displayLogs.length === 1 ? 'line' : 'lines'}
+              {searchTerm && logs && ` (filtered from ${logs.split('\n').filter(l => l.trim()).length})`}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Log viewer */}
+      {displayLogs.length === 0 ? (
+        <div className="rounded-lg border bg-card p-8 text-center">
+          <ScrollText className="mx-auto h-10 w-10 text-muted-foreground" />
+          <p className="mt-4 font-medium">
+            {searchTerm ? 'No matching logs found' : 'No logs available'}
+          </p>
+        </div>
+      ) : (
+        <VirtualizedContainerLogs
+          logViewerRef={logViewerRef}
+          displayLogs={displayLogs}
+          searchTerm={searchTerm}
+          autoScroll={autoScroll}
+          setAutoScroll={setAutoScroll}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────
+
 interface ContainerLogsViewerProps {
   endpointId: number;
   containerId: string;
   initialTailCount?: TailCount;
   showControls?: boolean;
+  isEdgeAsync?: boolean;
 }
 
 export function ContainerLogsViewer({
@@ -165,7 +328,29 @@ export function ContainerLogsViewer({
   containerId,
   initialTailCount = 100,
   showControls = true,
+  isEdgeAsync = false,
 }: ContainerLogsViewerProps) {
+  // Delegate to Edge Async collector when applicable
+  if (isEdgeAsync) {
+    return <EdgeAsyncLogCollector endpointId={endpointId} containerId={containerId} />;
+  }
+
+  return (
+    <StandardLogsViewer
+      endpointId={endpointId}
+      containerId={containerId}
+      initialTailCount={initialTailCount}
+      showControls={showControls}
+    />
+  );
+}
+
+function StandardLogsViewer({
+  endpointId,
+  containerId,
+  initialTailCount = 100,
+  showControls = true,
+}: Omit<ContainerLogsViewerProps, 'isEdgeAsync'>) {
   const logViewerRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -175,7 +360,6 @@ export function ContainerLogsViewer({
   const {
     data: logsData,
     isLoading: logsLoading,
-    isFetching,
     isError,
     error,
     refetch,

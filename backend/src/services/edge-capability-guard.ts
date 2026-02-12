@@ -76,3 +76,21 @@ export async function isEdgeStandard(endpointId: number): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Check if an endpoint is Edge Async (Type 7 — no Docker tunnel).
+ * These endpoints require Edge Jobs for log retrieval.
+ */
+export async function isEdgeAsync(endpointId: number): Promise<boolean> {
+  try {
+    const raw = await cachedFetchSWR(
+      getCacheKey('endpoint', endpointId),
+      TTL.ENDPOINTS,
+      () => getEndpoint(endpointId),
+    );
+    const norm = normalizeEndpoint(raw);
+    return norm.edgeMode === 'async';
+  } catch {
+    return false;
+  }
+}
