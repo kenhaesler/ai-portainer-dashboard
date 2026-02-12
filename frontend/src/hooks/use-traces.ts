@@ -24,21 +24,23 @@ interface Trace {
 }
 
 interface TracesOptions {
-  service?: string;
-  operation?: string;
+  from?: string;
+  to?: string;
+  serviceName?: string;
   source?: string;
+  status?: 'ok' | 'error' | 'unset';
   minDuration?: number;
-  maxDuration?: number;
   limit?: number;
-  startTime?: string;
-  endTime?: string;
 }
 
 interface ServiceMapNode {
   id: string;
   name: string;
-  type: string;
-  metrics: {
+  type?: string;
+  callCount?: number;
+  avgDuration?: number;
+  errorRate?: number;
+  metrics?: {
     requestRate: number;
     errorRate: number;
     avgLatency: number;
@@ -48,9 +50,11 @@ interface ServiceMapNode {
 interface ServiceMapEdge {
   source: string;
   target: string;
-  requestRate: number;
-  errorRate: number;
-  avgLatency: number;
+  callCount?: number;
+  avgDuration?: number;
+  requestRate?: number;
+  errorRate?: number;
+  avgLatency?: number;
 }
 
 interface ServiceMap {
@@ -88,16 +92,22 @@ export function useTrace(traceId: string | undefined) {
   });
 }
 
-export function useServiceMap() {
+export function useServiceMap(options?: TracesOptions) {
   return useQuery<ServiceMap>({
-    queryKey: ['traces', 'service-map'],
-    queryFn: () => api.get<ServiceMap>('/api/traces/service-map'),
+    queryKey: ['traces', 'service-map', options],
+    queryFn: () => api.get<ServiceMap>(
+      '/api/traces/service-map',
+      { params: options as Record<string, string | number | boolean | undefined> }
+    ),
   });
 }
 
-export function useTraceSummary() {
+export function useTraceSummary(options?: Pick<TracesOptions, 'from' | 'to'>) {
   return useQuery<TraceSummary>({
-    queryKey: ['traces', 'summary'],
-    queryFn: () => api.get<TraceSummary>('/api/traces/summary'),
+    queryKey: ['traces', 'summary', options],
+    queryFn: () => api.get<TraceSummary>(
+      '/api/traces/summary',
+      { params: options as Record<string, string | number | boolean | undefined> }
+    ),
   });
 }
