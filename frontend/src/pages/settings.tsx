@@ -177,7 +177,7 @@ export default function SettingsPage() {
     editedSnapshot: Record<string, string>,
     originalSnapshot: Record<string, string>,
     /** When set, only save keys in this list. */
-    filterKeys?: string[],
+    filterKeys?: readonly string[],
   ) => {
     const changedKeys = Object.keys(editedSnapshot).filter((key) => {
       if (editedSnapshot[key] === originalSnapshot[key]) return false;
@@ -232,14 +232,14 @@ export default function SettingsPage() {
   useEffect(() => {
     // Only auto-save non-LLM keys
     const nonLlmChanged = Object.keys(editedValues).some(
-      (key) => editedValues[key] !== originalValues[key] && !LLM_SETTING_KEYS.includes(key),
+      (key) => editedValues[key] !== originalValues[key] && !(LLM_SETTING_KEYS as readonly string[]).includes(key),
     );
     if (isSaving || !nonLlmChanged) return;
 
     const editedSnapshot = { ...editedValues };
     const originalSnapshot = { ...originalValues };
     // Build the filter list: every key *except* LLM keys
-    const nonLlmKeys = Object.keys(editedSnapshot).filter((k) => !LLM_SETTING_KEYS.includes(k));
+    const nonLlmKeys = Object.keys(editedSnapshot).filter((k) => !(LLM_SETTING_KEYS as readonly string[]).includes(k));
 
     const timeout = window.setTimeout(() => {
       void saveChangedSettings(editedSnapshot, originalSnapshot, nonLlmKeys);
