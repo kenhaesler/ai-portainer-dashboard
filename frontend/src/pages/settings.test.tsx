@@ -259,4 +259,22 @@ describe('Settings tab structure', () => {
     expect(webhooksModule.WebhooksPanel).toBeDefined();
     expect(typeof webhooksModule.WebhooksPanel).toBe('function');
   });
+
+  it('re-exports LlmSettingsSection and getRedisSystemInfo from settings.tsx', async () => {
+    const settingsModule = await import('./settings');
+
+    expect(settingsModule.LlmSettingsSection).toBeDefined();
+    expect(typeof settingsModule.LlmSettingsSection).toBe('function');
+    expect(settingsModule.getRedisSystemInfo).toBeDefined();
+    expect(typeof settingsModule.getRedisSystemInfo).toBe('function');
+  });
+
+  it('exports LLM_SETTING_KEYS from tab-ai-llm', async () => {
+    const { LLM_SETTING_KEYS } = await import('@/components/settings/tab-ai-llm');
+
+    expect(Array.isArray(LLM_SETTING_KEYS)).toBe(true);
+    expect(LLM_SETTING_KEYS.length).toBeGreaterThan(0);
+    expect(LLM_SETTING_KEYS).toContain('llm.model');
+    expect(LLM_SETTING_KEYS).toContain('llm.temperature');
+  });
 });
