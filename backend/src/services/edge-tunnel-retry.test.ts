@@ -33,6 +33,10 @@ describe('isDockerProxyUnavailable', () => {
     expect(isDockerProxyUnavailable({ status: 404 })).toBe(true);
   });
 
+  it('returns true for status 503', () => {
+    expect(isDockerProxyUnavailable({ status: 503 })).toBe(true);
+  });
+
   it('returns false for status 500', () => {
     expect(isDockerProxyUnavailable({ status: 500 })).toBe(false);
   });
@@ -66,7 +70,7 @@ describe('getContainerLogsWithRetry', () => {
       .mockResolvedValueOnce('retry logs');
     mockGetContainers.mockResolvedValue([]);
 
-    const result = await getContainerLogsWithRetry(4, 'def', { tail: 50 }, { maxWaitMs: 1000 });
+    const result = await getContainerLogsWithRetry(4, 'def', { tail: 50 }, { maxWaitMs: 100 });
     expect(result).toBe('retry logs');
     expect(mockGetContainerLogs).toHaveBeenCalledTimes(2);
     expect(mockGetContainers).toHaveBeenCalledWith(4, false);
@@ -90,14 +94,14 @@ describe('getContainerLogsWithRetry', () => {
       .mockResolvedValueOnce('found after warmup');
     mockGetContainers.mockResolvedValue([]);
 
-    const result = await getContainerLogsWithRetry(4, 'ghi', { tail: 50 }, { maxWaitMs: 1000 });
+    const result = await getContainerLogsWithRetry(4, 'ghi', { tail: 50 }, { maxWaitMs: 100 });
     expect(result).toBe('found after warmup');
     expect(mockGetContainerLogs).toHaveBeenCalledTimes(2);
   });
 
   it('throws tunnel timeout when warmup fails', async () => {
     const proxyErr = Object.assign(new Error('Bad Gateway'), { status: 502 });
-    mockGetContainerLogs.mockRejectedValueOnce(proxyErr);
+    mockGetContainerLogs.mockRejectedValue(proxyErr);
     mockGetContainers.mockRejectedValue(new Error('tunnel not ready'));
 
     await expect(
@@ -118,7 +122,16 @@ describe('waitForTunnel', () => {
 
   it('resolves immediately when tunnel is already up', async () => {
     mockGetContainers.mockResolvedValue([]);
-    await waitForTunnel(4, { maxWaitMs: 5000, pollIntervalMs: 1000 });
+    const promise = waitForTunnel(4, { maxWaitMs: 5000, pollIntervalMs: 1000, stabilizationMs: 0 });
+    await promise;
+    expect(mockGetContainers).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves with stabilization delay when tunnel is already up', async () => {
+    mockGetContainers.mockResolvedValue([]);
+    const promise = waitForTunnel(4, { maxWaitMs: 5000, pollIntervalMs: 1000, stabilizationMs: 500 });
+    await vi.advanceTimersByTimeAsync(500);
+    await promise;
     expect(mockGetContainers).toHaveBeenCalledTimes(1);
   });
 
@@ -128,7 +141,7 @@ describe('waitForTunnel', () => {
       .mockRejectedValueOnce(new Error('not ready'))
       .mockResolvedValueOnce([]);
 
-    const promise = waitForTunnel(4, { maxWaitMs: 10000, pollIntervalMs: 1000 });
+    const promise = waitForTunnel(4, { maxWaitMs: 10000, pollIntervalMs: 1000, stabilizationMs: 0 });
 
     await vi.advanceTimersByTimeAsync(1000);
     await vi.advanceTimersByTimeAsync(1000);
@@ -141,7 +154,7 @@ describe('waitForTunnel', () => {
     mockGetContainers.mockRejectedValue(new Error('not ready'));
 
     let caughtError: Error | undefined;
-    const promise = waitForTunnel(4, { maxWaitMs: 3000, pollIntervalMs: 1000 }).catch((err) => {
+    const promise = waitForTunnel(4, { maxWaitMs: 3000, pollIntervalMs: 1000, stabilizationMs: 0 }).catch((err) => {
       caughtError = err;
     });
 
