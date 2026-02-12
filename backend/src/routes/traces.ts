@@ -3,6 +3,30 @@ import { getDb } from '../db/sqlite.js';
 import { TracesQuerySchema, TraceIdParamsSchema } from '../models/api-schemas.js';
 
 export async function tracesRoutes(fastify: FastifyInstance) {
+  function buildSpanConditions(
+    filters: {
+      from?: string;
+      to?: string;
+      serviceName?: string;
+      status?: string;
+      source?: string;
+      minDuration?: number;
+    },
+    alias: string,
+  ) {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.from) { conditions.push(`${alias}.start_time >= ?`); params.push(filters.from); }
+    if (filters.to) { conditions.push(`${alias}.start_time <= ?`); params.push(filters.to); }
+    if (filters.serviceName) { conditions.push(`${alias}.service_name = ?`); params.push(filters.serviceName); }
+    if (filters.status) { conditions.push(`${alias}.status = ?`); params.push(filters.status); }
+    if (filters.source) { conditions.push(`${alias}.trace_source = ?`); params.push(filters.source); }
+    if (filters.minDuration !== undefined) { conditions.push(`${alias}.duration_ms >= ?`); params.push(filters.minDuration); }
+
+    return { conditions, params };
+  }
+
   // List traces
   fastify.get('/api/traces', {
     schema: {
@@ -78,10 +102,25 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       tags: ['Traces'],
       summary: 'Get service dependency map',
       security: [{ bearerAuth: [] }],
+      querystring: TracesQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
+  }, async (request) => {
+    const { from, to, serviceName, status, source, minDuration } = request.query as {
+      from?: string;
+      to?: string;
+      serviceName?: string;
+      status?: string;
+      source?: string;
+      minDuration?: number;
+    };
+
     const db = getDb();
+    const { conditions, params } = buildSpanConditions(
+      { from, to, serviceName, status, source, minDuration },
+      's',
+    );
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // Nodes: unique services with stats
     const nodes = db.prepare(`
@@ -89,10 +128,13 @@ export async function tracesRoutes(fastify: FastifyInstance) {
              COUNT(*) as callCount,
              AVG(duration_ms) as avgDuration,
              CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as errorRate
-      FROM spans
-      WHERE start_time > datetime('now', '-24 hours')
+      FROM spans s
+      ${where}
       GROUP BY service_name
-    `).all();
+    `).all(...params);
+
+    const childConditions = conditions.map((c) => c.replaceAll('s.', 'c.'));
+    const childWhere = childConditions.length > 0 ? `WHERE ${childConditions.join(' AND ')}` : '';
 
     // Edges: parent→child relationships
     const edges = db.prepare(`
@@ -101,10 +143,9 @@ export async function tracesRoutes(fastify: FastifyInstance) {
              AVG(c.duration_ms) as avgDuration
       FROM spans c
       JOIN spans p ON c.parent_span_id = p.id
-      WHERE c.start_time > datetime('now', '-24 hours')
-      AND p.service_name != c.service_name
+      ${childWhere}${childWhere ? ' AND ' : ' WHERE '}p.service_name != c.service_name
       GROUP BY p.service_name, c.service_name
-    `).all();
+    `).all(...params);
 
     return { nodes, edges };
   });
@@ -117,8 +158,15 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
+  }, async (request) => {
+    const { from, to } = request.query as { from?: string; to?: string };
     const db = getDb();
+    const conditions: string[] = ['parent_span_id IS NULL'];
+    const params: unknown[] = [];
+
+    if (from) { conditions.push('start_time >= ?'); params.push(from); }
+    if (to) { conditions.push('start_time <= ?'); params.push(to); }
+    const where = `WHERE ${conditions.join(' AND ')}`;
 
     const summary = db.prepare(`
       SELECT
@@ -127,15 +175,20 @@ export async function tracesRoutes(fastify: FastifyInstance) {
         CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as errorRate,
         COUNT(DISTINCT service_name) as services
       FROM spans
-      WHERE parent_span_id IS NULL
-      AND start_time > datetime('now', '-24 hours')
-    `).get() as { totalTraces: number; avgDuration: number | null; errorRate: number | null };
+      ${where}
+    `).get(...params) as { totalTraces: number; avgDuration: number | null; errorRate: number | null };
 
     const serviceCount = db.prepare(`
       SELECT COUNT(DISTINCT service_name) as services
       FROM spans
-      WHERE start_time > datetime('now', '-24 hours')
-    `).get() as { services: number };
+      ${from || to ? `WHERE ${[
+        from ? 'start_time >= ?' : '',
+        to ? 'start_time <= ?' : '',
+      ].filter(Boolean).join(' AND ')}` : ''}
+    `).get(...[
+      ...(from ? [from] : []),
+      ...(to ? [to] : []),
+    ]) as { services: number };
 
     return {
       totalTraces: summary.totalTraces ?? 0,

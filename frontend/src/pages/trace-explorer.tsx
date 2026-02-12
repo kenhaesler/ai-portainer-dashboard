@@ -10,6 +10,10 @@ import {
   Filter,
   Layers,
   Timer,
+  Info,
+  Box,
+  Rows,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/hooks/use-traces';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -35,16 +39,83 @@ function getDurationColor(ms: number): string {
   return 'bg-red-500';
 }
 
-interface SpanBarProps {
-  span: {
-    spanId: string;
-    operationName: string;
-    serviceName: string;
-    startTime: string;
-    duration: number;
-    status: string;
-    parentSpanId?: string;
+function getFromIso(timeRange: string): string | undefined {
+  if (timeRange === 'all') return undefined;
+  const now = Date.now();
+  const map: Record<string, number> = {
+    '15m': 15 * 60 * 1000,
+    '1h': 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
   };
+
+  const delta = map[timeRange];
+  if (!delta) return undefined;
+  return new Date(now - delta).toISOString();
+}
+
+type SpanItem = {
+  spanId: string;
+  traceId: string;
+  parentSpanId?: string;
+  operationName: string;
+  serviceName: string;
+  serviceNamespace: string;
+  serviceInstance: string;
+  startTime: string;
+  endTime: string | null;
+  duration: number;
+  kind: string;
+  status: string;
+  source: string;
+  endpoint: string;
+  container: string;
+  rawAttributes: Record<string, unknown>;
+  resourceAttributes: Record<string, unknown>;
+};
+
+function parseAttributes(attributes: unknown): Record<string, unknown> {
+  if (!attributes) return {};
+  if (typeof attributes === 'string') {
+    try {
+      const parsed = JSON.parse(attributes) as unknown;
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof attributes === 'object') {
+    return attributes as Record<string, unknown>;
+  }
+  return {};
+}
+
+function getAttrString(attrs: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = attrs[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value);
+    }
+  }
+  return undefined;
+}
+
+function splitResourceAttributes(attrs: Record<string, unknown>) {
+  const resourcePrefixes = ['service.', 'container.', 'k8s.', 'host.', 'deployment.', 'telemetry.'];
+  const resourceAttributes: Record<string, unknown> = {};
+
+  Object.entries(attrs).forEach(([key, value]) => {
+    if (resourcePrefixes.some((prefix) => key.startsWith(prefix))) {
+      resourceAttributes[key] = value;
+    }
+  });
+
+  return resourceAttributes;
+}
+
+interface SpanBarProps {
+  span: SpanItem;
   traceStartTime: number;
   traceDuration: number;
   depth: number;
@@ -54,8 +125,8 @@ interface SpanBarProps {
 
 function SpanBar({ span, traceStartTime, traceDuration, depth, isSelected, onClick }: SpanBarProps) {
   const spanStart = new Date(span.startTime).getTime();
-  const offsetPercent = ((spanStart - traceStartTime) / traceDuration) * 100;
-  const widthPercent = Math.max((span.duration / traceDuration) * 100, 1);
+  const offsetPercent = ((spanStart - traceStartTime) / Math.max(traceDuration, 1)) * 100;
+  const widthPercent = Math.max((span.duration / Math.max(traceDuration, 1)) * 100, 1);
 
   return (
     <button
@@ -68,9 +139,7 @@ function SpanBar({ span, traceStartTime, traceDuration, depth, isSelected, onCli
       <div className="w-32 shrink-0 truncate text-sm" style={{ paddingLeft: depth * 16 }}>
         <span className="font-medium">{span.serviceName}</span>
       </div>
-      <div className="w-40 shrink-0 truncate text-xs text-muted-foreground">
-        {span.operationName}
-      </div>
+      <div className="w-44 shrink-0 truncate text-xs text-muted-foreground">{span.operationName}</div>
       <div className="relative h-6 flex-1 rounded bg-muted/30">
         <div
           className={cn(
@@ -79,45 +148,46 @@ function SpanBar({ span, traceStartTime, traceDuration, depth, isSelected, onCli
             span.status === 'error' && 'bg-red-500'
           )}
           style={{
-            left: `${offsetPercent}%`,
-            width: `${widthPercent}%`,
+            left: `${Math.max(offsetPercent, 0)}%`,
+            width: `${Math.min(widthPercent, 100)}%`,
             minWidth: 4,
           }}
         />
       </div>
-      <div className="w-20 shrink-0 text-right text-xs text-muted-foreground">
-        {formatDuration(span.duration)}
-      </div>
-      {span.status === 'error' && (
-        <XCircle className="h-4 w-4 shrink-0 text-red-500" />
-      )}
+      <div className="w-20 shrink-0 text-right text-xs text-muted-foreground">{formatDuration(span.duration)}</div>
+      {span.status === 'error' && <XCircle className="h-4 w-4 shrink-0 text-red-500" />}
     </button>
   );
 }
 
+type TraceItem = {
+  trace_id?: string;
+  traceId?: string;
+  root_span?: string;
+  rootSpan?: { serviceName?: string; operationName?: string };
+  duration_ms?: number;
+  duration?: number;
+  span_count?: number;
+  spans?: unknown[];
+  services?: string[];
+  service_name?: string;
+  serviceName?: string;
+  start_time?: string;
+  startTime?: string;
+  status: string;
+  trace_source?: string;
+};
+
 interface TraceListItemProps {
-  trace: {
-    trace_id?: string;
-    traceId?: string;
-    root_span?: string;
-    rootSpan?: { serviceName?: string; operationName?: string };
-    duration_ms?: number;
-    duration?: number;
-    span_count?: number;
-    spans?: unknown[];
-    services?: string[];
-    service_name?: string;
-    serviceName?: string;
-    start_time?: string;
-    startTime?: string;
-    status: string;
-  };
+  trace: TraceItem;
   isSelected: boolean;
   onClick: () => void;
+  sourceLabel: string;
+  endpointLabel: string;
+  containerLabel: string;
 }
 
-function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
-  // Normalize field names (API uses snake_case, we prefer camelCase)
+function TraceListItem({ trace, isSelected, onClick, sourceLabel, endpointLabel, containerLabel }: TraceListItemProps) {
   const traceId = trace.traceId || trace.trace_id || '';
   const serviceName = trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || 'Unknown';
   const operationName = trace.root_span || trace.rootSpan?.operationName || 'Unknown operation';
@@ -145,9 +215,7 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
       </div>
       <div className="mt-2">
         <p className="font-medium">{serviceName}</p>
-        <p className="text-sm text-muted-foreground truncate">
-          {operationName}
-        </p>
+        <p className="truncate text-sm text-muted-foreground">{operationName}</p>
       </div>
       <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
@@ -163,9 +231,12 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
           {serviceCount} services
         </span>
       </div>
-      <div className="mt-2 text-xs text-muted-foreground">
-        {formatDate(startTime)}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="rounded border bg-muted/40 px-1.5 py-0.5">source: {sourceLabel}</span>
+        <span className="rounded border bg-muted/40 px-1.5 py-0.5">endpoint: {endpointLabel}</span>
+        <span className="rounded border bg-muted/40 px-1.5 py-0.5">container: {containerLabel}</span>
       </div>
+      <div className="mt-2 text-xs text-muted-foreground">{formatDate(startTime)}</div>
     </button>
   );
 }
@@ -175,56 +246,49 @@ export default function TraceExplorerPage() {
   const [serviceFilter, setServiceFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>('all');
+  const [timeRange, setTimeRange] = useState<'15m' | '1h' | '6h' | '24h' | '7d' | 'all'>('24h');
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [showServiceMap, setShowServiceMap] = useState(false);
+  const [spanFilter, setSpanFilter] = useState('');
+  const [sortBy, setSortBy] = useState<'startTime' | 'serviceName' | 'operationName' | 'kind' | 'status' | 'duration'>('startTime');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const { interval, setInterval } = useAutoRefresh(0);
 
-  // Fetch data
-  const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces({
-    service: serviceFilter || undefined,
+  const fromTime = useMemo(() => getFromIso(timeRange), [timeRange]);
+
+  const traceQuery = useMemo(() => ({
+    serviceName: serviceFilter || undefined,
     source: sourceFilter || undefined,
-    limit: 50,
-  });
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    from: fromTime,
+    limit: 200,
+  }), [serviceFilter, sourceFilter, statusFilter, fromTime]);
 
+  const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces(traceQuery);
   const { data: selectedTraceData } = useTrace(selectedTraceId || undefined);
-  const { data: serviceMapData } = useServiceMap();
-  const { data: summary } = useTraceSummary();
+  const { data: serviceMapData, isLoading: isServiceMapLoading } = useServiceMap(traceQuery);
+  const { data: summary } = useTraceSummary({ from: fromTime });
 
-  // Normalize API responses (API returns { traces: [...] } or { traceId, spans: [...] })
   const traces = useMemo(() => {
     if (!tracesData) return [];
-    // Handle both array and { traces: [...] } formats
     if (Array.isArray(tracesData)) return tracesData;
     if (Array.isArray((tracesData as { traces?: unknown[] }).traces)) {
       return (tracesData as { traces: unknown[] }).traces;
     }
     return [];
-  }, [tracesData]) as Array<{
-    trace_id?: string;
-    traceId?: string;
-    root_span?: string;
-    rootSpan?: { serviceName?: string; operationName?: string };
-    duration_ms?: number;
-    duration?: number;
-    status: string;
-    service_name?: string;
-    serviceName?: string;
-    start_time?: string;
-    startTime?: string;
-    span_count?: number;
-    spans?: unknown[];
-    services?: string[];
-  }>;
+  }, [tracesData]) as TraceItem[];
 
   const selectedTrace = useMemo(() => {
     if (!selectedTraceData) return null;
-    // Handle { traceId, spans: [...] } format
+
     const data = selectedTraceData as {
       traceId?: string;
       spans?: Array<{
         spanId?: string;
         span_id?: string;
+        traceId?: string;
+        trace_id?: string;
         parentSpanId?: string;
         parent_span_id?: string;
         operationName?: string;
@@ -233,64 +297,86 @@ export default function TraceExplorerPage() {
         service_name?: string;
         startTime?: string;
         start_time?: string;
+        endTime?: string;
+        end_time?: string | null;
         duration?: number;
         duration_ms?: number;
+        kind?: string;
         status: string;
-        attributes?: Record<string, unknown>;
+        trace_source?: string;
+        attributes?: unknown;
       }>;
     };
+
     if (!data.spans) return null;
-    // Normalize span field names
-    const normalizedSpans = data.spans.map((s) => ({
-      spanId: s.spanId || s.span_id || '',
-      parentSpanId: s.parentSpanId || s.parent_span_id,
-      operationName: s.operationName || s.name || '',
-      serviceName: s.serviceName || s.service_name || '',
-      startTime: s.startTime || s.start_time || '',
-      duration: s.duration ?? s.duration_ms ?? 0,
-      status: s.status,
-      attributes: s.attributes,
-    }));
-    // Compute status and services from spans
+
+    const normalizedSpans: SpanItem[] = data.spans.map((s) => {
+      const attrs = parseAttributes(s.attributes);
+      const resourceAttributes = splitResourceAttributes(attrs);
+
+      const source = s.trace_source || getAttrString(attrs, ['trace.source', 'telemetry.source']) || 'unknown';
+      const endpoint = getAttrString(attrs, ['endpoint.name', 'endpoint.id', 'endpoint', 'host.name']) || 'unknown';
+      const container = getAttrString(attrs, ['container.name', 'container.id', 'k8s.container.name', 'docker.container.name']) || 'unknown';
+
+      return {
+        spanId: s.spanId || s.span_id || '',
+        traceId: s.traceId || s.trace_id || data.traceId || '',
+        parentSpanId: s.parentSpanId || s.parent_span_id,
+        operationName: s.operationName || s.name || '',
+        serviceName: s.serviceName || s.service_name || 'unknown',
+        serviceNamespace: getAttrString(attrs, ['service.namespace']) || 'unknown',
+        serviceInstance: getAttrString(attrs, ['service.instance.id']) || 'unknown',
+        startTime: s.startTime || s.start_time || '',
+        endTime: s.endTime || s.end_time || null,
+        duration: s.duration ?? s.duration_ms ?? 0,
+        kind: s.kind || 'internal',
+        status: s.status,
+        source,
+        endpoint,
+        container,
+        rawAttributes: attrs,
+        resourceAttributes,
+      };
+    });
+
     const hasError = normalizedSpans.some((s) => s.status === 'error');
     const uniqueServices = [...new Set(normalizedSpans.map((s) => s.serviceName))];
 
+    const rootSpan = normalizedSpans.find((s) => !s.parentSpanId) || normalizedSpans[0];
+
     return {
-      traceId: data.traceId,
+      traceId: data.traceId || normalizedSpans[0]?.traceId || '',
       spans: normalizedSpans,
       duration: Math.max(...normalizedSpans.map((s) => s.duration), 0),
-      startTime: normalizedSpans[0]?.startTime || '',
+      startTime: rootSpan?.startTime || normalizedSpans[0]?.startTime || '',
       status: hasError ? 'error' : 'ok',
       services: uniqueServices,
+      source: rootSpan?.source || 'unknown',
+      endpoint: rootSpan?.endpoint || 'unknown',
+      container: rootSpan?.container || 'unknown',
     };
   }, [selectedTraceData]);
 
-  // Filter traces
   const filteredTraces = useMemo(() => {
     if (!traces || traces.length === 0) return [];
+
     return traces.filter((trace) => {
       if (statusFilter !== 'all' && trace.status !== statusFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const traceId = (trace.traceId || trace.trace_id || '').toLowerCase();
-        const serviceName = (trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || '').toLowerCase();
-        const operationName = (trace.root_span || trace.rootSpan?.operationName || '').toLowerCase();
-        return (
-          traceId.includes(q) ||
-          serviceName.includes(q) ||
-          operationName.includes(q)
-        );
-      }
-      return true;
+      if (!searchQuery) return true;
+
+      const q = searchQuery.toLowerCase();
+      const traceId = (trace.traceId || trace.trace_id || '').toLowerCase();
+      const serviceName = (trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || '').toLowerCase();
+      const operationName = (trace.root_span || trace.rootSpan?.operationName || '').toLowerCase();
+
+      return traceId.includes(q) || serviceName.includes(q) || operationName.includes(q);
     });
   }, [traces, searchQuery, statusFilter]);
 
-  // Get unique services for filter
   const services = useMemo(() => {
     if (!traces || traces.length === 0) return [];
     const set = new Set<string>();
     traces.forEach((t) => {
-      // Handle both field name formats
       const serviceName = t.serviceName || t.service_name;
       if (serviceName) set.add(serviceName);
       t.services?.forEach((s) => set.add(s));
@@ -298,15 +384,13 @@ export default function TraceExplorerPage() {
     return Array.from(set).sort();
   }, [traces]);
 
-  // Build span tree for selected trace
   const spanTree = useMemo(() => {
     if (!selectedTrace?.spans || selectedTrace.spans.length === 0) return [];
 
     const spans = selectedTrace.spans;
     const rootSpans = spans.filter((s) => !s.parentSpanId);
 
-    type SpanType = typeof spans[0];
-    const buildTree = (span: SpanType, depth: number): Array<{ span: SpanType; depth: number }> => {
+    const buildTree = (span: SpanItem, depth: number): Array<{ span: SpanItem; depth: number }> => {
       const result = [{ span, depth }];
       const children = spans.filter((s) => s.parentSpanId === span.spanId);
       children.forEach((child) => {
@@ -318,21 +402,53 @@ export default function TraceExplorerPage() {
     return rootSpans.flatMap((root) => buildTree(root, 0));
   }, [selectedTrace]);
 
-  // Selected span details
   const selectedSpan = useMemo(() => {
-    if (!selectedTrace?.spans || !selectedSpanId) return null;
-    return selectedTrace.spans.find((s) => s.spanId === selectedSpanId);
+    if (!selectedTrace?.spans || selectedTrace.spans.length === 0) return null;
+    if (!selectedSpanId) return selectedTrace.spans[0];
+    return selectedTrace.spans.find((s) => s.spanId === selectedSpanId) || selectedTrace.spans[0];
   }, [selectedTrace, selectedSpanId]);
 
-  // Service map data transformation
+  const hasOnlyServerSpans = useMemo(() => {
+    if (!selectedTrace?.spans || selectedTrace.spans.length === 0) return false;
+    return selectedTrace.spans.every((s) => s.kind === 'server');
+  }, [selectedTrace]);
+
+  const spanRows = useMemo(() => {
+    if (!selectedTrace?.spans) return [];
+
+    const q = spanFilter.trim().toLowerCase();
+    const rows = selectedTrace.spans.filter((s) => {
+      if (!q) return true;
+      return (
+        s.operationName.toLowerCase().includes(q)
+        || s.serviceName.toLowerCase().includes(q)
+        || s.status.toLowerCase().includes(q)
+        || s.kind.toLowerCase().includes(q)
+        || s.traceId.toLowerCase().includes(q)
+        || s.spanId.toLowerCase().includes(q)
+      );
+    });
+
+    return rows.sort((a, b) => {
+      const dir = sortDir === 'asc' ? 1 : -1;
+
+      if (sortBy === 'duration') return (a.duration - b.duration) * dir;
+      if (sortBy === 'startTime') return (new Date(a.startTime).getTime() - new Date(b.startTime).getTime()) * dir;
+
+      const left = String(a[sortBy] ?? '').toLowerCase();
+      const right = String(b[sortBy] ?? '').toLowerCase();
+      return left.localeCompare(right) * dir;
+    });
+  }, [selectedTrace, spanFilter, sortBy, sortDir]);
+
   const serviceMapNodes = useMemo(() => {
     if (!serviceMapData?.nodes) return [];
     return serviceMapData.nodes.map((n) => ({
       id: n.id,
       name: n.name,
-      callCount: n.metrics?.requestRate || 0,
-      avgDuration: n.metrics?.avgLatency || 0,
-      errorRate: n.metrics?.errorRate || 0,
+      callCount: n.callCount || 0,
+      avgDuration: n.avgDuration || 0,
+      errorRate: n.errorRate || 0,
     }));
   }, [serviceMapData]);
 
@@ -341,20 +457,17 @@ export default function TraceExplorerPage() {
     return serviceMapData.edges.map((e) => ({
       source: e.source,
       target: e.target,
-      callCount: e.requestRate || 0,
-      avgDuration: e.avgLatency || 0,
+      callCount: e.callCount || 0,
+      avgDuration: e.avgDuration || 0,
     }));
   }, [serviceMapData]);
 
-  // Error state
   if (isError) {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Trace Explorer</h1>
-          <p className="text-muted-foreground">
-            Distributed trace visualization with service map
-          </p>
+          <p className="text-muted-foreground">Distributed trace visualization with service map</p>
         </div>
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
           <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
@@ -375,13 +488,10 @@ export default function TraceExplorerPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Trace Explorer</h1>
-          <p className="text-muted-foreground">
-            Distributed trace visualization with service map
-          </p>
+          <p className="text-muted-foreground">Distributed trace visualization with service map</p>
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
@@ -389,7 +499,6 @@ export default function TraceExplorerPage() {
         </div>
       </div>
 
-      {/* Summary Stats */}
       {summary && (
         <div className="grid gap-4 md:grid-cols-4">
           <div className="rounded-lg border bg-card p-4">
@@ -411,16 +520,15 @@ export default function TraceExplorerPage() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-4">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search traces..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full rounded-md border border-input bg-background py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
 
@@ -453,8 +561,25 @@ export default function TraceExplorerPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Timer className="h-4 w-4 text-muted-foreground" />
+          <ThemedSelect
+            value={timeRange}
+            onValueChange={(val) => setTimeRange(val as typeof timeRange)}
+            options={[
+              { value: '15m', label: 'Last 15m' },
+              { value: '1h', label: 'Last 1h' },
+              { value: '6h', label: 'Last 6h' },
+              { value: '24h', label: 'Last 24h' },
+              { value: '7d', label: 'Last 7d' },
+              { value: 'all', label: 'All time' },
+            ]}
+            className="text-sm"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          <div className="flex rounded-md border border-input overflow-hidden">
+          <div className="flex overflow-hidden rounded-md border border-input">
             {(['all', 'ok', 'error'] as const).map((status) => (
               <button
                 key={status}
@@ -486,15 +611,24 @@ export default function TraceExplorerPage() {
         </button>
       </div>
 
-      {/* Service Map */}
       {showServiceMap && (
         <div className="rounded-lg border bg-card p-4">
-          <h3 className="text-lg font-semibold mb-4">Service Dependency Map</h3>
-          <ServiceMap serviceNodes={serviceMapNodes} serviceEdges={serviceMapEdges} />
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Service Dependency Map</h3>
+            <p className="text-xs text-muted-foreground">Computed from current filters and selected time range</p>
+          </div>
+          {isServiceMapLoading ? (
+            <div className="flex h-[300px] items-center justify-center text-muted-foreground">Computing service map...</div>
+          ) : serviceMapNodes.length === 0 ? (
+            <div className="flex h-[300px] items-center justify-center text-muted-foreground">
+              No service-map data for the current filters
+            </div>
+          ) : (
+            <ServiceMap serviceNodes={serviceMapNodes} serviceEdges={serviceMapEdges} />
+          )}
         </div>
       )}
 
-      {/* Main Content */}
       {isLoading ? (
         <div className="grid gap-6 lg:grid-cols-3">
           <SkeletonCard className="h-[600px]" />
@@ -507,22 +641,29 @@ export default function TraceExplorerPage() {
           <GitBranch className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-semibold">No traces found</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            {searchQuery || serviceFilter
+            {searchQuery || serviceFilter || sourceFilter
               ? 'Try adjusting your search or filter criteria.'
               : 'No distributed traces have been collected yet.'}
           </p>
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Trace List */}
-          <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+          <div className="max-h-[700px] space-y-3 overflow-y-auto pr-2">
             {filteredTraces.map((trace) => {
               const id = trace.traceId || trace.trace_id || '';
+
+              const sourceLabel = trace.trace_source || 'unknown';
+              const endpointLabel = selectedTraceId === id && selectedTrace ? selectedTrace.endpoint : 'unknown';
+              const containerLabel = selectedTraceId === id && selectedTrace ? selectedTrace.container : 'unknown';
+
               return (
                 <TraceListItem
                   key={id}
                   trace={trace}
                   isSelected={selectedTraceId === id}
+                  sourceLabel={sourceLabel}
+                  endpointLabel={endpointLabel}
+                  containerLabel={containerLabel}
                   onClick={() => {
                     setSelectedTraceId(id);
                     setSelectedSpanId(null);
@@ -532,11 +673,9 @@ export default function TraceExplorerPage() {
             })}
           </div>
 
-          {/* Trace Detail */}
           <div className="lg:col-span-2">
             {selectedTraceId && selectedTrace ? (
               <div className="rounded-lg border bg-card">
-                {/* Trace Header */}
                 <div className="border-b p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -545,90 +684,238 @@ export default function TraceExplorerPage() {
                     </div>
                     <StatusBadge status={selectedTrace.status} />
                   </div>
-                  <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                     <span>{formatDuration(selectedTrace.duration)}</span>
                     <span>{selectedTrace.spans?.length || 0} spans</span>
                     <span>{selectedTrace.services?.length || 0} services</span>
                     <span>{formatDate(selectedTrace.startTime)}</span>
                   </div>
-                </div>
-
-                {/* Span Timeline */}
-                <div className="p-4">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-3">Span Timeline</h4>
-                  <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                    {spanTree.map(({ span, depth }) => (
-                      <SpanBar
-                        key={span.spanId}
-                        span={span}
-                        traceStartTime={new Date(selectedTrace.startTime).getTime()}
-                        traceDuration={selectedTrace.duration}
-                        depth={depth}
-                        isSelected={selectedSpanId === span.spanId}
-                        onClick={() => setSelectedSpanId(span.spanId)}
-                      />
-                    ))}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="rounded border bg-muted/40 px-1.5 py-0.5">source: {selectedTrace.source}</span>
+                    <span className="rounded border bg-muted/40 px-1.5 py-0.5">endpoint: {selectedTrace.endpoint}</span>
+                    <span className="rounded border bg-muted/40 px-1.5 py-0.5">container: {selectedTrace.container}</span>
                   </div>
                 </div>
 
-                {/* Span Details */}
-                {selectedSpan && (
-                  <div className="border-t p-4">
-                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Span Details</h4>
-                    <div className="space-y-3">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Service</p>
-                          <p className="font-medium">{selectedSpan.serviceName}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Operation</p>
-                          <p className="font-medium">{selectedSpan.operationName}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Duration</p>
-                          <p className="font-medium">{formatDuration(selectedSpan.duration)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Status</p>
-                          <StatusBadge status={selectedSpan.status} />
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Span ID</p>
-                          <p className="font-mono text-xs">{selectedSpan.spanId}</p>
-                        </div>
-                        {selectedSpan.parentSpanId && (
+                <div className="grid gap-0 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+                  <div className="p-4">
+                    <h4 className="mb-3 text-sm font-medium text-muted-foreground">Span Timeline</h4>
+                    <div className="max-h-[320px] space-y-1 overflow-y-auto">
+                      {spanTree.map(({ span, depth }) => (
+                        <SpanBar
+                          key={span.spanId}
+                          span={span}
+                          traceStartTime={new Date(selectedTrace.startTime).getTime()}
+                          traceDuration={selectedTrace.duration}
+                          depth={depth}
+                          isSelected={selectedSpanId === span.spanId}
+                          onClick={() => setSelectedSpanId(span.spanId)}
+                        />
+                      ))}
+                    </div>
+
+                    {hasOnlyServerSpans && (
+                      <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                        <div className="flex items-start gap-2">
+                          <Info className="mt-0.5 h-4 w-4 text-amber-500" />
                           <div>
-                            <p className="text-xs text-muted-foreground">Parent Span</p>
-                            <p className="font-mono text-xs">{selectedSpan.parentSpanId}</p>
+                            <p className="font-medium">Missing client span detected</p>
+                            <p className="text-muted-foreground">
+                              eBPF/Beyla often instruments only the server process for this trace. Short-lived clients like curl loops may not appear as stable client services.
+                            </p>
+                            <p className="mt-1 text-muted-foreground">
+                              Hint: instrument a long-running client process (or another service) and verify OTLP export on both source and destination.
+                            </p>
                           </div>
-                        )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-6">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <h4 className="text-sm font-medium text-muted-foreground">Raw Spans</h4>
+                        <div className="relative w-full max-w-sm">
+                          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            type="text"
+                            placeholder="Filter spans..."
+                            value={spanFilter}
+                            onChange={(e) => setSpanFilter(e.target.value)}
+                            className="w-full rounded-md border border-input bg-background py-1.5 pl-9 pr-3 text-xs"
+                          />
+                        </div>
                       </div>
 
-                      {selectedSpan.attributes && Object.keys(selectedSpan.attributes).length > 0 && (
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-2">Attributes</p>
-                          <div className="rounded-md bg-muted/50 p-3 font-mono text-xs">
-                            {Object.entries(selectedSpan.attributes).map(([key, value]) => (
-                              <div key={key} className="flex gap-2">
-                                <span className="text-muted-foreground">{key}:</span>
-                                <span>{String(value)}</span>
-                              </div>
+                      <div className="overflow-x-auto rounded-md border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-muted/40 text-muted-foreground">
+                            <tr>
+                              {[
+                                { id: 'startTime', label: 'Timestamp' },
+                                { id: 'serviceName', label: 'Service' },
+                                { id: 'operationName', label: 'Span Name' },
+                                { id: 'kind', label: 'Kind' },
+                                { id: 'status', label: 'Status' },
+                                { id: 'duration', label: 'Duration' },
+                              ].map((col) => (
+                                <th key={col.id} className="px-3 py-2">
+                                  <button
+                                    className="inline-flex items-center gap-1 hover:text-foreground"
+                                    onClick={() => {
+                                      if (sortBy === col.id) {
+                                        setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+                                      } else {
+                                        setSortBy(col.id as typeof sortBy);
+                                        setSortDir('desc');
+                                      }
+                                    }}
+                                  >
+                                    {col.label}
+                                    <ArrowUpDown className="h-3 w-3" />
+                                  </button>
+                                </th>
+                              ))}
+                              <th className="px-3 py-2">Trace / Span</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {spanRows.map((span) => (
+                              <tr
+                                key={span.spanId}
+                                onClick={() => setSelectedSpanId(span.spanId)}
+                                className={cn(
+                                  'cursor-pointer border-t hover:bg-muted/30',
+                                  selectedSpanId === span.spanId && 'bg-primary/10'
+                                )}
+                              >
+                                <td className="px-3 py-2 whitespace-nowrap">{formatDate(span.startTime)}</td>
+                                <td className="px-3 py-2">{span.serviceName}</td>
+                                <td className="px-3 py-2">{span.operationName}</td>
+                                <td className="px-3 py-2">{span.kind}</td>
+                                <td className="px-3 py-2">{span.status}</td>
+                                <td className="px-3 py-2">{formatDuration(span.duration)}</td>
+                                <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
+                                  <div>{span.traceId.slice(0, 14)}</div>
+                                  <div>{span.spanId.slice(0, 14)}</div>
+                                </td>
+                              </tr>
                             ))}
-                          </div>
-                        </div>
-                      )}
+                            {spanRows.length === 0 && (
+                              <tr>
+                                <td className="px-3 py-5 text-center text-muted-foreground" colSpan={7}>
+                                  No spans match this filter
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
-                )}
+
+                  <div className="border-t p-4 xl:border-l xl:border-t-0">
+                    <h4 className="mb-3 text-sm font-medium text-muted-foreground">Trace Details Drawer</h4>
+                    {selectedSpan ? (
+                      <div className="space-y-4">
+                        <div className="grid gap-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Trace ID</p>
+                            <p className="font-mono text-xs break-all">{selectedSpan.traceId}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Span ID</p>
+                            <p className="font-mono text-xs break-all">{selectedSpan.spanId}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Parent Span ID</p>
+                            <p className="font-mono text-xs break-all">{selectedSpan.parentSpanId || 'none'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Service</p>
+                            <p className="font-medium">{selectedSpan.serviceName}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Namespace</p>
+                              <p className="text-sm">{selectedSpan.serviceNamespace}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Instance</p>
+                              <p className="text-sm">{selectedSpan.serviceInstance}</p>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Span</p>
+                            <p className="font-medium">{selectedSpan.operationName}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Kind</p>
+                              <p className="text-sm">{selectedSpan.kind}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Status</p>
+                              <StatusBadge status={selectedSpan.status} />
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Start / End</p>
+                            <p className="text-sm">{formatDate(selectedSpan.startTime)} / {selectedSpan.endTime ? formatDate(selectedSpan.endTime) : 'unknown'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Duration</p>
+                            <p className="text-sm">{formatDuration(selectedSpan.duration)}</p>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                            <div className="inline-flex items-center gap-1 rounded border bg-muted/40 px-1.5 py-0.5 text-[11px]">
+                              <Rows className="h-3 w-3" /> source: {selectedSpan.source}
+                            </div>
+                            <div className="inline-flex items-center gap-1 rounded border bg-muted/40 px-1.5 py-0.5 text-[11px]">
+                              <Server className="h-3 w-3" /> endpoint: {selectedSpan.endpoint}
+                            </div>
+                            <div className="inline-flex items-center gap-1 rounded border bg-muted/40 px-1.5 py-0.5 text-[11px]">
+                              <Box className="h-3 w-3" /> container: {selectedSpan.container}
+                            </div>
+                          </div>
+                        </div>
+
+                        <details className="rounded-md border p-2" open>
+                          <summary className="cursor-pointer text-xs font-medium">Raw span attributes JSON</summary>
+                          <pre className="mt-2 overflow-auto rounded bg-muted/40 p-2 text-[11px]">
+                            {JSON.stringify(selectedSpan.rawAttributes, null, 2)}
+                          </pre>
+                        </details>
+
+                        <details className="rounded-md border p-2" open>
+                          <summary className="cursor-pointer text-xs font-medium">Resource attributes JSON</summary>
+                          <pre className="mt-2 overflow-auto rounded bg-muted/40 p-2 text-[11px]">
+                            {JSON.stringify(selectedSpan.resourceAttributes, null, 2)}
+                          </pre>
+                        </details>
+
+                        <details className="rounded-md border p-2">
+                          <summary className="cursor-pointer text-xs font-medium">Span events JSON</summary>
+                          <pre className="mt-2 overflow-auto rounded bg-muted/40 p-2 text-[11px]">
+                            {JSON.stringify((selectedSpan.rawAttributes.events ?? []), null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                    ) : (
+                      <div className="flex h-[320px] items-center justify-center rounded-md border border-dashed bg-muted/20 text-center">
+                        <div>
+                          <ChevronRight className="mx-auto h-8 w-8 text-muted-foreground" />
+                          <p className="mt-2 text-sm text-muted-foreground">Select a span from timeline or table</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="flex h-[600px] items-center justify-center rounded-lg border border-dashed bg-muted/20">
+              <div className="flex h-[700px] items-center justify-center rounded-lg border border-dashed bg-muted/20">
                 <div className="text-center">
                   <ChevronRight className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Select a trace to view details
-                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">Select a trace to view details</p>
                 </div>
               </div>
             )}
