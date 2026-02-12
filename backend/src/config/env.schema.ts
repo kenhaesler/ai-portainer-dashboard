@@ -30,6 +30,8 @@ export const envSchema = z.object({
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
   PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
   PORTAINER_CB_RESET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
+  // Public/external dashboard URL used by remote agents/endpoints to call back into the API.
+  DASHBOARD_EXTERNAL_URL: optionalUrl,
 
   // Ollama / LLM
   OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),
