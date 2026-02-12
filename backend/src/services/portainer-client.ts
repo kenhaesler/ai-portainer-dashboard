@@ -373,6 +373,62 @@ export async function restartContainer(endpointId: number, containerId: string):
   });
 }
 
+export async function pullImage(endpointId: number, image: string, tag = 'latest'): Promise<void> {
+  const path = `/api/endpoints/${endpointId}/docker/images/create?fromImage=${encodeURIComponent(image)}&tag=${encodeURIComponent(tag)}`;
+  const url = buildApiUrl(path);
+  const headers = buildApiHeaders(false);
+
+  const res = await undiciFetch(url, {
+    method: 'POST',
+    headers,
+    dispatcher: getDispatcher(),
+  });
+
+  if (!res.ok) {
+    const errorBody = await readErrorBody(res);
+    throw new PortainerError(
+      errorBody || `Image pull failed: ${res.status}`,
+      classifyError(res.status),
+      res.status,
+    );
+  }
+}
+
+export interface CreateContainerPayload {
+  Image: string;
+  Env?: string[];
+  Labels?: Record<string, string>;
+  HostConfig?: {
+    Privileged?: boolean;
+    PidMode?: string;
+    Init?: boolean;
+    Binds?: string[];
+    RestartPolicy?: { Name: string };
+  };
+}
+
+export async function createContainer(
+  endpointId: number,
+  payload: CreateContainerPayload,
+  name?: string,
+): Promise<{ Id: string; Warnings?: string[] }> {
+  const nameQuery = name ? `?name=${encodeURIComponent(name)}` : '';
+  return portainerFetch<{ Id: string; Warnings?: string[] }>(
+    `/api/endpoints/${endpointId}/docker/containers/create${nameQuery}`,
+    {
+      method: 'POST',
+      body: payload,
+    },
+  );
+}
+
+export async function removeContainer(endpointId: number, containerId: string, force = false): Promise<void> {
+  const query = force ? '?force=true' : '';
+  await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}${query}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function getContainerLogs(
   endpointId: number,
   containerId: string,

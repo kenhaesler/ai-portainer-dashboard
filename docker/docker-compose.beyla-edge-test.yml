@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  beyla:
+    image: grafana/beyla:latest
+    container_name: beyla-edge-test
+    restart: unless-stopped
+    privileged: true
+    pid: "host"
+    init: true
+    environment:
+      # Capture common app ports; adjust for your workloads.
+      BEYLA_OPEN_PORT: "${BEYLA_OPEN_PORT:-80,443,3000-9999}"
+      # Namespace value shown in traces; set to endpoint/node name.
+      BEYLA_SERVICE_NAMESPACE: "${BEYLA_SERVICE_NAMESPACE:-edge-node}"
+      # Dashboard ingest base URL (Beyla appends /v1/traces automatically).
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${DASHBOARD_OTLP_URL}"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
+      OTEL_METRICS_EXPORTER: "none"
+      BEYLA_TRACE_PRINTER: "disabled"
+      # Must match backend TRACES_INGESTION_API_KEY
+      OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=${TRACES_INGESTION_API_KEY}"
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /sys/kernel/security:/sys/kernel/security:ro

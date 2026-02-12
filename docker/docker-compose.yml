@@ -4,12 +4,15 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
     ports:
-      - "3051:3051"
+      # Publish backend API on all host interfaces so edge nodes can reach OTLP ingest.
+      - "0.0.0.0:3051:3051"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       - NODE_ENV=production
       - PORT=3051
+      # Public/LAN URL used by remote endpoints (Beyla) to call back into OTLP ingest.
+      - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:-}
       - SQLITE_PATH=/app/data/dashboard.db
       - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:?DASHBOARD_USERNAME is required}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?DASHBOARD_PASSWORD is required}
