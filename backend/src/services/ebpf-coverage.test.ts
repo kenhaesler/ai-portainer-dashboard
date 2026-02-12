@@ -330,6 +330,33 @@ describe('ebpf-coverage service', () => {
       expect(mockStartContainer).toHaveBeenCalledWith(1, 'beyla-1');
     });
 
+    it('deployBeyla recreates existing container when recreateExisting=true', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'prod-1',
+        Type: 1,
+        URL: 'tcp://prod-1',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'old-beyla', Image: 'grafana/beyla:latest', State: 'running', Labels: {} },
+      ] as any);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'new-beyla' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://192.168.178.20:3051/api/traces/otlp',
+        tracesApiKey: 'abc123',
+        recreateExisting: true,
+      });
+
+      expect(result.status).toBe('deployed');
+      expect(mockStopContainer).toHaveBeenCalledWith(1, 'old-beyla');
+      expect(mockRemoveContainer).toHaveBeenCalledWith(1, 'old-beyla', true);
+      expect(mockCreateContainer).toHaveBeenCalled();
+      expect(mockStartContainer).toHaveBeenCalledWith(1, 'new-beyla');
+    });
+
     it('disableBeyla stops existing container', async () => {
       mockGetEndpoint.mockResolvedValueOnce({
         Id: 1,
@@ -382,6 +409,50 @@ describe('ebpf-coverage service', () => {
       const result = await removeBeylaFromEndpoint(2, true);
       expect(result.status).toBe('removed');
       expect(mockRemoveContainer).toHaveBeenCalledWith(2, 'manual-beyla', true);
+    });
+
+    it('removeBeylaFromEndpoint tolerates 404 when container is already gone', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 2,
+        Name: 'prod-2',
+        Type: 1,
+        URL: 'tcp://prod-2',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers
+        .mockResolvedValueOnce([
+          { Id: 'manual-beyla', Image: 'grafana/beyla:latest', State: 'running', Labels: { owner: 'manual' } },
+        ] as any)
+        .mockResolvedValueOnce([] as any);
+      mockRemoveContainer.mockRejectedValueOnce(new Error('HTTP 404: Not Found'));
+
+      const result = await removeBeylaFromEndpoint(2, true);
+      expect(result.status).toBe('removed');
+    });
+
+    it('deployBeyla tolerates 404 on start when container becomes running', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'prod-1',
+        Type: 1,
+        URL: 'tcp://prod-1',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers
+        .mockResolvedValueOnce([] as any)
+        .mockResolvedValueOnce([
+          { Id: 'beyla-1', Image: 'grafana/beyla:latest', State: 'running', Labels: {} },
+        ] as any);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+      mockStartContainer.mockRejectedValueOnce(new Error('HTTP 404: Not Found'));
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+      expect(result.status).toBe('deployed');
     });
   });
 

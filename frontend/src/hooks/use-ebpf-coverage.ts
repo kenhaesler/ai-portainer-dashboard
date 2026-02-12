@@ -9,6 +9,7 @@ export interface CoverageRecord {
   beyla_enabled?: number;
   beyla_container_id?: string | null;
   beyla_managed?: number;
+  otlp_endpoint_override?: string | null;
   drifted?: boolean;
   exclusion_reason: string | null;
   deployment_profile: string | null;
@@ -125,8 +126,13 @@ export function useVerifyCoverage() {
 export function useDeployBeyla() {
   const queryClient = useQueryClient();
 
-  return useMutation<{ success: boolean; result: { status: string } }, Error, number>({
-    mutationFn: async (endpointId) => api.post(`/api/ebpf/deploy/${endpointId}`),
+  return useMutation<{ success: boolean; result: { status: string } }, Error, { endpointId: number; otlpEndpoint?: string }>({
+    mutationFn: async ({ endpointId, otlpEndpoint }) =>
+      api.post(
+        `/api/ebpf/deploy/${endpointId}`,
+        otlpEndpoint ? { otlpEndpoint } : {},
+        { timeoutMs: 60000 },
+      ),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });
       queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage', 'summary'] });

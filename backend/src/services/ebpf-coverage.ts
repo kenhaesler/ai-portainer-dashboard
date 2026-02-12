@@ -28,6 +28,7 @@ export interface CoverageRecord {
   beyla_enabled: number;
   beyla_container_id: string | null;
   beyla_managed: number;
+  otlp_endpoint_override: string | null;
   drifted: boolean;
   exclusion_reason: string | null;
   deployment_profile: string | null;
@@ -43,6 +44,13 @@ interface DeployBeylaOptions {
   otlpEndpoint: string;
   tracesApiKey: string;
   openPorts?: string;
+  recreateExisting?: boolean;
+}
+
+interface BulkDeployOptions {
+  tracesApiKey: string;
+  openPorts?: string;
+  resolveOtlpEndpoint: (endpointId: number) => Promise<string>;
 }
 
 interface BeylaActionResult {
@@ -62,6 +70,11 @@ const DASHBOARD_MANAGED_BY = 'ai-portainer-dashboard';
 const BEYLA_COMPONENT_LABEL = 'beyla-ebpf';
 const BEYLA_IMAGE = 'grafana/beyla:latest';
 const DEFAULT_BEYLA_OPEN_PORTS = '80,443,3000-9999';
+
+function isNotFoundError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return message.includes('not found') || message.includes('404');
+}
 
 export interface CoverageSummary {
   total: number;
@@ -109,6 +122,23 @@ export function updateCoverageStatus(
   `).run(status, reason ?? null, endpointId);
 
   log.info({ endpointId, status, reason }, 'Coverage status updated');
+}
+
+export function getEndpointOtlpOverride(endpointId: number): string | null {
+  const row = prepareStmt(`
+    SELECT otlp_endpoint_override
+    FROM ebpf_coverage
+    WHERE endpoint_id = ?
+  `).get(endpointId) as { otlp_endpoint_override: string | null } | undefined;
+  return row?.otlp_endpoint_override ?? null;
+}
+
+export function setEndpointOtlpOverride(endpointId: number, value: string | null): void {
+  prepareStmt(`
+    UPDATE ebpf_coverage
+    SET otlp_endpoint_override = ?, updated_at = datetime('now')
+    WHERE endpoint_id = ?
+  `).run(value, endpointId);
 }
 
 function isBeylaContainer(container: { Image: string; Labels?: Record<string, string> }): boolean {
@@ -211,8 +241,24 @@ function detectionToCoverageStatus(result: DetectionResult): CoverageStatus {
 export async function deployBeyla(endpointId: number, options: DeployBeylaOptions): Promise<BeylaActionResult> {
   const endpoint = await getEndpoint(endpointId);
   const existing = await findBeylaContainer(endpointId);
+  const shouldRecreate = options.recreateExisting === true;
 
-  if (existing?.running) {
+  if (existing && shouldRecreate) {
+    if (existing.running) {
+      try {
+        await stopContainer(endpointId, existing.containerId);
+      } catch (err) {
+        if (!isNotFoundError(err)) throw err;
+      }
+    }
+    try {
+      await removeContainer(endpointId, existing.containerId, true);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+    }
+  }
+
+  if (!shouldRecreate && existing?.running) {
     updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
       beylaEnabled: true,
       containerId: existing.containerId,
@@ -226,8 +272,14 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     };
   }
 
-  if (existing && !existing.running) {
-    await startContainer(endpointId, existing.containerId);
+  if (!shouldRecreate && existing && !existing.running) {
+    try {
+      await startContainer(endpointId, existing.containerId);
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+      const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
+      if (postCheck !== 'deployed') throw err;
+    }
     updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
       beylaEnabled: true,
       containerId: existing.containerId,
@@ -280,7 +332,13 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     `beyla-${endpointId}`,
   );
 
-  await startContainer(endpointId, created.Id);
+  try {
+    await startContainer(endpointId, created.Id);
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+    const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
+    if (postCheck !== 'deployed') throw err;
+  }
 
   updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
     beylaEnabled: true,
@@ -367,13 +425,19 @@ export async function removeBeylaFromEndpoint(endpointId: number, force = false)
     try {
       await stopContainer(endpointId, existing.containerId);
     } catch (err) {
-      if (!force) {
+      if (!force && !isNotFoundError(err)) {
         throw err;
       }
     }
   }
 
-  await removeContainer(endpointId, existing.containerId, force);
+  try {
+    await removeContainer(endpointId, existing.containerId, force);
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
+    const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
+    if (postCheck !== 'not_found') throw err;
+  }
 
   updateLifecycleCoverage(endpointId, endpoint.Name, 'not_deployed', {
     beylaEnabled: false,
@@ -389,11 +453,16 @@ export async function removeBeylaFromEndpoint(endpointId: number, force = false)
   };
 }
 
-export async function deployBeylaBulk(endpointIds: number[], options: DeployBeylaOptions): Promise<BulkActionItemResult[]> {
+export async function deployBeylaBulk(endpointIds: number[], options: BulkDeployOptions): Promise<BulkActionItemResult[]> {
   const results = await Promise.all(
     endpointIds.map(async (endpointId) => {
       try {
-        const result = await deployBeyla(endpointId, options);
+        const endpointSpecificOtlp = await options.resolveOtlpEndpoint(endpointId);
+        const result = await deployBeyla(endpointId, {
+          otlpEndpoint: endpointSpecificOtlp,
+          tracesApiKey: options.tracesApiKey,
+          openPorts: options.openPorts,
+        });
         return { endpointId, success: true, message: result.status };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown deployment failure';

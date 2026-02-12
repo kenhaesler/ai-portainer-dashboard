@@ -203,12 +203,13 @@ describe('EbpfCoveragePage', () => {
     expect(verifyButtons.length).toBe(6);
   });
 
-  it('renders lifecycle action buttons based on endpoint status', () => {
+  it('shows lifecycle action buttons without selecting rows', () => {
     renderWithProviders(<EbpfCoveragePage />);
-    expect(screen.getByTestId('disable-btn')).toBeTruthy();
-    expect(screen.getByTestId('enable-btn')).toBeTruthy();
-    expect(screen.getByTestId('deploy-btn')).toBeTruthy();
-    expect(screen.getAllByTestId('remove-btn').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByTestId('disable-btn').length).toBe(6);
+    expect(screen.getAllByTestId('enable-btn').length).toBe(6);
+    // deploy shown for non-deployed-ish rows, remove shown for deployed/failed rows
+    expect(screen.getAllByTestId('deploy-btn').length).toBe(4);
+    expect(screen.getAllByTestId('remove-btn').length).toBe(2);
   });
 
   it('renders table headers', () => {

@@ -2,6 +2,7 @@ import {
   Radio,
   RefreshCw,
   CheckCircle2,
+  Loader2,
   AlertTriangle,
   Server,
   ShieldCheck,
@@ -10,6 +11,8 @@ import {
   Unplug,
   Ban,
 } from 'lucide-react';
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   useEbpfCoverage,
   useEbpfCoverageSummary,
@@ -117,7 +120,19 @@ function SummaryBar() {
   );
 }
 
-function CoverageRow({ record }: { record: CoverageRecord }) {
+function CoverageRow({
+  record,
+}: {
+  record: CoverageRecord;
+}) {
+  const [pendingAction, setPendingAction] = useState<null | {
+    action: 'deploy' | 'disable' | 'enable' | 'remove';
+    title: string;
+    description: string;
+    destructive?: boolean;
+  }>(null);
+  const [deployOtlpEndpoint, setDeployOtlpEndpoint] = useState(record.otlp_endpoint_override || '');
+
   const verifyMutation = useVerifyCoverage();
   const deployMutation = useDeployBeyla();
   const disableMutation = useDisableBeyla();
@@ -131,154 +146,203 @@ function CoverageRow({ record }: { record: CoverageRecord }) {
     enableMutation.isPending ||
     removeMutation.isPending;
 
-  const confirmAndRun = (action: 'deploy' | 'disable' | 'enable' | 'remove') => {
+  const openActionDialog = (action: 'deploy' | 'disable' | 'enable' | 'remove') => {
     if (action === 'deploy') {
-      const ok = window.confirm(
-        `Deploy Beyla to ${record.endpoint_name}?\n\n` +
-        'This will create/start a privileged grafana/beyla container.\n' +
-        'OTLP endpoint: derived from current dashboard URL\n' +
-        'Ports: 80,443,3000-9999',
-      );
-      if (ok) deployMutation.mutate(record.endpoint_id);
+      setPendingAction({
+        action: 'deploy',
+        title: `Deploy Beyla to ${record.endpoint_name}?`,
+        description:
+          'This creates/starts a privileged grafana/beyla container with host PID and required kernel mounts. ' +
+          'Enter only dashboard IP/hostname. The system automatically builds /api/traces/otlp for you.',
+      });
+      const existing = record.otlp_endpoint_override || '';
+      const hostOnly = existing
+        .replace(/^https?:\/\//, '')
+        .replace(/\/api\/traces\/otlp$/, '')
+        .replace(/\/$/, '');
+      setDeployOtlpEndpoint(hostOnly);
       return;
     }
 
     if (action === 'disable') {
-      const ok = window.confirm(
-        `Disable Beyla on ${record.endpoint_name}?\n\n` +
-        'This will stop the existing Beyla container but keep it for later re-enable.',
-      );
-      if (ok) disableMutation.mutate(record.endpoint_id);
+      setPendingAction({
+        action: 'disable',
+        title: `Disable Beyla on ${record.endpoint_name}?`,
+        description: 'This stops the existing Beyla container but keeps it for quick re-enable.',
+      });
       return;
     }
 
     if (action === 'enable') {
-      const ok = window.confirm(
-        `Enable Beyla on ${record.endpoint_name}?\n\n` +
-        'This will start the existing Beyla container.',
-      );
-      if (ok) enableMutation.mutate(record.endpoint_id);
+      setPendingAction({
+        action: 'enable',
+        title: `Enable Beyla on ${record.endpoint_name}?`,
+        description: 'This starts the existing Beyla container on this endpoint.',
+      });
       return;
     }
 
-    const ok = window.confirm(
-      `Remove Beyla from ${record.endpoint_name}?\n\n` +
-      'This will stop and remove the Beyla container from this endpoint.',
-    );
-    if (ok) removeMutation.mutate({ endpointId: record.endpoint_id, force: true });
+    setPendingAction({
+      action: 'remove',
+      title: `Remove Beyla from ${record.endpoint_name}?`,
+      description: 'This stops and removes the Beyla container from this endpoint.',
+      destructive: true,
+    });
   };
 
-  const actionButtons = (() => {
-    if (record.status === 'not_deployed' || record.drifted) {
-      return (
-        <button
-          onClick={() => confirmAndRun('deploy')}
-          disabled={mutationPending}
-          className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-          data-testid="deploy-btn"
-        >
-          Deploy
-        </button>
-      );
+  const runPendingAction = () => {
+    if (!pendingAction) return;
+    if (pendingAction.action === 'deploy') {
+      deployMutation.mutate({
+        endpointId: record.endpoint_id,
+        otlpEndpoint: deployOtlpEndpoint.trim() || undefined,
+      });
     }
+    if (pendingAction.action === 'disable') disableMutation.mutate(record.endpoint_id);
+    if (pendingAction.action === 'enable') enableMutation.mutate(record.endpoint_id);
+    if (pendingAction.action === 'remove') removeMutation.mutate({ endpointId: record.endpoint_id, force: true });
+    setPendingAction(null);
+  };
 
-    if (record.status === 'deployed') {
-      return (
-        <>
-          <button
-            onClick={() => confirmAndRun('disable')}
-            disabled={mutationPending}
-            className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-            data-testid="disable-btn"
-          >
-            Disable
-          </button>
-          <button
-            onClick={() => confirmAndRun('remove')}
-            disabled={mutationPending}
-            className="rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
-            data-testid="remove-btn"
-          >
-            Remove
-          </button>
-        </>
-      );
-    }
-
-    if (record.status === 'failed') {
-      return (
-        <>
-          <button
-            onClick={() => confirmAndRun('enable')}
-            disabled={mutationPending}
-            className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-            data-testid="enable-btn"
-          >
-            Enable
-          </button>
-          <button
-            onClick={() => confirmAndRun('remove')}
-            disabled={mutationPending}
-            className="rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
-            data-testid="remove-btn"
-          >
-            Remove
-          </button>
-        </>
-      );
-    }
-
-    return null;
-  })();
+  const canDisable = record.status === 'deployed';
+  const canEnable = record.status === 'failed';
+  const showRemoveToggle = record.status === 'deployed' || record.status === 'failed';
+  const canDeploy = !showRemoveToggle && record.status !== 'incompatible';
 
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <StatusIcon status={record.status} />
-          <span className="font-medium">{record.endpoint_name}</span>
-          <span className="text-xs text-muted-foreground">(ID: {record.endpoint_id})</span>
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex flex-col gap-1">
-          <StatusBadge status={record.status} label={STATUS_LABELS[record.status]} />
-          {hint && (
-            <span className="text-xs text-muted-foreground" data-testid="status-hint">
-              {hint}
-            </span>
-          )}
-          {record.status === 'excluded' && record.exclusion_reason && (
-            <span className="text-xs text-muted-foreground">
-              {record.exclusion_reason}
-            </span>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">
-        {formatDate(record.last_trace_at)}
-      </td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">
-        {formatDate(record.last_verified_at)}
-      </td>
-      <td className="px-4 py-3">
-        <button
-          onClick={() => verifyMutation.mutate(record.endpoint_id)}
-          disabled={mutationPending || record.status === 'incompatible'}
-          className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-          data-testid="verify-btn"
-          title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
-        >
-          <CheckCircle2 className="h-3 w-3" />
-          Verify
-        </button>
-        {actionButtons && (
-          <div className="mt-2 flex items-center gap-2">
-            {actionButtons}
+    <>
+      <tr
+        className="border-b border-border last:border-0 transition-colors hover:bg-muted/50"
+        data-testid="coverage-row"
+      >
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <StatusIcon status={record.status} />
+            <span className="font-medium">{record.endpoint_name}</span>
+            <span className="text-xs text-muted-foreground">(ID: {record.endpoint_id})</span>
           </div>
-        )}
-      </td>
-    </tr>
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex flex-col gap-1">
+            <StatusBadge status={record.status} label={STATUS_LABELS[record.status]} />
+            {hint && (
+              <span className="text-xs text-muted-foreground" data-testid="status-hint">
+                {hint}
+              </span>
+            )}
+            {record.status === 'excluded' && record.exclusion_reason && (
+              <span className="text-xs text-muted-foreground">
+                {record.exclusion_reason}
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-3 text-sm text-muted-foreground">
+          {formatDate(record.last_trace_at)}
+        </td>
+        <td className="px-4 py-3 text-sm text-muted-foreground">
+          {formatDate(record.last_verified_at)}
+        </td>
+        <td className="px-4 py-3">
+          <button
+            onClick={() => verifyMutation.mutate(record.endpoint_id)}
+            disabled={mutationPending || record.status === 'incompatible'}
+            className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            data-testid="verify-btn"
+            title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            Verify
+          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => openActionDialog('disable')}
+              disabled={mutationPending || !canDisable}
+              className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              data-testid="disable-btn"
+            >
+              Disable
+            </button>
+            <button
+              onClick={() => openActionDialog('enable')}
+              disabled={mutationPending || !canEnable}
+              className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              data-testid="enable-btn"
+            >
+              Enable
+            </button>
+            {showRemoveToggle ? (
+              <button
+                onClick={() => openActionDialog('remove')}
+                disabled={mutationPending}
+                className="rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+                data-testid="remove-btn"
+              >
+                Remove
+              </button>
+            ) : (
+              <button
+                onClick={() => openActionDialog('deploy')}
+                disabled={mutationPending || !canDeploy}
+                className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                data-testid="deploy-btn"
+              >
+                Deploy
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {pendingAction && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="ebpf-action-dialog">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setPendingAction(null)} />
+          <div className="relative z-50 w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
+            <h3 className="text-lg font-semibold">{pendingAction.title}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">{pendingAction.description}</p>
+            {pendingAction.action === 'deploy' && (
+              <div className="mt-4 space-y-2">
+                <label htmlFor={`otlp-endpoint-${record.endpoint_id}`} className="block text-xs font-semibold text-muted-foreground">
+                  Dashboard IP/Hostname (optional)
+                </label>
+                <input
+                  id={`otlp-endpoint-${record.endpoint_id}`}
+                  type="text"
+                  placeholder="192.168.178.20"
+                  value={deployOtlpEndpoint}
+                  onChange={(e) => setDeployOtlpEndpoint(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  data-testid="deploy-otlp-input"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Auto format: <code>http://&lt;value&gt;:3051/api/traces/otlp</code>. Leave empty for default routing.
+                </p>
+              </div>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setPendingAction(null)}
+                disabled={mutationPending}
+                className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runPendingAction}
+                disabled={mutationPending}
+                className={`rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+                  pendingAction.destructive
+                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                }`}
+              >
+                {mutationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -338,7 +402,10 @@ export default function EbpfCoveragePage() {
             <tbody>
               {data?.coverage && data.coverage.length > 0 ? (
                 data.coverage.map((record) => (
-                  <CoverageRow key={record.endpoint_id} record={record} />
+                  <CoverageRow
+                    key={record.endpoint_id}
+                    record={record}
+                  />
                 ))
               ) : (
                 <tr>

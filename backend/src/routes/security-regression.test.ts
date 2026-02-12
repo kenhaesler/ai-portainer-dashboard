@@ -286,6 +286,8 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   removeBeylaFromEndpoint: vi.fn().mockResolvedValue(undefined),
   deployBeylaBulk: vi.fn().mockResolvedValue([]),
   removeBeylaBulk: vi.fn().mockResolvedValue([]),
+  getEndpointOtlpOverride: vi.fn(() => null),
+  setEndpointOtlpOverride: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../services/mcp-manager.js', () => ({
