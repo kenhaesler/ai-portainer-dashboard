@@ -307,6 +307,11 @@ export const ContainerLogsQuerySchema = z.object({
   timestamps: QueryBooleanSchema.default(true),
 });
 
+export const ContainerLogStreamQuerySchema = z.object({
+  since: z.coerce.number().optional(),
+  timestamps: QueryBooleanSchema.default(true),
+});
+
 // ─── Dashboard schemas ──────────────────────────────────────────────
 export const DashboardKpisSchema = z.object({
   endpoints: z.number(),

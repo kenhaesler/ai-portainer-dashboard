@@ -5,10 +5,13 @@ import { containerLogsRoutes } from './container-logs.js';
 
 vi.mock('../services/portainer-client.js', () => ({
   getContainerLogs: vi.fn(),
+  streamContainerLogs: vi.fn(),
+  getContainers: vi.fn(),
 }));
 
 vi.mock('../services/edge-log-fetcher.js', () => ({
   getContainerLogsWithRetry: vi.fn(),
+  waitForTunnel: vi.fn(),
 }));
 
 vi.mock('../services/edge-capability-guard.js', () => ({
@@ -24,6 +27,13 @@ vi.mock('../services/edge-async-log-fetcher.js', () => ({
   cleanupEdgeJob: vi.fn(),
 }));
 
+vi.mock('../services/docker-frame-decoder.js', () => ({
+  IncrementalDockerFrameDecoder: vi.fn().mockImplementation(() => ({
+    push: vi.fn().mockReturnValue([]),
+    drain: vi.fn().mockReturnValue([]),
+  })),
+}));
+
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
     info: vi.fn(),
@@ -34,7 +44,7 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import * as portainer from '../services/portainer-client.js';
-import { getContainerLogsWithRetry } from '../services/edge-log-fetcher.js';
+import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
 import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
   initiateEdgeAsyncLogCollection,
@@ -44,7 +54,9 @@ import {
 } from '../services/edge-async-log-fetcher.js';
 
 const mockGetContainerLogs = vi.mocked(portainer.getContainerLogs);
+const mockStreamContainerLogs = vi.mocked(portainer.streamContainerLogs);
 const mockGetContainerLogsWithRetry = vi.mocked(getContainerLogsWithRetry);
+const mockWaitForTunnel = vi.mocked(waitForTunnel);
 const mockAssertCapability = vi.mocked(assertCapability);
 const mockIsEdgeStandard = vi.mocked(isEdgeStandard);
 const mockIsEdgeAsync = vi.mocked(isEdgeAsync);
@@ -257,6 +269,110 @@ describe('container-logs routes', () => {
     expect(body.jobId).toBe(42);
     expect(body.status).toBe('collecting');
     expect(mockRetrieveLogs).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  // ─── GET /logs/stream SSE tests ──────────────────────────────────
+
+  it('stream returns 422 for Edge Async endpoint', async () => {
+    const app = buildApp();
+    const err = new Error('Edge Async endpoints do not support "realtimeLogs" operations.');
+    (err as any).statusCode = 422;
+    mockAssertCapability.mockRejectedValue(err);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/7/abc123/logs/stream',
+    });
+
+    expect(res.statusCode).toBe(422);
+    const body = JSON.parse(res.body);
+    expect(body.code).toBe('EDGE_ASYNC_UNSUPPORTED');
+    await app.close();
+  });
+
+  it('stream returns 504 when Edge Standard tunnel warmup fails', async () => {
+    const app = buildApp();
+    mockAssertCapability.mockResolvedValue(undefined);
+    mockIsEdgeStandard.mockResolvedValue(true);
+    const tunnelErr = new Error('Edge agent tunnel did not establish within timeout');
+    (tunnelErr as any).status = 504;
+    mockWaitForTunnel.mockRejectedValue(tunnelErr);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/4/def456/logs/stream',
+    });
+
+    expect(res.statusCode).toBe(504);
+    const body = JSON.parse(res.body);
+    expect(body.code).toBe('EDGE_TUNNEL_TIMEOUT');
+    expect(mockWaitForTunnel).toHaveBeenCalledWith(4);
+    await app.close();
+  });
+
+  it('stream returns 502 when streamContainerLogs fails', async () => {
+    const app = buildApp();
+    mockAssertCapability.mockResolvedValue(undefined);
+    mockIsEdgeStandard.mockResolvedValue(false);
+    mockStreamContainerLogs.mockRejectedValue(new Error('Log stream failed: 502'));
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/1/abc123/logs/stream',
+    });
+
+    expect(res.statusCode).toBe(502);
+    const body = JSON.parse(res.body);
+    expect(body.error).toContain('log stream');
+    await app.close();
+  });
+
+  it('stream verifies waitForTunnel called for Edge Standard before streaming', async () => {
+    const app = buildApp();
+    mockAssertCapability.mockResolvedValue(undefined);
+    mockIsEdgeStandard.mockResolvedValue(true);
+    mockWaitForTunnel.mockResolvedValue(undefined);
+    // After tunnel warmup, streamContainerLogs fails — we just need to verify the call order
+    mockStreamContainerLogs.mockRejectedValue(new Error('stream failed'));
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/4/def456/logs/stream',
+    });
+
+    // Should have called waitForTunnel before attempting stream
+    expect(mockWaitForTunnel).toHaveBeenCalledWith(4);
+    expect(mockStreamContainerLogs).toHaveBeenCalled();
+    expect(res.statusCode).toBe(502);
+    await app.close();
+  });
+
+  it('stream opens SSE connection with correct Content-Type', async () => {
+    const app = buildApp();
+    mockAssertCapability.mockResolvedValue(undefined);
+    mockIsEdgeStandard.mockResolvedValue(false);
+
+    // Create a mock readable stream that ends immediately
+    const { Readable } = await import('stream');
+    const mockReadable = new Readable({
+      read() {
+        this.push(null); // Signal end of stream
+      },
+    });
+
+    mockStreamContainerLogs.mockResolvedValue({
+      body: mockReadable as any,
+      abort: vi.fn(),
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/1/abc123/logs/stream',
+    });
+
+    // Hijacked responses return 200 with the SSE content type
+    expect(res.headers['content-type']).toBe('text/event-stream');
     await app.close();
   });
 });

@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Play, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Play, RotateCcw, CheckCircle2, Zap } from 'lucide-react';
 import { useContainerLogs, type ContainerLogsError } from '@/hooks/use-container-logs';
 import { useEdgeAsyncLogs } from '@/hooks/use-edge-async-logs';
+import { useStreamingLogs, type StreamStatus } from '@/hooks/use-streaming-logs';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 
@@ -345,6 +346,38 @@ export function ContainerLogsViewer({
   );
 }
 
+function LiveStatusIndicator({ status, reconnectCount, error }: {
+  status: StreamStatus;
+  reconnectCount: number;
+  error: string | null;
+}) {
+  if (status === 'connecting') {
+    return <span className="text-xs text-blue-600 dark:text-blue-400">Connecting...</span>;
+  }
+  if (status === 'reconnecting') {
+    return (
+      <span className="text-xs text-amber-600 dark:text-amber-400">
+        Reconnecting... ({reconnectCount})
+      </span>
+    );
+  }
+  if (status === 'error' && error) {
+    return <span className="text-xs text-red-600 dark:text-red-400">{error}</span>;
+  }
+  if (status === 'streaming') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+        </span>
+        Live
+      </span>
+    );
+  }
+  return null;
+}
+
 function StandardLogsViewer({
   endpointId,
   containerId,
@@ -356,6 +389,11 @@ function StandardLogsViewer({
   const [autoScroll, setAutoScroll] = useState(true);
   const [showTimestamps, setShowTimestamps] = useState(true);
   const [tailCount, setTailCount] = useState<TailCount>(initialTailCount);
+  const [isLive, setIsLive] = useState(false);
+
+  const streaming = useStreamingLogs(endpointId, containerId, {
+    timestamps: showTimestamps,
+  });
 
   const {
     data: logsData,
@@ -368,22 +406,62 @@ function StandardLogsViewer({
     timestamps: showTimestamps,
   });
 
-  // Parse and filter logs
+  // Turn off live mode when streaming stops or errors
+  useEffect(() => {
+    if (isLive && (streaming.status === 'stopped' || streaming.status === 'error')) {
+      // Keep isLive true for error so user can see the status
+      if (streaming.status === 'stopped') {
+        setIsLive(false);
+      }
+    }
+  }, [isLive, streaming.status]);
+
+  // Parse and filter logs — use streaming lines in live mode
   const displayLogs = useMemo(() => {
+    if (isLive) {
+      const lines = streaming.lines;
+      if (!searchTerm) return lines;
+      const searchLower = searchTerm.toLowerCase();
+      return lines.filter(line => line.toLowerCase().includes(searchLower));
+    }
+
     if (!logsData?.logs) return [];
-
     const lines = logsData.logs.split('\n').filter(line => line.trim());
-
     if (!searchTerm) return lines;
-
     const searchLower = searchTerm.toLowerCase();
     return lines.filter(line => line.toLowerCase().includes(searchLower));
-  }, [logsData, searchTerm]);
+  }, [isLive, streaming.lines, logsData, searchTerm]);
+
+  // Toggle live mode
+  const toggleLive = useCallback(() => {
+    if (isLive) {
+      streaming.stop();
+      setIsLive(false);
+    } else {
+      streaming.clear();
+      streaming.start();
+      setIsLive(true);
+    }
+  }, [isLive, streaming]);
 
   // Download logs
   const handleDownload = () => {
-    if (!logsData?.logs) return;
+    if (isLive) {
+      if (streaming.lines.length === 0) return;
+      const content = streaming.lines.join('\n');
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${containerId.slice(0, 12)}-live-logs.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    }
 
+    if (!logsData?.logs) return;
     const blob = new Blob([logsData.logs], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -395,18 +473,20 @@ function StandardLogsViewer({
     URL.revokeObjectURL(url);
   };
 
-  // Error state — delegate to Edge-specific component
-  if (isError && error) {
+  // Error state — delegate to Edge-specific component (only for batch mode)
+  if (!isLive && isError && error) {
     return <EdgeErrorState error={error} onRetry={() => refetch()} />;
   }
+
+  const hasDownloadableContent = isLive ? streaming.lines.length > 0 : !!logsData;
 
   return (
     <div className="space-y-4">
       {/* Controls */}
       {showControls && (
         <div className="flex items-center gap-4 flex-wrap">
-          {/* Tail Count Selector */}
-          <div className="flex items-center gap-2">
+          {/* Tail Count Selector — disabled in live mode */}
+          <div className={`flex items-center gap-2 ${isLive ? 'opacity-50 pointer-events-none' : ''}`}>
             <label className="text-sm font-medium">
               Tail
             </label>
@@ -433,6 +513,29 @@ function StandardLogsViewer({
               className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
+
+          {/* Live Toggle */}
+          <button
+            onClick={toggleLive}
+            className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+              isLive
+                ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : 'border-input bg-background hover:bg-accent'
+            }`}
+            title={isLive ? 'Stop live streaming' : 'Start live log streaming'}
+          >
+            <Zap className="h-4 w-4" />
+            Live {isLive ? 'ON' : 'OFF'}
+          </button>
+
+          {/* Live Status */}
+          {isLive && (
+            <LiveStatusIndicator
+              status={streaming.status}
+              reconnectCount={streaming.reconnectCount}
+              error={streaming.error}
+            />
+          )}
 
           {/* Auto-scroll Toggle */}
           <button
@@ -463,7 +566,7 @@ function StandardLogsViewer({
           </button>
 
           {/* Download Button */}
-          {logsData && (
+          {hasDownloadableContent && (
             <button
               onClick={handleDownload}
               className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
@@ -475,19 +578,18 @@ function StandardLogsViewer({
           )}
 
           {/* Log Summary */}
-          {logsData && (
-            <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-              <span>
-                {displayLogs.length} {displayLogs.length === 1 ? 'line' : 'lines'}
-                {searchTerm && logsData.logs && ` (filtered from ${logsData.logs.split('\n').filter(l => l.trim()).length})`}
-              </span>
-            </div>
-          )}
+          <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              {displayLogs.length} {displayLogs.length === 1 ? 'line' : 'lines'}
+              {searchTerm && !isLive && logsData?.logs && ` (filtered from ${logsData.logs.split('\n').filter(l => l.trim()).length})`}
+              {searchTerm && isLive && ` (filtered from ${streaming.lines.length})`}
+            </span>
+          </div>
         </div>
       )}
 
       {/* Log Viewer */}
-      {logsLoading ? (
+      {!isLive && logsLoading ? (
         <div className="relative">
           <SkeletonCard className="h-[600px]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -499,12 +601,14 @@ function StandardLogsViewer({
         <div className="rounded-lg border bg-card p-8 text-center">
           <ScrollText className="mx-auto h-10 w-10 text-muted-foreground" />
           <p className="mt-4 font-medium">
-            {searchTerm ? 'No matching logs found' : 'No logs available'}
+            {searchTerm ? 'No matching logs found' : isLive && streaming.status === 'connecting' ? 'Connecting to log stream...' : 'No logs available'}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {searchTerm
               ? 'Try adjusting your search term or clear the filter'
-              : 'This container has not produced any log output'
+              : isLive
+                ? 'Waiting for log output from the container'
+                : 'This container has not produced any log output'
             }
           </p>
         </div>
