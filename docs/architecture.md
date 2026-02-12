@@ -407,7 +407,7 @@ ai-portainer-dashboard/
 │       │   └── setup.ts            #   Metrics (60s), monitoring (5m), cleanup (daily)
 │       ├── db/
 │       │   ├── sqlite.ts           #   Database init (WAL mode)
-│       │   └── migrations/         #   7 SQL migrations
+│       │   └── migrations/         #   SQL migrations (includes trace source + typed OTLP columns)
 │       ├── models/                 # Zod schemas & DB queries
 │       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino + ES transport)
 │       └── plugins/                # Fastify plugins

@@ -78,6 +78,21 @@ describe('Traces Ingest Routes', () => {
         service_name TEXT NOT NULL,
         attributes TEXT DEFAULT '{}',
         trace_source TEXT DEFAULT 'http',
+        http_method TEXT,
+        http_route TEXT,
+        http_status_code INTEGER,
+        service_namespace TEXT,
+        service_instance_id TEXT,
+        service_version TEXT,
+        deployment_environment TEXT,
+        container_id TEXT,
+        container_name TEXT,
+        k8s_namespace TEXT,
+        k8s_pod_name TEXT,
+        k8s_container_name TEXT,
+        server_address TEXT,
+        server_port INTEGER,
+        client_address TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);

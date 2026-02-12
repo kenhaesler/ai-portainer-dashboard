@@ -17,12 +17,21 @@ function insertSpan(span: {
   duration: number;
   service: string;
   source: string;
+  httpMethod?: string | null;
+  httpRoute?: string | null;
+  httpStatusCode?: number | null;
+  serviceNamespace?: string | null;
+  containerName?: string | null;
+  k8sNamespace?: string | null;
 }) {
   db.prepare(`
     INSERT INTO spans (
       id, trace_id, parent_span_id, name, kind, status,
-      start_time, end_time, duration_ms, service_name, attributes, trace_source, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      start_time, end_time, duration_ms, service_name, attributes, trace_source,
+      http_method, http_route, http_status_code,
+      service_namespace, container_name, k8s_namespace,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     span.id,
     span.traceId,
@@ -36,6 +45,12 @@ function insertSpan(span: {
     span.service,
     '{}',
     span.source,
+    span.httpMethod ?? null,
+    span.httpRoute ?? null,
+    span.httpStatusCode ?? null,
+    span.serviceNamespace ?? null,
+    span.containerName ?? null,
+    span.k8sNamespace ?? null,
   );
 }
 
@@ -54,6 +69,21 @@ beforeAll(() => {
       service_name TEXT NOT NULL,
       attributes TEXT DEFAULT '{}',
       trace_source TEXT DEFAULT 'http',
+      http_method TEXT,
+      http_route TEXT,
+      http_status_code INTEGER,
+      service_namespace TEXT,
+      service_instance_id TEXT,
+      service_version TEXT,
+      deployment_environment TEXT,
+      container_id TEXT,
+      container_name TEXT,
+      k8s_namespace TEXT,
+      k8s_pod_name TEXT,
+      k8s_container_name TEXT,
+      server_address TEXT,
+      server_port INTEGER,
+      client_address TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
@@ -86,10 +116,59 @@ describe('traces routes', () => {
     await app.close();
   });
 
-  it('GET /api/traces/service-map uses filtered time range and source', async () => {
+  it('GET /api/traces supports typed OTLP filters', async () => {
     insertSpan({
-      id: 'root-old',
-      traceId: 'trace-old',
+      id: 'typed-ok',
+      traceId: 'trace-typed',
+      name: 'GET /users',
+      kind: 'server',
+      status: 'ok',
+      startTime: '2026-02-12T10:00:00.000Z',
+      duration: 120,
+      service: 'api',
+      source: 'ebpf',
+      httpMethod: 'GET',
+      httpRoute: '/users/:id',
+      httpStatusCode: 200,
+      serviceNamespace: 'prod-eu-1',
+      containerName: 'api-1',
+      k8sNamespace: 'payments',
+    });
+
+    insertSpan({
+      id: 'typed-miss',
+      traceId: 'trace-miss',
+      name: 'POST /users',
+      kind: 'server',
+      status: 'ok',
+      startTime: '2026-02-12T10:01:00.000Z',
+      duration: 180,
+      service: 'api',
+      source: 'ebpf',
+      httpMethod: 'POST',
+      httpStatusCode: 500,
+      serviceNamespace: 'staging',
+      containerName: 'api-2',
+      k8sNamespace: 'ops',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/traces?httpMethod=GET&httpRoute=users&httpRouteMatch=contains&serviceNamespace=prod&serviceNamespaceMatch=contains&containerName=api&containerNameMatch=contains&k8sNamespace=pay&k8sNamespaceMatch=contains',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { traces: Array<{ trace_id: string; http_method: string }> };
+    expect(body.traces).toHaveLength(1);
+    expect(body.traces[0].trace_id).toBe('trace-typed');
+    expect(body.traces[0].http_method).toBe('GET');
+  });
+
+  it('GET /api/traces/service-map uses source + time filters', async () => {
+    insertSpan({
+      id: 'root-http',
+      traceId: 'trace-http',
       name: 'GET /old',
       kind: 'server',
       status: 'ok',
@@ -100,8 +179,8 @@ describe('traces routes', () => {
     });
 
     insertSpan({
-      id: 'root-new',
-      traceId: 'trace-new',
+      id: 'root-ebpf',
+      traceId: 'trace-ebpf',
       name: 'GET /users',
       kind: 'server',
       status: 'ok',
@@ -112,9 +191,9 @@ describe('traces routes', () => {
     });
 
     insertSpan({
-      id: 'child-new',
-      traceId: 'trace-new',
-      parentSpanId: 'root-new',
+      id: 'child-ebpf',
+      traceId: 'trace-ebpf',
+      parentSpanId: 'root-ebpf',
       name: 'SELECT users',
       kind: 'internal',
       status: 'ok',
@@ -144,29 +223,42 @@ describe('traces routes', () => {
     ]);
   });
 
-  it('GET /api/traces/summary uses provided from/to window', async () => {
+  it('GET /api/traces/summary returns source-scoped counters', async () => {
     insertSpan({
-      id: 'sum-1',
-      traceId: 'trace-1',
-      name: 'GET /a',
+      id: 'sum-http',
+      traceId: 'trace-http',
+      name: 'GET /http',
       kind: 'server',
       status: 'ok',
-      startTime: '2026-02-11T10:00:00.000Z',
-      duration: 50,
-      service: 'svc-a',
-      source: 'ebpf',
+      startTime: '2026-02-12T10:00:00.000Z',
+      duration: 120,
+      service: 'gateway',
+      source: 'http',
     });
 
     insertSpan({
-      id: 'sum-2',
-      traceId: 'trace-2',
-      name: 'GET /b',
+      id: 'sum-ebpf',
+      traceId: 'trace-ebpf',
+      name: 'GET /ebpf',
       kind: 'server',
       status: 'error',
-      startTime: '2026-02-12T10:00:00.000Z',
-      duration: 200,
-      service: 'svc-b',
+      startTime: '2026-02-12T10:05:00.000Z',
+      duration: 320,
+      service: 'api',
       source: 'ebpf',
+      httpMethod: 'GET',
+    });
+
+    insertSpan({
+      id: 'sum-scheduler',
+      traceId: 'trace-scheduler',
+      name: 'job:cleanup',
+      kind: 'internal',
+      status: 'ok',
+      startTime: '2026-02-12T10:06:00.000Z',
+      duration: 90,
+      service: 'scheduler',
+      source: 'scheduler',
     });
 
     const response = await app.inject({
@@ -181,12 +273,14 @@ describe('traces routes', () => {
       avgDuration: number;
       errorRate: number;
       services: number;
+      sourceCounts: { http: number; ebpf: number; scheduler: number; unknown: number };
     };
 
-    expect(body.totalTraces).toBe(1);
-    expect(body.avgDuration).toBe(200);
-    expect(body.errorRate).toBe(1);
-    expect(body.services).toBe(1);
+    expect(body.totalTraces).toBe(3);
+    expect(body.avgDuration).toBeCloseTo(176.67, 2);
+    expect(body.errorRate).toBeCloseTo(0.3333, 4);
+    expect(body.services).toBe(3);
+    expect(body.sourceCounts).toEqual({ http: 1, ebpf: 1, scheduler: 1, unknown: 0 });
   });
 });
 

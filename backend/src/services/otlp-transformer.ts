@@ -65,6 +65,26 @@ function getServiceName(resource?: OtlpResourceSpan['resource']): string {
   return attr?.value?.stringValue ?? 'unknown';
 }
 
+function pickString(attrs: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = attrs[key];
+    if (value === undefined || value === null) continue;
+    const asString = String(value).trim();
+    if (asString) return asString;
+  }
+  return null;
+}
+
+function pickInt(attrs: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = attrs[key];
+    if (value === undefined || value === null || value === '') continue;
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) return Math.trunc(asNumber);
+  }
+  return null;
+}
+
 function nanosToIso(nanos: string): string {
   const ms = Number(BigInt(nanos) / BigInt(1_000_000));
   return new Date(ms).toISOString();
@@ -121,6 +141,21 @@ export function transformOtlpToSpans(payload: OtlpExportRequest): SpanInsert[] {
           service_name: serviceName,
           attributes: JSON.stringify(allAttributes),
           trace_source: 'ebpf',
+          http_method: pickString(allAttributes, ['http.method', 'http.request.method']),
+          http_route: pickString(allAttributes, ['http.route', 'url.path', 'http.target']),
+          http_status_code: pickInt(allAttributes, ['http.status_code', 'http.response.status_code']),
+          service_namespace: pickString(allAttributes, ['service.namespace']),
+          service_instance_id: pickString(allAttributes, ['service.instance.id']),
+          service_version: pickString(allAttributes, ['service.version']),
+          deployment_environment: pickString(allAttributes, ['deployment.environment']),
+          container_id: pickString(allAttributes, ['container.id']),
+          container_name: pickString(allAttributes, ['container.name', 'k8s.container.name']),
+          k8s_namespace: pickString(allAttributes, ['k8s.namespace.name']),
+          k8s_pod_name: pickString(allAttributes, ['k8s.pod.name']),
+          k8s_container_name: pickString(allAttributes, ['k8s.container.name']),
+          server_address: pickString(allAttributes, ['server.address', 'net.host.name']),
+          server_port: pickInt(allAttributes, ['server.port', 'net.host.port']),
+          client_address: pickString(allAttributes, ['client.address', 'net.sock.peer.addr']),
         });
       }
     }

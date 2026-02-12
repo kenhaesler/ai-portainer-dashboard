@@ -1,0 +1,22 @@
+ALTER TABLE spans ADD COLUMN http_method TEXT;
+ALTER TABLE spans ADD COLUMN http_route TEXT;
+ALTER TABLE spans ADD COLUMN http_status_code INTEGER;
+ALTER TABLE spans ADD COLUMN service_namespace TEXT;
+ALTER TABLE spans ADD COLUMN service_instance_id TEXT;
+ALTER TABLE spans ADD COLUMN service_version TEXT;
+ALTER TABLE spans ADD COLUMN deployment_environment TEXT;
+ALTER TABLE spans ADD COLUMN container_id TEXT;
+ALTER TABLE spans ADD COLUMN container_name TEXT;
+ALTER TABLE spans ADD COLUMN k8s_namespace TEXT;
+ALTER TABLE spans ADD COLUMN k8s_pod_name TEXT;
+ALTER TABLE spans ADD COLUMN k8s_container_name TEXT;
+ALTER TABLE spans ADD COLUMN server_address TEXT;
+ALTER TABLE spans ADD COLUMN server_port INTEGER;
+ALTER TABLE spans ADD COLUMN client_address TEXT;
+
+CREATE INDEX idx_spans_source_time ON spans(trace_source, start_time);
+CREATE INDEX idx_spans_http_method ON spans(http_method);
+CREATE INDEX idx_spans_http_status_code ON spans(http_status_code);
+CREATE INDEX idx_spans_service_namespace ON spans(service_namespace);
+CREATE INDEX idx_spans_container_name ON spans(container_name);
+CREATE INDEX idx_spans_k8s_namespace ON spans(k8s_namespace);

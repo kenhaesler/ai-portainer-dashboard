@@ -23,7 +23,7 @@ interface Trace {
   status: 'ok' | 'error' | 'unset';
 }
 
-interface TracesOptions {
+export interface TracesOptions {
   from?: string;
   to?: string;
   serviceName?: string;
@@ -31,20 +31,33 @@ interface TracesOptions {
   status?: 'ok' | 'error' | 'unset';
   minDuration?: number;
   limit?: number;
+  httpMethod?: string;
+  httpRoute?: string;
+  httpRouteMatch?: 'exact' | 'contains';
+  httpStatusCode?: number;
+  serviceNamespace?: string;
+  serviceNamespaceMatch?: 'exact' | 'contains';
+  serviceInstanceId?: string;
+  serviceVersion?: string;
+  deploymentEnvironment?: string;
+  containerId?: string;
+  containerName?: string;
+  containerNameMatch?: 'exact' | 'contains';
+  k8sNamespace?: string;
+  k8sNamespaceMatch?: 'exact' | 'contains';
+  k8sPodName?: string;
+  k8sContainerName?: string;
+  serverAddress?: string;
+  serverPort?: number;
+  clientAddress?: string;
 }
 
 interface ServiceMapNode {
   id: string;
   name: string;
-  type?: string;
   callCount?: number;
   avgDuration?: number;
   errorRate?: number;
-  metrics?: {
-    requestRate: number;
-    errorRate: number;
-    avgLatency: number;
-  };
 }
 
 interface ServiceMapEdge {
@@ -52,9 +65,6 @@ interface ServiceMapEdge {
   target: string;
   callCount?: number;
   avgDuration?: number;
-  requestRate?: number;
-  errorRate?: number;
-  avgLatency?: number;
 }
 
 interface ServiceMap {
@@ -67,11 +77,12 @@ interface TraceSummary {
   avgDuration: number;
   errorRate: number;
   services: number;
-  topOperations: Array<{
-    name: string;
-    count: number;
-    avgDuration: number;
-  }>;
+  sourceCounts?: {
+    http: number;
+    ebpf: number;
+    scheduler: number;
+    unknown: number;
+  };
 }
 
 export function useTraces(options?: TracesOptions) {
@@ -102,7 +113,7 @@ export function useServiceMap(options?: TracesOptions) {
   });
 }
 
-export function useTraceSummary(options?: Pick<TracesOptions, 'from' | 'to'>) {
+export function useTraceSummary(options?: Omit<TracesOptions, 'limit'>) {
   return useQuery<TraceSummary>({
     queryKey: ['traces', 'summary', options],
     queryFn: () => api.get<TraceSummary>(
