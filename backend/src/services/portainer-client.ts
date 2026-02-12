@@ -191,6 +191,42 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Build a full Portainer API URL from a path, consistently stripping trailing slashes. */
+export function buildApiUrl(path: string): string {
+  const config = getConfig();
+  const base = config.PORTAINER_API_URL.replace(/\/+$/, '');
+  return `${base}${path}`;
+}
+
+/** Build standard headers for Portainer API requests. */
+export function buildApiHeaders(includeContentType = true): Record<string, string> {
+  const config = getConfig();
+  const headers: Record<string, string> = {};
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (config.PORTAINER_API_KEY) {
+    headers['X-API-Key'] = config.PORTAINER_API_KEY;
+  }
+  return headers;
+}
+
+/** Read error response body from a Portainer API response for diagnostics. */
+async function readErrorBody(res: { text: () => Promise<string> }): Promise<string> {
+  try {
+    const body = await res.text();
+    // Try to extract the message from JSON error responses
+    try {
+      const parsed = JSON.parse(body);
+      return parsed.message || parsed.details || body;
+    } catch {
+      return body;
+    }
+  } catch {
+    return '';
+  }
+}
+
 async function portainerFetch<T>(
   path: string,
   options: {
@@ -217,22 +253,15 @@ async function portainerFetchInner<T>(
     retries?: number;
   } = {},
 ): Promise<T> {
-  const config = getConfig();
   const { method = 'GET', body, timeout = 15000, retries = 3 } = options;
-  const base = config.PORTAINER_API_URL.replace(/\/+$/, '');
-  const url = `${base}${path}`;
+  const url = buildApiUrl(path);
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (config.PORTAINER_API_KEY) {
-        headers['X-API-Key'] = config.PORTAINER_API_KEY;
-      }
+      const headers = buildApiHeaders();
 
       const res = await undiciFetch(url, {
         method,
@@ -358,27 +387,48 @@ export async function getContainerLogs(
   if (options.since) params.set('since', String(options.since));
   if (options.until) params.set('until', String(options.until));
 
-  const config = getConfig();
-  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/containers/${containerId}/logs?${params}`;
+  const path = `/api/endpoints/${endpointId}/docker/containers/${containerId}/logs?${params}`;
+  const url = buildApiUrl(path);
+  const headers = buildApiHeaders();
 
-  const headers: Record<string, string> = {};
-  if (config.PORTAINER_API_KEY) {
-    headers['X-API-Key'] = config.PORTAINER_API_KEY;
-  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await undiciFetch(url, {
+      headers,
+      dispatcher: getDispatcher(),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
 
-  const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
-  if (!res.ok) {
-    if (res.status === 404) {
+    if (!res.ok) {
+      const errorBody = await readErrorBody(res);
+      log.warn(
+        { status: res.status, endpointId, containerId, errorBody },
+        'Container logs fetch failed from Portainer API',
+      );
+
+      if (res.status === 404 || res.status === 502 || res.status === 503) {
+        throw new PortainerError(
+          errorBody || 'Container logs unavailable — Docker daemon on this endpoint may be unreachable',
+          'server',
+          res.status,
+        );
+      }
       throw new PortainerError(
-        'Container logs unavailable — Docker daemon on this endpoint may be unreachable',
-        'server',
-        502,
+        errorBody || `Log fetch failed: ${res.status}`,
+        classifyError(res.status),
+        res.status,
       );
     }
-    throw new PortainerError(`Log fetch failed: ${res.status}`, classifyError(res.status), res.status);
+    const raw = Buffer.from(await res.arrayBuffer());
+    return decodeDockerLogPayload(raw);
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof PortainerError) throw err;
+    const msg = err instanceof Error ? err.message : 'Network error';
+    throw new PortainerError(msg, 'network');
   }
-  const raw = Buffer.from(await res.arrayBuffer());
-  return decodeDockerLogPayload(raw);
 }
 
 /**
@@ -402,13 +452,9 @@ export async function streamContainerLogs(
   });
   if (options.since) params.set('since', String(options.since));
 
-  const config = getConfig();
-  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/containers/${containerId}/logs?${params}`;
-
-  const headers: Record<string, string> = {};
-  if (config.PORTAINER_API_KEY) {
-    headers['X-API-Key'] = config.PORTAINER_API_KEY;
-  }
+  const path = `/api/endpoints/${endpointId}/docker/containers/${containerId}/logs?${params}`;
+  const url = buildApiUrl(path);
+  const headers = buildApiHeaders();
 
   const controller = new AbortController();
   const res = await undiciFetch(url, {
@@ -419,14 +465,24 @@ export async function streamContainerLogs(
 
   if (!res.ok) {
     controller.abort();
-    if (res.status === 404) {
+    const errorBody = await readErrorBody(res);
+    log.warn(
+      { status: res.status, endpointId, containerId, errorBody },
+      'Container log stream failed from Portainer API',
+    );
+
+    if (res.status === 404 || res.status === 502 || res.status === 503) {
       throw new PortainerError(
-        'Container logs unavailable — Docker daemon on this endpoint may be unreachable',
+        errorBody || 'Container logs unavailable — Docker daemon on this endpoint may be unreachable',
         'server',
-        502,
+        res.status,
       );
     }
-    throw new PortainerError(`Log stream failed: ${res.status}`, classifyError(res.status), res.status);
+    throw new PortainerError(
+      errorBody || `Log stream failed: ${res.status}`,
+      classifyError(res.status),
+      res.status,
+    );
   }
 
   if (!res.body) {
@@ -507,15 +563,8 @@ export async function createExec(
 }
 
 export async function startExec(endpointId: number, execId: string): Promise<void> {
-  const config = getConfig();
-  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/exec/${execId}/start`;
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (config.PORTAINER_API_KEY) {
-    headers['X-API-Key'] = config.PORTAINER_API_KEY;
-  }
+  const url = buildApiUrl(`/api/endpoints/${endpointId}/docker/exec/${execId}/start`);
+  const headers = buildApiHeaders();
 
   const res = await undiciFetch(url, {
     method: 'POST',
@@ -525,15 +574,19 @@ export async function startExec(endpointId: number, execId: string): Promise<voi
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    if (res.status === 404) {
+    const errorBody = await readErrorBody(res);
+    if (res.status === 404 || res.status === 502) {
       throw new PortainerError(
-        'Exec failed — Docker daemon on this endpoint may be unreachable',
+        errorBody || 'Exec failed — Docker daemon on this endpoint may be unreachable',
         'server',
-        502,
+        res.status,
       );
     }
-    throw new PortainerError(`Exec start failed: ${res.status} ${body}`.trim(), classifyError(res.status), res.status);
+    throw new PortainerError(
+      errorBody || `Exec start failed: ${res.status}`,
+      classifyError(res.status),
+      res.status,
+    );
   }
 }
 
@@ -551,17 +604,13 @@ export async function getArchive(
   containerId: string,
   containerPath: string,
 ): Promise<Buffer> {
-  const config = getConfig();
-  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/containers/${containerId}/archive?path=${encodeURIComponent(containerPath)}`;
-
-  const headers: Record<string, string> = {};
-  if (config.PORTAINER_API_KEY) {
-    headers['X-API-Key'] = config.PORTAINER_API_KEY;
-  }
+  const url = buildApiUrl(`/api/endpoints/${endpointId}/docker/containers/${containerId}/archive?path=${encodeURIComponent(containerPath)}`);
+  const headers = buildApiHeaders();
 
   const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
   if (!res.ok) {
-    throw new PortainerError(`Archive fetch failed: ${res.status}`, classifyError(res.status), res.status);
+    const errorBody = await readErrorBody(res);
+    throw new PortainerError(errorBody || `Archive fetch failed: ${res.status}`, classifyError(res.status), res.status);
   }
 
   const arrayBuffer = await res.arrayBuffer();
@@ -615,17 +664,13 @@ export async function collectEdgeJobTaskLogs(jobId: number, taskId: string): Pro
 }
 
 export async function getEdgeJobTaskLogs(jobId: number, taskId: string): Promise<string> {
-  const config = getConfig();
-  const url = `${config.PORTAINER_API_URL}/api/edge_jobs/${jobId}/tasks/${taskId}/logs`;
-
-  const headers: Record<string, string> = {};
-  if (config.PORTAINER_API_KEY) {
-    headers['X-API-Key'] = config.PORTAINER_API_KEY;
-  }
+  const url = buildApiUrl(`/api/edge_jobs/${jobId}/tasks/${taskId}/logs`);
+  const headers = buildApiHeaders();
 
   const res = await undiciFetch(url, { headers, dispatcher: getDispatcher() });
   if (!res.ok) {
-    throw new PortainerError(`Edge job task logs fetch failed: ${res.status}`, classifyError(res.status), res.status);
+    const errorBody = await readErrorBody(res);
+    throw new PortainerError(errorBody || `Edge job task logs fetch failed: ${res.status}`, classifyError(res.status), res.status);
   }
   return await res.text();
 }

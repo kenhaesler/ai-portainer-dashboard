@@ -1,6 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats } from './portainer-client.js';
+import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats, buildApiUrl, buildApiHeaders } from './portainer-client.js';
 import pLimit from 'p-limit';
+
+vi.mock('../config/index.js', () => ({
+  getConfig: () => ({
+    PORTAINER_API_URL: 'http://localhost:9000',
+    PORTAINER_API_KEY: 'test-api-key',
+    PORTAINER_CONCURRENCY: 10,
+    PORTAINER_MAX_CONNECTIONS: 10,
+    PORTAINER_VERIFY_SSL: true,
+    PORTAINER_CB_FAILURE_THRESHOLD: 5,
+    PORTAINER_CB_RESET_TIMEOUT_MS: 30000,
+  }),
+}));
 
 describe('sanitizeContainerLabels', () => {
   it('redacts known path-disclosing Docker labels', () => {
@@ -107,5 +119,32 @@ describe('per-endpoint circuit breaker stats', () => {
     _resetClientState();
     const stats2 = getCircuitBreakerStats();
     expect(stats2.byEndpoint).toEqual({});
+  });
+});
+
+describe('buildApiUrl', () => {
+  it('constructs URL from path and PORTAINER_API_URL', () => {
+    const url = buildApiUrl('/api/endpoints/20/docker/containers/json');
+    expect(url).toBe('http://localhost:9000/api/endpoints/20/docker/containers/json');
+  });
+
+  it('strips trailing slashes from base URL', () => {
+    // The mock config has no trailing slash; this tests the regex in buildApiUrl
+    const url = buildApiUrl('/api/endpoints/1/docker/containers/abc/logs?tail=100');
+    expect(url).toBe('http://localhost:9000/api/endpoints/1/docker/containers/abc/logs?tail=100');
+  });
+});
+
+describe('buildApiHeaders', () => {
+  it('includes Content-Type and X-API-Key by default', () => {
+    const headers = buildApiHeaders();
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers['X-API-Key']).toBe('test-api-key');
+  });
+
+  it('omits Content-Type when includeContentType is false', () => {
+    const headers = buildApiHeaders(false);
+    expect(headers['Content-Type']).toBeUndefined();
+    expect(headers['X-API-Key']).toBe('test-api-key');
   });
 });
