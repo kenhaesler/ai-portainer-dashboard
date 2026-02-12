@@ -381,6 +381,65 @@ export async function getContainerLogs(
   return decodeDockerLogPayload(raw);
 }
 
+/**
+ * Open a streaming (follow=true) connection to container logs via the Portainer Docker proxy.
+ * Returns the raw response body as a ReadableStream and an abort() function.
+ *
+ * Does NOT use portainerFetch, circuit breaker, or concurrency limiter because the
+ * long-lived connection would hold slots indefinitely.
+ */
+export async function streamContainerLogs(
+  endpointId: number,
+  containerId: string,
+  options: { since?: number; timestamps?: boolean } = {},
+): Promise<{ body: ReadableStream<Uint8Array>; abort: () => void }> {
+  const params = new URLSearchParams({
+    stdout: 'true',
+    stderr: 'true',
+    follow: 'true',
+    tail: '50',
+    timestamps: String(options.timestamps ?? true),
+  });
+  if (options.since) params.set('since', String(options.since));
+
+  const config = getConfig();
+  const url = `${config.PORTAINER_API_URL}/api/endpoints/${endpointId}/docker/containers/${containerId}/logs?${params}`;
+
+  const headers: Record<string, string> = {};
+  if (config.PORTAINER_API_KEY) {
+    headers['X-API-Key'] = config.PORTAINER_API_KEY;
+  }
+
+  const controller = new AbortController();
+  const res = await undiciFetch(url, {
+    headers,
+    dispatcher: getDispatcher(),
+    signal: controller.signal,
+  });
+
+  if (!res.ok) {
+    controller.abort();
+    if (res.status === 404) {
+      throw new PortainerError(
+        'Container logs unavailable — Docker daemon on this endpoint may be unreachable',
+        'server',
+        502,
+      );
+    }
+    throw new PortainerError(`Log stream failed: ${res.status}`, classifyError(res.status), res.status);
+  }
+
+  if (!res.body) {
+    controller.abort();
+    throw new PortainerError('No response body from log stream', 'server', 502);
+  }
+
+  return {
+    body: res.body as unknown as ReadableStream<Uint8Array>,
+    abort: () => controller.abort(),
+  };
+}
+
 export async function getContainerStats(endpointId: number, containerId: string): Promise<ContainerStats> {
   const raw = await portainerFetch<unknown>(
     `/api/endpoints/${endpointId}/docker/containers/${containerId}/stats?stream=false`,

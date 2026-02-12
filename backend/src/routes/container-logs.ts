@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as portainer from '../services/portainer-client.js';
-import { getContainerLogsWithRetry } from '../services/edge-log-fetcher.js';
-import { ContainerParamsSchema, ContainerLogsQuerySchema } from '../models/api-schemas.js';
+import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
+import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '../models/api-schemas.js';
 import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
   initiateEdgeAsyncLogCollection,
@@ -10,6 +10,7 @@ import {
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
 } from '../services/edge-async-log-fetcher.js';
+import { IncrementalDockerFrameDecoder } from '../services/docker-frame-decoder.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('container-logs-route');
@@ -158,6 +159,187 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       const message = err instanceof Error ? err.message : 'Failed to retrieve logs';
       log.error({ err, endpointId, containerId, jobId }, 'Failed to check/retrieve async logs');
       return reply.status(502).send({ error: message });
+    }
+  });
+
+  // GET: SSE streaming endpoint for real-time log tailing
+  fastify.get('/api/containers/:endpointId/:containerId/logs/stream', {
+    schema: {
+      tags: ['Containers'],
+      summary: 'Stream container logs via SSE (real-time tailing)',
+      security: [{ bearerAuth: [] }],
+      params: ContainerParamsSchema,
+      querystring: ContainerLogStreamQuerySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const { endpointId, containerId } = request.params as {
+      endpointId: number;
+      containerId: string;
+    };
+    const { since, timestamps } = request.query as {
+      since?: number;
+      timestamps?: boolean;
+    };
+
+    // 1. Reject Edge Async endpoints
+    try {
+      await assertCapability(endpointId, 'realtimeLogs');
+    } catch (err) {
+      const statusCode = (err as any).statusCode ?? (err as any).status;
+      if (statusCode === 422) {
+        return reply.status(422).send({
+          error: err instanceof Error ? err.message : 'Capability unavailable',
+          code: 'EDGE_ASYNC_UNSUPPORTED',
+        });
+      }
+      throw err;
+    }
+
+    // 2. Edge Standard: warm up tunnel first
+    const edgeStd = await isEdgeStandard(endpointId);
+    if (edgeStd) {
+      try {
+        await waitForTunnel(endpointId);
+      } catch (err) {
+        const statusCode = (err as any).statusCode ?? (err as any).status;
+        if (statusCode === 504) {
+          const message = err instanceof Error ? err.message : 'Edge agent tunnel timed out';
+          log.warn({ err, endpointId, containerId }, 'Edge tunnel warmup timed out for stream');
+          return reply.status(504).send({
+            error: message,
+            code: 'EDGE_TUNNEL_TIMEOUT',
+          });
+        }
+        throw err;
+      }
+    }
+
+    // 3. Open upstream streaming connection
+    let stream: { body: ReadableStream<Uint8Array>; abort: () => void };
+    try {
+      stream = await portainer.streamContainerLogs(endpointId, containerId, {
+        since,
+        timestamps,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to open log stream';
+      log.error({ err, endpointId, containerId }, 'Failed to open log stream');
+      return reply.status(502).send({ error: message });
+    }
+
+    // 4. Hijack response for SSE (bypasses Fastify compression/serialization)
+    const origin = request.headers.origin;
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      ...(origin ? {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Credentials': 'true',
+      } : {}),
+    });
+
+    const decoder = new IncrementalDockerFrameDecoder();
+    let closed = false;
+
+    // Heartbeat every 15s to keep the connection alive
+    const heartbeatInterval = setInterval(() => {
+      if (!closed) {
+        reply.raw.write(`data: ${JSON.stringify({ heartbeat: true, ts: Date.now() })}\n\n`);
+      }
+    }, 15_000);
+
+    // Edge Standard keep-alive: lightweight Docker API call every 3 min to prevent tunnel timeout
+    const keepAliveInterval = edgeStd
+      ? setInterval(() => {
+          if (!closed) {
+            portainer.getContainers(endpointId, false).catch((err) => {
+              log.debug({ err, endpointId }, 'Edge keep-alive ping failed');
+            });
+          }
+        }, 3 * 60_000)
+      : null;
+
+    function cleanup() {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeatInterval);
+      if (keepAliveInterval) clearInterval(keepAliveInterval);
+      stream.abort();
+    }
+
+    // Clean up on client disconnect
+    reply.raw.on('close', cleanup);
+
+    // 5. Pipe upstream through decoder, emit SSE events
+    try {
+      const reader = (stream.body as any).getReader
+        ? (stream.body as ReadableStream<Uint8Array>).getReader()
+        : null;
+
+      if (reader) {
+        // Web ReadableStream (from undici)
+        while (!closed) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const lines = decoder.push(Buffer.from(value));
+          for (const line of lines) {
+            if (closed) break;
+            const ok = reply.raw.write(`data: ${JSON.stringify({ line, ts: Date.now() })}\n\n`);
+            if (!ok) {
+              // Backpressure: wait for drain before continuing
+              await new Promise<void>((resolve) => reply.raw.once('drain', resolve));
+            }
+          }
+        }
+      } else {
+        // Node.js Readable stream fallback
+        const nodeStream = stream.body as unknown as import('stream').Readable;
+        for await (const chunk of nodeStream) {
+          if (closed) break;
+          const lines = decoder.push(Buffer.from(chunk));
+          for (const line of lines) {
+            if (closed) break;
+            const ok = reply.raw.write(`data: ${JSON.stringify({ line, ts: Date.now() })}\n\n`);
+            if (!ok) {
+              await new Promise<void>((resolve) => reply.raw.once('drain', resolve));
+            }
+          }
+        }
+      }
+
+      // Drain remaining buffered content
+      const remaining = decoder.drain();
+      for (const line of remaining) {
+        if (closed) break;
+        reply.raw.write(`data: ${JSON.stringify({ line, ts: Date.now() })}\n\n`);
+      }
+
+      // Stream ended (container stopped or log stream closed)
+      if (!closed) {
+        reply.raw.write(`data: ${JSON.stringify({ done: true, reason: 'container_stopped' })}\n\n`);
+      }
+    } catch (err) {
+      if (!closed) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if (!isAbort) {
+          log.error({ err, endpointId, containerId }, 'Log stream error');
+          try {
+            reply.raw.write(`data: ${JSON.stringify({ error: 'Stream interrupted', code: 'STREAM_ERROR' })}\n\n`);
+          } catch {
+            // Client already disconnected
+          }
+        }
+      }
+    } finally {
+      cleanup();
+      if (!reply.raw.writableEnded) {
+        reply.raw.end();
+      }
     }
   });
 }
