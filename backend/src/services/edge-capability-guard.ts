@@ -58,3 +58,21 @@ export async function supportsLiveFeatures(endpointId: number): Promise<boolean>
     return true; // Default to true if we can't determine — let the operation try and fail normally
   }
 }
+
+/**
+ * Check if an endpoint is Edge Standard (Type 4 with Chisel tunnel).
+ * These endpoints may need tunnel warm-up before Docker proxy calls succeed.
+ */
+export async function isEdgeStandard(endpointId: number): Promise<boolean> {
+  try {
+    const raw = await cachedFetchSWR(
+      getCacheKey('endpoint', endpointId),
+      TTL.ENDPOINTS,
+      () => getEndpoint(endpointId),
+    );
+    const norm = normalizeEndpoint(raw);
+    return norm.edgeMode === 'standard';
+  } catch {
+    return false;
+  }
+}

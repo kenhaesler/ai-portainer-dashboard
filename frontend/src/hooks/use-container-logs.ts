@@ -14,6 +14,12 @@ interface ContainerLogsResult {
   endpointId: number;
 }
 
+export interface ContainerLogsError {
+  message: string;
+  code?: 'EDGE_ASYNC_UNSUPPORTED' | 'EDGE_TUNNEL_TIMEOUT' | string;
+  status?: number;
+}
+
 export function useContainerLogs(
   endpointId: number | undefined,
   containerId: string | undefined,
@@ -21,7 +27,7 @@ export function useContainerLogs(
 ) {
   const { tail = 100, since, until, timestamps = true } = options;
 
-  return useQuery<ContainerLogsResult>({
+  return useQuery<ContainerLogsResult, ContainerLogsError>({
     queryKey: ['container-logs', endpointId, containerId, { tail, since, until, timestamps }],
     queryFn: () => {
       const params: Record<string, string | number | boolean> = { tail, timestamps };
@@ -34,9 +40,12 @@ export function useContainerLogs(
       );
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
-    // Logs endpoint can be aggressively rate-limited upstream (Portainer).
-    // Avoid automatic retry/refetch bursts that turn transient 429s into sustained failures.
-    retry: false,
+    // Smart retry: skip for Edge Async (permanent), allow 1 retry for transient errors
+    retry: (failureCount, error) => {
+      if (error?.code === 'EDGE_ASYNC_UNSUPPORTED') return false;
+      return failureCount < 1;
+    },
+    retryDelay: 3000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });

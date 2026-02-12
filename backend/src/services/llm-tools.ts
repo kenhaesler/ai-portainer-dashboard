@@ -1,4 +1,5 @@
 import * as portainer from './portainer-client.js';
+import { getContainerLogsWithRetry } from './edge-log-fetcher.js';
 import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.js';
 import { getDb } from '../db/sqlite.js';
@@ -448,7 +449,7 @@ async function executeGetContainerLogs(
     }
 
     const tail = Math.min(parseInt(String(args.tail || '50'), 10) || 50, 200);
-    const logs = await portainer.getContainerLogs(match.endpointId, match.id, {
+    const logs = await getContainerLogsWithRetry(match.endpointId, match.id, {
       tail,
       timestamps: true,
     });
@@ -471,7 +472,15 @@ async function executeGetContainerLogs(
     };
   } catch (err) {
     log.error({ err }, 'get_container_logs failed');
-    return { tool: 'get_container_logs', success: false, error: 'Failed to fetch container logs' };
+    const message = err instanceof Error ? err.message : 'Failed to fetch container logs';
+    if (message.includes('tunnel')) {
+      return {
+        tool: 'get_container_logs',
+        success: false,
+        error: `${message}. Note: This is an Edge agent — the tunnel may need time to establish. Try again in a few seconds.`,
+      };
+    }
+    return { tool: 'get_container_logs', success: false, error: message };
   }
 }
 
