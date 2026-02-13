@@ -26,7 +26,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       body: StartCaptureRequestSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const parsed = StartCaptureRequestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -113,7 +113,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
@@ -175,7 +175,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
@@ -213,7 +213,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
 

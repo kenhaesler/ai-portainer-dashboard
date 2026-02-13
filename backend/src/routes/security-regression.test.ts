@@ -1040,7 +1040,91 @@ describe('Remediation Approval Gate', () => {
 });
 
 // =====================================================================
-//  5. INFRASTRUCTURE EXPOSURE DEFAULTS
+//  5. PCAP ADMIN RBAC ENFORCEMENT
+// =====================================================================
+describe('PCAP Admin RBAC Enforcement', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
+    });
+
+    await app.register(pcapRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('denies start-capture for non-admin users', async () => {
+    currentRole = 'viewer';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/pcap/captures',
+      payload: {
+        endpointId: 1,
+        containerId: 'abc123',
+        containerName: 'web',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies stop/analyze/delete for non-admin users', async () => {
+    currentRole = 'operator';
+
+    const stopRes = await app.inject({
+      method: 'POST',
+      url: '/api/pcap/captures/c1/stop',
+    });
+    expect(stopRes.statusCode).toBe(403);
+
+    const analyzeRes = await app.inject({
+      method: 'POST',
+      url: '/api/pcap/captures/c1/analyze',
+    });
+    expect(analyzeRes.statusCode).toBe(403);
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/pcap/captures/c1',
+    });
+    expect(deleteRes.statusCode).toBe(403);
+  });
+
+  it('allows admin to execute a mutating PCAP route', async () => {
+    currentRole = 'admin';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/pcap/captures/c1/stop',
+    });
+
+    expect(res.statusCode).not.toBe(403);
+  });
+});
+
+// =====================================================================
+//  6. INFRASTRUCTURE EXPOSURE DEFAULTS
 // =====================================================================
 describe('Infrastructure Exposure Defaults', () => {
   it('should not host-publish Prometheus in workloads/staging-dev.yml by default', () => {
@@ -1061,7 +1145,7 @@ describe('Infrastructure Exposure Defaults', () => {
 });
 
 // =====================================================================
-//  6. RATE LIMITING VERIFICATION
+//  7. RATE LIMITING VERIFICATION
 // =====================================================================
 describe('Rate Limiting Verification', () => {
   let app: FastifyInstance;

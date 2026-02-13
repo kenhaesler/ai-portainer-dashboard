@@ -50,11 +50,24 @@ vi.mock('fs', () => ({
 
 describe('PCAP Routes', () => {
   let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
   beforeAll(async () => {
+    currentRole = 'admin';
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'test-user', sessionId: 's1', role: currentRole };
+    });
     await app.register(pcapRoutes);
     await app.ready();
   });
@@ -65,6 +78,7 @@ describe('PCAP Routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    currentRole = 'admin';
   });
 
   describe('POST /api/pcap/captures', () => {
@@ -173,6 +187,24 @@ describe('PCAP Routes', () => {
       expect(body.error).toContain('Edge Async');
       expect(mockStartCapture).not.toHaveBeenCalled();
     });
+
+    it('should return 403 for non-admin users', async () => {
+      currentRole = 'viewer';
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          endpointId: 1,
+          containerId: 'abc123',
+          containerName: 'web',
+        },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(mockStartCapture).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /api/pcap/captures', () => {
@@ -268,6 +300,19 @@ describe('PCAP Routes', () => {
 
       expect(response.statusCode).toBe(400);
     });
+
+    it('should return 403 for non-admin users', async () => {
+      currentRole = 'operator';
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/stop',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(mockStopCapture).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /api/pcap/captures/:id/download', () => {
@@ -333,6 +378,19 @@ describe('PCAP Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.error).toContain('Cannot analyze');
     });
+
+    it('should return 403 for non-admin users', async () => {
+      currentRole = 'viewer';
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/pcap/captures/c1/analyze',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(mockAnalyzeCapture).not.toHaveBeenCalled();
+    });
   });
 
   describe('DELETE /api/pcap/captures/:id', () => {
@@ -362,6 +420,19 @@ describe('PCAP Routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+
+    it('should return 403 for non-admin users', async () => {
+      currentRole = 'operator';
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/pcap/captures/c1',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(mockDeleteCaptureById).not.toHaveBeenCalled();
     });
   });
 });
