@@ -58,10 +58,10 @@ export const envSchema = z.object({
 
   // Anomaly Detection
   ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(3.0),
-  ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(30),
-  ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(30),
+  ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(20),
+  ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
-  ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(15),
+  ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(10),
   ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(80),
 
   // Predictive Alerting
@@ -77,7 +77,7 @@ export const envSchema = z.object({
   ISOLATION_FOREST_TREES: z.coerce.number().int().min(10).max(500).default(100),
   ISOLATION_FOREST_SAMPLE_SIZE: z.coerce.number().int().min(32).max(512).default(256),
   ISOLATION_FOREST_CONTAMINATION: z.coerce.number().min(0.01).max(0.5).default(0.1),
-  ISOLATION_FOREST_RETRAIN_INTERVAL: z.coerce.number().int().min(1).default(6),
+  ISOLATION_FOREST_RETRAIN_HOURS: z.coerce.number().int().min(1).default(6),
 
   // NLP Log Analysis (LLM)
   NLP_LOG_ANALYSIS_ENABLED: z.coerce.boolean().default(true),
@@ -91,7 +91,7 @@ export const envSchema = z.object({
 
   // Investigation (Root Cause Analysis)
   INVESTIGATION_ENABLED: z.coerce.boolean().default(true),
-  INVESTIGATION_COOLDOWN_MINUTES: z.coerce.number().int().min(1).default(30),
+  INVESTIGATION_COOLDOWN_MINUTES: z.coerce.number().int().min(1).default(20),
   INVESTIGATION_MAX_CONCURRENT: z.coerce.number().int().min(1).default(2),
   INVESTIGATION_LOG_TAIL_LINES: z.coerce.number().int().min(10).default(50),
   INVESTIGATION_METRICS_WINDOW_MINUTES: z.coerce.number().int().min(5).default(60),

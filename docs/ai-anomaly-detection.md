@@ -30,7 +30,7 @@ A from-scratch implementation of the Isolation Forest algorithm (zero external d
 - Skips containers already flagged by statistical detection to avoid duplicates
 - Falls back silently when insufficient training data is available
 
-Configuration: `ISOLATION_FOREST_ENABLED`, `ISOLATION_FOREST_TREES`, `ISOLATION_FOREST_SAMPLE_SIZE`, `ISOLATION_FOREST_CONTAMINATION`, `ISOLATION_FOREST_RETRAIN_INTERVAL`.
+Configuration: `ISOLATION_FOREST_ENABLED`, `ISOLATION_FOREST_TREES`, `ISOLATION_FOREST_SAMPLE_SIZE`, `ISOLATION_FOREST_CONTAMINATION`, `ISOLATION_FOREST_RETRAIN_HOURS`.
 
 ## Predictive Alerting
 

@@ -19,7 +19,7 @@ const MIN_TRAINING_SAMPLES = 50;
 export async function getOrTrainModel(containerId: string): Promise<IsolationForest | null> {
   const config = getConfig();
   const now = Date.now();
-  const retrainIntervalMs = config.ISOLATION_FOREST_RETRAIN_INTERVAL * 60 * 60 * 1000;
+  const retrainIntervalMs = config.ISOLATION_FOREST_RETRAIN_HOURS * 60 * 60 * 1000;
 
   // Check cache
   const cached = modelCache.get(containerId);
