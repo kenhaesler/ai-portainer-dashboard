@@ -120,6 +120,41 @@ export function setUserDefaultLandingPage(userId: string, defaultLandingPage: st
   return result.changes > 0;
 }
 
+/**
+ * Upsert an OIDC-authenticated user. Creates a new user record if not found,
+ * or updates the role if it has changed. Uses the OIDC `sub` claim as the user ID.
+ * Returns the user and whether the role was changed.
+ */
+export function upsertOIDCUser(
+  sub: string,
+  username: string,
+  role: Role,
+): { user: UserSafe; roleChanged: boolean; previousRole?: Role } {
+  const db = getDb();
+  const existing = getUserById(sub);
+
+  if (existing) {
+    if (existing.role === role) {
+      return { user: toSafe(existing), roleChanged: false };
+    }
+    const previousRole = existing.role;
+    db.prepare(`
+      UPDATE users SET role = ?, username = ?, updated_at = datetime('now') WHERE id = ?
+    `).run(role, username, sub);
+    log.info({ sub, username, previousRole, newRole: role }, 'OIDC user role updated');
+    return { user: toSafe(getUserById(sub)!), roleChanged: true, previousRole };
+  }
+
+  // Create new OIDC user with a random password hash (OIDC users don't use password auth)
+  const randomPlaceholder = crypto.randomUUID();
+  db.prepare(`
+    INSERT INTO users (id, username, password_hash, role, default_landing_page)
+    VALUES (?, ?, ?, ?, '/')
+  `).run(sub, username, randomPlaceholder, role);
+  log.info({ sub, username, role }, 'OIDC user auto-provisioned');
+  return { user: toSafe(getUserById(sub)!), roleChanged: false };
+}
+
 export async function ensureDefaultAdmin(): Promise<void> {
   const db = getDb();
   const config = getConfig();

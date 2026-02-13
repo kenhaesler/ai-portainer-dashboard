@@ -1,13 +1,22 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Loader2, Shield } from 'lucide-react';
 import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/hooks/use-security-audit';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
+import { GroupRoleMappingEditor } from './group-role-mapping-editor';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const LazyUsersPanel = lazy(() => import('@/pages/users').then((m) => ({ default: m.UsersPanel })));
 
 export function SecurityTab({ editedValues, originalValues, onChange, isSaving }: SettingsTabProps) {
+  // Filter out group_role_mappings from auto-rendered settings — it has a custom editor
+  const authSettings = useMemo(
+    () => DEFAULT_SETTINGS.authentication.filter((s) => s.key !== 'oidc.group_role_mappings') as unknown as typeof DEFAULT_SETTINGS.authentication,
+    [],
+  );
+
+  const isOIDCEnabled = editedValues['oidc.enabled'] === 'true';
+
   return (
     <div className="space-y-6">
       {/* Authentication Settings */}
@@ -15,15 +24,24 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
         title="Authentication"
         icon={<Shield className="h-5 w-5" />}
         category="authentication"
-        settings={DEFAULT_SETTINGS.authentication}
+        settings={authSettings}
         values={editedValues}
         originalValues={originalValues}
         onChange={onChange}
         requiresRestart
         disabled={isSaving}
-        status={editedValues['oidc.enabled'] === 'true' ? 'configured' : 'not-configured'}
-        statusLabel={editedValues['oidc.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
+        status={isOIDCEnabled ? 'configured' : 'not-configured'}
+        statusLabel={isOIDCEnabled ? 'Enabled' : 'Disabled'}
       />
+
+      {/* Group-to-Role Mapping Editor (only visible when OIDC is enabled) */}
+      {isOIDCEnabled && (
+        <GroupRoleMappingEditor
+          value={editedValues['oidc.group_role_mappings'] ?? '{}'}
+          onChange={(val) => onChange('oidc.group_role_mappings', val)}
+          disabled={isSaving}
+        />
+      )}
 
       {/* Security Audit Ignore List */}
       <SecurityAuditSettingsSection />

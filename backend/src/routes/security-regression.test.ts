@@ -184,12 +184,16 @@ vi.mock('../services/user-store.js', () => ({
   hasMinRole: vi.fn(() => false),
 }));
 
-vi.mock('../services/oidc.js', () => ({
-  isOIDCEnabled: vi.fn(() => false),
-  getOIDCConfig: vi.fn(() => null),
-  generateAuthorizationUrl: vi.fn().mockResolvedValue(''),
-  exchangeCode: vi.fn().mockResolvedValue(null),
-}));
+vi.mock('../services/oidc.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/oidc.js')>();
+  return {
+    ...actual,
+    isOIDCEnabled: vi.fn(() => false),
+    getOIDCConfig: vi.fn(() => null),
+    generateAuthorizationUrl: vi.fn().mockResolvedValue(''),
+    exchangeCode: vi.fn().mockResolvedValue(null),
+  };
+});
 
 vi.mock('../services/portainer-client.js', () => ({
   getEndpoints: vi.fn().mockResolvedValue([]),
@@ -1300,5 +1304,78 @@ describe('Rate Limiting Verification', () => {
 
     expect(rateLimitedResponse).not.toBeNull();
     expect(rateLimitedResponse!.headers['retry-after']).toBeDefined();
+  });
+});
+
+// ─── OIDC Group Mapping Security ──────────────────────────────────────
+// Validates that OIDC group-to-role mapping is secure:
+//   - Invalid role values are rejected
+//   - Group claim values are validated as string arrays
+//   - Highest-privilege-wins prevents accidental privilege escalation from ordering
+
+describe('OIDC Group-to-Role Mapping Security', () => {
+  // Import the pure functions directly (they don't need Fastify)
+  let resolveRoleFromGroups: typeof import('../services/oidc.js').resolveRoleFromGroups;
+  let extractGroups: typeof import('../services/oidc.js').extractGroups;
+
+  beforeAll(async () => {
+    const oidc = await import('../services/oidc.js');
+    resolveRoleFromGroups = oidc.resolveRoleFromGroups;
+    extractGroups = oidc.extractGroups;
+  });
+
+  it('should reject invalid role values in mappings and not assign them', () => {
+    const result = resolveRoleFromGroups(
+      ['HackerGroup'],
+      { 'HackerGroup': 'superadmin' as never },
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it('should not allow script injection via group names to affect role resolution', () => {
+    const result = resolveRoleFromGroups(
+      ['<script>alert(1)</script>'],
+      { '<script>alert(1)</script>': 'admin' },
+    );
+    // Group names are treated as opaque strings — the mapping works but the
+    // role must still be a valid enum value. This test ensures we don't crash.
+    expect(result).toBe('admin');
+  });
+
+  it('should filter non-string values from groups claim to prevent type confusion', () => {
+    const claims = {
+      groups: ['Admins', { role: 'admin' }, ['nested'], 42, true, null],
+    };
+    const groups = extractGroups(claims as unknown as Record<string, unknown>, 'groups');
+    expect(groups).toEqual(['Admins']);
+    // Only string values pass through — objects, arrays, numbers, booleans, null are all filtered
+  });
+
+  it('should not resolve role when groups claim is a string instead of array', () => {
+    const claims = { groups: 'admin' };
+    const groups = extractGroups(claims as unknown as Record<string, unknown>, 'groups');
+    expect(groups).toEqual([]);
+  });
+
+  it('should ensure highest-privilege-wins is deterministic regardless of input order', () => {
+    const mappings = {
+      'Viewers': 'viewer' as const,
+      'Operators': 'operator' as const,
+      'Admins': 'admin' as const,
+    };
+
+    // Test multiple orderings to ensure determinism
+    expect(resolveRoleFromGroups(['Viewers', 'Operators', 'Admins'], mappings)).toBe('admin');
+    expect(resolveRoleFromGroups(['Admins', 'Viewers', 'Operators'], mappings)).toBe('admin');
+    expect(resolveRoleFromGroups(['Operators', 'Admins', 'Viewers'], mappings)).toBe('admin');
+  });
+
+  it('should not allow wildcard to escalate above explicit matches', () => {
+    const result = resolveRoleFromGroups(
+      ['ViewersOnly'],
+      { 'ViewersOnly': 'viewer', '*': 'admin' },
+    );
+    // Explicit match 'viewer' should be used; wildcard is only for unmatched groups
+    expect(result).toBe('viewer');
   });
 });
