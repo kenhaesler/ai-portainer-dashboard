@@ -10,6 +10,8 @@ interface OtlpKeyValue {
     doubleValue?: number;
     boolValue?: boolean;
     arrayValue?: { values: OtlpKeyValue['value'][] };
+    kvlistValue?: { values: OtlpKeyValue[] };
+    bytesValue?: string;
   };
 }
 
@@ -47,6 +49,14 @@ function extractAttributeValue(value: OtlpKeyValue['value']): unknown {
   if (value.doubleValue !== undefined) return value.doubleValue;
   if (value.boolValue !== undefined) return value.boolValue;
   if (value.arrayValue) return value.arrayValue.values.map(extractAttributeValue);
+  if (value.kvlistValue) {
+    const result: Record<string, unknown> = {};
+    for (const entry of value.kvlistValue.values) {
+      result[entry.key] = extractAttributeValue(entry.value);
+    }
+    return result;
+  }
+  if (value.bytesValue !== undefined) return value.bytesValue;
   return undefined;
 }
 
@@ -77,9 +87,25 @@ function pickString(attrs: Record<string, unknown>, keys: string[]): string | nu
 
 const MODERN_CONTAINER_NAME_KEYS = ['container.name', 'k8s.container.name'];
 const CONTAINER_NAME_FALLBACK_KEYS = ['k8s.pod.name', 'service.instance.id'];
+const CONTAINER_ID_KEYS = ['container.id', 'host.id'];
 
 function deriveContainerName(attrs: Record<string, unknown>): string | null {
   return pickString(attrs, MODERN_CONTAINER_NAME_KEYS) ?? pickString(attrs, CONTAINER_NAME_FALLBACK_KEYS);
+}
+
+function deriveContainerId(attrs: Record<string, unknown>): string | null {
+  const direct = pickString(attrs, CONTAINER_ID_KEYS);
+  if (direct) return direct;
+
+  const fromInstance = pickString(attrs, ['service.instance.id']);
+  if (fromInstance) {
+    const candidate = fromInstance.split(':')[0];
+    if (/^[a-f0-9]{12,64}$/i.test(candidate)) return candidate;
+  }
+
+  const hostName = pickString(attrs, ['host.name']);
+  if (hostName && /^[a-f0-9]{12,64}$/i.test(hostName)) return hostName;
+  return null;
 }
 
 function deriveK8sContainerName(attrs: Record<string, unknown>): string | null {
@@ -138,6 +164,7 @@ export function transformOtlpToSpans(payload: OtlpExportRequest): SpanInsert[] {
         const resourceAttrs = flattenAttributes(resourceSpan.resource?.attributes);
         const allAttributes = { ...resourceAttrs, ...spanAttrs };
         const containerName = deriveContainerName(allAttributes);
+        const containerId = deriveContainerId(allAttributes);
         const k8sContainerName = deriveK8sContainerName(allAttributes);
 
         spans.push({
@@ -160,7 +187,7 @@ export function transformOtlpToSpans(payload: OtlpExportRequest): SpanInsert[] {
           service_instance_id: pickString(allAttributes, ['service.instance.id']),
           service_version: pickString(allAttributes, ['service.version']),
           deployment_environment: pickString(allAttributes, ['deployment.environment']),
-          container_id: pickString(allAttributes, ['container.id']),
+          container_id: containerId,
           container_name: containerName,
           k8s_namespace: pickString(allAttributes, ['k8s.namespace.name']),
           k8s_pod_name: pickString(allAttributes, ['k8s.pod.name']),

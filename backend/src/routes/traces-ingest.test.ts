@@ -279,7 +279,19 @@ describe('Traces Ingest Routes', () => {
       message Status { string message = 2; StatusCode code = 3; }
       enum StatusCode { STATUS_CODE_UNSET=0; STATUS_CODE_OK=1; STATUS_CODE_ERROR=2; }
       message KeyValue { string key = 1; AnyValue value = 2; }
-      message AnyValue { oneof value { string string_value = 1; bool bool_value = 2; int64 int_value = 3; double double_value = 4; } }
+      message AnyValue {
+        oneof value {
+          string string_value = 1;
+          bool bool_value = 2;
+          int64 int_value = 3;
+          double double_value = 4;
+          ArrayValue array_value = 5;
+          KeyValueList kvlist_value = 6;
+          bytes bytes_value = 7;
+        }
+      }
+      message ArrayValue { repeated AnyValue values = 1; }
+      message KeyValueList { repeated KeyValue values = 1; }
     `;
     const root = protobuf.parse(proto).root;
     const ExportType = root.lookupType('opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest');
@@ -296,7 +308,22 @@ describe('Traces Ingest Routes', () => {
             startTimeUnixNano: (protobuf.util.Long as unknown as { fromString(s: string, u: boolean): unknown }).fromString('1700000000000000000', true),
             endTimeUnixNano: (protobuf.util.Long as unknown as { fromString(s: string, u: boolean): unknown }).fromString('1700000000200000000', true),
             status: { code: 1 },
-            attributes: [{ key: 'http.method', value: { stringValue: 'GET' } }],
+            attributes: [
+              { key: 'http.method', value: { stringValue: 'GET' } },
+              {
+                key: 'complex.array',
+                value: { arrayValue: { values: [{ stringValue: 'alpha' }, { intValue: 3 }] } },
+              },
+              {
+                key: 'complex.map',
+                value: {
+                  kvlistValue: {
+                    values: [{ key: 'role', value: { stringValue: 'edge' } }],
+                  },
+                },
+              },
+              { key: 'complex.bytes', value: { bytesValue: Buffer.from('hello') } },
+            ],
           }],
         }],
       }],
@@ -325,11 +352,16 @@ describe('Traces Ingest Routes', () => {
       trace_source: string;
       service_name: string;
       name: string;
+      attributes: string;
     }>;
     expect(rows).toHaveLength(1);
     expect(rows[0].trace_source).toBe('ebpf');
     expect(rows[0].service_name).toBe('proto-app');
     expect(rows[0].name).toBe('GET /proto');
+    const attrs = JSON.parse(rows[0].attributes) as Record<string, unknown>;
+    expect(attrs['complex.array']).toEqual(['alpha', 3]);
+    expect(attrs['complex.map']).toEqual({ role: 'edge' });
+    expect(attrs['complex.bytes']).toBe(Buffer.from('hello').toString('base64'));
   });
 
   it('rejects invalid protobuf with 400', async () => {

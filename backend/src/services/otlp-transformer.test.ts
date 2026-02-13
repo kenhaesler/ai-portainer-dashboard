@@ -278,6 +278,37 @@ describe('transformOtlpToSpans', () => {
     expect(result[0].k8s_container_name).toBeNull();
   });
 
+  it('derives container_id from service.instance.id when container.id is missing', () => {
+    const payload: OtlpExportRequest = {
+      resourceSpans: [
+        {
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: 'my-app' } },
+              { key: 'service.instance.id', value: { stringValue: '5ac87ad14c6f:3512' } },
+            ],
+          },
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: 'abc123def456',
+                  spanId: 'span003',
+                  name: 'GET /derived-id',
+                  startTimeUnixNano: '1700000000000000000',
+                  endTimeUnixNano: '1700000000100000000',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = transformOtlpToSpans(payload);
+    expect(result[0].container_id).toBe('5ac87ad14c6f');
+  });
+
   it('maps all 3 kind values correctly', () => {
     const makeSpanWithKind = (kind: number) => ({
       resourceSpans: [{
@@ -415,5 +446,45 @@ describe('transformOtlpToSpans', () => {
     expect(attrs.double).toBe(3.14);
     expect(attrs.bool).toBe(true);
     expect(attrs.int_str).toBe(99);
+  });
+
+  it('flattens array/kvlist/bytes attribute value types', () => {
+    const payload: OtlpExportRequest = {
+      resourceSpans: [{
+        resource: { attributes: [{ key: 'service.name', value: { stringValue: 'test' } }] },
+        scopeSpans: [{
+          spans: [{
+            traceId: 't-complex',
+            spanId: 's-complex',
+            name: 'op',
+            startTimeUnixNano: '1700000000000000000',
+            attributes: [
+              {
+                key: 'arr',
+                value: { arrayValue: { values: [{ stringValue: 'alpha' }, { intValue: 7 }] } },
+              },
+              {
+                key: 'map',
+                value: {
+                  kvlistValue: {
+                    values: [
+                      { key: 'flag', value: { boolValue: true } },
+                      { key: 'port', value: { intValue: 8080 } },
+                    ],
+                  },
+                },
+              },
+              { key: 'raw', value: { bytesValue: 'aGVsbG8=' } },
+            ],
+          }],
+        }],
+      }],
+    };
+
+    const result = transformOtlpToSpans(payload);
+    const attrs = JSON.parse(result[0].attributes);
+    expect(attrs.arr).toEqual(['alpha', 7]);
+    expect(attrs.map).toEqual({ flag: true, port: 8080 });
+    expect(attrs.raw).toBe('aGVsbG8=');
   });
 });
