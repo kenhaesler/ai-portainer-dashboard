@@ -204,4 +204,44 @@ describe('TraceExplorerPage', () => {
 
     expect(screen.getByText('container: api-container')).toBeInTheDocument();
   });
+
+  it('prefers typed span columns when attributes are sparse', () => {
+    mockUseTrace.mockReturnValue({
+      data: {
+        traceId: 'trace-1',
+        spans: [
+          {
+            span_id: 'span-typed-1',
+            parent_span_id: null,
+            name: 'GET /typed',
+            service_name: 'api',
+            start_time: '2026-02-12T10:00:00.000Z',
+            duration_ms: 80,
+            status: 'ok',
+            trace_source: 'ebpf',
+            http_route: '/typed-route',
+            container_name: 'typed-container',
+            service_namespace: 'typed-namespace',
+            service_instance_id: 'typed-instance',
+            service_version: '9.9.9',
+            deployment_environment: 'staging',
+            server_address: 'typed-host.internal',
+            attributes: '{}',
+          },
+        ],
+      },
+    });
+
+    render(<TraceExplorerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /GET \/health/i }));
+
+    expect(screen.getAllByText('endpoint: /typed-route').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('container: typed-container').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('typed-namespace').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('typed-instance').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('9.9.9').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('staging').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('typed-host.internal').length).toBeGreaterThan(0);
+  });
 });

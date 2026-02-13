@@ -124,16 +124,59 @@ function getAttrNumber(attrs: Record<string, unknown>, keys: string[]): number |
   return undefined;
 }
 
+function getFirstString(...values: Array<unknown>): string | undefined {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const asString = String(value).trim();
+    if (asString.length > 0) return asString;
+  }
+  return undefined;
+}
+
 function getSpanSource(traceSource: string | undefined, attrs: Record<string, unknown>): string {
-  return traceSource || getAttrString(attrs, ['trace.source', 'telemetry.source']) || 'unknown';
+  return getFirstString(traceSource, getAttrString(attrs, ['trace.source', 'telemetry.source'])) || 'unknown';
 }
 
-function getSpanEndpoint(attrs: Record<string, unknown>): string {
-  return getAttrString(attrs, ['endpoint.name', 'endpoint.id', 'endpoint', 'host.name', 'server.address']) || 'unknown';
+function getSpanEndpoint(trace: Record<string, unknown>, attrs: Record<string, unknown>): string {
+  return getFirstString(
+    trace.http_route,
+    trace.url_full,
+    trace.server_address,
+    trace.net_peer_name,
+    getAttrString(attrs, [
+      'endpoint.name',
+      'endpoint.id',
+      'endpoint',
+      'http.route',
+      'url',
+      'url.path',
+      'http.target',
+      'url.full',
+      'http.url',
+      'service.instance.id',
+      'server.address',
+      'net.peer.name',
+      'net.host.name',
+      'host.name',
+    ]),
+  ) || 'unknown';
 }
 
-function getSpanContainer(attrs: Record<string, unknown>): string {
-  return getAttrString(attrs, ['container.name', 'container.id', 'k8s.container.name', 'docker.container.name']) || 'unknown';
+function getSpanContainer(trace: Record<string, unknown>, attrs: Record<string, unknown>): string {
+  return getFirstString(
+    trace.container_name,
+    trace.k8s_container_name,
+    trace.container_id,
+    getAttrString(attrs, [
+      'container.name',
+      'k8s.container.name',
+      'k8s.pod.name',
+      'service.instance.id',
+      'host.name',
+      'container.id',
+      'docker.container.name',
+    ]),
+  ) || 'unknown';
 }
 
 function getTraceEndpointLabel(trace: Record<string, unknown>): string {
@@ -501,6 +544,36 @@ export default function TraceExplorerPage() {
         kind?: string;
         status: string;
         trace_source?: string;
+        http_route?: string | null;
+        url_full?: string | null;
+        server_address?: string | null;
+        server_port?: number | null;
+        client_address?: string | null;
+        url_scheme?: string | null;
+        network_transport?: string | null;
+        network_protocol_name?: string | null;
+        network_protocol_version?: string | null;
+        net_peer_name?: string | null;
+        net_peer_port?: number | null;
+        host_name?: string | null;
+        os_type?: string | null;
+        process_pid?: number | null;
+        process_executable_name?: string | null;
+        process_command?: string | null;
+        telemetry_sdk_name?: string | null;
+        telemetry_sdk_language?: string | null;
+        telemetry_sdk_version?: string | null;
+        otel_scope_name?: string | null;
+        otel_scope_version?: string | null;
+        service_namespace?: string | null;
+        service_instance_id?: string | null;
+        service_version?: string | null;
+        deployment_environment?: string | null;
+        container_id?: string | null;
+        container_name?: string | null;
+        k8s_namespace?: string | null;
+        k8s_pod_name?: string | null;
+        k8s_container_name?: string | null;
         attributes?: unknown;
       }>;
     };
@@ -514,42 +587,42 @@ export default function TraceExplorerPage() {
         parentSpanId: s.parentSpanId || s.parent_span_id,
         operationName: s.operationName || s.name || '',
         serviceName: s.serviceName || s.service_name || 'unknown',
-        serviceNamespace: getAttrString(attrs, ['service.namespace']) || 'unknown',
-        serviceInstance: getAttrString(attrs, ['service.instance.id']) || 'unknown',
-        serviceVersion: getAttrString(attrs, ['service.version']) || 'unknown',
-        deploymentEnvironment: getAttrString(attrs, ['deployment.environment']) || 'unknown',
+        serviceNamespace: getFirstString(s.service_namespace, getAttrString(attrs, ['service.namespace'])) || 'unknown',
+        serviceInstance: getFirstString(s.service_instance_id, getAttrString(attrs, ['service.instance.id'])) || 'unknown',
+        serviceVersion: getFirstString(s.service_version, getAttrString(attrs, ['service.version'])) || 'unknown',
+        deploymentEnvironment: getFirstString(s.deployment_environment, getAttrString(attrs, ['deployment.environment'])) || 'unknown',
         startTime: s.startTime || s.start_time || '',
         endTime: s.endTime || s.end_time || null,
         duration: s.duration ?? s.duration_ms ?? 0,
         kind: s.kind || 'internal',
         status: s.status,
         source: getSpanSource(s.trace_source, attrs),
-        endpoint: getSpanEndpoint(attrs),
-        serverAddress: getAttrString(attrs, ['server.address', 'net.host.name']) || 'unknown',
-        serverPort: getAttrNumber(attrs, ['server.port', 'net.host.port']),
-        clientAddress: getAttrString(attrs, ['client.address', 'net.sock.peer.addr']) || 'unknown',
-        urlFull: getAttrString(attrs, ['url.full', 'http.url']) || 'unknown',
-        urlScheme: getAttrString(attrs, ['url.scheme']) || 'unknown',
-        networkTransport: getAttrString(attrs, ['network.transport']) || 'unknown',
-        networkProtocolName: getAttrString(attrs, ['network.protocol.name']) || 'unknown',
-        networkProtocolVersion: getAttrString(attrs, ['network.protocol.version']) || 'unknown',
-        netPeerName: getAttrString(attrs, ['net.peer.name']) || 'unknown',
-        netPeerPort: getAttrNumber(attrs, ['net.peer.port']),
-        hostName: getAttrString(attrs, ['host.name']) || 'unknown',
-        osType: getAttrString(attrs, ['os.type']) || 'unknown',
-        processPid: getAttrNumber(attrs, ['process.pid']),
-        processExecutableName: getAttrString(attrs, ['process.executable.name']) || 'unknown',
-        processCommand: getAttrString(attrs, ['process.command_line', 'process.command']) || 'unknown',
-        telemetrySdkName: getAttrString(attrs, ['telemetry.sdk.name']) || 'unknown',
-        telemetrySdkLanguage: getAttrString(attrs, ['telemetry.sdk.language']) || 'unknown',
-        telemetrySdkVersion: getAttrString(attrs, ['telemetry.sdk.version']) || 'unknown',
-        otelScopeName: getAttrString(attrs, ['otel.scope.name', 'otel.library.name']) || 'unknown',
-        otelScopeVersion: getAttrString(attrs, ['otel.scope.version']) || 'unknown',
-        containerId: getAttrString(attrs, ['container.id']) || 'unknown',
-        container: getSpanContainer(attrs),
-        k8sNamespace: getAttrString(attrs, ['k8s.namespace.name']) || 'unknown',
-        k8sPodName: getAttrString(attrs, ['k8s.pod.name']) || 'unknown',
-        k8sContainerName: getAttrString(attrs, ['k8s.container.name']) || 'unknown',
+        endpoint: getSpanEndpoint(s as Record<string, unknown>, attrs),
+        serverAddress: getFirstString(s.server_address, getAttrString(attrs, ['server.address', 'net.host.name', 'host.name'])) || 'unknown',
+        serverPort: s.server_port ?? getAttrNumber(attrs, ['server.port', 'net.host.port']),
+        clientAddress: getFirstString(s.client_address, getAttrString(attrs, ['client.address', 'net.sock.peer.addr'])) || 'unknown',
+        urlFull: getFirstString(s.url_full, getAttrString(attrs, ['url.full', 'http.url'])) || 'unknown',
+        urlScheme: getFirstString(s.url_scheme, getAttrString(attrs, ['url.scheme'])) || 'unknown',
+        networkTransport: getFirstString(s.network_transport, getAttrString(attrs, ['network.transport'])) || 'unknown',
+        networkProtocolName: getFirstString(s.network_protocol_name, getAttrString(attrs, ['network.protocol.name'])) || 'unknown',
+        networkProtocolVersion: getFirstString(s.network_protocol_version, getAttrString(attrs, ['network.protocol.version'])) || 'unknown',
+        netPeerName: getFirstString(s.net_peer_name, getAttrString(attrs, ['net.peer.name'])) || 'unknown',
+        netPeerPort: s.net_peer_port ?? getAttrNumber(attrs, ['net.peer.port']),
+        hostName: getFirstString(s.host_name, getAttrString(attrs, ['host.name'])) || 'unknown',
+        osType: getFirstString(s.os_type, getAttrString(attrs, ['os.type'])) || 'unknown',
+        processPid: s.process_pid ?? getAttrNumber(attrs, ['process.pid']),
+        processExecutableName: getFirstString(s.process_executable_name, getAttrString(attrs, ['process.executable.name'])) || 'unknown',
+        processCommand: getFirstString(s.process_command, getAttrString(attrs, ['process.command_line', 'process.command'])) || 'unknown',
+        telemetrySdkName: getFirstString(s.telemetry_sdk_name, getAttrString(attrs, ['telemetry.sdk.name'])) || 'unknown',
+        telemetrySdkLanguage: getFirstString(s.telemetry_sdk_language, getAttrString(attrs, ['telemetry.sdk.language'])) || 'unknown',
+        telemetrySdkVersion: getFirstString(s.telemetry_sdk_version, getAttrString(attrs, ['telemetry.sdk.version'])) || 'unknown',
+        otelScopeName: getFirstString(s.otel_scope_name, getAttrString(attrs, ['otel.scope.name', 'otel.library.name'])) || 'unknown',
+        otelScopeVersion: getFirstString(s.otel_scope_version, getAttrString(attrs, ['otel.scope.version'])) || 'unknown',
+        containerId: getFirstString(s.container_id, getAttrString(attrs, ['container.id'])) || 'unknown',
+        container: getSpanContainer(s as Record<string, unknown>, attrs),
+        k8sNamespace: getFirstString(s.k8s_namespace, getAttrString(attrs, ['k8s.namespace.name'])) || 'unknown',
+        k8sPodName: getFirstString(s.k8s_pod_name, getAttrString(attrs, ['k8s.pod.name'])) || 'unknown',
+        k8sContainerName: getFirstString(s.k8s_container_name, getAttrString(attrs, ['k8s.container.name'])) || 'unknown',
         attributes: attrs,
       };
     });
