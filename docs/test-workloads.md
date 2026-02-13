@@ -23,7 +23,7 @@ Five Docker Compose stacks are provided to spin up realistic test containers acr
 | `data-services` | db-postgres, db-redis, mq-rabbitmq | Database, cache, message queue |
 | `web-platform` | web-frontend, web-backend-1/2, app-gateway, app-cron | Web tier + API gateway |
 | `workers` | worker-1/2, app-api, app-worker-queue | Workers + backend API |
-| `staging-dev` | staging-web, staging-api, dev-web, monitoring-prometheus | Non-prod environments |
+| `staging-dev` | staging-web, staging-api, dev-web, monitoring-prometheus | Non-prod environments (Prometheus internal-only; no host port publish by default) |
 | `issue-simulators` | 10 issue containers + 6 heavy-load stress containers | Anomaly, security, health, CPU/memory/network stress |
 
 ## Heavy-Load Containers

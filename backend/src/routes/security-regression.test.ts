@@ -14,6 +14,8 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 // ─── Service Mocks ─────────────────────────────────────────────────────
 // Every service imported transitively by any route module must be mocked
@@ -926,7 +928,28 @@ describe('False Positive Checks', () => {
 });
 
 // =====================================================================
-//  4. RATE LIMITING VERIFICATION
+//  4. INFRASTRUCTURE EXPOSURE DEFAULTS
+// =====================================================================
+describe('Infrastructure Exposure Defaults', () => {
+  it('should not host-publish Prometheus in workloads/staging-dev.yml by default', () => {
+    const file = path.resolve(process.cwd(), '..', 'workloads', 'staging-dev.yml');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).not.toMatch(/\b9090:9090\b/);
+    expect(content).not.toMatch(/ports:\s*\n\s*-\s*["']?9090:9090["']?/m);
+  });
+
+  it('should document localhost-bound Ollama startup in README', () => {
+    const file = path.resolve(process.cwd(), '..', 'README.md');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toContain('OLLAMA_HOST=127.0.0.1:11434 ollama serve');
+    expect(content).toContain('Do not expose Ollama on `0.0.0.0` without authentication.');
+  });
+});
+
+// =====================================================================
+//  5. RATE LIMITING VERIFICATION
 // =====================================================================
 describe('Rate Limiting Verification', () => {
   let app: FastifyInstance;

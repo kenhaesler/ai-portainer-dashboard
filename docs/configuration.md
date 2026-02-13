@@ -43,6 +43,20 @@ When `LLM_VERIFY_SSL=false`:
 - The Ollama SDK is initialized with the custom `llmFetch` function to ensure it also respects SSL settings
 - The `--use-system-ca` Node.js flag is set in Docker images to trust system CA certificates
 
+### Safe exposure defaults (Prometheus + Ollama)
+
+Default posture in this project is internal-only exposure for infrastructure services.
+
+- Prometheus should not be host-published by default in provided workloads.
+- Ollama should be localhost-bound by default (`OLLAMA_HOST=127.0.0.1:11434`) when run directly on a host.
+- Do not expose Prometheus/Ollama on `0.0.0.0` without authentication.
+
+Approved external access pattern (when needed):
+
+1. Keep Prometheus/Ollama on internal network or localhost.
+2. Front them with an authenticated reverse proxy (SSO/token/basic auth) or a bastion tunnel.
+3. Point dashboard config (`OLLAMA_BASE_URL`) to the protected endpoint only.
+
 ## Monitoring & Metrics
 
 | Variable | Description | Default |

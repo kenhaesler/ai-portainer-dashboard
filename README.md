@@ -25,6 +25,17 @@
 
 ---
 
+## Architecture
+
+This project follows a **Monorepo** structure with a **Client-Server (Full-stack)** architectural pattern:
+
+- **Frontend:** React 19 (Vite) + Tailwind CSS v4 + TanStack Query
+- **Backend:** Fastify 5 + Socket.IO + SQLite (WAL)
+- **Design Philosophy:** **Observer-First** — focuses on deep visibility; mutating actions are gated by a remediation approval workflow.
+- **AI Engine:** Integrated Ollama support for local LLM insights and chat.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -82,8 +93,13 @@ Ollama is not bundled in the Docker Compose stack. Install and run it on your ho
 
 ```bash
 ollama pull llama3.2
-ollama serve
+OLLAMA_HOST=127.0.0.1:11434 ollama serve
 ```
+
+Security defaults for Ollama:
+- Do not expose Ollama on `0.0.0.0` without authentication.
+- Preferred default is localhost-only binding (`127.0.0.1`).
+- If remote access is required, place Ollama behind an authenticated reverse proxy or bastion and set `OLLAMA_BASE_URL` to that protected endpoint.
 
 ### 4. Access the dashboard
 

@@ -57,6 +57,8 @@ npm run test -w frontend   # Frontend only
 
 ### Key Patterns
 
+- **Observer-First principle**: Visibility prioritized; actions require explicit approval.
+- **Layered backend architecture**: Routes → Services → Models.
 - **Server state**: TanStack React Query. **UI state**: Zustand.
 - Zod validation on all Portainer API responses.
 - Path alias `@/*` → `./src/*` in both workspaces.
