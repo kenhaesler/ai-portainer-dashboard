@@ -43,6 +43,26 @@ vi.mock('@/hooks/use-llm-feedback', () => ({
   }),
 }));
 
+vi.mock('@/providers/auth-provider', () => ({
+  useAuth: vi.fn().mockReturnValue({
+    isAuthenticated: true,
+    username: 'admin',
+    token: 'test-token',
+    role: 'viewer',
+    login: vi.fn(),
+    loginWithToken: vi.fn(),
+    logout: vi.fn(),
+  }),
+}));
+
+vi.mock('@/hooks/use-prompt-profiles', () => ({
+  usePromptProfiles: vi.fn().mockReturnValue({ data: undefined }),
+  useSwitchProfile: vi.fn().mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -54,6 +74,9 @@ vi.mock('sonner', () => ({
 import LlmAssistantPage from './llm-assistant';
 import { useLlmChat } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
+import { useAuth } from '@/providers/auth-provider';
+import { usePromptProfiles, useSwitchProfile } from '@/hooks/use-prompt-profiles';
+import { toast } from 'sonner';
 
 function renderPage(initialEntry: string = '/assistant', state?: Record<string, unknown>) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -177,6 +200,181 @@ describe('LlmAssistantPage', () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith('Show me all running containers and their resource usage', undefined, 'llama3.2');
+  });
+});
+
+describe('LLM Profile Selector', () => {
+  const mockProfiles = [
+    { id: 'default', name: 'Default', description: 'Built-in profile', isBuiltIn: true, prompts: {}, createdAt: '', updatedAt: '' },
+    { id: 'custom-1', name: 'Security Focus', description: 'Security oriented', isBuiltIn: false, prompts: {}, createdAt: '', updatedAt: '' },
+    { id: 'custom-2', name: 'Verbose', description: 'Detailed responses', isBuiltIn: false, prompts: {}, createdAt: '', updatedAt: '' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders profile selector for admin users', () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'admin',
+      token: 'test-token',
+      role: 'admin',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: mockProfiles, activeProfileId: 'default' },
+    } as any);
+
+    renderPage();
+
+    // Should have two comboboxes: profile selector + model selector
+    const selects = screen.getAllByRole('combobox');
+    expect(selects.length).toBe(2);
+
+    // Open the profile selector (first combobox)
+    fireEvent.click(selects[0]);
+    expect(screen.getByRole('option', { name: /Default/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Security Focus/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Verbose/ })).toBeTruthy();
+  });
+
+  it('hides profile selector for non-admin users', () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'viewer-user',
+      token: 'test-token',
+      role: 'viewer',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: mockProfiles, activeProfileId: 'default' },
+    } as any);
+
+    renderPage();
+
+    // Only one combobox: model selector (no profile selector)
+    const selects = screen.getAllByRole('combobox');
+    expect(selects.length).toBe(1);
+  });
+
+  it('calls switchProfile on selection change', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ success: true, activeProfileId: 'custom-1' });
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'admin',
+      token: 'test-token',
+      role: 'admin',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: mockProfiles, activeProfileId: 'default' },
+    } as any);
+    vi.mocked(useSwitchProfile).mockReturnValue({
+      mutateAsync,
+      isPending: false,
+    } as any);
+
+    renderPage();
+
+    const selects = screen.getAllByRole('combobox');
+    fireEvent.click(selects[0]);
+    fireEvent.click(screen.getByRole('option', { name: /Security Focus/ }));
+
+    expect(mutateAsync).toHaveBeenCalledWith({ id: 'custom-1' });
+  });
+
+  it('shows active profile as selected', () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'admin',
+      token: 'test-token',
+      role: 'admin',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: mockProfiles, activeProfileId: 'custom-1' },
+    } as any);
+
+    renderPage();
+
+    const selects = screen.getAllByRole('combobox');
+    // The profile selector trigger should display the active profile name
+    expect(selects[0].textContent).toContain('Security Focus');
+  });
+
+  it('disables profile selector while streaming', () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'admin',
+      token: 'test-token',
+      role: 'admin',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: mockProfiles, activeProfileId: 'default' },
+    } as any);
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: true,
+      currentResponse: 'Generating...',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    const selects = screen.getAllByRole('combobox');
+    expect(selects[0]).toHaveProperty('disabled', true);
+  });
+
+  it('marks built-in profiles with diamond marker', () => {
+    vi.mocked(useAuth).mockReturnValue({
+      isAuthenticated: true,
+      username: 'admin',
+      token: 'test-token',
+      role: 'admin',
+      login: vi.fn(),
+      loginWithToken: vi.fn(),
+      logout: vi.fn(),
+    });
+    vi.mocked(usePromptProfiles).mockReturnValue({
+      data: { profiles: mockProfiles, activeProfileId: 'default' },
+    } as any);
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    const selects = screen.getAllByRole('combobox');
+    fireEvent.click(selects[0]);
+
+    // Built-in profile should have the diamond marker
+    const defaultOption = screen.getByRole('option', { name: /Default/ });
+    expect(defaultOption.textContent).toContain('✦');
+
+    // Custom profiles should NOT have the marker
+    const customOption = screen.getByRole('option', { name: /Security Focus/ });
+    expect(customOption.textContent).not.toContain('✦');
   });
 });
 
