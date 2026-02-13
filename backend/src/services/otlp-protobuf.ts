@@ -113,12 +113,46 @@ function nanosToString(value: number | Long | bigint): string {
 }
 
  
-function convertAnyValue(av: any): { stringValue?: string; intValue?: string | number; doubleValue?: number; boolValue?: boolean } {
+type ConvertedAnyValue = {
+  stringValue?: string;
+  intValue?: string | number;
+  doubleValue?: number;
+  boolValue?: boolean;
+  arrayValue?: { values: ConvertedAnyValue[] };
+  kvlistValue?: { values: Array<{ key: string; value: ConvertedAnyValue }> };
+  bytesValue?: string;
+};
+
+function convertAnyValue(av: any): ConvertedAnyValue {
   if (!av) return {};
   if (av.stringValue !== undefined && av.stringValue !== null) return { stringValue: av.stringValue };
   if (av.intValue !== undefined && av.intValue !== null) return { intValue: Number(av.intValue) };
   if (av.doubleValue !== undefined && av.doubleValue !== null) return { doubleValue: av.doubleValue };
   if (av.boolValue !== undefined && av.boolValue !== null) return { boolValue: av.boolValue };
+  if (Array.isArray(av.arrayValue?.values)) {
+    return {
+      arrayValue: {
+        values: av.arrayValue.values.map((entry: any) => convertAnyValue(entry)),
+      },
+    };
+  }
+  if (Array.isArray(av.kvlistValue?.values)) {
+    return {
+      kvlistValue: {
+        values: av.kvlistValue.values.map((entry: any) => ({
+          key: entry.key,
+          value: convertAnyValue(entry.value),
+        })),
+      },
+    };
+  }
+  if (av.bytesValue !== undefined && av.bytesValue !== null) {
+    return {
+      bytesValue: Buffer.isBuffer(av.bytesValue)
+        ? av.bytesValue.toString('base64')
+        : Buffer.from(av.bytesValue).toString('base64'),
+    };
+  }
   return {};
 }
 

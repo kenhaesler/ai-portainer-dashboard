@@ -23,6 +23,9 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
 
   fastify.addHook('onResponse', async (request, reply) => {
     const url = request.routeOptions?.url ?? request.url;
+    const host = request.hostname || (typeof request.headers.host === 'string' ? request.headers.host : '');
+    const protocol = request.protocol || 'http';
+    const urlFull = host ? `${protocol}://${host}${url}` : url;
 
     // Skip excluded paths
     for (const prefix of EXCLUDED_PREFIXES) {
@@ -58,10 +61,26 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
         attributes: JSON.stringify({
           method: request.method,
           url,
+          'url.full': urlFull,
+          'url.path': url,
+          'http.method': request.method,
           statusCode: reply.statusCode,
+          'http.status_code': reply.statusCode,
+          'server.address': host || null,
+          'url.scheme': protocol,
+          'network.protocol.name': protocol,
+          'network.transport': 'tcp',
           contentLength: reply.getHeader('content-length') ?? null,
         }),
         trace_source: 'http',
+        http_method: request.method,
+        http_route: url,
+        http_status_code: reply.statusCode,
+        server_address: host || null,
+        url_full: urlFull || null,
+        url_scheme: protocol,
+        network_transport: 'tcp',
+        network_protocol_name: protocol,
       });
     } catch (err) {
       log.warn({ err }, 'Failed to insert request span');
