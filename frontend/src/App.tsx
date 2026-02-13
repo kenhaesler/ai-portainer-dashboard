@@ -8,9 +8,17 @@ import { SearchProvider } from './providers/search-provider';
 import { Toaster } from 'sonner';
 import { domAnimation, LazyMotion, MotionConfig } from 'framer-motion';
 import { useUiStore } from './stores/ui-store';
+import { useEffect } from 'react';
 
 export function App() {
   const potatoMode = useUiStore((state) => state.potatoMode);
+
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-potato-mode', potatoMode);
+    return () => {
+      document.documentElement.removeAttribute('data-potato-mode');
+    };
+  }, [potatoMode]);
 
   return (
     <ThemeProvider>

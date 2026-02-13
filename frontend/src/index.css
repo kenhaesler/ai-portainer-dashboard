@@ -1875,3 +1875,8 @@ tr.keyboard-selected {
   transition: none !important;
   scroll-behavior: auto !important;
 }
+
+html[data-potato-mode],
+html[data-potato-mode] body {
+  scroll-behavior: auto !important;
+}
