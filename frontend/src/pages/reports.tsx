@@ -28,76 +28,13 @@ import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
+import { exportToCsv } from '@/lib/csv-export';
 
 const TIME_RANGES = [
   { value: '24h', label: '24 Hours' },
   { value: '7d', label: '7 Days' },
   { value: '30d', label: '30 Days' },
 ];
-
-function exportReportCSV(containers: ContainerReport[], timeRange: string) {
-  const escapeCsvValue = (value: string | number | null | undefined) => {
-    if (value === null || value === undefined) return '';
-    const raw = String(value);
-    return raw.includes(',') || raw.includes('"') || raw.includes('\n')
-      ? `"${raw.replace(/"/g, '""')}"`
-      : raw;
-  };
-
-  const header = [
-    'container_name',
-    'container_id',
-    'endpoint_id',
-    'cpu_avg',
-    'cpu_min',
-    'cpu_max',
-    'cpu_p50',
-    'cpu_p95',
-    'cpu_p99',
-    'memory_avg',
-    'memory_min',
-    'memory_max',
-    'memory_p50',
-    'memory_p95',
-    'memory_p99',
-  ].join(',');
-
-  const rows = containers.map((c) =>
-    [
-      escapeCsvValue(c.container_name),
-      escapeCsvValue(c.container_id),
-      escapeCsvValue(c.endpoint_id),
-      escapeCsvValue(c.cpu?.avg),
-      escapeCsvValue(c.cpu?.min),
-      escapeCsvValue(c.cpu?.max),
-      escapeCsvValue(c.cpu?.p50),
-      escapeCsvValue(c.cpu?.p95),
-      escapeCsvValue(c.cpu?.p99),
-      escapeCsvValue(c.memory?.avg),
-      escapeCsvValue(c.memory?.min),
-      escapeCsvValue(c.memory?.max),
-      escapeCsvValue(c.memory?.p50),
-      escapeCsvValue(c.memory?.p95),
-      escapeCsvValue(c.memory?.p99),
-    ].join(','),
-  );
-
-  const csv = [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  try {
-    a.href = url;
-    a.download = `resource-report-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-  } finally {
-    if (a.parentNode) {
-      a.parentNode.removeChild(a);
-    }
-    URL.revokeObjectURL(url);
-  }
-}
 
 function StatCard({
   label,
@@ -467,6 +404,50 @@ export default function ReportsPage() {
     }));
   }, [trends]);
 
+  const exportRows = useMemo<Record<string, unknown>[]>(() => {
+    if (report?.containers?.length) {
+      return report.containers.map((c) => ({
+        container_name: c.container_name,
+        container_id: c.container_id,
+        endpoint_id: c.endpoint_id,
+        cpu_avg: c.cpu?.avg ?? '',
+        cpu_min: c.cpu?.min ?? '',
+        cpu_max: c.cpu?.max ?? '',
+        cpu_p50: c.cpu?.p50 ?? '',
+        cpu_p95: c.cpu?.p95 ?? '',
+        cpu_p99: c.cpu?.p99 ?? '',
+        memory_avg: c.memory?.avg ?? '',
+        memory_min: c.memory?.min ?? '',
+        memory_max: c.memory?.max ?? '',
+        memory_p50: c.memory?.p50 ?? '',
+        memory_p95: c.memory?.p95 ?? '',
+        memory_p99: c.memory?.p99 ?? '',
+      }));
+    }
+
+    if (!allContainers?.length) return [];
+
+    // Fallback: export inventory rows even when utilization metrics are currently empty.
+    return allContainers.map((container) => ({
+      container_name: container.name,
+      container_id: container.id,
+      endpoint_id: container.endpointId,
+      endpoint_name: container.endpointName,
+      state: container.state,
+      status: container.status,
+      image: container.image,
+      stack: container.labels?.['com.docker.compose.project'] ?? '',
+      created_at: new Date(container.created * 1000).toISOString(),
+    }));
+  }, [report?.containers, allContainers]);
+
+  const handleExportCsv = () => {
+    if (!exportRows.length) return;
+    const scope = selectedEndpoint != null ? `endpoint-${selectedEndpoint}` : 'all-endpoints';
+    const date = new Date().toISOString().slice(0, 10);
+    exportToCsv(exportRows, `resource-report-${timeRange}-${scope}-${date}.csv`);
+  };
+
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -489,8 +470,8 @@ export default function ReportsPage() {
           </p>
         </div>
         <button
-          onClick={() => report && exportReportCSV(report.containers, timeRange)}
-          disabled={!report?.containers.length}
+          onClick={handleExportCsv}
+          disabled={!exportRows.length}
           className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
         >
           <Download className="h-4 w-4" />
