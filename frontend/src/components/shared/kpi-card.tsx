@@ -6,6 +6,7 @@ import { useCountUp } from '@/hooks/use-count-up';
 import { KpiSparkline } from '@/components/charts/kpi-sparkline';
 import { useUiStore } from '@/stores/ui-store';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { spring, duration } from '@/lib/motion-tokens';
 
 interface KpiCardProps {
   label: string;
@@ -84,7 +85,7 @@ export function KpiCard({
                 ? { scale: [1, 1.05, 1] }
                 : { scale: 1 }
             }
-            transition={{ duration: 0.3, ease: 'easeOut' }}
+            transition={{ duration: duration.base, ease: 'easeOut' }}
           >
             {isNumeric ? displayValue : value}
           </motion.p>
@@ -98,7 +99,7 @@ export function KpiCard({
               )}
               initial={reducedMotion ? false : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8, duration: 0.2, type: 'spring', bounce: 0.4 }}
+              transition={{ delay: 0.8, ...spring.bouncy }}
             >
               {trend === 'up' && <TrendingUp className="h-3 w-3" />}
               {trend === 'down' && <TrendingDown className="h-3 w-3" />}
