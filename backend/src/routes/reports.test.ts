@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { reportsRoutes } from './reports.js';
@@ -39,6 +39,10 @@ describe('Reports routes', () => {
 
   afterAll(async () => {
     await app.close();
+  });
+
+  beforeEach(() => {
+    mockQuery.mockReset();
   });
 
   describe('GET /api/reports/utilization', () => {
@@ -117,6 +121,46 @@ describe('Reports routes', () => {
 
       expect(res.statusCode).toBe(200);
     });
+
+    it('excludes infrastructure containers by default', async () => {
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'infra-1',
+              container_name: 'redis',
+              endpoint_id: 1,
+              metric_type: 'cpu',
+              avg_value: 10,
+              min_value: 5,
+              max_value: 20,
+              sample_count: 50,
+            },
+            {
+              container_id: 'app-1',
+              container_name: 'web',
+              endpoint_id: 1,
+              metric_type: 'cpu',
+              avg_value: 60,
+              min_value: 20,
+              max_value: 95,
+              sample_count: 50,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: 40, p95: 90, p99: 95 }] });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?timeRange=7d',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.payload);
+      expect(body.includeInfrastructure).toBe(false);
+      expect(body.containers).toHaveLength(1);
+      expect(body.containers[0].container_name).toBe('web');
+    });
   });
 
   describe('GET /api/reports/trends', () => {
@@ -153,6 +197,88 @@ describe('Reports routes', () => {
       const body = JSON.parse(res.payload);
       expect(body.trends.cpu).toEqual([]);
       expect(body.trends.memory).toEqual([]);
+    });
+  });
+
+  describe('GET /api/reports/management', () => {
+    it('returns management report payload contract with default settings', async () => {
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'app-1',
+              container_name: 'web',
+              endpoint_id: 1,
+              cpu_avg: 65.2,
+              cpu_max: 94,
+              memory_avg: 70.1,
+              memory_max: 91,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              day: '2025-01-01T00:00:00.000Z',
+              metric_type: 'cpu',
+              avg_value: 62,
+              min_value: 20,
+              max_value: 94,
+              sample_count: 120,
+            },
+            {
+              day: '2025-01-01T00:00:00.000Z',
+              metric_type: 'memory',
+              avg_value: 70,
+              min_value: 35,
+              max_value: 91,
+              sample_count: 120,
+            },
+          ],
+        });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/management',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.payload);
+      expect(body.reportType).toBe('management');
+      expect(body.scope.timeRange).toBe('7d');
+      expect(body.scope.includeInfrastructure).toBe(false);
+      expect(body.executiveSummary.totalServices).toBe(1);
+      expect(body.topServices).toHaveLength(1);
+      expect(body.weeklyTrends.cpu).toHaveLength(1);
+    });
+
+    it('supports includeInfrastructure query parameter', async () => {
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'infra-1',
+              container_name: 'redis',
+              endpoint_id: 1,
+              cpu_avg: 20,
+              cpu_max: 30,
+              memory_avg: 30,
+              memory_max: 45,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/management?includeInfrastructure=true',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.payload);
+      expect(body.scope.includeInfrastructure).toBe(true);
+      expect(body.topServices).toHaveLength(1);
+      expect(body.topServices[0].containerName).toBe('redis');
     });
   });
 });
