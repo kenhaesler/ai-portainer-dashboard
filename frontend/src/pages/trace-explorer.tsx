@@ -267,8 +267,6 @@ function TraceListItem({
   const spanCount = trace.span_count ?? trace.spans?.length ?? 0;
   const serviceCount = trace.services?.length ?? 1;
   const startTime = trace.startTime || trace.start_time || '';
-  const containerLabel = (trace.containerName || trace.container_name
-    || trace.k8sContainerName || trace.k8s_container_name || 'unknown');
 
   return (
     <button
@@ -916,9 +914,6 @@ export default function TraceExplorerPage() {
             </button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Need precision? Filter by HTTP route/status or service and container namespaces.
-        </p>
         <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
           <p className="font-medium text-foreground">eBPF Quick Guide</p>
           <p className="mt-1">
