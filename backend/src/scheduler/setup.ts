@@ -4,7 +4,7 @@ import { runMonitoringCycle } from '../services/monitoring-service.js';
 import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
+import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
 import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
 import { getSetting } from '../services/settings-store.js';
@@ -259,8 +259,35 @@ async function runCleanup(): Promise<void> {
   }
 }
 
+async function warmCache(): Promise<void> {
+  log.info('Warming cache: endpoints + containers');
+  try {
+    const endpoints = await cachedFetch(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
+    // Pre-fetch containers for all endpoints in parallel
+    await Promise.allSettled(
+      endpoints.map((ep) =>
+        cachedFetch(
+          getCacheKey('containers', ep.Id),
+          TTL.CONTAINERS,
+          () => getContainers(ep.Id),
+        ),
+      ),
+    );
+    log.info({ endpoints: endpoints.length }, 'Cache warmed successfully');
+  } catch (err) {
+    log.warn({ err }, 'Cache warming failed — first requests will be slower');
+  }
+}
+
 export function startScheduler(): void {
   const config = getConfig();
+
+  // Warm cache immediately to avoid thundering herd on first requests
+  warmCache().catch(() => {});
 
   if (config.METRICS_COLLECTION_ENABLED) {
     const metricsIntervalMs = config.METRICS_COLLECTION_INTERVAL_SECONDS * 1000;

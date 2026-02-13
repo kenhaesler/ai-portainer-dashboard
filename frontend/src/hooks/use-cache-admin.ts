@@ -21,7 +21,7 @@ export function useCacheStats() {
   return useQuery<CacheStats>({
     queryKey: ['admin', 'cache', 'stats'],
     queryFn: () => api.get<CacheStats>('/api/admin/cache/stats'),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
 }
 

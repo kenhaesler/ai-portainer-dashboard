@@ -22,7 +22,7 @@ export async function imagesRoutes(fastify: FastifyInstance) {
     if (endpointId) {
       const images = await cachedFetch(
         getCacheKey('images', endpointId),
-        TTL.CONTAINERS,
+        TTL.IMAGES,
         () => portainer.getImages(endpointId),
       );
       return images.map((img) => normalizeImage(img, endpointId));
@@ -40,7 +40,7 @@ export async function imagesRoutes(fastify: FastifyInstance) {
         try {
           const images = await cachedFetch(
             getCacheKey('images', ep.Id),
-            TTL.CONTAINERS,
+            TTL.IMAGES,
             () => portainer.getImages(ep.Id),
           );
           return images.map((img) => normalizeImage(img, ep.Id, ep.Name));
@@ -110,7 +110,7 @@ export async function imagesRoutes(fastify: FastifyInstance) {
         try {
           const images = await cachedFetch(
             getCacheKey('images', ep.Id),
-            TTL.CONTAINERS,
+            TTL.IMAGES,
             () => portainer.getImages(ep.Id),
           );
           for (const img of images) {

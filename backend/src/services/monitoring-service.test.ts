@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../config/index.js', () => ({
   getConfig: vi.fn().mockReturnValue({
     ANOMALY_DETECTION_METHOD: 'adaptive',
+    ANOMALY_COOLDOWN_MINUTES: 0,
+    ANOMALY_THRESHOLD_PCT: 80,
     PREDICTIVE_ALERTING_ENABLED: true,
     PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
     ANOMALY_EXPLANATION_ENABLED: true,
@@ -52,13 +54,9 @@ vi.mock('./security-scanner.js', () => ({
   scanContainer: () => [],
 }));
 
-vi.mock('./metrics-collector.js', () => ({
-  collectMetrics: vi.fn().mockResolvedValue({ cpu: 50, memory: 60, memoryBytes: 1024 }),
-}));
-
-const mockInsertMetrics = vi.fn();
+const mockGetLatestMetrics = vi.fn().mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
 vi.mock('./metrics-store.js', () => ({
-  insertMetrics: (...args: unknown[]) => mockInsertMetrics(...args),
+  getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
 }));
 
 const mockDetectAnomalyAdaptive = vi.fn().mockReturnValue(null);
@@ -132,6 +130,7 @@ describe('monitoring-service', () => {
     vi.clearAllMocks();
     mockGetEndpoints.mockResolvedValue([]);
     mockGetContainers.mockResolvedValue([]);
+    mockGetLatestMetrics.mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
     mockDetectAnomalyAdaptive.mockReturnValue(null);
     mockIsOllamaAvailable.mockResolvedValue(false);
     mockGetCapacityForecasts.mockReturnValue([]);
@@ -387,6 +386,19 @@ describe('monitoring-service', () => {
       expect(mockCachedFetchSWR).toHaveBeenCalledTimes(3);
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:2', 300, expect.any(Function));
+    });
+
+    it('reads metrics from DB instead of collecting from Portainer API', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockGetLatestMetrics.mockResolvedValue({ cpu: 75, memory: 80, memory_bytes: 2048 });
+
+      await runMonitoringCycle();
+
+      // Should read from DB using getLatestMetrics
+      expect(mockGetLatestMetrics).toHaveBeenCalledWith('c1');
     });
   });
 

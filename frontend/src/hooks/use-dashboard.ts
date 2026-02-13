@@ -66,7 +66,8 @@ export function useDashboard() {
   return useQuery<DashboardSummary>({
     queryKey: ['dashboard', 'summary'],
     queryFn: () => api.get<DashboardSummary>('/api/dashboard/summary'),
-    staleTime: 30 * 1000,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
     refetchInterval: enabled ? interval * 1000 : false,
   });
 }

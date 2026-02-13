@@ -5,6 +5,7 @@ const mockGetEndpoints = vi.fn();
 const mockGetContainers = vi.fn();
 const mockGetContainerLogs = vi.fn();
 const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
+const mockCachedFetch = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
 
 vi.mock('./elasticsearch-config.js', () => ({
   getElasticsearchConfig: (...args: unknown[]) => mockGetElasticsearchConfig(...args),
@@ -17,6 +18,7 @@ vi.mock('./portainer-client.js', () => ({
 }));
 
 vi.mock('./portainer-cache.js', () => ({
+  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args as [string, number, () => Promise<unknown>]),
   cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
   getCacheKey: (...args: (string | number)[]) => args.join(':'),
   TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
@@ -124,13 +126,17 @@ describe('elasticsearch-log-forwarder', () => {
     expect(secondDoc.containerImage).toBe('api:latest');
   });
 
-  it('uses cachedFetchSWR for endpoints and containers', async () => {
+  it('uses cachedFetchSWR for endpoints and containers, cachedFetch for logs', async () => {
     await runElasticsearchLogForwardingCycle();
 
     // cachedFetchSWR should be called for endpoints (1) + containers (1 per endpoint)
     expect(mockCachedFetchSWR).toHaveBeenCalledTimes(2);
     expect(mockCachedFetchSWR).toHaveBeenCalledWith('endpoints', 900, expect.any(Function));
     expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:1', 300, expect.any(Function));
+
+    // cachedFetch should be called for container logs (1 per running container)
+    expect(mockCachedFetch).toHaveBeenCalledTimes(1);
+    expect(mockCachedFetch).toHaveBeenCalledWith('es-logs:1:container-1', 25, expect.any(Function));
   });
 
   it('halts work when elasticsearch gets disabled mid-cycle', async () => {

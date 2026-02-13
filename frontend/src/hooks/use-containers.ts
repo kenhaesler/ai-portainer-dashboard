@@ -30,5 +30,7 @@ export function useContainers(endpointId?: number) {
         : '/api/containers';
       return api.get<Container[]>(path);
     },
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }

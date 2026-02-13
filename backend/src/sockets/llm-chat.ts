@@ -146,7 +146,21 @@ export function looksLikeToolCallAttempt(text: string): boolean {
 // Per-session conversation history
 const sessions = new Map<string, ChatMessage[]>();
 
+// Cached infrastructure context — shared across all chat sessions
+let cachedInfraContext: { text: string; expiresAt: number } | null = null;
+const INFRA_CONTEXT_TTL_MS = 30_000; // 30 seconds
+
 async function buildInfrastructureContext(): Promise<string> {
+  if (cachedInfraContext && Date.now() < cachedInfraContext.expiresAt) {
+    return cachedInfraContext.text;
+  }
+
+  const result = await buildInfrastructureContextUncached();
+  cachedInfraContext = { text: result, expiresAt: Date.now() + INFRA_CONTEXT_TTL_MS };
+  return result;
+}
+
+async function buildInfrastructureContextUncached(): Promise<string> {
   try {
     // Fetch infrastructure data
     const endpoints = await cachedFetch(

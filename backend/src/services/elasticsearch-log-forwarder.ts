@@ -1,7 +1,7 @@
 import { Agent } from 'undici';
 import { getContainers, getContainerLogs, getEndpoints } from './portainer-client.js';
 import { getElasticsearchConfig, type ElasticsearchConfig } from './elasticsearch-config.js';
-import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
+import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('es-log-forwarder');
@@ -196,11 +196,15 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
         const since = checkpoints.get(checkpointKey) ?? getInitialSince();
 
         try {
-          const logsRaw = await getContainerLogs(endpoint.Id, container.Id, {
-            since,
-            tail: MAX_LOG_LINES_PER_CONTAINER,
-            timestamps: true,
-          });
+          const logsRaw = await cachedFetch(
+            getCacheKey('es-logs', endpoint.Id, container.Id),
+            25, // 25s TTL — shorter than the 30s forward interval
+            () => getContainerLogs(endpoint.Id, container.Id, {
+              since,
+              tail: MAX_LOG_LINES_PER_CONTAINER,
+              timestamps: true,
+            }),
+          );
 
           const lines = logsRaw
             .split('\n')

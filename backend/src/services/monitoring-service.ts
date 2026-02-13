@@ -6,8 +6,8 @@ import { getEndpoints, getContainers } from './portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.js';
 import { scanContainer } from './security-scanner.js';
-import { collectMetrics } from './metrics-collector.js';
-import { insertMetrics, type MetricInsert } from './metrics-store.js';
+import { getLatestMetrics } from './metrics-store.js';
+import type { MetricInsert } from './metrics-store.js';
 import { detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
@@ -101,61 +101,54 @@ export async function runMonitoringCycle(): Promise<void> {
       endpointsDown: endpoints.filter((endpoint) => endpoint.status === 'down').length,
     });
 
-    // 2. Collect metrics for running containers (skip Edge Async — no live stats)
+    // 2. Read latest metrics from DB (scheduler collects every 60s — avoid duplicate API calls)
     const edgeAsyncEndpointIds = new Set(
       endpoints.filter((ep) => !ep.capabilities.liveStats).map((ep) => ep.id),
     );
-    const metricsToInsert: MetricInsert[] = [];
+    const metricsFromDb: MetricInsert[] = [];
     const runningContainers = allContainers.filter(
       (c) => c.raw.State === 'running' && !edgeAsyncEndpointIds.has(c.endpointId),
     );
 
-    if (edgeAsyncEndpointIds.size > 0) {
-      log.debug(
-        { edgeAsyncEndpoints: edgeAsyncEndpointIds.size },
-        'Skipping Edge Async endpoints for live metrics collection',
-      );
-    }
-
     for (const container of runningContainers) {
       try {
-        const stats = await collectMetrics(container.endpointId, container.raw.Id);
+        const latest = await getLatestMetrics(container.raw.Id);
         const containerName =
           container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
 
-        metricsToInsert.push(
-          {
+        if (latest.cpu !== undefined) {
+          metricsFromDb.push({
             endpoint_id: container.endpointId,
             container_id: container.raw.Id,
             container_name: containerName,
             metric_type: 'cpu',
-            value: stats.cpu,
-          },
-          {
+            value: latest.cpu,
+          });
+        }
+        if (latest.memory !== undefined) {
+          metricsFromDb.push({
             endpoint_id: container.endpointId,
             container_id: container.raw.Id,
             container_name: containerName,
             metric_type: 'memory',
-            value: stats.memory,
-          },
-          {
+            value: latest.memory,
+          });
+        }
+        if (latest.memory_bytes !== undefined) {
+          metricsFromDb.push({
             endpoint_id: container.endpointId,
             container_id: container.raw.Id,
             container_name: containerName,
             metric_type: 'memory_bytes',
-            value: stats.memoryBytes,
-          },
-        );
+            value: latest.memory_bytes,
+          });
+        }
       } catch (err) {
         log.warn(
           { containerId: container.raw.Id, err },
-          'Failed to collect metrics for container',
+          'Failed to read latest metrics for container',
         );
       }
-    }
-
-    if (metricsToInsert.length > 0) {
-      await insertMetrics(metricsToInsert);
     }
 
     // 3. Run security scan on all containers
@@ -190,7 +183,7 @@ export async function runMonitoringCycle(): Promise<void> {
         container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
 
       for (const metricType of ['cpu', 'memory'] as const) {
-        const metric = metricsToInsert.find(
+        const metric = metricsFromDb.find(
           (m) => m.container_id === container.raw.Id && m.metric_type === metricType,
         );
         if (!metric) continue;
@@ -239,7 +232,7 @@ export async function runMonitoringCycle(): Promise<void> {
         container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
 
       for (const metricType of ['cpu', 'memory'] as const) {
-        const metric = metricsToInsert.find(
+        const metric = metricsFromDb.find(
           (m) => m.container_id === container.raw.Id && m.metric_type === metricType,
         );
         if (!metric || metric.value <= config.ANOMALY_THRESHOLD_PCT) continue;
@@ -282,10 +275,10 @@ export async function runMonitoringCycle(): Promise<void> {
         const containerName =
           container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
 
-        const cpuMetric = metricsToInsert.find(
+        const cpuMetric = metricsFromDb.find(
           (m) => m.container_id === container.raw.Id && m.metric_type === 'cpu',
         );
-        const memMetric = metricsToInsert.find(
+        const memMetric = metricsFromDb.find(
           (m) => m.container_id === container.raw.Id && m.metric_type === 'memory',
         );
         if (!cpuMetric || !memMetric) continue;
@@ -569,7 +562,7 @@ export async function runMonitoringCycle(): Promise<void> {
         duration,
         endpoints: endpoints.length,
         containers: allContainers.length,
-        metricsCollected: metricsToInsert.length,
+        metricsFromDb: metricsFromDb.length,
         securityFindings: allFindings.length,
         anomalies: anomalyInsights.length,
         predictiveAlerts: predictiveInsights.length,

@@ -23,6 +23,12 @@ vi.mock('./portainer-client.js', () => ({
   getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
 }));
 
+// cachedFetch passthrough — invokes the fetcher function directly
+vi.mock('./portainer-cache.js', () => ({
+  cachedFetch: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+}));
+
 import { analyzeContainerLogs, analyzeLogsForContainers } from './log-analyzer.js';
 
 describe('log-analyzer', () => {
