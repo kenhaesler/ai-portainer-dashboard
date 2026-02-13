@@ -15,6 +15,8 @@ import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { resolveContainerStackName } from '@/lib/container-stack-grouping';
+import { exportToCsv } from '@/lib/csv-export';
+import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate } from '@/lib/utils';
 
 export default function WorkloadExplorerPage() {
@@ -24,10 +26,19 @@ export default function WorkloadExplorerPage() {
   // Read endpoint and stack from URL params
   const endpointParam = searchParams.get('endpoint');
   const stackParam = searchParams.get('stack');
+  const groupParam = searchParams.get('group');
   const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
   const selectedStack = stackParam || undefined;
+  const selectedGroup: ContainerGroup | undefined =
+    groupParam === 'system' || groupParam === 'workload'
+      ? groupParam
+      : undefined;
 
-  const setFilters = (endpointId: number | undefined, stackName: string | undefined) => {
+  const setFilters = (
+    endpointId: number | undefined,
+    stackName: string | undefined,
+    group: ContainerGroup | undefined
+  ) => {
     const params: Record<string, string> = {};
     if (endpointId !== undefined) {
       params.endpoint = String(endpointId);
@@ -35,15 +46,22 @@ export default function WorkloadExplorerPage() {
     if (stackName) {
       params.stack = stackName;
     }
+    if (group) {
+      params.group = group;
+    }
     setSearchParams(params);
   };
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
-    setFilters(endpointId, undefined);
+    setFilters(endpointId, undefined, selectedGroup);
   };
 
   const setSelectedStack = (stackName: string | undefined) => {
-    setFilters(selectedEndpoint, stackName);
+    setFilters(selectedEndpoint, stackName, selectedGroup);
+  };
+
+  const setSelectedGroup = (group: ContainerGroup | undefined) => {
+    setFilters(selectedEndpoint, selectedStack, group);
   };
 
   const { data: endpoints } = useEndpoints();
@@ -71,11 +89,40 @@ export default function WorkloadExplorerPage() {
     return [...stackNames].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
   }, [containers, knownStackNames]);
 
-  // Filter containers by stack if stack parameter is present
+  // Filter containers by stack/group URL params when present
   const filteredContainers = useMemo(() => {
-    if (!containers || !selectedStack) return containers;
-    return containers.filter((container) => resolveContainerStackName(container, knownStackNames) === selectedStack);
-  }, [containers, selectedStack, knownStackNames]);
+    if (!containers) return containers;
+    return containers.filter((container) => {
+      const stackMatches = !selectedStack || resolveContainerStackName(container, knownStackNames) === selectedStack;
+      const groupMatches = !selectedGroup || getContainerGroup(container) === selectedGroup;
+      return stackMatches && groupMatches;
+    });
+  }, [containers, selectedStack, selectedGroup, knownStackNames]);
+
+  const exportRows = useMemo<Record<string, unknown>[]>(() => {
+    if (!filteredContainers) return [];
+    return filteredContainers.map((container) => ({
+      name: container.name,
+      image: container.image,
+      group: getContainerGroupLabel(container),
+      stack: resolveContainerStackName(container, knownStackNames) ?? 'No Stack',
+      state: container.state,
+      status: container.status,
+      endpoint: container.endpointName,
+      created: formatDate(new Date(container.created * 1000)),
+    }));
+  }, [filteredContainers, knownStackNames]);
+
+  const handleExportCsv = () => {
+    if (!exportRows.length) return;
+    const scope = [
+      selectedEndpoint !== undefined ? `endpoint-${selectedEndpoint}` : 'all-endpoints',
+      selectedStack ?? 'all-stacks',
+      selectedGroup ?? 'all-groups',
+    ].join('-');
+    const date = new Date().toISOString().slice(0, 10);
+    exportToCsv(exportRows, `workload-explorer-${scope}-${date}.csv`);
+  };
 
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
@@ -117,6 +164,25 @@ export default function WorkloadExplorerPage() {
       cell: ({ getValue }) => (
         <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
       ),
+    },
+    {
+      id: 'group',
+      header: 'Group',
+      cell: ({ row }) => {
+        const label = getContainerGroupLabel(row.original);
+        const isSystem = label === 'System';
+        return (
+          <span
+            className={
+              isSystem
+                ? 'inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
+            }
+          >
+            {label}
+          </span>
+        );
+      },
     },
     {
       accessorKey: 'endpointName',
@@ -218,10 +284,35 @@ export default function WorkloadExplorerPage() {
           />
         </div>
 
+        <div className="flex items-center gap-2">
+          <label htmlFor="group-select" className="text-sm font-medium">
+            Group
+          </label>
+          <ThemedSelect
+            id="group-select"
+            value={selectedGroup ?? '__all__'}
+            onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
+            options={[
+              { value: '__all__', label: 'All groups' },
+              { value: 'system', label: 'System' },
+              { value: 'workload', label: 'Workload' },
+            ]}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={!exportRows.length}
+          className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          Export CSV
+        </button>
+
         {filteredContainers && (
           <span className="text-sm text-muted-foreground">
             {filteredContainers.length} container{filteredContainers.length !== 1 ? 's' : ''}
-            {selectedStack && containers && filteredContainers.length !== containers.length && (
+            {(selectedStack || selectedGroup) && containers && filteredContainers.length !== containers.length && (
               <span className="ml-1">
                 (of {containers.length} total)
               </span>
