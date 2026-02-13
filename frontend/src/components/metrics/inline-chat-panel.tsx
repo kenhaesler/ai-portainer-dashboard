@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, Send, X, User, AlertCircle, Wrench, CheckCircle2, XCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -42,7 +42,7 @@ const SUGGESTED_QUESTIONS = [
   'Is memory trending up?',
 ];
 
-export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps) {
+export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps) {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -276,7 +276,7 @@ export function InlineChatPanel({ open, onClose, context }: InlineChatPanelProps
       </div>
     </div>
   );
-}
+});
 
 function BotAvatar() {
   return (

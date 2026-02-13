@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -30,12 +30,11 @@ import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { AiMetricsSummary } from '@/components/metrics/ai-metrics-summary';
 import { InlineChatPanel } from '@/components/metrics/inline-chat-panel';
-import { CorrelationInsightsPanel } from '@/components/metrics/correlation-insights-panel';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
+import { decimateTimeSeries } from '@/lib/metrics-decimation';
 import {
   BarChart,
   Bar,
@@ -65,6 +64,14 @@ const METRIC_TYPES = [
   { value: 'memory', label: 'Memory Usage', icon: MemoryStick, color: '#8b5cf6', unit: '%' },
   { value: 'memory_bytes', label: 'Memory (Bytes)', icon: MemoryStick, color: '#06b6d4', unit: ' MB' },
 ];
+
+const LazyAiMetricsSummary = lazy(() =>
+  import('@/components/metrics/ai-metrics-summary').then((module) => ({ default: module.AiMetricsSummary })),
+);
+const LazyCorrelationInsightsPanel = lazy(() =>
+  import('@/components/metrics/correlation-insights-panel').then((module) => ({ default: module.CorrelationInsightsPanel })),
+);
+const DEFAULT_MAX_POINTS = 240;
 
 function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -118,6 +125,7 @@ export default function MetricsDashboardPage() {
   const [timeRange, setTimeRange] = useState('1h');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [chatOpen, setChatOpen] = useState(false);
+  const [showSecondaryPanels, setShowSecondaryPanels] = useState(false);
   const { interval, setInterval } = useAutoRefresh(0);
 
   // Check if LLM is available (hide Ask AI button when Ollama is down)
@@ -251,29 +259,32 @@ export default function MetricsDashboardPage() {
   // Process data for charts
   const cpuData = useMemo(() => {
     if (!cpuMetrics?.data) return [];
-    return cpuMetrics.data.map((d) => ({
+    const source = cpuMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value,
       isAnomaly: d.value > 80,
     }));
+    return decimateTimeSeries(source, DEFAULT_MAX_POINTS);
   }, [cpuMetrics]);
 
   const memoryData = useMemo(() => {
     if (!memoryMetrics?.data) return [];
-    return memoryMetrics.data.map((d) => ({
+    const source = memoryMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value,
       isAnomaly: d.value > 80,
     }));
+    return decimateTimeSeries(source, DEFAULT_MAX_POINTS);
   }, [memoryMetrics]);
 
   const memoryBytesData = useMemo(() => {
     if (!memoryBytesMetrics?.data) return [];
-    return memoryBytesMetrics.data.map((d) => ({
+    const source = memoryBytesMetrics.data.map((d) => ({
       timestamp: d.timestamp,
       value: d.value / (1024 * 1024), // Convert to MB
       isAnomaly: false,
     }));
+    return decimateTimeSeries(source, DEFAULT_MAX_POINTS);
   }, [memoryBytesMetrics]);
 
   const cpuAnomalyIndices = useMemo(
@@ -319,6 +330,14 @@ export default function MetricsDashboardPage() {
       { critical: 0, warning: 0, healthy: 0 }
     );
   }, [rankedForecasts]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setShowSecondaryPanels(true), 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   // Handle endpoint change
   const handleEndpointChange = (endpointId: number) => {
@@ -598,11 +617,17 @@ export default function MetricsDashboardPage() {
           )}
 
           {/* AI Summary */}
-          <AiMetricsSummary
-            endpointId={selectedEndpoint ?? undefined}
-            containerId={selectedContainer ?? undefined}
-            timeRange={timeRange}
-          />
+          {showSecondaryPanels ? (
+            <Suspense fallback={<SkeletonCard className="h-[120px]" />}>
+              <LazyAiMetricsSummary
+                endpointId={selectedEndpoint ?? undefined}
+                containerId={selectedContainer ?? undefined}
+                timeRange={timeRange}
+              />
+            </Suspense>
+          ) : (
+            <SkeletonCard className="h-[120px]" />
+          )}
 
           {/* Charts */}
           {metricsLoading ? (
@@ -782,7 +807,13 @@ export default function MetricsDashboardPage() {
       )}
 
       {/* Cross-Container Correlation Insights */}
-      <CorrelationInsightsPanel llmAvailable={llmAvailable} hours={24} selectedContainerId={selectedContainer} />
+      {showSecondaryPanels ? (
+        <Suspense fallback={<SkeletonCard className="h-[260px]" />}>
+          <LazyCorrelationInsightsPanel llmAvailable={llmAvailable} hours={24} selectedContainerId={selectedContainer} />
+        </Suspense>
+      ) : (
+        <SkeletonCard className="h-[260px]" />
+      )}
 
       {/* Forecast Overview */}
       <div className="rounded-lg border bg-card p-6">

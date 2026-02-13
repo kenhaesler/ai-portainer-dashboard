@@ -4,6 +4,7 @@ import { Bot, X, AlertTriangle, Lightbulb } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { AnomalyExplanation } from '@/hooks/use-metrics';
+import { decimateTimeSeries } from '@/lib/metrics-decimation';
 
 interface MetricPoint {
   timestamp: string;
@@ -21,43 +22,7 @@ interface MetricsLineChartProps {
   anomalyExplanations?: AnomalyExplanation[];
 }
 
-/** Max points to render before decimating (keeps chart performant) */
-const MAX_CHART_POINTS = 200;
-
-/**
- * Downsample data using largest-triangle-three-buckets (LTTB-like) algorithm.
- * Preserves visual shape while reducing SVG path complexity.
- */
-function decimateData(data: MetricPoint[], maxPoints: number): MetricPoint[] {
-  if (data.length <= maxPoints) return data;
-
-  const result: MetricPoint[] = [data[0]];
-  const bucketSize = (data.length - 2) / (maxPoints - 2);
-
-  for (let i = 1; i < maxPoints - 1; i++) {
-    const start = Math.floor((i - 1) * bucketSize) + 1;
-    const end = Math.min(Math.floor(i * bucketSize) + 1, data.length - 1);
-
-    let maxArea = -1;
-    let maxAreaIdx = start;
-    const prevPoint = result[result.length - 1];
-
-    for (let j = start; j < end; j++) {
-      const area = Math.abs(
-        (j - (result.length - 1)) * (prevPoint.value - data[j].value) -
-        (result.length - 1 - j) * (prevPoint.value - data[j].value)
-      );
-      if (area > maxArea) {
-        maxArea = area;
-        maxAreaIdx = j;
-      }
-    }
-    result.push(data[maxAreaIdx]);
-  }
-
-  result.push(data[data.length - 1]);
-  return result;
-}
+const MAX_CHART_POINTS = 220;
 
 /** Find the best anomaly explanation for a given timestamp.
  *  Prefers a close timestamp match (within 5 min), but falls back to the
@@ -157,8 +122,9 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   height = 300,
   anomalyExplanations = [],
 }: MetricsLineChartProps) {
-  const decimated = useMemo(() => decimateData(data, MAX_CHART_POINTS), [data]);
-  const anomalies = useMemo(() => data.filter((d) => d.isAnomaly), [data]);
+  const decimated = useMemo(() => decimateTimeSeries(data, MAX_CHART_POINTS), [data]);
+  const anomalies = useMemo(() => decimated.filter((d) => d.isAnomaly), [decimated]);
+  const animateLine = data.length <= MAX_CHART_POINTS;
   const [selectedAnomaly, setSelectedAnomaly] = useState<{
     point: MetricPoint;
     explanation: AnomalyExplanation | undefined;
@@ -221,7 +187,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
               fill={`url(#${gradientId})`}
               dot={false}
               activeDot={{ r: 4, strokeWidth: 2 }}
-              isAnimationActive
+              isAnimationActive={animateLine}
             />
             {anomalies.map((a, i) => (
               <ReferenceDot

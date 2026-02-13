@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useThemeStore, type DashboardBackground as DashboardBg } from '@/stores/theme-store';
+import { useUiStore } from '@/stores/ui-store';
 
 const PARTICLES = [
   { left: '8%', delay: '0s', duration: '14s', size: '6px' },
@@ -98,9 +99,10 @@ function RetroVaporwaveBackground() {
 
 export function DashboardBackground() {
   const bg = useThemeStore((s) => s.dashboardBackground) as DashboardBg;
+  const potatoMode = useUiStore((s) => s.potatoMode);
   const reducedMotion = useReducedMotion();
 
-  if (bg === 'none') return null;
+  if (bg === 'none' || potatoMode) return null;
 
   const showParticles = bg === 'gradient-mesh-particles' && !reducedMotion;
   const meshClass = MESH_CLASS_BY_BACKGROUND[bg];
