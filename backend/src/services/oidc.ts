@@ -1,6 +1,7 @@
 import * as client from 'openid-client';
 import { getDb } from '../db/sqlite.js';
 import { createChildLogger } from '../utils/logger.js';
+import type { Role } from './user-store.js';
 
 const log = createChildLogger('oidc');
 
@@ -12,6 +13,9 @@ interface OIDCConfig {
   redirect_uri: string;
   scopes: string;
   local_auth_enabled: boolean;
+  groups_claim: string;
+  group_role_mappings: Record<string, Role>;
+  auto_provision: boolean;
 }
 
 interface StateEntry {
@@ -25,10 +29,11 @@ interface AuthUrlResult {
   state: string;
 }
 
-interface TokenClaims {
+export interface TokenClaims {
   sub: string;
   email?: string;
   name?: string;
+  groups?: string[];
 }
 
 // In-memory state store (code verifier + nonce per auth request)
@@ -67,6 +72,19 @@ export function getOIDCConfig(): OIDCConfig {
     settings[row.key] = row.value;
   }
 
+  let groupRoleMappings: Record<string, Role> = {};
+  try {
+    const raw = settings['oidc.group_role_mappings'];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null) {
+        groupRoleMappings = parsed as Record<string, Role>;
+      }
+    }
+  } catch {
+    log.warn('Invalid oidc.group_role_mappings JSON, using empty mappings');
+  }
+
   return {
     enabled: settings['oidc.enabled'] === 'true',
     issuer_url: settings['oidc.issuer_url'] || '',
@@ -75,6 +93,9 @@ export function getOIDCConfig(): OIDCConfig {
     redirect_uri: settings['oidc.redirect_uri'] || '',
     scopes: settings['oidc.scopes'] || 'openid profile email',
     local_auth_enabled: settings['oidc.local_auth_enabled'] !== 'false',
+    groups_claim: settings['oidc.groups_claim'] || 'groups',
+    group_role_mappings: groupRoleMappings,
+    auto_provision: settings['oidc.auto_provision'] !== 'false',
   };
 }
 
@@ -156,6 +177,67 @@ export async function generateAuthorizationUrl(redirectUri: string, scopes: stri
   return { url: url.href, state };
 }
 
+const VALID_ROLES: ReadonlySet<string> = new Set(['viewer', 'operator', 'admin']);
+
+const ROLE_PRIORITY: Record<Role, number> = {
+  viewer: 0,
+  operator: 1,
+  admin: 2,
+};
+
+/**
+ * Resolve the highest-privilege role from a user's groups using the configured mappings.
+ * Returns undefined if no mapping matches (including wildcard).
+ */
+export function resolveRoleFromGroups(
+  groups: string[],
+  mappings: Record<string, Role>,
+): Role | undefined {
+  if (!groups.length || !Object.keys(mappings).length) {
+    return undefined;
+  }
+
+  let bestRole: Role | undefined;
+  let bestPriority = -1;
+
+  for (const group of groups) {
+    const sanitized = group.trim();
+    if (!sanitized) continue;
+
+    const mappedRole = mappings[sanitized];
+    if (mappedRole && VALID_ROLES.has(mappedRole)) {
+      const priority = ROLE_PRIORITY[mappedRole];
+      if (priority > bestPriority) {
+        bestRole = mappedRole;
+        bestPriority = priority;
+      }
+    }
+  }
+
+  // Check wildcard fallback only if no explicit match
+  if (!bestRole && '*' in mappings && VALID_ROLES.has(mappings['*'])) {
+    bestRole = mappings['*'];
+  }
+
+  return bestRole;
+}
+
+/**
+ * Extract groups from ID token claims using the configured claim name.
+ * Validates that the claim value is an array of strings.
+ */
+export function extractGroups(
+  claims: Record<string, unknown>,
+  groupsClaim: string,
+): string[] {
+  const raw = claims[groupsClaim];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.filter((item): item is string => typeof item === 'string');
+}
+
 /**
  * Exchange an authorization code for tokens and return user claims.
  */
@@ -192,9 +274,20 @@ export async function exchangeCode(
     throw new Error('No claims in ID token');
   }
 
+  const oidcConfig = getOIDCConfig();
+  const groups = extractGroups(
+    claims as unknown as Record<string, unknown>,
+    oidcConfig.groups_claim,
+  );
+
+  if (groups.length > 0) {
+    log.info({ groups, claim: oidcConfig.groups_claim }, 'Extracted groups from ID token');
+  }
+
   return {
     sub: claims.sub,
     email: claims.email as string | undefined,
     name: claims.name as string | undefined,
+    groups,
   };
 }

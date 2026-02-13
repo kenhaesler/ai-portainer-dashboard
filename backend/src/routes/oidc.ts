@@ -1,10 +1,14 @@
 import { FastifyInstance } from 'fastify';
-import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode } from '../services/oidc.js';
+import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups } from '../services/oidc.js';
 import { createSession, invalidateSession } from '../services/session-store.js';
 import { signJwt } from '../utils/crypto.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { upsertOIDCUser, getUserById } from '../services/user-store.js';
 import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
 import { getConfig } from '../config/index.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('oidc-routes');
 
 export async function oidcRoutes(fastify: FastifyInstance) {
   const config = getConfig();
@@ -68,19 +72,60 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     try {
       const claims = await exchangeCode(callbackUrl, state);
       const username = claims.email || claims.name || claims.sub;
+      const oidcConfig = getOIDCConfig();
+
+      // Resolve role from group mappings (highest-privilege-wins)
+      const resolvedRole = resolveRoleFromGroups(
+        claims.groups || [],
+        oidcConfig.group_role_mappings,
+      );
+
+      // Check if user already exists to get their current role
+      const existingUser = getUserById(claims.sub);
+      const effectiveRole = resolvedRole || existingUser?.role || 'viewer';
+
+      // Auto-provision or update user if enabled
+      if (oidcConfig.auto_provision) {
+        const { roleChanged, previousRole } = upsertOIDCUser(claims.sub, username, effectiveRole);
+
+        if (roleChanged) {
+          writeAuditLog({
+            user_id: claims.sub,
+            username,
+            action: 'oidc_role_changed',
+            target_type: 'user',
+            target_id: claims.sub,
+            details: {
+              previous_role: previousRole,
+              new_role: effectiveRole,
+              groups: claims.groups,
+              source: 'group_mapping',
+            },
+            request_id: request.requestId,
+            ip_address: request.ip,
+          });
+          log.info({ sub: claims.sub, previousRole, newRole: effectiveRole }, 'OIDC user role changed via group mapping');
+        }
+      }
 
       const session = createSession(claims.sub, username);
       const token = await signJwt({
         sub: claims.sub,
         username,
         sessionId: session.id,
+        role: effectiveRole,
       });
 
       writeAuditLog({
         user_id: claims.sub,
         username,
         action: 'oidc_login',
-        details: { email: claims.email, name: claims.name },
+        details: {
+          email: claims.email,
+          name: claims.name,
+          groups: claims.groups,
+          resolved_role: effectiveRole,
+        },
         request_id: request.requestId,
         ip_address: request.ip,
       });
