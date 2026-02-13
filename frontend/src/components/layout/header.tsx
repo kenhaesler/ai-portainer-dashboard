@@ -32,10 +32,20 @@ export function Header() {
   const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const hasAnimatedBg = dashboardBackground !== 'none';
-  const [appCommit, setAppCommit] = useState(
-    import.meta.env.VITE_GIT_COMMIT
-      || import.meta.env.VITE_APP_COMMIT
-      || 'dev'
+  const [appBuildRef, setAppBuildRef] = useState(
+    import.meta.env.DEV
+      ? (
+        import.meta.env.VITE_GIT_COMMIT
+        || import.meta.env.VITE_APP_COMMIT
+        || import.meta.env.VITE_BUILD_NUMBER
+        || 'dev'
+      )
+      : (
+        import.meta.env.VITE_BUILD_NUMBER
+        || import.meta.env.VITE_GIT_COMMIT
+        || import.meta.env.VITE_APP_COMMIT
+        || ''
+      )
   );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -81,7 +91,7 @@ export function Header() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { commit?: string } | null) => {
         if (!isMounted) return;
-        if (data?.commit) setAppCommit(data.commit);
+        if (data?.commit) setAppBuildRef(data.commit);
       })
       .catch(() => undefined);
     return () => {
@@ -90,13 +100,13 @@ export function Header() {
   }, []);
 
   const buildChannel = import.meta.env.DEV ? 'DEV' : 'BUILD';
-  const normalizedCommit = appCommit.trim();
-  const commitToken = normalizedCommit
-    && normalizedCommit.toLowerCase() !== 'dev'
-    && normalizedCommit.toLowerCase() !== 'build'
-    ? normalizedCommit.slice(0, 12).toLowerCase()
+  const normalizedBuildRef = appBuildRef.trim();
+  const buildToken = normalizedBuildRef
+    && normalizedBuildRef.toLowerCase() !== 'dev'
+    && normalizedBuildRef.toLowerCase() !== 'build'
+    ? normalizedBuildRef.slice(0, 16).toLowerCase()
     : '';
-  const buildBadge = commitToken ? `${buildChannel} ${commitToken}` : buildChannel;
+  const buildBadge = buildToken ? `${buildChannel} ${buildToken}` : buildChannel;
 
   return (
     <header
@@ -125,7 +135,7 @@ export function Header() {
             )}
           </span>
         ))}
-        {appCommit && (
+        {(appBuildRef || buildChannel) && (
           <span
             className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
             aria-label={`Build ${buildBadge}`}

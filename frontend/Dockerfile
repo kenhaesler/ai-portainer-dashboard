@@ -4,6 +4,7 @@ FROM dhi.io/node:24-alpine3.23-dev AS builder
 
 ARG VITE_API_URL=""
 ARG VITE_SOCKET_URL=""
+ARG VITE_BUILD_NUMBER=""
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -14,6 +15,7 @@ COPY frontend/public/ frontend/public/
 COPY frontend/src/ frontend/src/
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
+ENV VITE_BUILD_NUMBER=$VITE_BUILD_NUMBER
 RUN npm run build -w frontend
 
 # Tools stage — grab wget for healthcheck
