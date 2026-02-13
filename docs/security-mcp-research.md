@@ -404,7 +404,7 @@ The dashboard already has a production-ready MCP orchestrator:
 | `backend/src/services/mcp-tool-bridge.ts` | Schema conversion (MCP -> Ollama format), prefixed routing |
 | `backend/src/routes/mcp.ts` | Admin REST API for server CRUD (admin role required) |
 | `backend/src/sockets/llm-chat.ts` | Two-phase tool calling (native Ollama first, text-based fallback) |
-| `backend/src/db/migrations/024_mcp_servers.sql` | MCP server config storage |
+| `backend/src/db/migrations/029_mcp_servers.sql` | MCP server config storage |
 
 New security MCP servers plug in via `POST /api/mcp/servers` with automatic tool discovery.
 

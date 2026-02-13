@@ -269,7 +269,7 @@ This means the dashboard only needs connectivity to Portainer; endpoint-local Do
 | `backend/src/services/trace-store.ts` | `insertSpans()` batch insert, `getTraces()` with `source` filter |
 | `backend/src/services/otel-exporter.ts` | OTLP/HTTP JSON batch exporter — `queueSpanForExport()`, retry with backoff, graceful shutdown |
 | `backend/src/services/trace-context.ts` | `withSpan()` hooks into `queueSpanForExport()` after SQLite insert |
-| `backend/src/db/migrations/017_trace_source.sql` | Adds `trace_source` column and index to `spans` table |
+| `backend/src/db/migrations/022_trace_source.sql` | Adds `trace_source` column and index to `spans` table |
 | `backend/src/config/env.schema.ts` | `TRACES_INGESTION_ENABLED` and `TRACES_INGESTION_API_KEY` env vars |
 | `docker/beyla/beyla.yml` | Standalone Beyla Compose fragment for instrumenting dashboard-adjacent services |
 | `workloads/web-platform.yml` | Example workload stack with Beyla integrated |
@@ -278,7 +278,7 @@ This means the dashboard only needs connectivity to Portainer; endpoint-local Do
 
 ### Database Schema Change
 
-Migration `017_trace_source.sql`:
+Migration `022_trace_source.sql`:
 ```sql
 ALTER TABLE spans ADD COLUMN trace_source TEXT DEFAULT 'http';
 CREATE INDEX idx_spans_source ON spans(trace_source);
@@ -286,7 +286,7 @@ CREATE INDEX idx_spans_source ON spans(trace_source);
 
 Values: `'http'` (dashboard's own request tracing), `'scheduler'` (background jobs), `'ebpf'` (Beyla/external).
 
-Migration `029_trace_typed_otlp_attributes.sql`:
+Migration `036_trace_typed_otlp_attributes.sql`:
 ```sql
 ALTER TABLE spans ADD COLUMN http_method TEXT;
 ALTER TABLE spans ADD COLUMN http_route TEXT;
