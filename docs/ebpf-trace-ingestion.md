@@ -244,6 +244,21 @@ curl -X POST http://localhost:3051/api/traces/otlp \
 6. If the **OTLP exporter** is enabled (`OTEL_EXPORTER_ENABLED=true`), spans are also queued for export to an external collector (Jaeger, Tempo, Datadog) via OTLP/HTTP JSON. See [Span Export to External Collectors](#span-export-to-external-collectors)
 7. The **Trace Explorer** UI can filter by source: HTTP Requests, Background Jobs, or eBPF (Apps)
 
+### How Beyla deployment is executed
+
+Deployment actions from **eBPF Coverage** are executed through the **Portainer API control plane**, not by direct host access from the dashboard to endpoint Docker daemons.
+
+Flow:
+1. Admin calls dashboard route (for example `POST /api/ebpf/deploy/:endpointId`).
+2. Backend resolves OTLP endpoint + API key.
+3. Backend calls Portainer endpoint-scoped Docker APIs:
+   - image pull
+   - container create
+   - container start/stop/remove
+4. Portainer (or Edge Agent) performs the operation on the target endpoint.
+
+This means the dashboard only needs connectivity to Portainer; endpoint-local Docker operations are delegated by Portainer.
+
 ### File Map
 
 | File | Purpose |
