@@ -24,6 +24,7 @@ import {
   ChevronRight,
   ChevronDown,
 } from 'lucide-react';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SidebarLogo } from '@/components/icons/sidebar-logo';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
@@ -165,6 +166,7 @@ export function Sidebar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const collapsedGroups = useUiStore((s) => s.collapsedGroups);
   const toggleGroup = useUiStore((s) => s.toggleGroup);
+  const potatoMode = useUiStore((s) => s.potatoMode);
   const dashboardBackground = useThemeStore((s) => s.dashboardBackground);
   const { data: pendingActions } = useRemediationActions('pending');
   const pendingCount = pendingActions?.length ?? 0;
@@ -184,185 +186,207 @@ export function Sidebar() {
   };
 
   return (
-    <aside
-      data-testid="sidebar"
-      data-animated-bg={hasAnimatedBg || undefined}
-      className={cn(
-        'fixed left-4 top-4 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
-        getSidebarBottomClass(),
-        sidebarCollapsed ? 'w-14' : 'w-60'
-      )}
-    >
-      {/* Brand */}
-      <div className="flex h-14 items-center px-4">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <motion.div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
-            layout={!reducedMotion}
-            transition={
-              reducedMotion
-                ? { duration: 0 }
-                : { type: 'spring', stiffness: 300, damping: 25 }
-            }
-          >
-            <SidebarLogo />
-          </motion.div>
-          <AnimatePresence>
-            {!sidebarCollapsed && (
-              <motion.div
-                className="flex flex-col"
-                initial={reducedMotion ? false : { opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -8 }}
-                transition={
-                  reducedMotion
-                    ? { duration: 0 }
-                    : { duration: 0.15, ease: 'easeOut' }
-                }
-              >
-                <span className="truncate text-sm font-semibold text-sidebar-foreground">
-                  Docker Insights
-                </span>
-                <span className="text-[10px] text-muted-foreground">powered by AI</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav ref={navRef} className="relative flex-1 overflow-y-auto py-4">
-        {navigation.map((group, groupIndex) => {
-          const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
-          return (
-            <div key={group.title} className="mb-2">
-              {/* Group header: full title when expanded, thin divider when sidebar collapsed */}
-              {sidebarCollapsed ? (
-                groupIndex > 0 ? (
-                  <div className="mx-3 my-2 h-px bg-border/50" role="separator" />
-                ) : null
-              ) : (
-                <button
-                  onClick={() => toggleGroup(group.title)}
-                  className="mb-1 flex w-full items-center justify-between border-b border-border/20 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+    <TooltipPrimitive.Provider delayDuration={200}>
+      <aside
+        data-testid="sidebar"
+        data-animated-bg={hasAnimatedBg || undefined}
+        className={cn(
+          'fixed left-4 top-4 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10',
+          !potatoMode && 'transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+          getSidebarBottomClass(),
+          sidebarCollapsed ? 'w-16' : 'w-64'
+        )}
+      >
+        {/* Brand */}
+        <div className="flex h-14 items-center px-4">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <motion.div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
+              layout={!reducedMotion}
+              transition={
+                reducedMotion
+                  ? { duration: 0 }
+                  : { type: 'spring', stiffness: 300, damping: 25 }
+              }
+            >
+              <SidebarLogo />
+            </motion.div>
+            <AnimatePresence>
+              {!sidebarCollapsed && (
+                <motion.div
+                  className="flex flex-col"
+                  initial={reducedMotion ? false : { opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={
+                    reducedMotion
+                      ? { duration: 0 }
+                      : { duration: 0.15, ease: 'easeOut' }
+                  }
                 >
-                  <span>{group.title}</span>
-                  <motion.span
-                    animate={{ rotate: isGroupCollapsed ? -90 : 0 }}
-                    transition={
-                      reducedMotion
-                        ? { duration: 0 }
-                        : { duration: 0.2, ease: 'easeOut' }
-                    }
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </motion.span>
-                </button>
+                  <span className="truncate text-sm font-semibold text-sidebar-foreground">
+                    Docker Insights
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">powered by AI</span>
+                </motion.div>
               )}
-              <div
-                className={cn(
-                  'grid transition-all duration-200 ease-in-out',
-                  isGroupCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav ref={navRef} className="relative flex-1 overflow-y-auto py-4">
+          {navigation.map((group, groupIndex) => {
+            const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
+            return (
+              <div key={group.title} className="mb-2">
+                {sidebarCollapsed ? (
+                  groupIndex > 0 ? (
+                    <div className="mx-3 my-2 h-px bg-border/50" role="separator" />
+                  ) : null
+                ) : (
+                  <button
+                    onClick={() => toggleGroup(group.title)}
+                    className="mb-1 flex w-full items-center justify-between border-b border-border/20 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <span>{group.title}</span>
+                    <motion.span
+                      animate={{ rotate: isGroupCollapsed ? -90 : 0 }}
+                      transition={
+                        reducedMotion
+                          ? { duration: 0 }
+                          : { duration: 0.2, ease: 'easeOut' }
+                      }
+                    >
+                      <ChevronDown className="h-3 w-3" />
+                    </motion.span>
+                  </button>
                 )}
-              >
-                <ul className="space-y-0.5 overflow-hidden px-2">
-                  {group.items.map((item) => (
-                    <li key={item.to}>
-                      <NavLink
-                        to={item.to}
-                        end={item.to === '/'}
-                        className={({ isActive }) =>
-                          cn(
-                            'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
-                            isActive
-                              ? 'text-sidebar-accent-foreground'
-                              : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
-                            sidebarCollapsed && 'justify-center px-0'
-                          )
-                        }
-                        title={sidebarCollapsed ? item.label : undefined}
-                        onMouseEnter={prefetchMap[item.to]}
-                        onFocus={prefetchMap[item.to]}
-                      >
-                        {({ isActive }) => (
-                          <>
-                            {isActive && (
-                              <motion.span
-                                layoutId="sidebar-active-pill"
-                                data-testid="sidebar-active-indicator"
-                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
-                                transition={
-                                  reducedMotion
-                                    ? { duration: 0 }
-                                    : { type: 'spring', stiffness: 400, damping: 30 }
-                                }
-                              />
-                            )}
-                            <motion.span
-                              className="shrink-0"
-                              layout={!reducedMotion}
-                              transition={
-                                reducedMotion
-                                  ? { duration: 0 }
-                                  : { type: 'spring', stiffness: 300, damping: 25 }
-                              }
-                            >
-                              <item.icon className="h-4 w-4" />
-                            </motion.span>
-                            <AnimatePresence>
-                              {!sidebarCollapsed && (
+                <div
+                  className={cn(
+                    'grid transition-all duration-200 ease-in-out',
+                    isGroupCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+                  )}
+                >
+                  <ul className="space-y-0.5 overflow-hidden px-2">
+                    {group.items.map((item) => {
+                      const link = (
+                        <NavLink
+                          to={item.to}
+                          end={item.to === '/'}
+                          className={({ isActive }) =>
+                            cn(
+                              'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
+                              isActive
+                                ? 'text-sidebar-accent-foreground'
+                                : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
+                              sidebarCollapsed && 'justify-center px-0'
+                            )
+                          }
+                          onMouseEnter={prefetchMap[item.to]}
+                          onFocus={prefetchMap[item.to]}
+                        >
+                          {({ isActive }) => (
+                            <>
+                              {isActive && (
                                 <motion.span
-                                  className="flex flex-1 items-center gap-1 truncate"
-                                  initial={reducedMotion ? false : { opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  exit={{ opacity: 0 }}
+                                  layoutId="sidebar-active-pill"
+                                  data-testid="sidebar-active-indicator"
+                                  className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
                                   transition={
                                     reducedMotion
                                       ? { duration: 0 }
-                                      : { duration: 0.1, ease: 'easeOut' }
+                                      : { type: 'spring', stiffness: 400, damping: 30 }
                                   }
-                                >
-                                  <span className="truncate">{item.label}</span>
-                                  {item.to === '/remediation' ? (
-                                    <AnimatedBadge count={pendingCount} />
-                                  ) : item.badge != null && item.badge > 0 ? (
-                                    <AnimatedBadge count={item.badge} />
-                                  ) : null}
-                                </motion.span>
+                                />
                               )}
-                            </AnimatePresence>
-                          </>
-                        )}
-                      </NavLink>
-                    </li>
-                  ))}
-                </ul>
+                              <motion.span
+                                className="shrink-0"
+                                layout={!reducedMotion}
+                                transition={
+                                  reducedMotion
+                                    ? { duration: 0 }
+                                    : { type: 'spring', stiffness: 300, damping: 25 }
+                                }
+                              >
+                                <item.icon className="h-4 w-4" />
+                              </motion.span>
+                              <AnimatePresence>
+                                {!sidebarCollapsed && (
+                                  <motion.span
+                                    className="flex flex-1 items-center gap-1 truncate"
+                                    initial={reducedMotion ? false : { opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={
+                                      reducedMotion
+                                        ? { duration: 0 }
+                                        : { duration: 0.1, ease: 'easeOut' }
+                                    }
+                                  >
+                                    <span className="truncate">{item.label}</span>
+                                    {item.to === '/remediation' ? (
+                                      <AnimatedBadge count={pendingCount} />
+                                    ) : item.badge != null && item.badge > 0 ? (
+                                      <AnimatedBadge count={item.badge} />
+                                    ) : null}
+                                  </motion.span>
+                                )}
+                              </AnimatePresence>
+                            </>
+                          )}
+                        </NavLink>
+                      );
+                      return (
+                        <li key={item.to}>
+                          {sidebarCollapsed ? (
+                            <TooltipPrimitive.Root>
+                              <TooltipPrimitive.Trigger asChild>{link}</TooltipPrimitive.Trigger>
+                              <TooltipPrimitive.Portal>
+                                <TooltipPrimitive.Content
+                                  side="right"
+                                  sideOffset={8}
+                                  className="z-50 rounded-md bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-md"
+                                >
+                                  {item.label}
+                                  <TooltipPrimitive.Arrow className="fill-popover" />
+                                </TooltipPrimitive.Content>
+                              </TooltipPrimitive.Portal>
+                            </TooltipPrimitive.Root>
+                          ) : (
+                            link
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </div>
-            </div>
-          );
-        })}
-        <ScrollGradient navRef={navRef} />
-      </nav>
+            );
+          })}
+          <ScrollGradient navRef={navRef} />
+        </nav>
 
-      {/* Collapse toggle */}
-      <div className="p-2">
-        <button
-          onClick={toggleSidebar}
-          className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <motion.span
-            animate={{ rotate: sidebarCollapsed ? 0 : 180 }}
-            transition={
-              reducedMotion
-                ? { duration: 0 }
-                : { type: 'spring', stiffness: 300, damping: 25 }
-            }
+        {/* Collapse toggle */}
+        <div className="p-2">
+          <button
+            onClick={toggleSidebar}
+            className="flex w-full items-center justify-center rounded-md p-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <ChevronRight className="h-4 w-4" />
-          </motion.span>
-        </button>
-      </div>
-    </aside>
+            <motion.span
+              animate={{ rotate: sidebarCollapsed ? 0 : 180 }}
+              transition={
+                reducedMotion
+                  ? { duration: 0 }
+                  : { type: 'spring', stiffness: 300, damping: 25 }
+              }
+            >
+              <ChevronRight className="h-4 w-4" />
+            </motion.span>
+          </button>
+        </div>
+      </aside>
+    </TooltipPrimitive.Provider>
   );
 }

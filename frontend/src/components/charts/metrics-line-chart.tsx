@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import type { AnomalyExplanation } from '@/hooks/use-metrics';
 import { decimateTimeSeries } from '@/lib/metrics-decimation';
 import { useUiStore } from '@/stores/ui-store';
+import { GlassTooltip } from './glass-tooltip';
 
 interface MetricPoint {
   timestamp: string;
@@ -151,6 +152,8 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   }
 
   const gradientId = `color-${label.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const glowFilterId = `glow-${label.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const showGlow = !potatoMode;
 
   return (
     <div className="flex gap-3">
@@ -163,6 +166,13 @@ export const MetricsLineChart = memo(function MetricsLineChart({
                 <stop offset="5%" stopColor={color} stopOpacity={0.4}/>
                 <stop offset="95%" stopColor={color} stopOpacity={0}/>
               </linearGradient>
+              <filter id={glowFilterId} x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
             <XAxis
               dataKey="timestamp"
@@ -176,7 +186,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
               tickFormatter={(v) => `${v}${unit}`}
             />
             <Tooltip
-              content={<CustomTooltip unit={unit} name={label} />}
+              content={<GlassTooltip />}
             />
             <Legend />
             <Area
@@ -190,6 +200,7 @@ export const MetricsLineChart = memo(function MetricsLineChart({
               dot={false}
               activeDot={{ r: 4, strokeWidth: 2 }}
               isAnimationActive={animateLine}
+              filter={showGlow ? `url(#${glowFilterId})` : undefined}
             />
             {anomalies.map((a, i) => (
               <ReferenceDot

@@ -1154,6 +1154,18 @@ input.input-solid-bg:focus {
   }
 }
 
+@keyframes ai-insight-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
 /* ====== STATUS PULSE ANIMATION ====== */
 @keyframes status-pulse {
   0%, 100% {

@@ -197,8 +197,7 @@ export function AppLayout() {
         className={cn(
           'relative z-10 flex flex-1 flex-col overflow-hidden',
           !disableVisualMotion && 'transition-all duration-300',
-          'md:ml-[4.5rem]',
-          !sidebarCollapsed && 'md:ml-[16rem]',
+          sidebarCollapsed ? 'md:ml-[calc(64px+2rem)]' : 'md:ml-[calc(256px+2rem)]',
         )}
       >
         {/* Header — drops in from top */}
