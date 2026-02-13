@@ -51,7 +51,7 @@ export async function edgeJobsRoutes(fastify: FastifyInstance) {
       summary: 'Create an edge job',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const body = CreateEdgeJobBodySchema.parse(request.body);
     const result = await portainer.createEdgeJob(body);
@@ -76,7 +76,7 @@ export async function edgeJobsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: EdgeJobIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: number };
     await portainer.deleteEdgeJob(id);
