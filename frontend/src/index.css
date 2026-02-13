@@ -1896,3 +1896,122 @@ html[data-potato-mode] body {
   opacity: 1 !important;
   transform: none !important;
 }
+
+/* ============================================
+   TIER 1 VISUAL UPGRADES
+   ============================================ */
+
+/* ====== SPOTLIGHT CARD (mouse-follow radial glow) ====== */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    600px circle at var(--x, 50%) var(--y, 50%),
+    rgba(255, 255, 255, 0.06),
+    transparent 40%
+  );
+}
+
+.spotlight-card:hover::before {
+  opacity: 1;
+}
+
+[data-potato-mode] .spotlight-card::before {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-card::before {
+    transition: none;
+  }
+}
+
+/* ====== NOISE / GRAIN TEXTURE OVERLAY ====== */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+[data-potato-mode] body::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    display: none;
+  }
+}
+
+/* ====== SHIMMER TEXT ANIMATION ====== */
+@keyframes shimmer-text {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}
+
+.shimmer-text-animate {
+  animation: shimmer-text 3s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text-animate {
+    animation: none;
+    background: none;
+    color: var(--color-muted-foreground);
+    -webkit-text-fill-color: var(--color-muted-foreground);
+  }
+}
+
+/* ====== ANIMATED GRADIENT BORDERS ====== */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.animate-gradient-border {
+  --angle: 0deg;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--color-card, white), var(--color-card, white)) padding-box,
+    conic-gradient(from var(--angle), transparent 25%, var(--color-primary, #6366f1) 50%, transparent 75%) border-box;
+  animation: rotate-gradient-border 4s linear infinite;
+}
+
+@keyframes rotate-gradient-border {
+  to {
+    --angle: 360deg;
+  }
+}
+
+[data-potato-mode] .animate-gradient-border {
+  animation: none;
+  border-color: var(--color-border);
+  background: var(--color-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-gradient-border {
+    animation: none;
+    border-color: var(--color-border);
+    background: var(--color-card);
+  }
+}

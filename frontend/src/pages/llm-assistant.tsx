@@ -10,6 +10,7 @@ import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { useMcpServers } from '@/hooks/use-mcp';
 import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
+import { ShimmerText } from '@/components/shared/shimmer-text';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',
@@ -226,7 +227,7 @@ export default function LlmAssistantPage() {
                         <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
                         <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" />
                       </div>
-                      <span className="text-[13px] text-muted-foreground">Thinking...</span>
+                      <ShimmerText className="text-[13px]">Thinking...</ShimmerText>
                     </div>
                   </div>
                 </div>

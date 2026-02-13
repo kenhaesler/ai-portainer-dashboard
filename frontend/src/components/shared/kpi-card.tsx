@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useCountUp } from '@/hooks/use-count-up';
 import { KpiSparkline } from '@/components/charts/kpi-sparkline';
 import { useUiStore } from '@/stores/ui-store';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 interface KpiCardProps {
   label: string;
@@ -56,67 +57,69 @@ export function KpiCard({
   const [hovered, setHovered] = useState(false);
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
-        !potatoMode && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
-        className,
-      )}
-      onMouseEnter={() => !potatoMode && setHovered(true)}
-      onMouseLeave={() => !potatoMode && setHovered(false)}
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <div className="flex items-center gap-2">
-          {sparklineData && sparklineData.length >= 2 && (
-            <KpiSparkline values={sparklineData} color={sparklineColor} />
-          )}
-          {icon && <div className="text-muted-foreground">{icon}</div>}
-        </div>
-      </div>
-      <div className="mt-2 flex items-baseline gap-2">
-        <motion.p
-          className="text-3xl font-bold tracking-tight"
-          animate={
-            pulse && !reducedMotion
-              ? { scale: [1, 1.05, 1] }
-              : { scale: 1 }
-          }
-          transition={{ duration: 0.3, ease: 'easeOut' }}
-        >
-          {isNumeric ? displayValue : value}
-        </motion.p>
-        {trend && (
-          <motion.span
-            className={cn(
-              'inline-flex items-center gap-1 text-xs font-medium',
-              trend === 'up' && 'text-emerald-600 dark:text-emerald-400',
-              trend === 'down' && 'text-red-600 dark:text-red-400',
-              trend === 'neutral' && 'text-muted-foreground',
+    <SpotlightCard>
+      <div
+        className={cn(
+          'rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
+          !potatoMode && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
+          className,
+        )}
+        onMouseEnter={() => !potatoMode && setHovered(true)}
+        onMouseLeave={() => !potatoMode && setHovered(false)}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <div className="flex items-center gap-2">
+            {sparklineData && sparklineData.length >= 2 && (
+              <KpiSparkline values={sparklineData} color={sparklineColor} />
             )}
-            initial={reducedMotion ? false : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8, duration: 0.2, type: 'spring', bounce: 0.4 }}
+            {icon && <div className="text-muted-foreground">{icon}</div>}
+          </div>
+        </div>
+        <div className="mt-2 flex items-baseline gap-2">
+          <motion.p
+            className="text-3xl font-bold tracking-tight"
+            animate={
+              pulse && !reducedMotion
+                ? { scale: [1, 1.05, 1] }
+                : { scale: 1 }
+            }
+            transition={{ duration: 0.3, ease: 'easeOut' }}
           >
-            {trend === 'up' && <TrendingUp className="h-3 w-3" />}
-            {trend === 'down' && <TrendingDown className="h-3 w-3" />}
-            {trend === 'neutral' && <Minus className="h-3 w-3" />}
-            {trendValue}
-          </motion.span>
+            {isNumeric ? displayValue : value}
+          </motion.p>
+          {trend && (
+            <motion.span
+              className={cn(
+                'inline-flex items-center gap-1 text-xs font-medium',
+                trend === 'up' && 'text-emerald-600 dark:text-emerald-400',
+                trend === 'down' && 'text-red-600 dark:text-red-400',
+                trend === 'neutral' && 'text-muted-foreground',
+              )}
+              initial={reducedMotion ? false : { opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8, duration: 0.2, type: 'spring', bounce: 0.4 }}
+            >
+              {trend === 'up' && <TrendingUp className="h-3 w-3" />}
+              {trend === 'down' && <TrendingDown className="h-3 w-3" />}
+              {trend === 'neutral' && <Minus className="h-3 w-3" />}
+              {trendValue}
+            </motion.span>
+          )}
+        </div>
+
+        {/* Hover detail expansion */}
+        {hoverDetail && !potatoMode && (
+          <div
+            className={cn(
+              'overflow-hidden transition-all duration-200',
+              hovered ? 'mt-2 max-h-8 opacity-100' : 'max-h-0 opacity-0',
+            )}
+          >
+            <p className="text-xs text-muted-foreground">{hoverDetail}</p>
+          </div>
         )}
       </div>
-
-      {/* Hover detail expansion */}
-      {hoverDetail && !potatoMode && (
-        <div
-          className={cn(
-            'overflow-hidden transition-all duration-200',
-            hovered ? 'mt-2 max-h-8 opacity-100' : 'max-h-0 opacity-0',
-          )}
-        >
-          <p className="text-xs text-muted-foreground">{hoverDetail}</p>
-        </div>
-      )}
-    </div>
+    </SpotlightCard>
   );
 }
