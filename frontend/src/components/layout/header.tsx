@@ -163,14 +163,13 @@ export function Header() {
           title="Toggle Potato Mode"
           onClick={() => setPotatoMode(!potatoMode)}
           className={cn(
-            'inline-flex h-8 items-center gap-1 rounded-full border px-2 text-xs font-medium',
+            'inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
             potatoMode
               ? 'border-primary bg-primary/10 text-primary'
               : 'border-border bg-muted text-muted-foreground'
           )}
         >
           <span aria-hidden="true">🥔</span>
-          <span className="hidden sm:inline">Potato</span>
         </button>
 
         {/* Theme toggle — pill switch between two configured themes */}
