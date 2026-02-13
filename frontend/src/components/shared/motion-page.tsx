@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { pageVariants, transition, easing, duration } from '@/lib/motion-tokens';
 
 export function MotionPage({
   children,
@@ -13,9 +14,11 @@ export function MotionPage({
   return (
     <motion.div
       className={cn('space-y-6', className)}
-      initial={reducedMotion ? false : { opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reducedMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+      variants={pageVariants}
+      initial={reducedMotion ? false : 'initial'}
+      animate="animate"
+      exit="exit"
+      transition={reducedMotion ? { duration: 0 } : transition.page}
     >
       {children}
     </motion.div>
@@ -69,7 +72,7 @@ export function MotionReveal({
           opacity: 1,
           y: 0,
           scale: 1,
-          transition: { duration: reducedMotion ? 0 : 0.2, ease: [0.32, 0.72, 0, 1] },
+          transition: { duration: reducedMotion ? 0 : duration.fast, ease: [...easing.pop] },
         },
       }}
     >

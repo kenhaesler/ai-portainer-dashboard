@@ -24,4 +24,22 @@ describe('motion-page utilities', () => {
 
     expect(screen.getByText('Reveal Content')).toBeInTheDocument();
   });
+
+  it('applies space-y-6 class by default', () => {
+    const { container } = render(
+      <MotionPage>
+        <div>Content</div>
+      </MotionPage>,
+    );
+    expect(container.firstChild).toHaveClass('space-y-6');
+  });
+
+  it('accepts custom className', () => {
+    const { container } = render(
+      <MotionPage className="custom-class">
+        <div>Content</div>
+      </MotionPage>,
+    );
+    expect(container.firstChild).toHaveClass('custom-class');
+  });
 });
