@@ -19,11 +19,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return null;
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenValid(token: string | null): token is string {
+  if (!token) return false;
+  const payload = decodeJwtPayload(token);
+  if (!payload) return false;
+  const exp = payload.exp;
+  if (typeof exp !== 'number') return false;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return exp > nowSeconds;
+}
+
 function getStoredAuth(): { token: string | null; username: string | null; role: UserRole } {
   try {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
     const username = localStorage.getItem(AUTH_USERNAME_KEY);
     const role = (localStorage.getItem(AUTH_ROLE_KEY) as UserRole) || 'viewer';
+    if (!isTokenValid(token) || !username) {
+      clearStoredAuth();
+      return { token: null, username: null, role: 'viewer' };
+    }
     return { token, username, role };
   } catch {
     return { token: null, username: null, role: 'viewer' };
@@ -51,12 +77,10 @@ function clearStoredAuth(): void {
 }
 
 function parseRoleFromToken(token: string): UserRole {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.role || 'viewer';
-  } catch {
-    return 'viewer';
-  }
+  const payload = decodeJwtPayload(token);
+  if (!payload) return 'viewer';
+  const role = payload.role;
+  return role === 'admin' || role === 'operator' || role === 'viewer' ? role : 'viewer';
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
