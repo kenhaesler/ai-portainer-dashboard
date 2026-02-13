@@ -85,7 +85,6 @@ function deriveContainerName(attrs: Record<string, unknown>): string | null {
 function deriveK8sContainerName(attrs: Record<string, unknown>): string | null {
   return pickString(attrs, ['k8s.container.name', 'k8s.pod.name']);
 }
-
 function pickInt(attrs: Record<string, unknown>, keys: string[]): number | null {
   for (const key of keys) {
     const value = attrs[key];
