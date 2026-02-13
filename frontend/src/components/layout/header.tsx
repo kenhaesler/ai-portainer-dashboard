@@ -158,10 +158,10 @@ export function Header() {
         <button
           type="button"
           role="switch"
-          aria-checked={potatoMode}
+          aria-checked={Boolean(potatoMode)}
           aria-label={`Potato mode ${potatoMode ? 'on' : 'off'}`}
           title="Toggle Potato Mode"
-          onClick={() => setPotatoMode(!potatoMode)}
+          onClick={() => setPotatoMode(Boolean(!potatoMode))}
           className={cn(
             'inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
             potatoMode

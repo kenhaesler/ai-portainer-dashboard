@@ -163,6 +163,8 @@ const uiState = {
   collapsedGroups: {} as Record<string, boolean>,
   setCommandPaletteOpen: vi.fn(),
   commandPaletteOpen: false,
+  potatoMode: false,
+  setPotatoMode: vi.fn(),
   toggleSidebar: vi.fn(),
   setSidebarCollapsed: vi.fn(),
   toggleGroupCollapse: vi.fn(),
