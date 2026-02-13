@@ -1876,6 +1876,12 @@ tr.keyboard-selected {
   scroll-behavior: auto !important;
 }
 
+[data-potato-mode] *:hover,
+[data-potato-mode] *:focus,
+[data-potato-mode] *:active {
+  transform: none !important;
+}
+
 html[data-potato-mode],
 html[data-potato-mode] body {
   scroll-behavior: auto !important;
