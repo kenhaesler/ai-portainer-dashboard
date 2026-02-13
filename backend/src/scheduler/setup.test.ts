@@ -110,7 +110,13 @@ vi.mock('../services/elasticsearch-log-forwarder.js', () => ({
   stopElasticsearchLogForwarder: vi.fn(),
 }));
 
+const cleanExpiredSessionsMock = vi.fn().mockReturnValue(0);
+vi.mock('../services/session-store.js', () => ({
+  cleanExpiredSessions: (...args: unknown[]) => cleanExpiredSessionsMock(...args),
+}));
+
 import {
+  runCleanup,
   runImageStalenessCheck,
   runMetricsCollection,
   isMetricsCycleRunning,
@@ -431,5 +437,35 @@ describe('scheduler/setup – no double-collection (monitoring reuses scheduler 
     // Scheduler collected metrics via API
     expect(collectMetricsMock).toHaveBeenCalledTimes(1);
     expect(collectMetricsMock).toHaveBeenCalledWith(1, 'c-1');
+  });
+});
+
+describe('scheduler/setup – runCleanup includes session cleanup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('calls cleanExpiredSessions during cleanup', async () => {
+    cleanExpiredSessionsMock.mockReturnValue(5);
+
+    await runCleanup();
+
+    expect(cleanExpiredSessionsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when cleanExpiredSessions fails', async () => {
+    cleanExpiredSessionsMock.mockImplementation(() => {
+      throw new Error('DB locked');
+    });
+
+    await expect(runCleanup()).resolves.toBeUndefined();
+  });
+
+  it('returns zero deleted when no expired sessions exist', async () => {
+    cleanExpiredSessionsMock.mockReturnValue(0);
+
+    await runCleanup();
+
+    expect(cleanExpiredSessionsMock).toHaveBeenCalledTimes(1);
   });
 });
