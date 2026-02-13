@@ -28,6 +28,28 @@ type TraceFilters = {
   serverAddress?: string;
   serverPort?: number;
   clientAddress?: string;
+  urlFull?: string;
+  urlFullMatch?: 'exact' | 'contains';
+  urlScheme?: string;
+  networkTransport?: string;
+  networkProtocolName?: string;
+  networkProtocolVersion?: string;
+  netPeerName?: string;
+  netPeerNameMatch?: 'exact' | 'contains';
+  netPeerPort?: number;
+  hostName?: string;
+  hostNameMatch?: 'exact' | 'contains';
+  osType?: string;
+  processPid?: number;
+  processExecutableName?: string;
+  processExecutableNameMatch?: 'exact' | 'contains';
+  processCommand?: string;
+  processCommandMatch?: 'exact' | 'contains';
+  telemetrySdkName?: string;
+  telemetrySdkLanguage?: string;
+  telemetrySdkVersion?: string;
+  otelScopeName?: string;
+  otelScopeVersion?: string;
 };
 
 function pushTextCondition(
@@ -72,6 +94,23 @@ function buildSpanConditions(filters: TraceFilters, alias: string) {
   if (filters.serverAddress) { conditions.push(`${alias}.server_address = ?`); params.push(filters.serverAddress); }
   if (filters.serverPort !== undefined) { conditions.push(`${alias}.server_port = ?`); params.push(filters.serverPort); }
   if (filters.clientAddress) { conditions.push(`${alias}.client_address = ?`); params.push(filters.clientAddress); }
+  pushTextCondition(conditions, params, `${alias}.url_full`, filters.urlFull, filters.urlFullMatch);
+  if (filters.urlScheme) { conditions.push(`${alias}.url_scheme = ?`); params.push(filters.urlScheme); }
+  if (filters.networkTransport) { conditions.push(`${alias}.network_transport = ?`); params.push(filters.networkTransport); }
+  if (filters.networkProtocolName) { conditions.push(`${alias}.network_protocol_name = ?`); params.push(filters.networkProtocolName); }
+  if (filters.networkProtocolVersion) { conditions.push(`${alias}.network_protocol_version = ?`); params.push(filters.networkProtocolVersion); }
+  pushTextCondition(conditions, params, `${alias}.net_peer_name`, filters.netPeerName, filters.netPeerNameMatch);
+  if (filters.netPeerPort !== undefined) { conditions.push(`${alias}.net_peer_port = ?`); params.push(filters.netPeerPort); }
+  pushTextCondition(conditions, params, `${alias}.host_name`, filters.hostName, filters.hostNameMatch);
+  if (filters.osType) { conditions.push(`${alias}.os_type = ?`); params.push(filters.osType); }
+  if (filters.processPid !== undefined) { conditions.push(`${alias}.process_pid = ?`); params.push(filters.processPid); }
+  pushTextCondition(conditions, params, `${alias}.process_executable_name`, filters.processExecutableName, filters.processExecutableNameMatch);
+  pushTextCondition(conditions, params, `${alias}.process_command`, filters.processCommand, filters.processCommandMatch);
+  if (filters.telemetrySdkName) { conditions.push(`${alias}.telemetry_sdk_name = ?`); params.push(filters.telemetrySdkName); }
+  if (filters.telemetrySdkLanguage) { conditions.push(`${alias}.telemetry_sdk_language = ?`); params.push(filters.telemetrySdkLanguage); }
+  if (filters.telemetrySdkVersion) { conditions.push(`${alias}.telemetry_sdk_version = ?`); params.push(filters.telemetrySdkVersion); }
+  if (filters.otelScopeName) { conditions.push(`${alias}.otel_scope_name = ?`); params.push(filters.otelScopeName); }
+  if (filters.otelScopeVersion) { conditions.push(`${alias}.otel_scope_version = ?`); params.push(filters.otelScopeVersion); }
 
   return { conditions, params };
 }
@@ -117,6 +156,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       serverAddress,
       serverPort,
       clientAddress,
+      urlFull,
+      urlFullMatch,
+      urlScheme,
+      networkTransport,
+      networkProtocolName,
+      networkProtocolVersion,
+      netPeerName,
+      netPeerNameMatch,
+      netPeerPort,
+      hostName,
+      hostNameMatch,
+      osType,
+      processPid,
+      processExecutableName,
+      processExecutableNameMatch,
+      processCommand,
+      processCommandMatch,
+      telemetrySdkName,
+      telemetrySdkLanguage,
+      telemetrySdkVersion,
+      otelScopeName,
+      otelScopeVersion,
       limit = 50,
     } = request.query as TraceFilters & { limit?: number };
 
@@ -147,6 +208,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       serverAddress,
       serverPort,
       clientAddress,
+      urlFull,
+      urlFullMatch,
+      urlScheme,
+      networkTransport,
+      networkProtocolName,
+      networkProtocolVersion,
+      netPeerName,
+      netPeerNameMatch,
+      netPeerPort,
+      hostName,
+      hostNameMatch,
+      osType,
+      processPid,
+      processExecutableName,
+      processExecutableNameMatch,
+      processCommand,
+      processCommandMatch,
+      telemetrySdkName,
+      telemetrySdkLanguage,
+      telemetrySdkVersion,
+      otelScopeName,
+      otelScopeVersion,
     }, 's');
 
     // Only get root spans (no parent)
@@ -162,6 +245,13 @@ export async function tracesRoutes(fastify: FastifyInstance) {
              s.container_id, s.container_name,
              s.k8s_namespace, s.k8s_pod_name, s.k8s_container_name,
              s.server_address, s.server_port, s.client_address,
+             s.url_full, s.url_scheme,
+             s.network_transport, s.network_protocol_name, s.network_protocol_version,
+             s.net_peer_name, s.net_peer_port,
+             s.host_name, s.os_type,
+             s.process_pid, s.process_executable_name, s.process_command,
+             s.telemetry_sdk_name, s.telemetry_sdk_language, s.telemetry_sdk_version,
+             s.otel_scope_name, s.otel_scope_version,
              (SELECT COUNT(*) FROM spans s2 WHERE s2.trace_id = s.trace_id) as span_count
       FROM spans s
       ${where}
@@ -228,6 +318,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       serverAddress,
       serverPort,
       clientAddress,
+      urlFull,
+      urlFullMatch,
+      urlScheme,
+      networkTransport,
+      networkProtocolName,
+      networkProtocolVersion,
+      netPeerName,
+      netPeerNameMatch,
+      netPeerPort,
+      hostName,
+      hostNameMatch,
+      osType,
+      processPid,
+      processExecutableName,
+      processExecutableNameMatch,
+      processCommand,
+      processCommandMatch,
+      telemetrySdkName,
+      telemetrySdkLanguage,
+      telemetrySdkVersion,
+      otelScopeName,
+      otelScopeVersion,
     } = request.query as TraceFilters;
 
     const db = getDb();
@@ -257,6 +369,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       serverAddress,
       serverPort,
       clientAddress,
+      urlFull,
+      urlFullMatch,
+      urlScheme,
+      networkTransport,
+      networkProtocolName,
+      networkProtocolVersion,
+      netPeerName,
+      netPeerNameMatch,
+      netPeerPort,
+      hostName,
+      hostNameMatch,
+      osType,
+      processPid,
+      processExecutableName,
+      processExecutableNameMatch,
+      processCommand,
+      processCommandMatch,
+      telemetrySdkName,
+      telemetrySdkLanguage,
+      telemetrySdkVersion,
+      otelScopeName,
+      otelScopeVersion,
     }, 's');
 
     const where = buildWhere(conditions);
@@ -323,6 +457,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       serverAddress,
       serverPort,
       clientAddress,
+      urlFull,
+      urlFullMatch,
+      urlScheme,
+      networkTransport,
+      networkProtocolName,
+      networkProtocolVersion,
+      netPeerName,
+      netPeerNameMatch,
+      netPeerPort,
+      hostName,
+      hostNameMatch,
+      osType,
+      processPid,
+      processExecutableName,
+      processExecutableNameMatch,
+      processCommand,
+      processCommandMatch,
+      telemetrySdkName,
+      telemetrySdkLanguage,
+      telemetrySdkVersion,
+      otelScopeName,
+      otelScopeVersion,
     } = request.query as TraceFilters;
 
     const db = getDb();
@@ -348,6 +504,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       serverAddress,
       serverPort,
       clientAddress,
+      urlFull,
+      urlFullMatch,
+      urlScheme,
+      networkTransport,
+      networkProtocolName,
+      networkProtocolVersion,
+      netPeerName,
+      netPeerNameMatch,
+      netPeerPort,
+      hostName,
+      hostNameMatch,
+      osType,
+      processPid,
+      processExecutableName,
+      processExecutableNameMatch,
+      processCommand,
+      processCommandMatch,
+      telemetrySdkName,
+      telemetrySdkLanguage,
+      telemetrySdkVersion,
+      otelScopeName,
+      otelScopeVersion,
     }, 's');
 
     conditions.push('s.parent_span_id IS NULL');

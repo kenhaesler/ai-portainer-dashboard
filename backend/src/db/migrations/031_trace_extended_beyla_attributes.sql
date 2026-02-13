@@ -1,0 +1,23 @@
+ALTER TABLE spans ADD COLUMN url_full TEXT;
+ALTER TABLE spans ADD COLUMN url_scheme TEXT;
+ALTER TABLE spans ADD COLUMN network_transport TEXT;
+ALTER TABLE spans ADD COLUMN network_protocol_name TEXT;
+ALTER TABLE spans ADD COLUMN network_protocol_version TEXT;
+ALTER TABLE spans ADD COLUMN net_peer_name TEXT;
+ALTER TABLE spans ADD COLUMN net_peer_port INTEGER;
+ALTER TABLE spans ADD COLUMN host_name TEXT;
+ALTER TABLE spans ADD COLUMN os_type TEXT;
+ALTER TABLE spans ADD COLUMN process_pid INTEGER;
+ALTER TABLE spans ADD COLUMN process_executable_name TEXT;
+ALTER TABLE spans ADD COLUMN process_command TEXT;
+ALTER TABLE spans ADD COLUMN telemetry_sdk_name TEXT;
+ALTER TABLE spans ADD COLUMN telemetry_sdk_language TEXT;
+ALTER TABLE spans ADD COLUMN telemetry_sdk_version TEXT;
+ALTER TABLE spans ADD COLUMN otel_scope_name TEXT;
+ALTER TABLE spans ADD COLUMN otel_scope_version TEXT;
+
+CREATE INDEX idx_spans_url_full ON spans(url_full);
+CREATE INDEX idx_spans_host_name ON spans(host_name);
+CREATE INDEX idx_spans_net_peer_name ON spans(net_peer_name);
+CREATE INDEX idx_spans_network_transport ON spans(network_transport);
+CREATE INDEX idx_spans_process_executable_name ON spans(process_executable_name);

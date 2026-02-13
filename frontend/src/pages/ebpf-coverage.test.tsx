@@ -205,8 +205,7 @@ describe('EbpfCoveragePage', () => {
 
   it('shows lifecycle action buttons without selecting rows', () => {
     renderWithProviders(<EbpfCoveragePage />);
-    expect(screen.getAllByTestId('disable-btn').length).toBe(6);
-    expect(screen.getAllByTestId('enable-btn').length).toBe(6);
+    expect(screen.getAllByTestId('toggle-btn').length).toBe(6);
     // deploy shown for non-deployed-ish rows, remove shown for deployed/failed rows
     expect(screen.getAllByTestId('deploy-btn').length).toBe(4);
     expect(screen.getAllByTestId('remove-btn').length).toBe(2);

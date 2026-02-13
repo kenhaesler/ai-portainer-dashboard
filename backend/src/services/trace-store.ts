@@ -32,6 +32,23 @@ export interface SpanInsert {
   server_address?: string | null;
   server_port?: number | null;
   client_address?: string | null;
+  url_full?: string | null;
+  url_scheme?: string | null;
+  network_transport?: string | null;
+  network_protocol_name?: string | null;
+  network_protocol_version?: string | null;
+  net_peer_name?: string | null;
+  net_peer_port?: number | null;
+  host_name?: string | null;
+  os_type?: string | null;
+  process_pid?: number | null;
+  process_executable_name?: string | null;
+  process_command?: string | null;
+  telemetry_sdk_name?: string | null;
+  telemetry_sdk_language?: string | null;
+  telemetry_sdk_version?: string | null;
+  otel_scope_name?: string | null;
+  otel_scope_version?: string | null;
 }
 
 export function insertSpan(span: SpanInsert): void {
@@ -45,8 +62,15 @@ export function insertSpan(span: SpanInsert): void {
       container_id, container_name,
       k8s_namespace, k8s_pod_name, k8s_container_name,
       server_address, server_port, client_address,
+      url_full, url_scheme,
+      network_transport, network_protocol_name, network_protocol_version,
+      net_peer_name, net_peer_port,
+      host_name, os_type,
+      process_pid, process_executable_name, process_command,
+      telemetry_sdk_name, telemetry_sdk_language, telemetry_sdk_version,
+      otel_scope_name, otel_scope_version,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     span.id,
     span.trace_id,
@@ -75,6 +99,23 @@ export function insertSpan(span: SpanInsert): void {
     span.server_address ?? null,
     span.server_port ?? null,
     span.client_address ?? null,
+    span.url_full ?? null,
+    span.url_scheme ?? null,
+    span.network_transport ?? null,
+    span.network_protocol_name ?? null,
+    span.network_protocol_version ?? null,
+    span.net_peer_name ?? null,
+    span.net_peer_port ?? null,
+    span.host_name ?? null,
+    span.os_type ?? null,
+    span.process_pid ?? null,
+    span.process_executable_name ?? null,
+    span.process_command ?? null,
+    span.telemetry_sdk_name ?? null,
+    span.telemetry_sdk_language ?? null,
+    span.telemetry_sdk_version ?? null,
+    span.otel_scope_name ?? null,
+    span.otel_scope_version ?? null,
   );
 
   log.debug({ spanId: span.id, traceId: span.trace_id }, 'Span inserted');
@@ -93,8 +134,15 @@ export function insertSpans(spans: SpanInsert[]): number {
       container_id, container_name,
       k8s_namespace, k8s_pod_name, k8s_container_name,
       server_address, server_port, client_address,
+      url_full, url_scheme,
+      network_transport, network_protocol_name, network_protocol_version,
+      net_peer_name, net_peer_port,
+      host_name, os_type,
+      process_pid, process_executable_name, process_command,
+      telemetry_sdk_name, telemetry_sdk_language, telemetry_sdk_version,
+      otel_scope_name, otel_scope_version,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `);
 
   const insertMany = db.transaction((items: SpanInsert[]) => {
@@ -128,6 +176,23 @@ export function insertSpans(spans: SpanInsert[]): number {
         span.server_address ?? null,
         span.server_port ?? null,
         span.client_address ?? null,
+        span.url_full ?? null,
+        span.url_scheme ?? null,
+        span.network_transport ?? null,
+        span.network_protocol_name ?? null,
+        span.network_protocol_version ?? null,
+        span.net_peer_name ?? null,
+        span.net_peer_port ?? null,
+        span.host_name ?? null,
+        span.os_type ?? null,
+        span.process_pid ?? null,
+        span.process_executable_name ?? null,
+        span.process_command ?? null,
+        span.telemetry_sdk_name ?? null,
+        span.telemetry_sdk_language ?? null,
+        span.telemetry_sdk_version ?? null,
+        span.otel_scope_name ?? null,
+        span.otel_scope_version ?? null,
       );
       count++;
     }

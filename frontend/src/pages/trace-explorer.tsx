@@ -65,6 +65,103 @@ function parseAttributes(attributes: unknown): Record<string, unknown> {
   return {};
 }
 
+type TraceSource = 'ebpf' | 'http' | 'scheduler' | 'unknown';
+
+function normalizeSource(source: string | undefined): TraceSource {
+  if (!source) return 'unknown';
+  const normalized = source.toLowerCase();
+  if (normalized === 'ebpf') return 'ebpf';
+  if (normalized === 'http') return 'http';
+  if (normalized === 'scheduler') return 'scheduler';
+  return 'unknown';
+}
+
+function getSourceBadgeClass(source: string | undefined): string {
+  const normalized = normalizeSource(source);
+  if (normalized === 'ebpf') return 'border-amber-500/40 bg-amber-500/15 text-amber-300';
+  if (normalized === 'http') return 'border-sky-500/40 bg-sky-500/15 text-sky-300';
+  if (normalized === 'scheduler') return 'border-violet-500/40 bg-violet-500/15 text-violet-300';
+  return 'border-muted bg-muted/40 text-muted-foreground';
+}
+
+function getSourceDescription(source: string | undefined): string {
+  const normalized = normalizeSource(source);
+  if (normalized === 'ebpf') return 'Runtime traces from eBPF/Beyla instrumentation';
+  if (normalized === 'http') return 'Dashboard API request tracing';
+  if (normalized === 'scheduler') return 'Background scheduler traces';
+  return 'Unknown trace source';
+}
+
+function SourceBadge({ source }: { source: string | undefined }) {
+  const normalized = normalizeSource(source);
+  return (
+    <span
+      className={cn('rounded border px-1.5 py-0.5', getSourceBadgeClass(source))}
+      title={getSourceDescription(source)}
+    >
+      source: {normalized}
+    </span>
+  );
+}
+
+function getAttrString(attrs: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = attrs[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value);
+    }
+  }
+  return undefined;
+}
+
+function getAttrNumber(attrs: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = attrs[key];
+    if (value === undefined || value === null || value === '') continue;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function getSpanSource(traceSource: string | undefined, attrs: Record<string, unknown>): string {
+  return traceSource || getAttrString(attrs, ['trace.source', 'telemetry.source']) || 'unknown';
+}
+
+function getSpanEndpoint(attrs: Record<string, unknown>): string {
+  return getAttrString(attrs, ['endpoint.name', 'endpoint.id', 'endpoint', 'host.name', 'server.address']) || 'unknown';
+}
+
+function getSpanContainer(attrs: Record<string, unknown>): string {
+  return getAttrString(attrs, ['container.name', 'container.id', 'k8s.container.name', 'docker.container.name']) || 'unknown';
+}
+
+function getTraceEndpointLabel(trace: Record<string, unknown>): string {
+  return (
+    (typeof trace.http_route === 'string' && trace.http_route)
+    || (typeof trace.url_full === 'string' && trace.url_full)
+    || (typeof trace.server_address === 'string' && trace.server_address)
+    || (typeof trace.net_peer_name === 'string' && trace.net_peer_name)
+    || 'unknown'
+  );
+}
+
+function getTraceContainerLabel(trace: Record<string, unknown>): string {
+  return (
+    (typeof trace.container_name === 'string' && trace.container_name)
+    || (typeof trace.k8s_container_name === 'string' && trace.k8s_container_name)
+    || (typeof trace.container_id === 'string' && trace.container_id)
+    || 'unknown'
+  );
+}
+
+function getSpanKindDescription(kind: string): string {
+  if (kind === 'server') return 'Server span: work handled by a receiving service.';
+  if (kind === 'client') return 'Client span: outbound request to another service.';
+  if (kind === 'internal') return 'Internal span: in-process work inside one service.';
+  return 'Span kind from OTEL instrumentation.';
+}
+
 interface SpanBarProps {
   span: {
     spanId: string;
@@ -150,9 +247,19 @@ interface TraceListItemProps {
 };
   isSelected: boolean;
   onClick: () => void;
+  sourceLabel: string;
+  endpointLabel: string;
+  containerLabel: string;
 }
 
-function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
+function TraceListItem({
+  trace,
+  isSelected,
+  onClick,
+  sourceLabel,
+  endpointLabel,
+  containerLabel,
+}: TraceListItemProps) {
   const traceId = trace.traceId || trace.trace_id || '';
   const serviceName = trace.serviceName || trace.service_name || trace.rootSpan?.serviceName || 'Unknown';
   const operationName = trace.root_span || trace.rootSpan?.operationName || 'Unknown operation';
@@ -160,8 +267,6 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
   const spanCount = trace.span_count ?? trace.spans?.length ?? 0;
   const serviceCount = trace.services?.length ?? 1;
   const startTime = trace.startTime || trace.start_time || '';
-  const containerLabel = (trace.containerName || trace.container_name
-    || trace.k8sContainerName || trace.k8s_container_name || 'unknown');
 
   return (
     <button
@@ -198,17 +303,12 @@ function TraceListItem({ trace, isSelected, onClick }: TraceListItemProps) {
           {serviceCount} services
         </span>
       </div>
-      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-        <span>{formatDate(startTime)}</span>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border bg-muted/40 px-1.5 py-0.5">
-            source: {trace.trace_source || 'unknown'}
-          </span>
-          <span className="rounded border bg-muted/40 px-1.5 py-0.5">
-            container: {containerLabel}
-          </span>
-        </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <SourceBadge source={sourceLabel} />
+        <span className="rounded border bg-muted/40 px-1.5 py-0.5">endpoint: {endpointLabel}</span>
+        <span className="rounded border bg-muted/40 px-1.5 py-0.5">container: {containerLabel}</span>
       </div>
+      <div className="mt-2 text-xs text-muted-foreground">{formatDate(startTime)}</div>
     </button>
   );
 }
@@ -228,8 +328,34 @@ export default function TraceExplorerPage() {
   const [httpRouteFilter, setHttpRouteFilter] = useState('');
   const [httpStatusCodeFilter, setHttpStatusCodeFilter] = useState('');
   const [serviceNamespaceFilter, setServiceNamespaceFilter] = useState('');
+  const [serviceInstanceIdFilter, setServiceInstanceIdFilter] = useState('');
+  const [serviceVersionFilter, setServiceVersionFilter] = useState('');
+  const [deploymentEnvironmentFilter, setDeploymentEnvironmentFilter] = useState('');
+  const [containerIdFilter, setContainerIdFilter] = useState('');
   const [containerNameFilter, setContainerNameFilter] = useState('');
   const [k8sNamespaceFilter, setK8sNamespaceFilter] = useState('');
+  const [k8sPodNameFilter, setK8sPodNameFilter] = useState('');
+  const [k8sContainerNameFilter, setK8sContainerNameFilter] = useState('');
+  const [serverAddressFilter, setServerAddressFilter] = useState('');
+  const [serverPortFilter, setServerPortFilter] = useState('');
+  const [clientAddressFilter, setClientAddressFilter] = useState('');
+  const [urlFullFilter, setUrlFullFilter] = useState('');
+  const [urlSchemeFilter, setUrlSchemeFilter] = useState('');
+  const [networkTransportFilter, setNetworkTransportFilter] = useState('');
+  const [networkProtocolNameFilter, setNetworkProtocolNameFilter] = useState('');
+  const [networkProtocolVersionFilter, setNetworkProtocolVersionFilter] = useState('');
+  const [netPeerNameFilter, setNetPeerNameFilter] = useState('');
+  const [netPeerPortFilter, setNetPeerPortFilter] = useState('');
+  const [hostNameFilter, setHostNameFilter] = useState('');
+  const [osTypeFilter, setOsTypeFilter] = useState('');
+  const [processPidFilter, setProcessPidFilter] = useState('');
+  const [processExecutableNameFilter, setProcessExecutableNameFilter] = useState('');
+  const [processCommandFilter, setProcessCommandFilter] = useState('');
+  const [telemetrySdkNameFilter, setTelemetrySdkNameFilter] = useState('');
+  const [telemetrySdkLanguageFilter, setTelemetrySdkLanguageFilter] = useState('');
+  const [telemetrySdkVersionFilter, setTelemetrySdkVersionFilter] = useState('');
+  const [otelScopeNameFilter, setOtelScopeNameFilter] = useState('');
+  const [otelScopeVersionFilter, setOtelScopeVersionFilter] = useState('');
   const { interval, setInterval } = useAutoRefresh(0);
 
   const fromTime = useMemo(() => getFromIso(timeRange), [timeRange]);
@@ -246,10 +372,41 @@ export default function TraceExplorerPage() {
     httpStatusCode: httpStatusCodeFilter ? Number(httpStatusCodeFilter) : undefined,
     serviceNamespace: serviceNamespaceFilter || undefined,
     serviceNamespaceMatch: textFilterMode,
+    serviceInstanceId: serviceInstanceIdFilter || undefined,
+    serviceVersion: serviceVersionFilter || undefined,
+    deploymentEnvironment: deploymentEnvironmentFilter || undefined,
+    containerId: containerIdFilter || undefined,
     containerName: containerNameFilter || undefined,
     containerNameMatch: textFilterMode,
     k8sNamespace: k8sNamespaceFilter || undefined,
     k8sNamespaceMatch: textFilterMode,
+    k8sPodName: k8sPodNameFilter || undefined,
+    k8sContainerName: k8sContainerNameFilter || undefined,
+    serverAddress: serverAddressFilter || undefined,
+    serverPort: serverPortFilter ? Number(serverPortFilter) : undefined,
+    clientAddress: clientAddressFilter || undefined,
+    urlFull: urlFullFilter || undefined,
+    urlFullMatch: textFilterMode,
+    urlScheme: urlSchemeFilter || undefined,
+    networkTransport: networkTransportFilter || undefined,
+    networkProtocolName: networkProtocolNameFilter || undefined,
+    networkProtocolVersion: networkProtocolVersionFilter || undefined,
+    netPeerName: netPeerNameFilter || undefined,
+    netPeerNameMatch: textFilterMode,
+    netPeerPort: netPeerPortFilter ? Number(netPeerPortFilter) : undefined,
+    hostName: hostNameFilter || undefined,
+    hostNameMatch: textFilterMode,
+    osType: osTypeFilter || undefined,
+    processPid: processPidFilter ? Number(processPidFilter) : undefined,
+    processExecutableName: processExecutableNameFilter || undefined,
+    processExecutableNameMatch: textFilterMode,
+    processCommand: processCommandFilter || undefined,
+    processCommandMatch: textFilterMode,
+    telemetrySdkName: telemetrySdkNameFilter || undefined,
+    telemetrySdkLanguage: telemetrySdkLanguageFilter || undefined,
+    telemetrySdkVersion: telemetrySdkVersionFilter || undefined,
+    otelScopeName: otelScopeNameFilter || undefined,
+    otelScopeVersion: otelScopeVersionFilter || undefined,
   }), [
     serviceFilter,
     sourceFilter,
@@ -260,8 +417,34 @@ export default function TraceExplorerPage() {
     textFilterMode,
     httpStatusCodeFilter,
     serviceNamespaceFilter,
+    serviceInstanceIdFilter,
+    serviceVersionFilter,
+    deploymentEnvironmentFilter,
+    containerIdFilter,
     containerNameFilter,
     k8sNamespaceFilter,
+    k8sPodNameFilter,
+    k8sContainerNameFilter,
+    serverAddressFilter,
+    serverPortFilter,
+    clientAddressFilter,
+    urlFullFilter,
+    urlSchemeFilter,
+    networkTransportFilter,
+    networkProtocolNameFilter,
+    networkProtocolVersionFilter,
+    netPeerNameFilter,
+    netPeerPortFilter,
+    hostNameFilter,
+    osTypeFilter,
+    processPidFilter,
+    processExecutableNameFilter,
+    processCommandFilter,
+    telemetrySdkNameFilter,
+    telemetrySdkLanguageFilter,
+    telemetrySdkVersionFilter,
+    otelScopeNameFilter,
+    otelScopeVersionFilter,
   ]);
 
   const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces(traceQuery);
@@ -301,6 +484,8 @@ export default function TraceExplorerPage() {
       spans?: Array<{
         spanId?: string;
         span_id?: string;
+        traceId?: string;
+        trace_id?: string;
         parentSpanId?: string;
         parent_span_id?: string;
         operationName?: string;
@@ -309,8 +494,11 @@ export default function TraceExplorerPage() {
         service_name?: string;
         startTime?: string;
         start_time?: string;
+        endTime?: string;
+        end_time?: string | null;
         duration?: number;
         duration_ms?: number;
+        kind?: string;
         status: string;
         trace_source?: string;
         attributes?: unknown;
@@ -318,29 +506,68 @@ export default function TraceExplorerPage() {
     };
     if (!data.spans) return null;
 
-    const normalizedSpans = data.spans.map((s) => ({
-      spanId: s.spanId || s.span_id || '',
-      parentSpanId: s.parentSpanId || s.parent_span_id,
-      operationName: s.operationName || s.name || '',
-      serviceName: s.serviceName || s.service_name || '',
-      startTime: s.startTime || s.start_time || '',
-      duration: s.duration ?? s.duration_ms ?? 0,
-      status: s.status,
-      traceSource: s.trace_source || 'unknown',
-      attributes: parseAttributes(s.attributes),
-    }));
+    const normalizedSpans = data.spans.map((s) => {
+      const attrs = parseAttributes(s.attributes);
+      return {
+        spanId: s.spanId || s.span_id || '',
+        traceId: s.traceId || s.trace_id || data.traceId || '',
+        parentSpanId: s.parentSpanId || s.parent_span_id,
+        operationName: s.operationName || s.name || '',
+        serviceName: s.serviceName || s.service_name || 'unknown',
+        serviceNamespace: getAttrString(attrs, ['service.namespace']) || 'unknown',
+        serviceInstance: getAttrString(attrs, ['service.instance.id']) || 'unknown',
+        serviceVersion: getAttrString(attrs, ['service.version']) || 'unknown',
+        deploymentEnvironment: getAttrString(attrs, ['deployment.environment']) || 'unknown',
+        startTime: s.startTime || s.start_time || '',
+        endTime: s.endTime || s.end_time || null,
+        duration: s.duration ?? s.duration_ms ?? 0,
+        kind: s.kind || 'internal',
+        status: s.status,
+        source: getSpanSource(s.trace_source, attrs),
+        endpoint: getSpanEndpoint(attrs),
+        serverAddress: getAttrString(attrs, ['server.address', 'net.host.name']) || 'unknown',
+        serverPort: getAttrNumber(attrs, ['server.port', 'net.host.port']),
+        clientAddress: getAttrString(attrs, ['client.address', 'net.sock.peer.addr']) || 'unknown',
+        urlFull: getAttrString(attrs, ['url.full', 'http.url']) || 'unknown',
+        urlScheme: getAttrString(attrs, ['url.scheme']) || 'unknown',
+        networkTransport: getAttrString(attrs, ['network.transport']) || 'unknown',
+        networkProtocolName: getAttrString(attrs, ['network.protocol.name']) || 'unknown',
+        networkProtocolVersion: getAttrString(attrs, ['network.protocol.version']) || 'unknown',
+        netPeerName: getAttrString(attrs, ['net.peer.name']) || 'unknown',
+        netPeerPort: getAttrNumber(attrs, ['net.peer.port']),
+        hostName: getAttrString(attrs, ['host.name']) || 'unknown',
+        osType: getAttrString(attrs, ['os.type']) || 'unknown',
+        processPid: getAttrNumber(attrs, ['process.pid']),
+        processExecutableName: getAttrString(attrs, ['process.executable.name']) || 'unknown',
+        processCommand: getAttrString(attrs, ['process.command_line', 'process.command']) || 'unknown',
+        telemetrySdkName: getAttrString(attrs, ['telemetry.sdk.name']) || 'unknown',
+        telemetrySdkLanguage: getAttrString(attrs, ['telemetry.sdk.language']) || 'unknown',
+        telemetrySdkVersion: getAttrString(attrs, ['telemetry.sdk.version']) || 'unknown',
+        otelScopeName: getAttrString(attrs, ['otel.scope.name', 'otel.library.name']) || 'unknown',
+        otelScopeVersion: getAttrString(attrs, ['otel.scope.version']) || 'unknown',
+        containerId: getAttrString(attrs, ['container.id']) || 'unknown',
+        container: getSpanContainer(attrs),
+        k8sNamespace: getAttrString(attrs, ['k8s.namespace.name']) || 'unknown',
+        k8sPodName: getAttrString(attrs, ['k8s.pod.name']) || 'unknown',
+        k8sContainerName: getAttrString(attrs, ['k8s.container.name']) || 'unknown',
+        attributes: attrs,
+      };
+    });
 
     const hasError = normalizedSpans.some((s) => s.status === 'error');
     const uniqueServices = [...new Set(normalizedSpans.map((s) => s.serviceName))];
+    const rootSpan = normalizedSpans.find((s) => !s.parentSpanId) || normalizedSpans[0];
 
     return {
-      traceId: data.traceId,
+      traceId: data.traceId || normalizedSpans[0]?.traceId || '',
       spans: normalizedSpans,
       duration: Math.max(...normalizedSpans.map((s) => s.duration), 0),
-      startTime: normalizedSpans[0]?.startTime || '',
+      startTime: rootSpan?.startTime || normalizedSpans[0]?.startTime || '',
       status: hasError ? 'error' : 'ok',
       services: uniqueServices,
-      source: normalizedSpans[0]?.traceSource || 'unknown',
+      source: rootSpan?.source || 'unknown',
+      endpoint: rootSpan?.endpoint || 'unknown',
+      container: rootSpan?.container || 'unknown',
     };
   }, [selectedTraceData]);
 
@@ -418,8 +645,46 @@ export default function TraceExplorerPage() {
 
   const sourceCounts = summary?.sourceCounts ?? { http: 0, ebpf: 0, scheduler: 0, unknown: 0 };
   const hasAdvancedFiltersApplied = Boolean(
-    httpMethodFilter || httpRouteFilter || httpStatusCodeFilter || serviceNamespaceFilter || containerNameFilter || k8sNamespaceFilter || textFilterMode !== 'exact'
+    httpMethodFilter
+    || httpRouteFilter
+    || httpStatusCodeFilter
+    || serviceNamespaceFilter
+    || serviceInstanceIdFilter
+    || serviceVersionFilter
+    || deploymentEnvironmentFilter
+    || containerIdFilter
+    || containerNameFilter
+    || k8sNamespaceFilter
+    || k8sPodNameFilter
+    || k8sContainerNameFilter
+    || serverAddressFilter
+    || serverPortFilter
+    || clientAddressFilter
+    || urlFullFilter
+    || urlSchemeFilter
+    || networkTransportFilter
+    || networkProtocolNameFilter
+    || networkProtocolVersionFilter
+    || netPeerNameFilter
+    || netPeerPortFilter
+    || hostNameFilter
+    || osTypeFilter
+    || processPidFilter
+    || processExecutableNameFilter
+    || processCommandFilter
+    || telemetrySdkNameFilter
+    || telemetrySdkLanguageFilter
+    || telemetrySdkVersionFilter
+    || otelScopeNameFilter
+    || otelScopeVersionFilter
+    || textFilterMode !== 'exact'
   );
+  const sourceHint = useMemo(() => {
+    if (sourceFilter === 'ebpf') return 'Showing runtime traces from Beyla/eBPF instrumentation.';
+    if (sourceFilter === 'http') return 'Showing API gateway request traces.';
+    if (sourceFilter === 'scheduler') return 'Showing background scheduler traces.';
+    return 'Showing all trace sources. Use a source filter to focus on a single ingestion path.';
+  }, [sourceFilter]);
 
   if (isError) {
     return (
@@ -530,6 +795,17 @@ export default function TraceExplorerPage() {
             />
           </div>
 
+          <p className="text-xs text-muted-foreground" title="Trace source legend and context">
+            {sourceHint}
+          </p>
+          {!sourceFilter && (
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <SourceBadge source="ebpf" />
+              <SourceBadge source="http" />
+              <SourceBadge source="scheduler" />
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <Timer className="h-4 w-4 text-muted-foreground" />
             <ThemedSelect
@@ -602,8 +878,34 @@ export default function TraceExplorerPage() {
                 setHttpRouteFilter('');
                 setHttpStatusCodeFilter('');
                 setServiceNamespaceFilter('');
+                setServiceInstanceIdFilter('');
+                setServiceVersionFilter('');
+                setDeploymentEnvironmentFilter('');
+                setContainerIdFilter('');
                 setContainerNameFilter('');
                 setK8sNamespaceFilter('');
+                setK8sPodNameFilter('');
+                setK8sContainerNameFilter('');
+                setServerAddressFilter('');
+                setServerPortFilter('');
+                setClientAddressFilter('');
+                setUrlFullFilter('');
+                setUrlSchemeFilter('');
+                setNetworkTransportFilter('');
+                setNetworkProtocolNameFilter('');
+                setNetworkProtocolVersionFilter('');
+                setNetPeerNameFilter('');
+                setNetPeerPortFilter('');
+                setHostNameFilter('');
+                setOsTypeFilter('');
+                setProcessPidFilter('');
+                setProcessExecutableNameFilter('');
+                setProcessCommandFilter('');
+                setTelemetrySdkNameFilter('');
+                setTelemetrySdkLanguageFilter('');
+                setTelemetrySdkVersionFilter('');
+                setOtelScopeNameFilter('');
+                setOtelScopeVersionFilter('');
                 setTextFilterMode('exact');
               }}
               className="text-xs text-muted-foreground hover:text-foreground"
@@ -611,6 +913,12 @@ export default function TraceExplorerPage() {
               Clear advanced filters
             </button>
           )}
+        </div>
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">eBPF Quick Guide</p>
+          <p className="mt-1">
+            `source: ebpf` means Beyla captured runtime network spans. `kind=server` is inbound traffic, `kind=client` is outbound calls, and `kind=internal` is in-process work. If endpoint/container is `unknown`, instrumentation still works but metadata enrichment is missing.
+          </p>
         </div>
 
         {showAdvancedFilters && (
@@ -679,6 +987,50 @@ export default function TraceExplorerPage() {
             </label>
 
             <label className="text-xs text-muted-foreground">
+              Service Instance ID
+              <input
+                type="text"
+                value={serviceInstanceIdFilter}
+                onChange={(e) => setServiceInstanceIdFilter(e.target.value)}
+                placeholder="srv-edge-01"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Service Version
+              <input
+                type="text"
+                value={serviceVersionFilter}
+                onChange={(e) => setServiceVersionFilter(e.target.value)}
+                placeholder="1.2.3"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Deployment Environment
+              <input
+                type="text"
+                value={deploymentEnvironmentFilter}
+                onChange={(e) => setDeploymentEnvironmentFilter(e.target.value)}
+                placeholder="production"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Container ID
+              <input
+                type="text"
+                value={containerIdFilter}
+                onChange={(e) => setContainerIdFilter(e.target.value)}
+                placeholder="f6b71bc8bca2"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
               Container Name
               <input
                 type="text"
@@ -696,6 +1048,248 @@ export default function TraceExplorerPage() {
                 value={k8sNamespaceFilter}
                 onChange={(e) => setK8sNamespaceFilter(e.target.value)}
                 placeholder="payments"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              K8s Pod Name
+              <input
+                type="text"
+                value={k8sPodNameFilter}
+                onChange={(e) => setK8sPodNameFilter(e.target.value)}
+                placeholder="payments-api-6f9d95"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              K8s Container Name
+              <input
+                type="text"
+                value={k8sContainerNameFilter}
+                onChange={(e) => setK8sContainerNameFilter(e.target.value)}
+                placeholder="api"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Server Address
+              <input
+                type="text"
+                value={serverAddressFilter}
+                onChange={(e) => setServerAddressFilter(e.target.value)}
+                placeholder="10.0.0.24"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Server Port
+              <input
+                type="number"
+                value={serverPortFilter}
+                onChange={(e) => setServerPortFilter(e.target.value)}
+                placeholder="443"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Client Address
+              <input
+                type="text"
+                value={clientAddressFilter}
+                onChange={(e) => setClientAddressFilter(e.target.value)}
+                placeholder="10.0.0.12"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              URL Full
+              <input
+                type="text"
+                value={urlFullFilter}
+                onChange={(e) => setUrlFullFilter(e.target.value)}
+                placeholder="http://service:8080/path"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              URL Scheme
+              <input
+                type="text"
+                value={urlSchemeFilter}
+                onChange={(e) => setUrlSchemeFilter(e.target.value)}
+                placeholder="http"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Network Transport
+              <input
+                type="text"
+                value={networkTransportFilter}
+                onChange={(e) => setNetworkTransportFilter(e.target.value)}
+                placeholder="tcp"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Network Protocol Name
+              <input
+                type="text"
+                value={networkProtocolNameFilter}
+                onChange={(e) => setNetworkProtocolNameFilter(e.target.value)}
+                placeholder="http"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Network Protocol Version
+              <input
+                type="text"
+                value={networkProtocolVersionFilter}
+                onChange={(e) => setNetworkProtocolVersionFilter(e.target.value)}
+                placeholder="1.1"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Net Peer Name
+              <input
+                type="text"
+                value={netPeerNameFilter}
+                onChange={(e) => setNetPeerNameFilter(e.target.value)}
+                placeholder="api.internal.local"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Net Peer Port
+              <input
+                type="number"
+                value={netPeerPortFilter}
+                onChange={(e) => setNetPeerPortFilter(e.target.value)}
+                placeholder="443"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Host Name
+              <input
+                type="text"
+                value={hostNameFilter}
+                onChange={(e) => setHostNameFilter(e.target.value)}
+                placeholder="srv-edge-01"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              OS Type
+              <input
+                type="text"
+                value={osTypeFilter}
+                onChange={(e) => setOsTypeFilter(e.target.value)}
+                placeholder="linux"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Process PID
+              <input
+                type="number"
+                value={processPidFilter}
+                onChange={(e) => setProcessPidFilter(e.target.value)}
+                placeholder="12345"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Process Executable Name
+              <input
+                type="text"
+                value={processExecutableNameFilter}
+                onChange={(e) => setProcessExecutableNameFilter(e.target.value)}
+                placeholder="http-echo"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Process Command
+              <input
+                type="text"
+                value={processCommandFilter}
+                onChange={(e) => setProcessCommandFilter(e.target.value)}
+                placeholder="/bin/http-echo --port 8080"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Telemetry SDK Name
+              <input
+                type="text"
+                value={telemetrySdkNameFilter}
+                onChange={(e) => setTelemetrySdkNameFilter(e.target.value)}
+                placeholder="beyla"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Telemetry SDK Language
+              <input
+                type="text"
+                value={telemetrySdkLanguageFilter}
+                onChange={(e) => setTelemetrySdkLanguageFilter(e.target.value)}
+                placeholder="go"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              Telemetry SDK Version
+              <input
+                type="text"
+                value={telemetrySdkVersionFilter}
+                onChange={(e) => setTelemetrySdkVersionFilter(e.target.value)}
+                placeholder="2.8.5"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              OTEL Scope Name
+              <input
+                type="text"
+                value={otelScopeNameFilter}
+                onChange={(e) => setOtelScopeNameFilter(e.target.value)}
+                placeholder="github.com/grafana/beyla"
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            <label className="text-xs text-muted-foreground">
+              OTEL Scope Version
+              <input
+                type="text"
+                value={otelScopeVersionFilter}
+                onChange={(e) => setOtelScopeVersionFilter(e.target.value)}
+                placeholder="v2.8.5"
                 className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
               />
             </label>
@@ -732,11 +1326,17 @@ export default function TraceExplorerPage() {
           <div className="max-h-[600px] space-y-3 overflow-y-auto pr-2">
             {filteredTraces.map((trace) => {
               const id = trace.traceId || trace.trace_id || '';
+              const sourceLabel = trace.trace_source || 'unknown';
+              const endpointLabel = getTraceEndpointLabel(trace as Record<string, unknown>);
+              const containerLabel = getTraceContainerLabel(trace as Record<string, unknown>);
               return (
                 <TraceListItem
                   key={id}
                   trace={trace}
                   isSelected={selectedTraceId === id}
+                  sourceLabel={sourceLabel}
+                  endpointLabel={endpointLabel}
+                  containerLabel={containerLabel}
                   onClick={() => {
                     setSelectedTraceId(id);
                     setSelectedSpanId(null);
@@ -762,7 +1362,9 @@ export default function TraceExplorerPage() {
                     <span>{selectedTrace.spans?.length || 0} spans</span>
                     <span>{selectedTrace.services?.length || 0} services</span>
                     <span>{formatDate(selectedTrace.startTime)}</span>
-                    <span className="rounded border bg-muted/40 px-1.5 py-0.5">source: {selectedTrace.source}</span>
+                    <SourceBadge source={selectedTrace.source} />
+                    <span className="rounded border bg-muted/40 px-1.5 py-0.5">endpoint: {selectedTrace.endpoint}</span>
+                    <span className="rounded border bg-muted/40 px-1.5 py-0.5">container: {selectedTrace.container}</span>
                   </div>
                 </div>
 
@@ -808,12 +1410,148 @@ export default function TraceExplorerPage() {
                           <p className="text-xs text-muted-foreground">Span ID</p>
                           <p className="font-mono text-xs">{selectedSpan.spanId}</p>
                         </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Trace ID</p>
+                          <p className="font-mono text-xs">{selectedSpan.traceId}</p>
+                        </div>
                         {selectedSpan.parentSpanId && (
                           <div>
                             <p className="text-xs text-muted-foreground">Parent Span</p>
                             <p className="font-mono text-xs">{selectedSpan.parentSpanId}</p>
                           </div>
                         )}
+                        <div>
+                          <p className="text-xs text-muted-foreground">Kind</p>
+                          <p className="font-medium" title={getSpanKindDescription(selectedSpan.kind)}>{selectedSpan.kind}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Service Namespace</p>
+                          <p className="font-medium">{selectedSpan.serviceNamespace}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Service Instance</p>
+                          <p className="font-medium">{selectedSpan.serviceInstance}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Service Version</p>
+                          <p className="font-medium">{selectedSpan.serviceVersion}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Deployment Environment</p>
+                          <p className="font-medium">{selectedSpan.deploymentEnvironment}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Source</p>
+                          <SourceBadge source={selectedSpan.source} />
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Endpoint</p>
+                          <p className="font-medium">{selectedSpan.endpoint}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Container</p>
+                          <p className="font-medium">{selectedSpan.container}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Container ID</p>
+                          <p className="font-medium">{selectedSpan.containerId}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">K8s Namespace</p>
+                          <p className="font-medium">{selectedSpan.k8sNamespace}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">K8s Pod</p>
+                          <p className="font-medium">{selectedSpan.k8sPodName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">K8s Container</p>
+                          <p className="font-medium">{selectedSpan.k8sContainerName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Server Address</p>
+                          <p className="font-medium">{selectedSpan.serverAddress}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Server Port</p>
+                          <p className="font-medium">{selectedSpan.serverPort ?? 'unknown'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Client Address</p>
+                          <p className="font-medium">{selectedSpan.clientAddress}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">URL Full</p>
+                          <p className="font-medium">{selectedSpan.urlFull}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">URL Scheme</p>
+                          <p className="font-medium">{selectedSpan.urlScheme}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Network Transport</p>
+                          <p className="font-medium">{selectedSpan.networkTransport}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Network Protocol Name</p>
+                          <p className="font-medium">{selectedSpan.networkProtocolName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Network Protocol Version</p>
+                          <p className="font-medium">{selectedSpan.networkProtocolVersion}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Net Peer Name</p>
+                          <p className="font-medium">{selectedSpan.netPeerName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Net Peer Port</p>
+                          <p className="font-medium">{selectedSpan.netPeerPort ?? 'unknown'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Host Name</p>
+                          <p className="font-medium">{selectedSpan.hostName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">OS Type</p>
+                          <p className="font-medium">{selectedSpan.osType}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Process PID</p>
+                          <p className="font-medium">{selectedSpan.processPid ?? 'unknown'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Process Executable</p>
+                          <p className="font-medium">{selectedSpan.processExecutableName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Process Command</p>
+                          <p className="font-medium break-all">{selectedSpan.processCommand}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Telemetry SDK Name</p>
+                          <p className="font-medium">{selectedSpan.telemetrySdkName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Telemetry SDK Language</p>
+                          <p className="font-medium">{selectedSpan.telemetrySdkLanguage}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Telemetry SDK Version</p>
+                          <p className="font-medium">{selectedSpan.telemetrySdkVersion}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">OTEL Scope Name</p>
+                          <p className="font-medium">{selectedSpan.otelScopeName}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">OTEL Scope Version</p>
+                          <p className="font-medium">{selectedSpan.otelScopeVersion}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Start / End</p>
+                          <p className="font-medium">{formatDate(selectedSpan.startTime)} / {selectedSpan.endTime ? formatDate(selectedSpan.endTime) : 'unknown'}</p>
+                        </div>
                       </div>
 
                       {selectedSpan.attributes && Object.keys(selectedSpan.attributes).length > 0 && (

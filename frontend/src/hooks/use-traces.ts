@@ -50,6 +50,28 @@ export interface TracesOptions {
   serverAddress?: string;
   serverPort?: number;
   clientAddress?: string;
+  urlFull?: string;
+  urlFullMatch?: 'exact' | 'contains';
+  urlScheme?: string;
+  networkTransport?: string;
+  networkProtocolName?: string;
+  networkProtocolVersion?: string;
+  netPeerName?: string;
+  netPeerNameMatch?: 'exact' | 'contains';
+  netPeerPort?: number;
+  hostName?: string;
+  hostNameMatch?: 'exact' | 'contains';
+  osType?: string;
+  processPid?: number;
+  processExecutableName?: string;
+  processExecutableNameMatch?: 'exact' | 'contains';
+  processCommand?: string;
+  processCommandMatch?: 'exact' | 'contains';
+  telemetrySdkName?: string;
+  telemetrySdkLanguage?: string;
+  telemetrySdkVersion?: string;
+  otelScopeName?: string;
+  otelScopeVersion?: string;
 }
 
 interface ServiceMapNode {

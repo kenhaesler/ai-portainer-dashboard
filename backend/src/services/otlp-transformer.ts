@@ -168,6 +168,23 @@ export function transformOtlpToSpans(payload: OtlpExportRequest): SpanInsert[] {
           server_address: pickString(allAttributes, ['server.address', 'net.host.name']),
           server_port: pickInt(allAttributes, ['server.port', 'net.host.port']),
           client_address: pickString(allAttributes, ['client.address', 'net.sock.peer.addr']),
+          url_full: pickString(allAttributes, ['url.full', 'http.url']),
+          url_scheme: pickString(allAttributes, ['url.scheme']),
+          network_transport: pickString(allAttributes, ['network.transport']),
+          network_protocol_name: pickString(allAttributes, ['network.protocol.name']),
+          network_protocol_version: pickString(allAttributes, ['network.protocol.version']),
+          net_peer_name: pickString(allAttributes, ['net.peer.name']),
+          net_peer_port: pickInt(allAttributes, ['net.peer.port']),
+          host_name: pickString(allAttributes, ['host.name']),
+          os_type: pickString(allAttributes, ['os.type']),
+          process_pid: pickInt(allAttributes, ['process.pid']),
+          process_executable_name: pickString(allAttributes, ['process.executable.name']),
+          process_command: pickString(allAttributes, ['process.command_line', 'process.command']),
+          telemetry_sdk_name: pickString(allAttributes, ['telemetry.sdk.name']),
+          telemetry_sdk_language: pickString(allAttributes, ['telemetry.sdk.language']),
+          telemetry_sdk_version: pickString(allAttributes, ['telemetry.sdk.version']),
+          otel_scope_name: scopeSpan.scope?.name || null,
+          otel_scope_version: scopeSpan.scope?.version || null,
         });
       }
     }

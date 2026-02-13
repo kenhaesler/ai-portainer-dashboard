@@ -58,8 +58,25 @@ describe('Header', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText('def5678')).toBeInTheDocument();
-    expect(screen.getByLabelText('Build def5678')).toBeInTheDocument();
+    expect(await screen.findByText('DEV def5678')).toBeInTheDocument();
+    expect(screen.getByLabelText('Build DEV def5678')).toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledWith('/__commit');
+  });
+
+  it('renders non-hash build identifiers too', async () => {
+    vi.stubEnv('VITE_GIT_COMMIT', 'build-20260213');
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => null,
+    } as Response);
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/(DEV|BUILD) build-202602/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Build (DEV|BUILD) build-202602/i)).toBeInTheDocument();
   });
 });
