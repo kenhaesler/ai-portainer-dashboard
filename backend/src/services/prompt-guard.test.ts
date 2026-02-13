@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isPromptInjection, sanitizeLlmOutput, normalizeUnicode } from './prompt-guard.js';
+import { isPromptInjection, sanitizeLlmOutput, normalizeUnicode, stripThinkingBlocks } from './prompt-guard.js';
 
 // Mock getConfig to return strict mode
 vi.mock('../config/index.js', () => ({
@@ -317,5 +317,80 @@ describe('sanitizeLlmOutput', () => {
     const output = '## Container Status\n\n- **nginx**: running (healthy)\n- **redis**: running\n\nNo issues detected.';
     const result = sanitizeLlmOutput(output);
     expect(result).toBe(output);
+  });
+
+  it('strips <think> blocks from output', () => {
+    const output = '<think>I need to check container status...</think>Here are the running containers.';
+    const result = sanitizeLlmOutput(output);
+    expect(result).toBe('Here are the running containers.');
+  });
+
+  it('strips <thinking> blocks from output', () => {
+    const output = '<thinking>Let me analyze the metrics...</thinking>\n\nThe CPU usage is normal.';
+    const result = sanitizeLlmOutput(output);
+    expect(result).toBe('The CPU usage is normal.');
+  });
+
+  it('strips think blocks that contain system prompt fragments without false positive', () => {
+    const output = '<think>The infrastructure context shows endpoints and containers...</think>All 3 endpoints are healthy.';
+    const result = sanitizeLlmOutput(output);
+    expect(result).toBe('All 3 endpoints are healthy.');
+  });
+});
+
+describe('stripThinkingBlocks', () => {
+  it('strips a complete <think>...</think> block', () => {
+    const input = '<think>Some reasoning here</think>The actual answer.';
+    expect(stripThinkingBlocks(input)).toBe('The actual answer.');
+  });
+
+  it('strips a complete <thinking>...</thinking> block', () => {
+    const input = '<thinking>Some reasoning here</thinking>The actual answer.';
+    expect(stripThinkingBlocks(input)).toBe('The actual answer.');
+  });
+
+  it('strips multiline thinking blocks', () => {
+    const input = '<think>\nStep 1: Check containers\nStep 2: Analyze metrics\nStep 3: Summarize\n</think>\n\nAll containers are running.';
+    expect(stripThinkingBlocks(input)).toBe('All containers are running.');
+  });
+
+  it('strips multiple thinking blocks', () => {
+    const input = '<think>First thought</think>Answer 1. <think>Second thought</think>Answer 2.';
+    expect(stripThinkingBlocks(input)).toBe('Answer 1. Answer 2.');
+  });
+
+  it('handles unclosed <think> tag', () => {
+    const input = '<think>This was never closed and contains reasoning';
+    expect(stripThinkingBlocks(input)).toBe('');
+  });
+
+  it('handles unclosed <thinking> tag', () => {
+    const input = 'Preamble <thinking>This was never closed';
+    expect(stripThinkingBlocks(input)).toBe('Preamble');
+  });
+
+  it('handles empty thinking blocks', () => {
+    const input = '<think></think>The answer.';
+    expect(stripThinkingBlocks(input)).toBe('The answer.');
+  });
+
+  it('is case-insensitive', () => {
+    const input = '<THINK>Reasoning</THINK>Answer.';
+    expect(stripThinkingBlocks(input)).toBe('Answer.');
+  });
+
+  it('preserves text with no thinking blocks', () => {
+    const input = 'Just a normal response with no thinking tags.';
+    expect(stripThinkingBlocks(input)).toBe(input);
+  });
+
+  it('handles text before and after thinking block', () => {
+    const input = 'Hello, <think>internal reasoning</think>world!';
+    expect(stripThinkingBlocks(input)).toBe('Hello, world!');
+  });
+
+  it('handles deeply nested-looking content inside think block', () => {
+    const input = '<think>Step 1\n- substep a\n- substep b\nStep 2\n</think>\n\n## Summary\nEverything is fine.';
+    expect(stripThinkingBlocks(input)).toBe('## Summary\nEverything is fine.');
   });
 });

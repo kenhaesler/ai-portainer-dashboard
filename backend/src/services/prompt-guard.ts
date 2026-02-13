@@ -260,6 +260,27 @@ export function isPromptInjection(input: string): PromptGuardResult {
   return { blocked: false, score: heuristic.score };
 }
 
+// ─── Thinking block stripping ────────────────────────────────────────
+
+/**
+ * Strip `<think>...</think>` and `<thinking>...</thinking>` blocks from
+ * LLM output.  Reasoning models (DeepSeek R1, QwQ, Qwen3, etc.) wrap
+ * chain-of-thought in these tags — users should not see raw reasoning.
+ *
+ * Handles: complete blocks, unclosed tags (trailing thinking), empty
+ * blocks, case-insensitive tags, and nested occurrences.
+ */
+export function stripThinkingBlocks(text: string): string {
+  // Remove complete <think>...</think> and <thinking>...</thinking> blocks
+  let result = text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+
+  // Remove unclosed thinking blocks (tag opened but never closed — common
+  // when the model is interrupted or produces malformed output)
+  result = result.replace(/<think(?:ing)?>[\s\S]*$/gi, '');
+
+  return result.trim();
+}
+
 // ─── Layer 3: Output sanitization ───────────────────────────────────
 
 const SYSTEM_PROMPT_LEAK_PATTERNS = [
@@ -289,16 +310,20 @@ const SENTINEL_PHRASES = [
  * tool definitions, or sentinel phrases from LLM output.
  */
 export function sanitizeLlmOutput(output: string): string {
+  // Strip thinking blocks first (before other checks, since think blocks
+  // may contain system prompt fragments that would trigger false positives)
+  const cleaned = stripThinkingBlocks(output);
+
   // Check for system prompt leaks
   for (const pattern of SYSTEM_PROMPT_LEAK_PATTERNS) {
-    if (pattern.test(output)) {
+    if (pattern.test(cleaned)) {
       log.warn({ pattern: pattern.source.slice(0, 50) }, 'Output sanitized: system prompt leak detected');
       return 'I cannot provide internal system instructions. Ask about dashboard data or navigation.';
     }
   }
 
   // Check for sentinel phrases (case insensitive)
-  const lower = output.toLowerCase();
+  const lower = cleaned.toLowerCase();
   for (const phrase of SENTINEL_PHRASES) {
     if (lower.includes(phrase.toLowerCase())) {
       log.warn({ phrase }, 'Output sanitized: sentinel phrase detected');
@@ -307,13 +332,13 @@ export function sanitizeLlmOutput(output: string): string {
   }
 
   // Strip embedded tool definition JSON
-  if (TOOL_DEFINITION_PATTERN.test(output)) {
+  if (TOOL_DEFINITION_PATTERN.test(cleaned)) {
     log.warn('Output sanitized: tool definition leak detected');
-    return output.replace(
+    return cleaned.replace(
       /\{[^{}]*"name"\s*:\s*"[^"]+"\s*,\s*"description"\s*:\s*"[^"]*"\s*,\s*"parameters"\s*:[^}]*\}/g,
       '[tool definition redacted]',
     );
   }
 
-  return output;
+  return cleaned;
 }

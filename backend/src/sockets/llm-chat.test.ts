@@ -89,6 +89,7 @@ import {
   looksLikeToolCallAttempt,
   formatChatContext,
   setupLlmNamespace,
+  ThinkingBlockFilter,
 } from './llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
 
@@ -240,6 +241,104 @@ describe('formatChatContext', () => {
 
     expect(result).toContain('Additional Context');
     expect(result).not.toContain('ACTIVE FOCUS');
+  });
+});
+
+// ── ThinkingBlockFilter unit tests ──
+
+describe('ThinkingBlockFilter', () => {
+  it('passes through text with no thinking tags', () => {
+    const filter = new ThinkingBlockFilter();
+    expect(filter.process('Hello world')).toBe('Hello world');
+    expect(filter.flush()).toBe('');
+  });
+
+  it('strips a complete <think>...</think> block in a single chunk', () => {
+    const filter = new ThinkingBlockFilter();
+    const result = filter.process('<think>reasoning</think>Answer');
+    expect(result).toBe('Answer');
+  });
+
+  it('strips a complete <thinking>...</thinking> block in a single chunk', () => {
+    const filter = new ThinkingBlockFilter();
+    const result = filter.process('<thinking>reasoning</thinking>Answer');
+    expect(result).toBe('Answer');
+  });
+
+  it('suppresses thinking content split across multiple chunks', () => {
+    const filter = new ThinkingBlockFilter();
+    const chunks = ['<thi', 'nk>', 'some reasoning', '</thi', 'nk>', 'The answer'];
+    let output = '';
+    for (const chunk of chunks) {
+      output += filter.process(chunk);
+    }
+    output += filter.flush();
+    expect(output).toBe('The answer');
+  });
+
+  it('handles thinking tag split across chunks (opening)', () => {
+    const filter = new ThinkingBlockFilter();
+    let output = '';
+    output += filter.process('Hello <thin');
+    output += filter.process('king>internal</thinking> world');
+    output += filter.flush();
+    expect(output).toBe('Hello  world');
+  });
+
+  it('handles thinking tag split across chunks (closing)', () => {
+    const filter = new ThinkingBlockFilter();
+    let output = '';
+    output += filter.process('<think>reason');
+    output += filter.process('ing</thi');
+    output += filter.process('nk>result');
+    output += filter.flush();
+    expect(output).toBe('result');
+  });
+
+  it('discards unclosed thinking block on flush', () => {
+    const filter = new ThinkingBlockFilter();
+    let output = '';
+    output += filter.process('<think>never closed');
+    output += filter.flush();
+    expect(output).toBe('');
+  });
+
+  it('emits text before and after thinking block', () => {
+    const filter = new ThinkingBlockFilter();
+    const result = filter.process('before<think>middle</think>after');
+    expect(result).toBe('beforeafter');
+  });
+
+  it('handles empty thinking block', () => {
+    const filter = new ThinkingBlockFilter();
+    const result = filter.process('<think></think>content');
+    expect(result).toBe('content');
+  });
+
+  it('handles multiple thinking blocks', () => {
+    const filter = new ThinkingBlockFilter();
+    let output = '';
+    output += filter.process('<think>first</think>A');
+    output += filter.process('<think>second</think>B');
+    output += filter.flush();
+    expect(output).toBe('AB');
+  });
+
+  it('is case-insensitive', () => {
+    const filter = new ThinkingBlockFilter();
+    const result = filter.process('<THINK>reasoning</THINK>Answer');
+    expect(result).toBe('Answer');
+  });
+
+  it('buffers partial tag at end of chunk', () => {
+    const filter = new ThinkingBlockFilter();
+    // "<t" could be start of "<think>" — should buffer, not emit
+    let output = filter.process('Hello <t');
+    // Not a think tag after all — flush should emit the buffered text
+    output += filter.process('ext');
+    output += filter.flush();
+    // "<t" + "ext" = "<text" which is not a think tag, so it should be emitted
+    expect(output).toContain('Hello');
   });
 });
 
