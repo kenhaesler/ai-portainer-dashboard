@@ -89,6 +89,14 @@ describe('Header', () => {
   });
 
   it('renders potato mode toggle in header actions', async () => {
+  it('renders explicit build number identifiers', async () => {
+    vi.stubEnv('VITE_BUILD_NUMBER', '20260213.7');
+    vi.stubEnv('VITE_GIT_COMMIT', '');
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => null,
+    } as Response);
+
     render(
       <MemoryRouter>
         <Header />
@@ -96,5 +104,7 @@ describe('Header', () => {
     );
 
     expect(await screen.findByRole('switch', { name: /potato mode off/i })).toBeInTheDocument();
+    expect(await screen.findByText(/(DEV|BUILD) 20260213.7/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Build (DEV|BUILD) 20260213.7/i)).toBeInTheDocument();
   });
 });
