@@ -4,6 +4,9 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { remediationRoutes } from './remediation.js';
 
 const mockBroadcastActionUpdate = vi.fn();
+const mockRestartContainer = vi.fn();
+const mockStopContainer = vi.fn();
+const mockStartContainer = vi.fn();
 
 let state: { action: any } = {
   action: null,
@@ -15,6 +18,12 @@ vi.mock('../services/audit-logger.js', () => ({
 
 vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
+}));
+
+vi.mock('../services/portainer-client.js', () => ({
+  restartContainer: (...args: unknown[]) => mockRestartContainer(...args),
+  stopContainer: (...args: unknown[]) => mockStopContainer(...args),
+  startContainer: (...args: unknown[]) => mockStartContainer(...args),
 }));
 
 vi.mock('../db/sqlite.js', () => ({
@@ -47,18 +56,28 @@ vi.mock('../db/sqlite.js', () => ({
           },
         };
       }
-      if (query.includes('UPDATE actions SET status = \'completed\'')) {
+      if (query.includes('SET status = \'completed\'')) {
         return {
-          run: () => {
-            state.action = { ...state.action, status: 'completed' };
+          run: (...args: unknown[]) => {
+            state.action = {
+              ...state.action,
+              status: 'completed',
+              execution_result: args[0] as string,
+              execution_duration_ms: args[1] as number,
+            };
             return { changes: 1 };
           },
         };
       }
-      if (query.includes('UPDATE actions SET status = \'failed\'')) {
+      if (query.includes('SET status = \'failed\'')) {
         return {
-          run: () => {
-            state.action = { ...state.action, status: 'failed' };
+          run: (...args: unknown[]) => {
+            state.action = {
+              ...state.action,
+              status: 'failed',
+              execution_result: args[0] as string,
+              execution_duration_ms: args[1] as number,
+            };
             return { changes: 1 };
           },
         };
@@ -105,6 +124,9 @@ describe('remediation routes', () => {
   beforeEach(() => {
     currentRole = 'admin';
     vi.clearAllMocks();
+    mockRestartContainer.mockResolvedValue(undefined);
+    mockStopContainer.mockResolvedValue(undefined);
+    mockStartContainer.mockResolvedValue(undefined);
     state.action = {
       id: 'a1',
       status: 'pending',
@@ -161,12 +183,79 @@ describe('remediation routes', () => {
     expect(res.json()).toEqual({ error: 'Insufficient permissions' });
   });
 
-  it('does not expose execute endpoint', async () => {
+  it('rejects execute for non-admin users', async () => {
+    currentRole = 'operator';
+    state.action.status = 'approved';
+
     const res = await app.inject({
       method: 'POST',
       url: '/api/remediation/actions/a1/execute',
     });
 
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
+    expect(mockRestartContainer).not.toHaveBeenCalled();
+  });
+
+  it('rejects execute when action is not approved', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('must be approved');
+    expect(mockRestartContainer).not.toHaveBeenCalled();
+  });
+
+  it('executes approved restart actions', async () => {
+    state.action.status = 'approved';
+    state.action.action_type = 'RESTART_CONTAINER';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ success: true, actionId: 'a1', status: 'completed' });
+    expect(mockRestartContainer).toHaveBeenCalledWith(1, 'c1');
+    expect(mockBroadcastActionUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'executing' }));
+    expect(mockBroadcastActionUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+  });
+
+  it('marks action failed when execution throws', async () => {
+    state.action.status = 'approved';
+    state.action.action_type = 'RESTART_CONTAINER';
+    mockRestartContainer.mockRejectedValue(new Error('portainer unavailable'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      error: 'Failed to execute remediation action',
+      details: 'portainer unavailable',
+    });
+    expect(mockBroadcastActionUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('rejects unsupported action types', async () => {
+    state.action.status = 'approved';
+    state.action.action_type = 'INVESTIGATE';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('Failed to execute remediation action');
+    expect(res.json().details).toContain('Unsupported action type');
+    expect(mockRestartContainer).not.toHaveBeenCalled();
+    expect(mockStopContainer).not.toHaveBeenCalled();
+    expect(mockStartContainer).not.toHaveBeenCalled();
   });
 });
