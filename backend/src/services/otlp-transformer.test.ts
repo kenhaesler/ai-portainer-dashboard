@@ -17,6 +17,11 @@ function makePayload(overrides?: Partial<OtlpExportRequest>): OtlpExportRequest 
             { key: 'k8s.namespace.name', value: { stringValue: 'payments' } },
             { key: 'k8s.pod.name', value: { stringValue: 'api-pod-1' } },
             { key: 'k8s.container.name', value: { stringValue: 'api' } },
+            { key: 'host.name', value: { stringValue: 'node-a' } },
+            { key: 'os.type', value: { stringValue: 'linux' } },
+            { key: 'telemetry.sdk.name', value: { stringValue: 'opentelemetry' } },
+            { key: 'telemetry.sdk.language', value: { stringValue: 'go' } },
+            { key: 'telemetry.sdk.version', value: { stringValue: '1.27.0' } },
           ],
         },
         scopeSpans: [
@@ -39,6 +44,16 @@ function makePayload(overrides?: Partial<OtlpExportRequest>): OtlpExportRequest 
                   { key: 'server.address', value: { stringValue: 'api.internal' } },
                   { key: 'server.port', value: { intValue: 8443 } },
                   { key: 'client.address', value: { stringValue: '10.0.0.5' } },
+                  { key: 'url.full', value: { stringValue: 'https://api.internal/api/users/42' } },
+                  { key: 'url.scheme', value: { stringValue: 'https' } },
+                  { key: 'network.transport', value: { stringValue: 'tcp' } },
+                  { key: 'network.protocol.name', value: { stringValue: 'http' } },
+                  { key: 'network.protocol.version', value: { stringValue: '1.1' } },
+                  { key: 'net.peer.name', value: { stringValue: 'client.internal' } },
+                  { key: 'net.peer.port', value: { intValue: 50120 } },
+                  { key: 'process.pid', value: { intValue: 31337 } },
+                  { key: 'process.executable.name', value: { stringValue: 'agent' } },
+                  { key: 'process.command_line', value: { stringValue: '/usr/bin/agent --serve' } },
                 ],
               },
             ],
@@ -82,6 +97,23 @@ describe('transformOtlpToSpans', () => {
     expect(span.server_address).toBe('api.internal');
     expect(span.server_port).toBe(8443);
     expect(span.client_address).toBe('10.0.0.5');
+    expect(span.url_full).toBe('https://api.internal/api/users/42');
+    expect(span.url_scheme).toBe('https');
+    expect(span.network_transport).toBe('tcp');
+    expect(span.network_protocol_name).toBe('http');
+    expect(span.network_protocol_version).toBe('1.1');
+    expect(span.net_peer_name).toBe('client.internal');
+    expect(span.net_peer_port).toBe(50120);
+    expect(span.host_name).toBe('node-a');
+    expect(span.os_type).toBe('linux');
+    expect(span.process_pid).toBe(31337);
+    expect(span.process_executable_name).toBe('agent');
+    expect(span.process_command).toBe('/usr/bin/agent --serve');
+    expect(span.telemetry_sdk_name).toBe('opentelemetry');
+    expect(span.telemetry_sdk_language).toBe('go');
+    expect(span.telemetry_sdk_version).toBe('1.27.0');
+    expect(span.otel_scope_name).toBe('beyla');
+    expect(span.otel_scope_version).toBe('1.0');
 
     const attrs = JSON.parse(span.attributes);
     expect(attrs['http.method']).toBe('GET');

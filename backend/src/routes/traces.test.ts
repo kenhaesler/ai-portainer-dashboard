@@ -23,6 +23,10 @@ function insertSpan(span: {
   serviceNamespace?: string | null;
   containerName?: string | null;
   k8sNamespace?: string | null;
+  urlFull?: string | null;
+  networkTransport?: string | null;
+  hostName?: string | null;
+  telemetrySdkName?: string | null;
 }) {
   db.prepare(`
     INSERT INTO spans (
@@ -30,8 +34,9 @@ function insertSpan(span: {
       start_time, end_time, duration_ms, service_name, attributes, trace_source,
       http_method, http_route, http_status_code,
       service_namespace, container_name, k8s_namespace,
+      url_full, network_transport, host_name, telemetry_sdk_name,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     span.id,
     span.traceId,
@@ -51,6 +56,10 @@ function insertSpan(span: {
     span.serviceNamespace ?? null,
     span.containerName ?? null,
     span.k8sNamespace ?? null,
+    span.urlFull ?? null,
+    span.networkTransport ?? null,
+    span.hostName ?? null,
+    span.telemetrySdkName ?? null,
   );
 }
 
@@ -84,6 +93,23 @@ beforeAll(() => {
       server_address TEXT,
       server_port INTEGER,
       client_address TEXT,
+      url_full TEXT,
+      url_scheme TEXT,
+      network_transport TEXT,
+      network_protocol_name TEXT,
+      network_protocol_version TEXT,
+      net_peer_name TEXT,
+      net_peer_port INTEGER,
+      host_name TEXT,
+      os_type TEXT,
+      process_pid INTEGER,
+      process_executable_name TEXT,
+      process_command TEXT,
+      telemetry_sdk_name TEXT,
+      telemetry_sdk_language TEXT,
+      telemetry_sdk_version TEXT,
+      otel_scope_name TEXT,
+      otel_scope_version TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
@@ -133,6 +159,10 @@ describe('traces routes', () => {
       serviceNamespace: 'prod-eu-1',
       containerName: 'api-1',
       k8sNamespace: 'payments',
+      urlFull: 'https://api.internal/users/42',
+      networkTransport: 'tcp',
+      hostName: 'node-a',
+      telemetrySdkName: 'opentelemetry',
     });
 
     insertSpan({
@@ -150,11 +180,15 @@ describe('traces routes', () => {
       serviceNamespace: 'staging',
       containerName: 'api-2',
       k8sNamespace: 'ops',
+      urlFull: 'https://ops.internal/users',
+      networkTransport: 'udp',
+      hostName: 'node-b',
+      telemetrySdkName: 'custom-sdk',
     });
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/traces?httpMethod=GET&httpRoute=users&httpRouteMatch=contains&serviceNamespace=prod&serviceNamespaceMatch=contains&containerName=api&containerNameMatch=contains&k8sNamespace=pay&k8sNamespaceMatch=contains',
+      url: '/api/traces?httpMethod=GET&httpRoute=users&httpRouteMatch=contains&serviceNamespace=prod&serviceNamespaceMatch=contains&containerName=api&containerNameMatch=contains&k8sNamespace=pay&k8sNamespaceMatch=contains&urlFull=api.internal&urlFullMatch=contains&networkTransport=tcp&hostName=node&hostNameMatch=contains&telemetrySdkName=opentelemetry',
       headers: { authorization: 'Bearer test' },
     });
 
