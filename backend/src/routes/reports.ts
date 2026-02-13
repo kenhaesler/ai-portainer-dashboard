@@ -13,6 +13,31 @@ interface AggRow {
   sample_count: number;
 }
 
+const PROTECTED_INFRASTRUCTURE_NAMES = [
+  'portainer',
+  'portainer-agent',
+  'portainer_agent',
+  'redis',
+  'postgres',
+  'mysql',
+  'mariadb',
+  'mongo',
+  'mongodb',
+  'traefik',
+  'nginx',
+  'haproxy',
+  'caddy',
+  'etcd',
+  'consul',
+  'vault',
+];
+
+function isInfrastructureContainer(containerName: string): boolean {
+  const normalized = containerName.toLowerCase();
+  return PROTECTED_INFRASTRUCTURE_NAMES.some((name) =>
+    normalized === name || normalized.startsWith(`${name}-`) || normalized.startsWith(`${name}_`));
+}
+
 function timeRangeToInterval(timeRange: string): string {
   switch (timeRange) {
     case '24h': return '1 day';
@@ -20,6 +45,36 @@ function timeRangeToInterval(timeRange: string): string {
     case '30d': return '30 days';
     default: return '1 day';
   }
+}
+
+function excludeInfrastructureContainers<T extends { container_name: string }>(rows: T[], includeInfrastructure: boolean): T[] {
+  if (includeInfrastructure) return rows;
+  return rows.filter((row) => !isInfrastructureContainer(row.container_name));
+}
+
+function addInfrastructureSqlFilter(
+  conditions: string[],
+  params: unknown[],
+  startParamIdx: number,
+  includeInfrastructure: boolean,
+): number {
+  if (includeInfrastructure) return startParamIdx;
+
+  const infraClauses: string[] = [];
+  let paramIdx = startParamIdx;
+  for (const name of PROTECTED_INFRASTRUCTURE_NAMES) {
+    infraClauses.push(`LOWER(container_name) = $${paramIdx}`);
+    params.push(name);
+    paramIdx++;
+    infraClauses.push(`LOWER(container_name) LIKE $${paramIdx}`);
+    params.push(`${name}-%`);
+    paramIdx++;
+    infraClauses.push(`LOWER(container_name) LIKE $${paramIdx}`);
+    params.push(`${name}_%`);
+    paramIdx++;
+  }
+  conditions.push(`NOT (${infraClauses.join(' OR ')})`);
+  return paramIdx;
 }
 
 export async function reportsRoutes(fastify: FastifyInstance) {
@@ -33,10 +88,11 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { timeRange: tr, endpointId, containerId } = request.query as {
+    const { timeRange: tr, endpointId, containerId, includeInfrastructure = false } = request.query as {
       timeRange?: string;
       endpointId?: number;
       containerId?: string;
+      includeInfrastructure?: boolean;
     };
     const timeRange = tr || '24h';
 
@@ -57,6 +113,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       params.push(containerId);
       paramIdx++;
     }
+    paramIdx = addInfrastructureSqlFilter(conditions, params, paramIdx, includeInfrastructure);
 
     const where = conditions.join(' AND ');
 
@@ -88,7 +145,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       memory_bytes: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
     }>();
 
-    for (const row of rows as AggRow[]) {
+    for (const row of excludeInfrastructureContainers(rows as AggRow[], includeInfrastructure)) {
       if (!containersMap.has(row.container_id)) {
         containersMap.set(row.container_id, {
           container_id: row.container_id,
@@ -181,6 +238,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
     return {
       timeRange,
+      includeInfrastructure,
       containers,
       fleetSummary,
       recommendations,
@@ -197,10 +255,11 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { timeRange: tr, endpointId, containerId } = request.query as {
+    const { timeRange: tr, endpointId, containerId, includeInfrastructure = false } = request.query as {
       timeRange?: string;
       endpointId?: number;
       containerId?: string;
+      includeInfrastructure?: boolean;
     };
     const timeRange = tr || '24h';
 
@@ -221,6 +280,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       params.push(containerId);
       paramIdx++;
     }
+    addInfrastructureSqlFilter(conditions, params, paramIdx, includeInfrastructure);
 
     const where = conditions.join(' AND ');
 
@@ -269,6 +329,177 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       }
     }
 
-    return { timeRange, trends };
+    return { timeRange, includeInfrastructure, trends };
+  });
+
+  fastify.get('/api/reports/management', {
+    schema: {
+      tags: ['Reports'],
+      summary: 'Get management report payload contract for PDF generation',
+      security: [{ bearerAuth: [] }],
+      querystring: ReportsQuerySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const {
+      timeRange: tr,
+      endpointId,
+      containerId,
+      includeInfrastructure = false,
+    } = request.query as {
+      timeRange?: string;
+      endpointId?: number;
+      containerId?: string;
+      includeInfrastructure?: boolean;
+    };
+    const timeRange = tr || '7d';
+    const interval = timeRangeToInterval(timeRange);
+    const db = await getMetricsDb();
+
+    const baseConditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
+    const baseParams: unknown[] = [];
+    let paramIdx = 1;
+
+    if (endpointId) {
+      baseConditions.push(`endpoint_id = $${paramIdx}`);
+      baseParams.push(endpointId);
+      paramIdx++;
+    }
+    if (containerId) {
+      baseConditions.push(`container_id = $${paramIdx}`);
+      baseParams.push(containerId);
+      paramIdx++;
+    }
+    addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, includeInfrastructure);
+    const where = baseConditions.join(' AND ');
+
+    const { rows: topRows } = await db.query(
+      `SELECT
+        container_id,
+        container_name,
+        endpoint_id,
+        AVG(CASE WHEN metric_type = 'cpu' THEN value END) as cpu_avg,
+        MAX(CASE WHEN metric_type = 'cpu' THEN value END) as cpu_max,
+        AVG(CASE WHEN metric_type = 'memory' THEN value END) as memory_avg,
+        MAX(CASE WHEN metric_type = 'memory' THEN value END) as memory_max
+      FROM metrics
+      WHERE ${where}
+      GROUP BY container_id, container_name, endpoint_id`,
+      baseParams,
+    );
+
+    const topServices = (topRows as Array<{
+      container_id: string;
+      container_name: string;
+      endpoint_id: number;
+      cpu_avg: number | null;
+      cpu_max: number | null;
+      memory_avg: number | null;
+      memory_max: number | null;
+    }>)
+      .map((row) => ({
+        containerId: row.container_id,
+        containerName: row.container_name,
+        endpointId: row.endpoint_id,
+        cpuAvg: Math.round(Number(row.cpu_avg || 0) * 100) / 100,
+        cpuMax: Math.round(Number(row.cpu_max || 0) * 100) / 100,
+        memoryAvg: Math.round(Number(row.memory_avg || 0) * 100) / 100,
+        memoryMax: Math.round(Number(row.memory_max || 0) * 100) / 100,
+      }))
+      .sort((a, b) => (b.cpuAvg + b.memoryAvg) - (a.cpuAvg + a.memoryAvg))
+      .slice(0, 10);
+
+    const cpuAvgValues = topServices.map((s) => s.cpuAvg);
+    const cpuMaxValues = topServices.map((s) => s.cpuMax);
+    const memoryAvgValues = topServices.map((s) => s.memoryAvg);
+    const memoryMaxValues = topServices.map((s) => s.memoryMax);
+
+    const { rows: trendRows } = await db.query(
+      `SELECT
+        date_trunc('day', timestamp) as day,
+        metric_type,
+        AVG(value) as avg_value,
+        MIN(value) as min_value,
+        MAX(value) as max_value,
+        COUNT(*)::int as sample_count
+      FROM metrics
+      WHERE ${where}
+      GROUP BY day, metric_type
+      ORDER BY day ASC`,
+      baseParams,
+    );
+
+    const weeklyTrends: Record<string, Array<{
+      day: string;
+      avg: number;
+      min: number;
+      max: number;
+      samples: number;
+    }>> = { cpu: [], memory: [] };
+
+    for (const row of trendRows as Array<{
+      day: string;
+      metric_type: string;
+      avg_value: number;
+      min_value: number;
+      max_value: number;
+      sample_count: number;
+    }>) {
+      if (row.metric_type !== 'cpu' && row.metric_type !== 'memory') continue;
+      weeklyTrends[row.metric_type].push({
+        day: row.day,
+        avg: Math.round(Number(row.avg_value) * 100) / 100,
+        min: Math.round(Number(row.min_value) * 100) / 100,
+        max: Math.round(Number(row.max_value) * 100) / 100,
+        samples: row.sample_count,
+      });
+    }
+
+    const recommendations = topServices
+      .flatMap((service) => {
+        const items: Array<{ title: string; detail: string; severity: 'info' | 'warning' | 'critical' }> = [];
+        if (service.cpuAvg > 80) {
+          items.push({
+            title: `High CPU usage detected in ${service.containerName}`,
+            detail: `Average CPU is ${service.cpuAvg}% over selected time range.`,
+            severity: 'warning',
+          });
+        }
+        if (service.memoryAvg > 85) {
+          items.push({
+            title: `High memory usage detected in ${service.containerName}`,
+            detail: `Average memory is ${service.memoryAvg}% over selected time range.`,
+            severity: 'warning',
+          });
+        }
+        return items;
+      })
+      .slice(0, 10);
+
+    return {
+      reportType: 'management',
+      generatedAt: new Date().toISOString(),
+      scope: {
+        timeRange,
+        endpointId: endpointId ?? null,
+        containerId: containerId ?? null,
+        includeInfrastructure,
+      },
+      executiveSummary: {
+        totalServices: topServices.length,
+        avgCpu: cpuAvgValues.length
+          ? Math.round((cpuAvgValues.reduce((sum, value) => sum + value, 0) / cpuAvgValues.length) * 100) / 100
+          : 0,
+        maxCpu: cpuMaxValues.length ? Math.max(...cpuMaxValues) : 0,
+        avgMemory: memoryAvgValues.length
+          ? Math.round((memoryAvgValues.reduce((sum, value) => sum + value, 0) / memoryAvgValues.length) * 100) / 100
+          : 0,
+        maxMemory: memoryMaxValues.length ? Math.max(...memoryMaxValues) : 0,
+        anomalyCount: recommendations.length,
+      },
+      weeklyTrends,
+      topServices,
+      topInsights: recommendations,
+    };
   });
 }

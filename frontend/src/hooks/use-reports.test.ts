@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { useUtilizationReport, useTrendsReport } from './use-reports';
+import { api } from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -40,6 +41,25 @@ describe('useUtilizationReport', () => {
     expect(result.current.data?.timeRange).toBe('24h');
     expect(result.current.data?.containers).toEqual([]);
   });
+
+  it('passes time range and scope params to utilization endpoint', async () => {
+    const getSpy = vi.mocked(api.get);
+    getSpy.mockClear();
+
+    const { result } = renderHook(
+      () => useUtilizationReport('7d', 12, 'container-1'),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/api/reports/utilization', {
+      params: {
+        timeRange: '7d',
+        endpointId: 12,
+        containerId: 'container-1',
+      },
+    });
+  });
 });
 
 describe('useTrendsReport', () => {
@@ -47,5 +67,24 @@ describe('useTrendsReport', () => {
     const { result } = renderHook(() => useTrendsReport('24h'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.trends.cpu).toEqual([]);
+  });
+
+  it('passes time range and scope params to trends endpoint', async () => {
+    const getSpy = vi.mocked(api.get);
+    getSpy.mockClear();
+
+    const { result } = renderHook(
+      () => useTrendsReport('30d', 9, 'container-77'),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/api/reports/trends', {
+      params: {
+        timeRange: '30d',
+        endpointId: 9,
+        containerId: 'container-77',
+      },
+    });
   });
 });

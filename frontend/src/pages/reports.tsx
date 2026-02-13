@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   FileBarChart,
   Download,
+  FileText,
   Cpu,
   MemoryStick,
   TrendingUp,
@@ -29,12 +30,27 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { exportToCsv } from '@/lib/csv-export';
+import { getContainerGroup } from '@/lib/system-container-grouping';
+import {
+  MANAGEMENT_PDF_THEMES,
+  exportManagementPdf,
+  type ManagementPdfTheme,
+} from '@/lib/management-pdf-export';
 
 const TIME_RANGES = [
   { value: '24h', label: '24 Hours' },
   { value: '7d', label: '7 Days' },
   { value: '30d', label: '30 Days' },
 ];
+const DEFAULT_PDF_TIME_RANGE = '7d';
+const PDF_BRANDING_STORAGE_KEY = 'reports-management-pdf-branding-v1';
+const PDF_BRAND_PROFILES = [
+  { value: 'management', label: 'Management (Recommended)', theme: 'ocean', reportTitle: 'Management Resource Report' },
+  { value: 'board', label: 'Board Summary', theme: 'slate', reportTitle: 'Board Infrastructure Summary' },
+  { value: 'operations', label: 'Operations Review', theme: 'forest', reportTitle: 'Operations Weekly Service Report' },
+  { value: 'custom', label: 'Custom', theme: null, reportTitle: null },
+] as const;
+type PdfBrandProfile = (typeof PDF_BRAND_PROFILES)[number]['value'];
 
 function StatCard({
   label,
@@ -354,6 +370,18 @@ export function DienststellenOverview({
 
 export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState('24h');
+  const [csvIncludeInfrastructure, setCsvIncludeInfrastructure] = useState(false);
+  const [pdfTimeRange, setPdfTimeRange] = useState(DEFAULT_PDF_TIME_RANGE);
+  const [pdfIncludeInfrastructure, setPdfIncludeInfrastructure] = useState(false);
+  const [pdfBrandProfile, setPdfBrandProfile] = useState<PdfBrandProfile>('management');
+  const [pdfTheme, setPdfTheme] = useState<ManagementPdfTheme>('ocean');
+  const [pdfReportTitle, setPdfReportTitle] = useState('Management Resource Report');
+  const [pdfLogoDataUrl, setPdfLogoDataUrl] = useState<string>();
+  const [pdfLogoError, setPdfLogoError] = useState<string | null>(null);
+  const [pdfExportError, setPdfExportError] = useState<string | null>(null);
+  const [pdfExportSuccess, setPdfExportSuccess] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
   const [sortField, setSortField] = useState<'name' | 'cpu' | 'memory'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -368,6 +396,14 @@ export default function ReportsPage() {
     data: trends,
     isLoading: trendsLoading,
   } = useTrendsReport(timeRange, selectedEndpoint);
+  const {
+    data: pdfReport,
+    isLoading: pdfReportLoading,
+  } = useUtilizationReport(pdfTimeRange, selectedEndpoint);
+  const {
+    data: pdfTrends,
+    isLoading: pdfTrendsLoading,
+  } = useTrendsReport(pdfTimeRange, selectedEndpoint);
 
   // Sort containers
   const sortedContainers = useMemo(() => {
@@ -405,47 +441,140 @@ export default function ReportsPage() {
   }, [trends]);
 
   const exportRows = useMemo<Record<string, unknown>[]>(() => {
-    if (report?.containers?.length) {
-      return report.containers.map((c) => ({
-        container_name: c.container_name,
-        container_id: c.container_id,
-        endpoint_id: c.endpoint_id,
-        cpu_avg: c.cpu?.avg ?? '',
-        cpu_min: c.cpu?.min ?? '',
-        cpu_max: c.cpu?.max ?? '',
-        cpu_p50: c.cpu?.p50 ?? '',
-        cpu_p95: c.cpu?.p95 ?? '',
-        cpu_p99: c.cpu?.p99 ?? '',
-        memory_avg: c.memory?.avg ?? '',
-        memory_min: c.memory?.min ?? '',
-        memory_max: c.memory?.max ?? '',
-        memory_p50: c.memory?.p50 ?? '',
-        memory_p95: c.memory?.p95 ?? '',
-        memory_p99: c.memory?.p99 ?? '',
-      }));
-    }
-
     if (!allContainers?.length) return [];
 
-    // Fallback: export inventory rows even when utilization metrics are currently empty.
-    return allContainers.map((container) => ({
-      container_name: container.name,
-      container_id: container.id,
-      endpoint_id: container.endpointId,
-      endpoint_name: container.endpointName,
-      state: container.state,
-      status: container.status,
-      image: container.image,
-      stack: container.labels?.['com.docker.compose.project'] ?? '',
-      created_at: new Date(container.created * 1000).toISOString(),
-    }));
-  }, [report?.containers, allContainers]);
+    const filtered = allContainers.filter((container) => (
+      csvIncludeInfrastructure || getContainerGroup(container) !== 'system'
+    ));
+
+    return filtered.map((container) => {
+      const stack = container.labels?.['com.docker.compose.project'] ?? '';
+      const parsedStack = parseStackName(stack);
+      return {
+        container_name: container.name,
+        endpoint_name: container.endpointName,
+        state: container.state,
+        stack,
+        created_at: new Date(container.created * 1000).toISOString(),
+        dienststelle: parsedStack?.dienststelle ?? 'Standalone',
+      };
+    });
+  }, [allContainers, csvIncludeInfrastructure]);
+
+  const infrastructureContainerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const container of allContainers ?? []) {
+      if (getContainerGroup(container) === 'system') {
+        ids.add(container.id);
+      }
+    }
+    return ids;
+  }, [allContainers]);
+
+  const infrastructureContainerNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const container of allContainers ?? []) {
+      if (getContainerGroup(container) === 'system') {
+        names.add(container.name.trim().toLowerCase());
+      }
+    }
+    return names;
+  }, [allContainers]);
+
+  const effectivePdfReport = pdfTimeRange === timeRange ? report : pdfReport;
+  const effectivePdfTrends = pdfTimeRange === timeRange ? trends : pdfTrends;
+
+  const filteredPdfContainers = useMemo(() => {
+    const source = effectivePdfReport?.containers ?? [];
+    if (pdfIncludeInfrastructure) return source;
+
+    return source.filter((container) => {
+      if (infrastructureContainerIds.has(container.container_id)) return false;
+      return !infrastructureContainerNames.has(container.container_name.trim().toLowerCase());
+    });
+  }, [
+    effectivePdfReport?.containers,
+    infrastructureContainerIds,
+    infrastructureContainerNames,
+    pdfIncludeInfrastructure,
+  ]);
+
+  const filteredPdfRecommendations = useMemo(() => {
+    const source = effectivePdfReport?.recommendations ?? [];
+    if (pdfIncludeInfrastructure) return source;
+
+    return source.filter((recommendation) => {
+      if (infrastructureContainerIds.has(recommendation.container_id)) return false;
+      return !infrastructureContainerNames.has(recommendation.container_name.trim().toLowerCase());
+    });
+  }, [
+    effectivePdfReport?.recommendations,
+    infrastructureContainerIds,
+    infrastructureContainerNames,
+    pdfIncludeInfrastructure,
+  ]);
 
   const handleExportCsv = () => {
     if (!exportRows.length) return;
     const scope = selectedEndpoint != null ? `endpoint-${selectedEndpoint}` : 'all-endpoints';
     const date = new Date().toISOString().slice(0, 10);
     exportToCsv(exportRows, `resource-report-${timeRange}-${scope}-${date}.csv`);
+  };
+
+  const handleOpenPdfOptions = () => {
+    setPdfTimeRange(DEFAULT_PDF_TIME_RANGE);
+    setPdfIncludeInfrastructure(false);
+    setPdfExportError(null);
+    setPdfExportSuccess(null);
+    setShowPdfOptions(true);
+  };
+
+  const handleExportPdf = async () => {
+    const scope = selectedEndpoint != null ? `endpoint-${selectedEndpoint}` : 'all-endpoints';
+    const scopeLabel = selectedEndpoint != null
+      ? (endpoints?.find((endpoint) => endpoint.id === selectedEndpoint)?.name ?? `Endpoint ${selectedEndpoint}`)
+      : 'All endpoints';
+    const date = new Date();
+    setPdfExportError(null);
+    setPdfExportSuccess(null);
+    setIsGeneratingPdf(true);
+    try {
+      const filename = `management-report-${pdfTimeRange}-${scope}-${date.toISOString().slice(0, 10)}.pdf`;
+      const baseInput = {
+        generatedAt: date,
+        timeRange: pdfTimeRange,
+        scopeLabel,
+        includeInfrastructure: pdfIncludeInfrastructure,
+        containers: effectivePdfReport ? filteredPdfContainers : [],
+        recommendations: effectivePdfReport ? filteredPdfRecommendations : [],
+        trends: effectivePdfTrends?.trends,
+        theme: pdfTheme,
+        reportTitle: pdfReportTitle,
+      };
+
+      try {
+        await exportManagementPdf({
+          ...baseInput,
+          logoDataUrl: pdfLogoDataUrl,
+        }, filename);
+      } catch (errorWithLogo) {
+        if (!pdfLogoDataUrl) throw errorWithLogo;
+        await exportManagementPdf({
+          ...baseInput,
+          logoDataUrl: undefined,
+        }, filename);
+        setPdfLogoDataUrl(undefined);
+        setPdfExportSuccess(`PDF generated without logo: ${filename}`);
+        return;
+      }
+
+      setPdfExportSuccess(`PDF generated: ${filename}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPdfExportError(`PDF generation failed. ${message || 'Try again without logo.'}`);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const handleSort = (field: typeof sortField) => {
@@ -458,6 +587,78 @@ export default function ReportsPage() {
   };
 
   const isLoading = reportLoading || trendsLoading;
+  const isPdfLoading = pdfReportLoading || pdfTrendsLoading;
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PDF_BRANDING_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        profile?: PdfBrandProfile;
+        theme?: ManagementPdfTheme;
+        reportTitle?: string;
+        logoDataUrl?: string;
+      };
+      if (parsed.profile && PDF_BRAND_PROFILES.some((profile) => profile.value === parsed.profile)) {
+        setPdfBrandProfile(parsed.profile);
+      }
+      if (parsed.theme && MANAGEMENT_PDF_THEMES.some((theme) => theme.value === parsed.theme)) {
+        setPdfTheme(parsed.theme);
+      }
+      if (parsed.reportTitle) setPdfReportTitle(parsed.reportTitle);
+      if (parsed.logoDataUrl) setPdfLogoDataUrl(parsed.logoDataUrl);
+    } catch {
+      // Ignore malformed local data and use defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      PDF_BRANDING_STORAGE_KEY,
+      JSON.stringify({
+        profile: pdfBrandProfile,
+        theme: pdfTheme,
+        reportTitle: pdfReportTitle,
+        logoDataUrl: pdfLogoDataUrl,
+      }),
+    );
+  }, [pdfBrandProfile, pdfTheme, pdfReportTitle, pdfLogoDataUrl]);
+
+  const handlePdfLogoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPdfLogoError('Please upload an image file.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setPdfLogoError('Logo must be 2MB or smaller.');
+      return;
+    }
+
+    const reader = new FileReader();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(new Error('Failed reading file'));
+      reader.readAsDataURL(file);
+    }).catch(() => '');
+
+    if (!dataUrl) {
+      setPdfLogoError('Could not process logo file.');
+      return;
+    }
+    setPdfLogoError(null);
+    setPdfLogoDataUrl(dataUrl);
+  };
+
+  const handlePdfBrandProfileChange = (profile: PdfBrandProfile) => {
+    setPdfBrandProfile(profile);
+    const selected = PDF_BRAND_PROFILES.find((item) => item.value === profile);
+    if (!selected || profile === 'custom') return;
+    setPdfTheme(selected.theme as ManagementPdfTheme);
+    setPdfReportTitle(selected.reportTitle as string);
+  };
 
   return (
     <div className="space-y-6">
@@ -469,14 +670,23 @@ export default function ReportsPage() {
             Utilization analysis, trends, and right-sizing recommendations
           </p>
         </div>
-        <button
-          onClick={handleExportCsv}
-          disabled={!exportRows.length}
-          className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-        >
-          <Download className="h-4 w-4" />
-          Export CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleOpenPdfOptions}
+            className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            <FileText className="h-4 w-4" />
+            Export Management PDF
+          </button>
+          <button
+            onClick={handleExportCsv}
+            disabled={!exportRows.length}
+            className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       {/* Controls */}
@@ -513,7 +723,156 @@ export default function ReportsPage() {
             ))}
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={csvIncludeInfrastructure}
+            onChange={(event) => setCsvIncludeInfrastructure(event.target.checked)}
+          />
+          Include infrastructure services in CSV
+        </label>
       </div>
+
+      {showPdfOptions && (
+        <div className="relative z-20 space-y-4 rounded-lg border bg-card p-4 pointer-events-auto">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Management PDF Export</h2>
+              <p className="text-sm text-muted-foreground">
+                Default range is 7 days. Endpoint scope follows the current report filter.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Time range</span>
+              <div className="flex rounded-md border border-input overflow-hidden">
+                {TIME_RANGES.map((range) => (
+                  <button
+                    key={`pdf-${range.value}`}
+                    type="button"
+                    onClick={() => setPdfTimeRange(range.value)}
+                    className={cn(
+                      'px-3 py-1.5 text-sm font-medium transition-colors',
+                      pdfTimeRange === range.value
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-background hover:bg-muted',
+                    )}
+                  >
+                    {range.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pdfIncludeInfrastructure}
+                onChange={(event) => setPdfIncludeInfrastructure(event.target.checked)}
+              />
+              Include infrastructure services
+            </label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex flex-col gap-2 text-sm">
+              Brand profile
+              <select
+                value={pdfBrandProfile}
+                onChange={(event) => handlePdfBrandProfileChange(event.target.value as PdfBrandProfile)}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {PDF_BRAND_PROFILES.map((profile) => (
+                  <option key={profile.value} value={profile.value}>{profile.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-2 text-sm">
+              PDF color theme
+              <select
+                value={pdfTheme}
+                onChange={(event) => {
+                  setPdfBrandProfile('custom');
+                  setPdfTheme(event.target.value as ManagementPdfTheme);
+                }}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {MANAGEMENT_PDF_THEMES.map((theme) => (
+                  <option key={theme.value} value={theme.value}>{theme.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex flex-col gap-2 text-sm">
+              Report title
+              <input
+                type="text"
+                value={pdfReportTitle}
+                onChange={(event) => {
+                  setPdfBrandProfile('custom');
+                  setPdfReportTitle(event.target.value);
+                }}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Management Resource Report"
+              />
+            </label>
+
+            <div className="space-y-2 text-sm">
+              <label className="flex flex-col gap-2">
+                Report logo (optional)
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePdfLogoChange}
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border file:bg-card file:px-2 file:py-1"
+                />
+              </label>
+              {pdfLogoError && <p className="text-xs text-destructive">{pdfLogoError}</p>}
+              {pdfLogoDataUrl && (
+                <div className="flex items-center gap-3">
+                  <img src={pdfLogoDataUrl} alt="PDF logo preview" className="h-10 max-w-[140px] rounded border object-contain bg-white" />
+                  <button
+                    type="button"
+                    onClick={() => setPdfLogoDataUrl(undefined)}
+                    className="rounded-md border bg-card px-2 py-1 text-xs hover:bg-muted"
+                  >
+                    Remove logo
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={isGeneratingPdf}
+              className="flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted cursor-pointer opacity-100 pointer-events-auto"
+            >
+              <FileText className="h-4 w-4" />
+              {isGeneratingPdf ? 'Generating PDF...' : 'Generate PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPdfOptions(false)}
+              className="rounded-md border bg-card px-4 py-2 text-sm font-medium hover:bg-muted cursor-pointer"
+            >
+              Cancel
+            </button>
+            {isPdfLoading && (
+              <span className="text-sm text-muted-foreground">Loading report data...</span>
+            )}
+            {pdfExportError && (
+              <span className="text-sm text-destructive">{pdfExportError}</span>
+            )}
+            {pdfExportSuccess && (
+              <span className="text-sm text-green-600">{pdfExportSuccess}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Dienststellen Overview */}
       <DienststellenOverview containers={allContainers} />
