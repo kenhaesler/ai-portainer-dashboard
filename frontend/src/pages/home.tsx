@@ -20,6 +20,7 @@ import { WorkloadDistribution } from '@/components/charts/workload-distribution'
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
+import { TiltCard } from '@/components/shared/tilt-card';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -217,66 +218,76 @@ export default function HomePage() {
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5" stagger={0.05}>
           <MotionReveal>
-            <KpiCard
-              label="Endpoints"
-              value={data.kpis.endpoints}
-              icon={<Server className="h-5 w-5" />}
-              trendValue={`${data.kpis.endpointsUp} up`}
-              trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
-              sparklineData={sparklines.endpoints}
-              sparklineColor="var(--color-chart-1)"
-              hoverDetail={hoverDetails.endpoints}
-            />
-          </MotionReveal>
-          <MotionReveal>
-            <KpiCard
-              label="Running Containers"
-              value={data.kpis.running}
-              icon={<Boxes className="h-5 w-5" />}
-              trendValue={`of ${data.kpis.total} total`}
-              trend="neutral"
-              sparklineData={sparklines.running}
-              sparklineColor="var(--color-chart-2)"
-              hoverDetail={hoverDetails.running}
-            />
-          </MotionReveal>
-          <MotionReveal>
-            <KpiCard
-              label="Stopped Containers"
-              value={data.kpis.stopped}
-              icon={<PackageOpen className="h-5 w-5" />}
-              trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
-              trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
-              sparklineData={sparklines.stopped}
-              sparklineColor="var(--color-chart-3)"
-              hoverDetail={hoverDetails.stopped}
-            />
-          </MotionReveal>
-          <MotionReveal>
-            <KpiCard
-              label="Stacks"
-              value={data.kpis.stacks}
-              icon={<Layers className="h-5 w-5" />}
-              sparklineData={sparklines.stacks}
-              sparklineColor="var(--color-chart-4)"
-              hoverDetail={hoverDetails.stacks}
-            />
-          </MotionReveal>
-          <MotionReveal>
-            <button
-              type="button"
-              onClick={() => navigate('/security/audit')}
-              className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
-            >
+            <TiltCard>
               <KpiCard
-                label="Security Findings"
-                value={data.security.flagged}
-                icon={<ShieldAlert className="h-5 w-5" />}
-                trendValue={`${data.security.ignored} ignored`}
-                trend={data.security.flagged > 0 ? 'down' : 'up'}
-                className="cursor-pointer"
+                label="Endpoints"
+                value={data.kpis.endpoints}
+                icon={<Server className="h-5 w-5" />}
+                trendValue={`${data.kpis.endpointsUp} up`}
+                trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
+                sparklineData={sparklines.endpoints}
+                sparklineColor="var(--color-chart-1)"
+                hoverDetail={hoverDetails.endpoints}
               />
-            </button>
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <KpiCard
+                label="Running Containers"
+                value={data.kpis.running}
+                icon={<Boxes className="h-5 w-5" />}
+                trendValue={`of ${data.kpis.total} total`}
+                trend="neutral"
+                sparklineData={sparklines.running}
+                sparklineColor="var(--color-chart-2)"
+                hoverDetail={hoverDetails.running}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <KpiCard
+                label="Stopped Containers"
+                value={data.kpis.stopped}
+                icon={<PackageOpen className="h-5 w-5" />}
+                trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
+                trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
+                sparklineData={sparklines.stopped}
+                sparklineColor="var(--color-chart-3)"
+                hoverDetail={hoverDetails.stopped}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <KpiCard
+                label="Stacks"
+                value={data.kpis.stacks}
+                icon={<Layers className="h-5 w-5" />}
+                sparklineData={sparklines.stacks}
+                sparklineColor="var(--color-chart-4)"
+                hoverDetail={hoverDetails.stacks}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <button
+                type="button"
+                onClick={() => navigate('/security/audit')}
+                className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+              >
+                <KpiCard
+                  label="Security Findings"
+                  value={data.security.flagged}
+                  icon={<ShieldAlert className="h-5 w-5" />}
+                  trendValue={`${data.security.ignored} ignored`}
+                  trend={data.security.flagged > 0 ? 'down' : 'up'}
+                  className="cursor-pointer"
+                />
+              </button>
+            </TiltCard>
           </MotionReveal>
         </MotionStagger>
       ) : null}
