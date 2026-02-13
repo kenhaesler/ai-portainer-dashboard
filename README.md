@@ -63,6 +63,12 @@ docker compose up -d
 docker compose -f docker/docker-compose.dev.yml up -d
 ```
 
+**Production behind Traefik 443** (for Beyla OTLP via reverse proxy):
+
+```bash
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
+```
+
 **Without Docker:**
 
 ```bash

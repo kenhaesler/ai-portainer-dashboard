@@ -1,0 +1,38 @@
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/fullchain.pem
+      keyFile: /etc/traefik/certs/privkey.pem
+
+http:
+  routers:
+    beyla-otlp:
+      entryPoints:
+        - websecure
+      # Restrict to OTLP ingest paths used by Beyla.
+      rule: Host(`dashboard.example.com`) && PathPrefix(`/api/traces/otlp`) && Method(`POST`)
+      service: dashboard-backend
+      middlewares:
+        - beyla-ip-allow
+        - beyla-rate-limit
+      tls: {}
+      priority: 500
+
+  services:
+    dashboard-backend:
+      loadBalancer:
+        servers:
+          - url: http://backend:3051
+        passHostHeader: true
+
+  middlewares:
+    # Replace the CIDRs below with your Beyla source networks.
+    beyla-ip-allow:
+      ipAllowList:
+        sourceRange:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+    beyla-rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
