@@ -19,6 +19,7 @@ import {
   type ElkLayoutEdge,
 } from '@/hooks/use-elk-layout';
 import { useForceSimulation } from '@/hooks/use-force-simulation';
+import { useUiStore } from '@/stores/ui-store';
 
 export interface ContainerData {
   id: string;
@@ -248,6 +249,7 @@ export function TopologyGraph({
   selectedNodeId,
   relatedNodeIds,
 }: TopologyGraphProps) {
+  const potatoMode = useUiStore((state) => state.potatoMode);
   const relatedSet = useMemo(() => new Set(relatedNodeIds ?? []), [relatedNodeIds]);
 
   // Phase 1: Categorize stacks, classify inline/external networks, sort everything
@@ -476,7 +478,7 @@ export function TopologyGraph({
           sourceHandle: handles.sourceHandle,
           targetHandle: handles.targetHandle,
           type: 'smoothstep',
-          animated: container.state === 'running',
+          animated: !potatoMode && container.state === 'running',
           style: {
             stroke: edgeStyle.stroke,
             strokeWidth: edgeStyle.strokeWidth,
@@ -492,7 +494,7 @@ export function TopologyGraph({
     }
 
     return { nodes, edges };
-  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId]);
+  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId, potatoMode]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -636,10 +638,11 @@ export function TopologyGraph({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
-        onNodeDragStart={handleDragStart}
-        onNodeDrag={handleDrag}
-        onNodeDragStop={handleDragStop}
+        onNodeDragStart={potatoMode ? undefined : handleDragStart}
+        onNodeDrag={potatoMode ? undefined : handleDrag}
+        onNodeDragStop={potatoMode ? undefined : handleDragStop}
         nodeTypes={nodeTypes}
+        nodesDraggable={!potatoMode}
         fitView
         attributionPosition="bottom-left"
       >
