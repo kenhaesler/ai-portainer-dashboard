@@ -54,6 +54,7 @@ describe('TraceExplorerPage', () => {
             start_time: '2026-02-12T10:00:00.000Z',
             trace_source: 'ebpf',
             span_count: 1,
+            http_route: '/health',
             container_name: 'api-container',
           },
         ],
@@ -78,7 +79,38 @@ describe('TraceExplorerPage', () => {
             duration_ms: 120,
             status: 'ok',
             trace_source: 'ebpf',
-            attributes: '{}',
+            attributes: JSON.stringify({
+              endpoint: 'api-gateway',
+              'container.name': 'api-container',
+              'service.namespace': 'production',
+              'service.instance.id': 'instance-a',
+              'service.version': '1.8.2',
+              'deployment.environment': 'prod',
+              'container.id': 'container-abc',
+              'k8s.namespace.name': 'payments',
+              'k8s.pod.name': 'payments-api-9d7cc',
+              'k8s.container.name': 'api',
+              'server.address': '10.0.0.24',
+              'server.port': 443,
+              'client.address': '10.0.0.12',
+              'url.full': 'http://api-gateway/health',
+              'url.scheme': 'http',
+              'network.transport': 'tcp',
+              'network.protocol.name': 'http',
+              'network.protocol.version': '1.1',
+              'net.peer.name': 'api-gateway.internal',
+              'net.peer.port': 8080,
+              'host.name': 'srv-edge-01',
+              'os.type': 'linux',
+              'process.pid': 4711,
+              'process.executable.name': 'http-echo',
+              'process.command_line': '/bin/http-echo --port=8080',
+              'telemetry.sdk.name': 'beyla',
+              'telemetry.sdk.language': 'go',
+              'telemetry.sdk.version': '2.8.5',
+              'otel.scope.name': 'github.com/grafana/beyla',
+              'otel.scope.version': 'v2.8.5',
+            }),
           },
         ],
       },
@@ -112,6 +144,35 @@ describe('TraceExplorerPage', () => {
     expect(screen.getByText('Need precision? Filter by HTTP route/status or service and container namespaces.')).toBeInTheDocument();
   });
 
+  it('restores trace source context and span metadata details', () => {
+    render(<TraceExplorerPage />);
+
+    expect(screen.getByText('Tip: select a source below to focus this list.')).toBeInTheDocument();
+    expect(screen.getByText('Showing all trace sources. Use a source filter to focus on a single ingestion path.')).toBeInTheDocument();
+    expect(screen.getByText('eBPF Quick Guide')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /GET \/health/i }));
+
+    expect(screen.getAllByText('endpoint: api-gateway').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('container: api-container').length).toBeGreaterThan(0);
+    expect(screen.getByText('Service Namespace')).toBeInTheDocument();
+    expect(screen.getAllByText('production').length).toBeGreaterThan(0);
+    expect(screen.getByText('Service Instance')).toBeInTheDocument();
+    expect(screen.getAllByText('instance-a').length).toBeGreaterThan(0);
+    expect(screen.getByText('Service Version')).toBeInTheDocument();
+    expect(screen.getAllByText('1.8.2').length).toBeGreaterThan(0);
+    expect(screen.getByText('Deployment Environment')).toBeInTheDocument();
+    expect(screen.getAllByText('prod').length).toBeGreaterThan(0);
+    expect(screen.getByText('URL Full')).toBeInTheDocument();
+    expect(screen.getAllByText('http://api-gateway/health').length).toBeGreaterThan(0);
+    expect(screen.getByText('Network Transport')).toBeInTheDocument();
+    expect(screen.getAllByText('tcp').length).toBeGreaterThan(0);
+    expect(screen.getByText('Process PID')).toBeInTheDocument();
+    expect(screen.getAllByText('4711').length).toBeGreaterThan(0);
+    expect(screen.getByText('Telemetry SDK Name')).toBeInTheDocument();
+    expect(screen.getAllByText('beyla').length).toBeGreaterThan(0);
+  });
+
   it('applies advanced filters through trace query state', () => {
     render(<TraceExplorerPage />);
 
@@ -119,11 +180,23 @@ describe('TraceExplorerPage', () => {
     fireEvent.change(screen.getByDisplayValue('Exact match'), { target: { value: 'contains' } });
     fireEvent.change(screen.getByPlaceholderText('/api/users/:id'), { target: { value: '/health' } });
     fireEvent.change(screen.getByPlaceholderText('500'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('Service Instance ID'), { target: { value: 'instance-a' } });
+    fireEvent.change(screen.getByLabelText('Server Port'), { target: { value: '8443' } });
+    fireEvent.change(screen.getByPlaceholderText('http://service:8080/path'), { target: { value: 'http://api-gateway/health' } });
+    fireEvent.change(screen.getByPlaceholderText('tcp'), { target: { value: 'tcp' } });
+    fireEvent.change(screen.getByPlaceholderText('/bin/http-echo --port 8080'), { target: { value: '/bin/http-echo --port=8080' } });
+    fireEvent.change(screen.getByPlaceholderText('beyla'), { target: { value: 'beyla' } });
 
     const lastCall = mockUseTraces.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(lastCall.httpRoute).toBe('/health');
     expect(lastCall.httpRouteMatch).toBe('contains');
     expect(lastCall.httpStatusCode).toBe(200);
+    expect(lastCall.serviceInstanceId).toBe('instance-a');
+    expect(lastCall.serverPort).toBe(8443);
+    expect(lastCall.urlFull).toBe('http://api-gateway/health');
+    expect(lastCall.networkTransport).toBe('tcp');
+    expect(lastCall.processCommand).toBe('/bin/http-echo --port=8080');
+    expect(lastCall.telemetrySdkName).toBe('beyla');
   });
 
   it('shows container name alongside source on each trace card', () => {
