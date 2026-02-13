@@ -471,6 +471,18 @@ ai-portainer-dashboard/
 
 ---
 
+## Workload Explorer Grouping
+
+Workload Explorer includes first-class container grouping for operational agents and app workloads:
+
+- `System` group: containers detected as Edge Agent/Beyla using name/image/label patterns.
+- `Workload` group: all other containers.
+- CSV export runs on the visible filtered rows (endpoint/stack/group) to keep exports aligned with what users see.
+
+Detailed matching patterns are documented in `docs/workload-explorer-system-grouping.md`.
+
+---
+
 ## External Agent System Architecture
 
 For documentation related to the underlying AI agent framework, which includes components like the `ModularStrategy`, multi-strategy code execution environments, and the generic model abstraction layer, please refer to the separate architecture document:

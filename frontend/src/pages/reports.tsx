@@ -36,6 +36,14 @@ const TIME_RANGES = [
 ];
 
 function exportReportCSV(containers: ContainerReport[], timeRange: string) {
+  const escapeCsvValue = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined) return '';
+    const raw = String(value);
+    return raw.includes(',') || raw.includes('"') || raw.includes('\n')
+      ? `"${raw.replace(/"/g, '""')}"`
+      : raw;
+  };
+
   const header = [
     'container_name',
     'container_id',
@@ -56,21 +64,21 @@ function exportReportCSV(containers: ContainerReport[], timeRange: string) {
 
   const rows = containers.map((c) =>
     [
-      `"${c.container_name}"`,
-      c.container_id,
-      c.endpoint_id,
-      c.cpu?.avg ?? '',
-      c.cpu?.min ?? '',
-      c.cpu?.max ?? '',
-      c.cpu?.p50 ?? '',
-      c.cpu?.p95 ?? '',
-      c.cpu?.p99 ?? '',
-      c.memory?.avg ?? '',
-      c.memory?.min ?? '',
-      c.memory?.max ?? '',
-      c.memory?.p50 ?? '',
-      c.memory?.p95 ?? '',
-      c.memory?.p99 ?? '',
+      escapeCsvValue(c.container_name),
+      escapeCsvValue(c.container_id),
+      escapeCsvValue(c.endpoint_id),
+      escapeCsvValue(c.cpu?.avg),
+      escapeCsvValue(c.cpu?.min),
+      escapeCsvValue(c.cpu?.max),
+      escapeCsvValue(c.cpu?.p50),
+      escapeCsvValue(c.cpu?.p95),
+      escapeCsvValue(c.cpu?.p99),
+      escapeCsvValue(c.memory?.avg),
+      escapeCsvValue(c.memory?.min),
+      escapeCsvValue(c.memory?.max),
+      escapeCsvValue(c.memory?.p50),
+      escapeCsvValue(c.memory?.p95),
+      escapeCsvValue(c.memory?.p99),
     ].join(','),
   );
 
@@ -78,10 +86,17 @@ function exportReportCSV(containers: ContainerReport[], timeRange: string) {
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `resource-report-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    a.href = url;
+    a.download = `resource-report-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+  } finally {
+    if (a.parentNode) {
+      a.parentNode.removeChild(a);
+    }
+    URL.revokeObjectURL(url);
+  }
 }
 
 function StatCard({
