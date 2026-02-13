@@ -29,6 +29,7 @@ describe('Notification Routes', () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
     await app.register(notificationRoutes);
     await app.ready();
   });

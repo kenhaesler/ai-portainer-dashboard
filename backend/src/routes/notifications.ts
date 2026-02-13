@@ -56,7 +56,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       body: NotificationTestBodySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { channel } = request.body as { channel: 'teams' | 'email' };
     const result = await sendTestNotification(channel);
