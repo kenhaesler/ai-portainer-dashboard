@@ -20,14 +20,60 @@ import path from 'node:path';
 // ─── Service Mocks ─────────────────────────────────────────────────────
 // Every service imported transitively by any route module must be mocked
 // so that route registration succeeds without real DB/network connections.
+let mockRemediationAction: Record<string, unknown> | undefined;
 
 vi.mock('../db/sqlite.js', () => ({
   getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      all: vi.fn(() => []),
-      get: vi.fn(() => undefined),
-      run: vi.fn(() => ({ changes: 0 })),
-    })),
+    prepare: vi.fn((query: string) => {
+      if (query.includes('SELECT * FROM actions WHERE id = ?')) {
+        return { get: vi.fn(() => mockRemediationAction) };
+      }
+      if (query.includes('UPDATE actions SET status = \'executing\'')) {
+        return {
+          run: vi.fn(() => {
+            if (mockRemediationAction) {
+              mockRemediationAction = { ...mockRemediationAction, status: 'executing' };
+            }
+            return { changes: 1 };
+          }),
+        };
+      }
+      if (query.includes('UPDATE actions') && query.includes('SET status = \'completed\'')) {
+        return {
+          run: vi.fn((executionResult: string, executionDurationMs: number) => {
+            if (mockRemediationAction) {
+              mockRemediationAction = {
+                ...mockRemediationAction,
+                status: 'completed',
+                execution_result: executionResult,
+                execution_duration_ms: executionDurationMs,
+              };
+            }
+            return { changes: 1 };
+          }),
+        };
+      }
+      if (query.includes('UPDATE actions') && query.includes('SET status = \'failed\'')) {
+        return {
+          run: vi.fn((executionResult: string, executionDurationMs: number) => {
+            if (mockRemediationAction) {
+              mockRemediationAction = {
+                ...mockRemediationAction,
+                status: 'failed',
+                execution_result: executionResult,
+                execution_duration_ms: executionDurationMs,
+              };
+            }
+            return { changes: 1 };
+          }),
+        };
+      }
+      return {
+        all: vi.fn(() => []),
+        get: vi.fn(() => undefined),
+        run: vi.fn(() => ({ changes: 0 })),
+      };
+    }),
     exec: vi.fn(),
     pragma: vi.fn(() => []),
   })),
@@ -928,7 +974,73 @@ describe('False Positive Checks', () => {
 });
 
 // =====================================================================
-//  4. INFRASTRUCTURE EXPOSURE DEFAULTS
+//  4. REMEDIATION APPROVAL GATE
+// =====================================================================
+describe('Remediation Approval Gate', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: currentRole };
+    });
+    await app.register(remediationRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    currentRole = 'admin';
+    mockRemediationAction = {
+      id: 'a1',
+      status: 'pending',
+      action_type: 'RESTART_CONTAINER',
+      endpoint_id: 1,
+      container_id: 'c1',
+    };
+  });
+
+  it('denies execution for unapproved actions', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('must be approved');
+  });
+
+  it('allows execution for approved actions when caller is admin', async () => {
+    mockRemediationAction = { ...mockRemediationAction, status: 'approved' };
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/remediation/actions/a1/execute',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ success: true, actionId: 'a1', status: 'completed' });
+  });
+});
+
+// =====================================================================
+//  5. INFRASTRUCTURE EXPOSURE DEFAULTS
 // =====================================================================
 describe('Infrastructure Exposure Defaults', () => {
   it('should not host-publish Prometheus in workloads/staging-dev.yml by default', () => {
@@ -949,7 +1061,7 @@ describe('Infrastructure Exposure Defaults', () => {
 });
 
 // =====================================================================
-//  5. RATE LIMITING VERIFICATION
+//  6. RATE LIMITING VERIFICATION
 // =====================================================================
 describe('Rate Limiting Verification', () => {
   let app: FastifyInstance;
