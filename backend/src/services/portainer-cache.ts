@@ -102,7 +102,7 @@ class TtlCache {
 
 class HybridCache {
   private memory = new TtlCache();
-  private readonly l1TtlSeconds = 5; // Short L1 TTL for instant access
+  private readonly l1TtlSeconds = 30; // L1 TTL for instant access without Redis round-trip
   private hits = 0;
   private misses = 0;
   private compressedCount = 0;

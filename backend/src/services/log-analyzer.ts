@@ -2,6 +2,7 @@ import { createChildLogger } from '../utils/logger.js';
 import { chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { getContainerLogs } from './portainer-client.js';
+import { cachedFetch, getCacheKey } from './portainer-cache.js';
 
 const log = createChildLogger('log-analyzer');
 
@@ -20,7 +21,11 @@ export async function analyzeContainerLogs(
   tailLines: number,
 ): Promise<LogAnalysisResult | null> {
   try {
-    const logs = await getContainerLogs(endpointId, containerId, { tail: tailLines });
+    const logs = await cachedFetch(
+      getCacheKey('analyzer-logs', endpointId, containerId),
+      60, // 60s TTL — log analysis runs once per monitoring cycle (5 min)
+      () => getContainerLogs(endpointId, containerId, { tail: tailLines }),
+    );
 
     if (!logs || logs.trim().length < 20) {
       return null;

@@ -44,6 +44,8 @@ export function useSecurityAudit(endpointId?: number) {
       endpointId
         ? api.get<SecurityAuditResponse>(`/api/security/audit/${endpointId}`)
         : api.get<SecurityAuditResponse>('/api/security/audit'),
+    staleTime: 120 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 
