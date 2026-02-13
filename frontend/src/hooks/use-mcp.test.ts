@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
-import { useMcpServers, useMcpServerTools } from './use-mcp';
+import { useMcpServers, useMcpServerTools, useUpdateMcpServer } from './use-mcp';
 
 // Mock the api client
 const mockGet = vi.fn();
@@ -111,6 +111,38 @@ describe('use-mcp hooks', () => {
 
       expect(result.current.isFetching).toBe(false);
       expect(mockGet).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('useUpdateMcpServer', () => {
+    it('calls PUT /api/mcp/servers/:id with update body', async () => {
+      const updatedServer = {
+        id: 1,
+        name: 'test-server',
+        transport: 'sse' as const,
+        command: null,
+        url: 'http://localhost:3000/sse',
+        args: null,
+        env: null,
+        enabled: 1,
+        disabled_tools: null,
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01',
+        connected: false,
+        toolCount: 0,
+        connectionError: null,
+      };
+      mockPut.mockResolvedValue(updatedServer);
+
+      const { result } = renderHook(() => useUpdateMcpServer(), { wrapper: createWrapper() });
+
+      result.current.mutate({ id: 1, body: { transport: 'sse', url: 'http://localhost:3000/sse' } });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(mockPut).toHaveBeenCalledWith('/api/mcp/servers/1', { transport: 'sse', url: 'http://localhost:3000/sse' });
     });
   });
 });

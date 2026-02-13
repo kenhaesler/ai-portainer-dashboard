@@ -28,6 +28,7 @@ import {
   Upload,
   Wifi,
   WifiOff,
+  Pencil,
   Wrench,
   X,
   Zap,
@@ -37,6 +38,7 @@ import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/hooks/us
 import {
   useMcpServers,
   useCreateMcpServer,
+  useUpdateMcpServer,
   useDeleteMcpServer,
   useConnectMcpServer,
   useDisconnectMcpServer,
@@ -560,12 +562,41 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
 
 // ─── MCP Servers ────────────────────────────────────────────────────
 
-function McpServerRow({ server }: { server: McpServer }) {
+export function McpServerRow({ server }: { server: McpServer }) {
   const connectMutation = useConnectMcpServer();
   const disconnectMutation = useDisconnectMcpServer();
   const deleteMutation = useDeleteMcpServer();
+  const updateMutation = useUpdateMcpServer();
   const [showTools, setShowTools] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    transport: server.transport,
+    command: server.command || '',
+    url: server.url || '',
+  });
   const toolsQuery = useMcpServerTools(server.id, showTools && server.connected);
+
+  const handleSaveEdit = () => {
+    const body: Record<string, string> = { transport: editData.transport };
+    if (editData.transport === 'stdio') body.command = editData.command;
+    else body.url = editData.url;
+    updateMutation.mutate({ id: server.id, body }, {
+      onSuccess: () => setIsEditing(false),
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditData({
+      transport: server.transport,
+      command: server.command || '',
+      url: server.url || '',
+    });
+    setIsEditing(false);
+  };
+
+  const isRequiredFieldEmpty = editData.transport === 'stdio'
+    ? !editData.command.trim()
+    : !editData.url.trim();
 
   return (
     <div className="rounded-lg border border-border bg-card/50 p-4 space-y-3">
@@ -589,6 +620,20 @@ function McpServerRow({ server }: { server: McpServer }) {
               <Wrench className="h-4 w-4" />
             </button>
           )}
+          <button
+            onClick={() => {
+              setEditData({
+                transport: server.transport,
+                command: server.command || '',
+                url: server.url || '',
+              });
+              setIsEditing(!isEditing);
+            }}
+            className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
           {server.connected ? (
             <button
               onClick={() => disconnectMutation.mutate(server.id)}
@@ -618,6 +663,61 @@ function McpServerRow({ server }: { server: McpServer }) {
           </button>
         </div>
       </div>
+      {isEditing && (
+        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">Transport</label>
+            <select
+              value={editData.transport}
+              onChange={e => setEditData(p => ({ ...p, transport: e.target.value as 'stdio' | 'sse' | 'http' }))}
+              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+            >
+              <option value="stdio">stdio (local command)</option>
+              <option value="sse">SSE (remote)</option>
+              <option value="http">HTTP (streamable)</option>
+            </select>
+          </div>
+          {editData.transport === 'stdio' ? (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Command</label>
+              <input
+                value={editData.command}
+                onChange={e => setEditData(p => ({ ...p, command: e.target.value }))}
+                placeholder="npx -y @modelcontextprotocol/server-filesystem /data"
+                className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono"
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">URL</label>
+              <input
+                value={editData.url}
+                onChange={e => setEditData(p => ({ ...p, url: e.target.value }))}
+                placeholder="http://mcp-server:3000/sse"
+                className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono"
+              />
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={handleCancelEdit}
+              className="rounded-md px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              disabled={isRequiredFieldEmpty || updateMutation.isPending}
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+          {updateMutation.isError && (
+            <p className="text-xs text-red-400">{updateMutation.error.message}</p>
+          )}
+        </div>
+      )}
       {server.connectionError && (
         <p className="text-xs text-red-400">{server.connectionError}</p>
       )}
