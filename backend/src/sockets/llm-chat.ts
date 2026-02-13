@@ -267,29 +267,7 @@ ${stackSummary || 'No stacks detected.'}
 ${containerDetails || 'No containers available.'}
 
 ### Recent Issues & Insights (${insights.length} total)
-${recentInsights || 'No recent insights.'}
-
-## Your Role
-You are an AI infrastructure assistant with deep integration into this Portainer dashboard. You have real-time access to:
-- All endpoints and their health status
-- Container states, resource usage, and configurations
-- Stack compositions and relationships
-- Historical insights and detected issues (displayed in the **AI Monitor** page)
-- Container logs, metrics, and health checks
-- Remediation actions queue (viewed in the **Remediation** page)
-
-When answering questions:
-1. Reference specific containers, endpoints, or stacks by name
-2. Analyze patterns across the infrastructure based on the insights above
-3. Provide actionable recommendations based on current state
-4. Explain the reasoning behind your suggestions
-5. Warn about potential risks or side effects
-6. When critical issues are detected, inform the user that remediation actions may have been automatically suggested
-7. Guide users to check the **AI Monitor** page for real-time insights and the **Remediation** page for pending actions
-
-**Important:** The system automatically generates remediation action suggestions for critical issues (unhealthy containers, OOM errors, high CPU, restart loops). These appear in the Remediation page for human approval before execution.
-
-Use markdown formatting for clarity. For code blocks, use proper language tags.`;
+${recentInsights || 'No recent insights.'}`;
 
   } catch (err) {
     log.error({ err }, 'Failed to build infrastructure context');
@@ -623,7 +601,8 @@ export function setupLlmNamespace(ns: Namespace) {
 
       const additionalContext = data.context ? formatChatContext(data.context) : '';
       const basePrompt = getEffectivePrompt('chat_assistant');
-      const systemPromptCore = `${basePrompt}\n\n${additionalContext}\n\n${infrastructureContext}`;
+      // User's custom prompt comes LAST so it has highest priority for smaller LLMs
+      const systemPromptCore = `${infrastructureContext}\n\n${additionalContext}\n\n${basePrompt}`;
       const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}${mcpToolPrompt}`;
       const systemPromptWithoutTools = `${systemPromptCore}\n\nTool calling is temporarily unavailable for this response. Do not output tool_calls JSON. Provide the best direct answer you can from available context.`;
 

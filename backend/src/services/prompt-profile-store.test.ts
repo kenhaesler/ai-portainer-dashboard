@@ -30,9 +30,11 @@ vi.mock('../db/sqlite.js', () => ({
 
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
+const mockDeleteSetting = vi.fn();
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
+  deleteSetting: (...args: unknown[]) => mockDeleteSetting(...args),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -301,6 +303,21 @@ describe('prompt-profile-store', () => {
 
       expect(switchProfile('nonexistent')).toBe(false);
       expect(mockSetSetting).not.toHaveBeenCalled();
+    });
+
+    it('clears per-feature prompt overrides on switch', () => {
+      mockGet.mockReturnValue(SECURITY_PROFILE_ROW);
+
+      switchProfile('security-audit');
+
+      // Should delete per-feature overrides for all features (system_prompt, model, temperature)
+      const deleteCalls = mockDeleteSetting.mock.calls.map((args: unknown[]) => args[0] as string);
+      expect(deleteCalls).toContain('prompts.chat_assistant.system_prompt');
+      expect(deleteCalls).toContain('prompts.chat_assistant.model');
+      expect(deleteCalls).toContain('prompts.chat_assistant.temperature');
+      expect(deleteCalls).toContain('prompts.monitoring_analysis.system_prompt');
+      // 12 features × 3 keys each = 36 delete calls
+      expect(mockDeleteSetting).toHaveBeenCalledTimes(36);
     });
   });
 

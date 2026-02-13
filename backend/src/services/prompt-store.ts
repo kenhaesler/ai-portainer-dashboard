@@ -18,7 +18,8 @@ export type PromptFeature =
   | 'remediation'
   | 'pcap_analyzer'
   | 'capacity_forecast'
-  | 'correlation_insights';
+  | 'correlation_insights'
+  | 'monitoring_analysis';
 
 // ── Feature metadata ─────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ export const PROMPT_FEATURES: PromptFeatureInfo[] = [
   { key: 'pcap_analyzer', label: 'Packet Capture Analyzer', description: 'Analyzes network packet capture summaries' },
   { key: 'capacity_forecast', label: 'Capacity Forecast', description: 'Generates narrative capacity predictions' },
   { key: 'correlation_insights', label: 'Correlation Insights', description: 'Explains cross-container metric correlations' },
+  { key: 'monitoring_analysis', label: 'Monitoring Analysis', description: 'Periodic AI infrastructure analysis from the monitoring service' },
 ];
 
 // ── Default prompts (extracted from original hardcoded locations) ─────
@@ -101,6 +103,9 @@ INFRASTRUCTURE CONTEXT:`,
 
   correlation_insights:
     'You are a concise infrastructure analyst. Respond with plain text only — no markdown, no bullet points, no headings except the SUMMARY: prefix.',
+
+  monitoring_analysis:
+    'You are an AI infrastructure analyst. Analyze the current infrastructure state. Identify the most important issues or recommendations. Be specific and actionable. Format each as a brief title and description.',
 };
 
 // ── Prompt resolution ────────────────────────────────────────────────

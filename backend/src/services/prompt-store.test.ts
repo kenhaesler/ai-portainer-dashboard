@@ -57,8 +57,8 @@ describe('prompt-store', () => {
   });
 
   describe('PROMPT_FEATURES', () => {
-    it('defines metadata for all 11 features', () => {
-      expect(PROMPT_FEATURES).toHaveLength(11);
+    it('defines metadata for all 12 features', () => {
+      expect(PROMPT_FEATURES).toHaveLength(12);
     });
 
     it('each feature has key, label, and description', () => {
@@ -74,7 +74,7 @@ describe('prompt-store', () => {
         'chat_assistant', 'command_palette', 'anomaly_explainer',
         'incident_summarizer', 'log_analyzer', 'metrics_summary',
         'root_cause', 'remediation', 'pcap_analyzer',
-        'capacity_forecast', 'correlation_insights',
+        'capacity_forecast', 'correlation_insights', 'monitoring_analysis',
       ];
       expect(PROMPT_FEATURES.map((f) => f.key)).toEqual(expectedKeys);
     });
@@ -129,6 +129,14 @@ describe('prompt-store', () => {
 
       getEffectivePrompt('correlation_insights');
       expect(mockGetSetting).toHaveBeenCalledWith('prompts.correlation_insights.system_prompt');
+    });
+
+    it('returns default for monitoring_analysis when no override', () => {
+      mockGetSetting.mockReturnValue(undefined);
+
+      const result = getEffectivePrompt('monitoring_analysis');
+      expect(result).toBe(DEFAULT_PROMPTS.monitoring_analysis);
+      expect(result).toContain('infrastructure analyst');
     });
   });
 

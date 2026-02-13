@@ -58,7 +58,7 @@ import {
   type PromptExportData,
   type ImportPreviewResponse,
 } from '@/hooks/use-prompt-profiles';
-import { useUpdateSetting } from '@/hooks/use-settings';
+import { useUpdateSetting, useDeleteSetting } from '@/hooks/use-settings';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn, formatBytes } from '@/lib/utils';
 import { api } from '@/lib/api';
@@ -1377,6 +1377,8 @@ export function AiPromptsTab({
   const queryClient = useQueryClient();
   const [savedValues, setSavedValues] = useState<Record<string, string>>({});
   const updateSetting = useUpdateSetting();
+  const deleteSetting = useDeleteSetting();
+  const [keysToDelete, setKeysToDelete] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importPreviewData, setImportPreviewData] = useState<{ data: PromptExportData; preview: ImportPreviewResponse } | null>(null);
@@ -1452,6 +1454,8 @@ export function AiPromptsTab({
     const promptKey = `prompts.${featureKey}.system_prompt`;
     const modelKey = `prompts.${featureKey}.model`;
     const tempKey = `prompts.${featureKey}.temperature`;
+    // Mark keys for deletion so profile fallback works correctly
+    setKeysToDelete((prev) => new Set([...prev, promptKey, modelKey, tempKey]));
     setDraftValues((prev) => ({
       ...prev,
       [promptKey]: feature.defaultPrompt,
@@ -1488,15 +1492,22 @@ export function AiPromptsTab({
     const changedKeys = Object.keys(draftValues).filter((k) => draftValues[k] !== savedValues[k]);
     try {
       for (const key of changedKeys) {
-        await updateSetting.mutateAsync({
-          key,
-          value: draftValues[key],
-          category: 'prompts',
-          showToast: false,
-        });
-        onChange(key, draftValues[key]);
+        if (keysToDelete.has(key)) {
+          // Delete the setting so profile fallback can take effect
+          await deleteSetting.mutateAsync({ key, showToast: false });
+          onChange(key, '');
+        } else {
+          await updateSetting.mutateAsync({
+            key,
+            value: draftValues[key],
+            category: 'prompts',
+            showToast: false,
+          });
+          onChange(key, draftValues[key]);
+        }
       }
       setSavedValues({ ...draftValues });
+      setKeysToDelete(new Set());
       setSaveSuccess(true);
       toast.success(`Saved ${changedKeys.length} prompt setting${changedKeys.length !== 1 ? 's' : ''}`);
     } catch (err) {
@@ -1508,6 +1519,7 @@ export function AiPromptsTab({
 
   const handleDiscard = () => {
     setDraftValues({ ...savedValues });
+    setKeysToDelete(new Set());
     setSaveSuccess(false);
   };
 

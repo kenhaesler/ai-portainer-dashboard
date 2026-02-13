@@ -29,6 +29,9 @@ vi.mock('@/hooks/use-settings', () => ({
   useUpdateSetting: () => ({
     mutateAsync: (...args: unknown[]) => mockMutateAsync(...args),
   }),
+  useDeleteSetting: () => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+  }),
 }));
 
 const mockSwitchProfileAsync = vi.fn();

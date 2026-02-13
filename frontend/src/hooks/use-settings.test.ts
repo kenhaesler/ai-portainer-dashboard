@@ -5,12 +5,14 @@ import type { ReactNode } from 'react';
 import { createElement } from 'react';
 
 const mockPut = vi.fn();
+const mockDelete = vi.fn();
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
     put: (...args: unknown[]) => mockPut(...args),
+    delete: (...args: unknown[]) => mockDelete(...args),
     get: vi.fn(),
   },
 }));
@@ -22,7 +24,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import { useUpdateSetting } from './use-settings';
+import { useUpdateSetting, useDeleteSetting } from './use-settings';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -126,5 +128,60 @@ describe('useUpdateSetting', () => {
 
     const rolledBackData = queryClient.getQueryData<Array<{ value: string }>>(['settings', 'monitoring']);
     expect(rolledBackData?.[0]?.value).toBe('true');
+  });
+});
+
+describe('useDeleteSetting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('calls DELETE endpoint and shows success toast', async () => {
+    mockDelete.mockResolvedValueOnce(undefined);
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useDeleteSetting(), { wrapper: createWrapper(queryClient) });
+
+    await act(async () => {
+      await result.current.mutateAsync({ key: 'prompts.chat_assistant.system_prompt' });
+    });
+
+    expect(mockDelete).toHaveBeenCalledWith('/api/settings/prompts.chat_assistant.system_prompt');
+    expect(mockSuccess).toHaveBeenCalledWith('Setting reset', {
+      description: '"prompts.chat_assistant.system_prompt" removed.',
+    });
+  });
+
+  it('suppresses toast when showToast is false', async () => {
+    mockDelete.mockResolvedValueOnce(undefined);
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useDeleteSetting(), { wrapper: createWrapper(queryClient) });
+
+    await act(async () => {
+      await result.current.mutateAsync({ key: 'prompts.chat_assistant.model', showToast: false });
+    });
+
+    expect(mockDelete).toHaveBeenCalledWith('/api/settings/prompts.chat_assistant.model');
+    expect(mockSuccess).not.toHaveBeenCalled();
+  });
+
+  it('shows error toast on failure', async () => {
+    mockDelete.mockRejectedValueOnce(new Error('delete failed'));
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useDeleteSetting(), { wrapper: createWrapper(queryClient) });
+
+    await act(async () => {
+      try {
+        await result.current.mutateAsync({ key: 'prompts.chat_assistant.system_prompt' });
+      } catch {
+        // expected
+      }
+    });
+
+    expect(mockError).toHaveBeenCalledWith('Failed to reset "prompts.chat_assistant.system_prompt"', {
+      description: 'delete failed',
+    });
   });
 });
