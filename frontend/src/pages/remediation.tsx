@@ -28,6 +28,8 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { ShimmerText } from '@/components/shared/shimmer-text';
 import { useSockets } from '@/providers/socket-provider';
 import { cn, formatDate } from '@/lib/utils';
 
@@ -385,7 +387,7 @@ function ActionRow({
           {action.status === 'executing' && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Running...
+              <ShimmerText>Running...</ShimmerText>
             </span>
           )}
           {action.status === 'completed' && (
@@ -567,34 +569,42 @@ export default function RemediationPage() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border bg-amber-50 dark:bg-amber-900/20 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Pending Approval</p>
-            <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+        <SpotlightCard>
+          <div className="rounded-lg border bg-amber-50 dark:bg-amber-900/20 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Pending Approval</p>
+              <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <p className="mt-2 text-3xl font-bold text-amber-900 dark:text-amber-100">{stats.pending}</p>
           </div>
-          <p className="mt-2 text-3xl font-bold text-amber-900 dark:text-amber-100">{stats.pending}</p>
-        </div>
-        <div className="rounded-lg border bg-blue-50 dark:bg-blue-900/20 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Approved</p>
-            <ThumbsUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+        </SpotlightCard>
+        <SpotlightCard>
+          <div className="rounded-lg border bg-blue-50 dark:bg-blue-900/20 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Approved</p>
+              <ThumbsUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <p className="mt-2 text-3xl font-bold text-blue-900 dark:text-blue-100">{stats.approved}</p>
           </div>
-          <p className="mt-2 text-3xl font-bold text-blue-900 dark:text-blue-100">{stats.approved}</p>
-        </div>
-        <div className="rounded-lg border bg-emerald-50 dark:bg-emerald-900/20 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Completed</p>
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+        </SpotlightCard>
+        <SpotlightCard>
+          <div className="rounded-lg border bg-emerald-50 dark:bg-emerald-900/20 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Completed</p>
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <p className="mt-2 text-3xl font-bold text-emerald-900 dark:text-emerald-100">{stats.completed}</p>
           </div>
-          <p className="mt-2 text-3xl font-bold text-emerald-900 dark:text-emerald-100">{stats.completed}</p>
-        </div>
-        <div className="rounded-lg border bg-red-50 dark:bg-red-900/20 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-red-800 dark:text-red-200">Failed</p>
-            <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+        </SpotlightCard>
+        <SpotlightCard>
+          <div className="rounded-lg border bg-red-50 dark:bg-red-900/20 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-red-800 dark:text-red-200">Failed</p>
+              <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
+            <p className="mt-2 text-3xl font-bold text-red-900 dark:text-red-100">{stats.failed}</p>
           </div>
-          <p className="mt-2 text-3xl font-bold text-red-900 dark:text-red-100">{stats.failed}</p>
-        </div>
+        </SpotlightCard>
       </div>
 
       {/* Status Filter Tabs */}

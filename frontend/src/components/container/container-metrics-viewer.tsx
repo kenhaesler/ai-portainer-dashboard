@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Cpu, HardDrive, Network } from 'lucide-react';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { useContainerMetrics, useNetworkRates } from '@/hooks/use-metrics';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
@@ -107,7 +108,7 @@ export function ContainerMetricsViewer({
       {/* Metrics Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* CPU Chart */}
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <Cpu className="h-5 w-5 text-blue-500" />
             <h3 className="text-lg font-semibold">CPU Usage</h3>
@@ -124,10 +125,10 @@ export function ContainerMetricsViewer({
               unit="%"
             />
           )}
-        </div>
+        </SpotlightCard>
 
         {/* Memory Chart */}
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <HardDrive className="h-5 w-5 text-emerald-500" />
             <h3 className="text-lg font-semibold">Memory Usage</h3>
@@ -144,10 +145,10 @@ export function ContainerMetricsViewer({
               unit="%"
             />
           )}
-        </div>
+        </SpotlightCard>
       </div>
 
-      <div className="rounded-lg border bg-card p-6 shadow-sm">
+      <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
           <Network className="h-5 w-5 text-cyan-500" />
           <h3 className="text-lg font-semibold">Network RX/TX by Network</h3>
@@ -195,7 +196,7 @@ export function ContainerMetricsViewer({
             </div>
           </div>
         )}
-      </div>
+      </SpotlightCard>
     </div>
   );
 }

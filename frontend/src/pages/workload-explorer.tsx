@@ -18,6 +18,7 @@ import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
@@ -325,7 +326,7 @@ export default function WorkloadExplorerPage() {
       {isLoading ? (
         <SkeletonCard className="h-[500px]" />
       ) : filteredContainers ? (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <DataTable
             columns={columns}
             data={filteredContainers}
@@ -333,7 +334,7 @@ export default function WorkloadExplorerPage() {
             searchPlaceholder="Search containers by name..."
             pageSize={15}
           />
-        </div>
+        </SpotlightCard>
       ) : null}
     </div>
   );

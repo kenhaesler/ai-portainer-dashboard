@@ -1,6 +1,7 @@
 import { Box, Server, HardDrive, Clock, Activity, RotateCw, Network, Tag } from 'lucide-react';
 import { type Container } from '@/hooks/use-containers';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { formatDate } from '@/lib/utils';
 
 function formatUptime(createdTimestamp: number): string {
@@ -58,7 +59,7 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
   return (
     <div className="space-y-6">
       {/* Container Summary Card */}
-      <div className="rounded-lg border bg-card p-6 shadow-sm">
+      <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
@@ -104,11 +105,11 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
             value={formatDate(new Date(container.created * 1000))}
           />
         </div>
-      </div>
+      </SpotlightCard>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Image Information Card */}
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <HardDrive className="h-5 w-5" />
             Image Information
@@ -119,10 +120,10 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
               <p className="text-sm font-mono">{container.image}</p>
             </div>
           </div>
-        </div>
+        </SpotlightCard>
 
         {/* Endpoint Information Card */}
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Server className="h-5 w-5" />
             Endpoint Information
@@ -137,11 +138,11 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
               <p className="text-sm font-mono">{container.endpointId}</p>
             </div>
           </div>
-        </div>
+        </SpotlightCard>
 
         {/* Networks Card */}
         {networks.length > 0 && (
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Network className="h-5 w-5" />
               Networks
@@ -161,13 +162,13 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
                 </span>
               ))}
             </div>
-          </div>
+          </SpotlightCard>
         )}
       </div>
 
       {/* Port Mappings Card */}
       {ports.length > 0 && (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Network className="h-5 w-5" />
             Port Mappings
@@ -194,12 +195,12 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
               </tbody>
             </table>
           </div>
-        </div>
+        </SpotlightCard>
       )}
 
       {/* Labels Card */}
       {labelEntries.length > 0 && (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Tag className="h-5 w-5" />
             Labels ({labelEntries.length})
@@ -212,7 +213,7 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
               </div>
             ))}
           </div>
-        </div>
+        </SpotlightCard>
       )}
     </div>
   );

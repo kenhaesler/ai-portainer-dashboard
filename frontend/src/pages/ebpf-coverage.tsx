@@ -27,6 +27,7 @@ import type { CoverageRecord } from '@/hooks/use-ebpf-coverage';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { formatDate } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 /** Human-readable labels for coverage statuses */
 const STATUS_LABELS: Record<string, string> = {
@@ -80,7 +81,7 @@ function SummaryBar() {
   return (
     <div
       data-testid="coverage-summary"
-      className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4"
+      className="spotlight-card flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4"
     >
       <div className="flex items-center gap-2">
         <Radio className="h-5 w-5 text-primary" />
@@ -373,7 +374,7 @@ export default function EbpfCoveragePage() {
       {isLoading ? (
         <SkeletonCard className="h-64" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <SpotlightCard className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-left" data-testid="coverage-table">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -411,7 +412,7 @@ export default function EbpfCoveragePage() {
               )}
             </tbody>
           </table>
-        </div>
+        </SpotlightCard>
       )}
     </div>
   );

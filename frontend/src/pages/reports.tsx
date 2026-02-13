@@ -27,6 +27,7 @@ import { useContainers } from '@/hooks/use-containers';
 import type { Container } from '@/hooks/use-containers';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { cn } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { exportToCsv } from '@/lib/csv-export';
@@ -65,22 +66,24 @@ function StatCard({
   trend?: 'up' | 'down' | 'neutral';
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="mt-2 flex items-baseline gap-1">
-        <p className="text-2xl font-bold">{value.toFixed(1)}</p>
-        <span className="text-sm text-muted-foreground">{unit}</span>
-      </div>
-      {trend && trend !== 'neutral' && (
-        <div className={cn('mt-1 flex items-center gap-1 text-xs', trend === 'up' ? 'text-red-500' : 'text-green-500')}>
-          {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-          <span>{trend === 'up' ? 'Increasing' : 'Decreasing'}</span>
+    <SpotlightCard>
+      <div className="rounded-lg border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
-      )}
-    </div>
+        <div className="mt-2 flex items-baseline gap-1">
+          <p className="text-2xl font-bold">{value.toFixed(1)}</p>
+          <span className="text-sm text-muted-foreground">{unit}</span>
+        </div>
+        {trend && trend !== 'neutral' && (
+          <div className={cn('mt-1 flex items-center gap-1 text-xs', trend === 'up' ? 'text-red-500' : 'text-green-500')}>
+            {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            <span>{trend === 'up' ? 'Increasing' : 'Decreasing'}</span>
+          </div>
+        )}
+      </div>
+    </SpotlightCard>
   );
 }
 

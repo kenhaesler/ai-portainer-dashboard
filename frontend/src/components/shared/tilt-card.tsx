@@ -35,8 +35,8 @@ export function TiltCard({ children, className, disabled }: TiltCardProps) {
       const normalizedY = (e.clientY - centerY) / (rect.height / 2);
 
       // Map to rotation: mouse moving right tilts card left (negative Y rotation feels natural)
-      rotateX.set(-normalizedY * 10);
-      rotateY.set(normalizedX * 10);
+      rotateX.set(-normalizedY * 5);
+      rotateY.set(normalizedX * 5);
     },
     [isTiltDisabled, rotateX, rotateY],
   );
@@ -63,7 +63,7 @@ export function TiltCard({ children, className, disabled }: TiltCardProps) {
         onMouseLeave={handleMouseLeave}
         data-testid="tilt-card"
       >
-        <div style={{ transform: 'translateZ(50px)' }}>{children}</div>
+        <div style={{ transform: 'translateZ(25px)' }}>{children}</div>
       </motion.div>
     </div>
   );

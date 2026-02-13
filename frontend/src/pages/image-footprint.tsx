@@ -11,6 +11,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -156,27 +157,33 @@ export default function ImageFootprintPage() {
       {/* Staleness Summary */}
       {stalenessData && stalenessData.summary.total > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Layers className="h-4 w-4" />
-              <span>Checked</span>
+          <SpotlightCard>
+            <div className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Layers className="h-4 w-4" />
+                <span>Checked</span>
+              </div>
+              <p className="mt-1 text-2xl font-bold">{stalenessData.summary.total}</p>
             </div>
-            <p className="mt-1 text-2xl font-bold">{stalenessData.summary.total}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-emerald-600">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>Up to Date</span>
+          </SpotlightCard>
+          <SpotlightCard>
+            <div className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-sm text-emerald-600">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Up to Date</span>
+              </div>
+              <p className="mt-1 text-2xl font-bold text-emerald-600">{stalenessData.summary.upToDate}</p>
             </div>
-            <p className="mt-1 text-2xl font-bold text-emerald-600">{stalenessData.summary.upToDate}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-yellow-600">
-              <AlertTriangle className="h-4 w-4" />
-              <span>Stale</span>
+          </SpotlightCard>
+          <SpotlightCard>
+            <div className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-sm text-yellow-600">
+                <AlertTriangle className="h-4 w-4" />
+                <span>Stale</span>
+              </div>
+              <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
             </div>
-            <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
-          </div>
+          </SpotlightCard>
           <div className="flex items-center justify-center rounded-lg border bg-card p-4 shadow-sm">
             <button
               onClick={() => triggerCheck.mutate()}

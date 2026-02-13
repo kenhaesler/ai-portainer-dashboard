@@ -4,6 +4,7 @@ import { useSecurityAudit } from '@/hooks/use-security-audit';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 const severityOptions = [
   { value: 'all', label: 'All Severities' },
@@ -101,7 +102,7 @@ export default function SecurityAuditPage() {
         <p className="text-muted-foreground">Container capability posture across endpoints with ignore-list visibility.</p>
       </div>
 
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard className="rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -156,7 +157,7 @@ export default function SecurityAuditPage() {
             />
           </label>
         </div>
-      </section>
+      </SpotlightCard>
 
       {isError && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6">
@@ -171,7 +172,7 @@ export default function SecurityAuditPage() {
         </div>
       )}
 
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard className="rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="mb-3 text-sm text-muted-foreground">
           {filteredEntries.length} containers shown ({entries.filter((entry) => entry.findings.length > 0).length} with findings total)
         </div>
@@ -265,7 +266,7 @@ export default function SecurityAuditPage() {
             </table>
           </div>
         )}
-      </section>
+      </SpotlightCard>
     </div>
   );
 }

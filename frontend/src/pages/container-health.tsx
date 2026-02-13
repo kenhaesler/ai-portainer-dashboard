@@ -18,6 +18,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 interface HealthStats {
   total: number;
@@ -80,20 +81,22 @@ function StatCard({ icon: Icon, label, value, percentage, variant = 'default' }:
   };
 
   return (
-    <div className={`rounded-lg border p-4 shadow-sm ${variantClasses[variant]}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm text-muted-foreground mb-1">{label}</p>
-          <p className="text-3xl font-bold">{value}</p>
-          {percentage !== undefined && (
-            <p className="text-xs text-muted-foreground mt-1">{percentage.toFixed(1)}%</p>
-          )}
-        </div>
-        <div className={`rounded-lg p-2 ${iconVariantClasses[variant]}`}>
-          <Icon className="h-6 w-6" />
+    <SpotlightCard>
+      <div className={`rounded-lg border p-4 shadow-sm ${variantClasses[variant]}`}>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <p className="text-sm text-muted-foreground mb-1">{label}</p>
+            <p className="text-3xl font-bold">{value}</p>
+            {percentage !== undefined && (
+              <p className="text-xs text-muted-foreground mt-1">{percentage.toFixed(1)}%</p>
+            )}
+          </div>
+          <div className={`rounded-lg p-2 ${iconVariantClasses[variant]}`}>
+            <Icon className="h-6 w-6" />
+          </div>
         </div>
       </div>
-    </div>
+    </SpotlightCard>
   );
 }
 

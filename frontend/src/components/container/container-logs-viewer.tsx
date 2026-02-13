@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Play, RotateCcw, CheckCircle2, Zap } from 'lucide-react';
 import { useContainerLogs, type ContainerLogsError } from '@/hooks/use-container-logs';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { useEdgeAsyncLogs } from '@/hooks/use-edge-async-logs';
 import { useStreamingLogs, type StreamStatus } from '@/hooks/use-streaming-logs';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -59,7 +60,7 @@ function VirtualizedContainerLogs({
   }, [displayLogs.length, autoScroll, virtualizer]);
 
   return (
-    <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
+    <SpotlightCard className="rounded-lg border bg-card shadow-sm overflow-hidden">
       <div
         ref={logViewerRef}
         className="h-[600px] overflow-auto bg-slate-950 dark:bg-slate-950"
@@ -97,7 +98,7 @@ function VirtualizedContainerLogs({
           })}
         </div>
       </div>
-    </div>
+    </SpotlightCard>
   );
 }
 

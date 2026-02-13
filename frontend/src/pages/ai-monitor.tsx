@@ -8,6 +8,8 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { ShimmerText } from '@/components/shared/shimmer-text';
 import { cn, formatDate } from '@/lib/utils';
 import {
   AlertTriangle,
@@ -291,11 +293,11 @@ function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
 
 function InvestigationStatusBadge({ status }: { status: Investigation['status'] }) {
   const config = {
-    pending: { label: 'Pending', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300', spinning: false },
-    gathering: { label: 'Gathering Evidence', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', spinning: true },
-    analyzing: { label: 'Analyzing', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', spinning: true },
-    complete: { label: 'Complete', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', spinning: false },
-    failed: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', spinning: false },
+    pending: { label: 'Pending', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300', spinning: false, shimmer: false },
+    gathering: { label: 'Gathering Evidence', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', spinning: true, shimmer: true },
+    analyzing: { label: 'Analyzing', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', spinning: true, shimmer: true },
+    complete: { label: 'Complete', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', spinning: false, shimmer: false },
+    failed: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', spinning: false, shimmer: false },
   }[status];
 
   return (
@@ -303,7 +305,7 @@ function InvestigationStatusBadge({ status }: { status: Investigation['status'] 
       {config.spinning && <Loader2 className="h-3 w-3 animate-spin" />}
       {status === 'complete' && <Brain className="h-3 w-3" />}
       {status === 'failed' && <XCircle className="h-3 w-3" />}
-      {config.label}
+      {config.shimmer ? <ShimmerText>{config.label}</ShimmerText> : config.label}
     </span>
   );
 }
@@ -333,8 +335,8 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
         </div>
         <p className="text-sm text-purple-700 dark:text-purple-300">
           {investigation.status === 'pending' && 'Investigation queued...'}
-          {investigation.status === 'gathering' && 'Gathering container logs, metrics, and related context...'}
-          {investigation.status === 'analyzing' && 'AI is analyzing the evidence...'}
+          {investigation.status === 'gathering' && <ShimmerText>Gathering container logs, metrics, and related context...</ShimmerText>}
+          {investigation.status === 'analyzing' && <ShimmerText>AI is analyzing the evidence...</ShimmerText>}
         </p>
       </div>
     );
@@ -851,13 +853,15 @@ export default function AiMonitorPage() {
 
       {/* Stats Cards — click to toggle real-time alerts */}
       <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Total Insights</p>
-            <Activity className="h-5 w-5 text-primary" />
+        <SpotlightCard>
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Total Insights</p>
+              <Activity className="h-5 w-5 text-primary" />
+            </div>
+            <p className="mt-2 text-3xl font-bold">{stats.total}</p>
           </div>
-          <p className="mt-2 text-3xl font-bold">{stats.total}</p>
-        </div>
+        </SpotlightCard>
         {([
           { severity: 'critical' as const, label: 'Critical', icon: AlertTriangle, count: stats.critical,
             active: 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500/20',

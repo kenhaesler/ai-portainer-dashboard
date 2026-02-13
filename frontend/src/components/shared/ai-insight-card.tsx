@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
+import { ShimmerText } from '@/components/shared/shimmer-text';
 
 interface AiInsightCardProps {
   title?: string;
@@ -23,6 +24,7 @@ export function AiInsightCard({
       data-testid="ai-insight-card"
       className={cn(
         'relative overflow-hidden rounded-xl border border-purple-200 bg-purple-50/30 p-4 dark:border-purple-800/50 dark:bg-purple-950/20',
+        !potatoMode && 'animate-gradient-border',
         className,
       )}
     >
@@ -46,7 +48,7 @@ export function AiInsightCard({
 
       {/* Label */}
       <p className="text-xs font-semibold uppercase tracking-widest text-purple-500">
-        {title}
+        {streaming && !potatoMode ? <ShimmerText>{title}</ShimmerText> : title}
       </p>
 
       {/* Content */}

@@ -21,6 +21,7 @@ import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -339,7 +340,7 @@ export default function HomePage() {
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal>
-            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+            <SpotlightCard className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
               <div className="flex-1 min-h-0">
                 <ContainerStatePie
@@ -348,27 +349,27 @@ export default function HomePage() {
                   unhealthy={data.kpis.unhealthy}
                 />
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
           <MotionReveal>
-            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+            <SpotlightCard className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Endpoint Status
               </h3>
               <div className="flex-1 min-h-0">
                 <EndpointStatusBar data={endpointBarData} />
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
           <MotionReveal>
-            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+            <SpotlightCard className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Workload Distribution
               </h3>
               <div className="flex-1 min-h-0 overflow-y-auto">
                 <WorkloadDistribution data={workloadData} />
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
         </MotionStagger>
       ) : null}
@@ -377,7 +378,7 @@ export default function HomePage() {
       {isLoading ? (
         <SkeletonCard className="h-[400px]" />
       ) : data ? (
-        <MotionReveal className="rounded-lg border bg-card p-6 shadow-sm">
+        <MotionReveal className="rounded-lg border bg-card p-6 shadow-sm spotlight-card">
           <h3 className="mb-4 text-sm font-medium text-muted-foreground">
             Recent Containers
           </h3>

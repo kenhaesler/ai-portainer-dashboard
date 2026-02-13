@@ -18,6 +18,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { cn, formatDate } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
 
@@ -799,22 +800,30 @@ export default function TraceExplorerPage() {
       {summary && (
         <>
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Total Traces</p>
-              <p className="text-2xl font-bold">{summary.totalTraces}</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Avg Duration</p>
-              <p className="text-2xl font-bold">{formatDuration(summary.avgDuration)}</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Error Rate</p>
-              <p className="text-2xl font-bold">{(summary.errorRate * 100).toFixed(1)}%</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Services</p>
-              <p className="text-2xl font-bold">{summary.services}</p>
-            </div>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-4">
+                <p className="text-sm text-muted-foreground">Total Traces</p>
+                <p className="text-2xl font-bold">{summary.totalTraces}</p>
+              </div>
+            </SpotlightCard>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-4">
+                <p className="text-sm text-muted-foreground">Avg Duration</p>
+                <p className="text-2xl font-bold">{formatDuration(summary.avgDuration)}</p>
+              </div>
+            </SpotlightCard>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-4">
+                <p className="text-sm text-muted-foreground">Error Rate</p>
+                <p className="text-2xl font-bold">{(summary.errorRate * 100).toFixed(1)}%</p>
+              </div>
+            </SpotlightCard>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-4">
+                <p className="text-sm text-muted-foreground">Services</p>
+                <p className="text-2xl font-bold">{summary.services}</p>
+              </div>
+            </SpotlightCard>
           </div>
           <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-xs">
             <span className="font-medium text-muted-foreground">Source counters:</span>

@@ -7,6 +7,7 @@ import {
   type RecommendedAction,
 } from '@/hooks/use-investigations';
 import { formatDate } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -96,6 +97,7 @@ export default function InvestigationDetailPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
+        <SpotlightCard>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-sm">Created</span>
@@ -103,6 +105,8 @@ export default function InvestigationDetailPage() {
           </div>
           <p className="mt-2 text-sm font-medium">{formatDate(investigation.created_at)}</p>
         </div>
+        </SpotlightCard>
+        <SpotlightCard>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-sm">Confidence</span>
@@ -112,6 +116,8 @@ export default function InvestigationDetailPage() {
             {investigation.confidence_score != null ? `${Math.round(investigation.confidence_score * 100)}%` : 'N/A'}
           </p>
         </div>
+        </SpotlightCard>
+        <SpotlightCard>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-sm">Duration</span>
@@ -121,6 +127,8 @@ export default function InvestigationDetailPage() {
             {investigation.analysis_duration_ms != null ? `${(investigation.analysis_duration_ms / 1000).toFixed(1)}s` : 'N/A'}
           </p>
         </div>
+        </SpotlightCard>
+        <SpotlightCard>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-sm">Model</span>
@@ -128,10 +136,11 @@ export default function InvestigationDetailPage() {
           </div>
           <p className="mt-2 text-sm font-medium">{investigation.llm_model ?? 'Unknown'}</p>
         </div>
+        </SpotlightCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border bg-card p-5">
+        <SpotlightCard className="rounded-lg border bg-card p-5">
           <h2 className="text-lg font-semibold">Timeline</h2>
           <div className="mt-4 space-y-3">
             {timeline.map((item, index) => (
@@ -145,9 +154,9 @@ export default function InvestigationDetailPage() {
               </div>
             ))}
           </div>
-        </div>
+        </SpotlightCard>
 
-        <div className="rounded-lg border bg-card p-5">
+        <SpotlightCard className="rounded-lg border bg-card p-5">
           <h2 className="text-lg font-semibold">Related Artifacts</h2>
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex items-center gap-2">
@@ -177,10 +186,10 @@ export default function InvestigationDetailPage() {
               </div>
             )}
           </div>
-        </div>
+        </SpotlightCard>
       </div>
 
-      <div className="rounded-lg border bg-card p-5">
+      <SpotlightCard className="rounded-lg border bg-card p-5">
         <h2 className="text-lg font-semibold">Findings</h2>
         <div className="mt-4 space-y-4">
           {investigation.root_cause && (
@@ -220,7 +229,7 @@ export default function InvestigationDetailPage() {
             </div>
           )}
         </div>
-      </div>
+      </SpotlightCard>
     </div>
   );
 }

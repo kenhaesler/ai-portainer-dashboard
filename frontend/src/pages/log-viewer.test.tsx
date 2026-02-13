@@ -68,7 +68,7 @@ describe('LogViewerPage', () => {
   it('filter section has higher z-index than log output area (#404)', () => {
     const { container } = render(<LogViewerPage />);
 
-    const filterSection = container.querySelector('section.z-20');
+    const filterSection = container.querySelector('.z-20');
     expect(filterSection).toBeInTheDocument();
     expect(filterSection).toHaveClass('backdrop-blur');
 

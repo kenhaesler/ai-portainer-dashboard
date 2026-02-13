@@ -14,6 +14,7 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { formatDate } from '@/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 type SelectedNode =
   | { type: 'container'; data: Container }
@@ -172,7 +173,7 @@ export default function NetworkTopologyPage() {
 
             {/* Side Panel */}
             {selectedNode && (
-              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 overflow-y-auto">
+              <SpotlightCard className="w-1/3 rounded-lg border bg-card p-6 space-y-4 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">
                     {selectedNode.type === 'container' ? 'Container Details' : 'Network Details'}
@@ -190,7 +191,7 @@ export default function NetworkTopologyPage() {
                 ) : (
                   <NetworkDetails network={selectedNode.data} />
                 )}
-              </div>
+              </SpotlightCard>
             )}
           </div>
         )}

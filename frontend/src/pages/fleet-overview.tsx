@@ -10,6 +10,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { cn } from '@/lib/utils';
 
 type ViewMode = 'grid' | 'table';
@@ -36,6 +37,7 @@ function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () =
   const memoryGB = (endpoint.totalMemory / (1024 * 1024 * 1024)).toFixed(1);
 
   return (
+    <SpotlightCard>
     <button
       onClick={onClick}
       className="w-full rounded-lg border bg-card p-6 shadow-sm text-left transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
@@ -111,6 +113,7 @@ function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () =
 
       <p className="mt-4 truncate text-xs text-muted-foreground">{endpoint.url}</p>
     </button>
+    </SpotlightCard>
   );
 }
 

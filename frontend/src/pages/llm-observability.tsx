@@ -6,6 +6,7 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn, formatDate } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import {
   Activity,
   MessageSquare,
@@ -64,7 +65,7 @@ function TracesTable({ traces, isLoading, privacyMode }: { traces: LlmTrace[]; i
   }
 
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
+    <SpotlightCard className="rounded-lg border bg-card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -106,7 +107,7 @@ function TracesTable({ traces, isLoading, privacyMode }: { traces: LlmTrace[]; i
           </tbody>
         </table>
       </div>
-    </div>
+    </SpotlightCard>
   );
 }
 
@@ -211,7 +212,7 @@ export default function LlmObservabilityPage() {
 
       {/* Model Breakdown */}
       {stats && (
-        <div className="rounded-lg border bg-card p-6">
+        <SpotlightCard className="rounded-lg border bg-card p-6">
           <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
           {modelBreakdown.length === 0 ? (
             <p className="text-sm text-muted-foreground">No model data available.</p>
@@ -257,7 +258,7 @@ export default function LlmObservabilityPage() {
               </table>
             </div>
           )}
-        </div>
+        </SpotlightCard>
       )}
 
       {/* Recent Traces */}

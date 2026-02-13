@@ -10,6 +10,7 @@ import { ContainerMultiSelect } from '@/components/shared/container-multi-select
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useUiStore } from '@/stores/ui-store';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { usePageVisibility } from '@/hooks/use-page-visibility';
 
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
@@ -310,7 +311,7 @@ export default function LogViewerPage() {
         <p className="text-muted-foreground">Live tail, regex search, level filtering, and multi-container aggregation.</p>
       </div>
 
-      <section className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Endpoint</span>
@@ -402,7 +403,7 @@ export default function LogViewerPage() {
         <div className="mt-2 text-xs text-muted-foreground">
           {filteredEntries.length} lines | {regexMatches} regex matches
         </div>
-      </section>
+      </SpotlightCard>
 
       <VirtualizedLogView
         scrollRef={scrollRef}

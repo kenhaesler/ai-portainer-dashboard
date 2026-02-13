@@ -35,6 +35,7 @@ import { useLlmModels } from '@/hooks/use-llm-models';
 import { cn } from '@/lib/utils';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { decimateTimeSeries } from '@/lib/metrics-decimation';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import {
   BarChart,
   Bar,
@@ -584,35 +585,43 @@ export default function MetricsDashboardPage() {
           {/* Container Info & Stats */}
           {selectedContainerData && (
             <div className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Container</p>
-                <p className="text-lg font-semibold truncate">{selectedContainerData.name}</p>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Avg CPU</p>
-                <p className="text-lg font-semibold">{stats.cpu.avg.toFixed(1)}%</p>
-                <AnomalySparkline
-                  values={cpuData.map((d) => d.value)}
-                  anomalyIndices={cpuAnomalyIndices}
-                  className="mt-2"
-                />
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Avg Memory</p>
-                <p className="text-lg font-semibold">{stats.memory.avg.toFixed(1)}%</p>
-                <AnomalySparkline
-                  values={memoryData.map((d) => d.value)}
-                  anomalyIndices={memoryAnomalyIndices}
-                  className="mt-2"
-                />
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Peak Memory</p>
-                <p className="text-lg font-semibold">{stats.memoryBytes.max.toFixed(1)} MB</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Min: {stats.memoryBytes.min.toFixed(1)} MB
-                </p>
-              </div>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-4">
+                  <p className="text-sm text-muted-foreground">Container</p>
+                  <p className="text-lg font-semibold truncate">{selectedContainerData.name}</p>
+                </div>
+              </SpotlightCard>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-4">
+                  <p className="text-sm text-muted-foreground">Avg CPU</p>
+                  <p className="text-lg font-semibold">{stats.cpu.avg.toFixed(1)}%</p>
+                  <AnomalySparkline
+                    values={cpuData.map((d) => d.value)}
+                    anomalyIndices={cpuAnomalyIndices}
+                    className="mt-2"
+                  />
+                </div>
+              </SpotlightCard>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-4">
+                  <p className="text-sm text-muted-foreground">Avg Memory</p>
+                  <p className="text-lg font-semibold">{stats.memory.avg.toFixed(1)}%</p>
+                  <AnomalySparkline
+                    values={memoryData.map((d) => d.value)}
+                    anomalyIndices={memoryAnomalyIndices}
+                    className="mt-2"
+                  />
+                </div>
+              </SpotlightCard>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-4">
+                  <p className="text-sm text-muted-foreground">Peak Memory</p>
+                  <p className="text-lg font-semibold">{stats.memoryBytes.max.toFixed(1)} MB</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Min: {stats.memoryBytes.min.toFixed(1)} MB
+                  </p>
+                </div>
+              </SpotlightCard>
             </div>
           )}
 
@@ -655,7 +664,7 @@ export default function MetricsDashboardPage() {
           ) : (
             <div className="space-y-6">
               {/* CPU Chart */}
-              <div className="rounded-lg border bg-card p-6">
+              <SpotlightCard className="rounded-lg border bg-card p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Cpu className="h-5 w-5 text-blue-500" />
@@ -684,10 +693,10 @@ export default function MetricsDashboardPage() {
                     Failed to load CPU metrics
                   </div>
                 )}
-              </div>
+              </SpotlightCard>
 
               {/* Memory Chart */}
-              <div className="rounded-lg border bg-card p-6">
+              <SpotlightCard className="rounded-lg border bg-card p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <MemoryStick className="h-5 w-5 text-purple-500" />
@@ -716,10 +725,10 @@ export default function MetricsDashboardPage() {
                     Failed to load memory metrics
                   </div>
                 )}
-              </div>
+              </SpotlightCard>
 
               {/* Memory Bytes Chart */}
-              <div className="rounded-lg border bg-card p-6">
+              <SpotlightCard className="rounded-lg border bg-card p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <MemoryStick className="h-5 w-5 text-cyan-500" />
@@ -744,7 +753,7 @@ export default function MetricsDashboardPage() {
                   unit=" MB"
                   height={300 * zoomLevel}
                 />
-              </div>
+              </SpotlightCard>
             </div>
           )}
 

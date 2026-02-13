@@ -12,6 +12,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 type ViewMode = 'grid' | 'table';
 
@@ -39,6 +40,7 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
   };
 
   return (
+    <SpotlightCard>
     <button
       onClick={onClick}
       className="w-full rounded-lg border bg-card p-6 shadow-sm text-left transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
@@ -93,6 +95,7 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
         </div>
       </div>
     </button>
+    </SpotlightCard>
   );
 }
 
@@ -302,7 +305,7 @@ export default function StackOverviewPage() {
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <SpotlightCard className="rounded-lg border bg-card p-6 shadow-sm">
           <DataTable
             columns={columns}
             data={stacksWithEndpoints}
@@ -311,7 +314,7 @@ export default function StackOverviewPage() {
             pageSize={15}
             onRowClick={handleStackClick}
           />
-        </div>
+        </SpotlightCard>
       )}
     </div>
   );
