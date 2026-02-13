@@ -195,7 +195,8 @@ export function AppLayout() {
       </motion.div>
       <div
         className={cn(
-          'relative z-10 flex flex-1 flex-col overflow-hidden transition-all duration-300',
+          'relative z-10 flex flex-1 flex-col overflow-hidden',
+          !disableVisualMotion && 'transition-all duration-300',
           'md:ml-[4.5rem]',
           !sidebarCollapsed && 'md:ml-[16rem]',
         )}
@@ -227,34 +228,40 @@ export function AppLayout() {
               : { duration: 0 }
           }
         >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.pathname}
-              className="h-auto"
-              custom={direction}
-              initial={disableVisualMotion ? false : 'initial'}
-              animate={disableVisualMotion ? undefined : 'animate'}
-              exit={disableVisualMotion ? undefined : 'exit'}
-              variants={disableVisualMotion ? undefined : {
-                initial: (currentDirection: number) => ({
-                  opacity: 0,
-                  x: currentDirection > 0 ? 24 : -24,
-                }),
-                animate: {
-                  opacity: 1,
-                  x: 0,
-                  transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
-                },
-                exit: (currentDirection: number) => ({
-                  opacity: 0,
-                  x: currentDirection > 0 ? -18 : 18,
-                  transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
-                }),
-              }}
-            >
+          {disableVisualMotion ? (
+            <div key={location.pathname} className="h-auto">
               <Outlet />
-            </motion.div>
-          </AnimatePresence>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={location.pathname}
+                className="h-auto"
+                custom={direction}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                variants={{
+                  initial: (currentDirection: number) => ({
+                    opacity: 0,
+                    x: currentDirection > 0 ? 24 : -24,
+                  }),
+                  animate: {
+                    opacity: 1,
+                    x: 0,
+                    transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
+                  },
+                  exit: (currentDirection: number) => ({
+                    opacity: 0,
+                    x: currentDirection > 0 ? -18 : 18,
+                    transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
+                  }),
+                }}
+              >
+                <Outlet />
+              </motion.div>
+            </AnimatePresence>
+          )}
         </motion.main>
       </div>
       {/* Mobile bottom nav — visible only on mobile */}
