@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { runMonitoringCycle } from '../services/monitoring-service.js';
@@ -20,18 +21,117 @@ const log = createChildLogger('scheduler');
 
 const intervals: NodeJS.Timeout[] = [];
 
-const METRICS_CONCURRENCY = 6;
+// ---------------------------------------------------------------------------
+// Mutex guard — prevents overlapping metrics collection cycles
+// ---------------------------------------------------------------------------
+let metricsCollectionRunning = false;
 
-async function runMetricsCollection(): Promise<void> {
-  log.debug('Running metrics collection cycle');
+/** Exposed for testing — check whether a cycle is currently in progress. */
+export function isMetricsCycleRunning(): boolean {
+  return metricsCollectionRunning;
+}
+
+/** Exposed for testing — forcibly reset the mutex (e.g. between test runs). */
+export function _resetMetricsMutex(): void {
+  metricsCollectionRunning = false;
+}
+
+// ---------------------------------------------------------------------------
+// Metrics collection — endpoints + containers processed in parallel
+// ---------------------------------------------------------------------------
+
+/** Collect metrics for a single endpoint's running containers.
+ *  Returns an array of MetricInsert rows ready for batch insert.
+ */
+async function collectEndpointMetrics(
+  endpointId: number,
+  containerConcurrency: number,
+): Promise<MetricInsert[]> {
+  const containers = await cachedFetchSWR(
+    getCacheKey('containers', endpointId),
+    TTL.CONTAINERS,
+    () => getContainers(endpointId),
+  );
+  const running = containers.filter((c) => c.State === 'running');
+
+  const containerLimit = pLimit(containerConcurrency);
+  const results = await Promise.allSettled(
+    running.map((container) =>
+      containerLimit(async () => {
+        const stats = await collectMetrics(endpointId, container.Id);
+        const containerName =
+          container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
+        return { stats, container, containerName };
+      }),
+    ),
+  );
+
+  const metrics: MetricInsert[] = [];
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      log.warn({ err: result.reason }, 'Failed to collect metrics for container');
+      continue;
+    }
+    const { stats, container, containerName } = result.value;
+    metrics.push(
+      {
+        endpoint_id: endpointId,
+        container_id: container.Id,
+        container_name: containerName,
+        metric_type: 'cpu',
+        value: stats.cpu,
+      },
+      {
+        endpoint_id: endpointId,
+        container_id: container.Id,
+        container_name: containerName,
+        metric_type: 'memory',
+        value: stats.memory,
+      },
+      {
+        endpoint_id: endpointId,
+        container_id: container.Id,
+        container_name: containerName,
+        metric_type: 'memory_bytes',
+        value: stats.memoryBytes,
+      },
+      {
+        endpoint_id: endpointId,
+        container_id: container.Id,
+        container_name: containerName,
+        metric_type: 'network_rx_bytes',
+        value: stats.networkRxBytes,
+      },
+      {
+        endpoint_id: endpointId,
+        container_id: container.Id,
+        container_name: containerName,
+        metric_type: 'network_tx_bytes',
+        value: stats.networkTxBytes,
+      },
+    );
+  }
+  return metrics;
+}
+
+export async function runMetricsCollection(): Promise<void> {
+  // Mutex guard — skip this cycle if the previous one is still in progress
+  if (metricsCollectionRunning) {
+    log.warn('Metrics collection cycle still running, skipping this tick');
+    return;
+  }
+  metricsCollectionRunning = true;
+  const startTime = Date.now();
 
   try {
+    log.debug('Running metrics collection cycle');
+    const config = getConfig();
+
     const endpoints = await cachedFetchSWR(
       getCacheKey('endpoints'),
       TTL.ENDPOINTS,
       () => getEndpoints(),
     );
-    const metricsToInsert: MetricInsert[] = [];
 
     // Skip Edge Async endpoints — they lack persistent tunnels for live stats
     const normalized = endpoints.map(normalizeEndpoint);
@@ -47,84 +147,38 @@ async function runMetricsCollection(): Promise<void> {
       );
     }
 
-    for (const ep of liveCapableEndpoints) {
-      try {
-        const containers = await cachedFetchSWR(
-          getCacheKey('containers', ep.Id),
-          TTL.CONTAINERS,
-          () => getContainers(ep.Id),
-        );
-        const running = containers.filter((c) => c.State === 'running');
+    // Process endpoints in parallel, bounded by METRICS_ENDPOINT_CONCURRENCY
+    const endpointLimit = pLimit(config.METRICS_ENDPOINT_CONCURRENCY);
+    const endpointResults = await Promise.allSettled(
+      liveCapableEndpoints.map((ep) =>
+        endpointLimit(() =>
+          collectEndpointMetrics(ep.Id, config.METRICS_CONTAINER_CONCURRENCY),
+        ),
+      ),
+    );
 
-        // Collect stats in parallel batches to avoid ~1.3s per container sequentially
-        for (let i = 0; i < running.length; i += METRICS_CONCURRENCY) {
-          const batch = running.slice(i, i + METRICS_CONCURRENCY);
-          const results = await Promise.allSettled(
-            batch.map(async (container) => {
-              const stats = await collectMetrics(ep.Id, container.Id);
-              const containerName =
-                container.Names?.[0]?.replace(/^\//, '') || container.Id.slice(0, 12);
-              return { stats, container, containerName };
-            }),
-          );
-
-          for (const result of results) {
-            if (result.status === 'rejected') {
-              log.warn({ err: result.reason }, 'Failed to collect metrics for container');
-              continue;
-            }
-            const { stats, container, containerName } = result.value;
-            metricsToInsert.push(
-              {
-                endpoint_id: ep.Id,
-                container_id: container.Id,
-                container_name: containerName,
-                metric_type: 'cpu',
-                value: stats.cpu,
-              },
-              {
-                endpoint_id: ep.Id,
-                container_id: container.Id,
-                container_name: containerName,
-                metric_type: 'memory',
-                value: stats.memory,
-              },
-              {
-                endpoint_id: ep.Id,
-                container_id: container.Id,
-                container_name: containerName,
-                metric_type: 'memory_bytes',
-                value: stats.memoryBytes,
-              },
-              {
-                endpoint_id: ep.Id,
-                container_id: container.Id,
-                container_name: containerName,
-                metric_type: 'network_rx_bytes',
-                value: stats.networkRxBytes,
-              },
-              {
-                endpoint_id: ep.Id,
-                container_id: container.Id,
-                container_name: containerName,
-                metric_type: 'network_tx_bytes',
-                value: stats.networkTxBytes,
-              },
-            );
-          }
-        }
-      } catch (err) {
-        log.warn({ endpointId: ep.Id, err }, 'Failed to fetch containers for endpoint');
+    const metricsToInsert: MetricInsert[] = [];
+    for (const result of endpointResults) {
+      if (result.status === 'rejected') {
+        log.warn({ err: result.reason }, 'Failed to collect metrics for endpoint');
+        continue;
       }
+      metricsToInsert.push(...result.value);
     }
 
     if (metricsToInsert.length > 0) {
       await insertMetrics(metricsToInsert);
     }
 
-    log.debug({ metricsCount: metricsToInsert.length }, 'Metrics collection cycle completed');
+    const duration = Date.now() - startTime;
+    log.debug(
+      { metricsCount: metricsToInsert.length, durationMs: duration, endpoints: liveCapableEndpoints.length },
+      'Metrics collection cycle completed',
+    );
   } catch (err) {
     log.error({ err }, 'Metrics collection cycle failed');
+  } finally {
+    metricsCollectionRunning = false;
   }
 }
 
@@ -171,38 +225,50 @@ async function runMonitoringWithErrorHandling(): Promise<void> {
 export async function runImageStalenessCheck(): Promise<void> {
   log.debug('Running image staleness check');
   try {
+    const config = getConfig();
     const endpoints = await cachedFetchSWR(
       getCacheKey('endpoints'),
       TTL.ENDPOINTS,
       () => getEndpoints(),
     );
-    const allImages: Array<{ name: string; tags: string[]; registry: string; id: string }> = [];
 
-    for (const ep of endpoints) {
-      try {
-        const images = await cachedFetchSWR(
-          getCacheKey('images', ep.Id),
-          TTL.IMAGES,
-          () => getImages(ep.Id),
-        );
-        for (const img of images) {
-          const tags = img.RepoTags?.filter((t: string) => t !== '<none>:<none>') ?? [];
-          const firstTag = tags[0] || '<none>';
-          const parts = firstTag.split('/');
-          let registry = 'docker.io';
-          let name = firstTag;
-          if (parts.length > 1 && parts[0].includes('.')) {
-            registry = parts[0];
-            name = parts.slice(1).join('/');
-          } else if (parts.length === 1) {
-            name = `library/${parts[0]}`;
+    // Process endpoints in parallel, bounded by METRICS_ENDPOINT_CONCURRENCY
+    const endpointLimit = pLimit(config.METRICS_ENDPOINT_CONCURRENCY);
+    const endpointResults = await Promise.allSettled(
+      endpoints.map((ep) =>
+        endpointLimit(async () => {
+          const images = await cachedFetchSWR(
+            getCacheKey('images', ep.Id),
+            TTL.IMAGES,
+            () => getImages(ep.Id),
+          );
+          const parsed: Array<{ name: string; tags: string[]; registry: string; id: string }> = [];
+          for (const img of images) {
+            const tags = img.RepoTags?.filter((t: string) => t !== '<none>:<none>') ?? [];
+            const firstTag = tags[0] || '<none>';
+            const parts = firstTag.split('/');
+            let registry = 'docker.io';
+            let name = firstTag;
+            if (parts.length > 1 && parts[0].includes('.')) {
+              registry = parts[0];
+              name = parts.slice(1).join('/');
+            } else if (parts.length === 1) {
+              name = `library/${parts[0]}`;
+            }
+            const displayName = name.split(':')[0];
+            parsed.push({ name: displayName, tags, registry, id: img.Id });
           }
-          const displayName = name.split(':')[0];
-          allImages.push({ name: displayName, tags, registry, id: img.Id });
-        }
-      } catch {
-        // skip endpoint
+          return parsed;
+        }),
+      ),
+    );
+
+    const allImages: Array<{ name: string; tags: string[]; registry: string; id: string }> = [];
+    for (const result of endpointResults) {
+      if (result.status === 'fulfilled') {
+        allImages.push(...result.value);
       }
+      // Silently skip failed endpoints (matches previous behaviour)
     }
 
     const result = await runStalenessChecks(allImages);
@@ -292,7 +358,11 @@ export function startScheduler(): void {
   if (config.METRICS_COLLECTION_ENABLED) {
     const metricsIntervalMs = config.METRICS_COLLECTION_INTERVAL_SECONDS * 1000;
     log.info(
-      { intervalSeconds: config.METRICS_COLLECTION_INTERVAL_SECONDS },
+      {
+        intervalSeconds: config.METRICS_COLLECTION_INTERVAL_SECONDS,
+        endpointConcurrency: config.METRICS_ENDPOINT_CONCURRENCY,
+        containerConcurrency: config.METRICS_CONTAINER_CONCURRENCY,
+      },
       'Starting metrics collection scheduler',
     );
     const metricsInterval = setInterval(
