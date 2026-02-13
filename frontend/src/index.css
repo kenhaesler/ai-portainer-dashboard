@@ -1866,3 +1866,12 @@ tr.keyboard-selected {
   box-shadow: none !important;
   border-radius: var(--radius-lg) !important;
 }
+
+/* Potato Mode: hard-disable UI animation and transitions across the app shell. */
+[data-potato-mode] *,
+[data-potato-mode] *::before,
+[data-potato-mode] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

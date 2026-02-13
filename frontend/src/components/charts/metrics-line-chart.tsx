@@ -5,6 +5,7 @@ import { formatDate } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { AnomalyExplanation } from '@/hooks/use-metrics';
 import { decimateTimeSeries } from '@/lib/metrics-decimation';
+import { useUiStore } from '@/stores/ui-store';
 
 interface MetricPoint {
   timestamp: string;
@@ -122,9 +123,10 @@ export const MetricsLineChart = memo(function MetricsLineChart({
   height = 300,
   anomalyExplanations = [],
 }: MetricsLineChartProps) {
+  const potatoMode = useUiStore((state) => state.potatoMode);
   const decimated = useMemo(() => decimateTimeSeries(data, MAX_CHART_POINTS), [data]);
   const anomalies = useMemo(() => decimated.filter((d) => d.isAnomaly), [decimated]);
-  const animateLine = data.length <= MAX_CHART_POINTS;
+  const animateLine = !potatoMode && data.length <= MAX_CHART_POINTS;
   const [selectedAnomaly, setSelectedAnomaly] = useState<{
     point: MetricPoint;
     explanation: AnomalyExplanation | undefined;

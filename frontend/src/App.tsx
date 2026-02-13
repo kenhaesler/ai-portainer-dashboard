@@ -7,8 +7,11 @@ import { SocketProvider } from './providers/socket-provider';
 import { SearchProvider } from './providers/search-provider';
 import { Toaster } from 'sonner';
 import { domAnimation, LazyMotion, MotionConfig } from 'framer-motion';
+import { useUiStore } from './stores/ui-store';
 
 export function App() {
+  const potatoMode = useUiStore((state) => state.potatoMode);
+
   return (
     <ThemeProvider>
       <QueryProvider>
@@ -17,7 +20,7 @@ export function App() {
             <SearchProvider>
               {/* Keep motion payload small by loading domAnimation features once */}
               <LazyMotion features={domAnimation}>
-                <MotionConfig reducedMotion="user">
+                <MotionConfig reducedMotion={potatoMode ? 'always' : 'user'}>
                   <RouterProvider router={router} />
                 </MotionConfig>
               </LazyMotion>
