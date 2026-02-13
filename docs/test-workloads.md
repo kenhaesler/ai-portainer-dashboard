@@ -16,6 +16,13 @@ Five Docker Compose stacks are provided to spin up realistic test containers acr
 ./scripts/deploy-workload.sh delete
 ```
 
+## Redis Auth Defaults
+
+- `workloads/data-services.yml` enables Redis authentication by default via `--requirepass`.
+- Set `REDIS_PASSWORD` in your project `.env` before deploying workloads.
+- If `REDIS_PASSWORD` is not set, workload stacks fall back to `changeme-redis` for local/dev convenience only.
+- Never use the fallback value outside local/dev testing.
+
 ## Stacks
 
 | Stack | Services | Purpose |

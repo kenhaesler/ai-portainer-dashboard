@@ -1221,6 +1221,14 @@ describe('Infrastructure Exposure Defaults', () => {
     expect(content).not.toMatch(/ports:\s*\n\s*-\s*["']?9090:9090["']?/m);
   });
 
+  it('should require Redis auth in workloads/data-services.yml', () => {
+    const file = path.resolve(process.cwd(), '..', 'workloads', 'data-services.yml');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toContain('--requirepass ${REDIS_PASSWORD:-changeme-redis}');
+    expect(content).toMatch(/redis-cli -a \\"\$\{REDIS_PASSWORD:-changeme-redis\}\\" ping/);
+  });
+
   it('should document localhost-bound Ollama startup in README', () => {
     const file = path.resolve(process.cwd(), '..', 'README.md');
     const content = readFileSync(file, 'utf8');
