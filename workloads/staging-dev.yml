@@ -29,8 +29,6 @@ services:
   monitoring-prometheus:
     image: prom/prometheus:latest
     container_name: monitoring-prometheus
-    ports:
-      - "9090:9090"
     labels:
       app.tier: "monitoring"
       app.env: "infrastructure"
