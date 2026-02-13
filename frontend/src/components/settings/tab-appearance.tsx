@@ -1,5 +1,4 @@
 import {
-  Cpu,
   Monitor,
   Moon,
   Palette,
@@ -25,7 +24,6 @@ import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCallback } from 'react';
-import { useUiStore } from '@/stores/ui-store';
 
 function ThemeIcon({ theme }: { theme: Theme }) {
   if (theme === 'system') return <Monitor className="h-4 w-4" />;
@@ -37,9 +35,6 @@ function ThemeIcon({ theme }: { theme: Theme }) {
 }
 
 export function AppearanceTab() {
-  const potatoMode = useUiStore((s) => s.potatoMode);
-  const setPotatoMode = useUiStore((s) => s.setPotatoMode);
-
   const {
     theme, setTheme,
     toggleThemes, setToggleThemes,
@@ -180,31 +175,6 @@ export function AppearanceTab() {
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="mt-6 border-t border-border pt-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Cpu className="h-4 w-4" />
-            <h3 className="text-sm font-medium">Performance</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-3">
-            Potato Mode reduces non-essential visual effects for lower-resource devices.
-          </p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={potatoMode}
-            onClick={() => setPotatoMode(!potatoMode)}
-            className={cn(
-              'mb-6 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors',
-              potatoMode
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border hover:border-primary/40 hover:bg-muted/50'
-            )}
-          >
-            <span className="font-medium">Potato Mode</span>
-            <span className="text-xs text-muted-foreground">{potatoMode ? 'On' : 'Off'}</span>
-          </button>
         </div>
 
         <div className="mt-6 border-t border-border pt-6">

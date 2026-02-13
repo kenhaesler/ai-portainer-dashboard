@@ -28,8 +28,16 @@ vi.mock('@/stores/theme-store', () => ({
 }));
 
 vi.mock('@/stores/ui-store', () => ({
-  useUiStore: (selector: (s: { setCommandPaletteOpen: (open: boolean) => void }) => void) =>
-    selector({ setCommandPaletteOpen: vi.fn() }),
+  useUiStore: (selector: (s: {
+    setCommandPaletteOpen: (open: boolean) => void;
+    potatoMode: boolean;
+    setPotatoMode: (enabled: boolean) => void;
+  }) => unknown) =>
+    selector({
+      setCommandPaletteOpen: vi.fn(),
+      potatoMode: false,
+      setPotatoMode: vi.fn(),
+    }),
 }));
 
 vi.mock('@/components/shared/connection-orb', () => ({
@@ -78,5 +86,15 @@ describe('Header', () => {
 
     expect(await screen.findByText(/(DEV|BUILD) build-202602/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Build (DEV|BUILD) build-202602/i)).toBeInTheDocument();
+  });
+
+  it('renders potato mode toggle in header actions', async () => {
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('switch', { name: /potato mode off/i })).toBeInTheDocument();
   });
 });

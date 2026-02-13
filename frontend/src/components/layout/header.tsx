@@ -31,6 +31,8 @@ export function Header() {
   const { username, logout } = useAuth();
   const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const potatoMode = useUiStore((s) => s.potatoMode);
+  const setPotatoMode = useUiStore((s) => s.setPotatoMode);
   const hasAnimatedBg = dashboardBackground !== 'none';
   const [appCommit, setAppCommit] = useState(
     import.meta.env.VITE_GIT_COMMIT
@@ -151,6 +153,24 @@ export function Header() {
           <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
             /
           </kbd>
+        </button>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={potatoMode}
+          aria-label={`Potato mode ${potatoMode ? 'on' : 'off'}`}
+          title="Toggle Potato Mode"
+          onClick={() => setPotatoMode(!potatoMode)}
+          className={cn(
+            'inline-flex h-8 items-center gap-1 rounded-full border px-2 text-xs font-medium',
+            potatoMode
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-border bg-muted text-muted-foreground'
+          )}
+        >
+          <span aria-hidden="true">🥔</span>
+          <span className="hidden sm:inline">Potato</span>
         </button>
 
         {/* Theme toggle — pill switch between two configured themes */}
