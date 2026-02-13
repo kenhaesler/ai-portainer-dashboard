@@ -1225,7 +1225,6 @@ describe('Infrastructure Exposure Defaults', () => {
     expect(content).not.toMatch(/ports:\s*\n\s*-\s*["']?9090:9090["']?/m);
   });
 
-<<<<<<< HEAD
   it('should enforce Redis resource limits in docker/docker-compose.yml', () => {
     const file = path.resolve(process.cwd(), '..', 'docker', 'docker-compose.yml');
     const content = readFileSync(file, 'utf8');
