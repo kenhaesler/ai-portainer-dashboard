@@ -115,7 +115,7 @@ describe('session-store uses prepareStmt', () => {
   });
 });
 
-describe('migration 020_actions_pending_unique', () => {
+describe('migration 025_actions_pending_unique', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -148,7 +148,7 @@ describe('migration 020_actions_pending_unique', () => {
       const markMigration = seedDb.prepare('INSERT INTO _migrations (name) VALUES (?)');
       const migrationDir = join(process.cwd(), 'src/db/migrations');
       const previousMigrations = readdirSync(migrationDir)
-        .filter((file) => file.endsWith('.sql') && file !== '020_actions_pending_unique.sql')
+        .filter((file) => file.endsWith('.sql') && file !== '025_actions_pending_unique.sql')
         .sort();
       const markAll = seedDb.transaction((names: string[]) => {
         for (const name of names) {
@@ -237,6 +237,62 @@ describe('migration 020_actions_pending_unique', () => {
       );
       expect(insertPending).toThrow();
 
+      closeDb();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('migration legacy filename aliases', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('marks renamed migrations as applied when legacy names already exist', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'aidash-sqlite-'));
+    const dbPath = join(tmpDir, 'dashboard.db');
+
+    try {
+      const seedDb = new Database(dbPath);
+      seedDb.exec(`
+        CREATE TABLE IF NOT EXISTS _migrations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+
+      const markMigration = seedDb.prepare('INSERT INTO _migrations (name) VALUES (?)');
+      const migrationDir = join(process.cwd(), 'src/db/migrations');
+      const allMigrations = readdirSync(migrationDir)
+        .filter((file) => file.endsWith('.sql'))
+        .sort();
+
+      const targetRenamedMigration = '010_notification_log.sql';
+      const allExceptTarget = allMigrations.filter((name) => name !== targetRenamedMigration);
+
+      const markAll = seedDb.transaction((names: string[]) => {
+        for (const name of names) {
+          markMigration.run(name);
+        }
+      });
+      markAll(allExceptTarget);
+      markMigration.run('009_notification_log.sql');
+      seedDb.close();
+
+      vi.doMock('../config/index.js', () => ({
+        getConfig: vi.fn().mockReturnValue({ SQLITE_PATH: dbPath }),
+      }));
+
+      const { getDb, closeDb } = await import('./sqlite.js');
+      const db = getDb();
+
+      const hasRenamedMigration = db
+        .prepare('SELECT COUNT(*) as count FROM _migrations WHERE name = ?')
+        .get(targetRenamedMigration) as { count: number };
+
+      expect(hasRenamedMigration.count).toBe(1);
       closeDb();
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
