@@ -89,6 +89,15 @@ export function Header() {
     };
   }, []);
 
+  const buildChannel = import.meta.env.DEV ? 'DEV' : 'BUILD';
+  const normalizedCommit = appCommit.trim();
+  const commitToken = normalizedCommit
+    && normalizedCommit.toLowerCase() !== 'dev'
+    && normalizedCommit.toLowerCase() !== 'build'
+    ? normalizedCommit.slice(0, 12).toLowerCase()
+    : '';
+  const buildBadge = commitToken ? `${buildChannel} ${commitToken}` : buildChannel;
+
   return (
     <header
       data-testid="header"
@@ -119,10 +128,10 @@ export function Header() {
         {appCommit && (
           <span
             className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-            aria-label={`Build ${appCommit}`}
-            title={`Build ${appCommit}`}
+            aria-label={`Build ${buildBadge}`}
+            title={`Build ${buildBadge}`}
           >
-            {appCommit}
+            {buildBadge}
           </span>
         )}
       </nav>

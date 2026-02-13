@@ -206,6 +206,7 @@ function CoverageRow({
 
   const canDisable = record.status === 'deployed';
   const canEnable = record.status === 'failed';
+  const canToggle = canDisable || canEnable;
   const showRemoveToggle = record.status === 'deployed' || record.status === 'failed';
   const canDeploy = !showRemoveToggle && record.status !== 'incompatible';
 
@@ -244,32 +245,26 @@ function CoverageRow({
           {formatDate(record.last_verified_at)}
         </td>
         <td className="px-4 py-3">
-          <button
-            onClick={() => verifyMutation.mutate(record.endpoint_id)}
-            disabled={mutationPending || record.status === 'incompatible'}
-            className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-            data-testid="verify-btn"
-            title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
-          >
-            <CheckCircle2 className="h-3 w-3" />
-            Verify
-          </button>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="flex flex-nowrap items-center gap-2">
             <button
-              onClick={() => openActionDialog('disable')}
-              disabled={mutationPending || !canDisable}
+              onClick={() => verifyMutation.mutate(record.endpoint_id)}
+              disabled={mutationPending || record.status === 'incompatible'}
               className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-              data-testid="disable-btn"
+              data-testid="verify-btn"
+              title={record.status === 'incompatible' ? 'Cannot verify incompatible endpoints' : 'Verify trace ingestion'}
             >
-              Disable
+              <span className="inline-flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                Verify
+              </span>
             </button>
             <button
-              onClick={() => openActionDialog('enable')}
-              disabled={mutationPending || !canEnable}
+              onClick={() => openActionDialog(canDisable ? 'disable' : 'enable')}
+              disabled={mutationPending || !canToggle}
               className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-              data-testid="enable-btn"
+              data-testid="toggle-btn"
             >
-              Enable
+              {canDisable ? 'Disable' : 'Enable'}
             </button>
             {showRemoveToggle ? (
               <button
