@@ -249,6 +249,50 @@ describe('normalizeMarkdown', () => {
   // We test the normalizeMarkdown function indirectly through MarkdownContent rendering.
   // The function is not exported, but its effects are visible in the rendered output.
 
+  it('strips <think> blocks from thinking models', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'assistant', content: '<think>I need to analyze the containers...</think>All containers are healthy.', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+
+    renderPage();
+    expect(screen.getByText('All containers are healthy.')).toBeTruthy();
+    expect(screen.queryByText(/I need to analyze/)).toBeNull();
+  });
+
+  it('strips <thinking> blocks from thinking models', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'assistant', content: '<thinking>Reasoning about metrics</thinking>CPU usage is 45%.', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+
+    renderPage();
+    expect(screen.getByText('CPU usage is 45%.')).toBeTruthy();
+    expect(screen.queryByText(/Reasoning about metrics/)).toBeNull();
+  });
+
   it('renders headers without space correctly', () => {
     vi.mocked(useLlmChat).mockReturnValue({
       messages: [

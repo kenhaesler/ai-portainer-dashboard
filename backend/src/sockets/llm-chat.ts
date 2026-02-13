@@ -10,7 +10,7 @@ import { getDb } from '../db/sqlite.js';
 import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
-import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
+import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks } from '../services/prompt-guard.js';
 import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
 
 const log = createChildLogger('socket:llm');
@@ -21,6 +21,98 @@ const log = createChildLogger('socket:llm');
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
+
+// ─── Thinking block filter for streaming ─────────────────────────────
+
+const THINK_TAG_MAX_LEN = 12; // "</thinking>" = 12 chars
+
+/**
+ * Streaming filter that suppresses `<think>...</think>` and
+ * `<thinking>...</thinking>` blocks emitted by reasoning models.
+ *
+ * Feed chunks via `process()` — it returns only the non-thinking text.
+ * Call `flush()` at end-of-stream to get any buffered residual.
+ */
+export class ThinkingBlockFilter {
+  private insideThink = false;
+  private buffer = '';
+
+  /** Process a streaming chunk. Returns text to emit (may be empty). */
+  process(chunk: string): string {
+    this.buffer += chunk;
+    let output = '';
+
+    for (;;) {
+      if (this.insideThink) {
+        const closeMatch = this.buffer.match(/<\/think(?:ing)?>/i);
+        if (closeMatch && closeMatch.index !== undefined) {
+          // Discard everything up to and including the closing tag
+          this.buffer = this.buffer.slice(closeMatch.index + closeMatch[0].length);
+          this.insideThink = false;
+          continue;
+        }
+        // No close tag yet — keep only a tail that could contain a partial tag
+        if (this.buffer.length > THINK_TAG_MAX_LEN) {
+          this.buffer = this.buffer.slice(-THINK_TAG_MAX_LEN);
+        }
+        break;
+      }
+
+      // Outside thinking — look for opening tag
+      const openMatch = this.buffer.match(/<think(?:ing)?>/i);
+      if (openMatch && openMatch.index !== undefined) {
+        output += this.buffer.slice(0, openMatch.index);
+        this.buffer = this.buffer.slice(openMatch.index + openMatch[0].length);
+        this.insideThink = true;
+        continue;
+      }
+
+      // Check for a partial opening tag at the end of the buffer
+      const partialIdx = this.findPartialOpenTag();
+      if (partialIdx >= 0) {
+        output += this.buffer.slice(0, partialIdx);
+        this.buffer = this.buffer.slice(partialIdx);
+        break;
+      }
+
+      // No tags — emit everything
+      output += this.buffer;
+      this.buffer = '';
+      break;
+    }
+
+    return output;
+  }
+
+  /** Flush remaining buffer at end of stream. */
+  flush(): string {
+    if (this.insideThink) {
+      // Unclosed thinking block — discard remaining
+      this.buffer = '';
+      this.insideThink = false;
+      return '';
+    }
+    const remaining = this.buffer;
+    this.buffer = '';
+    return remaining;
+  }
+
+  private findPartialOpenTag(): number {
+    // Check if the buffer ends with a prefix of "<think>" or "<thinking>"
+    const candidates = ['<think>', '<thinking>'];
+    for (let len = Math.min(this.buffer.length, THINK_TAG_MAX_LEN - 1); len >= 1; len--) {
+      const suffix = this.buffer.slice(-len).toLowerCase();
+      for (const tag of candidates) {
+        if (tag.startsWith(suffix) && suffix !== tag) {
+          return this.buffer.length - len;
+        }
+      }
+    }
+    return -1;
+  }
+}
+
+// ─── Chat types ──────────────────────────────────────────────────────
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -537,6 +629,13 @@ export function setupLlmNamespace(ns: Namespace) {
         let plainRetryAttempted = false;
         let lastToolResults: ToolCallResult[] = [];
 
+        // Filter that suppresses <think>...</think> blocks during streaming
+        const thinkFilter = new ThinkingBlockFilter();
+        const emitChunk = (text: string) => {
+          const filtered = thinkFilter.process(text);
+          if (filtered) socket.emit('chat:chunk', filtered);
+        };
+
         let finalResponse = '';
         let toolIteration = 0;
 
@@ -663,9 +762,7 @@ export function setupLlmNamespace(ns: Namespace) {
               llmConfig,
               selectedModel,
               messages,
-              (text) => {
-                socket.emit('chat:chunk', text);
-              },
+              emitChunk,
               abortController.signal,
             );
           } catch (streamErr) {
@@ -676,9 +773,7 @@ export function setupLlmNamespace(ns: Namespace) {
                   llmConfig,
                   selectedModel,
                   messages,
-                  (text) => {
-                    socket.emit('chat:chunk', text);
-                  },
+                  emitChunk,
                   abortController.signal,
                 );
                 // Continue regular flow: parse tool calls or finalize natural response.
@@ -777,7 +872,7 @@ export function setupLlmNamespace(ns: Namespace) {
               llmConfig,
               selectedModel,
               summaryMessages,
-              (text) => { socket.emit('chat:chunk', text); },
+              emitChunk,
               abortController.signal,
             );
           } catch (summaryErr) {
@@ -801,6 +896,14 @@ export function setupLlmNamespace(ns: Namespace) {
             finalResponse = 'I could not generate a complete response for that request. Please try again.';
           }
         }
+
+        // Flush any buffered content from the thinking filter
+        const flushed = thinkFilter.flush();
+        if (flushed) socket.emit('chat:chunk', flushed);
+
+        // Strip thinking blocks from the full response (covers non-streaming
+        // paths and ensures the final content sent via chat:end is clean)
+        finalResponse = stripThinkingBlocks(finalResponse);
 
         // Sanitize final output before sending
         finalResponse = sanitizeLlmOutput(finalResponse);

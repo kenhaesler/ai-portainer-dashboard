@@ -453,7 +453,11 @@ function ToolCallIndicator({ events }: { events: ToolCallEvent[] }) {
  * Local models often produce malformed markdown that breaks rendering.
  */
 function normalizeMarkdown(raw: string): string {
-  let text = raw;
+  // Strip thinking blocks from reasoning models (frontend fallback — backend
+  // strips these during streaming, but this catches any that slip through)
+  let text = raw
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
+    .replace(/<think(?:ing)?>[\s\S]*$/gi, '');
 
   // Fix code blocks: if language tag and code are on the same line separated by space,
   // split them. The space delimiter prevents greedy backtracking from eating into the
