@@ -102,6 +102,31 @@ export function useUpdateSetting() {
   });
 }
 
+export function useDeleteSetting() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { key: string; showToast?: boolean }>({
+    mutationFn: async ({ key }) => {
+      await api.delete(`/api/settings/${key}`);
+    },
+    onSuccess: (_data, { key, showToast }) => {
+      if (showToast === false) return;
+      toast.success('Setting reset', {
+        description: `"${key}" removed.`,
+      });
+    },
+    onError: (error, { key, showToast }) => {
+      if (showToast === false) return;
+      toast.error(`Failed to reset "${key}"`, {
+        description: error.message,
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+}
+
 export function useAuditLog(options?: AuditLogOptions) {
   return useQuery<{ entries: AuditLogEntry[]; total: number }>({
     queryKey: ['settings', 'audit-log', options],

@@ -192,4 +192,9 @@ TCP Flags Summary:
       sampleSize: 1440,
     }, null, 2),
   },
+
+  monitoring_analysis: {
+    label: 'Periodic monitoring analysis request',
+    sampleInput: 'Analyze the current infrastructure state. Identify the top 3 most important issues or recommendations. Be specific and actionable.',
+  },
 };

@@ -58,7 +58,7 @@ import {
   type PromptExportData,
   type ImportPreviewResponse,
 } from '@/hooks/use-prompt-profiles';
-import { useUpdateSetting } from '@/hooks/use-settings';
+import { useUpdateSetting, useDeleteSetting } from '@/hooks/use-settings';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn, formatBytes } from '@/lib/utils';
 import { api } from '@/lib/api';
@@ -767,6 +767,8 @@ interface PromptFeatureInfo {
   label: string;
   description: string;
   defaultPrompt: string;
+  /** Profile-aware effective prompt (profile prompt or default) */
+  effectivePrompt?: string;
 }
 
 function ProfileSelector({
@@ -1377,6 +1379,8 @@ export function AiPromptsTab({
   const queryClient = useQueryClient();
   const [savedValues, setSavedValues] = useState<Record<string, string>>({});
   const updateSetting = useUpdateSetting();
+  const deleteSetting = useDeleteSetting();
+  const [keysToDelete, setKeysToDelete] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importPreviewData, setImportPreviewData] = useState<{ data: PromptExportData; preview: ImportPreviewResponse } | null>(null);
@@ -1413,7 +1417,8 @@ export function AiPromptsTab({
       const promptKey = `prompts.${f.key}.system_prompt`;
       const modelKey = `prompts.${f.key}.model`;
       const tempKey = `prompts.${f.key}.temperature`;
-      drafts[promptKey] = values[promptKey] || f.defaultPrompt;
+      // Use profile-aware effective prompt as fallback (includes profile's custom prompt)
+      drafts[promptKey] = values[promptKey] || f.effectivePrompt || f.defaultPrompt;
       drafts[modelKey] = values[modelKey] || '';
       drafts[tempKey] = values[tempKey] || '';
     }
@@ -1452,9 +1457,11 @@ export function AiPromptsTab({
     const promptKey = `prompts.${featureKey}.system_prompt`;
     const modelKey = `prompts.${featureKey}.model`;
     const tempKey = `prompts.${featureKey}.temperature`;
+    // Mark keys for deletion so profile fallback works correctly
+    setKeysToDelete((prev) => new Set([...prev, promptKey, modelKey, tempKey]));
     setDraftValues((prev) => ({
       ...prev,
-      [promptKey]: feature.defaultPrompt,
+      [promptKey]: feature.effectivePrompt || feature.defaultPrompt,
       [modelKey]: '',
       [tempKey]: '',
     }));
@@ -1478,8 +1485,9 @@ export function AiPromptsTab({
     const promptKey = `prompts.${featureKey}.system_prompt`;
     const modelKey = `prompts.${featureKey}.model`;
     const tempKey = `prompts.${featureKey}.temperature`;
-    const storedPrompt = values[promptKey] || feature.defaultPrompt;
-    return storedPrompt !== feature.defaultPrompt || (values[modelKey] || '') !== '' || (values[tempKey] || '') !== '';
+    const effectiveDefault = feature.effectivePrompt || feature.defaultPrompt;
+    const storedPrompt = values[promptKey] || effectiveDefault;
+    return storedPrompt !== effectiveDefault || (values[modelKey] || '') !== '' || (values[tempKey] || '') !== '';
   };
 
   const handleSave = async () => {
@@ -1488,15 +1496,22 @@ export function AiPromptsTab({
     const changedKeys = Object.keys(draftValues).filter((k) => draftValues[k] !== savedValues[k]);
     try {
       for (const key of changedKeys) {
-        await updateSetting.mutateAsync({
-          key,
-          value: draftValues[key],
-          category: 'prompts',
-          showToast: false,
-        });
-        onChange(key, draftValues[key]);
+        if (keysToDelete.has(key)) {
+          // Delete the setting so profile fallback can take effect
+          await deleteSetting.mutateAsync({ key, showToast: false });
+          onChange(key, '');
+        } else {
+          await updateSetting.mutateAsync({
+            key,
+            value: draftValues[key],
+            category: 'prompts',
+            showToast: false,
+          });
+          onChange(key, draftValues[key]);
+        }
       }
       setSavedValues({ ...draftValues });
+      setKeysToDelete(new Set());
       setSaveSuccess(true);
       toast.success(`Saved ${changedKeys.length} prompt setting${changedKeys.length !== 1 ? 's' : ''}`);
     } catch (err) {
@@ -1508,6 +1523,7 @@ export function AiPromptsTab({
 
   const handleDiscard = () => {
     setDraftValues({ ...savedValues });
+    setKeysToDelete(new Set());
     setSaveSuccess(false);
   };
 
@@ -1671,7 +1687,17 @@ export function AiPromptsTab({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-sm font-medium">System Prompt</label>
-                    <TokenBadge count={tokenCount} />
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => resetToDefault(feature.key)}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Reset to Default
+                      </button>
+                      <TokenBadge count={tokenCount} />
+                    </div>
                   </div>
                   <textarea
                     value={promptValue}
@@ -1681,22 +1707,12 @@ export function AiPromptsTab({
                   />
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <PromptTestPanel
-                    feature={feature.key}
-                    systemPrompt={promptValue}
-                    model={modelValue}
-                    temperature={tempValue}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => resetToDefault(feature.key)}
-                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Reset to Default
-                  </button>
-                </div>
+                <PromptTestPanel
+                  feature={feature.key}
+                  systemPrompt={promptValue}
+                  model={modelValue}
+                  temperature={tempValue}
+                />
               </div>
             )}
           </div>

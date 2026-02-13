@@ -28,16 +28,20 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../services/prompt-store.js', () => ({
-  PROMPT_FEATURES: [
-    { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
-    { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
-  ],
-  DEFAULT_PROMPTS: {
+vi.mock('../services/prompt-store.js', () => {
+  const defaults: Record<string, string> = {
     chat_assistant: 'You are a helpful assistant.',
     anomaly_explainer: 'You are an anomaly explainer.',
-  },
-}));
+  };
+  return {
+    PROMPT_FEATURES: [
+      { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
+      { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
+    ],
+    DEFAULT_PROMPTS: defaults,
+    getEffectivePrompt: (feature: string) => defaults[feature] ?? '',
+  };
+});
 
 describe('settings preference routes', () => {
   let app: FastifyInstance;
@@ -411,12 +415,14 @@ describe('prompt-features endpoint', () => {
       label: 'Chat Assistant',
       description: 'Main AI chat',
       defaultPrompt: 'You are a helpful assistant.',
+      effectivePrompt: 'You are a helpful assistant.',
     });
     expect(body.features[1]).toEqual({
       key: 'anomaly_explainer',
       label: 'Anomaly Explainer',
       description: 'Explains anomalies',
       defaultPrompt: 'You are an anomaly explainer.',
+      effectivePrompt: 'You are an anomaly explainer.',
     });
   });
 

@@ -9,7 +9,7 @@ import {
   PreferencesUpdateBodySchema,
 } from '../models/api-schemas.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../services/user-store.js';
-import { PROMPT_FEATURES, DEFAULT_PROMPTS } from '../services/prompt-store.js';
+import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../services/prompt-store.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
@@ -273,6 +273,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       features: PROMPT_FEATURES.map((f) => ({
         ...f,
         defaultPrompt: DEFAULT_PROMPTS[f.key],
+        effectivePrompt: getEffectivePrompt(f.key),
       })),
     };
   });

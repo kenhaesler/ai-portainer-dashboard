@@ -12,6 +12,7 @@ import { detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
+import { getEffectivePrompt } from './prompt-store.js';
 import { suggestAction } from './remediation-service.js';
 import { triggerInvestigation } from './investigation-service.js';
 import { getCapacityForecasts } from './capacity-forecaster.js';
@@ -446,7 +447,9 @@ export async function runMonitoringCycle(): Promise<void> {
     if (ollamaAvailable) {
       try {
         const recentInsights = getRecentInsights(60);
-        const context = buildInfrastructureContext(endpoints, normalizedContainers, recentInsights);
+        const infraContext = buildInfrastructureContext(endpoints, normalizedContainers, recentInsights);
+        const userPrompt = getEffectivePrompt('monitoring_analysis');
+        const systemPrompt = `${infraContext}\n\n${userPrompt}`;
 
         const analysisPrompt =
           'Analyze the current infrastructure state. Identify the top 3 most important ' +
@@ -455,7 +458,7 @@ export async function runMonitoringCycle(): Promise<void> {
         let aiResponse = '';
         await chatStream(
           [{ role: 'user', content: analysisPrompt }],
-          context,
+          systemPrompt,
           (chunk) => { aiResponse += chunk; },
         );
 

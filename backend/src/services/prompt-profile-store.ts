@@ -1,7 +1,7 @@
 import { getDb } from '../db/sqlite.js';
-import { getSetting, setSetting } from './settings-store.js';
+import { getSetting, setSetting, deleteSetting } from './settings-store.js';
 import { createChildLogger } from '../utils/logger.js';
-import type { PromptFeature } from './prompt-store.js';
+import { PROMPT_FEATURES, type PromptFeature } from './prompt-store.js';
 
 const log = createChildLogger('prompt-profile-store');
 
@@ -171,8 +171,15 @@ export function switchProfile(id: string): boolean {
   const profile = getProfileById(id);
   if (!profile) return false;
 
+  // Clear per-feature prompt overrides so the new profile's prompts take effect
+  for (const feature of PROMPT_FEATURES) {
+    deleteSetting(`prompts.${feature.key}.system_prompt`);
+    deleteSetting(`prompts.${feature.key}.model`);
+    deleteSetting(`prompts.${feature.key}.temperature`);
+  }
+
   setSetting(ACTIVE_PROFILE_KEY, id, 'prompts');
-  log.info({ id, name: profile.name }, 'Switched active profile');
+  log.info({ id, name: profile.name }, 'Switched active profile (per-feature overrides cleared)');
   return true;
 }
 
