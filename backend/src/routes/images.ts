@@ -96,7 +96,7 @@ export async function imagesRoutes(fastify: FastifyInstance) {
       summary: 'Trigger image staleness check for all images',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
     try {
       const endpoints = await cachedFetch(

@@ -23,6 +23,7 @@ function buildApp() {
   const app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
   app.decorate('authenticate', async () => undefined);
+  app.decorate('requireRole', () => async () => undefined);
   app.register(imagesRoutes);
   return app;
 }
