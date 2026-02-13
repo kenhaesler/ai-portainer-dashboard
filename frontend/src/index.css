@@ -1866,3 +1866,33 @@ tr.keyboard-selected {
   box-shadow: none !important;
   border-radius: var(--radius-lg) !important;
 }
+
+/* Potato Mode: hard-disable UI animation and transitions across the app shell. */
+[data-potato-mode] *,
+[data-potato-mode] *::before,
+[data-potato-mode] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+[data-potato-mode] *:hover,
+[data-potato-mode] *:focus,
+[data-potato-mode] *:active {
+  transform: none !important;
+}
+
+html[data-potato-mode],
+html[data-potato-mode] body {
+  scroll-behavior: auto !important;
+}
+
+/* Safety net: never hide login content when potato mode disables animations. */
+[data-potato-mode] .login-stage-in,
+[data-potato-mode] .login-logo-shell,
+[data-potato-mode] .login-typewriter,
+[data-potato-mode] .login-card {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}

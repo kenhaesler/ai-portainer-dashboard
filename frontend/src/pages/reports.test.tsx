@@ -1,39 +1,67 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReportsPage from './reports';
 
+const mockExportToCsv = vi.fn();
+
+const reportState = vi.hoisted(() => ({
+  data: {
+    timeRange: '24h',
+    containers: [
+      {
+        container_id: 'c1',
+        container_name: 'test-web',
+        endpoint_id: 1,
+        cpu: { avg: 45.5, min: 10, max: 92, p50: 44, p95: 88, p99: 91, samples: 100 },
+        memory: { avg: 60.2, min: 30, max: 88, p50: 58, p95: 82, p99: 87, samples: 100 },
+        memory_bytes: null,
+      },
+    ],
+    fleetSummary: {
+      totalContainers: 1,
+      avgCpu: 45.5,
+      maxCpu: 92,
+      avgMemory: 60.2,
+      maxMemory: 88,
+    },
+    recommendations: [
+      {
+        container_id: 'c1',
+        container_name: 'test-web',
+        issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
+      },
+    ],
+  },
+}));
+
+const containerState = vi.hoisted(() => ({
+  data: [
+    {
+      id: 'container-1',
+      name: 'standalone-api',
+      image: 'nginx:alpine',
+      state: 'running',
+      status: 'Up 2h',
+      endpointId: 1,
+      endpointName: 'local',
+      ports: [],
+      created: 1700000000,
+      labels: {},
+      networks: [],
+    },
+  ],
+}));
+
+vi.mock('@/lib/csv-export', () => ({
+  exportToCsv: (...args: unknown[]) => mockExportToCsv(...args),
+}));
+
 // Mock hooks
 vi.mock('@/hooks/use-reports', () => ({
   useUtilizationReport: vi.fn(() => ({
-    data: {
-      timeRange: '24h',
-      containers: [
-        {
-          container_id: 'c1',
-          container_name: 'test-web',
-          endpoint_id: 1,
-          cpu: { avg: 45.5, min: 10, max: 92, p50: 44, p95: 88, p99: 91, samples: 100 },
-          memory: { avg: 60.2, min: 30, max: 88, p50: 58, p95: 82, p99: 87, samples: 100 },
-          memory_bytes: null,
-        },
-      ],
-      fleetSummary: {
-        totalContainers: 1,
-        avgCpu: 45.5,
-        maxCpu: 92,
-        avgMemory: 60.2,
-        maxMemory: 88,
-      },
-      recommendations: [
-        {
-          container_id: 'c1',
-          container_name: 'test-web',
-          issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
-        },
-      ],
-    },
+    data: reportState.data,
     isLoading: false,
   })),
   useTrendsReport: vi.fn(() => ({
@@ -53,6 +81,15 @@ vi.mock('@/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn(() => ({
     data: [{ id: 1, name: 'local' }],
     isLoading: false,
+  })),
+}));
+
+vi.mock('@/hooks/use-containers', () => ({
+  useContainers: vi.fn(() => ({
+    data: containerState.data,
+    isLoading: false,
+    isError: false,
+    error: null,
   })),
 }));
 
@@ -81,6 +118,36 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe('ReportsPage', () => {
+  beforeEach(() => {
+    mockExportToCsv.mockReset();
+    reportState.data.containers = [
+      {
+        container_id: 'c1',
+        container_name: 'test-web',
+        endpoint_id: 1,
+        cpu: { avg: 45.5, min: 10, max: 92, p50: 44, p95: 88, p99: 91, samples: 100 },
+        memory: { avg: 60.2, min: 30, max: 88, p50: 58, p95: 82, p99: 87, samples: 100 },
+        memory_bytes: null,
+      },
+    ];
+    reportState.data.fleetSummary.totalContainers = 1;
+    containerState.data = [
+      {
+        id: 'container-1',
+        name: 'standalone-api',
+        image: 'nginx:alpine',
+        state: 'running',
+        status: 'Up 2h',
+        endpointId: 1,
+        endpointName: 'local',
+        ports: [],
+        created: 1700000000,
+        labels: {},
+        networks: [],
+      },
+    ];
+  });
+
   it('renders the page header', () => {
     renderWithProviders(<ReportsPage />);
     expect(screen.getByText('Resource Reports')).toBeTruthy();
@@ -110,28 +177,29 @@ describe('ReportsPage', () => {
     expect(screen.getByText('Export CSV')).toBeTruthy();
   });
 
-  it('triggers CSV download when export button is clicked', () => {
-    const mockCreateObjectURL = vi.fn().mockReturnValue('blob:resource-report');
-    const mockRevokeObjectURL = vi.fn();
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    const appendSpy = vi.spyOn(document.body, 'appendChild');
-    const removeSpy = vi.spyOn(document.body, 'removeChild');
+  it('exports utilization rows when report metrics are available', () => {
+    renderWithProviders(<ReportsPage />);
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
 
-    global.URL.createObjectURL = mockCreateObjectURL;
-    global.URL.revokeObjectURL = mockRevokeObjectURL;
+    expect(mockExportToCsv).toHaveBeenCalledTimes(1);
+    const [rows, filename] = mockExportToCsv.mock.calls[0];
+    expect((rows as Array<Record<string, unknown>>)[0]?.container_name).toBe('test-web');
+    expect(filename).toMatch(/^resource-report-24h-all-endpoints-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('exports inventory fallback rows when utilization metrics are empty', () => {
+    reportState.data.containers = [];
+    reportState.data.fleetSummary.totalContainers = 0;
 
     renderWithProviders(<ReportsPage />);
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
 
-    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
-    expect(appendSpy).toHaveBeenCalled();
-    expect(clickSpy).toHaveBeenCalledTimes(1);
-    expect(removeSpy).toHaveBeenCalled();
-    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:resource-report');
-
-    clickSpy.mockRestore();
-    appendSpy.mockRestore();
-    removeSpy.mockRestore();
+    expect(mockExportToCsv).toHaveBeenCalledTimes(1);
+    const [rows] = mockExportToCsv.mock.calls[0];
+    const first = (rows as Array<Record<string, unknown>>)[0];
+    expect(first.container_name).toBe('standalone-api');
+    expect(first.endpoint_name).toBe('local');
+    expect(first.image).toBe('nginx:alpine');
   });
 
   it('renders time range selector buttons', () => {

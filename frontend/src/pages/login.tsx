@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
 import { LoginLogo } from "@/components/icons/login-logo";
+import { useUiStore } from "@/stores/ui-store";
 
 const PARTICLES = [
   { left: "8%", delay: "0s", duration: "12s", size: "7px" },
@@ -35,7 +36,9 @@ export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { data: oidcStatus } = useOIDCStatus();
-  const reducedMotion = usePrefersReducedMotion();
+  const potatoMode = useUiStore((state) => state.potatoMode);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const reducedMotion = prefersReducedMotion || potatoMode;
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("changeme123");
   const [error, setError] = useState<string | null>(null);

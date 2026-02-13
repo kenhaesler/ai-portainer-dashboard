@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSockets } from '@/providers/socket-provider';
 import { cn } from '@/lib/utils';
+import { useUiStore } from '@/stores/ui-store';
 
 type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
 
 export function ConnectionOrb() {
   const { connected, monitoringSocket } = useSockets();
+  const potatoMode = useUiStore((s) => s.potatoMode);
   const [state, setState] = useState<ConnectionState>('disconnected');
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [tooltipVisible, setTooltipVisible] = useState(false);
@@ -65,22 +67,22 @@ export function ConnectionOrb() {
   // Tick relative time every second
   const [, setTick] = useState(0);
   useEffect(() => {
-    const interval = window.setInterval(() => setTick((t) => t + 1), 1000);
+    const interval = window.setInterval(() => setTick((t) => t + 1), potatoMode ? 5000 : 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [potatoMode]);
 
   const stateConfig = {
     connected: {
       color: 'bg-emerald-500',
       ring: 'ring-emerald-500/30',
       label: 'Connected',
-      pulse: true,
+      pulse: !potatoMode,
     },
     reconnecting: {
       color: 'bg-amber-500',
       ring: 'ring-amber-500/30',
       label: 'Reconnecting',
-      pulse: true,
+      pulse: !potatoMode,
     },
     disconnected: {
       color: 'bg-red-500',

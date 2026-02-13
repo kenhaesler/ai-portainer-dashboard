@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { Socket } from 'socket.io-client';
 import { getNamespaceSocket, disconnectAll } from '@/lib/socket';
 import { useAuth } from './auth-provider';
+import { useUiStore } from '@/stores/ui-store';
 
 interface SocketContextType {
   llmSocket: Socket | null;
@@ -19,6 +20,7 @@ const SocketContext = createContext<SocketContextType>({
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { token, isAuthenticated } = useAuth();
+  const potatoMode = useUiStore((state) => state.potatoMode);
   const [sockets, setSockets] = useState<SocketContextType>({
     llmSocket: null,
     monitoringSocket: null,
@@ -38,30 +40,36 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const llm = getNamespaceSocket('llm', token);
     const monitoring = getNamespaceSocket('monitoring', token);
-    const remediation = getNamespaceSocket('remediation', token);
+    const llm = potatoMode ? null : getNamespaceSocket('llm', token);
+    const remediation = potatoMode ? null : getNamespaceSocket('remediation', token);
+    const activeSockets = [llm, monitoring, remediation].filter((s): s is Socket => s !== null);
 
     const updateConnected = () => {
       setSockets((prev) => ({
         ...prev,
-        connected: llm.connected || monitoring.connected || remediation.connected,
+        connected: activeSockets.some((socket) => socket.connected),
       }));
     };
 
-    for (const s of [llm, monitoring, remediation]) {
+    for (const s of activeSockets) {
       s.on('connect', updateConnected);
       s.on('disconnect', updateConnected);
     }
 
-    setSockets({ llmSocket: llm, monitoringSocket: monitoring, remediationSocket: remediation, connected: false });
+    setSockets({
+      llmSocket: llm,
+      monitoringSocket: monitoring,
+      remediationSocket: remediation,
+      connected: activeSockets.some((socket) => socket.connected),
+    });
 
     return () => {
-      llm.disconnect();
-      monitoring.disconnect();
-      remediation.disconnect();
+      for (const socket of activeSockets) {
+        socket.disconnect();
+      }
     };
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, potatoMode]);
 
   return (
     <SocketContext.Provider value={sockets}>

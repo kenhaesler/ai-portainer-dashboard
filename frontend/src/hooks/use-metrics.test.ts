@@ -28,7 +28,20 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-import { useAnomalyExplanations } from './use-metrics';
+vi.mock('@/stores/ui-store', () => ({
+  useUiStore: (selector: (state: { potatoMode: boolean }) => boolean) =>
+    selector({ potatoMode: false }),
+}));
+
+vi.mock('@/hooks/use-page-visibility', () => ({
+  usePageVisibility: () => true,
+}));
+
+import {
+  getContainerMetricsRefetchInterval,
+  getHeavyRefetchInterval,
+  useAnomalyExplanations,
+} from './use-metrics';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -80,5 +93,61 @@ describe('useAnomalyExplanations', () => {
     unmount();
 
     expect(mockOff).toHaveBeenCalledWith('cycle:complete', expect.any(Function));
+  });
+});
+
+describe('metrics polling intervals', () => {
+  it('polls quickly while metrics are empty in default mode', () => {
+    expect(
+      getContainerMetricsRefetchInterval({
+        points: 0,
+        potatoMode: false,
+        isPageVisible: true,
+      }),
+    ).toBe(15_000);
+  });
+
+  it('slows metrics polling once data is present in default mode', () => {
+    expect(
+      getContainerMetricsRefetchInterval({
+        points: 5,
+        potatoMode: false,
+        isPageVisible: true,
+      }),
+    ).toBe(60_000);
+  });
+
+  it('throttles heavy polling to >=5 minutes in potato mode', () => {
+    expect(
+      getContainerMetricsRefetchInterval({
+        points: 5,
+        potatoMode: true,
+        isPageVisible: true,
+      }),
+    ).toBe(300_000);
+    expect(
+      getHeavyRefetchInterval({
+        defaultIntervalMs: 60_000,
+        potatoMode: true,
+        isPageVisible: true,
+      }),
+    ).toBe(300_000);
+  });
+
+  it('pauses heavy polling when tab is hidden', () => {
+    expect(
+      getContainerMetricsRefetchInterval({
+        points: 5,
+        potatoMode: false,
+        isPageVisible: false,
+      }),
+    ).toBe(false);
+    expect(
+      getHeavyRefetchInterval({
+        defaultIntervalMs: 60_000,
+        potatoMode: false,
+        isPageVisible: false,
+      }),
+    ).toBe(false);
   });
 });

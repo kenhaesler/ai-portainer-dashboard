@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Bot, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAiMetricsSummary } from '@/hooks/use-ai-metrics-summary';
 import { cn } from '@/lib/utils';
@@ -8,7 +9,7 @@ interface AiMetricsSummaryProps {
   timeRange: string;
 }
 
-export function AiMetricsSummary({ endpointId, containerId, timeRange }: AiMetricsSummaryProps) {
+export const AiMetricsSummary = memo(function AiMetricsSummary({ endpointId, containerId, timeRange }: AiMetricsSummaryProps) {
   const { summary, isStreaming, error, refresh } = useAiMetricsSummary(
     endpointId,
     containerId,
@@ -66,4 +67,4 @@ export function AiMetricsSummary({ endpointId, containerId, timeRange }: AiMetri
       )}
     </div>
   );
-}
+});

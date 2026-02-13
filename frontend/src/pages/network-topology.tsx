@@ -13,6 +13,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { formatDate } from '@/lib/utils';
+import { useUiStore } from '@/stores/ui-store';
 
 type SelectedNode =
   | { type: 'container'; data: Container }
@@ -20,6 +21,7 @@ type SelectedNode =
   | null;
 
 export default function NetworkTopologyPage() {
+  const potatoMode = useUiStore((state) => state.potatoMode);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedNode, setSelectedNode] = useState<SelectedNode>(null);
 
@@ -159,7 +161,7 @@ export default function NetworkTopologyPage() {
           </div>
         ) : (
           <div className="flex gap-4 h-full">
-            <div className={`transition-all h-full ${selectedNode ? 'w-2/3' : 'w-full'}`}>
+            <div className={`${potatoMode ? '' : 'transition-all'} h-full ${selectedNode ? 'w-2/3' : 'w-full'}`}>
               <TopologyGraph
                 containers={graphData.containers}
                 networks={graphData.networks}

@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { ContainerMultiSelect } from '@/components/shared/container-multi-select';
 import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
 import { ThemedSelect } from '@/components/shared/themed-select';
+import { useUiStore } from '@/stores/ui-store';
+import { usePageVisibility } from '@/hooks/use-page-visibility';
 
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
 const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
@@ -192,6 +194,8 @@ export default function LogViewerPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const potatoMode = useUiStore((state) => state.potatoMode);
+  const isPageVisible = usePageVisibility();
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
   const [selectedContainers, setSelectedContainers] = useState<string[]>([]);
   const [searchPattern, setSearchPattern] = useState('');
@@ -199,7 +203,7 @@ export default function LogViewerPage() {
   const [bufferSize, setBufferSize] = useState<number>(1000);
   const [lineWrap, setLineWrap] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [liveTail, setLiveTail] = useState(true);
+  const [liveTail, setLiveTail] = useState(!potatoMode);
 
   const { data: endpoints = [] } = useEndpoints();
   const { data: containers = [] } = useContainers(selectedEndpoint);
@@ -214,6 +218,12 @@ export default function LogViewerPage() {
     setSelectedContainers([]);
   }, [selectedEndpoint]);
 
+  useEffect(() => {
+    if (potatoMode) {
+      setLiveTail(false);
+    }
+  }, [potatoMode]);
+
   const selectedContainerModels = useMemo(
     () => containers.filter((container) => selectedContainers.includes(container.id)),
     [containers, selectedContainers],
@@ -225,7 +235,7 @@ export default function LogViewerPage() {
       queryFn: () => api.get<LogsResponse>(`/api/containers/${container.endpointId}/${container.id}/logs`, {
         params: { tail: bufferSize, timestamps: true },
       }),
-      refetchInterval: liveTail ? 2000 : false,
+      refetchInterval: liveTail && isPageVisible ? 2000 : false,
       enabled: true,
     })),
   });

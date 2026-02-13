@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react';
 import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/hooks/use-correlations';
 import { cn } from '@/lib/utils';
@@ -119,7 +119,7 @@ function HeatmapGrid({ pairs }: { pairs: CorrelationPair[] }) {
   );
 }
 
-export function CorrelationInsightsPanel({ llmAvailable, hours = 24, selectedContainerId }: CorrelationInsightsPanelProps) {
+export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({ llmAvailable, hours = 24, selectedContainerId }: CorrelationInsightsPanelProps) {
   const { data: correlationsData, isLoading: pairsLoading } = useCorrelations(hours);
   const { data: insightsData, isLoading: insightsLoading } = useCorrelationInsights(hours, llmAvailable);
 
@@ -270,4 +270,4 @@ export function CorrelationInsightsPanel({ llmAvailable, hours = 24, selectedCon
       )}
     </div>
   );
-}
+});

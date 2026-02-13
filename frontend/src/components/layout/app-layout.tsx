@@ -28,14 +28,16 @@ export function getDesktopMainPaddingClass(): 'md:pb-12' {
 export function AppLayout() {
   const { isAuthenticated } = useAuth();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const potatoMode = useUiStore((s) => s.potatoMode);
   const { commandPaletteOpen, setCommandPaletteOpen } = useUiStore();
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const { theme, setTheme, dashboardBackground } = useThemeStore();
-  const hasAnimatedBg = dashboardBackground !== 'none';
+  const hasAnimatedBg = dashboardBackground !== 'none' && !potatoMode;
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
   const reducedMotion = useReducedMotion();
+  const disableVisualMotion = reducedMotion || potatoMode;
   const [direction, setDirection] = useState(1);
   const previousDepthRef = useRef(getRouteDepth(location.pathname));
   const { hasPlayed, markPlayed } = useEntrancePlayed();
@@ -43,7 +45,7 @@ export function AppLayout() {
 
   // Skip entrance on click/keypress
   useEffect(() => {
-    if (hasPlayed || reducedMotion) return;
+    if (hasPlayed || disableVisualMotion) return;
 
     const skipEntrance = () => markPlayed();
     window.addEventListener('click', skipEntrance, { once: true });
@@ -57,7 +59,7 @@ export function AppLayout() {
       window.removeEventListener('keydown', skipEntrance);
       clearTimeout(timer);
     };
-  }, [hasPlayed, markPlayed, reducedMotion]);
+  }, [disableVisualMotion, hasPlayed, markPlayed]);
 
   // Vim-style g+key chord navigation
   const chordBindings: ChordBinding[] = useMemo(
@@ -166,11 +168,12 @@ export function AppLayout() {
   }
 
   // Whether to show entrance animation (first visit this session, no reduced motion)
-  const showEntrance = !hasPlayed && !reducedMotion;
+  const showEntrance = !hasPlayed && !disableVisualMotion;
 
   return (
     <motion.div
       data-animated-bg={hasAnimatedBg || undefined}
+      data-potato-mode={potatoMode || undefined}
       className="relative flex h-screen overflow-hidden bg-background"
       initial={showEntrance ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
@@ -192,7 +195,8 @@ export function AppLayout() {
       </motion.div>
       <div
         className={cn(
-          'relative z-10 flex flex-1 flex-col overflow-hidden transition-all duration-300',
+          'relative z-10 flex flex-1 flex-col overflow-hidden',
+          !disableVisualMotion && 'transition-all duration-300',
           'md:ml-[4.5rem]',
           !sidebarCollapsed && 'md:ml-[16rem]',
         )}
@@ -224,34 +228,40 @@ export function AppLayout() {
               : { duration: 0 }
           }
         >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.pathname}
-              className="h-auto"
-              custom={direction}
-              initial={reducedMotion ? false : 'initial'}
-              animate="animate"
-              exit="exit"
-              variants={{
-                initial: (currentDirection: number) => ({
-                  opacity: 0,
-                  x: currentDirection > 0 ? 24 : -24,
-                }),
-                animate: {
-                  opacity: 1,
-                  x: 0,
-                  transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
-                },
-                exit: (currentDirection: number) => ({
-                  opacity: 0,
-                  x: currentDirection > 0 ? -18 : 18,
-                  transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
-                }),
-              }}
-            >
+          {disableVisualMotion ? (
+            <div key={location.pathname} className="h-auto">
               <Outlet />
-            </motion.div>
-          </AnimatePresence>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={location.pathname}
+                className="h-auto"
+                custom={direction}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                variants={{
+                  initial: (currentDirection: number) => ({
+                    opacity: 0,
+                    x: currentDirection > 0 ? 24 : -24,
+                  }),
+                  animate: {
+                    opacity: 1,
+                    x: 0,
+                    transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
+                  },
+                  exit: (currentDirection: number) => ({
+                    opacity: 0,
+                    x: currentDirection > 0 ? -18 : 18,
+                    transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
+                  }),
+                }}
+              >
+                <Outlet />
+              </motion.div>
+            </AnimatePresence>
+          )}
         </motion.main>
       </div>
       {/* Mobile bottom nav — visible only on mobile */}

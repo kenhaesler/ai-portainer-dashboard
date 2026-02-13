@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useCountUp } from '@/hooks/use-count-up';
 import { KpiSparkline } from '@/components/charts/kpi-sparkline';
+import { useUiStore } from '@/stores/ui-store';
 
 interface KpiCardProps {
   label: string;
@@ -32,6 +33,7 @@ export function KpiCard({
   hoverDetail,
 }: KpiCardProps) {
   const reducedMotion = useReducedMotion();
+  const potatoMode = useUiStore((state) => state.potatoMode);
   const numericValue = typeof value === 'number' ? value : 0;
   const isNumeric = typeof value === 'number';
   const displayValue = useCountUp(numericValue, { enabled: isNumeric });
@@ -56,11 +58,12 @@ export function KpiCard({
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
+        'rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
+        !potatoMode && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
         className,
       )}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => !potatoMode && setHovered(true)}
+      onMouseLeave={() => !potatoMode && setHovered(false)}
     >
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
@@ -104,7 +107,7 @@ export function KpiCard({
       </div>
 
       {/* Hover detail expansion */}
-      {hoverDetail && (
+      {hoverDetail && !potatoMode && (
         <div
           className={cn(
             'overflow-hidden transition-all duration-200',
