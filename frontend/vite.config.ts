@@ -15,9 +15,19 @@ const appCommit = (() => {
   }
 })();
 
+const appBuildNumber = (() => {
+  const explicit = process.env.VITE_BUILD_NUMBER
+    || process.env.GITHUB_RUN_NUMBER
+    || process.env.BUILD_NUMBER;
+  if (explicit) return String(explicit).trim();
+  // Fallback for local/prod image builds where CI run numbers are not injected.
+  return `${Math.floor(Date.now() / 1000)}`;
+})();
+
 export default defineConfig({
   define: {
     'import.meta.env.VITE_GIT_COMMIT': JSON.stringify(appCommit),
+    'import.meta.env.VITE_BUILD_NUMBER': JSON.stringify(appBuildNumber),
   },
   plugins: [
     react({

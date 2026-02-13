@@ -79,4 +79,22 @@ describe('Header', () => {
     expect(await screen.findByText(/(DEV|BUILD) build-202602/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Build (DEV|BUILD) build-202602/i)).toBeInTheDocument();
   });
+
+  it('renders explicit build number identifiers', async () => {
+    vi.stubEnv('VITE_BUILD_NUMBER', '20260213.7');
+    vi.stubEnv('VITE_GIT_COMMIT', '');
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => null,
+    } as Response);
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/(DEV|BUILD) 20260213.7/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Build (DEV|BUILD) 20260213.7/i)).toBeInTheDocument();
+  });
 });
