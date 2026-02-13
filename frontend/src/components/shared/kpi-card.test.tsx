@@ -78,7 +78,9 @@ describe('KpiCard', () => {
       <KpiCard label="Custom" value={1} className="custom-class" />,
     );
 
-    expect(container.firstChild).toHaveClass('custom-class');
+    // The SpotlightCard wrapper is container.firstChild; the inner card div has the className
+    const innerCard = container.querySelector('.custom-class');
+    expect(innerCard).toBeInTheDocument();
   });
 
   it('should not render trend when not provided', () => {
@@ -125,8 +127,9 @@ describe('KpiCard', () => {
     const detail = screen.getByText('Last hour: +3 | Peak: 20 | Avg: 14');
     expect(detail).toBeInTheDocument();
 
-    // Simulate hover
-    fireEvent.mouseEnter(container.firstChild!);
+    // The inner card div (with the hover handler) is inside the SpotlightCard wrapper
+    const innerCard = container.querySelector('.bg-card')!;
+    fireEvent.mouseEnter(innerCard);
     // The detail container should now be visible
     expect(detail.parentElement).toHaveClass('opacity-100');
   });
@@ -140,9 +143,9 @@ describe('KpiCard', () => {
       />,
     );
 
-    const card = container.firstChild!;
-    fireEvent.mouseEnter(card);
-    fireEvent.mouseLeave(card);
+    const innerCard = container.querySelector('.bg-card')!;
+    fireEvent.mouseEnter(innerCard);
+    fireEvent.mouseLeave(innerCard);
 
     const detail = screen.getByText('Last hour: +3 | Peak: 20 | Avg: 14');
     expect(detail.parentElement).toHaveClass('opacity-0');
