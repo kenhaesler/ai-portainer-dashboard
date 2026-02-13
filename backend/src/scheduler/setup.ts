@@ -16,6 +16,7 @@ import { runStalenessChecks } from '../services/image-staleness.js';
 import { getImages } from '../services/portainer-client.js';
 import { runWithTraceContext } from '../services/trace-context.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
+import { cleanExpiredSessions } from '../services/session-store.js';
 
 const log = createChildLogger('scheduler');
 
@@ -298,7 +299,7 @@ async function runPortainerBackupSchedule(): Promise<void> {
   }
 }
 
-async function runCleanup(): Promise<void> {
+export async function runCleanup(): Promise<void> {
   try {
     const config = getConfig();
     const deleted = await cleanOldMetrics(config.METRICS_RETENTION_DAYS);
@@ -322,6 +323,15 @@ async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'KPI snapshot cleanup failed');
+  }
+
+  try {
+    const sessionsDeleted = cleanExpiredSessions();
+    if (sessionsDeleted > 0) {
+      log.info({ deleted: sessionsDeleted }, 'Expired sessions cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Session cleanup failed');
   }
 }
 
