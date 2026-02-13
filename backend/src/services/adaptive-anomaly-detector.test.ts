@@ -6,6 +6,7 @@ vi.mock('../config/index.js', () => ({
     ANOMALY_MOVING_AVERAGE_WINDOW: 30,
     ANOMALY_MIN_SAMPLES: 10,
     ANOMALY_DETECTION_METHOD: 'adaptive',
+    BOLLINGER_BANDS_ENABLED: true,
   }),
 }));
 
@@ -24,10 +25,18 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import { calculateBollingerBands, detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
+const { getConfig } = await import('../config/index.js');
 
 describe('adaptive-anomaly-detector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+      ANOMALY_ZSCORE_THRESHOLD: 2.5,
+      ANOMALY_MOVING_AVERAGE_WINDOW: 30,
+      ANOMALY_MIN_SAMPLES: 10,
+      ANOMALY_DETECTION_METHOD: 'adaptive',
+      BOLLINGER_BANDS_ENABLED: true,
+    });
   });
 
   describe('calculateBollingerBands', () => {
@@ -94,12 +103,44 @@ describe('adaptive-anomaly-detector', () => {
       expect(result!.method).toBe('adaptive');
     });
 
+    it('widens threshold for low variance adaptive mode', async () => {
+      // cv = 5/100 = 0.05 -> low variance -> threshold = 2.5 * 1.2 = 3.0
+      mockGetMovingAverage.mockResolvedValue({ mean: 100, std_dev: 5, sample_count: 25 });
+      // z-score = (114 - 100) / 5 = 2.8 -> not anomalous with widened threshold
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 114, 'adaptive');
+      expect(result).not.toBeNull();
+      expect(result!.threshold).toBe(3);
+      expect(result!.is_anomalous).toBe(false);
+    });
+
     it('handles zero standard deviation', async () => {
       mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 0, sample_count: 15 });
       const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 60);
       expect(result).not.toBeNull();
       expect(result!.is_anomalous).toBe(true);
-      expect(result!.z_score).toBe(Infinity);
+      expect(result!.z_score).toBe(2);
+    });
+
+    it('does not flag tiny deviations on very low mean when std dev is zero', async () => {
+      mockGetMovingAverage.mockResolvedValue({ mean: 0.2, std_dev: 0, sample_count: 15 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'memory', 0.21, 'adaptive');
+      expect(result).not.toBeNull();
+      expect(result!.is_anomalous).toBe(false);
+      expect(result!.z_score).toBe(0);
+    });
+
+    it('falls back from bollinger to zscore when bollinger is disabled', async () => {
+      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+        ANOMALY_ZSCORE_THRESHOLD: 2.5,
+        ANOMALY_MOVING_AVERAGE_WINDOW: 30,
+        ANOMALY_MIN_SAMPLES: 10,
+        ANOMALY_DETECTION_METHOD: 'adaptive',
+        BOLLINGER_BANDS_ENABLED: false,
+      });
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 5, sample_count: 20 });
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 65, 'bollinger');
+      expect(result).not.toBeNull();
+      expect(result!.method).toBe('zscore');
     });
   });
 });

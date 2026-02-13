@@ -61,7 +61,10 @@ export async function detectAnomalyAdaptive(
   }
 
   // Determine detection method
-  const selectedMethod = method ?? selectMethod(stats.mean, stats.std_dev, stats.sample_count);
+  const selectedMethod = resolveDetectionMethod(
+    method ?? selectMethod(stats.mean, stats.std_dev, stats.sample_count),
+    config.BOLLINGER_BANDS_ENABLED !== false,
+  );
 
   let isAnomalous: boolean;
   let threshold: number;
@@ -81,7 +84,7 @@ export async function detectAnomalyAdaptive(
       ? config.ANOMALY_ZSCORE_THRESHOLD * 1.5
       : cv > 0.2
         ? config.ANOMALY_ZSCORE_THRESHOLD
-        : config.ANOMALY_ZSCORE_THRESHOLD * 0.8;
+        : config.ANOMALY_ZSCORE_THRESHOLD * 1.2;
 
     zScore = stats.std_dev > 0 ? (currentValue - stats.mean) / stats.std_dev : 0;
     isAnomalous = Math.abs(zScore) > adaptiveThreshold;
@@ -95,8 +98,14 @@ export async function detectAnomalyAdaptive(
 
   // Handle zero std_dev
   if (stats.std_dev === 0) {
-    isAnomalous = Math.abs(currentValue - stats.mean) > 0.001;
-    zScore = isAnomalous ? Infinity : 0;
+    const absMean = Math.abs(stats.mean);
+    // Use a percentage-based tolerance for stable workloads to avoid tiny-value false positives.
+    const tolerance = absMean > 0
+      ? Math.max(absMean * 0.1, 0.01)
+      : 0.01;
+    const delta = currentValue - stats.mean;
+    isAnomalous = Math.abs(delta) > tolerance;
+    zScore = isAnomalous ? delta / tolerance : 0;
   }
 
   if (isAnomalous) {
@@ -137,4 +146,14 @@ function selectMethod(mean: number, stdDev: number, sampleCount: number): Detect
 
   // Medium → standard z-score works well
   return 'zscore';
+}
+
+function resolveDetectionMethod(
+  requestedMethod: DetectionMethod,
+  bollingerEnabled: boolean,
+): DetectionMethod {
+  if (requestedMethod === 'bollinger' && !bollingerEnabled) {
+    return 'zscore';
+  }
+  return requestedMethod;
 }

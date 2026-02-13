@@ -57,12 +57,14 @@ export const envSchema = z.object({
   PROMETHEUS_BEARER_TOKEN: z.string().optional(),
 
   // Anomaly Detection
-  ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(3.0),
+  ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(3.5),
   ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(20),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
-  ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(10),
-  ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(80),
+  ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(30),
+  ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(85),
+  ANOMALY_HARD_THRESHOLD_ENABLED: z.coerce.boolean().default(true),
+  BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),
@@ -70,13 +72,13 @@ export const envSchema = z.object({
 
   // Anomaly Explanations (LLM)
   ANOMALY_EXPLANATION_ENABLED: z.coerce.boolean().default(true),
-  ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(50).default(20),
+  ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(50).default(5),
 
   // Isolation Forest Anomaly Detection
   ISOLATION_FOREST_ENABLED: z.coerce.boolean().default(true),
   ISOLATION_FOREST_TREES: z.coerce.number().int().min(10).max(500).default(100),
   ISOLATION_FOREST_SAMPLE_SIZE: z.coerce.number().int().min(32).max(512).default(256),
-  ISOLATION_FOREST_CONTAMINATION: z.coerce.number().min(0.01).max(0.5).default(0.1),
+  ISOLATION_FOREST_CONTAMINATION: z.coerce.number().min(0.01).max(0.5).default(0.15),
   ISOLATION_FOREST_RETRAIN_HOURS: z.coerce.number().int().min(1).default(6),
 
   // NLP Log Analysis (LLM)
