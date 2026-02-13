@@ -93,6 +93,23 @@ describe('Traces Ingest Routes', () => {
         server_address TEXT,
         server_port INTEGER,
         client_address TEXT,
+        url_full TEXT,
+        url_scheme TEXT,
+        network_transport TEXT,
+        network_protocol_name TEXT,
+        network_protocol_version TEXT,
+        net_peer_name TEXT,
+        net_peer_port INTEGER,
+        host_name TEXT,
+        os_type TEXT,
+        process_pid INTEGER,
+        process_executable_name TEXT,
+        process_command TEXT,
+        telemetry_sdk_name TEXT,
+        telemetry_sdk_language TEXT,
+        telemetry_sdk_version TEXT,
+        otel_scope_name TEXT,
+        otel_scope_version TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
