@@ -12,7 +12,26 @@ The system is composed of several major subsystems that work together:
 -   **Search & Data Retrieval:** Tools for searching external sources, like the `search_code` function for GitHub.
 -   **Frontend UI:** A rich user interface built with React for rendering the complex interactions, steps, and results from the agent.
 
-## 2. Code Execution Subsystem
+## 2. Core Architectural Patterns
+
+The project follows a **Monorepo** structure with a **Client-Server (Full-stack)** architectural pattern, specifically designed around an **Observer-First** principle.
+
+### Key Patterns
+
+*   **Layered Backend:** The backend is organized into functional layers:
+    *   `routes/`: REST API endpoints.
+    *   `services/`: Business logic and external integrations (Portainer, Ollama, Redis).
+    *   `models/`: Zod schemas and database query logic.
+    *   `scheduler/`: Background jobs for metrics collection and anomaly detection. Endpoints and containers are processed in parallel (`METRICS_ENDPOINT_CONCURRENCY`, `METRICS_CONTAINER_CONCURRENCY`) with a mutex guard to prevent overlapping cycles.
+*   **Frontend State Management:**
+    *   **Server State:** Managed by **TanStack React Query** for caching and synchronization.
+    *   **UI State:** Managed by **Zustand** for lightweight client-side state.
+*   **Observer-First Design:** A core project philosophy where visibility is prioritized, and any state-mutating actions (like restarting containers) are strictly opt-in and gated by a **Remediation Approval** workflow.
+*   **Real-Time Subsystems:** Uses Socket.IO namespaces (`/llm`, `/monitoring`, `/remediation`) to push live insights and handle streaming AI chat.
+*   **Security-First:** Implements **RBAC (Role-Based Access Control)** by default, requiring administrative roles for all mutating endpoints, alongside specialized **Prompt Injection Guards** for LLM safety.
+*   **Modular Agent Strategy:** For AI features, it uses a modular strategy that includes multi-stage search pipelines and flexible code execution environments (In-process, Dockerized, or Remote).
+
+## 3. Code Execution Subsystem
 
 The system employs multiple strategies for code execution, likely chosen based on the security context, required dependencies, and the nature of the code being run. This provides a flexible and security-conscious approach.
 

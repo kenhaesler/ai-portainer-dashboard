@@ -75,18 +75,22 @@ export async function runMonitoringCycle(): Promise<void> {
       endpointName: string;
     }> = [];
 
-    for (const ep of rawEndpoints) {
-      try {
+    // Fetch containers for all endpoints in parallel (they are cached by the scheduler)
+    const containerResults = await Promise.allSettled(
+      rawEndpoints.map(async (ep) => {
         const containers = await cachedFetchSWR(
           getCacheKey('containers', ep.Id),
           TTL.CONTAINERS,
           () => getContainers(ep.Id),
         );
-        for (const c of containers) {
-          allContainers.push({ raw: c, endpointId: ep.Id, endpointName: ep.Name });
-        }
-      } catch (err) {
-        log.warn({ endpointId: ep.Id, err }, 'Failed to fetch containers for endpoint');
+        return containers.map((c) => ({ raw: c, endpointId: ep.Id, endpointName: ep.Name }));
+      }),
+    );
+    for (const result of containerResults) {
+      if (result.status === 'fulfilled') {
+        allContainers.push(...result.value);
+      } else {
+        log.warn({ err: result.reason }, 'Failed to fetch containers for endpoint');
       }
     }
 
