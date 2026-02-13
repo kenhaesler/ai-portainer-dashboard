@@ -206,6 +206,10 @@ vi.mock('../services/portainer-client.js', () => ({
   getStack: vi.fn().mockResolvedValue({}),
   getNetworks: vi.fn().mockResolvedValue([]),
   getImages: vi.fn().mockResolvedValue([]),
+  getEdgeJobs: vi.fn().mockResolvedValue([]),
+  getEdgeJob: vi.fn().mockResolvedValue({ Id: 1 }),
+  createEdgeJob: vi.fn().mockResolvedValue({ Id: 1 }),
+  deleteEdgeJob: vi.fn().mockResolvedValue(undefined),
   createExec: vi.fn().mockResolvedValue({ Id: 'exec-1' }),
   startExec: vi.fn().mockResolvedValue(undefined),
   inspectExec: vi.fn().mockResolvedValue({ Running: false, ExitCode: 0, Pid: 0 }),
@@ -496,6 +500,7 @@ import { correlationRoutes } from './correlations.js';
 import { ebpfCoverageRoutes } from './ebpf-coverage.js';
 import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
+import { edgeJobsRoutes } from './edge-jobs.js';
 
 // ─── Known Public Routes ────────────────────────────────────────────────
 // Routes that are intentionally accessible without a Bearer token.
@@ -580,6 +585,7 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(ebpfCoverageRoutes);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
+  await app.register(edgeJobsRoutes);
 
   await app.ready();
   return { app, registeredRoutes };
@@ -1063,7 +1069,6 @@ describe('PCAP Admin RBAC Enforcement', () => {
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
     });
-
     await app.register(pcapRoutes);
     await app.ready();
   });
@@ -1124,7 +1129,88 @@ describe('PCAP Admin RBAC Enforcement', () => {
 });
 
 // =====================================================================
-//  6. INFRASTRUCTURE EXPOSURE DEFAULTS
+//  6. EDGE JOBS ADMIN RBAC ENFORCEMENT
+// =====================================================================
+describe('Edge Jobs Admin RBAC Enforcement', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
+    });
+    await app.register(edgeJobsRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('denies create/delete edge jobs for non-admin users', async () => {
+    currentRole = 'viewer';
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/edge-jobs',
+      payload: {
+        name: 'nightly-backup',
+        cronExpression: '0 0 * * *',
+        recurring: true,
+        endpoints: [1],
+        fileContent: '#!/bin/sh\necho test',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(createRes.statusCode).toBe(403);
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/edge-jobs/1',
+    });
+    expect(deleteRes.statusCode).toBe(403);
+  });
+
+  it('allows admin users to reach mutating edge-job handlers', async () => {
+    currentRole = 'admin';
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/edge-jobs',
+      payload: {
+        name: 'nightly-backup',
+        cronExpression: '0 0 * * *',
+        recurring: true,
+        endpoints: [1],
+        fileContent: '#!/bin/sh\necho test',
+      },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(createRes.statusCode).not.toBe(403);
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: '/api/edge-jobs/1',
+    });
+    expect(deleteRes.statusCode).not.toBe(403);
+  });
+});
+
+// =====================================================================
+//  7. INFRASTRUCTURE EXPOSURE DEFAULTS
 // =====================================================================
 describe('Infrastructure Exposure Defaults', () => {
   it('should not host-publish Prometheus in workloads/staging-dev.yml by default', () => {
@@ -1145,7 +1231,7 @@ describe('Infrastructure Exposure Defaults', () => {
 });
 
 // =====================================================================
-//  7. RATE LIMITING VERIFICATION
+//  8. RATE LIMITING VERIFICATION
 // =====================================================================
 describe('Rate Limiting Verification', () => {
   let app: FastifyInstance;

@@ -38,10 +38,21 @@ const mockCreateEdgeJob = vi.mocked(portainer.createEdgeJob);
 const mockDeleteEdgeJob = vi.mocked(portainer.deleteEdgeJob);
 const mockWriteAuditLog = vi.mocked(writeAuditLog);
 
-function buildApp() {
+function buildApp(currentRole: 'viewer' | 'operator' | 'admin' = 'admin') {
   const app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
   app.decorate('authenticate', async () => undefined);
+  app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+    const rank = { viewer: 0, operator: 1, admin: 2 };
+    const userRole = request.user?.role ?? 'viewer';
+    if (rank[userRole] < rank[minRole]) {
+      reply.code(403).send({ error: 'Insufficient permissions' });
+    }
+  });
+  app.decorateRequest('user', undefined);
+  app.addHook('preHandler', async (request) => {
+    request.user = { sub: 'u1', username: 'test-user', sessionId: 's1', role: currentRole };
+  });
   app.register(edgeJobsRoutes);
   return app;
 }
@@ -142,6 +153,24 @@ describe('edge-jobs routes', () => {
 
       expect(res.statusCode).toBe(500); // Zod parse error
     });
+
+    it('returns 403 for authenticated non-admin users', async () => {
+      const app = buildApp('viewer');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/edge-jobs',
+        payload: {
+          name: 'new-job',
+          cronExpression: '*/5 * * * *',
+          recurring: true,
+          endpoints: [1],
+          fileContent: '#!/bin/sh\necho hello',
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(mockCreateEdgeJob).not.toHaveBeenCalled();
+    });
   });
 
   describe('DELETE /api/edge-jobs/:id', () => {
@@ -164,6 +193,17 @@ describe('edge-jobs routes', () => {
         }),
       );
     });
+
+    it('returns 403 for authenticated non-admin users', async () => {
+      const app = buildApp('operator');
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/edge-jobs/5',
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(mockDeleteEdgeJob).not.toHaveBeenCalled();
+    });
   });
 
   describe('authentication', () => {
@@ -174,6 +214,7 @@ describe('edge-jobs routes', () => {
       app.decorate('authenticate', async (_req: any, reply: any) => {
         reply.code(401).send({ error: 'Unauthorized' });
       });
+      app.decorate('requireRole', () => async () => undefined);
       app.register(edgeJobsRoutes);
 
       const routes = [
