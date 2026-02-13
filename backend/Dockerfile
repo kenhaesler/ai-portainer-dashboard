@@ -39,8 +39,10 @@ FROM dhi.io/node:24-alpine3.23 AS runtime
 COPY --from=tools /usr/bin/dumb-init /usr/bin/dumb-init
 COPY --from=tools /usr/bin/wget /usr/bin/wget
 COPY --from=tools /usr/bin/tcpdump /usr/bin/tcpdump
-# Copy shared libraries needed by tcpdump
+# Copy shared libraries needed by tcpdump (libpcap + OpenSSL)
 COPY --from=tools /usr/lib/libpcap* /usr/lib/
+COPY --from=tools /usr/lib/libcrypto* /usr/lib/
+COPY --from=tools /usr/lib/libssl* /usr/lib/
 # Copy pre-created data directory with correct ownership
 COPY --from=tools --chown=node:node /opt/app/data /app/data
 
