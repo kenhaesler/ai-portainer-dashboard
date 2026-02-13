@@ -20,6 +20,7 @@ import {
 } from '@/hooks/use-elk-layout';
 import { useForceSimulation } from '@/hooks/use-force-simulation';
 import { useUiStore } from '@/stores/ui-store';
+import { TopologyLegend } from './topology-legend';
 
 export interface ContainerData {
   id: string;
@@ -485,8 +486,8 @@ export function TopologyGraph({
             opacity: 0.7,
           },
           label: edgeLabel,
-          labelStyle: { fontSize: 10, fill: '#94a3b8' },
-          labelBgStyle: { fill: 'rgba(15, 23, 42, 0.85)', opacity: 0.9 },
+          labelStyle: { fontSize: 10, fill: 'var(--color-muted-foreground)' },
+          labelBgStyle: { fill: 'var(--color-card)', opacity: 0.9 },
           labelBgPadding: [4, 2],
           labelBgBorderRadius: 4,
         });
@@ -631,7 +632,8 @@ export function TopologyGraph({
   }
 
   return (
-    <div className="h-full rounded-lg border">
+    <div className="h-full rounded-lg border relative">
+      <TopologyLegend />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -654,7 +656,7 @@ export function TopologyGraph({
   );
 }
 
-function formatRate(bytesPerSec: number): string {
+export function formatRate(bytesPerSec: number): string {
   if (bytesPerSec >= 1_048_576) return `${(bytesPerSec / 1_048_576).toFixed(1)}MB/s`;
   if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)}KB/s`;
   return `${Math.round(bytesPerSec)}B/s`;

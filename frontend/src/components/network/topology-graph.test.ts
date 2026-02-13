@@ -11,6 +11,7 @@ import {
   sortStacks,
   getHandleForAngle,
   getBestHandles,
+  formatRate,
   type ContainerData,
   type NetworkData,
 } from './topology-graph';
@@ -520,5 +521,32 @@ describe('getBestHandles', () => {
     const result = getBestHandles({ x: 0, y: 0 }, { x: 30, y: 100 });
     expect(result.sourceHandle).toBe('bottom');
     expect(result.targetHandle).toBe('top');
+  });
+});
+
+// --- formatRate ---
+describe('formatRate', () => {
+  it('returns "0B/s" for 0 bytes', () => {
+    expect(formatRate(0)).toBe('0B/s');
+  });
+
+  it('returns bytes for values below 1 KB', () => {
+    expect(formatRate(500)).toBe('500B/s');
+  });
+
+  it('returns KB for 1024 bytes', () => {
+    expect(formatRate(1024)).toBe('1.0KB/s');
+  });
+
+  it('returns KB for 5 KB', () => {
+    expect(formatRate(5120)).toBe('5.0KB/s');
+  });
+
+  it('returns MB for 1 MB', () => {
+    expect(formatRate(1_048_576)).toBe('1.0MB/s');
+  });
+
+  it('rounds correctly for fractional KB', () => {
+    expect(formatRate(1536)).toBe('1.5KB/s');
   });
 });
