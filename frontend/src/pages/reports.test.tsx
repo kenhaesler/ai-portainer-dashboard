@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReportsPage from './reports';
@@ -108,6 +108,30 @@ describe('ReportsPage', () => {
   it('renders export CSV button', () => {
     renderWithProviders(<ReportsPage />);
     expect(screen.getByText('Export CSV')).toBeTruthy();
+  });
+
+  it('triggers CSV download when export button is clicked', () => {
+    const mockCreateObjectURL = vi.fn().mockReturnValue('blob:resource-report');
+    const mockRevokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const appendSpy = vi.spyOn(document.body, 'appendChild');
+    const removeSpy = vi.spyOn(document.body, 'removeChild');
+
+    global.URL.createObjectURL = mockCreateObjectURL;
+    global.URL.revokeObjectURL = mockRevokeObjectURL;
+
+    renderWithProviders(<ReportsPage />);
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+
+    expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+    expect(appendSpy).toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalled();
+    expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:resource-report');
+
+    clickSpy.mockRestore();
+    appendSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 
   it('renders time range selector buttons', () => {
