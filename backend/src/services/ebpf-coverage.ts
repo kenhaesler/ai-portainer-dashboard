@@ -596,24 +596,15 @@ export async function verifyCoverage(endpointId: number): Promise<{ verified: bo
   const newStatus = detectionToCoverageStatus(beylaDetection);
   const verified = beylaRunning || lastTraceAt !== null;
 
-  if (newStatus === 'deployed' || newStatus === 'failed') {
-    prepareStmt(`
-      UPDATE ebpf_coverage
-      SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible') THEN ? ELSE status END,
-          last_trace_at = COALESCE(?, last_trace_at),
-          last_verified_at = datetime('now'),
-          updated_at = datetime('now')
-      WHERE endpoint_id = ?
-    `).run(newStatus, lastTraceAt, endpointId);
-  } else {
-    prepareStmt(`
-      UPDATE ebpf_coverage
-      SET last_trace_at = COALESCE(?, last_trace_at),
-          last_verified_at = datetime('now'),
-          updated_at = datetime('now')
-      WHERE endpoint_id = ?
-    `).run(lastTraceAt, endpointId);
-  }
+  // Keep coverage status in sync with the latest detection result on every verify call.
+  prepareStmt(`
+    UPDATE ebpf_coverage
+    SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible') THEN ? ELSE status END,
+        last_trace_at = COALESCE(?, last_trace_at),
+        last_verified_at = datetime('now'),
+        updated_at = datetime('now')
+    WHERE endpoint_id = ?
+  `).run(newStatus, lastTraceAt, endpointId);
 
   log.debug({ endpointId, verified, beylaRunning, lastTraceAt }, 'Coverage verified');
   return { verified, lastTraceAt, beylaRunning };

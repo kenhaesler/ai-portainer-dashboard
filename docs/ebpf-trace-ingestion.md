@@ -244,6 +244,21 @@ curl -X POST http://localhost:3051/api/traces/otlp \
 6. If the **OTLP exporter** is enabled (`OTEL_EXPORTER_ENABLED=true`), spans are also queued for export to an external collector (Jaeger, Tempo, Datadog) via OTLP/HTTP JSON. See [Span Export to External Collectors](#span-export-to-external-collectors)
 7. The **Trace Explorer** UI can filter by source: HTTP Requests, Background Jobs, or eBPF (Apps)
 
+### How Beyla deployment is executed
+
+Deployment actions from **eBPF Coverage** are executed through the **Portainer API control plane**, not by direct host access from the dashboard to endpoint Docker daemons.
+
+Flow:
+1. Admin calls dashboard route (for example `POST /api/ebpf/deploy/:endpointId`).
+2. Backend resolves OTLP endpoint + API key.
+3. Backend calls Portainer endpoint-scoped Docker APIs:
+   - image pull
+   - container create
+   - container start/stop/remove
+4. Portainer (or Edge Agent) performs the operation on the target endpoint.
+
+This means the dashboard only needs connectivity to Portainer; endpoint-local Docker operations are delegated by Portainer.
+
 ### File Map
 
 | File | Purpose |
@@ -315,6 +330,41 @@ docker compose --profile ebpf up
 
 This instruments services visible from the dashboard's Docker network.
 
+### Option C: Production via Traefik on HTTPS 443
+
+Use this when endpoint firewalls allow only `443` and direct access to backend `:3051` is blocked.
+
+1. Set required env vars:
+
+```env
+DASHBOARD_EXTERNAL_URL=https://dashboard.example.com
+TRACES_INGESTION_ENABLED=true
+TRACES_INGESTION_API_KEY=your-secret-api-key-here
+```
+
+2. Start dashboard with the Traefik OTLP overlay:
+
+```bash
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
+```
+
+3. Set Beyla exporter endpoint on each remote endpoint:
+
+```env
+OTEL_EXPORTER_OTLP_ENDPOINT=https://dashboard.example.com/api/traces/otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=your-secret-api-key-here
+```
+
+Repository assets for this mode:
+- `docker/docker-compose.traefik-otlp.yml`
+- `docker/traefik/dynamic/beyla-otlp.yml`
+
+Important:
+- Replace `dashboard.example.com` in `docker/traefik/dynamic/beyla-otlp.yml`.
+- Replace default IP allow-list CIDRs with your real Beyla source networks.
+- Mount valid TLS certs at `docker/traefik/certs/fullchain.pem` and `docker/traefik/certs/privkey.pem`.
+
 ## Multi-Endpoint Deployment
 
 In production environments with multiple Portainer endpoints (e.g., `prod-eu-1`, `prod-us-2`, `staging`), Beyla must be deployed on **every endpoint** where you want eBPF trace visibility. Without this, the Trace Explorer and eBPF Coverage page will have blind spots.
@@ -367,7 +417,7 @@ Each Beyla instance needs to reach the dashboard's OTLP endpoint. The URL depend
 | Same Docker host as dashboard | `http://backend:3051/api/traces/otlp` (use Docker network) |
 | Same machine, different compose stack | `http://host.docker.internal:3051/api/traces/otlp` |
 | Remote server (LAN/VPN) | `http://<dashboard-ip>:3051/api/traces/otlp` |
-| Remote server (internet) | `https://dashboard.example.com/api/traces/otlp` (use HTTPS + reverse proxy) |
+| Remote server (internet, recommended) | `https://dashboard.example.com/api/traces/otlp` (Traefik on 443) |
 
 #### 3. Deploy Beyla on each endpoint
 
@@ -464,11 +514,27 @@ Not all endpoints can run Beyla. Mark these as `excluded` with a reason:
 | Symptom | Cause | Fix |
 |---|---|---|
 | No traces from a remote endpoint | Dashboard not reachable | Check firewall, verify URL with `curl` from the endpoint host |
+| No traces when using 443 | Traefik OTLP route missing/mismatched | Confirm route matches `Host(...) && PathPrefix(/api/traces/otlp) && Method(POST)` |
 | Traces arrive but no `service.namespace` | `BEYLA_SERVICE_NAMESPACE` not set | Add the env var and restart the Beyla stack |
 | Beyla container keeps restarting | Missing kernel BTF support | Check `ls /sys/kernel/btf/vmlinux` on the host — if missing, kernel is too old |
 | Beyla running but no spans | No HTTP traffic on configured ports | Verify `BEYLA_OPEN_PORT` matches your application ports |
 | 401 errors in Beyla logs | Wrong API key | Verify `TRACES_INGESTION_API_KEY` matches the dashboard `.env` |
 | Coverage page shows `unknown` | Endpoints not synced | Click **Sync Endpoints** on the eBPF Coverage page |
+
+### 443 smoke test
+
+```bash
+curl -X POST https://dashboard.example.com/api/traces/otlp/v1/traces \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key-here" \
+  -d '{"resourceSpans":[]}'
+```
+
+Expected response:
+
+```json
+{"accepted":0}
+```
 
 ## Known Behaviors
 

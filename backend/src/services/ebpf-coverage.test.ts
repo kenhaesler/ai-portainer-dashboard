@@ -275,6 +275,7 @@ describe('ebpf-coverage service', () => {
       expect(result.verified).toBe(false);
       expect(result.beylaRunning).toBe(false);
       expect(result.lastTraceAt).toBeNull();
+      expect(mockRun).toHaveBeenCalledWith('not_deployed', null, 1);
     });
 
     it('should handle missing spans table', async () => {
@@ -303,6 +304,7 @@ describe('ebpf-coverage service', () => {
       const result = await verifyCoverage(1);
       expect(result.beylaRunning).toBe(false);
       expect(result.verified).toBe(false);
+      expect(mockRun).toHaveBeenCalledWith('unreachable', null, 1);
     });
   });
 

@@ -1,0 +1,28 @@
+services:
+  backend:
+    # In Traefik mode, keep backend private to docker network.
+    ports: []
+    environment:
+      # Required so eBPF deploy defaults point to the HTTPS public endpoint.
+      - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:?Set DASHBOARD_EXTERNAL_URL to your https://dashboard.example.com URL}
+
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --entrypoints.websecure.address=:443
+      - --providers.file.filename=/etc/traefik/dynamic/beyla-otlp.yml
+      - --providers.file.watch=true
+      - --accesslog=true
+      - --log.level=INFO
+    ports:
+      - "443:443"
+    volumes:
+      - ./traefik/dynamic/beyla-otlp.yml:/etc/traefik/dynamic/beyla-otlp.yml:ro
+      # Mount your certificate/key pair for the dashboard domain.
+      - ./traefik/certs:/etc/traefik/certs:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - dashboard-net
+    restart: unless-stopped

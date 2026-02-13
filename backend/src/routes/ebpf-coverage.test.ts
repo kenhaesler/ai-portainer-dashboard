@@ -435,6 +435,26 @@ describe('ebpf-coverage routes', () => {
       });
     });
 
+    it('POST /api/ebpf/deploy/:endpointId respects forwarded https host when behind reverse proxy', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        payload: {},
+        headers: {
+          host: 'backend:3051',
+          'x-forwarded-proto': 'https',
+          'x-forwarded-host': 'dashboard.example.com',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeyla).toHaveBeenCalledWith(1, {
+        otlpEndpoint: 'https://dashboard.example.com/api/traces/otlp',
+        tracesApiKey: 'ingest-key',
+        recreateExisting: false,
+      });
+    });
+
     it('POST /api/ebpf/enable/:endpointId enables beyla', async () => {
       const response = await app.inject({
         method: 'POST',
