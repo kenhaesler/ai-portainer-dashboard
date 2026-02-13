@@ -54,6 +54,7 @@ describe('TraceExplorerPage', () => {
             start_time: '2026-02-12T10:00:00.000Z',
             trace_source: 'ebpf',
             span_count: 1,
+            container_name: 'api-container',
           },
         ],
       },
@@ -107,6 +108,8 @@ describe('TraceExplorerPage', () => {
     expect(screen.getByText('eBPF: 7')).toBeInTheDocument();
     expect(screen.getByText('HTTP: 3')).toBeInTheDocument();
     expect(screen.getByText('Scheduler: 2')).toBeInTheDocument();
+    expect(screen.getByText('Tip: select a source below to focus this list.')).toBeInTheDocument();
+    expect(screen.getByText('Need precision? Filter by HTTP route/status or service and container namespaces.')).toBeInTheDocument();
   });
 
   it('applies advanced filters through trace query state', () => {
@@ -121,5 +124,11 @@ describe('TraceExplorerPage', () => {
     expect(lastCall.httpRoute).toBe('/health');
     expect(lastCall.httpRouteMatch).toBe('contains');
     expect(lastCall.httpStatusCode).toBe(200);
+  });
+
+  it('shows container name alongside source on each trace card', () => {
+    render(<TraceExplorerPage />);
+
+    expect(screen.getByText('container: api-container')).toBeInTheDocument();
   });
 });
