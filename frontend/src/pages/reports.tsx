@@ -30,7 +30,6 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { cn } from '@/lib/utils';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { exportToCsv } from '@/lib/csv-export';
-import { getContainerGroup } from '@/lib/system-container-grouping';
 import {
   MANAGEMENT_PDF_THEMES,
   exportManagementPdf,
@@ -370,7 +369,7 @@ export function DienststellenOverview({
 
 export default function ReportsPage() {
   const [timeRange, setTimeRange] = useState('24h');
-  const [csvIncludeInfrastructure, setCsvIncludeInfrastructure] = useState(false);
+  const [excludeInfrastructure, setExcludeInfrastructure] = useState(true);
   const [pdfTimeRange, setPdfTimeRange] = useState(DEFAULT_PDF_TIME_RANGE);
   const [pdfIncludeInfrastructure, setPdfIncludeInfrastructure] = useState(false);
   const [pdfBrandProfile, setPdfBrandProfile] = useState<PdfBrandProfile>('management');
@@ -391,19 +390,19 @@ export default function ReportsPage() {
   const {
     data: report,
     isLoading: reportLoading,
-  } = useUtilizationReport(timeRange, selectedEndpoint);
+  } = useUtilizationReport(timeRange, selectedEndpoint, undefined, excludeInfrastructure);
   const {
     data: trends,
     isLoading: trendsLoading,
-  } = useTrendsReport(timeRange, selectedEndpoint);
+  } = useTrendsReport(timeRange, selectedEndpoint, undefined, excludeInfrastructure);
   const {
     data: pdfReport,
     isLoading: pdfReportLoading,
-  } = useUtilizationReport(pdfTimeRange, selectedEndpoint);
+  } = useUtilizationReport(pdfTimeRange, selectedEndpoint, undefined, !pdfIncludeInfrastructure);
   const {
     data: pdfTrends,
     isLoading: pdfTrendsLoading,
-  } = useTrendsReport(pdfTimeRange, selectedEndpoint);
+  } = useTrendsReport(pdfTimeRange, selectedEndpoint, undefined, !pdfIncludeInfrastructure);
 
   // Sort containers
   const sortedContainers = useMemo(() => {
@@ -440,78 +439,48 @@ export default function ReportsPage() {
     }));
   }, [trends]);
 
+  const allContainersById = useMemo(() => {
+    const byId = new Map<string, Container>();
+    for (const container of allContainers ?? []) {
+      byId.set(container.id, container);
+    }
+    return byId;
+  }, [allContainers]);
+
   const exportRows = useMemo<Record<string, unknown>[]>(() => {
-    if (!allContainers?.length) return [];
+    if (!report?.containers?.length) return [];
 
-    const filtered = allContainers.filter((container) => (
-      csvIncludeInfrastructure || getContainerGroup(container) !== 'system'
-    ));
-
-    return filtered.map((container) => {
-      const stack = container.labels?.['com.docker.compose.project'] ?? '';
+    return report.containers.map((container) => {
+      const metadata = allContainersById.get(container.container_id);
+      const stack = metadata?.labels?.['com.docker.compose.project'] ?? '';
       const parsedStack = parseStackName(stack);
       return {
-        container_name: container.name,
-        endpoint_name: container.endpointName,
-        state: container.state,
+        container_name: container.container_name,
+        endpoint_name: metadata?.endpointName ?? '',
+        state: metadata?.state ?? '',
         stack,
-        created_at: new Date(container.created * 1000).toISOString(),
+        created_at: metadata ? new Date(metadata.created * 1000).toISOString() : '',
         dienststelle: parsedStack?.dienststelle ?? 'Standalone',
+        service_type: container.service_type,
       };
     });
-  }, [allContainers, csvIncludeInfrastructure]);
+  }, [allContainersById, report?.containers]);
 
-  const infrastructureContainerIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const container of allContainers ?? []) {
-      if (getContainerGroup(container) === 'system') {
-        ids.add(container.id);
-      }
-    }
-    return ids;
-  }, [allContainers]);
-
-  const infrastructureContainerNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const container of allContainers ?? []) {
-      if (getContainerGroup(container) === 'system') {
-        names.add(container.name.trim().toLowerCase());
-      }
-    }
-    return names;
-  }, [allContainers]);
-
-  const effectivePdfReport = pdfTimeRange === timeRange ? report : pdfReport;
-  const effectivePdfTrends = pdfTimeRange === timeRange ? trends : pdfTrends;
+  const reusePrimaryReportForPdf = pdfTimeRange === timeRange
+    && (!pdfIncludeInfrastructure === excludeInfrastructure);
+  const effectivePdfReport = reusePrimaryReportForPdf ? report : pdfReport;
+  const effectivePdfTrends = reusePrimaryReportForPdf ? trends : pdfTrends;
 
   const filteredPdfContainers = useMemo(() => {
-    const source = effectivePdfReport?.containers ?? [];
-    if (pdfIncludeInfrastructure) return source;
-
-    return source.filter((container) => {
-      if (infrastructureContainerIds.has(container.container_id)) return false;
-      return !infrastructureContainerNames.has(container.container_name.trim().toLowerCase());
-    });
+    return effectivePdfReport?.containers ?? [];
   }, [
     effectivePdfReport?.containers,
-    infrastructureContainerIds,
-    infrastructureContainerNames,
-    pdfIncludeInfrastructure,
   ]);
 
   const filteredPdfRecommendations = useMemo(() => {
-    const source = effectivePdfReport?.recommendations ?? [];
-    if (pdfIncludeInfrastructure) return source;
-
-    return source.filter((recommendation) => {
-      if (infrastructureContainerIds.has(recommendation.container_id)) return false;
-      return !infrastructureContainerNames.has(recommendation.container_name.trim().toLowerCase());
-    });
+    return effectivePdfReport?.recommendations ?? [];
   }, [
     effectivePdfReport?.recommendations,
-    infrastructureContainerIds,
-    infrastructureContainerNames,
-    pdfIncludeInfrastructure,
   ]);
 
   const handleExportCsv = () => {
@@ -588,6 +557,14 @@ export default function ReportsPage() {
 
   const isLoading = reportLoading || trendsLoading;
   const isPdfLoading = pdfReportLoading || pdfTrendsLoading;
+  const applicationContainers = useMemo(
+    () => sortedContainers.filter((container) => container.service_type === 'application'),
+    [sortedContainers],
+  );
+  const infrastructureContainers = useMemo(
+    () => sortedContainers.filter((container) => container.service_type === 'infrastructure'),
+    [sortedContainers],
+  );
 
   useEffect(() => {
     try {
@@ -660,6 +637,70 @@ export default function ReportsPage() {
     setPdfReportTitle(selected.reportTitle as string);
   };
 
+  const renderContainerTable = (containers: ContainerReport[]) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50 text-left">
+            <th
+              className="px-4 py-3 font-medium cursor-pointer hover:text-foreground"
+              onClick={() => handleSort('name')}
+            >
+              Container {sortField === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
+            </th>
+            <th
+              className="px-4 py-3 font-medium cursor-pointer hover:text-foreground text-right"
+              onClick={() => handleSort('cpu')}
+            >
+              CPU Avg {sortField === 'cpu' && (sortDir === 'asc' ? '↑' : '↓')}
+            </th>
+            <th className="px-4 py-3 font-medium text-right">CPU p95</th>
+            <th className="px-4 py-3 font-medium text-right">CPU Max</th>
+            <th
+              className="px-4 py-3 font-medium cursor-pointer hover:text-foreground text-right"
+              onClick={() => handleSort('memory')}
+            >
+              Mem Avg {sortField === 'memory' && (sortDir === 'asc' ? '↑' : '↓')}
+            </th>
+            <th className="px-4 py-3 font-medium text-right">Mem p95</th>
+            <th className="px-4 py-3 font-medium text-right">Mem Max</th>
+            <th className="px-4 py-3 font-medium text-right">Samples</th>
+          </tr>
+        </thead>
+        <tbody>
+          {containers.map((container) => (
+            <tr key={container.container_id} className="border-b last:border-0 hover:bg-muted/30">
+              <td className="px-4 py-3 font-medium truncate max-w-[200px]" title={container.container_name}>
+                {container.container_name}
+              </td>
+              <td className={cn('px-4 py-3 text-right', (container.cpu?.avg ?? 0) > 80 && 'text-red-500 font-medium')}>
+                {container.cpu ? `${container.cpu.avg.toFixed(1)}%` : '—'}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {container.cpu ? `${container.cpu.p95.toFixed(1)}%` : '—'}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {container.cpu ? `${container.cpu.max.toFixed(1)}%` : '—'}
+              </td>
+              <td className={cn('px-4 py-3 text-right', (container.memory?.avg ?? 0) > 85 && 'text-red-500 font-medium')}>
+                {container.memory ? `${container.memory.avg.toFixed(1)}%` : '—'}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {container.memory ? `${container.memory.p95.toFixed(1)}%` : '—'}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {container.memory ? `${container.memory.max.toFixed(1)}%` : '—'}
+              </td>
+              <td className="px-4 py-3 text-right text-muted-foreground">
+                {container.cpu?.samples ?? container.memory?.samples ?? 0}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -727,10 +768,10 @@ export default function ReportsPage() {
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={csvIncludeInfrastructure}
-            onChange={(event) => setCsvIncludeInfrastructure(event.target.checked)}
+            checked={excludeInfrastructure}
+            onChange={(event) => setExcludeInfrastructure(event.target.checked)}
           />
-          Include infrastructure services in CSV
+          Exclude infrastructure services
         </label>
       </div>
 
@@ -1001,71 +1042,26 @@ export default function ReportsPage() {
 
       {/* Container Utilization Table */}
       {report && report.containers.length > 0 && (
-        <div className="rounded-lg border bg-card">
-          <div className="p-4 border-b">
-            <h3 className="text-lg font-semibold">Container Utilization</h3>
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-card">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold">Application Services</h3>
+            </div>
+            {applicationContainers.length > 0 ? (
+              renderContainerTable(applicationContainers)
+            ) : (
+              <div className="p-4 text-sm text-muted-foreground">No application services for the selected scope.</div>
+            )}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50 text-left">
-                  <th
-                    className="px-4 py-3 font-medium cursor-pointer hover:text-foreground"
-                    onClick={() => handleSort('name')}
-                  >
-                    Container {sortField === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th
-                    className="px-4 py-3 font-medium cursor-pointer hover:text-foreground text-right"
-                    onClick={() => handleSort('cpu')}
-                  >
-                    CPU Avg {sortField === 'cpu' && (sortDir === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th className="px-4 py-3 font-medium text-right">CPU p95</th>
-                  <th className="px-4 py-3 font-medium text-right">CPU Max</th>
-                  <th
-                    className="px-4 py-3 font-medium cursor-pointer hover:text-foreground text-right"
-                    onClick={() => handleSort('memory')}
-                  >
-                    Mem Avg {sortField === 'memory' && (sortDir === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th className="px-4 py-3 font-medium text-right">Mem p95</th>
-                  <th className="px-4 py-3 font-medium text-right">Mem Max</th>
-                  <th className="px-4 py-3 font-medium text-right">Samples</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedContainers.map((c) => (
-                  <tr key={c.container_id} className="border-b last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3 font-medium truncate max-w-[200px]" title={c.container_name}>
-                      {c.container_name}
-                    </td>
-                    <td className={cn('px-4 py-3 text-right', (c.cpu?.avg ?? 0) > 80 && 'text-red-500 font-medium')}>
-                      {c.cpu ? `${c.cpu.avg.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {c.cpu ? `${c.cpu.p95.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {c.cpu ? `${c.cpu.max.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className={cn('px-4 py-3 text-right', (c.memory?.avg ?? 0) > 85 && 'text-red-500 font-medium')}>
-                      {c.memory ? `${c.memory.avg.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {c.memory ? `${c.memory.p95.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {c.memory ? `${c.memory.max.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">
-                      {c.cpu?.samples ?? c.memory?.samples ?? 0}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+          {infrastructureContainers.length > 0 && (
+            <div className="rounded-lg border bg-card">
+              <div className="p-4 border-b">
+                <h3 className="text-lg font-semibold">Infrastructure Services</h3>
+              </div>
+              {renderContainerTable(infrastructureContainers)}
+            </div>
+          )}
         </div>
       )}
 

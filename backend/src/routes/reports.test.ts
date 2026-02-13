@@ -27,6 +27,18 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
+vi.mock('../services/infrastructure-service-classifier.js', () => ({
+  getInfrastructureServicePatterns: vi.fn().mockReturnValue(['traefik', 'portainer_agent', 'beyla', 'redis']),
+  isInfrastructureService: vi.fn((name: string) => {
+    const normalized = name.toLowerCase();
+    return ['traefik', 'portainer_agent', 'beyla', 'redis'].some((pattern) => (
+      normalized === pattern
+      || normalized.startsWith(`${pattern}-`)
+      || normalized.startsWith(`${pattern}_`)
+    ));
+  }),
+}));
+
 describe('Reports routes', () => {
   const app = Fastify({ logger: false });
 
@@ -158,8 +170,41 @@ describe('Reports routes', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.payload);
       expect(body.includeInfrastructure).toBe(false);
+      expect(body.excludeInfrastructure).toBe(true);
       expect(body.containers).toHaveLength(1);
       expect(body.containers[0].container_name).toBe('web');
+      expect(body.containers[0].service_type).toBe('application');
+    });
+
+    it('supports excludeInfrastructure=false query parameter', async () => {
+      mockQuery
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              container_id: 'infra-1',
+              container_name: 'redis',
+              endpoint_id: 1,
+              metric_type: 'cpu',
+              avg_value: 10,
+              min_value: 5,
+              max_value: 20,
+              sample_count: 50,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [{ p50: 9, p95: 18, p99: 20 }] });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?excludeInfrastructure=false',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.payload);
+      expect(body.includeInfrastructure).toBe(true);
+      expect(body.excludeInfrastructure).toBe(false);
+      expect(body.containers).toHaveLength(1);
+      expect(body.containers[0].service_type).toBe('infrastructure');
     });
   });
 

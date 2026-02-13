@@ -1,6 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { getMetricsDb } from '../db/timescale.js';
 import { ReportsQuerySchema } from '../models/api-schemas.js';
+import {
+  getInfrastructureServicePatterns,
+  isInfrastructureService,
+} from '../services/infrastructure-service-classifier.js';
 
 interface AggRow {
   container_id: string;
@@ -13,31 +17,6 @@ interface AggRow {
   sample_count: number;
 }
 
-const PROTECTED_INFRASTRUCTURE_NAMES = [
-  'portainer',
-  'portainer-agent',
-  'portainer_agent',
-  'redis',
-  'postgres',
-  'mysql',
-  'mariadb',
-  'mongo',
-  'mongodb',
-  'traefik',
-  'nginx',
-  'haproxy',
-  'caddy',
-  'etcd',
-  'consul',
-  'vault',
-];
-
-function isInfrastructureContainer(containerName: string): boolean {
-  const normalized = containerName.toLowerCase();
-  return PROTECTED_INFRASTRUCTURE_NAMES.some((name) =>
-    normalized === name || normalized.startsWith(`${name}-`) || normalized.startsWith(`${name}_`));
-}
-
 function timeRangeToInterval(timeRange: string): string {
   switch (timeRange) {
     case '24h': return '1 day';
@@ -47,22 +26,40 @@ function timeRangeToInterval(timeRange: string): string {
   }
 }
 
-function excludeInfrastructureContainers<T extends { container_name: string }>(rows: T[], includeInfrastructure: boolean): T[] {
-  if (includeInfrastructure) return rows;
-  return rows.filter((row) => !isInfrastructureContainer(row.container_name));
+function resolveExcludeInfrastructure(query: {
+  includeInfrastructure?: boolean;
+  excludeInfrastructure?: boolean;
+}): boolean {
+  if (typeof query.excludeInfrastructure === 'boolean') {
+    return query.excludeInfrastructure;
+  }
+  if (typeof query.includeInfrastructure === 'boolean') {
+    return !query.includeInfrastructure;
+  }
+  return true;
+}
+
+function excludeInfrastructureContainers<T extends { container_name: string }>(
+  rows: T[],
+  excludeInfrastructure: boolean,
+  patterns: string[],
+): T[] {
+  if (!excludeInfrastructure) return rows;
+  return rows.filter((row) => !isInfrastructureService(row.container_name, patterns));
 }
 
 function addInfrastructureSqlFilter(
   conditions: string[],
   params: unknown[],
   startParamIdx: number,
-  includeInfrastructure: boolean,
+  excludeInfrastructure: boolean,
+  patterns: string[],
 ): number {
-  if (includeInfrastructure) return startParamIdx;
+  if (!excludeInfrastructure) return startParamIdx;
 
   const infraClauses: string[] = [];
   let paramIdx = startParamIdx;
-  for (const name of PROTECTED_INFRASTRUCTURE_NAMES) {
+  for (const name of patterns) {
     infraClauses.push(`LOWER(container_name) = $${paramIdx}`);
     params.push(name);
     paramIdx++;
@@ -88,13 +85,20 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { timeRange: tr, endpointId, containerId, includeInfrastructure = false } = request.query as {
+    const { timeRange: tr, endpointId, containerId, includeInfrastructure, excludeInfrastructure: rawExcludeInfrastructure } = request.query as {
       timeRange?: string;
       endpointId?: number;
       containerId?: string;
       includeInfrastructure?: boolean;
+      excludeInfrastructure?: boolean;
     };
+    const excludeInfrastructure = resolveExcludeInfrastructure({
+      includeInfrastructure,
+      excludeInfrastructure: rawExcludeInfrastructure,
+    });
+    const includeInfrastructureResolved = !excludeInfrastructure;
     const timeRange = tr || '24h';
+    const infrastructurePatterns = getInfrastructureServicePatterns();
 
     const db = await getMetricsDb();
     const interval = timeRangeToInterval(timeRange);
@@ -113,7 +117,13 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       params.push(containerId);
       paramIdx++;
     }
-    paramIdx = addInfrastructureSqlFilter(conditions, params, paramIdx, includeInfrastructure);
+    paramIdx = addInfrastructureSqlFilter(
+      conditions,
+      params,
+      paramIdx,
+      excludeInfrastructure,
+      infrastructurePatterns,
+    );
 
     const where = conditions.join(' AND ');
 
@@ -140,17 +150,23 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       container_id: string;
       container_name: string;
       endpoint_id: number;
+      service_type: 'application' | 'infrastructure';
       cpu: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
       memory: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
       memory_bytes: { avg: number; min: number; max: number; p50: number; p95: number; p99: number; samples: number } | null;
     }>();
 
-    for (const row of excludeInfrastructureContainers(rows as AggRow[], includeInfrastructure)) {
+    for (const row of excludeInfrastructureContainers(rows as AggRow[], excludeInfrastructure, infrastructurePatterns)) {
+      const serviceType: 'application' | 'infrastructure' = isInfrastructureService(
+        row.container_name,
+        infrastructurePatterns,
+      ) ? 'infrastructure' : 'application';
       if (!containersMap.has(row.container_id)) {
         containersMap.set(row.container_id, {
           container_id: row.container_id,
           container_name: row.container_name,
           endpoint_id: row.endpoint_id,
+          service_type: serviceType,
           cpu: null,
           memory: null,
           memory_bytes: null,
@@ -231,6 +247,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         return {
           container_id: c.container_id,
           container_name: c.container_name,
+          service_type: c.service_type,
           issues,
         };
       })
@@ -238,7 +255,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
     return {
       timeRange,
-      includeInfrastructure,
+      includeInfrastructure: includeInfrastructureResolved,
+      excludeInfrastructure,
       containers,
       fleetSummary,
       recommendations,
@@ -255,13 +273,20 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { timeRange: tr, endpointId, containerId, includeInfrastructure = false } = request.query as {
+    const { timeRange: tr, endpointId, containerId, includeInfrastructure, excludeInfrastructure: rawExcludeInfrastructure } = request.query as {
       timeRange?: string;
       endpointId?: number;
       containerId?: string;
       includeInfrastructure?: boolean;
+      excludeInfrastructure?: boolean;
     };
+    const excludeInfrastructure = resolveExcludeInfrastructure({
+      includeInfrastructure,
+      excludeInfrastructure: rawExcludeInfrastructure,
+    });
+    const includeInfrastructureResolved = !excludeInfrastructure;
     const timeRange = tr || '24h';
+    const infrastructurePatterns = getInfrastructureServicePatterns();
 
     const db = await getMetricsDb();
     const interval = timeRangeToInterval(timeRange);
@@ -280,7 +305,13 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       params.push(containerId);
       paramIdx++;
     }
-    addInfrastructureSqlFilter(conditions, params, paramIdx, includeInfrastructure);
+    addInfrastructureSqlFilter(
+      conditions,
+      params,
+      paramIdx,
+      excludeInfrastructure,
+      infrastructurePatterns,
+    );
 
     const where = conditions.join(' AND ');
 
@@ -329,7 +360,12 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       }
     }
 
-    return { timeRange, includeInfrastructure, trends };
+    return {
+      timeRange,
+      includeInfrastructure: includeInfrastructureResolved,
+      excludeInfrastructure,
+      trends,
+    };
   });
 
   fastify.get('/api/reports/management', {
@@ -345,16 +381,24 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       timeRange: tr,
       endpointId,
       containerId,
-      includeInfrastructure = false,
+      includeInfrastructure,
+      excludeInfrastructure: rawExcludeInfrastructure,
     } = request.query as {
       timeRange?: string;
       endpointId?: number;
       containerId?: string;
       includeInfrastructure?: boolean;
+      excludeInfrastructure?: boolean;
     };
+    const excludeInfrastructure = resolveExcludeInfrastructure({
+      includeInfrastructure,
+      excludeInfrastructure: rawExcludeInfrastructure,
+    });
+    const includeInfrastructureResolved = !excludeInfrastructure;
     const timeRange = tr || '7d';
     const interval = timeRangeToInterval(timeRange);
     const db = await getMetricsDb();
+    const infrastructurePatterns = getInfrastructureServicePatterns();
 
     const baseConditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
     const baseParams: unknown[] = [];
@@ -370,7 +414,13 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       baseParams.push(containerId);
       paramIdx++;
     }
-    addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, includeInfrastructure);
+    addInfrastructureSqlFilter(
+      baseConditions,
+      baseParams,
+      paramIdx,
+      excludeInfrastructure,
+      infrastructurePatterns,
+    );
     const where = baseConditions.join(' AND ');
 
     const { rows: topRows } = await db.query(
@@ -483,7 +533,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         timeRange,
         endpointId: endpointId ?? null,
         containerId: containerId ?? null,
-        includeInfrastructure,
+        includeInfrastructure: includeInfrastructureResolved,
+        excludeInfrastructure,
       },
       executiveSummary: {
         totalServices: topServices.length,

@@ -57,6 +57,27 @@ describe('useUtilizationReport', () => {
         timeRange: '7d',
         endpointId: 12,
         containerId: 'container-1',
+        excludeInfrastructure: true,
+      },
+    });
+  });
+
+  it('passes excludeInfrastructure override to utilization endpoint', async () => {
+    const getSpy = vi.mocked(api.get);
+    getSpy.mockClear();
+
+    const { result } = renderHook(
+      () => useUtilizationReport('7d', 12, 'container-1', false),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/api/reports/utilization', {
+      params: {
+        timeRange: '7d',
+        endpointId: 12,
+        containerId: 'container-1',
+        excludeInfrastructure: false,
       },
     });
   });
@@ -84,6 +105,7 @@ describe('useTrendsReport', () => {
         timeRange: '30d',
         endpointId: 9,
         containerId: 'container-77',
+        excludeInfrastructure: true,
       },
     });
   });

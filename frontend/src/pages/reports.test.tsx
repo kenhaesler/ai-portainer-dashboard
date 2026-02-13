@@ -11,38 +11,54 @@ const reportState = vi.hoisted(() => ({
   byRange: {
     '24h': {
       timeRange: '24h',
+      includeInfrastructure: false,
+      excludeInfrastructure: true,
       containers: [
         {
           container_id: 'c1',
           container_name: 'test-web',
           endpoint_id: 1,
+          service_type: 'application',
           cpu: { avg: 45.5, min: 10, max: 92, p50: 44, p95: 88, p99: 91, samples: 100 },
           memory: { avg: 60.2, min: 30, max: 88, p50: 58, p95: 82, p99: 87, samples: 100 },
           memory_bytes: null,
         },
+        {
+          container_id: 'c2',
+          container_name: 'edge-agent',
+          endpoint_id: 1,
+          service_type: 'infrastructure',
+          cpu: { avg: 25, min: 5, max: 55, p50: 20, p95: 45, p99: 51, samples: 100 },
+          memory: { avg: 30, min: 10, max: 60, p50: 25, p95: 50, p99: 55, samples: 100 },
+          memory_bytes: null,
+        },
       ],
       fleetSummary: {
-        totalContainers: 1,
-        avgCpu: 45.5,
+        totalContainers: 2,
+        avgCpu: 35.25,
         maxCpu: 92,
-        avgMemory: 60.2,
+        avgMemory: 45.1,
         maxMemory: 88,
       },
       recommendations: [
         {
           container_id: 'c1',
           container_name: 'test-web',
+          service_type: 'application',
           issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
         },
       ],
     },
     '7d': {
       timeRange: '7d',
+      includeInfrastructure: false,
+      excludeInfrastructure: true,
       containers: [
         {
           container_id: 'c1',
           container_name: 'test-web',
           endpoint_id: 1,
+          service_type: 'application',
           cpu: { avg: 50, min: 10, max: 93, p50: 45, p95: 86, p99: 90, samples: 200 },
           memory: { avg: 62, min: 32, max: 90, p50: 58, p95: 84, p99: 88, samples: 200 },
           memory_bytes: null,
@@ -51,6 +67,7 @@ const reportState = vi.hoisted(() => ({
           container_id: 'c2',
           container_name: 'edge-agent',
           endpoint_id: 1,
+          service_type: 'infrastructure',
           cpu: { avg: 25, min: 5, max: 55, p50: 20, p95: 45, p99: 51, samples: 200 },
           memory: { avg: 30, min: 10, max: 60, p50: 25, p95: 50, p99: 55, samples: 200 },
           memory_bytes: null,
@@ -67,17 +84,21 @@ const reportState = vi.hoisted(() => ({
         {
           container_id: 'c1',
           container_name: 'test-web',
+          service_type: 'application',
           issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
         },
         {
           container_id: 'c2',
           container_name: 'edge-agent',
+          service_type: 'infrastructure',
           issues: ['System container with elevated baseline load'],
         },
       ],
     },
     '30d': {
       timeRange: '30d',
+      includeInfrastructure: false,
+      excludeInfrastructure: true,
       containers: [],
       fleetSummary: {
         totalContainers: 0,
@@ -106,14 +127,36 @@ vi.mock('@/lib/management-pdf-export', () => ({
 
 // Mock hooks
 vi.mock('@/hooks/use-reports', () => ({
-  useUtilizationReport: vi.fn((timeRange: string) => ({
-    data: reportState.byRange[timeRange as keyof typeof reportState.byRange],
-    isLoading: false,
-  })),
+  useUtilizationReport: vi.fn((timeRange: string, _endpointId?: number, _containerId?: string, excludeInfrastructure?: boolean) => {
+    const source = reportState.byRange[timeRange as keyof typeof reportState.byRange];
+    const shouldExclude = excludeInfrastructure ?? true;
+    const containers = shouldExclude
+      ? source.containers.filter((container) => container.service_type !== 'infrastructure')
+      : source.containers;
+    const recommendations = shouldExclude
+      ? source.recommendations.filter((recommendation) => recommendation.service_type !== 'infrastructure')
+      : source.recommendations;
+    return {
+      data: {
+        ...source,
+        includeInfrastructure: !shouldExclude,
+        excludeInfrastructure: shouldExclude,
+        containers,
+        recommendations,
+        fleetSummary: {
+          ...source.fleetSummary,
+          totalContainers: containers.length,
+        },
+      },
+      isLoading: false,
+    };
+  }),
   useTrendsReport: vi.fn((timeRange: string) => ({
     data: timeRange === '7d'
       ? {
         timeRange: '7d',
+        includeInfrastructure: false,
+        excludeInfrastructure: true,
         trends: {
           cpu: [{ hour: '2025-01-01T10:00:00', avg: 45, max: 82, min: 5, samples: 140 }],
           memory: [{ hour: '2025-01-01T10:00:00', avg: 57, max: 72, min: 40, samples: 140 }],
@@ -122,6 +165,8 @@ vi.mock('@/hooks/use-reports', () => ({
       }
       : {
         timeRange: '24h',
+        includeInfrastructure: false,
+        excludeInfrastructure: true,
         trends: {
           cpu: [{ hour: '2025-01-01T10:00:00', avg: 40, max: 80, min: 5, samples: 60 }],
           memory: [{ hour: '2025-01-01T10:00:00', avg: 55, max: 70, min: 40, samples: 60 }],
@@ -208,17 +253,28 @@ describe('ReportsPage', () => {
         container_id: 'c1',
         container_name: 'test-web',
         endpoint_id: 1,
+        service_type: 'application',
         cpu: { avg: 45.5, min: 10, max: 92, p50: 44, p95: 88, p99: 91, samples: 100 },
         memory: { avg: 60.2, min: 30, max: 88, p50: 58, p95: 82, p99: 87, samples: 100 },
         memory_bytes: null,
       },
+      {
+        container_id: 'c2',
+        container_name: 'edge-agent',
+        endpoint_id: 1,
+        service_type: 'infrastructure',
+        cpu: { avg: 25, min: 5, max: 55, p50: 20, p95: 45, p99: 51, samples: 100 },
+        memory: { avg: 30, min: 10, max: 60, p50: 25, p95: 50, p99: 55, samples: 100 },
+        memory_bytes: null,
+      },
     ];
-    reportState.byRange['24h'].fleetSummary.totalContainers = 1;
+    reportState.byRange['24h'].fleetSummary.totalContainers = 2;
     reportState.byRange['7d'].containers = [
       {
         container_id: 'c1',
         container_name: 'test-web',
         endpoint_id: 1,
+        service_type: 'application',
         cpu: { avg: 50, min: 10, max: 93, p50: 45, p95: 86, p99: 90, samples: 200 },
         memory: { avg: 62, min: 32, max: 90, p50: 58, p95: 84, p99: 88, samples: 200 },
         memory_bytes: null,
@@ -227,6 +283,7 @@ describe('ReportsPage', () => {
         container_id: 'c2',
         container_name: 'edge-agent',
         endpoint_id: 1,
+        service_type: 'infrastructure',
         cpu: { avg: 25, min: 5, max: 55, p50: 20, p95: 45, p99: 51, samples: 200 },
         memory: { avg: 30, min: 10, max: 60, p50: 25, p95: 50, p99: 55, samples: 200 },
         memory_bytes: null,
@@ -236,11 +293,13 @@ describe('ReportsPage', () => {
       {
         container_id: 'c1',
         container_name: 'test-web',
+        service_type: 'application',
         issues: ['CPU over-utilized (avg > 80%) — consider increasing CPU limits'],
       },
       {
         container_id: 'c2',
         container_name: 'edge-agent',
+        service_type: 'infrastructure',
         issues: ['System container with elevated baseline load'],
       },
     ];
@@ -261,7 +320,7 @@ describe('ReportsPage', () => {
 
   it('renders container utilization table', () => {
     renderWithProviders(<ReportsPage />);
-    expect(screen.getByText('Container Utilization')).toBeTruthy();
+    expect(screen.getByText('Application Services')).toBeTruthy();
     expect(screen.getAllByText('test-web').length).toBeGreaterThan(0);
   });
 
@@ -293,10 +352,11 @@ describe('ReportsPage', () => {
     expect(first.stack).toBe('');
     expect(first.created_at).toBe('2023-11-14T22:13:20.000Z');
     expect(first.dienststelle).toBe('Standalone');
+    expect(first.service_type).toBe('application');
     expect(filename).toMatch(/^resource-report-24h-all-endpoints-\d{4}-\d{2}-\d{2}\.csv$/);
   });
 
-  it('includes infrastructure rows in CSV only when toggle is enabled', () => {
+  it('excludes infrastructure rows in CSV by default and includes them when toggled off', () => {
     renderWithProviders(<ReportsPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
@@ -305,25 +365,21 @@ describe('ReportsPage', () => {
     expect(rows[0].container_name).toBe('test-web');
 
     mockExportToCsv.mockClear();
-    fireEvent.click(screen.getByLabelText(/include infrastructure services in csv/i));
+    fireEvent.click(screen.getByLabelText(/exclude infrastructure services/i));
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
     rows = mockExportToCsv.mock.calls[0][0] as Array<Record<string, unknown>>;
     expect(rows).toHaveLength(2);
+    expect(rows[1].service_type).toBe('infrastructure');
   });
 
-  it('exports required CSV fields even when utilization metrics are empty', () => {
+  it('disables CSV export when utilization metrics are empty', () => {
     reportState.byRange['24h'].containers = [];
     reportState.byRange['24h'].fleetSummary.totalContainers = 0;
 
     renderWithProviders(<ReportsPage />);
     fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
 
-    expect(mockExportToCsv).toHaveBeenCalledTimes(1);
-    const [rows] = mockExportToCsv.mock.calls[0];
-    const first = (rows as Array<Record<string, unknown>>)[0];
-    expect(first.container_name).toBe('test-web');
-    expect(first.endpoint_name).toBe('local');
-    expect(first.dienststelle).toBe('Standalone');
+    expect(mockExportToCsv).not.toHaveBeenCalled();
   });
 
   it('renders time range selector buttons', () => {
@@ -366,7 +422,7 @@ describe('ReportsPage', () => {
     const [payload, filename] = mockExportManagementPdf.mock.calls[0];
     expect(payload.timeRange).toBe('24h');
     expect(payload.includeInfrastructure).toBe(true);
-    expect(payload.containers).toHaveLength(1);
+    expect(payload.containers).toHaveLength(2);
     expect(filename).toMatch(/^management-report-24h-all-endpoints-\d{4}-\d{2}-\d{2}\.pdf$/);
   });
 });
