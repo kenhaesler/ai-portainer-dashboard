@@ -77,6 +77,17 @@ export function getRatesForEndpoint(endpointId: number): Record<string, LiveNetw
   return rates;
 }
 
+/** Get live rates for all containers across all endpoints. */
+export function getAllRates(): Record<string, LiveNetworkRate> {
+  const rates: Record<string, LiveNetworkRate> = {};
+  for (const endpointMap of store.values()) {
+    for (const [containerId, entry] of endpointMap) {
+      rates[containerId] = computeRate(entry);
+    }
+  }
+  return rates;
+}
+
 /** Clear all stored samples (for testing). */
 export function _resetTracker(): void {
   store.clear();

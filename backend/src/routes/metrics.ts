@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { getMetricsDb } from '../db/timescale.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
-import { getNetworkRates } from '../services/metrics-store.js';
-import { getRatesForEndpoint } from '../services/network-rate-tracker.js';
+import { getNetworkRates, getAllNetworkRates } from '../services/metrics-store.js';
+import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
 import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
@@ -182,6 +182,27 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     }
     // Fallback: in-memory rates computed from scheduler's Docker stats collection
     const rates = getRatesForEndpoint(eid);
+    return { rates };
+  });
+
+  // Network rates across all endpoints (for "All endpoints" view)
+  fastify.get('/api/metrics/network-rates', {
+    schema: {
+      tags: ['Metrics'],
+      summary: 'Get network I/O rates for all containers across all endpoints',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    try {
+      const rates = await getAllNetworkRates();
+      if (Object.keys(rates).length > 0) {
+        return { rates };
+      }
+    } catch {
+      log.debug('TimescaleDB unavailable for all network rates, using in-memory tracker');
+    }
+    const rates = getAllRates();
     return { rates };
   });
 

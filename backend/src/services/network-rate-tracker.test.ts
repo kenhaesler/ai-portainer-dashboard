@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   recordNetworkSample,
   getRatesForEndpoint,
+  getAllRates,
   _resetTracker,
 } from './network-rate-tracker.js';
 
@@ -84,5 +85,30 @@ describe('network-rate-tracker', () => {
     expect(Object.keys(getRatesForEndpoint(2))).toEqual(['c2']);
 
     vi.restoreAllMocks();
+  });
+
+  it('getAllRates returns rates across all endpoints', () => {
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    recordNetworkSample(1, 'c1', 0, 0);
+    recordNetworkSample(2, 'c2', 0, 0);
+
+    vi.spyOn(Date, 'now').mockReturnValue(now + 10_000);
+    recordNetworkSample(1, 'c1', 10000, 5000);
+    recordNetworkSample(2, 'c2', 20000, 8000);
+
+    const rates = getAllRates();
+    // Both containers from different endpoints should appear
+    expect(Object.keys(rates).sort()).toEqual(['c1', 'c2']);
+    expect(rates['c1'].rxBytesPerSec).toBeCloseTo(1000, 0); // 10000/10
+    expect(rates['c1'].txBytesPerSec).toBeCloseTo(500, 0);  // 5000/10
+    expect(rates['c2'].rxBytesPerSec).toBeCloseTo(2000, 0); // 20000/10
+    expect(rates['c2'].txBytesPerSec).toBeCloseTo(800, 0);  // 8000/10
+
+    vi.restoreAllMocks();
+  });
+
+  it('getAllRates returns empty object when no samples recorded', () => {
+    expect(getAllRates()).toEqual({});
   });
 });
