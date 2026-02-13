@@ -120,6 +120,11 @@ describe('config validation', () => {
   });
 
   describe('monitoring timing defaults', () => {
+    it('defaults ANOMALY_ZSCORE_THRESHOLD to 3.5', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_ZSCORE_THRESHOLD).toBe(3.5);
+    });
+
     it('defaults ANOMALY_MIN_SAMPLES to 10', async () => {
       const { getConfig } = await import('./index.js');
       expect(getConfig().ANOMALY_MIN_SAMPLES).toBe(10);
@@ -130,9 +135,34 @@ describe('config validation', () => {
       expect(getConfig().ANOMALY_MOVING_AVERAGE_WINDOW).toBe(20);
     });
 
-    it('defaults ANOMALY_COOLDOWN_MINUTES to 10', async () => {
+    it('defaults ANOMALY_COOLDOWN_MINUTES to 30', async () => {
       const { getConfig } = await import('./index.js');
-      expect(getConfig().ANOMALY_COOLDOWN_MINUTES).toBe(10);
+      expect(getConfig().ANOMALY_COOLDOWN_MINUTES).toBe(30);
+    });
+
+    it('defaults ANOMALY_HARD_THRESHOLD_ENABLED to true', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_HARD_THRESHOLD_ENABLED).toBe(true);
+    });
+
+    it('defaults BOLLINGER_BANDS_ENABLED to true', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().BOLLINGER_BANDS_ENABLED).toBe(true);
+    });
+
+    it('defaults ANOMALY_THRESHOLD_PCT to 85', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_THRESHOLD_PCT).toBe(85);
+    });
+
+    it('defaults ANOMALY_EXPLANATION_MAX_PER_CYCLE to 5', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ANOMALY_EXPLANATION_MAX_PER_CYCLE).toBe(5);
+    });
+
+    it('defaults ISOLATION_FOREST_CONTAMINATION to 0.15', async () => {
+      const { getConfig } = await import('./index.js');
+      expect(getConfig().ISOLATION_FOREST_CONTAMINATION).toBe(0.15);
     });
 
     it('defaults INVESTIGATION_COOLDOWN_MINUTES to 20', async () => {

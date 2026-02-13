@@ -6,6 +6,7 @@ vi.mock('../config/index.js', () => ({
     ANOMALY_DETECTION_METHOD: 'adaptive',
     ANOMALY_COOLDOWN_MINUTES: 0,
     ANOMALY_THRESHOLD_PCT: 80,
+    ANOMALY_HARD_THRESHOLD_ENABLED: true,
     PREDICTIVE_ALERTING_ENABLED: true,
     PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
     ANOMALY_EXPLANATION_ENABLED: true,
@@ -137,6 +138,9 @@ describe('monitoring-service', () => {
     mockExplainAnomalies.mockResolvedValue(new Map());
     (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
       ANOMALY_DETECTION_METHOD: 'adaptive',
+      ANOMALY_COOLDOWN_MINUTES: 0,
+      ANOMALY_THRESHOLD_PCT: 80,
+      ANOMALY_HARD_THRESHOLD_ENABLED: true,
       PREDICTIVE_ALERTING_ENABLED: true,
       PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
       ANOMALY_EXPLANATION_ENABLED: true,
@@ -334,6 +338,9 @@ describe('monitoring-service', () => {
     it('respects ANOMALY_EXPLANATION_ENABLED flag', async () => {
       (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
         ANOMALY_DETECTION_METHOD: 'adaptive',
+        ANOMALY_COOLDOWN_MINUTES: 0,
+        ANOMALY_THRESHOLD_PCT: 80,
+        ANOMALY_HARD_THRESHOLD_ENABLED: true,
         PREDICTIVE_ALERTING_ENABLED: false,
         PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
         ANOMALY_EXPLANATION_ENABLED: false,
@@ -355,6 +362,41 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       expect(mockExplainAnomalies).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hard-threshold toggle', () => {
+    it('does not create threshold anomalies when ANOMALY_HARD_THRESHOLD_ENABLED is false', async () => {
+      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+        ANOMALY_DETECTION_METHOD: 'adaptive',
+        ANOMALY_COOLDOWN_MINUTES: 0,
+        ANOMALY_THRESHOLD_PCT: 80,
+        ANOMALY_HARD_THRESHOLD_ENABLED: false,
+        PREDICTIVE_ALERTING_ENABLED: false,
+        PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
+        ANOMALY_EXPLANATION_ENABLED: false,
+        ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
+        INVESTIGATION_ENABLED: false,
+        INVESTIGATION_COOLDOWN_MINUTES: 30,
+        INVESTIGATION_MAX_CONCURRENT: 2,
+        ISOLATION_FOREST_ENABLED: false,
+        NLP_LOG_ANALYSIS_ENABLED: false,
+        NLP_LOG_ANALYSIS_MAX_PER_CYCLE: 3,
+        NLP_LOG_ANALYSIS_TAIL_LINES: 100,
+      });
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockGetLatestMetrics.mockResolvedValue({ cpu: 95, memory: 40, memory_bytes: 1024 });
+      mockDetectAnomalyAdaptive.mockReturnValue(null);
+
+      await runMonitoringCycle();
+
+      const anomalyCalls = mockInsertInsight.mock.calls.filter(
+        (c: unknown[]) => (c[0] as { category: string }).category === 'anomaly',
+      );
+      expect(anomalyCalls).toHaveLength(0);
     });
   });
 
