@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle } from 'lucide-react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import remarkGfm from 'remark-gfm';
@@ -9,8 +9,11 @@ import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { useMcpServers } from '@/hooks/use-mcp';
+import { usePromptProfiles, useSwitchProfile } from '@/hooks/use-prompt-profiles';
+import { useAuth } from '@/providers/auth-provider';
 import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
 import { ShimmerText } from '@/components/shared/shimmer-text';
+import { toast } from 'sonner';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',
@@ -61,6 +64,21 @@ export default function LlmAssistantPage() {
   const { messages, isStreaming, currentResponse, activeToolCalls, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
   const { data: modelsData } = useLlmModels();
   const { data: mcpServers } = useMcpServers();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
+  const { data: profileData } = usePromptProfiles();
+  const switchProfile = useSwitchProfile();
+
+  const profiles = profileData?.profiles ?? [];
+  const activeProfileId = profileData?.activeProfileId ?? 'default';
+
+  const handleProfileSwitch = async (id: string) => {
+    if (id === activeProfileId) return;
+    await switchProfile.mutateAsync({ id });
+    toast.success('Profile switched', {
+      description: 'AI prompts updated. New messages will use the new profile.',
+    });
+  };
 
   const suggestions = useSuggestions(mcpServers);
 
@@ -143,6 +161,21 @@ export default function LlmAssistantPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Profile Selector (admin-only) */}
+          {isAdmin && profiles.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Layers className="h-4 w-4 text-muted-foreground" />
+              <ThemedSelect
+                value={activeProfileId}
+                onValueChange={(val) => void handleProfileSwitch(val)}
+                disabled={isStreaming || isSending || switchProfile.isPending}
+                options={profiles.map((p) => ({
+                  value: p.id,
+                  label: `${p.name}${p.isBuiltIn ? ' ✦' : ''}`,
+                }))}
+              />
+            </div>
+          )}
           {/* Model Selector */}
           {modelsData && modelsData.models.length > 0 && (
             <ThemedSelect
