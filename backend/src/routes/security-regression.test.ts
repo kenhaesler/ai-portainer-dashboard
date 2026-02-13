@@ -1225,6 +1225,18 @@ describe('Infrastructure Exposure Defaults', () => {
     expect(content).not.toMatch(/ports:\s*\n\s*-\s*["']?9090:9090["']?/m);
   });
 
+<<<<<<< HEAD
+  it('should enforce Redis resource limits in docker/docker-compose.yml', () => {
+    const file = path.resolve(process.cwd(), '..', 'docker', 'docker-compose.yml');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toContain('--maxmemory ${REDIS_MAXMEMORY:-512mb}');
+    expect(content).toContain('mem_limit: 768M');
+    expect(content).toContain('mem_reservation: 256M');
+    expect(content).toMatch(/redis:\n[\s\S]*?deploy:\n[\s\S]*?resources:\n[\s\S]*?limits:\n[\s\S]*?memory: 768M/);
+    expect(content).toMatch(/redis:\n[\s\S]*?deploy:\n[\s\S]*?resources:\n[\s\S]*?limits:\n[\s\S]*?cpus: "0\.5"/);
+  });
+
   it('should require Redis auth in workloads/data-services.yml', () => {
     const file = path.resolve(process.cwd(), '..', 'workloads', 'data-services.yml');
     const content = readFileSync(file, 'utf8');

@@ -110,6 +110,9 @@ services:
   redis:
     image: dhi.io/redis:8.0-debian13
     restart: unless-stopped
+    mem_limit: 768M
+    mem_reservation: 256M
+    cpus: "0.5"
     command: >
       redis-server
       --maxmemory ${REDIS_MAXMEMORY:-512mb}
@@ -123,6 +126,14 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.5"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
     networks:
       - dashboard-net
 
