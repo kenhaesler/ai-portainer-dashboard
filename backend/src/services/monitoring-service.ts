@@ -8,7 +8,8 @@ import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.j
 import { scanContainer } from './security-scanner.js';
 import { getLatestMetrics } from './metrics-store.js';
 import type { MetricInsert } from './metrics-store.js';
-import { detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
+import { detectAnomalyAdaptive, detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
+import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, insertInsights, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
@@ -222,9 +223,12 @@ export async function runMonitoringCycle(): Promise<void> {
       }
     }
 
-    // 4. Run anomaly detection on recent metrics
+    // 4. Run anomaly detection on recent metrics (batched)
     const config = getConfig();
     const anomalyInsights: InsightInsert[] = [];
+
+    // Build batch items for all running containers × metric types
+    const batchItems: (BatchDetectionItem & { endpointId: number; endpointName: string })[] = [];
     for (const container of runningContainers) {
       const containerName =
         container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
@@ -235,41 +239,60 @@ export async function runMonitoringCycle(): Promise<void> {
         );
         if (!metric) continue;
 
-        const anomaly = await detectAnomalyAdaptive(container.raw.Id, containerName, metricType, metric.value, config.ANOMALY_DETECTION_METHOD);
-        if (anomaly?.is_anomalous) {
-          // Cooldown check: skip if this container+metric was recently flagged
-          const cooldownKey = `${container.raw.Id}:${metricType}`;
-          const cooldownMs = config.ANOMALY_COOLDOWN_MINUTES * 60_000;
-          const lastAlerted = anomalyCooldowns.get(cooldownKey);
-          if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) {
-            log.debug(
-              { containerId: container.raw.Id, metricType, cooldownMinutes: config.ANOMALY_COOLDOWN_MINUTES },
-              'Anomaly suppressed by cooldown',
-            );
-            continue;
-          }
-          anomalyCooldowns.set(cooldownKey, Date.now());
-
-          anomalyInsights.push({
-            id: uuidv4(),
-            endpoint_id: container.endpointId,
-            endpoint_name: container.endpointName,
-            container_id: container.raw.Id,
-            container_name: containerName,
-            severity: Math.abs(anomaly.z_score) > 4 ? 'critical' : 'warning',
-            category: 'anomaly',
-            title: `Anomalous ${metricType} usage on "${containerName}"`,
-            description:
-              `Current ${metricType}: ${anomaly.current_value.toFixed(1)}% ` +
-              `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}, ` +
-              `method: ${anomaly.method ?? 'zscore'}). ` +
-              `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
-            suggested_action: metricType === 'memory'
-              ? 'Investigate memory usage patterns and check container configuration'
-              : 'Investigate CPU usage patterns and check for process anomalies',
-          });
-        }
+        batchItems.push({
+          containerId: container.raw.Id,
+          containerName,
+          metricType,
+          currentValue: metric.value,
+          endpointId: container.endpointId,
+          endpointName: container.endpointName,
+        });
       }
+    }
+
+    // Run batch anomaly detection
+    const batchResults = await detectAnomaliesBatch(
+      batchItems,
+      config.ANOMALY_DETECTION_METHOD,
+    );
+
+    // Process batch results with cooldown checks
+    for (const item of batchItems) {
+      const key = `${item.containerId}:${item.metricType}`;
+      const anomaly = batchResults.get(key);
+      if (!anomaly?.is_anomalous) continue;
+
+      // Cooldown check: skip if this container+metric was recently flagged
+      const cooldownKey = key;
+      const cooldownMs = config.ANOMALY_COOLDOWN_MINUTES * 60_000;
+      const lastAlerted = anomalyCooldowns.get(cooldownKey);
+      if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) {
+        log.debug(
+          { containerId: item.containerId, metricType: item.metricType, cooldownMinutes: config.ANOMALY_COOLDOWN_MINUTES },
+          'Anomaly suppressed by cooldown',
+        );
+        continue;
+      }
+      anomalyCooldowns.set(cooldownKey, Date.now());
+
+      anomalyInsights.push({
+        id: uuidv4(),
+        endpoint_id: item.endpointId,
+        endpoint_name: item.endpointName,
+        container_id: item.containerId,
+        container_name: item.containerName,
+        severity: Math.abs(anomaly.z_score) > 4 ? 'critical' : 'warning',
+        category: 'anomaly',
+        title: `Anomalous ${item.metricType} usage on "${item.containerName}"`,
+        description:
+          `Current ${item.metricType}: ${anomaly.current_value.toFixed(1)}% ` +
+          `(mean: ${anomaly.mean.toFixed(1)}%, z-score: ${anomaly.z_score.toFixed(2)}, ` +
+          `method: ${anomaly.method ?? 'zscore'}). ` +
+          `This is ${Math.abs(anomaly.z_score).toFixed(1)} standard deviations from the moving average.`,
+        suggested_action: item.metricType === 'memory'
+          ? 'Investigate memory usage patterns and check container configuration'
+          : 'Investigate CPU usage patterns and check for process anomalies',
+      });
     }
 
     // 4.05. Threshold-based detection — flag values above ANOMALY_THRESHOLD_PCT.

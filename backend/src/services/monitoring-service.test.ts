@@ -66,8 +66,23 @@ vi.mock('./metrics-store.js', () => ({
 }));
 
 const mockDetectAnomalyAdaptive = vi.fn().mockReturnValue(null);
+// detectAnomaliesBatch delegates to mockDetectAnomalyAdaptive so existing tests that
+// configure mockDetectAnomalyAdaptive continue to work after the batch refactor.
+const mockDetectAnomaliesBatch = vi.fn().mockImplementation(
+  async (items: Array<{ containerId: string; containerName: string; metricType: string; currentValue: number }>) => {
+    const results = new Map();
+    for (const item of items) {
+      const detection = mockDetectAnomalyAdaptive(item.containerId, item.containerName, item.metricType, item.currentValue);
+      if (detection) {
+        results.set(`${item.containerId}:${item.metricType}`, detection);
+      }
+    }
+    return results;
+  },
+);
 vi.mock('./adaptive-anomaly-detector.js', () => ({
   detectAnomalyAdaptive: (...args: unknown[]) => mockDetectAnomalyAdaptive(...args),
+  detectAnomaliesBatch: (...args: unknown[]) => mockDetectAnomaliesBatch(...args),
 }));
 
 vi.mock('./isolation-forest-detector.js', () => ({
@@ -146,6 +161,19 @@ describe('monitoring-service', () => {
     mockGetContainers.mockResolvedValue([]);
     mockGetLatestMetrics.mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
     mockDetectAnomalyAdaptive.mockReturnValue(null);
+    // Re-apply the delegating implementation (clearAllMocks removes it)
+    mockDetectAnomaliesBatch.mockImplementation(
+      async (items: Array<{ containerId: string; containerName: string; metricType: string; currentValue: number }>) => {
+        const results = new Map();
+        for (const item of items) {
+          const detection = mockDetectAnomalyAdaptive(item.containerId, item.containerName, item.metricType, item.currentValue);
+          if (detection) {
+            results.set(`${item.containerId}:${item.metricType}`, detection);
+          }
+        }
+        return results;
+      },
+    );
     mockIsOllamaAvailable.mockResolvedValue(false);
     mockGetCapacityForecasts.mockReturnValue([]);
     mockExplainAnomalies.mockResolvedValue(new Map());
@@ -153,6 +181,25 @@ describe('monitoring-service', () => {
   });
 
   describe('batch insight processing', () => {
+    it('calls detectAnomaliesBatch instead of per-container detectAnomalyAdaptive (#546)', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
+      ]);
+
+      await runMonitoringCycle();
+
+      // Should call batch function once with all container×metric items
+      expect(mockDetectAnomaliesBatch).toHaveBeenCalledTimes(1);
+      const batchItems = mockDetectAnomaliesBatch.mock.calls[0][0];
+      // 2 containers × 2 metrics (cpu, memory) = 4 items
+      expect(batchItems.length).toBe(4);
+      expect(batchItems[0]).toHaveProperty('containerId');
+      expect(batchItems[0]).toHaveProperty('metricType');
+      expect(batchItems[0]).toHaveProperty('currentValue');
+    });
+
     it('uses insertInsights (batch) instead of per-insight insertInsight', async () => {
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
       mockGetContainers.mockResolvedValue([
