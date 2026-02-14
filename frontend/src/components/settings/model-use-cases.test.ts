@@ -53,6 +53,11 @@ describe('getModelUseCase (#645)', () => {
     expect(result.description).toBe('General-purpose model');
   });
 
+  it('returns Open GPT for gpt-oss:20b', () => {
+    expect(getModelUseCase('gpt-oss:20b')).toMatchObject({ label: 'Open GPT' });
+    expect(getModelUseCase('gpt-oss:20B')).toMatchObject({ label: 'Open GPT' });
+  });
+
   it('is case-insensitive', () => {
     expect(getModelUseCase('Qwen3:32B')).toMatchObject({ label: 'Gold Standard' });
     expect(getModelUseCase('DEEPSEEK-R1:32B')).toMatchObject({ label: 'Deep Analysis' });

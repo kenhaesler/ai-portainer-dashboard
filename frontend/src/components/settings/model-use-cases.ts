@@ -30,6 +30,7 @@ const MODEL_USE_CASES: Array<{
   { pattern: /gemma/i, label: 'Compact', description: 'Google model — efficient for lighter workloads', color: 'text-emerald-400' },
   { pattern: /wizard-?coder|code/i, label: 'Code', description: 'Optimized for code-related tasks', color: 'text-indigo-400' },
   { pattern: /command-r/i, label: 'RAG Specialist', description: 'Cohere model — strong at retrieval-augmented generation', color: 'text-teal-400' },
+  { pattern: /gpt-oss[:-]20b/i, label: 'Open GPT', description: 'Open-source GPT model — strong general-purpose reasoning at 20B scale', color: 'text-sky-400' },
 ];
 
 const FALLBACK: ModelUseCase = { label: 'Standard', description: 'General-purpose model', color: 'text-muted-foreground' };
@@ -55,6 +56,7 @@ export const MODEL_USE_CASE_TABLE: Array<{ models: string; label: string; descri
   { models: 'gemma', label: 'Compact', description: 'Google model — efficient for lighter workloads', color: 'text-emerald-400' },
   { models: 'wizard-coder / code', label: 'Code', description: 'Optimized for code-related tasks', color: 'text-indigo-400' },
   { models: 'command-r', label: 'RAG Specialist', description: 'Cohere model — strong at retrieval-augmented generation', color: 'text-teal-400' },
+  { models: 'gpt-oss:20b', label: 'Open GPT', description: 'Open-source GPT model — strong general-purpose reasoning at 20B scale', color: 'text-sky-400' },
 ];
 
 export function getModelUseCase(modelName: string): ModelUseCase {
