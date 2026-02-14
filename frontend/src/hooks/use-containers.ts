@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { useAuth } from '@/providers/auth-provider';
 
 export interface Container {
   id: string;
@@ -23,8 +22,6 @@ export interface Container {
 }
 
 export function useContainers(endpointId?: number) {
-  const { isAuthenticated, token } = useAuth();
-
   return useQuery<Container[]>({
     queryKey: ['containers', endpointId],
     queryFn: async () => {
@@ -33,7 +30,6 @@ export function useContainers(endpointId?: number) {
         : '/api/containers';
       return api.get<Container[]>(path);
     },
-    enabled: isAuthenticated && !!token,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });

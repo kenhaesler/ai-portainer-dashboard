@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboard } from './use-dashboard';
+import { api } from '@/lib/api';
 
 const mockUseQuery = vi.fn();
 const mockUseAutoRefresh = vi.fn();
-const mockUseAuth = vi.fn();
 
 vi.mock('@tanstack/react-query', () => ({
   useQuery: (...args: unknown[]) => mockUseQuery(...args),
@@ -13,20 +13,15 @@ vi.mock('@/hooks/use-auto-refresh', () => ({
   useAutoRefresh: (...args: unknown[]) => mockUseAutoRefresh(...args),
 }));
 
-vi.mock('@/providers/auth-provider', () => ({
-  useAuth: (...args: unknown[]) => mockUseAuth(...args),
-}));
-
 describe('useDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseQuery.mockReturnValue({});
     mockUseAutoRefresh.mockReturnValue({ interval: 30, enabled: true });
+    vi.spyOn(api, 'getToken').mockReturnValue('jwt-token');
   });
 
-  it('enables query only when authenticated with token', () => {
-    mockUseAuth.mockReturnValue({ isAuthenticated: true, token: 'jwt-token' });
-
+  it('enables query only when token is available', () => {
     useDashboard();
 
     const options = mockUseQuery.mock.calls[0][0];
@@ -34,8 +29,6 @@ describe('useDashboard', () => {
   });
 
   it('forces refetch on mount to recover when navigating back to home', () => {
-    mockUseAuth.mockReturnValue({ isAuthenticated: true, token: 'jwt-token' });
-
     useDashboard();
 
     const options = mockUseQuery.mock.calls[0][0];

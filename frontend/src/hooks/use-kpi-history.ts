@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { useAuth } from '@/providers/auth-provider';
 
 export interface KpiSnapshot {
   endpoints: number;
@@ -20,8 +19,6 @@ interface KpiHistoryResponse {
 }
 
 export function useKpiHistory(hours = 24) {
-  const { isAuthenticated, token } = useAuth();
-
   return useQuery<KpiSnapshot[]>({
     queryKey: ['dashboard', 'kpi-history', hours],
     queryFn: async () => {
@@ -30,7 +27,6 @@ export function useKpiHistory(hours = 24) {
       });
       return res.snapshots;
     },
-    enabled: isAuthenticated && !!token,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 5 * 60 * 1000,
   });

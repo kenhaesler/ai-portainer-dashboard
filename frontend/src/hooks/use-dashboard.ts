@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useAuth } from '@/providers/auth-provider';
 
 export interface DashboardKpis {
   endpoints: number;
@@ -61,14 +60,26 @@ export interface DashboardSummary {
   timestamp: string;
 }
 
+function hasAuthToken(): boolean {
+  const apiToken = typeof (api as { getToken?: () => string | null }).getToken === 'function'
+    ? api.getToken()
+    : null;
+  if (apiToken) return true;
+  try {
+    return !!window.localStorage.getItem('auth_token');
+  } catch {
+    return false;
+  }
+}
+
 export function useDashboard() {
   const { interval, enabled } = useAutoRefresh(30);
-  const { isAuthenticated, token } = useAuth();
+  const hasToken = hasAuthToken();
 
   return useQuery<DashboardSummary>({
     queryKey: ['dashboard', 'summary'],
     queryFn: () => api.get<DashboardSummary>('/api/dashboard/summary'),
-    enabled: isAuthenticated && !!token,
+    enabled: hasToken,
     staleTime: 60 * 1000,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
