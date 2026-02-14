@@ -43,7 +43,7 @@ export function getHealthColor_testable(ratio: number): string {
 function CustomContent(props: any) {
   const { x, y, width, height, name, fill, running, total } = props;
 
-  if (!width || !height || width < 2 || height < 2) return null;
+  if (!width || !height || width < 2 || height < 2 || !name) return null;
 
   const safeFill = fill || HEALTH_COLORS.good;
   const textFill = getLuminance(safeFill) > 0.45 ? '#0f172a' : '#ffffff';
@@ -79,7 +79,7 @@ function CustomContent(props: any) {
             : name}
         </text>
       )}
-      {width > 50 && height > 40 && (
+      {width > 50 && height > 40 && running !== undefined && total !== undefined && (
         <text
           x={x + width / 2}
           y={y + height / 2 + 10}
