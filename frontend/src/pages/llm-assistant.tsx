@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers } from 'lucide-react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, Info } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import remarkGfm from 'remark-gfm';
@@ -179,7 +179,7 @@ export default function LlmAssistantPage() {
           )}
           {/* Model Selector */}
           {modelsData && modelsData.models.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-1">
               <ThemedSelect
                 value={selectedModel}
                 onValueChange={(val) => setSelectedModel(val)}
@@ -192,9 +192,11 @@ export default function LlmAssistantPage() {
               {selectedModel && (() => {
                 const useCase = getModelUseCase(selectedModel);
                 return (
-                  <span className={`text-xs font-semibold ${useCase.color}`} title={useCase.description}>
-                    {useCase.label}
-                  </span>
+                  <div className="flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1">
+                    <Info className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className={`text-[11px] font-semibold ${useCase.color}`}>{useCase.label}</span>
+                    <span className="text-[11px] text-muted-foreground hidden lg:inline">— {useCase.description}</span>
+                  </div>
                 );
               })()}
             </div>
