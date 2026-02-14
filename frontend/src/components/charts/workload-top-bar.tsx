@@ -21,6 +21,7 @@ interface ChartRow {
 }
 
 function buildChartData(endpoints: WorkloadTopBarProps['endpoints']): ChartRow[] {
+  if (!endpoints || endpoints.length === 0) return [];
   const sorted = [...endpoints].sort((a, b) => b.total - a.total);
   const top = sorted.slice(0, 10);
   const rest = sorted.slice(10);

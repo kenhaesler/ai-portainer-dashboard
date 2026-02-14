@@ -23,6 +23,16 @@ export function computeFleetSummary(
   endpoints: FleetSummaryCardProps['endpoints'],
   totalContainers: number,
 ): FleetSummary {
+  if (!endpoints || endpoints.length === 0) {
+    return {
+      totalEndpoints: 0,
+      totalContainers: 0,
+      runningPct: 0,
+      stoppedPct: 0,
+      topContributors: [],
+    };
+  }
+
   const totalRunning = endpoints.reduce((s, ep) => s + ep.running, 0);
   const total = totalContainers || endpoints.reduce((s, ep) => s + ep.total, 0);
   const runningPct = total > 0 ? Math.round((totalRunning / total) * 100) : 0;
