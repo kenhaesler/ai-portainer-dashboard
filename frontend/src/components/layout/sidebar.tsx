@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Boxes,
@@ -162,6 +162,8 @@ function ScrollGradient({ navRef }: { navRef: React.RefObject<HTMLElement | null
 }
 
 export function Sidebar() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const collapsedGroups = useUiStore((s) => s.collapsedGroups);
@@ -270,72 +272,77 @@ export function Sidebar() {
                 >
                   <ul className="space-y-0.5 overflow-hidden px-2">
                     {group.items.map((item) => {
+                      const isActive = item.to === '/'
+                        ? location.pathname === '/'
+                        : location.pathname.startsWith(item.to);
                       const link = (
-                        <NavLink
-                          to={item.to}
-                          end={item.to === '/'}
-                          className={({ isActive }) =>
-                            cn(
-                              'relative flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
-                              isActive
-                                ? 'text-sidebar-accent-foreground'
-                                : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
-                              sidebarCollapsed && 'justify-center px-0'
-                            )
-                          }
+                        <button
+                          type="button"
+                          className={cn(
+                            'relative flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200',
+                            isActive
+                              ? 'text-sidebar-accent-foreground'
+                              : 'text-sidebar-foreground hover:bg-sidebar-background/45 hover:text-sidebar-accent-foreground',
+                            sidebarCollapsed && 'justify-center px-0'
+                          )}
                           onMouseEnter={prefetchMap[item.to]}
                           onFocus={prefetchMap[item.to]}
+                          onClick={() => {
+                            if (item.to === '/') {
+                              window.location.assign('/');
+                              return;
+                            }
+                            navigate(item.to, { state: { source: 'sidebar-nav', ts: Date.now() } });
+                          }}
                         >
-                          {({ isActive }) => (
-                            <>
-                              {isActive && (
-                                <motion.span
-                                  layoutId="sidebar-active-pill"
-                                  data-testid="sidebar-active-indicator"
-                                  className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
-                                  transition={
-                                    reducedMotion
-                                      ? { duration: 0 }
-                                      : { type: 'spring', stiffness: 400, damping: 30 }
-                                  }
-                                />
-                              )}
+                          <>
+                            {isActive && (
                               <motion.span
-                                className="shrink-0"
-                                layout={!reducedMotion}
+                                layoutId="sidebar-active-pill"
+                                data-testid="sidebar-active-indicator"
+                                className="absolute inset-0 -z-10 rounded-md bg-sidebar-background/55 shadow-sm ring-1 ring-sidebar-border/60 backdrop-blur-sm"
                                 transition={
                                   reducedMotion
                                     ? { duration: 0 }
-                                    : { type: 'spring', stiffness: 300, damping: 25 }
+                                    : { type: 'spring', stiffness: 400, damping: 30 }
                                 }
-                              >
-                                <item.icon className="h-4 w-4" />
-                              </motion.span>
-                              <AnimatePresence>
-                                {!sidebarCollapsed && (
-                                  <motion.span
-                                    className="flex flex-1 items-center gap-1 truncate"
-                                    initial={reducedMotion ? false : { opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={
-                                      reducedMotion
-                                        ? { duration: 0 }
-                                        : { duration: 0.1, ease: 'easeOut' }
-                                    }
-                                  >
-                                    <span className="truncate">{item.label}</span>
-                                    {item.to === '/remediation' ? (
-                                      <AnimatedBadge count={pendingCount} />
-                                    ) : item.badge != null && item.badge > 0 ? (
-                                      <AnimatedBadge count={item.badge} />
-                                    ) : null}
-                                  </motion.span>
-                                )}
-                              </AnimatePresence>
-                            </>
-                          )}
-                        </NavLink>
+                              />
+                            )}
+                            <motion.span
+                              className="shrink-0"
+                              layout={!reducedMotion}
+                              transition={
+                                reducedMotion
+                                  ? { duration: 0 }
+                                  : { type: 'spring', stiffness: 300, damping: 25 }
+                              }
+                            >
+                              <item.icon className="h-4 w-4" />
+                            </motion.span>
+                            <AnimatePresence>
+                              {!sidebarCollapsed && (
+                                <motion.span
+                                  className="flex flex-1 items-center gap-1 truncate"
+                                  initial={reducedMotion ? false : { opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  transition={
+                                    reducedMotion
+                                      ? { duration: 0 }
+                                      : { duration: 0.1, ease: 'easeOut' }
+                                  }
+                                >
+                                  <span className="truncate">{item.label}</span>
+                                  {item.to === '/remediation' ? (
+                                    <AnimatedBadge count={pendingCount} />
+                                  ) : item.badge != null && item.badge > 0 ? (
+                                    <AnimatedBadge count={item.badge} />
+                                  ) : null}
+                                </motion.span>
+                              )}
+                            </AnimatePresence>
+                          </>
+                        </button>
                       );
                       return (
                         <li key={item.to}>

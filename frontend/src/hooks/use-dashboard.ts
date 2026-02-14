@@ -60,13 +60,28 @@ export interface DashboardSummary {
   timestamp: string;
 }
 
+function hasAuthToken(): boolean {
+  const apiToken = typeof (api as { getToken?: () => string | null }).getToken === 'function'
+    ? api.getToken()
+    : null;
+  if (apiToken) return true;
+  try {
+    return !!window.localStorage.getItem('auth_token');
+  } catch {
+    return false;
+  }
+}
+
 export function useDashboard() {
   const { interval, enabled } = useAutoRefresh(30);
+  const hasToken = hasAuthToken();
 
   return useQuery<DashboardSummary>({
     queryKey: ['dashboard', 'summary'],
     queryFn: () => api.get<DashboardSummary>('/api/dashboard/summary'),
+    enabled: hasToken,
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchInterval: enabled ? interval * 1000 : false,
   });

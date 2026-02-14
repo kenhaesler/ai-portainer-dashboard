@@ -84,9 +84,10 @@ function parseRoleFromToken(token: string): UserRole {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => getStoredAuth().token);
-  const [username, setUsername] = useState<string | null>(() => getStoredAuth().username);
-  const [role, setRole] = useState<UserRole>(() => getStoredAuth().role);
+  const [initialAuth] = useState(() => getStoredAuth());
+  const [token, setToken] = useState<string | null>(initialAuth.token);
+  const [username, setUsername] = useState<string | null>(initialAuth.username);
+  const [role, setRole] = useState<UserRole>(initialAuth.role);
 
   const login = useCallback(async (user: string, password: string) => {
     const data = await api.post<{ token: string; username: string; defaultLandingPage?: string }>(
@@ -134,6 +135,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('auth:expired', handler);
     return () => window.removeEventListener('auth:expired', handler);
   }, []);
+
+  // Keep API client auth state synchronized with provider state, including initial load.
+  useEffect(() => {
+    api.setToken(token);
+  }, [token]);
 
   // Token refresh timer
   useEffect(() => {
