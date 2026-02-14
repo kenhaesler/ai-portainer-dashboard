@@ -68,7 +68,6 @@ check "total >= data.length ($TOTAL >= $DATA_LEN)" "$([ "$TOTAL" -ge "$DATA_LEN"
 echo ""
 echo "3. Page 2"
 RESP2=$(curl -sf -H "$AUTH" "$BASE/api/containers?page=2&pageSize=5")
-DATA_LEN2=$(echo "$RESP2" | jq '.data | length')
 TOTAL2=$(echo "$RESP2" | jq '.total')
 check "total is consistent ($TOTAL2 = $TOTAL)" "$([ "$TOTAL2" -eq "$TOTAL" ] && echo true || echo false)"
 # Page 2 names should differ from page 1 (unless <5 total)
