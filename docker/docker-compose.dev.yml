@@ -121,7 +121,7 @@ services:
       --requirepass ${REDIS_PASSWORD:-changeme-redis}
     # DEV ONLY: Redis defaults above use changeme-redis — never use in production
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme-redis}", "ping"]
+      test: ["CMD", "sh", "-c", "REDISCLI_AUTH=$${REDIS_PASSWORD:-changeme-redis} redis-cli ping"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -141,7 +141,7 @@ services:
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
-      - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-all}
+      - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-whoami,id,uname,ip,df,free,ps,ss,ls,cat}
       - MCP_TOOL_TIMEOUT=${MCP_TOOL_TIMEOUT:-60}
     networks:
       - dashboard-net
