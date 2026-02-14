@@ -199,10 +199,41 @@ services:
     networks:
       - dashboard-net
 
+  timescale-backup:
+    image: prodrigestivill/postgres-backup-local:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: timescaledb
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: metrics
+      POSTGRES_USER: metrics_user
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-changeme-timescale}  # DEV ONLY default
+      POSTGRES_EXTRA_OPTS: ${TIMESCALE_BACKUP_EXTRA_OPTS:--Z6 --no-comments}
+      SCHEDULE: ${TIMESCALE_BACKUP_SCHEDULE:-0 3 * * *}
+      BACKUP_KEEP_DAYS: ${TIMESCALE_BACKUP_KEEP_DAYS:-7}
+      BACKUP_KEEP_WEEKS: ${TIMESCALE_BACKUP_KEEP_WEEKS:-4}
+      BACKUP_KEEP_MONTHS: ${TIMESCALE_BACKUP_KEEP_MONTHS:-0}
+      BACKUP_ON_START: "TRUE"
+      HEALTHCHECK_PORT: "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    volumes:
+      - timescale-backups:/backups
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - dashboard-net
+
 volumes:
   backend-data:
   postgres-app-data:
   timescale-data:
+  timescale-backups:
 
 networks:
   dashboard-net:
