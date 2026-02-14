@@ -22,19 +22,6 @@ import path from 'node:path';
 // so that route registration succeeds without real DB/network connections.
 let mockRemediationAction: Record<string, unknown> | undefined;
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      all: vi.fn(() => []),
-      get: vi.fn(() => undefined),
-      run: vi.fn(() => ({ changes: 0 })),
-    })),
-    exec: vi.fn(),
-    pragma: vi.fn(() => []),
-  })),
-  isDbHealthy: vi.fn(() => true),
-}));
-
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     queryOne: vi.fn(async (sql: string) => {
@@ -149,7 +136,7 @@ vi.mock('../config/index.js', () => ({
     TIMESCALE_URL: 'postgresql://localhost/test',
     PORT: 3051,
     LOG_LEVEL: 'silent',
-    SQLITE_PATH: ':memory:',
+    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
     TEAMS_WEBHOOK_URL: undefined,
     TEAMS_NOTIFICATIONS_ENABLED: false,
     EMAIL_NOTIFICATIONS_ENABLED: false,

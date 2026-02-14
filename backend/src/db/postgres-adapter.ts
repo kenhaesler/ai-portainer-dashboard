@@ -7,7 +7,7 @@ import type { AppDb, QueryResult } from './app-db.js';
 import { getAppDb } from './postgres.js';
 
 /**
- * Convert SQLite-style `?` placeholders to PostgreSQL `$1, $2, $3` style.
+ * Convert `?` placeholders to PostgreSQL `$1, $2, $3` style.
  * Skips `?` inside single-quoted string literals and `??` (escaped question marks).
  */
 export function convertPlaceholders(sql: string): string {

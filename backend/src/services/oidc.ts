@@ -59,7 +59,7 @@ function cleanExpiredStates(): void {
 }
 
 /**
- * Read OIDC settings from the SQLite settings table.
+ * Read OIDC settings from the settings table.
  */
 export async function getOIDCConfig(): Promise<OIDCConfig> {
   const settingsDb = getDbForDomain('settings');

@@ -17,9 +17,7 @@ function getDispatcher(): Agent | undefined {
 }
 
 function getBackupsDir(): string {
-  const config = getConfig();
-  const dbDir = path.dirname(config.SQLITE_PATH);
-  const backupsDir = path.join(dbDir, 'portainer-backups');
+  const backupsDir = path.resolve('./data/portainer-backups');
 
   if (!fs.existsSync(backupsDir)) {
     fs.mkdirSync(backupsDir, { recursive: true });

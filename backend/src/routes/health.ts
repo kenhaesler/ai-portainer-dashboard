@@ -1,5 +1,4 @@
 import { FastifyInstance } from 'fastify';
-import { isDbHealthy } from '../db/sqlite.js';
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
 import { getConfig } from '../config/index.js';
@@ -11,11 +10,6 @@ type DependencyCheck = { status: string; url?: string; error?: string };
 async function runChecks(): Promise<{ checks: Record<string, DependencyCheck>; overallStatus: string }> {
   const config = getConfig();
   const checks: Record<string, DependencyCheck> = {};
-
-  // Check SQLite database (users, sessions, settings, etc.)
-  checks.database = isDbHealthy()
-    ? { status: 'healthy' }
-    : { status: 'unhealthy', error: 'Database query failed' };
 
   // Check App PostgreSQL (sessions, settings, insights, etc.)
   const appPgHealthy = await isAppDbHealthy();

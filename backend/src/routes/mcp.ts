@@ -144,7 +144,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
         enabled: body.enabled ? 1 : 0,
       });
     } catch (err: any) {
-      if (err?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (err?.code === '23505') {
         return reply.code(409).send({ error: `Server with name "${body.name}" already exists` });
       }
       throw err;

@@ -9,7 +9,7 @@ const mockConfig = {
   PROMETHEUS_BEARER_TOKEN: undefined as string | undefined,
 };
 
-// Wrap in-memory SQLite with AppDb interface (query/queryOne/execute)
+// Wrap in-memory better-sqlite3 with AppDb interface (test double)
 const mockAppDb = {
   query: vi.fn(async (sql: string, params: unknown[] = []) => {
     return db.prepare(sql).all(...params);
@@ -228,7 +228,7 @@ describe('Prometheus Routes', () => {
     });
   });
 
-  it('caches sqlite aggregations for 15 seconds', async () => {
+  it('caches DB aggregations for 15 seconds', async () => {
     mockConfig.PROMETHEUS_METRICS_ENABLED = true;
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-01T00:00:00.000Z'));

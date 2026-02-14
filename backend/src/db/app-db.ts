@@ -1,14 +1,13 @@
 /**
- * AppDb — Thin async database abstraction layer for incremental SQLite→PostgreSQL migration.
+ * AppDb — Thin async database abstraction layer for PostgreSQL.
  *
- * Service files use this interface instead of calling getDb() directly.
- * The router (app-db-router.ts) determines which adapter to use per domain.
+ * Service files use this interface via getDbForDomain().
+ * The router (app-db-router.ts) returns the PostgreSQL adapter for all domains.
  *
  * SQL Convention:
- * - Use `?` placeholders (SQLite style) in all queries.
+ * - Use `?` placeholders in all queries.
  * - The PostgreSQL adapter converts `?` → `$1, $2, $3` internally.
- * - Use standard SQL where possible. Adapter-specific syntax (datetime, upsert)
- *   must be handled by the caller using the appropriate dialect.
+ * - Use standard SQL where possible.
  */
 
 export interface QueryResult {

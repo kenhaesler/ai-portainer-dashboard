@@ -13,7 +13,6 @@ services:
       - PORT=3051
       # Public/LAN URL used by remote endpoints (Beyla) to call back into OTLP ingest.
       - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:-}
-      - SQLITE_PATH=/app/data/dashboard.db
       - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:?DASHBOARD_USERNAME is required}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?DASHBOARD_PASSWORD is required}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required (min 32 chars)}
@@ -205,6 +204,7 @@ services:
       POSTGRES_DB: metrics
       POSTGRES_USER: metrics_user
       POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
       interval: 15s
@@ -213,6 +213,7 @@ services:
       start_period: 30s
     volumes:
       - timescale-data:/var/lib/postgresql/data
+      - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
     networks:
       - dashboard-net
 

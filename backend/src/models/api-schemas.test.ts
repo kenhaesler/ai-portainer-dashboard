@@ -93,7 +93,7 @@ describe('api-schemas', () => {
       const result = ReadinessResponseSchema.safeParse({
         status: 'healthy',
         checks: {
-          database: { status: 'healthy' },
+          appDb: { status: 'healthy' },
           metricsDb: { status: 'healthy' },
           portainer: { status: 'healthy' },
           ollama: { status: 'unhealthy' },
@@ -107,7 +107,7 @@ describe('api-schemas', () => {
       const result = ReadinessResponseSchema.safeParse({
         status: 'healthy',
         checks: {
-          database: { status: 'healthy' },
+          appDb: { status: 'healthy' },
           metricsDb: { status: 'healthy' },
           portainer: { status: 'healthy' },
           ollama: { status: 'healthy' },

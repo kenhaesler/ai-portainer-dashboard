@@ -10,8 +10,8 @@ const mockConfig = {
   TRACES_INGESTION_API_KEY: 'test-api-key-12345',
 };
 
-// Wrap in-memory SQLite as AppDb interface for getDbForDomain
-// Replace NOW() with datetime('now') for SQLite compatibility
+// Wrap in-memory better-sqlite3 as AppDb interface for getDbForDomain (test double)
+// Replace NOW() with datetime('now') for SQLite compatibility in test DB
 const appDb = {
   query: async (sql: string, params: unknown[] = []) => db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).all(...params),
   queryOne: async (sql: string, params: unknown[] = []) => db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).get(...params) ?? null,

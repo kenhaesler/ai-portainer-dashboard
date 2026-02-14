@@ -318,7 +318,7 @@ describe('traces routes', () => {
   });
 });
 
-// Wrap in-memory SQLite as AppDb interface for getDbForDomain
+// Wrap in-memory better-sqlite3 as AppDb interface for getDbForDomain (test double)
 const appDb = {
   query: async (sql: string, params: unknown[] = []) => db.prepare(sql).all(...params),
   queryOne: async (sql: string, params: unknown[] = []) => db.prepare(sql).get(...params) ?? null,

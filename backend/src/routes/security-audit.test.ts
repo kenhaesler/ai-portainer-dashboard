@@ -15,13 +15,11 @@ vi.mock('../services/security-audit.js', () => ({
   setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
 }));
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    prepare: () => ({
-      all: () => [],
-      get: () => ({ count: 0 }),
-      run: () => ({ changes: 1 }),
-    }),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    query: async () => [],
+    queryOne: async () => ({ count: 0 }),
+    execute: async () => ({ changes: 1 }),
   }),
 }));
 

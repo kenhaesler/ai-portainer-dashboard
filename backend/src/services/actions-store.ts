@@ -49,8 +49,7 @@ export async function insertAction(action: ActionInsert): Promise<boolean> {
       typeof err === 'object'
       && err !== null
       && 'code' in err
-      && ((err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
-        || (err as { code?: string }).code === '23505')
+      && (err as { code?: string }).code === '23505'
     );
     if (isUniqueViolation) {
       log.debug(

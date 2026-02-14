@@ -120,7 +120,7 @@ export const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
   REDIS_KEY_PREFIX: z.string().default('aidash:cache:'),
 
-  // App PostgreSQL (replaces SQLite for app data)
+  // App PostgreSQL
   POSTGRES_APP_URL: z.string().default('postgresql://app_user:changeme@localhost:5433/portainer_dashboard'),
   POSTGRES_APP_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(20),
 
@@ -135,9 +135,6 @@ export const envSchema = z.object({
   // Server
   PORT: z.coerce.number().int().min(1).max(65535).default(3051),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  SQLITE_PATH: z.string().default('./data/dashboard.db'),
-  SQLITE_BUSY_TIMEOUT: z.coerce.number().int().min(1000).max(60000).default(5000),
-
   // HTTP/2 (opt-in, requires TLS cert/key)
   HTTP2_ENABLED: z.coerce.boolean().default(false),
   TLS_CERT_PATH: z.string().optional(),

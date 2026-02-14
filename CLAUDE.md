@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository. AG
 
 ## Project Overview
 
-AI-powered container monitoring dashboard extending Portainer with real-time insights, anomaly detection, and an LLM chat assistant. **Observer-first** — visibility comes first; actions require explicit approval via remediation workflow. Monorepo: `backend/` (Fastify 5 + SQLite) and `frontend/` (React 19 + Vite).
+AI-powered container monitoring dashboard extending Portainer with real-time insights, anomaly detection, and an LLM chat assistant. **Observer-first** — visibility comes first; actions require explicit approval via remediation workflow. Monorepo: `backend/` (Fastify 5 + PostgreSQL) and `frontend/` (React 19 + Vite).
 
 ## Mandatory Rules
 
@@ -33,7 +33,7 @@ npm run test -w frontend   # Frontend only
 
 ## Architecture
 
-### Backend (`backend/src/`) — Fastify 5, TypeScript, SQLite (WAL), Socket.IO
+### Backend (`backend/src/`) — Fastify 5, TypeScript, PostgreSQL, Socket.IO
 
 | Directory | Purpose |
 |-----------|---------|
@@ -41,7 +41,7 @@ npm run test -w frontend   # Frontend only
 | `services/` | Portainer client, anomaly detection (z-score), monitoring, hybrid cache (Redis + in-memory) |
 | `sockets/` | Socket.IO: `/llm` (chat), `/monitoring` (insights), `/remediation` (actions) |
 | `models/` | Zod schemas + database query functions |
-| `db/migrations/` | SQLite migrations (auto-run via `getDb()`) |
+| `db/postgres-migrations/` | PostgreSQL migrations (auto-run via `getAppDb()`) |
 | `scheduler/` | Background: metrics (60s), monitoring (5min), daily cleanup |
 
 ### Frontend (`frontend/src/`) — React 19, TypeScript, Vite, Tailwind CSS v4
@@ -68,7 +68,7 @@ npm run test -w frontend   # Frontend only
 
 ## Security (Project-Specific)
 
-- JWT via `jose` (32+ char secrets). Session store in SQLite — validated server-side per request.
+- JWT via `jose` (32+ char secrets). Session store in PostgreSQL — validated server-side per request.
 - OIDC/SSO via `openid-client` v6 with PKCE. Rate limiting on login (`LOGIN_RATE_LIMIT`).
 - Auth decorator: `fastify.authenticate` on all protected routes.
 - **Prompt injection guard** (`services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
@@ -114,7 +114,7 @@ main ← stable/release (protected)
 
 ## Environment
 
-Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`), `OLLAMA_MODEL` (default `llama3.2`), `REDIS_URL`, `JWT_SECRET` (32+ chars). See `.env.example` for full list.
+Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`), `OLLAMA_MODEL` (default `llama3.2`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. See `.env.example` for full list.
 
 ## Issue Templates
 
