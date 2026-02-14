@@ -388,6 +388,13 @@ docker compose -f docker/docker-compose.edge-agent.yml up -d
 
 Runs a **Portainer Edge Agent Standard** container locally for testing Edge features (e.g., endpoints registered as edge agents). Requires `EDGE_AGENT_ID` and `EDGE_AGENT_KEY` environment variables in `docker/.env` (obtained from Portainer UI when enrolling an edge agent). Port 8000 must be exposed on the Portainer instance for Edge tunnels.
 
+### Edge Observer Load Testing
+```bash
+docker compose -f docker/docker-compose.edge-loadtest.yml run --rm edge-observer
+```
+
+Runs a read-only Artillery scenario against Edge-adjacent observer endpoints (`/api/endpoints`, `/api/endpoints/debug/edge-status`, `/api/edge-jobs`) to stress test dashboard behavior with Edge environments enabled.
+
 ### Test Database Setup
 
 Backend tests use a **real PostgreSQL test database** instead of mocks or in-memory databases:
@@ -491,6 +498,7 @@ ai-portainer-dashboard/
 │   ├── docker-compose.yml          # Production (Nginx + Node)
 │   ├── docker-compose.dev.yml      # Development (hot-reload)
 │   ├── docker-compose.loadtest.yml # Load testing suite
+│   ├── docker-compose.edge-loadtest.yml # Edge observer load test
 │   ├── docker-compose.security-mcp.yml # Security MCP servers
 │   ├── backend/
 │   │   ├── Dockerfile              # Backend production image

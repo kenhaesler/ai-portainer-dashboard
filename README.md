@@ -159,6 +159,7 @@ npm test                   # Run all tests
 npm run test -w backend    # Tests for backend only
 npm run test -w frontend   # Tests for frontend only
 npm run test:watch         # Watch mode
+npm run loadtest:edge      # Edge observer load test
 ```
 
 Docker development (preferred):
