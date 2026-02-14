@@ -78,6 +78,68 @@ vi.mock('../utils/logger.js', () => ({
 
 import { createSession, getSession, invalidateSession, refreshSession, cleanExpiredSessions } from './session-store.js';
 
+describe('session-store performance benchmarks', () => {
+  beforeEach(() => {
+    sessionStore.clear();
+  });
+
+  it('session lookup completes in under 2ms (PostgreSQL target)', async () => {
+    // Create a session
+    const sessionId = await createSession('user-123', 'alice');
+
+    // Warm up (first query may be slower due to connection)
+    await getSession(sessionId);
+
+    // Benchmark: measure 100 lookups
+    const iterations = 100;
+    const start = performance.now();
+
+    for (let i = 0; i < iterations; i++) {
+      await getSession(sessionId);
+    }
+
+    const end = performance.now();
+    const avgMs = (end - start) / iterations;
+
+    // Target: <2ms average per lookup (as specified in issue #650)
+    expect(avgMs).toBeLessThan(2);
+  });
+
+  it('session creation completes in under 5ms', async () => {
+    const iterations = 50;
+    const start = performance.now();
+
+    for (let i = 0; i < iterations; i++) {
+      await createSession(`user-${i}`, `user${i}`);
+    }
+
+    const end = performance.now();
+    const avgMs = (end - start) / iterations;
+
+    // Session creation should be reasonably fast
+    expect(avgMs).toBeLessThan(5);
+  });
+
+  it('session invalidation completes in under 3ms', async () => {
+    // Create sessions to invalidate
+    const sessionIds = await Promise.all(
+      Array.from({ length: 50 }, (_, i) => createSession(`user-${i}`, `user${i}`))
+    );
+
+    const iterations = sessionIds.length;
+    const start = performance.now();
+
+    for (const sessionId of sessionIds) {
+      await invalidateSession(sessionId);
+    }
+
+    const end = performance.now();
+    const avgMs = (end - start) / iterations;
+
+    expect(avgMs).toBeLessThan(3);
+  });
+});
+
 describe('session-store expiration semantics', () => {
   beforeEach(() => {
     sessionStore.clear();
