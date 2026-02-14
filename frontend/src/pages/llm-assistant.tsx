@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers } from 'lucide-react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, Info } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import remarkGfm from 'remark-gfm';
@@ -8,6 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
+import { getModelUseCase } from '@/components/settings/model-use-cases';
 import { useMcpServers } from '@/hooks/use-mcp';
 import { usePromptProfiles, useSwitchProfile } from '@/hooks/use-prompt-profiles';
 import { useAuth } from '@/providers/auth-provider';
@@ -160,42 +161,56 @@ export default function LlmAssistantPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Profile Selector (admin-only) */}
-          {isAdmin && profiles.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Layers className="h-4 w-4 text-muted-foreground" />
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-3">
+            {/* Profile Selector (admin-only) */}
+            {isAdmin && profiles.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <ThemedSelect
+                  value={activeProfileId}
+                  onValueChange={(val) => void handleProfileSwitch(val)}
+                  disabled={isStreaming || isSending || switchProfile.isPending}
+                  options={profiles.map((p) => ({
+                    value: p.id,
+                    label: `${p.name}${p.isBuiltIn ? ' ✦' : ''}`,
+                  }))}
+                />
+              </div>
+            )}
+            {/* Model Selector */}
+            {modelsData && modelsData.models.length > 0 && (
               <ThemedSelect
-                value={activeProfileId}
-                onValueChange={(val) => void handleProfileSwitch(val)}
-                disabled={isStreaming || isSending || switchProfile.isPending}
-                options={profiles.map((p) => ({
-                  value: p.id,
-                  label: `${p.name}${p.isBuiltIn ? ' ✦' : ''}`,
+                value={selectedModel}
+                onValueChange={(val) => setSelectedModel(val)}
+                disabled={isStreaming || isSending}
+                className="min-w-[200px]"
+                options={modelsData.models.map((model) => ({
+                  value: model.name,
+                  label: model.name,
                 }))}
               />
-            </div>
-          )}
-          {/* Model Selector */}
-          {modelsData && modelsData.models.length > 0 && (
-            <ThemedSelect
-              value={selectedModel}
-              onValueChange={(val) => setSelectedModel(val)}
-              disabled={isStreaming || isSending}
-              options={modelsData.models.map((model) => ({
-                value: model.name,
-                label: model.name,
-              }))}
-            />
-          )}
-          <button
-            onClick={handleClear}
-            disabled={messages.length === 0}
+            )}
+            <button
+              onClick={handleClear}
+              disabled={messages.length === 0}
             className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-all hover:bg-accent hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Trash2 className="h-4 w-4" />
-            Clear History
-          </button>
+              <Trash2 className="h-4 w-4" />
+              Clear History
+            </button>
+          </div>
+          {selectedModel && (() => {
+            const useCase = getModelUseCase(selectedModel);
+            return (
+              <div className="flex items-center justify-end gap-2">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${useCase.color}`} style={{ backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)', borderColor: 'color-mix(in srgb, currentColor 25%, transparent)' }}>
+                  {useCase.label}
+                </span>
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">{useCase.description}</span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

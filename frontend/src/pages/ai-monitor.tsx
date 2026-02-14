@@ -32,6 +32,7 @@ import {
   TrendingUp,
   FileText,
 } from 'lucide-react';
+import { getModelUseCase } from '@/components/settings/model-use-cases';
 
 type Severity = 'critical' | 'warning' | 'info';
 
@@ -433,9 +434,15 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
             {(investigation.analysis_duration_ms / 1000).toFixed(1)}s
           </span>
         )}
-        {investigation.llm_model && (
-          <span>Model: {investigation.llm_model}</span>
-        )}
+        {investigation.llm_model && (() => {
+          const useCase = getModelUseCase(investigation.llm_model);
+          return (
+            <span className="flex items-center gap-1.5">
+              Model: {investigation.llm_model}
+              <span className={cn('font-semibold', useCase.color)}>{useCase.label}</span>
+            </span>
+          );
+        })()}
       </div>
     </div>
   );

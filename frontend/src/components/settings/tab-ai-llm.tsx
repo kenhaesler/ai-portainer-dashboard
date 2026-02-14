@@ -69,6 +69,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { LlmModel, LlmTestPromptResponse } from '@/hooks/use-llm-models';
 
 const LazyAiFeedbackPanel = lazy(() => import('@/pages/settings-ai-feedback').then((m) => ({ default: m.AiFeedbackPanel })));
+import { getModelUseCase, MODEL_USE_CASE_TABLE } from './model-use-cases';
 
 /** Keys that belong to LLM configuration (excluded from parent auto-save). */
 export const LLM_SETTING_KEYS = DEFAULT_SETTINGS.llm.map((s) => s.key);
@@ -216,6 +217,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   const testConnection = useLlmTestConnection();
   const queryClient = useQueryClient();
   const [showToken, setShowToken] = useState(false);
+  const [showUseCaseTable, setShowUseCaseTable] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'ok' | 'error'>('idle');
   const [connectionError, setConnectionError] = useState<string>();
 
@@ -472,6 +474,48 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           )}
           {!modelsLoading && models.length === 0 && (
             <p className="text-xs text-amber-500">Could not fetch models. Enter model name manually or click Scan Models.</p>
+          )}
+          {selectedModel && (() => {
+            const useCase = getModelUseCase(selectedModel);
+            return (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2">
+                <span className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shrink-0', useCase.color)} style={{ backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)', borderColor: 'color-mix(in srgb, currentColor 25%, transparent)' }}>
+                  {useCase.label}
+                </span>
+                <span className="text-xs text-muted-foreground min-w-0">{useCase.description}</span>
+                <button
+                  type="button"
+                  onClick={() => setShowUseCaseTable((v) => !v)}
+                  className="ml-auto shrink-0 inline-flex items-center gap-1 rounded-md border border-border/60 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="View all model use-cases"
+                >
+                  {showUseCaseTable ? 'Hide' : 'All models'}
+                  {showUseCaseTable ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                </button>
+              </div>
+            );
+          })()}
+          {showUseCaseTable && (
+            <div className="mt-2 rounded-md border border-border/50 bg-muted/20 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/50 bg-muted/40">
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Model</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Label</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground hidden sm:table-cell">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MODEL_USE_CASE_TABLE.map((row) => (
+                    <tr key={row.models} className="border-b border-border/30 last:border-0">
+                      <td className="px-3 py-1.5 font-mono text-foreground">{row.models}</td>
+                      <td className={cn('px-3 py-1.5 font-semibold whitespace-nowrap', row.color)}>{row.label}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground hidden sm:table-cell">{row.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
