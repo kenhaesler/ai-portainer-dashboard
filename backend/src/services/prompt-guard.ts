@@ -3,6 +3,20 @@ import { getConfig } from '../config/index.js';
 
 const log = createChildLogger('service:prompt-guard');
 
+// ─── In-memory Prometheus counter ───────────────────────────────────
+
+let nearMissCounter = 0;
+
+/** Return the current near-miss count (for Prometheus /metrics). */
+export function getPromptGuardNearMissTotal(): number {
+  return nearMissCounter;
+}
+
+/** Reset counter (test helper). */
+export function resetPromptGuardNearMissCounter(): void {
+  nearMissCounter = 0;
+}
+
 // ─── Unicode normalization ──────────────────────────────────────────
 
 /**
@@ -259,26 +273,32 @@ export function isPromptInjection(input: string): PromptGuardResult {
 
   // Near-miss monitoring: log borderline scores that passed but were close to threshold
   let nearMissEnabled = true;
+  let nearMissLow = strict ? 0.2 : 0.3;
+  let nearMissHigh = strict ? 0.4 : 0.5;
   try {
-    const cfg = getConfig();
-    nearMissEnabled = (cfg as Record<string, unknown>).PROMPT_GUARD_NEAR_MISS_ENABLED !== false;
+    const cfg = getConfig() as Record<string, unknown>;
+    nearMissEnabled = cfg.PROMPT_GUARD_NEAR_MISS_ENABLED !== false;
+    if (strict) {
+      if (typeof cfg.PROMPT_GUARD_NEAR_MISS_LOW_STRICT === 'number') nearMissLow = cfg.PROMPT_GUARD_NEAR_MISS_LOW_STRICT;
+      if (typeof cfg.PROMPT_GUARD_NEAR_MISS_HIGH_STRICT === 'number') nearMissHigh = cfg.PROMPT_GUARD_NEAR_MISS_HIGH_STRICT;
+    } else {
+      if (typeof cfg.PROMPT_GUARD_NEAR_MISS_LOW_RELAXED === 'number') nearMissLow = cfg.PROMPT_GUARD_NEAR_MISS_LOW_RELAXED;
+      if (typeof cfg.PROMPT_GUARD_NEAR_MISS_HIGH_RELAXED === 'number') nearMissHigh = cfg.PROMPT_GUARD_NEAR_MISS_HIGH_RELAXED;
+    }
   } catch {
-    // Config unavailable — default to enabled
+    // Config unavailable — use defaults
   }
 
-  if (nearMissEnabled) {
-    const nearMissLow = strict ? 0.2 : 0.3;
-    const nearMissHigh = strict ? 0.4 : 0.5;
-    if (heuristic.score >= nearMissLow && heuristic.score < nearMissHigh) {
-      log.warn(
-        {
-          score: heuristic.score,
-          inputSnippet: input.substring(0, 200),
-          patterns: heuristic.details.map((d) => d.label),
-        },
-        'prompt-guard-near-miss',
-      );
-    }
+  if (nearMissEnabled && heuristic.score >= nearMissLow && heuristic.score < nearMissHigh) {
+    nearMissCounter++;
+    log.warn(
+      {
+        score: heuristic.score,
+        inputSnippet: input.substring(0, 200),
+        patterns: heuristic.details.map((d) => d.label),
+      },
+      'prompt-guard-near-miss',
+    );
   }
 
   return { blocked: false, score: heuristic.score };
