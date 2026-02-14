@@ -67,7 +67,15 @@ jobs:
         run: npm install
 
       - name: Run backend tests
-        run: npm run test -w backend
+        run: npm run test -w backend -- --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-backend
+          path: backend/coverage/
+          retention-days: 14
 
   test-frontend:
     name: Frontend Tests
@@ -86,7 +94,15 @@ jobs:
         run: npm install
 
       - name: Run frontend tests
-        run: npm run test -w frontend
+        run: npm run test -w frontend -- --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-frontend
+          path: frontend/coverage/
+          retention-days: 14
 
   test-gate:
     name: Test Gate (Required)
