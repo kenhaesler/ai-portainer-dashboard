@@ -45,7 +45,8 @@ function CustomContent(props: any) {
 
   if (!width || !height || width < 2 || height < 2) return null;
 
-  const textFill = getLuminance(fill) > 0.45 ? '#0f172a' : '#ffffff';
+  const safeFill = fill || HEALTH_COLORS.good;
+  const textFill = getLuminance(safeFill) > 0.45 ? '#0f172a' : '#ffffff';
 
   return (
     <g>
@@ -54,7 +55,7 @@ function CustomContent(props: any) {
         y={y}
         width={width}
         height={height}
-        fill={fill}
+        fill={safeFill}
         fillOpacity={0.85}
         stroke="hsl(var(--border))"
         strokeWidth={1}
@@ -96,6 +97,7 @@ function CustomContent(props: any) {
 }
 
 function getLuminance(hex: string): number {
+  if (!hex) return 0.5;
   const c = hex.replace('#', '');
   if (c.length !== 6) return 0.5;
   const r = parseInt(c.slice(0, 2), 16) / 255;
