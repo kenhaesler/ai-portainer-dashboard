@@ -82,8 +82,8 @@ describe('remediation-service', () => {
     mockChatStream.mockResolvedValue('');
   });
 
-  it('maps OOM insights to INVESTIGATE (not STOP_CONTAINER) and broadcasts', () => {
-    const result = suggestAction({
+  it('maps OOM insights to INVESTIGATE (not STOP_CONTAINER) and broadcasts', async () => {
+    const result = await suggestAction({
       id: 'insight-1',
       title: 'OOM detected',
       description: 'out of memory',
@@ -98,10 +98,10 @@ describe('remediation-service', () => {
     expect(mockBroadcastNewAction).toHaveBeenCalledTimes(1);
   });
 
-  it('skips duplicate when a pending action already exists for container+type', () => {
+  it('skips duplicate when a pending action already exists for container+type', async () => {
     mockHasPendingAction.mockReturnValue(true);
 
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-2',
       title: 'OOM detected',
       description: 'out of memory',
@@ -117,10 +117,10 @@ describe('remediation-service', () => {
     expect(mockHasPendingAction).toHaveBeenCalledWith('container-1', 'INVESTIGATE');
   });
 
-  it('creates action when no pending duplicate exists', () => {
+  it('creates action when no pending duplicate exists', async () => {
     mockHasPendingAction.mockReturnValue(false);
 
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-3',
       title: 'Container is unhealthy',
       description: 'health check failing',
@@ -135,11 +135,11 @@ describe('remediation-service', () => {
     expect(mockInsertAction).toHaveBeenCalledTimes(1);
   });
 
-  it('does not broadcast when insert is rejected by unique constraint', () => {
+  it('does not broadcast when insert is rejected by unique constraint', async () => {
     mockHasPendingAction.mockReturnValue(false);
     mockInsertAction.mockReturnValue(false);
 
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-5',
       title: 'OOM detected',
       description: 'out of memory',
@@ -154,10 +154,10 @@ describe('remediation-service', () => {
     expect(mockBroadcastNewAction).not.toHaveBeenCalled();
   });
 
-  it('maps high CPU to INVESTIGATE (not STOP_CONTAINER)', () => {
+  it('maps high CPU to INVESTIGATE (not STOP_CONTAINER)', async () => {
     mockHasPendingAction.mockReturnValue(false);
 
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-4',
       title: 'high cpu spike',
       description: 'runaway process',
@@ -191,7 +191,7 @@ describe('remediation-service', () => {
       return '';
     });
 
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-6',
       title: 'OOM detected',
       description: 'out of memory',
@@ -221,7 +221,7 @@ describe('remediation-service', () => {
       return '';
     });
 
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-7',
       title: 'Container unhealthy',
       description: 'health check failing',
@@ -283,8 +283,8 @@ describe('protected container safety', () => {
     mockIsOllamaAvailable.mockResolvedValue(false);
   });
 
-  it('never suggests STOP_CONTAINER — OOM maps to INVESTIGATE', () => {
-    const result = suggestAction({
+  it('never suggests STOP_CONTAINER — OOM maps to INVESTIGATE', async () => {
+    const result = await suggestAction({
       id: 'insight-oom',
       title: 'OOM detected',
       description: 'Container hit memory limit (OOM)',
@@ -299,8 +299,8 @@ describe('protected container safety', () => {
     expect(result!.actionType).not.toBe('STOP_CONTAINER');
   });
 
-  it('downgrades RESTART_CONTAINER to INVESTIGATE for protected containers', () => {
-    const result = suggestAction({
+  it('downgrades RESTART_CONTAINER to INVESTIGATE for protected containers', async () => {
+    const result = await suggestAction({
       id: 'insight-unhealthy-redis',
       title: 'Container is unhealthy',
       description: 'health check failing on redis',
@@ -314,8 +314,8 @@ describe('protected container safety', () => {
     expect(result!.actionType).toBe('INVESTIGATE');
   });
 
-  it('allows RESTART_CONTAINER for non-protected containers', () => {
-    const result = suggestAction({
+  it('allows RESTART_CONTAINER for non-protected containers', async () => {
+    const result = await suggestAction({
       id: 'insight-unhealthy-app',
       title: 'Container is unhealthy',
       description: 'health check failing on my-app',
@@ -329,8 +329,8 @@ describe('protected container safety', () => {
     expect(result!.actionType).toBe('RESTART_CONTAINER');
   });
 
-  it('allows START_CONTAINER for protected containers (non-destructive)', () => {
-    const result = suggestAction({
+  it('allows START_CONTAINER for protected containers (non-destructive)', async () => {
+    const result = await suggestAction({
       id: 'insight-stopped-portainer',
       title: 'Container stopped',
       description: 'Container is not running',
@@ -344,8 +344,8 @@ describe('protected container safety', () => {
     expect(result!.actionType).toBe('START_CONTAINER');
   });
 
-  it('blocks destructive actions on portainer-agent variant', () => {
-    const result = suggestAction({
+  it('blocks destructive actions on portainer-agent variant', async () => {
+    const result = await suggestAction({
       id: 'insight-agent',
       title: 'Container is unhealthy',
       description: 'health check failing',
@@ -359,9 +359,9 @@ describe('protected container safety', () => {
     expect(result!.actionType).toBe('INVESTIGATE');
   });
 
-  it('reproduces issue #450 scenario: certificate error should not suggest Stop Container', () => {
+  it('reproduces issue #450 scenario: certificate error should not suggest Stop Container', async () => {
     // Simulates the cascade: cert error → false memory anomaly → suggested_action with "memory" keywords
-    const result = suggestAction({
+    const result = await suggestAction({
       id: 'insight-450',
       title: 'Anomalous memory usage on "portainer"',
       description: 'Current memory: 45.2% (mean: 42.1%, z-score: 3.10). This is 3.1 standard deviations from the moving average.',

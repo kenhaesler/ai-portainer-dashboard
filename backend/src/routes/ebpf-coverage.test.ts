@@ -30,11 +30,11 @@ vi.mock('node:os', () => ({
 }));
 
 vi.mock('../services/ebpf-coverage.js', () => ({
-  getEndpointCoverage: vi.fn(() => []),
-  updateCoverageStatus: vi.fn(),
+  getEndpointCoverage: vi.fn(async () => []),
+  updateCoverageStatus: vi.fn(async () => {}),
   syncEndpointCoverage: vi.fn(async () => 0),
   verifyCoverage: vi.fn(async () => ({ verified: false, lastTraceAt: null, beylaRunning: false })),
-  getCoverageSummary: vi.fn(() => ({
+  getCoverageSummary: vi.fn(async () => ({
     total: 0,
     deployed: 0,
     planned: 0,
@@ -49,8 +49,8 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   removeBeylaFromEndpoint: vi.fn(async () => ({ endpointId: 1, endpointName: 'local', containerId: 'b1', status: 'removed' })),
   deployBeylaBulk: vi.fn(async () => []),
   removeBeylaBulk: vi.fn(async () => []),
-  getEndpointOtlpOverride: vi.fn(() => null),
-  setEndpointOtlpOverride: vi.fn(),
+  getEndpointOtlpOverride: vi.fn(async () => null),
+  setEndpointOtlpOverride: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/audit-logger.js', () => ({
@@ -97,7 +97,7 @@ describe('ebpf-coverage routes', () => {
       TRACES_INGESTION_API_KEY: 'ingest-key',
       DASHBOARD_EXTERNAL_URL: '',
     } as any);
-    mockedGetEndpointOtlpOverride.mockReturnValue(null);
+    mockedGetEndpointOtlpOverride.mockResolvedValue(null);
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
 
@@ -115,9 +115,9 @@ describe('ebpf-coverage routes', () => {
           endpoint_id: 1,
           endpoint_name: 'local',
           status: 'deployed' as const,
-          beyla_enabled: 1,
+          beyla_enabled: true,
           beyla_container_id: 'b1',
-          beyla_managed: 1,
+          beyla_managed: true,
           otlp_endpoint_override: null,
           drifted: false,
           exclusion_reason: null,
@@ -128,7 +128,7 @@ describe('ebpf-coverage routes', () => {
           updated_at: '2025-01-01',
         },
       ];
-      mockedGetEndpointCoverage.mockReturnValue(mockRecords);
+      mockedGetEndpointCoverage.mockResolvedValue(mockRecords);
 
       const response = await app.inject({
         method: 'GET',
@@ -142,7 +142,7 @@ describe('ebpf-coverage routes', () => {
     });
 
     it('should return empty coverage list', async () => {
-      mockedGetEndpointCoverage.mockReturnValue([]);
+      mockedGetEndpointCoverage.mockResolvedValue([]);
 
       const response = await app.inject({
         method: 'GET',
@@ -157,7 +157,7 @@ describe('ebpf-coverage routes', () => {
 
   describe('GET /api/ebpf/coverage/summary', () => {
     it('should return coverage summary', async () => {
-      mockedGetCoverageSummary.mockReturnValue({
+      mockedGetCoverageSummary.mockResolvedValue({
         total: 8,
         deployed: 6,
         planned: 1,
@@ -371,7 +371,7 @@ describe('ebpf-coverage routes', () => {
     });
 
     it('POST /api/ebpf/deploy/:endpointId uses endpoint-specific OTLP override when present', async () => {
-      mockedGetEndpointOtlpOverride.mockReturnValueOnce('https://override.example.com/api/traces/otlp');
+      mockedGetEndpointOtlpOverride.mockResolvedValueOnce('https://override.example.com/api/traces/otlp');
       const response = await app.inject({
         method: 'POST',
         url: '/api/ebpf/deploy/1',

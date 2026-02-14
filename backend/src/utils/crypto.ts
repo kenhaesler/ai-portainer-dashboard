@@ -13,7 +13,7 @@ import { getConfig } from '../config/index.js';
  *    simpler and sufficient (no key distribution problem).
  * 2. Performance — HS256 is ~10-20x faster than RS256 for signing operations.
  * 3. Key management — a single JWT_SECRET env var vs. PEM key pair rotation.
- * 4. Session store — tokens are validated against SQLite sessions on every
+ * 4. Session store — tokens are validated against PostgreSQL sessions on every
  *    request, so even if a token were forged the session check would reject it.
  *
  * Revisit this decision when ANY of the following become true:

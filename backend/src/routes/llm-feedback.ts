@@ -103,7 +103,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
       return reply.code(429).send({ error: 'Too many feedback submissions. Please wait a moment.' });
     }
 
-    const feedback = insertFeedback({
+    const feedback = await insertFeedback({
       trace_id: body.traceId,
       message_id: body.messageId,
       feature: body.feature,
@@ -129,7 +129,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const query = request.query as z.infer<typeof ListFeedbackQuerySchema>;
-    return listFeedback(query);
+    return await listFeedback(query);
   });
 
   // ── Get feedback statistics (admin only) ────────────────────────
@@ -142,7 +142,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    return getFeedbackStats();
+    return await getFeedbackStats();
   });
 
   // ── Get recent negative feedback (admin only) ───────────────────
@@ -155,7 +155,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    return getRecentNegativeFeedback(20);
+    return await getRecentNegativeFeedback(20);
   });
 
   // ── Review a feedback entry (admin only) ────────────────────────
@@ -174,7 +174,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     const { action, note } = request.body as z.infer<typeof ReviewFeedbackSchema>;
     const reviewerId = request.user?.sub ?? 'unknown';
 
-    const result = adminReviewFeedback(id, action, reviewerId, note);
+    const result = await adminReviewFeedback(id, action, reviewerId, note);
     if (!result) {
       return reply.code(404).send({ error: 'Feedback entry not found' });
     }
@@ -205,7 +205,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { ids } = request.body as z.infer<typeof BulkDeleteSchema>;
-    const deleted = bulkDeleteFeedback(ids);
+    const deleted = await bulkDeleteFeedback(ids);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -237,7 +237,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: `Invalid feature: ${feature}` });
     }
 
-    const negativeCount = getNegativeFeedbackCount(feature);
+    const negativeCount = await getNegativeFeedbackCount(feature);
     if (negativeCount < MIN_NEGATIVE_FOR_SUGGESTION) {
       return reply.code(400).send({
         error: `Need at least ${MIN_NEGATIVE_FOR_SUGGESTION} negative feedback entries before generating suggestions. Currently have ${negativeCount}.`,
@@ -247,8 +247,8 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     }
 
     // Get negative feedback for analysis
-    const negativeFeedback = getNegativeFeedbackForFeature(feature, 30);
-    const currentPrompt = getEffectivePrompt(feature as PromptFeature);
+    const negativeFeedback = await getNegativeFeedbackForFeature(feature, 30);
+    const currentPrompt = await getEffectivePrompt(feature as PromptFeature);
     const featureInfo = PROMPT_FEATURES.find(f => f.key === feature);
 
     // Build the analysis prompt for the LLM
@@ -273,7 +273,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
       // Dynamically import to avoid circular dependencies
       const { getEffectiveLlmConfig } = await import('../services/settings-store.js');
 
-      const llmConfig = getEffectiveLlmConfig();
+      const llmConfig = await getEffectiveLlmConfig();
 
       let responseText = '';
 
@@ -304,7 +304,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
         responseText = data.choices?.[0]?.message?.content ?? '';
       } else {
         // Ollama
-        const ollama = createConfiguredOllamaClient(llmConfig);
+        const ollama = await createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages: [
@@ -326,7 +326,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
       }
 
       // Store the suggestion
-      const suggestion = insertPromptSuggestion({
+      const suggestion = await insertPromptSuggestion({
         feature,
         current_prompt: currentPrompt,
         suggested_prompt: parsed.suggestedPrompt,
@@ -366,7 +366,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const query = request.query as z.infer<typeof SuggestionListQuerySchema>;
-    return listPromptSuggestions(query);
+    return await listPromptSuggestions(query);
   });
 
   // ── Update suggestion status (admin only) ──────────────────────
@@ -385,7 +385,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     const { status } = request.body as z.infer<typeof UpdateSuggestionStatusSchema>;
     const userId = request.user?.sub ?? 'unknown';
 
-    const result = updatePromptSuggestionStatus(id, status, userId);
+    const result = await updatePromptSuggestionStatus(id, status, userId);
     if (!result) {
       return reply.code(404).send({ error: 'Suggestion not found' });
     }

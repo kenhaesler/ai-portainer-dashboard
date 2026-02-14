@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 
 export async function incidentsRoutes(fastify: FastifyInstance) {
   // List incidents
@@ -19,8 +19,8 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
       offset?: number;
     };
 
-    const incidents = getIncidents({ status, severity, limit, offset });
-    const counts = getIncidentCount();
+    const incidents = await getIncidents({ status, severity, limit, offset });
+    const counts = await getIncidentCount();
 
     return {
       incidents,
@@ -40,7 +40,7 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const incident = getIncident(id);
+    const incident = await getIncident(id);
 
     if (!incident) {
       return reply.code(404).send({ error: 'Incident not found' });
@@ -54,11 +54,12 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
 
     let relatedInsights: unknown[] = [];
     if (allIds.length > 0) {
-      const db = getDb();
+      const db = getDbForDomain('insights');
       const placeholders = allIds.map(() => '?').join(',');
-      relatedInsights = db.prepare(
+      relatedInsights = await db.query(
         `SELECT * FROM insights WHERE id IN (${placeholders}) ORDER BY created_at ASC`,
-      ).all(...allIds);
+        allIds,
+      );
     }
 
     return {
@@ -77,13 +78,13 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const incident = getIncident(id);
+    const incident = await getIncident(id);
 
     if (!incident) {
       return reply.code(404).send({ error: 'Incident not found' });
     }
 
-    resolveIncident(id);
+    await resolveIncident(id);
     return { success: true };
   });
 }

@@ -144,7 +144,7 @@ export async function correlationRoutes(fastify: FastifyInstance) {
     try {
       const response = await chatStream(
         [{ role: 'user', content: prompt }],
-        getEffectivePrompt('correlation_insights'),
+        await getEffectivePrompt('correlation_insights'),
         () => {},
       );
 

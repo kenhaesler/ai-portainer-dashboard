@@ -3,21 +3,19 @@ import Fastify from 'fastify';
 import { incidentsRoutes } from './incidents.js';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
 
-// Mock the stores
+// Mock the stores — all functions are now async
 vi.mock('../services/incident-store.js', () => ({
-  getIncidents: vi.fn(() => []),
-  getIncident: vi.fn(),
-  resolveIncident: vi.fn(),
-  getIncidentCount: vi.fn(() => ({ active: 0, resolved: 0, total: 0 })),
+  getIncidents: vi.fn(() => Promise.resolve([])),
+  getIncident: vi.fn(() => Promise.resolve(null)),
+  resolveIncident: vi.fn(() => Promise.resolve()),
+  getIncidentCount: vi.fn(() => Promise.resolve({ active: 0, resolved: 0, total: 0 })),
 }));
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      all: vi.fn(() => []),
-      get: vi.fn(),
-      run: vi.fn(),
-    })),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: vi.fn(() => ({
+    query: vi.fn(() => Promise.resolve([])),
+    queryOne: vi.fn(() => Promise.resolve(null)),
+    execute: vi.fn(() => Promise.resolve({ changes: 0 })),
   })),
 }));
 
@@ -41,10 +39,10 @@ describe('incidents routes', () => {
 
   describe('GET /api/incidents', () => {
     it('should return incidents list with counts', async () => {
-      mockedGetIncidents.mockReturnValue([
+      mockedGetIncidents.mockResolvedValue([
         { id: 'inc-1', title: 'Test incident', severity: 'critical', status: 'active' } as never,
       ]);
-      mockedGetIncidentCount.mockReturnValue({ active: 1, resolved: 0, total: 1 });
+      mockedGetIncidentCount.mockResolvedValue({ active: 1, resolved: 0, total: 1 });
 
       const response = await app.inject({
         method: 'GET',
@@ -71,7 +69,7 @@ describe('incidents routes', () => {
 
   describe('GET /api/incidents/:id', () => {
     it('should return 404 for non-existent incident', async () => {
-      mockedGetIncident.mockReturnValue(undefined);
+      mockedGetIncident.mockResolvedValue(null);
 
       const response = await app.inject({
         method: 'GET',
@@ -82,7 +80,7 @@ describe('incidents routes', () => {
     });
 
     it('should return incident with related insights', async () => {
-      mockedGetIncident.mockReturnValue({
+      mockedGetIncident.mockResolvedValue({
         id: 'inc-1',
         title: 'Test incident',
         root_cause_insight_id: 'insight-1',
@@ -103,7 +101,7 @@ describe('incidents routes', () => {
 
   describe('POST /api/incidents/:id/resolve', () => {
     it('should return 404 for non-existent incident', async () => {
-      mockedGetIncident.mockReturnValue(undefined);
+      mockedGetIncident.mockResolvedValue(null);
 
       const response = await app.inject({
         method: 'POST',
@@ -114,7 +112,7 @@ describe('incidents routes', () => {
     });
 
     it('should resolve an existing incident', async () => {
-      mockedGetIncident.mockReturnValue({ id: 'inc-1', status: 'active' } as never);
+      mockedGetIncident.mockResolvedValue({ id: 'inc-1', status: 'active' } as never);
 
       const response = await app.inject({
         method: 'POST',

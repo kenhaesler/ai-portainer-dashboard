@@ -5,22 +5,23 @@ import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 
-let sqlitePath = '';
-const mockPragma = vi.fn();
 const mockWriteAuditLog = vi.fn();
+const mockCreateBackup = vi.fn();
+const mockListBackups = vi.fn();
+const mockRestoreBackup = vi.fn();
+const mockDeleteBackup = vi.fn();
 
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({ SQLITE_PATH: sqlitePath }),
-}));
-
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    pragma: (...args: unknown[]) => mockPragma(...args),
-  }),
-}));
+let cwdValue = '';
 
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
+}));
+
+vi.mock('../services/backup-service.js', () => ({
+  createBackup: (...args: unknown[]) => mockCreateBackup(...args),
+  listBackups: (...args: unknown[]) => mockListBackups(...args),
+  restoreBackup: (...args: unknown[]) => mockRestoreBackup(...args),
+  deleteBackup: (...args: unknown[]) => mockDeleteBackup(...args),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -42,12 +43,15 @@ describe('backup routes', () => {
   beforeEach(async () => {
     currentRole = 'admin';
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-route-test-'));
-    sqlitePath = path.join(tempDir, 'dashboard.db');
-    fs.writeFileSync(sqlitePath, 'current-db-content');
+    cwdValue = tempDir;
 
-    const backupDir = path.join(tempDir, 'backups');
+    // Create the data/backups directory that getBackupDir() will use
+    const backupDir = path.join(tempDir, 'data', 'backups');
     fs.mkdirSync(backupDir, { recursive: true });
-    fs.writeFileSync(path.join(backupDir, 'backup-1.db'), 'restored-db-content');
+    fs.writeFileSync(path.join(backupDir, 'backup-1.dump'), 'pg-dump-content');
+
+    // Mock process.cwd() so getBackupDir() resolves to our temp dir
+    vi.spyOn(process, 'cwd').mockReturnValue(cwdValue);
 
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
@@ -77,32 +81,89 @@ describe('backup routes', () => {
     await app.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
-  it('restores the selected backup file', async () => {
+  it('creates a backup via pg_dump', async () => {
+    const backupDir = path.join(tempDir, 'data', 'backups');
+    const dumpFile = path.join(backupDir, 'dashboard-backup-test.dump');
+    fs.writeFileSync(dumpFile, 'fake-pg-dump-data');
+
+    mockCreateBackup.mockResolvedValue('dashboard-backup-test.dump');
+
     const response = await app.inject({
       method: 'POST',
-      url: '/api/backup/backup-1.db/restore',
+      url: '/api/backup',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.success).toBe(true);
+    expect(body.filename).toBe('dashboard-backup-test.dump');
+    expect(body.size).toBeGreaterThan(0);
+    expect(mockCreateBackup).toHaveBeenCalled();
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'backup.create',
+      details: { filename: 'dashboard-backup-test.dump' },
+    }));
+  });
+
+  it('lists backups', async () => {
+    mockListBackups.mockReturnValue([
+      { filename: 'backup-1.dump', size: 1024, createdAt: '2026-01-01T00:00:00.000Z' },
+    ]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/backup',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.backups).toHaveLength(1);
+    expect(body.backups[0].filename).toBe('backup-1.dump');
+  });
+
+  it('restores a backup via pg_restore', async () => {
+    mockRestoreBackup.mockResolvedValue(undefined);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/backup/backup-1.dump/restore',
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ success: true });
-    expect(fs.readFileSync(sqlitePath, 'utf8')).toBe('restored-db-content');
-    expect(mockPragma).toHaveBeenCalledWith('wal_checkpoint(TRUNCATE)');
+    expect(mockRestoreBackup).toHaveBeenCalledWith('backup-1.dump');
     expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: 'backup.restore',
-      details: { filename: 'backup-1.db' },
+      details: { filename: 'backup-1.dump' },
     }));
   });
 
   it('returns 404 when restore backup does not exist', async () => {
     const response = await app.inject({
       method: 'POST',
-      url: '/api/backup/missing.db/restore',
+      url: '/api/backup/missing.dump/restore',
     });
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: 'Backup not found' });
+  });
+
+  it('deletes a backup', async () => {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/backup/backup-1.dump',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ success: true });
+    expect(mockDeleteBackup).toHaveBeenCalledWith('backup-1.dump');
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'backup.delete',
+      details: { filename: 'backup-1.dump' },
+    }));
   });
 
   it('rejects create for non-admin users', async () => {
@@ -131,7 +192,7 @@ describe('backup routes', () => {
     currentRole = 'viewer';
     const response = await app.inject({
       method: 'GET',
-      url: '/api/backup/backup-1.db',
+      url: '/api/backup/backup-1.dump',
     });
 
     expect(response.statusCode).toBe(403);
@@ -169,7 +230,7 @@ describe('backup routes', () => {
     currentRole = 'viewer';
     const response = await app.inject({
       method: 'POST',
-      url: '/api/backup/backup-1.db/restore',
+      url: '/api/backup/backup-1.dump/restore',
     });
 
     expect(response.statusCode).toBe(403);
@@ -180,7 +241,7 @@ describe('backup routes', () => {
     currentRole = 'viewer';
     const response = await app.inject({
       method: 'DELETE',
-      url: '/api/backup/backup-1.db',
+      url: '/api/backup/backup-1.dump',
     });
 
     expect(response.statusCode).toBe(403);

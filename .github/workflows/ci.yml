@@ -53,6 +53,20 @@ jobs:
   test-backend:
     name: Backend Tests
     runs-on: ubuntu-latest
+    services:
+      postgres-test:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: portainer_dashboard_test
+          POSTGRES_USER: app_user
+          POSTGRES_PASSWORD: changeme-postgres-app
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U app_user -d portainer_dashboard_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -68,6 +82,8 @@ jobs:
 
       - name: Run backend tests
         run: npm run test -w backend -- --coverage
+        env:
+          POSTGRES_TEST_URL: postgresql://app_user:changeme-postgres-app@localhost:5433/portainer_dashboard_test
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

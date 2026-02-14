@@ -15,7 +15,6 @@ services:
       - PORT=3051
       # Public/LAN URL used by remote endpoints (Beyla) to call back into OTLP ingest.
       - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:-}
-      - SQLITE_PATH=/app/data/dashboard.db
       - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin}                # DEV ONLY default
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme123}          # DEV ONLY default
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production-must-be-at-least-32-chars}  # DEV ONLY default
@@ -49,6 +48,9 @@ services:
       # eBPF Trace Ingestion (Grafana Beyla) — see docker/beyla/beyla.yml
       - TRACES_INGESTION_ENABLED=${TRACES_INGESTION_ENABLED:-false}
       - TRACES_INGESTION_API_KEY=${TRACES_INGESTION_API_KEY:-}
+      # App PostgreSQL (replaces SQLite for app data)
+      - POSTGRES_APP_URL=postgresql://app_user:${POSTGRES_APP_PASSWORD:-changeme-postgres-app}@postgres-app:5432/portainer_dashboard  # DEV ONLY default
+      - POSTGRES_APP_MAX_CONNECTIONS=${POSTGRES_APP_MAX_CONNECTIONS:-20}
       # TimescaleDB Metrics Storage
       - TIMESCALE_URL=postgresql://metrics_user:${TIMESCALE_PASSWORD:-changeme-timescale}@timescaledb:5432/metrics  # DEV ONLY default
       - TIMESCALE_MAX_CONNECTIONS=${TIMESCALE_MAX_CONNECTIONS:-20}
@@ -69,6 +71,8 @@ services:
       # - ../certs/ca-bundle.crt:/certs/ca-bundle.crt:ro
     depends_on:
       redis:
+        condition: service_healthy
+      postgres-app:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
@@ -152,6 +156,28 @@ services:
     networks:
       - dashboard-net
 
+  postgres-app:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    ports:
+      # Expose on 5433 so backend tests can reach PG from the host
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: portainer_dashboard
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:-changeme-postgres-app}  # DEV ONLY default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d portainer_dashboard"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - postgres-app-data:/var/lib/postgresql/data
+      - ./init-test-db.sh:/docker-entrypoint-initdb.d/01-create-test-db.sh:ro
+    networks:
+      - dashboard-net
+
   timescaledb:
     # Pinned version — avoid :latest for reproducible builds (see #554)
     image: timescale/timescaledb:2.25.0-pg17
@@ -160,6 +186,7 @@ services:
       POSTGRES_DB: metrics
       POSTGRES_USER: metrics_user
       POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-changeme-timescale}  # DEV ONLY default
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-changeme-postgres-app}  # DEV ONLY default
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
       interval: 15s
@@ -168,11 +195,13 @@ services:
       start_period: 30s
     volumes:
       - timescale-data:/var/lib/postgresql/data
+      - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
     networks:
       - dashboard-net
 
 volumes:
   backend-data:
+  postgres-app-data:
   timescale-data:
 
 networks:

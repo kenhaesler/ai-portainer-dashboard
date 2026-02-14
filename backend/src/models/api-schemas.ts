@@ -74,7 +74,7 @@ export const RedactedDependencyCheckSchema = z.object({
 export const ReadinessResponseSchema = z.object({
   status: z.string(),
   checks: z.object({
-    database: RedactedDependencyCheckSchema,
+    appDb: RedactedDependencyCheckSchema,
     metricsDb: RedactedDependencyCheckSchema,
     portainer: RedactedDependencyCheckSchema,
     ollama: RedactedDependencyCheckSchema,
@@ -86,7 +86,7 @@ export const ReadinessResponseSchema = z.object({
 export const ReadinessDetailResponseSchema = z.object({
   status: z.string(),
   checks: z.object({
-    database: DependencyCheckSchema,
+    appDb: DependencyCheckSchema,
     metricsDb: DependencyCheckSchema,
     portainer: DependencyCheckSchema,
     ollama: DependencyCheckSchema,
@@ -273,7 +273,7 @@ export const TraceIdParamsSchema = z.object({
 export const FilenameParamsSchema = z.object({
   filename: z
     .string()
-    .regex(/^[A-Za-z0-9._-]+\.db$/, 'filename must be a .db file without path separators'),
+    .regex(/^[A-Za-z0-9._-]+\.(db|dump)$/, 'filename must be a .db or .dump file without path separators'),
 });
 
 export const PortainerBackupFilenameParamsSchema = z.object({

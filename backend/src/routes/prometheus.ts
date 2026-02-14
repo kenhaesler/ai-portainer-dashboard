@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getConfig } from '../config/index.js';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { getPromptGuardNearMissTotal } from '../services/prompt-guard.js';
 
 const CACHE_TTL_MS = 15_000;
@@ -86,20 +86,23 @@ function renderHistogram(
   renderMetric(lines, `${name}_count`, sorted.length);
 }
 
-function getCachedSnapshot(): MetricsSnapshot {
+async function getCachedSnapshot(): Promise<MetricsSnapshot> {
   if (cache && cache.expiresAt > Date.now()) {
     return cache.snapshot;
   }
 
-  const db = getDb();
+  const insightsDb = getDbForDomain('insights');
+  const actionsDb = getDbForDomain('actions');
+  const monitoringDb = getDbForDomain('monitoring');
 
-  const insights = db.prepare(
-    `SELECT severity, category, COUNT(*) as total
+  const insights = await insightsDb.query<{ severity: string; category: string; total: number }>(
+    `SELECT severity, category, COUNT(*)::integer as total
      FROM insights
      GROUP BY severity, category`,
-  ).all() as Array<{ severity: string; category: string; total: number }>;
+    [],
+  );
 
-  const anomalies = db.prepare(
+  const anomalies = await insightsDb.query<{ container_name: string; metric_type: string; total: number }>(
     `SELECT
        container_name,
        CASE
@@ -107,42 +110,48 @@ function getCachedSnapshot(): MetricsSnapshot {
          WHEN lower(title) LIKE '%memory%' THEN 'memory'
          ELSE 'unknown'
        END as metric_type,
-       COUNT(*) as total
+       COUNT(*)::integer as total
      FROM insights
      WHERE category = 'anomaly'
        AND container_name IS NOT NULL
      GROUP BY container_name, metric_type`,
-  ).all() as Array<{ container_name: string; metric_type: string; total: number }>;
+    [],
+  );
 
-  const actions = db.prepare(
-    `SELECT status, COUNT(*) as total
+  const actions = await actionsDb.query<{ status: string; total: number }>(
+    `SELECT status, COUNT(*)::integer as total
      FROM actions
      GROUP BY status`,
-  ).all() as Array<{ status: string; total: number }>;
+    [],
+  );
 
-  const snapshot = db.prepare(
+  const snapshot = await monitoringDb.queryOne<MetricsSnapshot['snapshot']>(
     `SELECT containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down
      FROM monitoring_snapshots
      ORDER BY created_at DESC
      LIMIT 1`,
-  ).get() as MetricsSnapshot['snapshot'] | undefined;
+    [],
+  );
 
-  const activeAnomalies = db.prepare(
-    `SELECT COUNT(*) as count
+  const activeAnomalies = await insightsDb.queryOne<{ count: number }>(
+    `SELECT COUNT(*)::integer as count
      FROM insights
-     WHERE category = 'anomaly' AND is_acknowledged = 0`,
-  ).get() as { count: number };
+     WHERE category = 'anomaly' AND is_acknowledged = false`,
+    [],
+  );
 
-  const remediationDurations = db.prepare(
+  const remediationDurations = await actionsDb.query<{ execution_duration_ms: number }>(
     `SELECT execution_duration_ms
      FROM actions
      WHERE status IN ('completed', 'failed')
        AND execution_duration_ms IS NOT NULL`,
-  ).all() as Array<{ execution_duration_ms: number }>;
+    [],
+  );
 
-  const monitoringDurations = db.prepare(
+  const monitoringDurations = await monitoringDb.query<{ duration_ms: number }>(
     `SELECT duration_ms FROM monitoring_cycles`,
-  ).all() as Array<{ duration_ms: number }>;
+    [],
+  );
 
   const snapshotData: MetricsSnapshot = {
     insights,
@@ -155,7 +164,7 @@ function getCachedSnapshot(): MetricsSnapshot {
       endpoints_up: 0,
       endpoints_down: 0,
     },
-    activeAnomalies: activeAnomalies.count,
+    activeAnomalies: activeAnomalies?.count ?? 0,
     remediationDurations: remediationDurations.map((row) => row.execution_duration_ms / 1000),
     monitoringDurations: monitoringDurations.map((row) => row.duration_ms / 1000),
   };
@@ -168,8 +177,8 @@ function getCachedSnapshot(): MetricsSnapshot {
   return snapshotData;
 }
 
-function buildMetricsPayload(): string {
-  const snapshot = getCachedSnapshot();
+async function buildMetricsPayload(): Promise<string> {
+  const snapshot = await getCachedSnapshot();
   const lines: string[] = [];
 
   lines.push('# HELP dashboard_insights_total Total AI insights generated');
@@ -277,6 +286,6 @@ export async function prometheusRoutes(fastify: FastifyInstance) {
 
     return reply
       .header('content-type', 'text/plain; version=0.0.4; charset=utf-8')
-      .send(buildMetricsPayload());
+      .send(await buildMetricsPayload());
   });
 }

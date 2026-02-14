@@ -8,8 +8,8 @@ import {
 // We only test pure utility functions here; DB-dependent functions
 // are tested via the route-level integration tests.
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: vi.fn(),
 }));
 
 vi.mock('../utils/logger.js', () => ({

@@ -85,8 +85,8 @@ export async function imagesRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async () => {
     return {
-      records: getStalenessRecords(),
-      summary: getStalenessSummary(),
+      records: await getStalenessRecords(),
+      summary: await getStalenessSummary(),
     };
   });
 

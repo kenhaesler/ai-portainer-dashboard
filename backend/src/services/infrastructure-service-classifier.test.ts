@@ -15,31 +15,30 @@ describe('infrastructure-service-classifier', () => {
     mockGetSetting.mockReset();
   });
 
-  it('falls back to default infrastructure patterns when setting is not present', () => {
-    mockGetSetting.mockReturnValue(undefined);
-    expect(getInfrastructureServicePatterns()).toEqual(['traefik', 'portainer_agent', 'beyla']);
+  it('falls back to default infrastructure patterns when setting is not present', async () => {
+    mockGetSetting.mockResolvedValue(undefined);
+    expect(await getInfrastructureServicePatterns()).toEqual(['traefik', 'portainer_agent', 'beyla']);
   });
 
-  it('loads patterns from JSON array setting', () => {
-    mockGetSetting.mockReturnValue({
+  it('loads patterns from JSON array setting', async () => {
+    mockGetSetting.mockResolvedValue({
       value: '["Traefik","portainer_agent","beyla","Traefik"]',
     });
-    expect(getInfrastructureServicePatterns()).toEqual(['traefik', 'portainer_agent', 'beyla']);
+    expect(await getInfrastructureServicePatterns()).toEqual(['traefik', 'portainer_agent', 'beyla']);
   });
 
-  it('loads patterns from comma-separated setting', () => {
-    mockGetSetting.mockReturnValue({
+  it('loads patterns from comma-separated setting', async () => {
+    mockGetSetting.mockResolvedValue({
       value: 'traefik,portainer_agent,beyla',
     });
-    expect(getInfrastructureServicePatterns()).toEqual(['traefik', 'portainer_agent', 'beyla']);
+    expect(await getInfrastructureServicePatterns()).toEqual(['traefik', 'portainer_agent', 'beyla']);
   });
 
-  it('matches exact and prefixed infrastructure service names', () => {
+  it('matches exact and prefixed infrastructure service names', async () => {
     const patterns = ['traefik', 'portainer_agent', 'beyla'];
-    expect(isInfrastructureService('traefik', patterns)).toBe(true);
-    expect(isInfrastructureService('traefik-prod', patterns)).toBe(true);
-    expect(isInfrastructureService('portainer_agent_1', patterns)).toBe(true);
-    expect(isInfrastructureService('customer-api', patterns)).toBe(false);
+    expect(await isInfrastructureService('traefik', patterns)).toBe(true);
+    expect(await isInfrastructureService('traefik-prod', patterns)).toBe(true);
+    expect(await isInfrastructureService('portainer_agent_1', patterns)).toBe(true);
+    expect(await isInfrastructureService('customer-api', patterns)).toBe(false);
   });
 });
-

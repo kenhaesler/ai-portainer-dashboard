@@ -83,7 +83,7 @@ function makeConfig(overrides: Partial<McpServerConfig> = {}): McpServerConfig {
     url: null,
     args: null,
     env: null,
-    enabled: 1,
+    enabled: true,
     disabled_tools: null,
     ...overrides,
   };

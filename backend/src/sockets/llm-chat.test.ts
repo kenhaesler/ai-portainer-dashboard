@@ -50,12 +50,11 @@ vi.mock('../services/portainer-cache.js', () => ({
   TTL: { ENDPOINTS: 60, CONTAINERS: 60 },
 }));
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      all: vi.fn(() => []),
-      run: vi.fn(),
-    })),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: vi.fn(() => ({
+    query: vi.fn(async () => []),
+    queryOne: vi.fn(async () => null),
+    execute: vi.fn(async () => ({ changes: 0 })),
   })),
 }));
 

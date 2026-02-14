@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../db/sqlite.js', () => {
+vi.mock('../db/app-db-router.js', () => {
   const mockDb = {
-    prepare: vi.fn().mockReturnValue({
-      run: vi.fn(),
-      get: vi.fn().mockReturnValue({ total: 3, stale: 1, up_to_date: 1, unchecked: 1 }),
-      all: vi.fn().mockReturnValue([]),
-    }),
+    execute: vi.fn().mockResolvedValue({ changes: 1 }),
+    queryOne: vi.fn().mockResolvedValue({ total: 3, stale: 1, up_to_date: 1, unchecked: 1 }),
+    query: vi.fn().mockResolvedValue([]),
   };
-  return { getDb: vi.fn(() => mockDb) };
+  return { getDbForDomain: vi.fn(() => mockDb) };
 });
 
 vi.mock('../utils/logger.js', () => ({
@@ -55,8 +53,8 @@ describe('image-staleness', () => {
   });
 
   describe('getStalenessSummary', () => {
-    it('returns summary from database', () => {
-      const summary = getStalenessSummary();
+    it('returns summary from database', async () => {
+      const summary = await getStalenessSummary();
       expect(summary).toEqual({
         total: 3,
         stale: 1,

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import {
   SettingsQuerySchema,
@@ -98,7 +98,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const userId = request.user?.sub;
     return {
-      defaultLandingPage: userId ? getUserDefaultLandingPage(userId) : '/',
+      defaultLandingPage: userId ? await getUserDefaultLandingPage(userId) : '/',
     };
   });
 
@@ -121,7 +121,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Invalid landing page route' });
     }
 
-    setUserDefaultLandingPage(userId, defaultLandingPage);
+    await setUserDefaultLandingPage(userId, defaultLandingPage);
     return { defaultLandingPage };
   });
 
@@ -136,11 +136,11 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { category } = request.query as { category?: string };
-    const db = getDb();
+    const db = getDbForDomain('settings');
 
     const rows = category
-      ? db.prepare('SELECT * FROM settings WHERE category = ?').all(category) as Array<Record<string, unknown>>
-      : db.prepare('SELECT * FROM settings').all() as Array<Record<string, unknown>>;
+      ? await db.query<Record<string, unknown>>('SELECT * FROM settings WHERE category = ?', [category])
+      : await db.query<Record<string, unknown>>('SELECT * FROM settings');
     return redactSensitive(rows);
   });
 
@@ -157,23 +157,22 @@ export async function settingsRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { key } = request.params as { key: string };
     const { value, category } = request.body as { value: string; category?: string };
-    const db = getDb();
+    const db = getDbForDomain('settings');
     const validationError = validateSecurityCriticalUrl(key, value);
 
     if (validationError) {
       return reply.code(400).send({ error: validationError });
     }
 
-    const existingSetting = db
-      .prepare('SELECT category FROM settings WHERE key = ?')
-      .get(key) as { category?: string } | undefined;
+    const existingSetting = await db
+      .queryOne<{ category?: string }>('SELECT category FROM settings WHERE key = ?', [key]);
     const effectiveCategory = category ?? existingSetting?.category ?? 'general';
 
-    db.prepare(`
+    await db.execute(`
       INSERT INTO settings (key, value, category, updated_at)
-      VALUES (?, ?, ?, datetime('now'))
-      ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = datetime('now')
-    `).run(key, value, effectiveCategory, value, effectiveCategory);
+      VALUES (?, ?, ?, NOW())
+      ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = NOW()
+    `, [key, value, effectiveCategory, value, effectiveCategory]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -201,8 +200,8 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { key } = request.params as { key: string };
-    const db = getDb();
-    db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+    const db = getDbForDomain('settings');
+    await db.execute('DELETE FROM settings WHERE key = ?', [key]);
     return { success: true };
   });
 
@@ -224,7 +223,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       cursor?: string;
     };
 
-    const db = getDb();
+    const db = getDbForDomain('audit');
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -243,14 +242,14 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     // Fetch N+1 to determine hasMore
     const fetchLimit = limit + 1;
     const entries = cursor
-      ? db.prepare(`
+      ? await db.query<Record<string, unknown>>(`
           SELECT * FROM audit_log ${where}
           ORDER BY created_at DESC, id DESC LIMIT ?
-        `).all(...params, fetchLimit) as Array<Record<string, unknown>>
-      : db.prepare(`
+        `, [...params, fetchLimit])
+      : await db.query<Record<string, unknown>>(`
           SELECT * FROM audit_log ${where}
           ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
-        `).all(...params, fetchLimit, offset) as Array<Record<string, unknown>>;
+        `, [...params, fetchLimit, offset]);
 
     const hasMore = entries.length > limit;
     const items = hasMore ? entries.slice(0, limit) : entries;
@@ -271,12 +270,13 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    return {
-      features: PROMPT_FEATURES.map((f) => ({
+    const features = await Promise.all(
+      PROMPT_FEATURES.map(async (f) => ({
         ...f,
         defaultPrompt: DEFAULT_PROMPTS[f.key],
-        effectivePrompt: getEffectivePrompt(f.key),
+        effectivePrompt: await getEffectivePrompt(f.key),
       })),
-    };
+    );
+    return { features };
   });
 }

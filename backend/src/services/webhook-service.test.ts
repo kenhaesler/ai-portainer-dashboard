@@ -5,65 +5,63 @@ import { signPayload } from './webhook-service.js';
 const webhookStore: Map<string, Record<string, unknown>> = new Map();
 const deliveryStore: Map<string, Record<string, unknown>> = new Map();
 
-vi.mock('../db/sqlite.js', () => {
+vi.mock('../db/app-db-router.js', () => {
   const mockDb = {
-    prepare: vi.fn((sql: string) => ({
-      run: vi.fn((...args: unknown[]) => {
-        if (sql.includes('INSERT INTO webhooks')) {
-          const row = {
-            id: args[0],
-            name: args[1],
-            url: args[2],
-            secret: args[3],
-            events: args[4],
-            enabled: args[5],
-            description: args[6],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-          webhookStore.set(row.id as string, row);
-          return { changes: 1 };
-        }
-        if (sql.includes('INSERT INTO webhook_deliveries')) {
-          const row = {
-            id: args[0],
-            webhook_id: args[1],
-            event_type: args[2],
-            payload: args[3],
-            status: 'pending',
-            attempt: 0,
-            max_attempts: 5,
-            created_at: new Date().toISOString(),
-          };
-          deliveryStore.set(row.id as string, row);
-          return { changes: 1 };
-        }
-        if (sql.includes('DELETE FROM webhooks')) {
-          const deleted = webhookStore.delete(args[0] as string);
-          return { changes: deleted ? 1 : 0 };
-        }
-        if (sql.includes('UPDATE webhooks')) {
-          return { changes: 1 };
-        }
-        return { changes: 0 };
-      }),
-      get: vi.fn((...args: unknown[]) => {
-        if (sql.includes('FROM webhooks WHERE id')) {
-          return webhookStore.get(args[0] as string) ?? undefined;
-        }
-        if (sql.includes('COUNT(*)')) {
-          return { count: deliveryStore.size };
-        }
-        return undefined;
-      }),
-      all: vi.fn(() => {
-        if (sql.includes('FROM webhooks')) return [...webhookStore.values()];
-        if (sql.includes('FROM webhook_deliveries')) return [...deliveryStore.values()];
-        return [];
-      }),
-    })),
+    execute: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('INSERT INTO webhooks')) {
+        const row = {
+          id: params[0],
+          name: params[1],
+          url: params[2],
+          secret: params[3],
+          events: params[4],
+          enabled: params[5],
+          description: params[6],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        webhookStore.set(row.id as string, row);
+        return { changes: 1 };
+      }
+      if (sql.includes('INSERT INTO webhook_deliveries')) {
+        const row = {
+          id: params[0],
+          webhook_id: params[1],
+          event_type: params[2],
+          payload: params[3],
+          status: 'pending',
+          attempt: 0,
+          max_attempts: 5,
+          created_at: new Date().toISOString(),
+        };
+        deliveryStore.set(row.id as string, row);
+        return { changes: 1 };
+      }
+      if (sql.includes('DELETE FROM webhooks')) {
+        const deleted = webhookStore.delete(params[0] as string);
+        return { changes: deleted ? 1 : 0 };
+      }
+      if (sql.includes('UPDATE webhooks')) {
+        return { changes: 1 };
+      }
+      return { changes: 0 };
+    }),
+    queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('FROM webhooks WHERE id')) {
+        return webhookStore.get(params[0] as string) ?? null;
+      }
+      if (sql.includes('COUNT(*)')) {
+        return { count: deliveryStore.size };
+      }
+      return null;
+    }),
+    query: vi.fn(async (sql: string) => {
+      if (sql.includes('FROM webhooks')) return [...webhookStore.values()];
+      if (sql.includes('FROM webhook_deliveries')) return [...deliveryStore.values()];
+      return [];
+    }),
   };
-  return { getDb: vi.fn(() => mockDb) };
+  return { getDbForDomain: vi.fn(() => mockDb) };
 });
 
 vi.mock('../utils/logger.js', () => ({
@@ -115,8 +113,8 @@ describe('webhook-service', () => {
   });
 
   describe('createWebhook', () => {
-    it('should create a webhook with generated secret', () => {
-      const webhook = createWebhook({
+    it('should create a webhook with generated secret', async () => {
+      const webhook = await createWebhook({
         name: 'Test Webhook',
         url: 'https://example.com/hook',
         events: ['insight.created'],
@@ -128,8 +126,8 @@ describe('webhook-service', () => {
       expect(webhook.secret).toBeTruthy();
     });
 
-    it('should create a webhook with custom secret', () => {
-      const webhook = createWebhook({
+    it('should create a webhook with custom secret', async () => {
+      const webhook = await createWebhook({
         name: 'Custom Secret',
         url: 'https://example.com/hook',
         events: ['*'],
@@ -142,33 +140,33 @@ describe('webhook-service', () => {
   });
 
   describe('listWebhooks', () => {
-    it('should return all webhooks', () => {
-      createWebhook({ name: 'Hook 1', url: 'https://a.com/h', events: ['*'] });
-      createWebhook({ name: 'Hook 2', url: 'https://b.com/h', events: ['*'] });
+    it('should return all webhooks', async () => {
+      await createWebhook({ name: 'Hook 1', url: 'https://a.com/h', events: ['*'] });
+      await createWebhook({ name: 'Hook 2', url: 'https://b.com/h', events: ['*'] });
 
-      const webhooks = listWebhooks();
+      const webhooks = await listWebhooks();
       expect(webhooks).toHaveLength(2);
     });
   });
 
   describe('deleteWebhook', () => {
-    it('should delete an existing webhook', () => {
-      const webhook = createWebhook({ name: 'To Delete', url: 'https://x.com/h', events: ['*'] });
-      const result = deleteWebhook(webhook.id);
+    it('should delete an existing webhook', async () => {
+      const webhook = await createWebhook({ name: 'To Delete', url: 'https://x.com/h', events: ['*'] });
+      const result = await deleteWebhook(webhook.id);
       expect(result).toBe(true);
     });
 
-    it('should return false for non-existent webhook', () => {
-      const result = deleteWebhook('non-existent-id');
+    it('should return false for non-existent webhook', async () => {
+      const result = await deleteWebhook('non-existent-id');
       expect(result).toBe(false);
     });
   });
 
   describe('createDelivery', () => {
-    it('should create a delivery record', () => {
-      const webhook = createWebhook({ name: 'Delivery Test', url: 'https://x.com/h', events: ['*'] });
+    it('should create a delivery record', async () => {
+      const webhook = await createWebhook({ name: 'Delivery Test', url: 'https://x.com/h', events: ['*'] });
       const event = { type: 'insight.created', timestamp: new Date().toISOString(), data: { test: true } };
-      const deliveryId = createDelivery(webhook.id, event);
+      const deliveryId = await createDelivery(webhook.id, event);
       expect(deliveryId).toBeTruthy();
       expect(typeof deliveryId).toBe('string');
     });

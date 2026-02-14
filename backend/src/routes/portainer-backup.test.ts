@@ -5,11 +5,8 @@ import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 
-let sqlitePath = '';
-
 vi.mock('../config/index.js', () => ({
   getConfig: () => ({
-    SQLITE_PATH: sqlitePath,
     PORTAINER_API_URL: 'http://portainer:9000',
     PORTAINER_API_KEY: 'test-api-key',
     PORTAINER_VERIFY_SSL: true,
@@ -54,8 +51,6 @@ describe('portainer-backup routes', () => {
   beforeEach(async () => {
     currentRole = 'admin';
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portainer-backup-test-'));
-    sqlitePath = path.join(tempDir, 'dashboard.db');
-
     // Create a test backup file for download tests
     const backupDir = path.join(tempDir, 'portainer-backups');
     fs.mkdirSync(backupDir, { recursive: true });

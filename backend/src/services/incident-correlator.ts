@@ -9,7 +9,6 @@ import {
   getActiveIncidentForContainer,
   type IncidentInsert,
 } from './incident-store.js';
-import { getDb } from '../db/sqlite.js';
 import { findSimilarInsights } from './alert-similarity.js';
 import { generateLlmIncidentSummary } from './incident-summarizer.js';
 
@@ -60,9 +59,9 @@ export async function correlateInsights(
     const insight = anomalyInsights[0];
     // Check if it fits into an existing active incident
     if (insight.container_id) {
-      const existing = getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
+      const existing = await getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
       if (existing) {
-        addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
+        await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
         result.insightsGrouped = 1;
         log.debug({ incidentId: existing.id, insightId: insight.id }, 'Added insight to existing incident');
         return result;
@@ -131,9 +130,9 @@ export async function correlateInsights(
       // Single insight — check for existing incident to join
       const insight = group.insights[0];
       if (insight.container_id) {
-        const existing = getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
+        const existing = await getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
         if (existing) {
-          addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
+          await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
           result.insightsGrouped++;
           continue;
         }
@@ -145,7 +144,7 @@ export async function correlateInsights(
     // Create a new incident for this group
     const incident = buildIncident(group);
     try {
-      insertIncident(incident);
+      await insertIncident(incident);
       result.incidentsCreated++;
       result.insightsGrouped += group.insights.length;
       log.info(

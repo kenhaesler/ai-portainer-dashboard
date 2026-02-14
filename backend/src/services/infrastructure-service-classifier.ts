@@ -30,23 +30,31 @@ function parsePatterns(raw: string): string[] {
     .filter(Boolean);
 }
 
-export function getInfrastructureServicePatterns(): string[] {
-  const raw = getSetting(INFRASTRUCTURE_PATTERNS_KEY)?.value ?? '';
+export async function getInfrastructureServicePatterns(): Promise<string[]> {
+  const raw = (await getSetting(INFRASTRUCTURE_PATTERNS_KEY))?.value ?? '';
   const configured = parsePatterns(raw);
   const source = configured.length > 0 ? configured : DEFAULT_INFRASTRUCTURE_PATTERNS;
   return Array.from(new Set(source.map(normalizePattern).filter(Boolean)));
 }
 
-export function isInfrastructureService(name: string, patterns?: string[]): boolean {
+/**
+ * Sync matching when patterns are already resolved.
+ * Use this in `.filter()` callbacks and other sync contexts.
+ */
+export function matchesInfrastructurePattern(name: string, patterns: string[]): boolean {
   const normalized = name.trim().toLowerCase();
-  const activePatterns = patterns && patterns.length > 0
-    ? patterns
-    : getInfrastructureServicePatterns();
-
-  return activePatterns.some((pattern) => (
+  return patterns.some((pattern) => (
     normalized === pattern
     || normalized.startsWith(`${pattern}-`)
     || normalized.startsWith(`${pattern}_`)
   ));
+}
+
+export async function isInfrastructureService(name: string, patterns?: string[]): Promise<boolean> {
+  const activePatterns = patterns && patterns.length > 0
+    ? patterns
+    : await getInfrastructureServicePatterns();
+
+  return matchesInfrastructurePattern(name, activePatterns);
 }
 

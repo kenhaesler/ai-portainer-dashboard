@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
 
 const mockGetKpiHistory = vi.fn();
@@ -24,6 +25,8 @@ describe('Dashboard Routes', () => {
 
   it('GET /api/dashboard/kpi-history returns snapshots', async () => {
     const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(dashboardRoutes);
     await app.ready();
@@ -53,6 +56,8 @@ describe('Dashboard Routes', () => {
 
   it('GET /api/dashboard/kpi-history falls back to empty snapshots on store error', async () => {
     const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(dashboardRoutes);
     await app.ready();

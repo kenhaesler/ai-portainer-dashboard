@@ -48,7 +48,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async () => {
-    const webhooks = listWebhooks();
+    const webhooks = await listWebhooks();
     return webhooks.map(sanitizeWebhook);
   });
 
@@ -82,7 +82,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: urlValidationError });
     }
 
-    const webhook = createWebhook(body);
+    const webhook = await createWebhook(body);
     return reply.status(201).send(sanitizeWebhook(webhook));
   });
 
@@ -97,7 +97,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const webhook = getWebhookById(id);
+    const webhook = await getWebhookById(id);
     if (!webhook) return reply.status(404).send({ error: 'Webhook not found' });
     return sanitizeWebhook(webhook);
   });
@@ -137,7 +137,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const webhook = updateWebhook(id, body);
+    const webhook = await updateWebhook(id, body);
     if (!webhook) return reply.status(404).send({ error: 'Webhook not found' });
     return sanitizeWebhook(webhook);
   });
@@ -153,7 +153,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const deleted = deleteWebhook(id);
+    const deleted = await deleteWebhook(id);
     if (!deleted) return reply.status(404).send({ error: 'Webhook not found' });
     return { success: true };
   });
@@ -172,7 +172,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { limit = 50, offset = 0 } = request.query as { limit?: number; offset?: number };
 
-    const webhook = getWebhookById(id);
+    const webhook = await getWebhookById(id);
     if (!webhook) return reply.status(404).send({ error: 'Webhook not found' });
 
     return getDeliveriesForWebhook(id, limit, offset);
@@ -189,7 +189,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const webhook = getWebhookById(id);
+    const webhook = await getWebhookById(id);
     if (!webhook) return reply.status(404).send({ error: 'Webhook not found' });
     const urlValidationError = validateOutboundWebhookUrl(webhook.url);
     if (urlValidationError) {

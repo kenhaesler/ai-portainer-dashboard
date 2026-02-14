@@ -3,7 +3,7 @@ import { getMetricsDb } from '../db/timescale.js';
 import { ReportsQuerySchema } from '../models/api-schemas.js';
 import {
   getInfrastructureServicePatterns,
-  isInfrastructureService,
+  matchesInfrastructurePattern,
 } from '../services/infrastructure-service-classifier.js';
 import { isUndefinedTableError } from '../services/metrics-store.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -49,7 +49,7 @@ function excludeInfrastructureContainers<T extends { container_name: string }>(
   patterns: string[],
 ): T[] {
   if (!excludeInfrastructure) return rows;
-  return rows.filter((row) => !isInfrastructureService(row.container_name, patterns));
+  return rows.filter((row) => !matchesInfrastructurePattern(row.container_name, patterns));
 }
 
 function addInfrastructureSqlFilter(
@@ -103,7 +103,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     });
     const includeInfrastructureResolved = !excludeInfrastructure;
     const timeRange = tr || '24h';
-    const infrastructurePatterns = getInfrastructureServicePatterns();
+    const infrastructurePatterns = await getInfrastructureServicePatterns();
 
     const db = await getMetricsDb();
     const interval = timeRangeToInterval(timeRange);
@@ -162,7 +162,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     }>();
 
     for (const row of excludeInfrastructureContainers(rows as AggRow[], excludeInfrastructure, infrastructurePatterns)) {
-      const serviceType: 'application' | 'infrastructure' = isInfrastructureService(
+      const serviceType: 'application' | 'infrastructure' = matchesInfrastructurePattern(
         row.container_name,
         infrastructurePatterns,
       ) ? 'infrastructure' : 'application';
@@ -299,7 +299,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     });
     const includeInfrastructureResolved = !excludeInfrastructure;
     const timeRange = tr || '24h';
-    const infrastructurePatterns = getInfrastructureServicePatterns();
+    const infrastructurePatterns = await getInfrastructureServicePatterns();
 
     const db = await getMetricsDb();
     const interval = timeRangeToInterval(timeRange);
@@ -419,7 +419,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     const timeRange = tr || '7d';
     const interval = timeRangeToInterval(timeRange);
     const db = await getMetricsDb();
-    const infrastructurePatterns = getInfrastructureServicePatterns();
+    const infrastructurePatterns = await getInfrastructureServicePatterns();
 
     const baseConditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
     const baseParams: unknown[] = [];

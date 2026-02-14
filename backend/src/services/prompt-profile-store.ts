@@ -1,9 +1,11 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { getSetting, setSetting, deleteSetting } from './settings-store.js';
 import { createChildLogger } from '../utils/logger.js';
 import { PROMPT_FEATURES, type PromptFeature } from './prompt-store.js';
 
 const log = createChildLogger('prompt-profile-store');
+
+function db() { return getDbForDomain('prompts'); }
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -27,7 +29,7 @@ interface PromptProfileRow {
   id: string;
   name: string;
   description: string;
-  is_built_in: number;
+  is_built_in: boolean;
   prompts_json: string;
   created_at: string;
   updated_at: string;
@@ -48,7 +50,7 @@ function rowToProfile(row: PromptProfileRow): PromptProfile {
     id: row.id,
     name: row.name,
     description: row.description,
-    isBuiltIn: row.is_built_in === 1,
+    isBuiltIn: !!row.is_built_in,
     prompts,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -61,51 +63,47 @@ function generateId(): string {
 
 // ── CRUD Operations ──────────────────────────────────────────────────
 
-export function getAllProfiles(): PromptProfile[] {
-  const db = getDb();
-  const rows = db
-    .prepare('SELECT * FROM prompt_profiles ORDER BY is_built_in DESC, name ASC')
-    .all() as PromptProfileRow[];
+export async function getAllProfiles(): Promise<PromptProfile[]> {
+  const rows = await db().query<PromptProfileRow>(
+    'SELECT * FROM prompt_profiles ORDER BY is_built_in DESC, name ASC',
+  );
   return rows.map(rowToProfile);
 }
 
-export function getProfileById(id: string): PromptProfile | undefined {
-  const db = getDb();
-  const row = db
-    .prepare('SELECT * FROM prompt_profiles WHERE id = ?')
-    .get(id) as PromptProfileRow | undefined;
+export async function getProfileById(id: string): Promise<PromptProfile | undefined> {
+  const row = await db().queryOne<PromptProfileRow>(
+    'SELECT * FROM prompt_profiles WHERE id = ?', [id],
+  );
   return row ? rowToProfile(row) : undefined;
 }
 
-export function createProfile(
+export async function createProfile(
   name: string,
   description: string,
   prompts: Record<string, PromptProfileFeatureConfig>,
-): PromptProfile {
-  const db = getDb();
+): Promise<PromptProfile> {
   const id = generateId();
   const promptsJson = JSON.stringify(prompts);
 
-  db.prepare(`
+  await db().execute(`
     INSERT INTO prompt_profiles (id, name, description, is_built_in, prompts_json, created_at, updated_at)
-    VALUES (?, ?, ?, 0, ?, datetime('now'), datetime('now'))
-  `).run(id, name, description, promptsJson);
+    VALUES (?, ?, ?, false, ?, NOW(), NOW())
+  `, [id, name, description, promptsJson]);
 
   log.info({ id, name }, 'Profile created');
 
-  return getProfileById(id)!;
+  return (await getProfileById(id))!;
 }
 
-export function updateProfile(
+export async function updateProfile(
   id: string,
   updates: {
     name?: string;
     description?: string;
     prompts?: Record<string, PromptProfileFeatureConfig>;
   },
-): PromptProfile | undefined {
-  const db = getDb();
-  const existing = getProfileById(id);
+): Promise<PromptProfile | undefined> {
+  const existing = await getProfileById(id);
   if (!existing) return undefined;
 
   const name = updates.name ?? existing.name;
@@ -113,20 +111,19 @@ export function updateProfile(
   const prompts = updates.prompts ?? existing.prompts;
   const promptsJson = JSON.stringify(prompts);
 
-  db.prepare(`
+  await db().execute(`
     UPDATE prompt_profiles
-    SET name = ?, description = ?, prompts_json = ?, updated_at = datetime('now')
+    SET name = ?, description = ?, prompts_json = ?, updated_at = NOW()
     WHERE id = ?
-  `).run(name, description, promptsJson, id);
+  `, [name, description, promptsJson, id]);
 
   log.info({ id, name }, 'Profile updated');
 
-  return getProfileById(id);
+  return await getProfileById(id);
 }
 
-export function deleteProfile(id: string): boolean {
-  const db = getDb();
-  const profile = getProfileById(id);
+export async function deleteProfile(id: string): Promise<boolean> {
+  const profile = await getProfileById(id);
 
   if (!profile) return false;
   if (profile.isBuiltIn) {
@@ -135,12 +132,14 @@ export function deleteProfile(id: string): boolean {
   }
 
   // If deleting the active profile, switch to default
-  const activeId = getActiveProfileId();
+  const activeId = await getActiveProfileId();
   if (activeId === id) {
-    switchProfile('default');
+    await switchProfile('default');
   }
 
-  const result = db.prepare('DELETE FROM prompt_profiles WHERE id = ? AND is_built_in = 0').run(id);
+  const result = await db().execute(
+    'DELETE FROM prompt_profiles WHERE id = ? AND is_built_in = false', [id],
+  );
   if (result.changes > 0) {
     log.info({ id, name: profile.name }, 'Profile deleted');
     return true;
@@ -148,37 +147,37 @@ export function deleteProfile(id: string): boolean {
   return false;
 }
 
-export function duplicateProfile(sourceId: string, newName: string): PromptProfile | undefined {
-  const source = getProfileById(sourceId);
+export async function duplicateProfile(sourceId: string, newName: string): Promise<PromptProfile | undefined> {
+  const source = await getProfileById(sourceId);
   if (!source) return undefined;
 
-  return createProfile(newName, source.description, { ...source.prompts });
+  return await createProfile(newName, source.description, { ...source.prompts });
 }
 
 // ── Active profile ───────────────────────────────────────────────────
 
-export function getActiveProfileId(): string {
-  const setting = getSetting(ACTIVE_PROFILE_KEY);
+export async function getActiveProfileId(): Promise<string> {
+  const setting = await getSetting(ACTIVE_PROFILE_KEY);
   return setting?.value || 'default';
 }
 
-export function getActiveProfile(): PromptProfile | undefined {
-  const id = getActiveProfileId();
-  return getProfileById(id);
+export async function getActiveProfile(): Promise<PromptProfile | undefined> {
+  const id = await getActiveProfileId();
+  return await getProfileById(id);
 }
 
-export function switchProfile(id: string): boolean {
-  const profile = getProfileById(id);
+export async function switchProfile(id: string): Promise<boolean> {
+  const profile = await getProfileById(id);
   if (!profile) return false;
 
   // Clear per-feature prompt overrides so the new profile's prompts take effect
   for (const feature of PROMPT_FEATURES) {
-    deleteSetting(`prompts.${feature.key}.system_prompt`);
-    deleteSetting(`prompts.${feature.key}.model`);
-    deleteSetting(`prompts.${feature.key}.temperature`);
+    await deleteSetting(`prompts.${feature.key}.system_prompt`);
+    await deleteSetting(`prompts.${feature.key}.model`);
+    await deleteSetting(`prompts.${feature.key}.temperature`);
   }
 
-  setSetting(ACTIVE_PROFILE_KEY, id, 'prompts');
+  await setSetting(ACTIVE_PROFILE_KEY, id, 'prompts');
   log.info({ id, name: profile.name }, 'Switched active profile (per-feature overrides cleared)');
   return true;
 }
@@ -189,8 +188,8 @@ export function switchProfile(id: string): boolean {
  * Get the prompt config for a specific feature from the active profile.
  * Returns undefined if the active profile has no override for this feature.
  */
-export function getProfilePromptConfig(feature: PromptFeature): PromptProfileFeatureConfig | undefined {
-  const profile = getActiveProfile();
+export async function getProfilePromptConfig(feature: PromptFeature): Promise<PromptProfileFeatureConfig | undefined> {
+  const profile = await getActiveProfile();
   if (!profile) return undefined;
 
   // The "default" profile has empty prompts ({}) which means "use defaults"

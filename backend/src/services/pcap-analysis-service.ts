@@ -295,7 +295,7 @@ export async function analyzeCapture(captureId: string): Promise<PcapAnalysisRes
   }
 
   // Guard: capture must exist and be complete/succeeded
-  const capture = getCapture(captureId);
+  const capture = await getCapture(captureId);
   if (!capture) {
     throw new Error('Capture not found');
   }
@@ -304,7 +304,7 @@ export async function analyzeCapture(captureId: string): Promise<PcapAnalysisRes
   }
 
   // Guard: file must exist
-  const filePath = getCaptureFilePath(captureId);
+  const filePath = await getCaptureFilePath(captureId);
   if (!filePath) {
     throw new Error('Capture file not found on disk');
   }
@@ -326,14 +326,14 @@ export async function analyzeCapture(captureId: string): Promise<PcapAnalysisRes
   let llmResponse = '';
   await chatStream(
     [{ role: 'user', content: prompt }],
-    getEffectivePrompt('pcap_analyzer'),
+    await getEffectivePrompt('pcap_analyzer'),
     (chunk) => { llmResponse += chunk; },
   );
 
   // Phase 3: Parse and store
   const result = parseAnalysisResponse(llmResponse);
 
-  updateCaptureAnalysis(captureId, JSON.stringify(result));
+  await updateCaptureAnalysis(captureId, JSON.stringify(result));
 
   log.info(
     { captureId, healthStatus: result.health_status, findingsCount: result.findings.length, confidence: result.confidence_score },

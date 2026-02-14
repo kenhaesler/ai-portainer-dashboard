@@ -48,18 +48,14 @@ vi.mock('../config/index.js', () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 
-const mockDbPrepare = vi.fn();
-const mockDbRun = vi.fn();
-const mockDbGet = vi.fn();
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    prepare: (...args: unknown[]) => {
-      mockDbPrepare(...args);
-      return {
-        run: mockDbRun,
-        get: mockDbGet,
-      };
-    },
+const mockQueryOne = vi.fn();
+const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
+const mockQuery = vi.fn().mockResolvedValue([]);
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    query: (...args: unknown[]) => mockQuery(...args),
+    queryOne: (...args: unknown[]) => mockQueryOne(...args),
+    execute: (...args: unknown[]) => mockExecute(...args),
   }),
 }));
 
@@ -82,7 +78,7 @@ describe('notification-service', () => {
     vi.clearAllMocks();
     _resetCooldownMap();
     // Default: settings not found in DB -> fall back to env config
-    mockDbGet.mockReturnValue(undefined);
+    mockQueryOne.mockResolvedValue(null);
     mockGetConfig.mockReturnValue({
       TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
       TEAMS_NOTIFICATIONS_ENABLED: false,
@@ -280,7 +276,7 @@ describe('notification-service', () => {
       });
 
       // Verify notification_log insert was called
-      expect(mockDbPrepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'));
+      expect(mockExecute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'), expect.any(Array));
     });
   });
 
@@ -867,7 +863,7 @@ describe('notification-service', () => {
         eventType: 'test',
       });
 
-      expect(mockDbPrepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'));
+      expect(mockExecute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'), expect.any(Array));
     });
   });
 
@@ -1108,7 +1104,7 @@ describe('notification-service', () => {
         eventType: 'test',
       });
 
-      expect(mockDbPrepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'));
+      expect(mockExecute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'), expect.any(Array));
     });
   });
 });

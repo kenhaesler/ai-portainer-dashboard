@@ -1,233 +1,238 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppDb } from '../db/app-db.js';
 
 /**
- * Regression tests for status-page-store SQL queries.
+ * Regression tests for status-page-store async AppDb queries.
  *
- * These tests use a real in-memory SQLite database (not mocked) to verify
- * that the datetime() parameter binding in uptime queries works correctly.
- *
- * Bug: datetime('now', ? || ' hours') with .get(`-${hours}`) produced
- * malformed SQL — SQLite silently returned NULL, causing HTTP 500.
- * Fix: datetime('now', ?) with .get(`-${hours} hours`) passes the
- * complete modifier string as the bound parameter.
+ * These tests mock the AppDb interface returned by getDbForDomain()
+ * and verify correct SQL parameter passing and result transformation.
  */
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    SQLITE_PATH: ':memory:',
+const mockMonitoringDb: AppDb = {
+  query: vi.fn(async () => []),
+  queryOne: vi.fn(async () => null),
+  execute: vi.fn(async () => ({ changes: 0 })),
+  transaction: vi.fn(async (fn) => fn(mockMonitoringDb)),
+  healthCheck: vi.fn(async () => true),
+};
+
+const mockIncidentsDb: AppDb = {
+  query: vi.fn(async () => []),
+  queryOne: vi.fn(async () => null),
+  execute: vi.fn(async () => ({ changes: 0 })),
+  transaction: vi.fn(async (fn) => fn(mockIncidentsDb)),
+  healthCheck: vi.fn(async () => true),
+};
+
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: vi.fn((domain: string) => {
+    if (domain === 'monitoring') return mockMonitoringDb;
+    if (domain === 'incidents') return mockIncidentsDb;
+    throw new Error(`Unexpected domain: ${domain}`);
   }),
 }));
 
 // Mock settings-store so getStatusPageConfig doesn't hit a real settings table
 vi.mock('./settings-store.js', () => ({
-  getSetting: vi.fn(() => undefined),
+  getSetting: vi.fn(async () => undefined),
 }));
 
 describe('status-page-store SQL queries', () => {
   beforeEach(() => {
-    vi.resetModules();
+    vi.clearAllMocks();
   });
-
-  afterEach(async () => {
-    const { closeDb } = await import('../db/sqlite.js');
-    closeDb();
-  });
-
-  async function setupDb() {
-    const { getDb } = await import('../db/sqlite.js');
-    const db = getDb();
-
-    // Create the monitoring_snapshots table (mirrors migration 011)
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS monitoring_snapshots (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        containers_running INTEGER NOT NULL,
-        containers_stopped INTEGER NOT NULL,
-        containers_unhealthy INTEGER NOT NULL,
-        endpoints_up INTEGER NOT NULL,
-        endpoints_down INTEGER NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-
-    return db;
-  }
 
   describe('getOverallUptime', () => {
     it('should return 100 when no snapshots exist', async () => {
-      await setupDb();
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue(null);
       const { getOverallUptime } = await import('./status-page-store.js');
 
-      const result = getOverallUptime(24);
+      const result = await getOverallUptime(24);
       expect(result).toBe(100);
     });
 
-    it('should calculate uptime from recent snapshots', async () => {
-      const db = await setupDb();
+    it('should return 100 when total_all is 0', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_running: 0, total_all: 0 });
       const { getOverallUptime } = await import('./status-page-store.js');
 
-      // Insert a snapshot with created_at = now (within the 24h window)
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (8, 1, 1, 2, 0, datetime('now'))
-      `).run();
+      const result = await getOverallUptime(24);
+      expect(result).toBe(100);
+    });
 
-      const result = getOverallUptime(24);
+    it('should calculate uptime from snapshots', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_running: 8, total_all: 10 });
+      const { getOverallUptime } = await import('./status-page-store.js');
+
+      const result = await getOverallUptime(24);
       // 8 running out of 10 total = 80%
       expect(result).toBe(80);
     });
 
-    it('should exclude snapshots older than the specified hours', async () => {
-      const db = await setupDb();
+    it('should pass a cutoff timestamp as parameter', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_running: 0, total_all: 0 });
       const { getOverallUptime } = await import('./status-page-store.js');
 
-      // Insert an old snapshot (48 hours ago) — should be excluded from a 24h query
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (0, 10, 0, 0, 2, datetime('now', '-48 hours'))
-      `).run();
+      const before = Date.now();
+      await getOverallUptime(24);
+      const after = Date.now();
 
-      // Insert a recent snapshot (1 hour ago) — should be included
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (9, 1, 0, 2, 0, datetime('now', '-1 hours'))
-      `).run();
+      expect(mockMonitoringDb.queryOne).toHaveBeenCalledTimes(1);
+      const [sql, params] = vi.mocked(mockMonitoringDb.queryOne).mock.calls[0];
+      expect(sql).toContain('monitoring_snapshots');
+      expect(sql).toContain('WHERE created_at >= ?');
+      expect(params).toHaveLength(1);
 
-      const result = getOverallUptime(24);
-      // Only the recent snapshot counts: 9/10 = 90%
-      expect(result).toBe(90);
+      // The cutoff should be approximately 24 hours ago
+      const cutoff = new Date(params![0] as string).getTime();
+      const expectedCutoff = before - 24 * 3600_000;
+      expect(cutoff).toBeGreaterThanOrEqual(expectedCutoff - 1000);
+      expect(cutoff).toBeLessThanOrEqual(after - 24 * 3600_000 + 1000);
     });
 
-    it('should not throw with the fixed parameter binding (regression)', async () => {
-      await setupDb();
+    it('should not throw for different hour values (regression)', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_running: 0, total_all: 0 });
       const { getOverallUptime } = await import('./status-page-store.js');
 
-      // The old code with `? || ' hours'` would cause SQLite to error or
-      // return unexpected results. This must not throw.
-      expect(() => getOverallUptime(24)).not.toThrow();
-      expect(() => getOverallUptime(168)).not.toThrow();
-      expect(() => getOverallUptime(720)).not.toThrow();
+      await expect(getOverallUptime(24)).resolves.not.toThrow();
+      await expect(getOverallUptime(168)).resolves.not.toThrow();
+      await expect(getOverallUptime(720)).resolves.not.toThrow();
     });
   });
 
   describe('getEndpointUptime', () => {
     it('should return 100 when no snapshots exist', async () => {
-      await setupDb();
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue(null);
       const { getEndpointUptime } = await import('./status-page-store.js');
 
-      const result = getEndpointUptime(24);
+      const result = await getEndpointUptime(24);
       expect(result).toBe(100);
     });
 
-    it('should calculate endpoint uptime from recent snapshots', async () => {
-      const db = await setupDb();
+    it('should calculate endpoint uptime from snapshots', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_up: 3, total_all: 4 });
       const { getEndpointUptime } = await import('./status-page-store.js');
 
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (5, 0, 0, 3, 1, datetime('now'))
-      `).run();
-
-      const result = getEndpointUptime(24);
+      const result = await getEndpointUptime(24);
       // 3 up out of 4 total = 75%
       expect(result).toBe(75);
     });
 
-    it('should exclude snapshots older than the specified hours', async () => {
-      const db = await setupDb();
+    it('should not throw for different hour values (regression)', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({ total_up: 0, total_all: 0 });
       const { getEndpointUptime } = await import('./status-page-store.js');
 
-      // Old snapshot — excluded
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (5, 0, 0, 0, 5, datetime('now', '-48 hours'))
-      `).run();
+      await expect(getEndpointUptime(24)).resolves.not.toThrow();
+      await expect(getEndpointUptime(168)).resolves.not.toThrow();
+      await expect(getEndpointUptime(720)).resolves.not.toThrow();
+    });
+  });
 
-      // Recent snapshot — included
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (5, 0, 0, 4, 1, datetime('now', '-1 hours'))
-      `).run();
+  describe('getLatestSnapshot', () => {
+    it('should return null when no snapshots exist', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue(null);
+      const { getLatestSnapshot } = await import('./status-page-store.js');
 
-      const result = getEndpointUptime(24);
-      // 4 up out of 5 total = 80%
-      expect(result).toBe(80);
+      const result = await getLatestSnapshot();
+      expect(result).toBeNull();
     });
 
-    it('should not throw with the fixed parameter binding (regression)', async () => {
-      await setupDb();
-      const { getEndpointUptime } = await import('./status-page-store.js');
+    it('should return mapped snapshot data', async () => {
+      vi.mocked(mockMonitoringDb.queryOne).mockResolvedValue({
+        containers_running: 5,
+        containers_stopped: 1,
+        containers_unhealthy: 0,
+        endpoints_up: 3,
+        endpoints_down: 1,
+        created_at: '2026-02-14T12:00:00Z',
+      });
+      const { getLatestSnapshot } = await import('./status-page-store.js');
 
-      expect(() => getEndpointUptime(24)).not.toThrow();
-      expect(() => getEndpointUptime(168)).not.toThrow();
-      expect(() => getEndpointUptime(720)).not.toThrow();
+      const result = await getLatestSnapshot();
+      expect(result).toEqual({
+        containersRunning: 5,
+        containersStopped: 1,
+        containersUnhealthy: 0,
+        endpointsUp: 3,
+        endpointsDown: 1,
+        createdAt: '2026-02-14T12:00:00Z',
+      });
     });
   });
 
   describe('getDailyUptimeBuckets', () => {
     it('should return empty array when no snapshots exist', async () => {
-      await setupDb();
+      vi.mocked(mockMonitoringDb.query).mockResolvedValue([]);
       const { getDailyUptimeBuckets } = await import('./status-page-store.js');
 
-      const result = getDailyUptimeBuckets(30);
+      const result = await getDailyUptimeBuckets(30);
       expect(result).toEqual([]);
     });
 
-    it('should return daily buckets for recent snapshots', async () => {
-      const db = await setupDb();
+    it('should return daily buckets with uptime percentages', async () => {
+      vi.mocked(mockMonitoringDb.query).mockResolvedValue([
+        { date: '2026-02-13', total_running: 7, total_all: 10 },
+        { date: '2026-02-14', total_running: 10, total_all: 10 },
+      ]);
       const { getDailyUptimeBuckets } = await import('./status-page-store.js');
 
-      // Insert a snapshot today
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (7, 2, 1, 2, 0, datetime('now'))
-      `).run();
-
-      const result = getDailyUptimeBuckets(30);
-      expect(result.length).toBeGreaterThanOrEqual(1);
-      // 7 running out of 10 total = 70%
-      expect(result[result.length - 1].uptime_pct).toBe(70);
-      expect(result[result.length - 1].date).toBeDefined();
+      const result = await getDailyUptimeBuckets(30);
+      expect(result).toEqual([
+        { date: '2026-02-13', uptime_pct: 70 },
+        { date: '2026-02-14', uptime_pct: 100 },
+      ]);
     });
 
-    it('should exclude snapshots older than the specified days', async () => {
-      const db = await setupDb();
+    it('should return 100% when total_all is 0', async () => {
+      vi.mocked(mockMonitoringDb.query).mockResolvedValue([
+        { date: '2026-02-14', total_running: 0, total_all: 0 },
+      ]);
       const { getDailyUptimeBuckets } = await import('./status-page-store.js');
 
-      // Old snapshot (60 days ago) — should be excluded from a 30-day query
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (0, 10, 0, 0, 2, datetime('now', '-60 days'))
-      `).run();
+      const result = await getDailyUptimeBuckets(30);
+      expect(result).toEqual([{ date: '2026-02-14', uptime_pct: 100 }]);
+    });
 
-      // Recent snapshot (2 days ago) — should be included
-      db.prepare(`
-        INSERT INTO monitoring_snapshots
-          (containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down, created_at)
-        VALUES (10, 0, 0, 2, 0, datetime('now', '-2 days'))
-      `).run();
+    it('should not throw for different day values (regression)', async () => {
+      vi.mocked(mockMonitoringDb.query).mockResolvedValue([]);
+      const { getDailyUptimeBuckets } = await import('./status-page-store.js');
 
-      const result = getDailyUptimeBuckets(30);
-      // Only the recent snapshot should be in the results
+      await expect(getDailyUptimeBuckets(7)).resolves.not.toThrow();
+      await expect(getDailyUptimeBuckets(30)).resolves.not.toThrow();
+      await expect(getDailyUptimeBuckets(90)).resolves.not.toThrow();
+    });
+  });
+
+  describe('getRecentIncidentsPublic', () => {
+    it('should return empty array when no incidents exist', async () => {
+      vi.mocked(mockIncidentsDb.query).mockResolvedValue([]);
+      const { getRecentIncidentsPublic } = await import('./status-page-store.js');
+
+      const result = await getRecentIncidentsPublic(10);
+      expect(result).toEqual([]);
+    });
+
+    it('should query incidents domain with limit parameter', async () => {
+      vi.mocked(mockIncidentsDb.query).mockResolvedValue([
+        {
+          id: 'inc-1',
+          title: 'Test incident',
+          severity: 'critical',
+          status: 'resolved',
+          created_at: '2026-02-14T10:00:00Z',
+          resolved_at: '2026-02-14T10:30:00Z',
+          summary: 'Test summary',
+        },
+      ]);
+      const { getRecentIncidentsPublic } = await import('./status-page-store.js');
+
+      const result = await getRecentIncidentsPublic(5);
       expect(result).toHaveLength(1);
-      expect(result[0].uptime_pct).toBe(100);
-    });
+      expect(result[0].title).toBe('Test incident');
 
-    it('should not throw with the fixed parameter binding (regression)', async () => {
-      await setupDb();
-      const { getDailyUptimeBuckets } = await import('./status-page-store.js');
-
-      expect(() => getDailyUptimeBuckets(7)).not.toThrow();
-      expect(() => getDailyUptimeBuckets(30)).not.toThrow();
-      expect(() => getDailyUptimeBuckets(90)).not.toThrow();
+      expect(mockIncidentsDb.query).toHaveBeenCalledWith(
+        expect.stringContaining('FROM incidents'),
+        [5],
+      );
     });
   });
 });

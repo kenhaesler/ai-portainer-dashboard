@@ -1,5 +1,5 @@
 import * as client from 'openid-client';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Role } from './user-store.js';
 
@@ -59,13 +59,13 @@ function cleanExpiredStates(): void {
 }
 
 /**
- * Read OIDC settings from the SQLite settings table.
+ * Read OIDC settings from the settings table.
  */
-export function getOIDCConfig(): OIDCConfig {
-  const db = getDb();
-  const rows = db
-    .prepare("SELECT key, value FROM settings WHERE category = 'authentication'")
-    .all() as Array<{ key: string; value: string }>;
+export async function getOIDCConfig(): Promise<OIDCConfig> {
+  const settingsDb = getDbForDomain('settings');
+  const rows = await settingsDb.query<{ key: string; value: string }>(
+    "SELECT key, value FROM settings WHERE category = 'authentication'",
+  );
 
   const settings: Record<string, string> = {};
   for (const row of rows) {
@@ -102,8 +102,8 @@ export function getOIDCConfig(): OIDCConfig {
 /**
  * Check if OIDC is enabled and has required fields configured.
  */
-export function isOIDCEnabled(): boolean {
-  const config = getOIDCConfig();
+export async function isOIDCEnabled(): Promise<boolean> {
+  const config = await getOIDCConfig();
   return config.enabled && !!config.issuer_url && !!config.client_id && !!config.client_secret;
 }
 
@@ -111,7 +111,7 @@ export function isOIDCEnabled(): boolean {
  * Get or create the OIDC discovery configuration, cached for 1 hour.
  */
 async function getOrCreateConfiguration(): Promise<client.Configuration> {
-  const oidcConfig = getOIDCConfig();
+  const oidcConfig = await getOIDCConfig();
 
   if (cachedConfig && Date.now() < cachedConfigExpiry) {
     return cachedConfig;
@@ -274,7 +274,7 @@ export async function exchangeCode(
     throw new Error('No claims in ID token');
   }
 
-  const oidcConfig = getOIDCConfig();
+  const oidcConfig = await getOIDCConfig();
   const groups = extractGroups(
     claims as unknown as Record<string, unknown>,
     oidcConfig.groups_claim,

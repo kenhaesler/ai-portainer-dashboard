@@ -154,7 +154,7 @@ export function createMockConfig() {
     JWT_SECRET: 'test-jwt-secret-at-least-32-chars-long',
     DASHBOARD_USERNAME: 'admin',
     DASHBOARD_PASSWORD: 'testpassword',
-    SQLITE_PATH: ':memory:',
+    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
     API_RATE_LIMIT: 1000,
     LOGIN_RATE_LIMIT: 10,
     ANOMALY_ZSCORE_THRESHOLD: 2.5,

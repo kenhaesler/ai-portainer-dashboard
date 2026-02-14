@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockPrepare = vi.fn();
-const mockDb = { prepare: mockPrepare, transaction: vi.fn() };
+const mockExecute = vi.fn();
+const mockQuery = vi.fn();
+const mockQueryOne = vi.fn();
+const mockTransaction = vi.fn();
+const mockDb = {
+  execute: mockExecute,
+  query: mockQuery,
+  queryOne: mockQueryOne,
+  transaction: mockTransaction,
+  healthCheck: vi.fn(),
+};
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => mockDb,
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => mockDb,
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -46,130 +55,123 @@ describe('insights-store', () => {
   });
 
   describe('insertInsight', () => {
-    it('inserts a single insight', () => {
-      const mockRun = vi.fn();
-      mockPrepare.mockReturnValue({ run: mockRun });
+    it('inserts a single insight', async () => {
+      mockExecute.mockResolvedValue({ changes: 1 });
 
-      insertInsight(makeInsight());
+      await insertInsight(makeInsight());
 
-      expect(mockPrepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO insights'));
-      expect(mockRun).toHaveBeenCalledWith(
-        'test-id-1', 1, 'local', 'c1', 'web-app',
-        'warning', 'anomaly', 'High CPU on "web-app"', 'CPU is high', null,
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO insights'),
+        [
+          'test-id-1', 1, 'local', 'c1', 'web-app',
+          'warning', 'anomaly', 'High CPU on "web-app"', 'CPU is high', null,
+        ],
       );
     });
   });
 
   describe('insertInsights (batch)', () => {
-    it('inserts multiple insights in a transaction', () => {
-      const mockRun = vi.fn();
-      const mockGet = vi.fn().mockReturnValue({ cnt: 0 });
-      mockPrepare.mockImplementation((sql: string) => {
-        if (sql.includes('INSERT')) return { run: mockRun };
-        if (sql.includes('SELECT COUNT')) return { get: mockGet };
-        return { run: vi.fn(), get: vi.fn() };
-      });
-      // Transaction mock: execute the callback immediately
-      mockDb.transaction.mockImplementation((fn: () => void) => fn);
+    it('inserts multiple insights in a transaction', async () => {
+      // Transaction mock: call the callback with a transactional db mock
+      const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
+      const txQueryOne = vi.fn().mockResolvedValue({ cnt: 0 });
+      const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<number>) => fn(txDb));
 
       const insights = [
         makeInsight({ id: 'id-1' }),
         makeInsight({ id: 'id-2', container_id: 'c2', container_name: 'api' }),
       ];
 
-      const inserted = insertInsights(insights);
+      const inserted = await insertInsights(insights);
 
       expect(inserted).toBe(2);
-      expect(mockRun).toHaveBeenCalledTimes(2);
+      expect(txExecute).toHaveBeenCalledTimes(2);
     });
 
-    it('deduplicates insights with same container_id, category, title within 60min', () => {
-      const mockRun = vi.fn();
-      const mockGet = vi.fn()
-        .mockReturnValueOnce({ cnt: 1 }) // first insight is a duplicate
-        .mockReturnValueOnce({ cnt: 0 }); // second is unique
-      mockPrepare.mockImplementation((sql: string) => {
-        if (sql.includes('INSERT')) return { run: mockRun };
-        if (sql.includes('SELECT COUNT')) return { get: mockGet };
-        return { run: vi.fn(), get: vi.fn() };
-      });
-      mockDb.transaction.mockImplementation((fn: () => void) => fn);
+    it('deduplicates insights with same container_id, category, title within 60min', async () => {
+      const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
+      const txQueryOne = vi.fn()
+        .mockResolvedValueOnce({ cnt: 1 }) // first insight is a duplicate
+        .mockResolvedValueOnce({ cnt: 0 }); // second is unique
+      const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<number>) => fn(txDb));
 
       const insights = [
         makeInsight({ id: 'dup-1' }),
         makeInsight({ id: 'unique-1', container_id: 'c2' }),
       ];
 
-      const inserted = insertInsights(insights);
+      const inserted = await insertInsights(insights);
 
       expect(inserted).toBe(1);
-      expect(mockRun).toHaveBeenCalledTimes(1);
+      expect(txExecute).toHaveBeenCalledTimes(1);
     });
 
-    it('skips deduplication for insights without container_id', () => {
-      const mockRun = vi.fn();
-      const mockGet = vi.fn();
-      mockPrepare.mockImplementation((sql: string) => {
-        if (sql.includes('INSERT')) return { run: mockRun };
-        if (sql.includes('SELECT COUNT')) return { get: mockGet };
-        return { run: vi.fn(), get: vi.fn() };
-      });
-      mockDb.transaction.mockImplementation((fn: () => void) => fn);
+    it('skips deduplication for insights without container_id', async () => {
+      const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
+      const txQueryOne = vi.fn();
+      const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<number>) => fn(txDb));
 
       const insights = [
         makeInsight({ id: 'no-container', container_id: null }),
       ];
 
-      const inserted = insertInsights(insights);
+      const inserted = await insertInsights(insights);
 
       expect(inserted).toBe(1);
       // Dedup query should NOT be called for null container_id
-      expect(mockGet).not.toHaveBeenCalled();
+      expect(txQueryOne).not.toHaveBeenCalled();
     });
 
-    it('returns 0 for empty array', () => {
-      const inserted = insertInsights([]);
+    it('returns 0 for empty array', async () => {
+      const inserted = await insertInsights([]);
       expect(inserted).toBe(0);
     });
   });
 
   describe('getRecentInsights', () => {
-    it('applies LIMIT parameter', () => {
-      const mockAll = vi.fn().mockReturnValue([]);
-      mockPrepare.mockReturnValue({ all: mockAll });
+    it('applies LIMIT parameter', async () => {
+      mockQuery.mockResolvedValue([]);
 
-      getRecentInsights(60, 100);
+      await getRecentInsights(60, 100);
 
-      expect(mockAll).toHaveBeenCalledWith('-60', 100);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('LIMIT ?'),
+        ['-60', 100],
+      );
     });
 
-    it('defaults limit to 500', () => {
-      const mockAll = vi.fn().mockReturnValue([]);
-      mockPrepare.mockReturnValue({ all: mockAll });
+    it('defaults limit to 500', async () => {
+      mockQuery.mockResolvedValue([]);
 
-      getRecentInsights(30);
+      await getRecentInsights(30);
 
-      expect(mockAll).toHaveBeenCalledWith('-30', 500);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('LIMIT ?'),
+        ['-30', 500],
+      );
     });
   });
 
   describe('cleanupOldInsights', () => {
-    it('deletes insights older than retention days', () => {
-      const mockRun = vi.fn().mockReturnValue({ changes: 42 });
-      mockPrepare.mockReturnValue({ run: mockRun });
+    it('deletes insights older than retention days', async () => {
+      mockExecute.mockResolvedValue({ changes: 42 });
 
-      const deleted = cleanupOldInsights(7);
+      const deleted = await cleanupOldInsights(7);
 
       expect(deleted).toBe(42);
-      expect(mockPrepare).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM insights'));
-      expect(mockRun).toHaveBeenCalledWith('-7');
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM insights'),
+        ['-7'],
+      );
     });
 
-    it('returns 0 when nothing to delete', () => {
-      const mockRun = vi.fn().mockReturnValue({ changes: 0 });
-      mockPrepare.mockReturnValue({ run: mockRun });
+    it('returns 0 when nothing to delete', async () => {
+      mockExecute.mockResolvedValue({ changes: 0 });
 
-      const deleted = cleanupOldInsights(30);
+      const deleted = await cleanupOldInsights(30);
       expect(deleted).toBe(0);
     });
   });

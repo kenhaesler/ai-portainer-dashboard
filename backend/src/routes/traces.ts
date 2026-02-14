@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { TracesQuerySchema, TraceIdParamsSchema } from '../models/api-schemas.js';
 
 type TraceFilters = {
@@ -181,7 +181,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       limit = 50,
     } = request.query as TraceFilters & { limit?: number };
 
-    const db = getDb();
+    const db = getDbForDomain('traces');
     const { conditions, params } = buildSpanConditions({
       from,
       to,
@@ -237,7 +237,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
 
     const where = buildWhere(conditions);
 
-    const traces = db.prepare(`
+    const traces = await db.query<any>(`
       SELECT s.trace_id, s.name as root_span, s.duration_ms, s.status, s.service_name,
              s.start_time, s.trace_source,
              s.http_method, s.http_route, s.http_status_code,
@@ -252,12 +252,12 @@ export async function tracesRoutes(fastify: FastifyInstance) {
              s.process_pid, s.process_executable_name, s.process_command,
              s.telemetry_sdk_name, s.telemetry_sdk_language, s.telemetry_sdk_version,
              s.otel_scope_name, s.otel_scope_version,
-             (SELECT COUNT(*) FROM spans s2 WHERE s2.trace_id = s.trace_id) as span_count
+             (SELECT COUNT(*)::integer FROM spans s2 WHERE s2.trace_id = s.trace_id) as span_count
       FROM spans s
       ${where}
       ORDER BY s.start_time DESC
       LIMIT ?
-    `).all(...params, limit);
+    `, [...params, limit]);
 
     return { traces };
   });
@@ -273,11 +273,12 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const { traceId } = request.params as { traceId: string };
-    const db = getDb();
+    const db = getDbForDomain('traces');
 
-    const spans = db.prepare(
-      'SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time ASC'
-    ).all(traceId);
+    const spans = await db.query<any>(
+      'SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time ASC',
+      [traceId]
+    );
 
     return { traceId, spans };
   });
@@ -342,7 +343,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       otelScopeVersion,
     } = request.query as TraceFilters;
 
-    const db = getDb();
+    const db = getDbForDomain('traces');
     const { conditions, params } = buildSpanConditions({
       from,
       to,
@@ -395,28 +396,28 @@ export async function tracesRoutes(fastify: FastifyInstance) {
 
     const where = buildWhere(conditions);
 
-    const nodes = db.prepare(`
+    const nodes = await db.query<any>(`
       SELECT s.service_name as id, s.service_name as name,
-             COUNT(*) as callCount,
-             AVG(s.duration_ms) as avgDuration,
-             CAST(SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as errorRate
+             COUNT(*)::integer as "callCount",
+             AVG(s.duration_ms)::float as "avgDuration",
+             (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / COUNT(*)) as "errorRate"
       FROM spans s
       ${where}
       GROUP BY s.service_name
-    `).all(...params);
+    `, [...params]);
 
     const childConditions = conditions.map((condition) => condition.replaceAll('s.', 'c.'));
     const childWhere = buildWhere(childConditions);
 
-    const edges = db.prepare(`
+    const edges = await db.query<any>(`
       SELECT p.service_name as source, c.service_name as target,
-             COUNT(*) as callCount,
-             AVG(c.duration_ms) as avgDuration
+             COUNT(*)::integer as "callCount",
+             AVG(c.duration_ms)::float as "avgDuration"
       FROM spans c
       JOIN spans p ON c.parent_span_id = p.id
       ${childWhere}${childWhere ? ' AND ' : ' WHERE '}p.service_name != c.service_name
       GROUP BY p.service_name, c.service_name
-    `).all(...params);
+    `, [...params]);
 
     return { nodes, edges };
   });
@@ -481,7 +482,7 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       otelScopeVersion,
     } = request.query as TraceFilters;
 
-    const db = getDb();
+    const db = getDbForDomain('traces');
     const { conditions, params } = buildSpanConditions({
       from,
       to,
@@ -531,23 +532,23 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     conditions.push('s.parent_span_id IS NULL');
     const where = buildWhere(conditions);
 
-    const summary = db.prepare(`
+    const summary = await db.queryOne<{ totalTraces: number; avgDuration: number | null; errorRate: number | null; services: number }>(`
       SELECT
-        COUNT(DISTINCT s.trace_id) as totalTraces,
-        AVG(s.duration_ms) as avgDuration,
-        CAST(SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) as errorRate,
-        COUNT(DISTINCT s.service_name) as services
+        COUNT(DISTINCT s.trace_id)::integer as "totalTraces",
+        AVG(s.duration_ms)::float as "avgDuration",
+        (SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0)) as "errorRate",
+        COUNT(DISTINCT s.service_name)::integer as services
       FROM spans s
       ${where}
-    `).get(...params) as { totalTraces: number; avgDuration: number | null; errorRate: number | null; services: number };
+    `, [...params]);
 
-    const bySource = db.prepare(`
+    const bySource = await db.query<{ source: string; total: number }>(`
       SELECT COALESCE(NULLIF(s.trace_source, ''), 'unknown') as source,
-             COUNT(DISTINCT s.trace_id) as total
+             COUNT(DISTINCT s.trace_id)::integer as total
       FROM spans s
       ${where}
       GROUP BY COALESCE(NULLIF(s.trace_source, ''), 'unknown')
-    `).all(...params) as Array<{ source: string; total: number }>;
+    `, [...params]);
 
     const sourceCounts = {
       http: 0,
@@ -565,10 +566,10 @@ export async function tracesRoutes(fastify: FastifyInstance) {
     }
 
     return {
-      totalTraces: summary.totalTraces ?? 0,
-      avgDuration: Math.round((summary.avgDuration ?? 0) * 100) / 100,
-      errorRate: Math.round((summary.errorRate ?? 0) * 10000) / 10000,
-      services: summary.services ?? 0,
+      totalTraces: summary?.totalTraces ?? 0,
+      avgDuration: Math.round((summary?.avgDuration ?? 0) * 100) / 100,
+      errorRate: Math.round((summary?.errorRate ?? 0) * 10000) / 10000,
+      services: summary?.services ?? 0,
       sourceCounts,
     };
   });

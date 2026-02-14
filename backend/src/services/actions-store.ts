@@ -1,4 +1,4 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Action, ActionStatus } from '../models/remediation.js';
 
@@ -20,22 +20,23 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   executing: ['completed', 'failed'],
 };
 
-export function insertAction(action: ActionInsert): boolean {
-  const db = getDb();
+export async function insertAction(action: ActionInsert): Promise<boolean> {
+  const db = getDbForDomain('actions');
   try {
-    const result = db.prepare(`
-      INSERT INTO actions (
+    const result = await db.execute(
+      `INSERT INTO actions (
         id, insight_id, endpoint_id, container_id, container_name,
         action_type, rationale, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
-    `).run(
-      action.id,
-      action.insight_id,
-      action.endpoint_id,
-      action.container_id,
-      action.container_name,
-      action.action_type,
-      action.rationale,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())`,
+      [
+        action.id,
+        action.insight_id,
+        action.endpoint_id,
+        action.container_id,
+        action.container_name,
+        action.action_type,
+        action.rationale,
+      ],
     );
 
     if (result.changes > 0) {
@@ -48,7 +49,7 @@ export function insertAction(action: ActionInsert): boolean {
       typeof err === 'object'
       && err !== null
       && 'code' in err
-      && (err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+      && (err as { code?: string }).code === '23505'
     );
     if (isUniqueViolation) {
       log.debug(
@@ -67,8 +68,8 @@ export interface GetActionsOptions {
   offset?: number;
 }
 
-export function getActions(options: GetActionsOptions = {}): Action[] {
-  const db = getDb();
+export async function getActions(options: GetActionsOptions = {}): Promise<Action[]> {
+  const db = getDbForDomain('actions');
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -81,39 +82,40 @@ export function getActions(options: GetActionsOptions = {}): Action[] {
   const limit = options.limit ?? 100;
   const offset = options.offset ?? 0;
 
-  return db
-    .prepare(
-      `SELECT * FROM actions ${where}
-       ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-    )
-    .all(...params, limit, offset) as Action[];
+  return await db.query<Action>(
+    `SELECT * FROM actions ${where}
+     ORDER BY created_at DESC
+     LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
 }
 
-export function hasPendingAction(containerId: string, actionType: string): boolean {
-  const db = getDb();
-  const row = db
-    .prepare(
-      `SELECT 1 FROM actions
-       WHERE container_id = ? AND action_type = ? AND status = 'pending'
-       LIMIT 1`,
-    )
-    .get(containerId, actionType);
-  return row !== undefined;
+export async function hasPendingAction(containerId: string, actionType: string): Promise<boolean> {
+  const db = getDbForDomain('actions');
+  const row = await db.queryOne(
+    `SELECT 1 FROM actions
+     WHERE container_id = ? AND action_type = ? AND status = 'pending'
+     LIMIT 1`,
+    [containerId, actionType],
+  );
+  return row !== null;
 }
 
-export function getAction(id: string): Action | undefined {
-  const db = getDb();
-  return db
-    .prepare('SELECT * FROM actions WHERE id = ?')
-    .get(id) as Action | undefined;
+export async function getAction(id: string): Promise<Action | undefined> {
+  const db = getDbForDomain('actions');
+  const row = await db.queryOne<Action>(
+    'SELECT * FROM actions WHERE id = ?',
+    [id],
+  );
+  return row ?? undefined;
 }
 
-export function updateActionRationale(id: string, rationale: string): boolean {
-  const db = getDb();
-  const result = db
-    .prepare('UPDATE actions SET rationale = ? WHERE id = ?')
-    .run(rationale, id);
+export async function updateActionRationale(id: string, rationale: string): Promise<boolean> {
+  const db = getDbForDomain('actions');
+  const result = await db.execute(
+    'UPDATE actions SET rationale = ? WHERE id = ?',
+    [rationale, id],
+  );
 
   if (result.changes > 0) {
     log.info({ actionId: id }, 'Action rationale updated');
@@ -122,13 +124,13 @@ export function updateActionRationale(id: string, rationale: string): boolean {
   return false;
 }
 
-export function updateActionStatus(
+export async function updateActionStatus(
   id: string,
   newStatus: ActionStatus,
   details?: Record<string, unknown>,
-): boolean {
-  const db = getDb();
-  const action = getAction(id);
+): Promise<boolean> {
+  const db = getDbForDomain('actions');
+  const action = await getAction(id);
 
   if (!action) {
     log.warn({ actionId: id }, 'Action not found');
@@ -148,13 +150,13 @@ export function updateActionStatus(
   const params: unknown[] = [newStatus];
 
   if (newStatus === 'approved' && details?.approved_by) {
-    updates.push('approved_by = ?', "approved_at = datetime('now')");
+    updates.push('approved_by = ?', 'approved_at = NOW()');
     params.push(details.approved_by as string);
   }
 
   if (newStatus === 'rejected') {
     if (details?.rejected_by) {
-      updates.push('rejected_by = ?', "rejected_at = datetime('now')");
+      updates.push('rejected_by = ?', 'rejected_at = NOW()');
       params.push(details.rejected_by as string);
     }
     if (details?.rejection_reason) {
@@ -164,11 +166,11 @@ export function updateActionStatus(
   }
 
   if (newStatus === 'executing') {
-    updates.push("executed_at = datetime('now')");
+    updates.push('executed_at = NOW()');
   }
 
   if (newStatus === 'completed' || newStatus === 'failed') {
-    updates.push("completed_at = datetime('now')");
+    updates.push('completed_at = NOW()');
     if (details?.execution_result) {
       updates.push('execution_result = ?');
       params.push(details.execution_result as string);
@@ -181,9 +183,10 @@ export function updateActionStatus(
 
   params.push(id);
 
-  const result = db
-    .prepare(`UPDATE actions SET ${updates.join(', ')} WHERE id = ?`)
-    .run(...params);
+  const result = await db.execute(
+    `UPDATE actions SET ${updates.join(', ')} WHERE id = ?`,
+    params,
+  );
 
   if (result.changes > 0) {
     log.info({ actionId: id, from: action.status, to: newStatus }, 'Action status updated');

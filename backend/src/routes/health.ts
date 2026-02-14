@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { isDbHealthy } from '../db/sqlite.js';
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
+import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
 import { getConfig } from '../config/index.js';
 import { cache } from '../services/portainer-cache.js';
 import { HealthResponseSchema, ReadinessResponseSchema } from '../models/api-schemas.js';
@@ -11,10 +11,16 @@ async function runChecks(): Promise<{ checks: Record<string, DependencyCheck>; o
   const config = getConfig();
   const checks: Record<string, DependencyCheck> = {};
 
-  // Check SQLite database (users, sessions, settings, etc.)
-  checks.database = isDbHealthy()
-    ? { status: 'healthy' }
-    : { status: 'unhealthy', error: 'Database query failed' };
+  // Check App PostgreSQL (sessions, settings, insights, etc.)
+  const appPgHealthy = await isAppDbHealthy();
+  const appPgReady = isAppDbReady();
+  if (appPgHealthy && appPgReady) {
+    checks.appDb = { status: 'healthy' };
+  } else if (appPgHealthy && !appPgReady) {
+    checks.appDb = { status: 'degraded', error: 'App PostgreSQL connected but migrations not applied' };
+  } else {
+    checks.appDb = { status: 'unhealthy', error: 'App PostgreSQL query failed' };
+  }
 
   // Check TimescaleDB (metrics, KPI snapshots)
   const tsHealthy = await isMetricsDbHealthy();

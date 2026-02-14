@@ -89,7 +89,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
   }
 
   // Guard: concurrency
-  const activeCount = getActiveCount();
+  const activeCount = await getActiveCount();
   if (activeCount >= config.PCAP_MAX_CONCURRENT) {
     throw new Error(
       `Concurrency limit reached: ${activeCount}/${config.PCAP_MAX_CONCURRENT} captures active`,
@@ -104,7 +104,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
   const captureId = uuidv4();
 
   // Insert DB record
-  insertCapture({
+  await insertCapture({
     id: captureId,
     endpoint_id: params.endpointId,
     container_id: params.containerId,
@@ -123,7 +123,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
     await startExec(params.endpointId, exec.Id);
 
     // Update status to capturing
-    updateCaptureStatus(captureId, 'capturing', {
+    await updateCaptureStatus(captureId, 'capturing', {
       exec_id: exec.Id,
       started_at: new Date().toISOString(),
     });
@@ -137,7 +137,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
     );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Failed to start capture';
-    updateCaptureStatus(captureId, 'failed', {
+    await updateCaptureStatus(captureId, 'failed', {
       error_message: errorMessage,
       completed_at: new Date().toISOString(),
     });
@@ -145,7 +145,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
     throw err;
   }
 
-  return getCapture(captureId)!;
+  return (await getCapture(captureId))!;
 }
 
 function startPolling(
@@ -182,7 +182,7 @@ function startPolling(
           // 0 = normal exit (e.g., max packets reached), 137 = killed (our stop signal)
           await downloadAndProcessCapture(captureId, endpointId, containerId);
         } else {
-          updateCaptureStatus(captureId, 'failed', {
+          await updateCaptureStatus(captureId, 'failed', {
             error_message: `tcpdump exited with code ${execInfo.ExitCode}`,
             completed_at: new Date().toISOString(),
           });
@@ -202,7 +202,7 @@ async function downloadAndProcessCapture(
   endpointId: number,
   containerId: string,
 ): Promise<void> {
-  updateCaptureStatus(captureId, 'processing');
+  await updateCaptureStatus(captureId, 'processing');
 
   try {
     const config = getConfig();
@@ -212,7 +212,7 @@ async function downloadAndProcessCapture(
     // Extract PCAP from tar
     const pcapData = extractFromTar(tarBuffer);
     if (!pcapData) {
-      updateCaptureStatus(captureId, 'failed', {
+      await updateCaptureStatus(captureId, 'failed', {
         error_message: 'Failed to extract PCAP data from archive',
         completed_at: new Date().toISOString(),
       });
@@ -222,7 +222,7 @@ async function downloadAndProcessCapture(
     // Check file size
     const maxSizeBytes = config.PCAP_MAX_FILE_SIZE_MB * 1024 * 1024;
     if (pcapData.length > maxSizeBytes) {
-      updateCaptureStatus(captureId, 'failed', {
+      await updateCaptureStatus(captureId, 'failed', {
         error_message: `Capture file exceeds maximum size of ${config.PCAP_MAX_FILE_SIZE_MB}MB`,
         completed_at: new Date().toISOString(),
       });
@@ -235,7 +235,7 @@ async function downloadAndProcessCapture(
     const filePath = path.join(storageDir, filename);
     fs.writeFileSync(filePath, pcapData);
 
-    updateCaptureStatus(captureId, 'complete', {
+    await updateCaptureStatus(captureId, 'complete', {
       capture_file: filename,
       file_size_bytes: pcapData.length,
       completed_at: new Date().toISOString(),
@@ -244,7 +244,7 @@ async function downloadAndProcessCapture(
     log.info({ captureId, fileSize: pcapData.length }, 'Capture file saved');
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Failed to download capture';
-    updateCaptureStatus(captureId, 'failed', {
+    await updateCaptureStatus(captureId, 'failed', {
       error_message: errorMessage,
       completed_at: new Date().toISOString(),
     });
@@ -271,12 +271,12 @@ async function stopCaptureInternal(
     await downloadAndProcessCapture(captureId, endpointId, containerId);
 
     // If it completed, override status to 'succeeded' to indicate manual stop
-    const capture = getCapture(captureId);
+    const capture = await getCapture(captureId);
     if (capture && capture.status === 'complete') {
-      updateCaptureStatus(captureId, 'succeeded');
+      await updateCaptureStatus(captureId, 'succeeded');
     }
   } catch (err) {
-    updateCaptureStatus(captureId, 'succeeded', {
+    await updateCaptureStatus(captureId, 'succeeded', {
       error_message: 'Stopped (partial data may be unavailable)',
       completed_at: new Date().toISOString(),
     });
@@ -285,7 +285,7 @@ async function stopCaptureInternal(
 }
 
 export async function stopCapture(id: string): Promise<Capture> {
-  const capture = getCapture(id);
+  const capture = await getCapture(id);
   if (!capture) {
     throw new Error('Capture not found');
   }
@@ -303,24 +303,24 @@ export async function stopCapture(id: string): Promise<Capture> {
 
   await stopCaptureInternal(id, capture.endpoint_id, capture.container_id);
 
-  return getCapture(id)!;
+  return (await getCapture(id))!;
 }
 
-export function getCaptureById(id: string): Capture | undefined {
+export async function getCaptureById(id: string): Promise<Capture | undefined> {
   return getCapture(id);
 }
 
-export function listCaptures(options?: {
+export async function listCaptures(options?: {
   status?: CaptureStatus;
   containerId?: string;
   limit?: number;
   offset?: number;
-}): Capture[] {
+}): Promise<Capture[]> {
   return getCaptures(options);
 }
 
-export function deleteCaptureById(id: string): void {
-  const capture = getCapture(id);
+export async function deleteCaptureById(id: string): Promise<void> {
+  const capture = await getCapture(id);
   if (!capture) {
     throw new Error('Capture not found');
   }
@@ -343,11 +343,11 @@ export function deleteCaptureById(id: string): void {
     }
   }
 
-  deleteDbCapture(id);
+  await deleteDbCapture(id);
 }
 
-export function getCaptureFilePath(id: string): string | null {
-  const capture = getCapture(id);
+export async function getCaptureFilePath(id: string): Promise<string | null> {
+  const capture = await getCapture(id);
   if (!capture || !capture.capture_file) return null;
 
   const config = getConfig();
@@ -365,14 +365,19 @@ export function getCaptureFilePath(id: string): string | null {
   return filePath;
 }
 
-export function cleanupOldCaptures(): void {
+export async function cleanupOldCaptures(): Promise<void> {
   const config = getConfig();
   const storageDir = getStorageDir();
 
   // Get captures that will be cleaned — query the files before deleting DB records
-  const oldCaptures = getCaptures({ status: 'complete' })
-    .concat(getCaptures({ status: 'failed' }))
-    .concat(getCaptures({ status: 'succeeded' }))
+  const [completeCaptures, failedCaptures, succeededCaptures] = await Promise.all([
+    getCaptures({ status: 'complete' }),
+    getCaptures({ status: 'failed' }),
+    getCaptures({ status: 'succeeded' }),
+  ]);
+  const oldCaptures = completeCaptures
+    .concat(failedCaptures)
+    .concat(succeededCaptures)
     .filter((c) => {
       if (!c.created_at) return false;
       const createdAt = new Date(c.created_at).getTime();
@@ -395,17 +400,22 @@ export function cleanupOldCaptures(): void {
   }
 
   // Clean DB records
-  cleanDbOldCaptures(config.PCAP_RETENTION_DAYS);
+  await cleanDbOldCaptures(config.PCAP_RETENTION_DAYS);
 }
 
-function getActiveCount(): number {
-  return getCapturesCount('capturing') + getCapturesCount('pending');
+async function getActiveCount(): Promise<number> {
+  const [capturing, pending] = await Promise.all([
+    getCapturesCount('capturing'),
+    getCapturesCount('pending'),
+  ]);
+  return capturing + pending;
 }
 
-export function getActiveCaptures(): Capture[] {
-  return [
-    ...getCaptures({ status: 'capturing' }),
-    ...getCaptures({ status: 'pending' }),
-    ...getCaptures({ status: 'processing' }),
-  ];
+export async function getActiveCaptures(): Promise<Capture[]> {
+  const [capturing, pending, processing] = await Promise.all([
+    getCaptures({ status: 'capturing' }),
+    getCaptures({ status: 'pending' }),
+    getCaptures({ status: 'processing' }),
+  ]);
+  return [...capturing, ...pending, ...processing];
 }

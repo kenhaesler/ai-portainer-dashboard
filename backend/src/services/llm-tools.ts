@@ -4,7 +4,7 @@ import { isEdgeAsync } from './edge-capability-guard.js';
 import { getEdgeAsyncContainerLogs } from './edge-async-log-fetcher.js';
 import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.js';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { getMetricsDb } from '../db/timescale.js';
 import { getTraces, getTrace, getTraceSummary } from './trace-store.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -402,7 +402,7 @@ async function executeListInsights(
   args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
   try {
-    const db = getDb();
+    const db = getDbForDomain('insights');
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -418,12 +418,12 @@ async function executeListInsights(
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = Math.min(parseInt(String(args.limit || '10'), 10) || 10, 50);
 
-    const insights = db.prepare(`
+    const insights = await db.query<Record<string, unknown>>(`
       SELECT id, severity, category, title, description, suggested_action,
              container_name, endpoint_name, is_acknowledged, created_at
       FROM insights ${where}
       ORDER BY created_at DESC LIMIT ?
-    `).all(...params, limit) as Array<Record<string, unknown>>;
+    `, [...params, limit]);
 
     return {
       tool: 'list_insights',
@@ -546,15 +546,15 @@ function parseTimeRange(timeRange: string): Date {
   return from;
 }
 
-function executeQueryTraces(
+async function executeQueryTraces(
   args: Record<string, unknown>,
-): ToolCallResult {
+): Promise<ToolCallResult> {
   try {
     const timeRange = String(args.time_range || '24h');
     const from = parseTimeRange(timeRange);
     const limit = Math.min(parseInt(String(args.limit || '20'), 10) || 20, 50);
 
-    let traces = getTraces({
+    let traces = await getTraces({
       from: from.toISOString(),
       serviceName: args.service_name ? String(args.service_name) : undefined,
       status: args.status ? String(args.status) : undefined,
@@ -579,16 +579,16 @@ function executeQueryTraces(
   }
 }
 
-function executeGetTraceDetails(
+async function executeGetTraceDetails(
   args: Record<string, unknown>,
-): ToolCallResult {
+): Promise<ToolCallResult> {
   try {
     const traceId = String(args.trace_id || '');
     if (!traceId) {
       return { tool: 'get_trace_details', success: false, error: 'trace_id is required' };
     }
 
-    const spans = getTrace(traceId);
+    const spans = await getTrace(traceId);
     if (spans.length === 0) {
       return { tool: 'get_trace_details', success: false, error: `No trace found with ID "${traceId}"` };
     }
@@ -604,18 +604,18 @@ function executeGetTraceDetails(
   }
 }
 
-function executeGetTraceStats(
+async function executeGetTraceStats(
   args: Record<string, unknown>,
-): ToolCallResult {
+): Promise<ToolCallResult> {
   try {
     const timeRange = String(args.time_range || '24h');
     const from = parseTimeRange(timeRange);
 
-    const summary = getTraceSummary(from.toISOString());
+    const summary = await getTraceSummary(from.toISOString());
 
     // Get top slowest endpoints
-    const db = getDb();
-    const slowest = db.prepare(`
+    const tracesDb = getDbForDomain('traces');
+    const slowest = await tracesDb.query<Record<string, unknown>>(`
       SELECT name, AVG(duration_ms) as avg_duration_ms, COUNT(*) as call_count,
              CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as error_rate
       FROM spans
@@ -623,7 +623,7 @@ function executeGetTraceStats(
       GROUP BY name
       ORDER BY AVG(duration_ms) DESC
       LIMIT 10
-    `).all(from.toISOString()) as Array<Record<string, unknown>>;
+    `, [from.toISOString()]);
 
     return {
       tool: 'get_trace_stats',

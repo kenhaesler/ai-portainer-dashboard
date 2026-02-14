@@ -44,7 +44,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: 'Invalid credentials' });
     }
 
-    const session = createSession(user.id, user.username);
+    const session = await createSession(user.id, user.username);
     const token = await signJwt({
       sub: user.id,
       username: user.username,
@@ -65,7 +65,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       token,
       username: user.username,
       expiresAt: session.expires_at,
-      defaultLandingPage: getUserDefaultLandingPage(user.id),
+      defaultLandingPage: await getUserDefaultLandingPage(user.id),
     };
   });
 
@@ -79,7 +79,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     if (request.user) {
-      invalidateSession(request.user.sessionId);
+      await invalidateSession(request.user.sessionId);
       writeAuditLog({
         user_id: request.user.sub,
         username: request.user.username,
@@ -105,7 +105,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: 'Not authenticated' });
     }
 
-    const session = getSession(request.user.sessionId);
+    const session = await getSession(request.user.sessionId);
     if (!session) {
       return reply.code(401).send({ error: 'Session expired' });
     }
@@ -131,7 +131,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: 'Not authenticated' });
     }
 
-    const session = refreshSession(request.user.sessionId);
+    const session = await refreshSession(request.user.sessionId);
     if (!session) {
       return reply.code(401).send({ error: 'Session expired' });
     }

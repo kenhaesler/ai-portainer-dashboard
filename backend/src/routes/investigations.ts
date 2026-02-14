@@ -24,7 +24,7 @@ export async function investigationRoutes(fastify: FastifyInstance) {
       offset?: number;
     };
 
-    const investigations = getInvestigations({ status, container_id, limit, offset });
+    const investigations = await getInvestigations({ status, container_id, limit, offset });
     return { investigations };
   });
 
@@ -38,7 +38,7 @@ export async function investigationRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const investigation = getInvestigation(id);
+    const investigation = await getInvestigation(id);
 
     if (!investigation) {
       return reply.status(404).send({ error: 'Investigation not found' });
@@ -57,7 +57,7 @@ export async function investigationRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { insightId } = request.params as { insightId: string };
-    const investigation = getInvestigationByInsightId(insightId);
+    const investigation = await getInvestigationByInsightId(insightId);
 
     if (!investigation) {
       return reply.status(404).send({ error: 'No investigation found for this insight' });

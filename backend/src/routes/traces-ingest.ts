@@ -93,7 +93,7 @@ async function handleOtlpIngest(
     return { accepted: 0 };
   }
 
-  const accepted = insertSpans(spans);
+  const accepted = await insertSpans(spans);
   log.info({ accepted, resourceSpans: otlpPayload.resourceSpans.length, format: contentType.includes('protobuf') ? 'protobuf' : 'json' }, 'OTLP spans ingested');
 
   return { accepted };

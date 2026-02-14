@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { roleLevel, hasMinRole } from './user-store.js';
 
-vi.mock('../db/sqlite.js', () => ({ getDb: vi.fn() }));
+vi.mock('../db/app-db-router.js', () => ({ getDbForDomain: vi.fn() }));
 vi.mock('../utils/crypto.js', () => ({
   hashPassword: vi.fn(async (p: string) => `hashed:${p}`),
   comparePassword: vi.fn(async (p: string, h: string) => h === `hashed:${p}`),

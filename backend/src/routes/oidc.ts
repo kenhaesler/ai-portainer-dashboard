@@ -24,12 +24,12 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (_request, reply) => {
-    if (!isOIDCEnabled()) {
+    if (!(await isOIDCEnabled())) {
       return { enabled: false };
     }
 
     try {
-      const oidcConfig = getOIDCConfig();
+      const oidcConfig = await getOIDCConfig();
       const redirectUri = oidcConfig.redirect_uri;
       if (!redirectUri) {
         return { enabled: false };
@@ -72,7 +72,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     try {
       const claims = await exchangeCode(callbackUrl, state);
       const username = claims.email || claims.name || claims.sub;
-      const oidcConfig = getOIDCConfig();
+      const oidcConfig = await getOIDCConfig();
 
       // Resolve role from group mappings (highest-privilege-wins)
       const resolvedRole = resolveRoleFromGroups(
@@ -81,12 +81,12 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       );
 
       // Check if user already exists to get their current role
-      const existingUser = getUserById(claims.sub);
+      const existingUser = await getUserById(claims.sub);
       const effectiveRole = resolvedRole || existingUser?.role || 'viewer';
 
       // Auto-provision or update user if enabled
       if (oidcConfig.auto_provision) {
-        const { roleChanged, previousRole } = upsertOIDCUser(claims.sub, username, effectiveRole);
+        const { roleChanged, previousRole } = await upsertOIDCUser(claims.sub, username, effectiveRole);
 
         if (roleChanged) {
           writeAuditLog({
@@ -108,7 +108,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const session = createSession(claims.sub, username);
+      const session = await createSession(claims.sub, username);
       const token = await signJwt({
         sub: claims.sub,
         username,
@@ -152,7 +152,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     if (request.user) {
-      invalidateSession(request.user.sessionId);
+      await invalidateSession(request.user.sessionId);
       writeAuditLog({
         user_id: request.user.sub,
         username: request.user.username,

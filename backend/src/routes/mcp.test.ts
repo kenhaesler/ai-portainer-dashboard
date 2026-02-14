@@ -2,13 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { mcpRoutes } from './mcp.js';
 
-// Mock SQLite
-const mockPrepare = vi.fn();
-const mockDb = {
-  prepare: mockPrepare,
-};
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => mockDb,
+// Mock AppDb adapter
+const mockQuery = vi.fn().mockResolvedValue([]);
+const mockQueryOne = vi.fn().mockResolvedValue(null);
+const mockExecute = vi.fn().mockResolvedValue({ changes: 1, lastInsertRowid: 1 });
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    query: (...args: unknown[]) => mockQuery(...args),
+    queryOne: (...args: unknown[]) => mockQueryOne(...args),
+    execute: (...args: unknown[]) => mockExecute(...args),
+  }),
 }));
 
 // Mock audit logger
@@ -43,16 +46,6 @@ vi.mock('../utils/logger.js', () => ({
 describe('MCP Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
-  function setupMockStmt(returnValue: unknown = undefined) {
-    const stmt = {
-      all: vi.fn().mockReturnValue(returnValue ?? []),
-      get: vi.fn().mockReturnValue(returnValue),
-      run: vi.fn().mockReturnValue({ lastInsertRowid: 1, changes: 1 }),
-    };
-    mockPrepare.mockReturnValue(stmt);
-    return stmt;
-  }
-
   beforeEach(async () => {
     vi.clearAllMocks();
     app = Fastify();
@@ -74,8 +67,7 @@ describe('MCP Routes', () => {
       const servers = [
         { id: 1, name: 'fs-server', transport: 'stdio', command: 'npx server', url: null, enabled: 1, args: null, env: null, disabled_tools: null },
       ];
-      setupMockStmt();
-      mockPrepare.mockReturnValue({ all: vi.fn().mockReturnValue(servers) });
+      mockQuery.mockResolvedValue(servers);
       mockIsConnected.mockReturnValue(true);
       mockGetConnectedServers.mockReturnValue([{ name: 'fs-server', transport: 'stdio', connected: true, toolCount: 3 }]);
 
@@ -91,7 +83,7 @@ describe('MCP Routes', () => {
 
   describe('POST /api/mcp/servers', () => {
     it('creates a new stdio server', async () => {
-      const stmt = setupMockStmt();
+      mockExecute.mockResolvedValue({ changes: 1, lastInsertRowid: 1 });
 
       const res = await app.inject({
         method: 'POST',
@@ -106,7 +98,7 @@ describe('MCP Routes', () => {
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.payload);
       expect(body.name).toBe('test-server');
-      expect(stmt.run).toHaveBeenCalled();
+      expect(mockExecute).toHaveBeenCalled();
     });
 
     it('validates name format', async () => {
@@ -150,7 +142,6 @@ describe('MCP Routes', () => {
     });
 
     it('validates args as JSON', async () => {
-      setupMockStmt();
       const res = await app.inject({
         method: 'POST',
         url: '/api/mcp/servers',
@@ -168,12 +159,11 @@ describe('MCP Routes', () => {
 
   describe('PUT /api/mcp/servers/:id', () => {
     it('updates an existing server', async () => {
-      const stmt = setupMockStmt({ id: 1, name: 'test', transport: 'stdio' });
-      // First call for get, second for update, third for get after update
-      mockPrepare
-        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ id: 1, name: 'test', transport: 'stdio' }) })
-        .mockReturnValueOnce({ run: vi.fn().mockReturnValue({ changes: 1 }) })
-        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ id: 1, name: 'updated', transport: 'stdio' }) });
+      // First queryOne for existing lookup, execute for update, second queryOne for return
+      mockQueryOne
+        .mockResolvedValueOnce({ id: 1, name: 'test', transport: 'stdio' })
+        .mockResolvedValueOnce({ id: 1, name: 'updated', transport: 'stdio' });
+      mockExecute.mockResolvedValue({ changes: 1 });
 
       const res = await app.inject({
         method: 'PUT',
@@ -185,7 +175,7 @@ describe('MCP Routes', () => {
     });
 
     it('returns 404 for unknown server', async () => {
-      mockPrepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
+      mockQueryOne.mockResolvedValue(null);
 
       const res = await app.inject({
         method: 'PUT',
@@ -199,9 +189,8 @@ describe('MCP Routes', () => {
 
   describe('DELETE /api/mcp/servers/:id', () => {
     it('deletes an existing server', async () => {
-      mockPrepare
-        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ id: 1, name: 'test' }) })
-        .mockReturnValueOnce({ run: vi.fn().mockReturnValue({ changes: 1 }) });
+      mockQueryOne.mockResolvedValue({ id: 1, name: 'test' });
+      mockExecute.mockResolvedValue({ changes: 1 });
       mockIsConnected.mockReturnValue(false);
 
       const res = await app.inject({ method: 'DELETE', url: '/api/mcp/servers/1' });
@@ -212,9 +201,8 @@ describe('MCP Routes', () => {
     });
 
     it('disconnects connected server before deleting', async () => {
-      mockPrepare
-        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ id: 1, name: 'test' }) })
-        .mockReturnValueOnce({ run: vi.fn().mockReturnValue({ changes: 1 }) });
+      mockQueryOne.mockResolvedValue({ id: 1, name: 'test' });
+      mockExecute.mockResolvedValue({ changes: 1 });
       mockIsConnected.mockReturnValue(true);
 
       await app.inject({ method: 'DELETE', url: '/api/mcp/servers/1' });
@@ -223,7 +211,7 @@ describe('MCP Routes', () => {
     });
 
     it('returns 404 for unknown server', async () => {
-      mockPrepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
+      mockQueryOne.mockResolvedValue(null);
 
       const res = await app.inject({ method: 'DELETE', url: '/api/mcp/servers/999' });
       expect(res.statusCode).toBe(404);
@@ -232,11 +220,9 @@ describe('MCP Routes', () => {
 
   describe('POST /api/mcp/servers/:id/connect', () => {
     it('connects to a server', async () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({
-          id: 1, name: 'test', transport: 'stdio', command: 'test',
-          enabled: 1, url: null, args: null, env: null, disabled_tools: null,
-        }),
+      mockQueryOne.mockResolvedValue({
+        id: 1, name: 'test', transport: 'stdio', command: 'test',
+        enabled: 1, url: null, args: null, env: null, disabled_tools: null,
       });
       mockConnectServer.mockResolvedValue(undefined);
 
@@ -246,11 +232,9 @@ describe('MCP Routes', () => {
     });
 
     it('returns 502 on connection failure', async () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({
-          id: 1, name: 'test', transport: 'stdio', command: 'test',
-          enabled: 1, url: null, args: null, env: null, disabled_tools: null,
-        }),
+      mockQueryOne.mockResolvedValue({
+        id: 1, name: 'test', transport: 'stdio', command: 'test',
+        enabled: 1, url: null, args: null, env: null, disabled_tools: null,
       });
       mockConnectServer.mockRejectedValue(new Error('Connection refused'));
 
@@ -261,9 +245,7 @@ describe('MCP Routes', () => {
 
   describe('POST /api/mcp/servers/:id/disconnect', () => {
     it('disconnects from a server', async () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({ id: 1, name: 'test', transport: 'stdio' }),
-      });
+      mockQueryOne.mockResolvedValue({ id: 1, name: 'test', transport: 'stdio' });
 
       const res = await app.inject({ method: 'POST', url: '/api/mcp/servers/1/disconnect' });
       expect(res.statusCode).toBe(200);
@@ -273,9 +255,7 @@ describe('MCP Routes', () => {
 
   describe('GET /api/mcp/servers/:id/tools', () => {
     it('returns tools for a connected server', async () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({ id: 1, name: 'test', transport: 'stdio' }),
-      });
+      mockQueryOne.mockResolvedValue({ id: 1, name: 'test', transport: 'stdio' });
       mockIsConnected.mockReturnValue(true);
       mockGetServerTools.mockReturnValue([
         { serverName: 'test', name: 'read_file', description: 'Read a file', inputSchema: {} },
@@ -289,9 +269,7 @@ describe('MCP Routes', () => {
     });
 
     it('returns 400 if server not connected', async () => {
-      mockPrepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({ id: 1, name: 'test', transport: 'stdio' }),
-      });
+      mockQueryOne.mockResolvedValue({ id: 1, name: 'test', transport: 'stdio' });
       mockIsConnected.mockReturnValue(false);
 
       const res = await app.inject({ method: 'GET', url: '/api/mcp/servers/1/tools' });

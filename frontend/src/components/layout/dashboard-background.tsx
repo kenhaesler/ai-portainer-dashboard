@@ -97,6 +97,18 @@ function RetroVaporwaveBackground() {
   );
 }
 
+function PoweredByAiBackgroundImage() {
+  return (
+    <img
+      src="/powered-by-ai-bg.svg"
+      alt=""
+      aria-hidden="true"
+      className="absolute inset-0 h-full w-full object-cover opacity-[0.14]"
+      data-testid="powered-by-ai-bg"
+    />
+  );
+}
+
 export function DashboardBackground() {
   const bg = useThemeStore((s) => s.dashboardBackground) as DashboardBg;
   const potatoMode = useUiStore((s) => s.potatoMode);
@@ -121,6 +133,7 @@ export function DashboardBackground() {
       {bg === 'retro-arcade' && <RetroArcadeBackground />}
       {bg === 'retro-terminal' && <RetroTerminalBackground />}
       {bg === 'retro-vaporwave' && <RetroVaporwaveBackground />}
+      <PoweredByAiBackgroundImage />
     </div>
   );
 }

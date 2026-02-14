@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import { broadcastActionUpdate } from '../sockets/remediation.js';
 import { RemediationQuerySchema, ActionIdParamsSchema, RejectBodySchema } from '../models/api-schemas.js';
@@ -22,7 +22,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       offset?: number;
     };
 
-    const db = getDb();
+    const db = getDbForDomain('actions');
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -32,20 +32,21 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const actions = db.prepare(`
+    const actions = await db.query<any>(`
       SELECT * FROM actions ${where}
       ORDER BY created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, limit, offset);
+    `, [...params, limit, offset]);
 
-    const total = db.prepare(
-      `SELECT COUNT(*) as count FROM actions ${where}`
-    ).get(...params) as { count: number };
+    const total = await db.queryOne<{ count: number }>(
+      `SELECT COUNT(*) as count FROM actions ${where}`,
+      [...params]
+    );
 
-    const pending = db.prepare(
+    const pending = await db.queryOne<{ count: number }>(
       "SELECT COUNT(*) as count FROM actions WHERE status = 'pending'"
-    ).get() as { count: number };
+    );
 
-    return { actions, total: total.count, pendingCount: pending.count, limit, offset };
+    return { actions, total: total?.count ?? 0, pendingCount: pending?.count ?? 0, limit, offset };
   });
 
   // Approve action
@@ -59,9 +60,9 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = getDb();
+    const db = getDbForDomain('actions');
 
-    const action = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as any;
+    const action = await db.queryOne<any>('SELECT * FROM actions WHERE id = ?', [id]);
     if (!action) return reply.code(404).send({ error: 'Action not found' });
     if (action.status !== 'pending') {
       return reply.code(409).send({
@@ -71,10 +72,10 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       });
     }
 
-    db.prepare(`
-      UPDATE actions SET status = 'approved', approved_by = ?, approved_at = datetime('now')
+    await db.execute(`
+      UPDATE actions SET status = 'approved', approved_by = ?, approved_at = NOW()
       WHERE id = ?
-    `).run(request.user?.username, id);
+    `, [request.user?.username, id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -86,7 +87,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
-    const updated = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const updated = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
     if (updated) {
       broadcastActionUpdate(updated);
     }
@@ -107,9 +108,9 @@ export async function remediationRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { reason } = (request.body as { reason?: string }) || {};
-    const db = getDb();
+    const db = getDbForDomain('actions');
 
-    const action = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as any;
+    const action = await db.queryOne<any>('SELECT * FROM actions WHERE id = ?', [id]);
     if (!action) return reply.code(404).send({ error: 'Action not found' });
     if (action.status !== 'pending') {
       return reply.code(409).send({
@@ -119,10 +120,10 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       });
     }
 
-    db.prepare(`
-      UPDATE actions SET status = 'rejected', rejected_by = ?, rejected_at = datetime('now'), rejection_reason = ?
+    await db.execute(`
+      UPDATE actions SET status = 'rejected', rejected_by = ?, rejected_at = NOW(), rejection_reason = ?
       WHERE id = ?
-    `).run(request.user?.username, reason || null, id);
+    `, [request.user?.username, reason || null, id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -135,7 +136,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
-    const updated = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const updated = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
     if (updated) {
       broadcastActionUpdate(updated);
     }
@@ -154,15 +155,15 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = getDb();
+    const db = getDbForDomain('actions');
 
-    const action = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as {
+    const action = await db.queryOne<{
       id: string;
       status: string;
       action_type: string;
       endpoint_id: number;
       container_id: string;
-    } | undefined;
+    }>('SELECT * FROM actions WHERE id = ?', [id]);
 
     if (!action) return reply.code(404).send({ error: 'Action not found' });
     if (action.status !== 'approved') {
@@ -173,12 +174,12 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       });
     }
 
-    db.prepare(`
-      UPDATE actions SET status = 'executing', executed_at = datetime('now')
+    await db.execute(`
+      UPDATE actions SET status = 'executing', executed_at = NOW()
       WHERE id = ?
-    `).run(id);
+    `, [id]);
 
-    const executing = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const executing = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
     if (executing) {
       broadcastActionUpdate(executing);
     }
@@ -196,14 +197,14 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       }
 
       const duration = Date.now() - startedAt;
-      db.prepare(`
+      await db.execute(`
         UPDATE actions
         SET status = 'completed',
-            completed_at = datetime('now'),
+            completed_at = NOW(),
             execution_result = ?,
             execution_duration_ms = ?
         WHERE id = ?
-      `).run(`Executed ${action.action_type} successfully`, duration, id);
+      `, [`Executed ${action.action_type} successfully`, duration, id]);
 
       writeAuditLog({
         user_id: request.user?.sub,
@@ -220,7 +221,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
         ip_address: request.ip,
       });
 
-      const completed = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+      const completed = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
       if (completed) {
         broadcastActionUpdate(completed);
       }
@@ -229,14 +230,14 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown execution failure';
       const duration = Date.now() - startedAt;
-      db.prepare(`
+      await db.execute(`
         UPDATE actions
         SET status = 'failed',
-            completed_at = datetime('now'),
+            completed_at = NOW(),
             execution_result = ?,
             execution_duration_ms = ?
         WHERE id = ?
-      `).run(message, duration, id);
+      `, [message, duration, id]);
 
       writeAuditLog({
         user_id: request.user?.sub,
@@ -254,7 +255,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
         ip_address: request.ip,
       });
 
-      const failed = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+      const failed = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
       if (failed) {
         broadcastActionUpdate(failed);
       }

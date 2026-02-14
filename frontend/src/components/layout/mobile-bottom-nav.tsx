@@ -29,25 +29,25 @@ interface MobileNavItem {
 }
 
 const primaryNav: MobileNavItem[] = [
-  { label: 'Home', to: '/', icon: LayoutDashboard },
-  { label: 'Workloads', to: '/workloads', icon: Boxes },
-  { label: 'Health', to: '/health', icon: HeartPulse },
-  { label: 'Metrics', to: '/metrics', icon: BarChart3 },
+  { label: 'AI Home', to: '/', icon: LayoutDashboard },
+  { label: 'AI Workloads', to: '/workloads', icon: Boxes },
+  { label: 'AI Health', to: '/health', icon: HeartPulse },
+  { label: 'AI Metrics', to: '/metrics', icon: BarChart3 },
 ];
 
 const secondaryNav: MobileNavItem[] = [
-  { label: 'Fleet', to: '/fleet', icon: Ship },
-  { label: 'Stacks', to: '/stacks', icon: Layers },
-  { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
-  { label: 'Images', to: '/images', icon: PackageOpen },
-  { label: 'Topology', to: '/topology', icon: Network },
+  { label: 'AI Fleet', to: '/fleet', icon: Ship },
+  { label: 'AI Stacks', to: '/stacks', icon: Layers },
+  { label: 'AI Comparison', to: '/comparison', icon: GitCompareArrows },
+  { label: 'AI Images', to: '/images', icon: PackageOpen },
+  { label: 'AI Topology', to: '/topology', icon: Network },
   { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
-  { label: 'Traces', to: '/traces', icon: GitBranch },
-  { label: 'Assistant', to: '/assistant', icon: MessageSquare },
-  { label: 'Remediation', to: '/remediation', icon: Shield },
-  { label: 'Edge Logs', to: '/edge-logs', icon: FileSearch },
-  { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
-  { label: 'Settings', to: '/settings', icon: Settings },
+  { label: 'AI Traces', to: '/traces', icon: GitBranch },
+  { label: 'AI Assistant', to: '/assistant', icon: MessageSquare },
+  { label: 'AI Remediation', to: '/remediation', icon: Shield },
+  { label: 'AI Edge Logs', to: '/edge-logs', icon: FileSearch },
+  { label: 'AI Packet Capture', to: '/packet-capture', icon: Radio },
+  { label: 'AI Settings', to: '/settings', icon: Settings },
 ];
 
 function NavButton({ item, onClick }: { item: MobileNavItem; onClick?: () => void }) {

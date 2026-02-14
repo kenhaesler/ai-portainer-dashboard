@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
 
 const mockGetEndpoints = vi.fn();
@@ -53,6 +54,8 @@ describe('Dashboard Summary Route', () => {
 
   it('returns 200 with empty recentContainers when container fetches fail', async () => {
     const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(dashboardRoutes);
     await app.ready();
@@ -100,6 +103,8 @@ describe('Dashboard Summary Route', () => {
 
   it('returns 502 when endpoint list cannot be fetched', async () => {
     const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
     await app.register(dashboardRoutes);
     await app.ready();

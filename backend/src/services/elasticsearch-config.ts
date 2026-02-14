@@ -13,14 +13,14 @@ function cleanEndpoint(value: string | undefined): string {
   return (value ?? '').trim().replace(/\/+$/, '');
 }
 
-export function getElasticsearchConfig(): ElasticsearchConfig | null {
+export async function getElasticsearchConfig(): Promise<ElasticsearchConfig | null> {
   const config = getConfig();
 
-  const enabled = getSetting('elasticsearch.enabled')?.value === 'true';
-  const endpoint = cleanEndpoint(getSetting('elasticsearch.endpoint')?.value);
-  const apiKey = (getSetting('elasticsearch.api_key')?.value ?? '').trim();
-  const indexPattern = (getSetting('elasticsearch.index_pattern')?.value ?? 'logs-*').trim() || 'logs-*';
-  const verifySsl = getSetting('elasticsearch.verify_ssl')?.value !== 'false';
+  const enabled = (await getSetting('elasticsearch.enabled'))?.value === 'true';
+  const endpoint = cleanEndpoint((await getSetting('elasticsearch.endpoint'))?.value);
+  const apiKey = ((await getSetting('elasticsearch.api_key'))?.value ?? '').trim();
+  const indexPattern = ((await getSetting('elasticsearch.index_pattern'))?.value ?? 'logs-*').trim() || 'logs-*';
+  const verifySsl = (await getSetting('elasticsearch.verify_ssl'))?.value !== 'false';
 
   if (enabled && endpoint) {
     return {

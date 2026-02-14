@@ -88,7 +88,7 @@ export async function withSpan<T>(
       trace_source: source,
     };
     try {
-      insertSpan(spanData);
+      await insertSpan(spanData);
     } catch (insertErr) {
       log.warn({ err: insertErr, spanId, traceId }, 'Failed to insert child span');
     }

@@ -26,70 +26,42 @@ vi.mock('../services/portainer-client.js', () => ({
   startContainer: (...args: unknown[]) => mockStartContainer(...args),
 }));
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    prepare: (query: string) => {
-      if (query.includes('SELECT * FROM actions WHERE id = ?')) {
-        return { get: () => state.action };
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('SELECT * FROM actions WHERE id = ?')) {
+        return state.action;
       }
-      if (query.includes('UPDATE actions SET status = \'approved\'')) {
-        return {
-          run: () => {
-            state.action = { ...state.action, status: 'approved' };
-            return { changes: 1 };
-          },
+      if (sql.includes('SELECT COUNT(*)')) {
+        return { count: 0 };
+      }
+      return null;
+    }),
+    query: vi.fn(async () => []),
+    execute: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("status = 'approved'")) {
+        state.action = { ...state.action, status: 'approved' };
+      } else if (sql.includes("status = 'rejected'")) {
+        state.action = { ...state.action, status: 'rejected' };
+      } else if (sql.includes("status = 'executing'")) {
+        state.action = { ...state.action, status: 'executing' };
+      } else if (sql.includes("status = 'completed'")) {
+        state.action = {
+          ...state.action,
+          status: 'completed',
+          execution_result: params[0],
+          execution_duration_ms: params[1],
+        };
+      } else if (sql.includes("status = 'failed'")) {
+        state.action = {
+          ...state.action,
+          status: 'failed',
+          execution_result: params[0],
+          execution_duration_ms: params[1],
         };
       }
-      if (query.includes('UPDATE actions SET status = \'rejected\'')) {
-        return {
-          run: () => {
-            state.action = { ...state.action, status: 'rejected' };
-            return { changes: 1 };
-          },
-        };
-      }
-      if (query.includes('UPDATE actions SET status = \'executing\'')) {
-        return {
-          run: () => {
-            state.action = { ...state.action, status: 'executing' };
-            return { changes: 1 };
-          },
-        };
-      }
-      if (query.includes('SET status = \'completed\'')) {
-        return {
-          run: (...args: unknown[]) => {
-            state.action = {
-              ...state.action,
-              status: 'completed',
-              execution_result: args[0] as string,
-              execution_duration_ms: args[1] as number,
-            };
-            return { changes: 1 };
-          },
-        };
-      }
-      if (query.includes('SET status = \'failed\'')) {
-        return {
-          run: (...args: unknown[]) => {
-            state.action = {
-              ...state.action,
-              status: 'failed',
-              execution_result: args[0] as string,
-              execution_duration_ms: args[1] as number,
-            };
-            return { changes: 1 };
-          },
-        };
-      }
-      if (query.includes('SELECT * FROM actions')) {
-        return { all: () => [] };
-      }
-      if (query.includes('SELECT COUNT(*) as count FROM actions')) {
-        return { get: () => ({ count: 0 }) };
-      }
-      return { run: () => ({ changes: 1 }), get: () => ({ count: 0 }), all: () => [] };
-    },
+      return { changes: 1 };
+    }),
   }),
 }));
 

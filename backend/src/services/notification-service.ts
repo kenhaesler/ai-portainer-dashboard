@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { z } from 'zod';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Insight } from '../models/monitoring.js';
@@ -45,36 +45,36 @@ function getSeverityColor(severity: string): string {
   }
 }
 
-function getSettingValue(key: string): string | null {
+async function getSettingValue(key: string): Promise<string | null> {
   try {
-    const db = getDb();
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+    const settingsDb = getDbForDomain('settings');
+    const row = await settingsDb.queryOne<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
     return row?.value ?? null;
   } catch {
     return null;
   }
 }
 
-function isChannelEnabled(channel: 'teams' | 'email' | 'discord' | 'telegram'): boolean {
+async function isChannelEnabled(channel: 'teams' | 'email' | 'discord' | 'telegram'): Promise<boolean> {
   if (channel === 'teams') {
-    const dbValue = getSettingValue('notifications.teams_enabled');
+    const dbValue = await getSettingValue('notifications.teams_enabled');
     if (dbValue !== null) return dbValue === 'true';
     const config = getConfig();
     return config.TEAMS_NOTIFICATIONS_ENABLED;
   }
   if (channel === 'discord') {
-    const dbValue = getSettingValue('notifications.discord_enabled');
+    const dbValue = await getSettingValue('notifications.discord_enabled');
     if (dbValue !== null) return dbValue === 'true';
     const config = getConfig();
     return config.DISCORD_NOTIFICATIONS_ENABLED;
   }
   if (channel === 'telegram') {
-    const dbValue = getSettingValue('notifications.telegram_enabled');
+    const dbValue = await getSettingValue('notifications.telegram_enabled');
     if (dbValue !== null) return dbValue === 'true';
     const config = getConfig();
     return config.TELEGRAM_NOTIFICATIONS_ENABLED;
   }
-  const dbValue = getSettingValue('notifications.email_enabled');
+  const dbValue = await getSettingValue('notifications.email_enabled');
   if (dbValue !== null) return dbValue === 'true';
   const config = getConfig();
   return config.EMAIL_NOTIFICATIONS_ENABLED;
@@ -117,11 +117,11 @@ function isPrivateOrLocalHost(host: string): boolean {
   return false;
 }
 
-function getSafeSmtpHost(): string | undefined {
+async function getSafeSmtpHost(): Promise<string | undefined> {
   const configHost = getConfig().SMTP_HOST;
   if (!configHost) return undefined;
 
-  const dbHost = getSettingValue('notifications.smtp_host');
+  const dbHost = await getSettingValue('notifications.smtp_host');
   if (dbHost && dbHost !== configHost) {
     log.warn('Ignoring settings SMTP host override for SSRF protection');
   }
@@ -134,8 +134,8 @@ function getSafeSmtpHost(): string | undefined {
   return configHost;
 }
 
-function getTeamsWebhookUrl(): string | undefined {
-  const dbValue = getSettingValue('notifications.teams_webhook_url');
+async function getTeamsWebhookUrl(): Promise<string | undefined> {
+  const dbValue = await getSettingValue('notifications.teams_webhook_url');
   const webhookUrl = dbValue || getConfig().TEAMS_WEBHOOK_URL;
   if (!webhookUrl) return undefined;
   if (!validateWebhookUrl(webhookUrl)) {
@@ -157,8 +157,8 @@ function validateTelegramToken(token: string): boolean {
   return /^\d+:[A-Za-z0-9_-]{30,50}$/.test(token);
 }
 
-function getDiscordWebhookUrl(): string | undefined {
-  const dbValue = getSettingValue('notifications.discord_webhook_url');
+async function getDiscordWebhookUrl(): Promise<string | undefined> {
+  const dbValue = await getSettingValue('notifications.discord_webhook_url');
   const webhookUrl = dbValue || getConfig().DISCORD_WEBHOOK_URL;
   if (!webhookUrl) return undefined;
   if (!validateDiscordWebhookUrl(webhookUrl)) {
@@ -168,41 +168,42 @@ function getDiscordWebhookUrl(): string | undefined {
   return webhookUrl;
 }
 
-function getSmtpConfig() {
+async function getSmtpConfig() {
   const config = getConfig();
   return {
-    host: getSafeSmtpHost(),
+    host: await getSafeSmtpHost(),
     port: config.SMTP_PORT,
     secure: config.SMTP_SECURE,
     user: config.SMTP_USER,
     password: config.SMTP_PASSWORD,
     from: config.SMTP_FROM,
-    recipients: getSettingValue('notifications.email_recipients') || config.EMAIL_RECIPIENTS,
+    recipients: await getSettingValue('notifications.email_recipients') || config.EMAIL_RECIPIENTS,
   };
 }
 
-function logNotification(
+async function logNotification(
   channel: string,
   payload: NotificationPayload,
   status: 'sent' | 'failed',
   error?: string,
-): void {
+): Promise<void> {
   try {
-    const db = getDb();
-    db.prepare(`
-      INSERT INTO notification_log (channel, event_type, title, body, severity, container_id, container_name, endpoint_id, status, error)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      channel,
-      payload.eventType,
-      payload.title,
-      payload.body,
-      payload.severity,
-      payload.containerId ?? null,
-      payload.containerName ?? null,
-      payload.endpointId ?? null,
-      status,
-      error ?? null,
+    const db = getDbForDomain('notifications');
+    await db.execute(
+      `INSERT INTO notification_log (channel, event_type, title, body, severity, container_id, container_name, endpoint_id, status, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        channel,
+        payload.eventType,
+        payload.title,
+        payload.body,
+        payload.severity,
+        payload.containerId ?? null,
+        payload.containerName ?? null,
+        payload.endpointId ?? null,
+        status,
+        error ?? null,
+      ],
     );
   } catch (err) {
     log.warn({ err }, 'Failed to log notification');
@@ -301,7 +302,7 @@ export async function sendTeamsNotification(payload: NotificationPayload): Promi
 }
 
 async function sendTeamsNotificationInner(payload: NotificationPayload): Promise<void> {
-  const webhookUrl = getTeamsWebhookUrl();
+  const webhookUrl = await getTeamsWebhookUrl();
   if (!webhookUrl) {
     throw new Error('Teams webhook URL not configured');
   }
@@ -319,7 +320,7 @@ async function sendTeamsNotificationInner(payload: NotificationPayload): Promise
     throw new Error(`Teams webhook failed (${response.status}): ${text}`);
   }
 
-  logNotification('teams', payload, 'sent');
+  await logNotification('teams', payload, 'sent');
   log.info({ title: payload.title }, 'Teams notification sent');
 }
 
@@ -330,7 +331,7 @@ export async function sendEmailNotification(payload: NotificationPayload): Promi
 }
 
 async function sendEmailNotificationInner(payload: NotificationPayload): Promise<void> {
-  const smtp = getSmtpConfig();
+  const smtp = await getSmtpConfig();
   if (!smtp.host) {
     throw new Error('SMTP host not configured');
   }
@@ -362,7 +363,7 @@ async function sendEmailNotificationInner(payload: NotificationPayload): Promise
     html,
   });
 
-  logNotification('email', payload, 'sent');
+  await logNotification('email', payload, 'sent');
   log.info({ title: payload.title, recipients: recipients.length }, 'Email notification sent');
 }
 
@@ -373,7 +374,7 @@ export async function sendDiscordNotification(payload: NotificationPayload): Pro
 }
 
 async function sendDiscordNotificationInner(payload: NotificationPayload): Promise<void> {
-  const webhookUrl = getDiscordWebhookUrl();
+  const webhookUrl = await getDiscordWebhookUrl();
   if (!webhookUrl) {
     throw new Error('Discord webhook URL not configured or invalid');
   }
@@ -406,7 +407,7 @@ async function sendDiscordNotificationInner(payload: NotificationPayload): Promi
     throw new Error(`Discord webhook failed (${response.status}): ${text}`);
   }
 
-  logNotification('discord', payload, 'sent');
+  await logNotification('discord', payload, 'sent');
   log.info({ title: payload.title }, 'Discord notification sent');
 }
 
@@ -418,8 +419,8 @@ export async function sendTelegramNotification(payload: NotificationPayload): Pr
 
 async function sendTelegramNotificationInner(payload: NotificationPayload): Promise<void> {
   const config = getConfig();
-  const token = getSettingValue('notifications.telegram_bot_token') || config.TELEGRAM_BOT_TOKEN;
-  const chatId = getSettingValue('notifications.telegram_chat_id') || config.TELEGRAM_CHAT_ID;
+  const token = await getSettingValue('notifications.telegram_bot_token') || config.TELEGRAM_BOT_TOKEN;
+  const chatId = await getSettingValue('notifications.telegram_chat_id') || config.TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
     throw new Error('Telegram bot token or chat ID not configured');
   }
@@ -456,7 +457,7 @@ async function sendTelegramNotificationInner(payload: NotificationPayload): Prom
     throw new Error(`Telegram API failed (${response.status}): ${errText}`);
   }
 
-  logNotification('telegram', payload, 'sent');
+  await logNotification('telegram', payload, 'sent');
   log.info({ title: payload.title }, 'Telegram notification sent');
 }
 
@@ -495,50 +496,50 @@ export async function notifyInsight(insight: Insight): Promise<void> {
   const errors: string[] = [];
   let successCount = 0;
 
-  if (isChannelEnabled('teams')) {
+  if (await isChannelEnabled('teams')) {
     try {
       await sendTeamsNotification(payload);
       successCount++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`teams: ${msg}`);
-      logNotification('teams', payload, 'failed', msg);
+      await logNotification('teams', payload, 'failed', msg);
       log.warn({ err }, 'Teams notification failed');
     }
   }
 
-  if (isChannelEnabled('email')) {
+  if (await isChannelEnabled('email')) {
     try {
       await sendEmailNotification(payload);
       successCount++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`email: ${msg}`);
-      logNotification('email', payload, 'failed', msg);
+      await logNotification('email', payload, 'failed', msg);
       log.warn({ err }, 'Email notification failed');
     }
   }
 
-  if (isChannelEnabled('discord')) {
+  if (await isChannelEnabled('discord')) {
     try {
       await sendDiscordNotification(payload);
       successCount++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`discord: ${msg}`);
-      logNotification('discord', payload, 'failed', msg);
+      await logNotification('discord', payload, 'failed', msg);
       log.warn({ err }, 'Discord notification failed');
     }
   }
 
-  if (isChannelEnabled('telegram')) {
+  if (await isChannelEnabled('telegram')) {
     try {
       await sendTelegramNotification(payload);
       successCount++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`telegram: ${msg}`);
-      logNotification('telegram', payload, 'failed', msg);
+      await logNotification('telegram', payload, 'failed', msg);
       log.warn({ err }, 'Telegram notification failed');
     }
   }
@@ -570,7 +571,7 @@ export async function sendTestNotification(channel: 'teams' | 'email' | 'discord
     return { success: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logNotification(channel, payload, 'failed', msg);
+    await logNotification(channel, payload, 'failed', msg);
     return { success: false, error: msg };
   }
 }

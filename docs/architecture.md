@@ -90,7 +90,7 @@ The frontend is built with **React** and uses **Tailwind CSS** for styling, indi
 
 ## Architecture Map (Route → Service/Data)
 
-Backend request flow is organized by route modules, with most Portainer-facing routes using the Portainer client + cache/normalizers. Monitoring and metrics read/write directly to SQLite.
+Backend request flow is organized by route modules, with most Portainer-facing routes using the Portainer client + cache/normalizers. App data (sessions, settings, insights, etc.) is stored in PostgreSQL. Time-series metrics use TimescaleDB.
 
 | Route Area | Primary Routes | Service/Data Dependencies |
 |---|---|---|
@@ -104,17 +104,17 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 | Networks | `/api/networks*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
 | Stacks | `/api/stacks*` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
 | Search | `/api/search` | `services/portainer-client.ts`, `services/portainer-cache.ts`, `services/portainer-normalizers.ts` |
-| Metrics | `/api/metrics*` | SQLite via `db/sqlite.ts` |
-| Monitoring | `/api/monitoring/*` | SQLite via `db/sqlite.ts` |
-| Remediation | `/api/remediation/*` | `services/portainer-client.ts`, `services/audit-logger.ts`, SQLite |
-| Settings | `/api/settings*` | SQLite via `db/sqlite.ts`, `services/audit-logger.ts` |
+| Metrics | `/api/metrics*` | TimescaleDB via `db/timescale.ts` |
+| Monitoring | `/api/monitoring/*` | PostgreSQL via `db/app-db-router.ts` |
+| Remediation | `/api/remediation/*` | `services/portainer-client.ts`, `services/audit-logger.ts`, PostgreSQL |
+| Settings | `/api/settings*` | PostgreSQL via `db/app-db-router.ts`, `services/audit-logger.ts` |
 | Logs | `/api/logs/*` | `services/notification-service.ts` (test), optional external log backend |
-| Traces | `/api/traces*` | SQLite via `db/sqlite.ts` |
-| Investigations | `/api/investigations*` | `services/investigation-store.ts` (SQLite) |
-| Backup | `/api/backup*` | `services/audit-logger.ts`, filesystem |
+| Traces | `/api/traces*` | PostgreSQL via `db/app-db-router.ts` |
+| Investigations | `/api/investigations*` | `services/investigation-store.ts` (PostgreSQL) |
+| Backup | `/api/backup*` | `services/backup-service.ts` (pg_dump/pg_restore), `services/audit-logger.ts` |
 | Cache Admin | `/api/admin/cache/*` | `services/portainer-cache.ts`, `services/audit-logger.ts` |
 | PCAP | `/api/pcap/*` | `services/pcap-service.ts`, `services/audit-logger.ts` |
-| Health | `/health`, `/health/ready`, `/health/ready/detail` | `db/sqlite.ts`, `db/timescale.ts`, `services/portainer-cache.ts` (Redis ping) |
+| Health | `/health`, `/health/ready`, `/health/ready/detail` | `db/postgres.ts`, `db/timescale.ts`, `services/portainer-cache.ts` (Redis ping) |
 
 ## System Overview
 
@@ -198,7 +198,7 @@ graph LR
             J3(["Cleanup<br/><i>daily</i>"])
         end
 
-        DB[("SQLite + WAL")]
+        DB[("PostgreSQL 17")]
 
         API --> Services
         Sockets --> Services
@@ -209,7 +209,7 @@ graph LR
     subgraph Bottom[" "]
         direction TB
 
-        subgraph Schema["&nbsp; DB Schema — 19 tables &nbsp;"]
+        subgraph Schema["&nbsp; DB Schema — 22 tables (PostgreSQL) &nbsp;"]
             direction TB
             subgraph SchemaRow1[" "]
                 direction LR
@@ -241,6 +241,12 @@ graph LR
                 T17["image_staleness"]
                 T18["monitoring_cycles"]
                 T19["monitoring_snapshots"]
+            end
+            subgraph SchemaRow5[" "]
+                direction LR
+                T20["ebpf_coverage"]
+                T21["mcp_servers"]
+                T22["prompt_profiles"]
             end
         end
 
@@ -287,8 +293,8 @@ graph LR
     class API,NSllm,NSmon,NSrem backend
     class SvcCore,SvcAI,SvcMetrics,SvcIncident,SvcTrace,SvcInfra backend
     class J1,J2,J3 scheduler
-    class DB,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,T18,T19 data
-    class Bottom,SvcRow1,SvcRow2,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,ExtRow1,ExtRow2 invisible
+    class DB,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,T18,T19,T20,T21,T22 data
+    class Bottom,SvcRow1,SvcRow2,SchemaRow1,SchemaRow2,SchemaRow3,SchemaRow4,SchemaRow5,ExtRow1,ExtRow2 invisible
 ```
 
 </div>
@@ -306,7 +312,7 @@ sequenceDiagram
     participant Sched as Scheduler
     participant Port as Portainer
     participant LLM as Ollama
-    participant DB as SQLite
+    participant DB as PostgreSQL
 
     rect rgba(59, 130, 246, 0.05)
         Note over User,DB: Authentication
@@ -360,7 +366,7 @@ sequenceDiagram
 | **Frontend** | React 19, TypeScript 5.7, Vite 6, Tailwind CSS v4, TanStack Query 5, Zustand 5, React Router 7 |
 | **UI Components** | Radix UI, Recharts, XYFlow, cmdk, Lucide Icons, Sonner |
 | **Backend** | Fastify 5, TypeScript 5.7, Socket.IO 4, Zod, Jose (JWT), bcrypt |
-| **Database** | SQLite (better-sqlite3, WAL mode) |
+| **Database** | PostgreSQL 17 (pg client), TimescaleDB (metrics) |
 | **AI** | Ollama (local LLM), optional OpenWebUI support |
 | **Logging** | Pino (backend), optional Elasticsearch log shipping via `_bulk` API (batched, retry with backoff) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions CI |
@@ -381,6 +387,35 @@ docker compose -f docker/docker-compose.edge-agent.yml up -d
 ```
 
 Runs a **Portainer Edge Agent Standard** container locally for testing Edge features (e.g., endpoints registered as edge agents). Requires `EDGE_AGENT_ID` and `EDGE_AGENT_KEY` environment variables in `docker/.env` (obtained from Portainer UI when enrolling an edge agent). Port 8000 must be exposed on the Portainer instance for Edge tunnels.
+
+### Test Database Setup
+
+Backend tests use a **real PostgreSQL test database** instead of mocks or in-memory databases:
+
+- **Database**: `portainer_dashboard_test` on port **5433** (mapped from container port 5432)
+- **Initialization**: `docker/init-test-db.sh` creates the test database when the `postgres-app` container starts
+- **Test Utilities**: `backend/src/db/test-db-helper.ts` provides:
+  - `getTestDb()` — Returns a PostgreSQL pool connected to the test database
+  - `getTestPool()` — Returns the raw `pg.Pool` for advanced usage
+  - `truncateTestTables()` — Clears all tables between tests
+  - `closeTestDb()` — Closes the test pool connection
+- **Migrations**: Production migrations from `backend/src/db/postgres-migrations/` are automatically applied to the test database
+- **Configuration**: Set `POSTGRES_TEST_URL` environment variable to override the default connection string (default: `postgresql://postgres:postgres@localhost:5433/portainer_dashboard_test`)
+- **CI Support**: GitHub Actions workflow includes a `postgres-test` service container for running tests in CI
+
+**Running Tests**:
+```bash
+# All backend tests (requires test DB running)
+npm run test -w backend
+
+# Single test file
+cd backend && npx vitest run src/path/to/file.test.ts
+
+# Start test database
+docker compose -f docker/docker-compose.dev.yml up -d postgres-app
+```
+
+**Important**: Backend tests use `fileParallelism: false` in vitest config because tests share database tables. This ensures tests run sequentially to avoid conflicts.
 
 ---
 
@@ -425,8 +460,12 @@ ai-portainer-dashboard/
 │       ├── scheduler/              # Background jobs
 │       │   └── setup.ts            #   Metrics (60s), monitoring (5m), cleanup (daily)
 │       ├── db/
-│       │   ├── sqlite.ts           #   Database init (WAL mode)
-│       │   └── migrations/         #   SQL migrations (includes trace source + typed OTLP columns)
+│       │   ├── postgres.ts         #   App PostgreSQL pool + migration runner
+│       │   ├── app-db.ts           #   AppDb interface (async DB abstraction)
+│       │   ├── app-db-router.ts    #   Routes domains to PostgreSQL adapter
+│       │   ├── postgres-adapter.ts #   PostgreSQL AppDb implementation
+│       │   ├── timescale.ts        #   TimescaleDB pool (metrics/KPI)
+│       │   └── postgres-migrations/ #  22 PostgreSQL migration files
 │       ├── models/                 # Zod schemas & DB queries
 │       ├── utils/                  # Crypto (JWT/bcrypt), logging (Pino + ES transport)
 │       └── plugins/                # Fastify plugins

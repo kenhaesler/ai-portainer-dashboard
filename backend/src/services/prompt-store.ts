@@ -117,18 +117,18 @@ INFRASTRUCTURE CONTEXT:`,
  * 2. Active profile's prompt for this feature
  * 3. Hardcoded default
  */
-export function getEffectivePrompt(feature: PromptFeature): string {
+export async function getEffectivePrompt(feature: PromptFeature): Promise<string> {
   // 1. Check per-feature individual override in settings
   const settingKey = `prompts.${feature}.system_prompt`;
-  const stored = getSetting(settingKey)?.value;
+  const stored = (await getSetting(settingKey))?.value;
   if (stored && stored.trim().length > 0) {
     return stored;
   }
 
   // 2. Check active profile (skip for 'default' profile which uses empty prompts)
-  const activeProfileId = getActiveProfileId();
+  const activeProfileId = await getActiveProfileId();
   if (activeProfileId !== 'default') {
-    const profileConfig = getProfilePromptConfig(feature);
+    const profileConfig = await getProfilePromptConfig(feature);
     if (profileConfig?.systemPrompt && profileConfig.systemPrompt.trim().length > 0) {
       return profileConfig.systemPrompt;
     }
@@ -146,14 +146,14 @@ export function getEffectivePrompt(feature: PromptFeature): string {
  * 2. Active profile's model/temperature for this feature
  * 3. Global LLM config
  */
-export function getEffectiveLlmConfig(feature?: PromptFeature) {
-  const global = getGlobalLlmConfig();
+export async function getEffectiveLlmConfig(feature?: PromptFeature) {
+  const global = await getGlobalLlmConfig();
 
   if (!feature) return global;
 
   // 1. Check per-feature individual overrides in settings
-  const modelOverride = getSetting(`prompts.${feature}.model`)?.value;
-  const tempOverride = getSetting(`prompts.${feature}.temperature`)?.value;
+  const modelOverride = (await getSetting(`prompts.${feature}.model`))?.value;
+  const tempOverride = (await getSetting(`prompts.${feature}.temperature`))?.value;
 
   let model = global.model;
   let temperature: number | undefined;
@@ -163,9 +163,9 @@ export function getEffectiveLlmConfig(feature?: PromptFeature) {
     model = modelOverride.trim();
   } else {
     // 2. Check active profile
-    const activeProfileId = getActiveProfileId();
+    const activeProfileId = await getActiveProfileId();
     if (activeProfileId !== 'default') {
-      const profileConfig = getProfilePromptConfig(feature);
+      const profileConfig = await getProfilePromptConfig(feature);
       if (profileConfig?.model && profileConfig.model.trim().length > 0) {
         model = profileConfig.model.trim();
       }
@@ -176,9 +176,9 @@ export function getEffectiveLlmConfig(feature?: PromptFeature) {
     temperature = parseFloat(tempOverride);
   } else {
     // 2. Check active profile
-    const activeProfileId = getActiveProfileId();
+    const activeProfileId = await getActiveProfileId();
     if (activeProfileId !== 'default') {
-      const profileConfig = getProfilePromptConfig(feature);
+      const profileConfig = await getProfilePromptConfig(feature);
       if (profileConfig?.temperature !== undefined) {
         temperature = profileConfig.temperature;
       }

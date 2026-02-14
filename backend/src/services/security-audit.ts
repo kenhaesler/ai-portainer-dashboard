@@ -71,8 +71,8 @@ export function resolveAuditSeverity(findings: SecurityFinding[]): SecurityAudit
   return 'none';
 }
 
-export function getSecurityAuditIgnoreList(): string[] {
-  const stored = getSetting(SECURITY_AUDIT_IGNORE_KEY)?.value;
+export async function getSecurityAuditIgnoreList(): Promise<string[]> {
+  const stored = (await getSetting(SECURITY_AUDIT_IGNORE_KEY))?.value;
   if (!stored) {
     return [...DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS];
   }
@@ -92,12 +92,12 @@ export function getSecurityAuditIgnoreList(): string[] {
   }
 }
 
-export function setSecurityAuditIgnoreList(patterns: string[]): string[] {
+export async function setSecurityAuditIgnoreList(patterns: string[]): Promise<string[]> {
   const cleaned = patterns
     .map(normalizePattern)
     .filter((value) => value.length > 0);
 
-  setSetting(SECURITY_AUDIT_IGNORE_KEY, JSON.stringify(cleaned), 'security');
+  await setSetting(SECURITY_AUDIT_IGNORE_KEY, JSON.stringify(cleaned), 'security');
   return cleaned;
 }
 
@@ -106,7 +106,7 @@ export function isIgnoredContainer(containerName: string, patterns: string[]): b
 }
 
 export async function getSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
-  const ignorePatterns = getSecurityAuditIgnoreList();
+  const ignorePatterns = await getSecurityAuditIgnoreList();
   const endpoints = await cachedFetch(
     getCacheKey('endpoints'),
     TTL.ENDPOINTS,

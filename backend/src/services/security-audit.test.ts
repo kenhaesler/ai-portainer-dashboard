@@ -41,7 +41,8 @@ vi.mock('./settings-store.js', () => ({
 describe('security-audit service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetSetting.mockReturnValue(undefined);
+    mockGetSetting.mockResolvedValue(undefined);
+    mockSetSetting.mockResolvedValue(undefined);
     // cachedFetch delegates to the fetcher function (3rd arg)
     mockCachedFetch.mockImplementation((_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
 
@@ -78,14 +79,14 @@ describe('security-audit service', () => {
     });
   });
 
-  it('uses defaults when no ignore list setting exists', () => {
-    const patterns = getSecurityAuditIgnoreList();
+  it('uses defaults when no ignore list setting exists', async () => {
+    const patterns = await getSecurityAuditIgnoreList();
     expect(patterns).toContain('portainer');
     expect(patterns).toContain('traefik');
   });
 
-  it('normalizes and persists ignore list updates', () => {
-    const saved = setSecurityAuditIgnoreList([' Portainer ', 'infra-*', '']);
+  it('normalizes and persists ignore list updates', async () => {
+    const saved = await setSecurityAuditIgnoreList([' Portainer ', 'infra-*', '']);
 
     expect(saved).toEqual(['portainer', 'infra-*']);
     expect(mockSetSetting).toHaveBeenCalledWith(
@@ -101,7 +102,7 @@ describe('security-audit service', () => {
   });
 
   it('returns audit entries with ignored visibility preserved', async () => {
-    mockGetSetting.mockReturnValue({ value: JSON.stringify(['portainer']) });
+    mockGetSetting.mockResolvedValue({ value: JSON.stringify(['portainer']) });
 
     const entries = await getSecurityAudit();
 
@@ -127,7 +128,7 @@ describe('security-audit service', () => {
   });
 
   it('populates capabilities from inspect data', async () => {
-    mockGetSetting.mockReturnValue({ value: JSON.stringify([]) });
+    mockGetSetting.mockResolvedValue({ value: JSON.stringify([]) });
 
     const entries = await getSecurityAudit();
     const api = entries.find((entry) => entry.containerName === 'api');

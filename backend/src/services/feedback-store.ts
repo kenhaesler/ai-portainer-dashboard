@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('feedback-store');
+
+function db() { return getDbForDomain('feedback'); }
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -82,15 +84,14 @@ export function checkFeedbackRateLimit(userId: string): boolean {
 
 // ── CRUD Operations ────────────────────────────────────────────────
 
-export function insertFeedback(data: FeedbackInsert): LlmFeedback {
-  const db = getDb();
+export async function insertFeedback(data: FeedbackInsert): Promise<LlmFeedback> {
   const id = randomUUID();
   const effectiveRating = data.rating; // Initially the effective rating equals the user's rating
 
-  db.prepare(`
+  await db().execute(`
     INSERT INTO llm_feedback (id, trace_id, message_id, feature, rating, comment, user_id, effective_rating, response_preview, user_query)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     id,
     data.trace_id ?? null,
     data.message_id ?? null,
@@ -101,26 +102,24 @@ export function insertFeedback(data: FeedbackInsert): LlmFeedback {
     effectiveRating,
     data.response_preview ?? null,
     data.user_query ?? null,
-  );
+  ]);
 
   log.debug({ id, feature: data.feature, rating: data.rating }, 'Feedback recorded');
 
-  return getFeedbackById(id)!;
+  return (await getFeedbackById(id))!;
 }
 
-export function getFeedbackById(id: string): LlmFeedback | null {
-  const db = getDb();
-  return db.prepare(`SELECT * FROM llm_feedback WHERE id = ?`).get(id) as LlmFeedback | null;
+export async function getFeedbackById(id: string): Promise<LlmFeedback | null> {
+  return db().queryOne<LlmFeedback>(`SELECT * FROM llm_feedback WHERE id = ?`, [id]);
 }
 
-export function listFeedback(options: {
+export async function listFeedback(options: {
   feature?: string;
   rating?: 'positive' | 'negative';
   adminStatus?: string;
   limit?: number;
   offset?: number;
-}): { items: LlmFeedback[]; total: number } {
-  const db = getDb();
+}): Promise<{ items: LlmFeedback[]; total: number }> {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -141,20 +140,20 @@ export function listFeedback(options: {
   const limit = options.limit ?? 50;
   const offset = options.offset ?? 0;
 
-  const total = (db.prepare(`SELECT COUNT(*) as count FROM llm_feedback f ${where}`).get(...params) as { count: number }).count;
-  const items = db.prepare(`SELECT f.*, u.username FROM llm_feedback f LEFT JOIN users u ON f.user_id = u.id ${where} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as LlmFeedback[];
+  const countRow = await db().queryOne<{ count: number }>(`SELECT COUNT(*) as count FROM llm_feedback f ${where}`, params);
+  const total = countRow?.count ?? 0;
+  const items = await db().query<LlmFeedback>(`SELECT f.*, u.username FROM llm_feedback f LEFT JOIN users u ON f.user_id = u.id ${where} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
 
   return { items, total };
 }
 
-export function adminReviewFeedback(
+export async function adminReviewFeedback(
   feedbackId: string,
   action: 'approved' | 'rejected' | 'overruled',
   reviewerId: string,
   note?: string,
-): LlmFeedback | null {
-  const db = getDb();
-  const existing = getFeedbackById(feedbackId);
+): Promise<LlmFeedback | null> {
+  const existing = await getFeedbackById(feedbackId);
   if (!existing) return null;
 
   let effectiveRating = existing.rating;
@@ -165,33 +164,36 @@ export function adminReviewFeedback(
     effectiveRating = existing.rating; // Keep original but mark rejected
   }
 
-  db.prepare(`
+  await db().execute(`
     UPDATE llm_feedback
-    SET admin_status = ?, admin_note = ?, effective_rating = ?, reviewed_at = datetime('now'), reviewed_by = ?
+    SET admin_status = ?, admin_note = ?, effective_rating = ?, reviewed_at = NOW(), reviewed_by = ?
     WHERE id = ?
-  `).run(action, note ?? null, effectiveRating, reviewerId, feedbackId);
+  `, [action, note ?? null, effectiveRating, reviewerId, feedbackId]);
 
   log.info({ feedbackId, action, reviewerId }, 'Feedback reviewed');
 
   return getFeedbackById(feedbackId);
 }
 
-export function bulkDeleteFeedback(ids: string[]): number {
-  const db = getDb();
+export async function bulkDeleteFeedback(ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
 
   const placeholders = ids.map(() => '?').join(',');
-  const result = db.prepare(`DELETE FROM llm_feedback WHERE id IN (${placeholders})`).run(...ids);
+  const result = await db().execute(`DELETE FROM llm_feedback WHERE id IN (${placeholders})`, ids);
   log.info({ count: result.changes }, 'Bulk deleted feedback');
   return result.changes;
 }
 
 // ── Statistics ─────────────────────────────────────────────────────
 
-export function getFeedbackStats(): FeedbackStats[] {
-  const db = getDb();
-
-  const rows = db.prepare(`
+export async function getFeedbackStats(): Promise<FeedbackStats[]> {
+  const rows = await db().query<{
+    feature: string;
+    total: number;
+    positive: number;
+    negative: number;
+    pending_count: number;
+  }>(`
     SELECT
       feature,
       COUNT(*) as total,
@@ -201,13 +203,7 @@ export function getFeedbackStats(): FeedbackStats[] {
     FROM llm_feedback
     GROUP BY feature
     ORDER BY total DESC
-  `).all() as Array<{
-    feature: string;
-    total: number;
-    positive: number;
-    negative: number;
-    pending_count: number;
-  }>;
+  `);
 
   return rows.map(row => ({
     feature: row.feature,
@@ -219,53 +215,49 @@ export function getFeedbackStats(): FeedbackStats[] {
   }));
 }
 
-export function getRecentNegativeFeedback(limit: number = 20): LlmFeedback[] {
-  const db = getDb();
-  return db.prepare(`
+export async function getRecentNegativeFeedback(limit: number = 20): Promise<LlmFeedback[]> {
+  return db().query<LlmFeedback>(`
     SELECT f.*, u.username FROM llm_feedback f
     LEFT JOIN users u ON f.user_id = u.id
     WHERE f.effective_rating = 'negative'
     ORDER BY f.created_at DESC
     LIMIT ?
-  `).all(limit) as LlmFeedback[];
+  `, [limit]);
 }
 
-export function getNegativeFeedbackCount(feature: string): number {
-  const db = getDb();
-  const row = db.prepare(`
+export async function getNegativeFeedbackCount(feature: string): Promise<number> {
+  const row = await db().queryOne<{ count: number }>(`
     SELECT COUNT(*) as count FROM llm_feedback
     WHERE feature = ? AND effective_rating = 'negative'
-  `).get(feature) as { count: number };
-  return row.count;
+  `, [feature]);
+  return row?.count ?? 0;
 }
 
-export function getNegativeFeedbackForFeature(feature: string, limit: number = 50): LlmFeedback[] {
-  const db = getDb();
-  return db.prepare(`
+export async function getNegativeFeedbackForFeature(feature: string, limit: number = 50): Promise<LlmFeedback[]> {
+  return db().query<LlmFeedback>(`
     SELECT * FROM llm_feedback
     WHERE feature = ? AND effective_rating = 'negative' AND admin_status != 'rejected'
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(feature, limit) as LlmFeedback[];
+  `, [feature, limit]);
 }
 
 // ── Prompt Suggestions ─────────────────────────────────────────────
 
-export function insertPromptSuggestion(data: {
+export async function insertPromptSuggestion(data: {
   feature: string;
   current_prompt: string;
   suggested_prompt: string;
   reasoning: string;
   evidence_feedback_ids: string[];
   negative_count: number;
-}): PromptSuggestion {
-  const db = getDb();
+}): Promise<PromptSuggestion> {
   const id = randomUUID();
 
-  db.prepare(`
+  await db().execute(`
     INSERT INTO llm_prompt_suggestions (id, feature, current_prompt, suggested_prompt, reasoning, evidence_feedback_ids, negative_count)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     id,
     data.feature,
     data.current_prompt,
@@ -273,17 +265,16 @@ export function insertPromptSuggestion(data: {
     data.reasoning,
     JSON.stringify(data.evidence_feedback_ids),
     data.negative_count,
-  );
+  ]);
 
   log.info({ id, feature: data.feature }, 'Prompt suggestion created');
-  return getPromptSuggestionById(id)!;
+  return (await getPromptSuggestionById(id))!;
 }
 
-export function getPromptSuggestionById(id: string): PromptSuggestion | null {
-  const db = getDb();
-  const row = db.prepare(`SELECT * FROM llm_prompt_suggestions WHERE id = ?`).get(id) as
-    | (Omit<PromptSuggestion, 'evidence_feedback_ids'> & { evidence_feedback_ids: string })
-    | null;
+export async function getPromptSuggestionById(id: string): Promise<PromptSuggestion | null> {
+  const row = await db().queryOne<Omit<PromptSuggestion, 'evidence_feedback_ids'> & { evidence_feedback_ids: string }>(
+    `SELECT * FROM llm_prompt_suggestions WHERE id = ?`, [id],
+  );
   if (!row) return null;
   return {
     ...row,
@@ -291,11 +282,10 @@ export function getPromptSuggestionById(id: string): PromptSuggestion | null {
   };
 }
 
-export function listPromptSuggestions(options?: {
+export async function listPromptSuggestions(options?: {
   feature?: string;
   status?: string;
-}): PromptSuggestion[] {
-  const db = getDb();
+}): Promise<PromptSuggestion[]> {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -310,9 +300,9 @@ export function listPromptSuggestions(options?: {
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const rows = db.prepare(`
+  const rows = await db().query<Omit<PromptSuggestion, 'evidence_feedback_ids'> & { evidence_feedback_ids: string }>(`
     SELECT * FROM llm_prompt_suggestions ${where} ORDER BY created_at DESC
-  `).all(...params) as Array<Omit<PromptSuggestion, 'evidence_feedback_ids'> & { evidence_feedback_ids: string }>;
+  `, params);
 
   return rows.map(row => ({
     ...row,
@@ -320,20 +310,19 @@ export function listPromptSuggestions(options?: {
   }));
 }
 
-export function updatePromptSuggestionStatus(
+export async function updatePromptSuggestionStatus(
   id: string,
   status: 'applied' | 'dismissed' | 'edited',
   userId?: string,
-): PromptSuggestion | null {
-  const db = getDb();
-  const existing = getPromptSuggestionById(id);
+): Promise<PromptSuggestion | null> {
+  const existing = await getPromptSuggestionById(id);
   if (!existing) return null;
 
-  db.prepare(`
+  await db().execute(`
     UPDATE llm_prompt_suggestions
-    SET status = ?, applied_at = datetime('now'), applied_by = ?
+    SET status = ?, applied_at = NOW(), applied_by = ?
     WHERE id = ?
-  `).run(status, userId ?? null, id);
+  `, [status, userId ?? null, id]);
 
   return getPromptSuggestionById(id);
 }

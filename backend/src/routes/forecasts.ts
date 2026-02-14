@@ -141,7 +141,7 @@ export async function forecastRoutes(fastify: FastifyInstance) {
     try {
       const narrative = await chatStream(
         [{ role: 'user', content: prompt }],
-        getEffectivePrompt('capacity_forecast'),
+        await getEffectivePrompt('capacity_forecast'),
         () => {}, // no streaming needed for this endpoint
       );
 

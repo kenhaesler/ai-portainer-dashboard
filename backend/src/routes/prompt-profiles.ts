@@ -83,8 +83,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    const profiles = getAllProfiles();
-    const activeId = getActiveProfileId();
+    const profiles = await getAllProfiles();
+    const activeId = await getActiveProfileId();
     return { profiles, activeProfileId: activeId };
   });
 
@@ -99,7 +99,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const profile = getProfileById(id);
+    const profile = await getProfileById(id);
     if (!profile) {
       return reply.code(404).send({ error: 'Profile not found' });
     }
@@ -119,7 +119,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     const { name, description, prompts } = request.body as z.infer<typeof CreateProfileBodySchema>;
 
     try {
-      const profile = createProfile(name, description, prompts);
+      const profile = await createProfile(name, description, prompts);
 
       writeAuditLog({
         user_id: request.user?.sub,
@@ -157,7 +157,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     const updates = request.body as z.infer<typeof UpdateProfileBodySchema>;
 
     try {
-      const profile = updateProfile(id, updates);
+      const profile = await updateProfile(id, updates);
       if (!profile) {
         return reply.code(404).send({ error: 'Profile not found' });
       }
@@ -194,7 +194,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const profile = getProfileById(id);
+    const profile = await getProfileById(id);
 
     if (!profile) {
       return reply.code(404).send({ error: 'Profile not found' });
@@ -204,7 +204,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Cannot delete built-in profiles' });
     }
 
-    const deleted = deleteProfile(id);
+    const deleted = await deleteProfile(id);
     if (!deleted) {
       return reply.code(500).send({ error: 'Failed to delete profile' });
     }
@@ -238,7 +238,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     const { name } = request.body as { name: string };
 
     try {
-      const profile = duplicateProfile(id, name);
+      const profile = await duplicateProfile(id, name);
       if (!profile) {
         return reply.code(404).send({ error: 'Source profile not found' });
       }
@@ -276,12 +276,12 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = request.body as { id: string };
 
-    const success = switchProfile(id);
+    const success = await switchProfile(id);
     if (!success) {
       return reply.code(404).send({ error: 'Profile not found' });
     }
 
-    const profile = getProfileById(id);
+    const profile = await getProfileById(id);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -309,8 +309,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { profileId } = request.query as z.infer<typeof ExportQuerySchema>;
-    const targetId = profileId ?? getActiveProfileId();
-    const profile = getProfileById(targetId);
+    const targetId = profileId ?? await getActiveProfileId();
+    const profile = await getProfileById(targetId);
 
     if (!profile) {
       return reply.code(404).send({ error: 'Profile not found' });
@@ -362,8 +362,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     }
 
     const importData = parseResult.data;
-    const activeId = getActiveProfileId();
-    const currentProfile = getProfileById(activeId);
+    const activeId = await getActiveProfileId();
+    const currentProfile = await getProfileById(activeId);
     const currentPrompts = currentProfile?.prompts ?? {};
 
     const changes: Record<string, {
@@ -439,8 +439,8 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
     }
 
     const importData = parseResult.data;
-    const activeId = getActiveProfileId();
-    const currentProfile = getProfileById(activeId);
+    const activeId = await getActiveProfileId();
+    const currentProfile = await getProfileById(activeId);
 
     if (!currentProfile) {
       return reply.code(404).send({ error: 'Active profile not found' });
@@ -456,7 +456,7 @@ export async function promptProfileRoutes(fastify: FastifyInstance) {
       };
     }
 
-    const updated = updateProfile(activeId, { prompts: mergedPrompts });
+    const updated = await updateProfile(activeId, { prompts: mergedPrompts });
     if (!updated) {
       return reply.code(500).send({ error: 'Failed to apply import' });
     }

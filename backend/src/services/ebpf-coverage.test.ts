@@ -1,27 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockAll = vi.fn((): any[] => []);
-const mockGet = vi.fn();
-const mockRun = vi.fn(() => ({ changes: 1 }));
-const mockPrepare = vi.fn(() => ({
-  all: mockAll,
-  get: mockGet,
-  run: mockRun,
-}));
-const mockExec = vi.fn();
-const mockTransaction = vi.fn((fn: () => void) => () => fn());
+const mockExecute = vi.fn(async () => ({ changes: 1 }));
+const mockQuery = vi.fn(async (): Promise<any[]> => []);
+const mockQueryOne = vi.fn(async (): Promise<any> => null);
+const mockTransaction = vi.fn();
+const mockDb = {
+  execute: mockExecute,
+  query: mockQuery,
+  queryOne: mockQueryOne,
+  transaction: mockTransaction,
+  healthCheck: vi.fn(),
+};
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: mockPrepare,
-    exec: mockExec,
-    transaction: mockTransaction,
-  })),
-  prepareStmt: vi.fn(() => ({
-    all: mockAll,
-    get: mockGet,
-    run: mockRun,
-  })),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => mockDb,
 }));
 
 vi.mock('./portainer-client.js', () => ({
@@ -78,6 +70,7 @@ const mockRemoveContainer = vi.mocked(removeContainer);
 describe('ebpf-coverage service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecute.mockResolvedValue({ changes: 1 });
   });
 
   describe('BEYLA_COMPATIBLE_TYPES', () => {
@@ -155,47 +148,69 @@ describe('ebpf-coverage service', () => {
   });
 
   describe('getEndpointCoverage', () => {
-    it('should return all coverage records', () => {
+    it('should return all coverage records', async () => {
       const mockRecords = [
         { endpoint_id: 1, endpoint_name: 'local', status: 'deployed', drifted: false },
         { endpoint_id: 2, endpoint_name: 'remote', status: 'unknown', drifted: false },
       ];
-      mockAll.mockReturnValueOnce(mockRecords);
-      const result = getEndpointCoverage();
+      mockQuery.mockResolvedValueOnce(mockRecords);
+      const result = await getEndpointCoverage();
       expect(result).toEqual(mockRecords);
     });
 
-    it('should return empty array when no records exist', () => {
-      mockAll.mockReturnValueOnce([]);
-      const result = getEndpointCoverage();
+    it('should return empty array when no records exist', async () => {
+      mockQuery.mockResolvedValueOnce([]);
+      const result = await getEndpointCoverage();
       expect(result).toEqual([]);
     });
   });
 
   describe('updateCoverageStatus', () => {
-    it('should update status for an endpoint', () => {
-      updateCoverageStatus(1, 'deployed');
-      expect(mockRun).toHaveBeenCalledWith('deployed', null, 1);
+    it('should update status for an endpoint', async () => {
+      await updateCoverageStatus(1, 'deployed');
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['deployed', null, 1],
+      );
     });
 
-    it('should update status with a reason', () => {
-      updateCoverageStatus(2, 'excluded', 'Development-only endpoint');
-      expect(mockRun).toHaveBeenCalledWith('excluded', 'Development-only endpoint', 2);
+    it('should update status with a reason', async () => {
+      await updateCoverageStatus(2, 'excluded', 'Development-only endpoint');
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['excluded', 'Development-only endpoint', 2],
+      );
     });
 
-    it('should accept new status types', () => {
-      updateCoverageStatus(3, 'not_deployed');
-      expect(mockRun).toHaveBeenCalledWith('not_deployed', null, 3);
-      updateCoverageStatus(4, 'unreachable');
-      expect(mockRun).toHaveBeenCalledWith('unreachable', null, 4);
-      updateCoverageStatus(5, 'incompatible', 'Edge Agent');
-      expect(mockRun).toHaveBeenCalledWith('incompatible', 'Edge Agent', 5);
+    it('should accept new status types', async () => {
+      await updateCoverageStatus(3, 'not_deployed');
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['not_deployed', null, 3],
+      );
+      await updateCoverageStatus(4, 'unreachable');
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['unreachable', null, 4],
+      );
+      await updateCoverageStatus(5, 'incompatible', 'Edge Agent');
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['incompatible', 'Edge Agent', 5],
+      );
     });
   });
 
   describe('syncEndpointCoverage', () => {
     it('should sync endpoints from Portainer', async () => {
-      mockRun.mockReturnValue({ changes: 1 });
+      const txDb = {
+        execute: vi.fn(async () => ({ changes: 1 })),
+        query: vi.fn(),
+        queryOne: vi.fn(),
+        transaction: vi.fn(),
+        healthCheck: vi.fn(),
+      };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<void>) => fn(txDb));
       const added = await syncEndpointCoverage();
       expect(mockTransaction).toHaveBeenCalled();
       expect(typeof added).toBe('number');
@@ -210,7 +225,14 @@ describe('ebpf-coverage service', () => {
         }
         return [];
       });
-      mockRun.mockReturnValue({ changes: 1 });
+      const txDb = {
+        execute: vi.fn(async () => ({ changes: 1 })),
+        query: vi.fn(),
+        queryOne: vi.fn(),
+        transaction: vi.fn(),
+        healthCheck: vi.fn(),
+      };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<void>) => fn(txDb));
       await syncEndpointCoverage();
       expect(mockGetContainers).toHaveBeenCalledTimes(2);
       expect(mockTransaction).toHaveBeenCalled();
@@ -222,7 +244,14 @@ describe('ebpf-coverage service', () => {
         { Id: 3, Name: 'edge-agent', Type: 4, URL: 'tcp://edge', Status: 1, Snapshots: [] },
       ] as any);
       mockGetContainers.mockResolvedValue([]);
-      mockRun.mockReturnValue({ changes: 1 });
+      const txDb = {
+        execute: vi.fn(async () => ({ changes: 1 })),
+        query: vi.fn(),
+        queryOne: vi.fn(),
+        transaction: vi.fn(),
+        healthCheck: vi.fn(),
+      };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<void>) => fn(txDb));
       await syncEndpointCoverage();
       expect(mockGetContainers).toHaveBeenCalledTimes(2);
       expect(mockGetContainers).toHaveBeenCalledWith(1, true);
@@ -235,7 +264,14 @@ describe('ebpf-coverage service', () => {
         { Id: 3, Name: 'aci-endpoint', Type: 3, URL: 'tcp://aci', Status: 1, Snapshots: [] },
       ] as any);
       mockGetContainers.mockResolvedValue([]);
-      mockRun.mockReturnValue({ changes: 1 });
+      const txDb = {
+        execute: vi.fn(async () => ({ changes: 1 })),
+        query: vi.fn(),
+        queryOne: vi.fn(),
+        transaction: vi.fn(),
+        healthCheck: vi.fn(),
+      };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<void>) => fn(txDb));
       await syncEndpointCoverage();
       expect(mockGetContainers).toHaveBeenCalledTimes(1);
       expect(mockGetContainers).toHaveBeenCalledWith(1, true);
@@ -247,7 +283,14 @@ describe('ebpf-coverage service', () => {
         { Id: 2, Name: 'down-host', Type: 1, URL: 'tcp://down', Status: 2, Snapshots: [] },
       ] as any);
       mockGetContainers.mockResolvedValue([]);
-      mockRun.mockReturnValue({ changes: 1 });
+      const txDb = {
+        execute: vi.fn(async () => ({ changes: 1 })),
+        query: vi.fn(),
+        queryOne: vi.fn(),
+        transaction: vi.fn(),
+        healthCheck: vi.fn(),
+      };
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<void>) => fn(txDb));
       await syncEndpointCoverage();
       expect(mockGetContainers).toHaveBeenCalledTimes(1);
       expect(mockGetContainers).toHaveBeenCalledWith(1, true);
@@ -259,8 +302,7 @@ describe('ebpf-coverage service', () => {
       mockGetContainers.mockResolvedValueOnce([
         { Id: 'c1', Names: ['/beyla'], Image: 'grafana/beyla:latest', State: 'running', Status: 'Up', Created: 0, Ports: [], Labels: {}, NetworkSettings: { Networks: {} } },
       ] as any);
-      mockGet.mockReturnValueOnce({ name: 'spans' });
-      mockGet.mockReturnValueOnce({ start_time: '2025-01-01T12:00:00' });
+      mockQueryOne.mockResolvedValueOnce({ start_time: '2025-01-01T12:00:00' });
       const result = await verifyCoverage(1);
       expect(result.verified).toBe(true);
       expect(result.beylaRunning).toBe(true);
@@ -269,18 +311,20 @@ describe('ebpf-coverage service', () => {
 
     it('should return verified=false when no beyla and no spans', async () => {
       mockGetContainers.mockResolvedValueOnce([]);
-      mockGet.mockReturnValueOnce({ name: 'spans' });
-      mockGet.mockReturnValueOnce(undefined);
+      mockQueryOne.mockResolvedValueOnce(null);
       const result = await verifyCoverage(1);
       expect(result.verified).toBe(false);
       expect(result.beylaRunning).toBe(false);
       expect(result.lastTraceAt).toBeNull();
-      expect(mockRun).toHaveBeenCalledWith('not_deployed', null, 1);
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['not_deployed', null, 1],
+      );
     });
 
-    it('should handle missing spans table', async () => {
+    it('should handle spans query failure gracefully', async () => {
       mockGetContainers.mockResolvedValueOnce([]);
-      mockGet.mockReturnValueOnce(undefined);
+      mockQueryOne.mockRejectedValueOnce(new Error('table not found'));
       const result = await verifyCoverage(1);
       expect(result.verified).toBe(false);
       expect(result.lastTraceAt).toBeNull();
@@ -290,8 +334,7 @@ describe('ebpf-coverage service', () => {
       mockGetContainers.mockResolvedValueOnce([
         { Id: 'c1', Names: ['/beyla'], Image: 'grafana/beyla:latest', State: 'exited', Status: 'Exited', Created: 0, Ports: [], Labels: {}, NetworkSettings: { Networks: {} } },
       ] as any);
-      mockGet.mockReturnValueOnce({ name: 'spans' });
-      mockGet.mockReturnValueOnce(undefined);
+      mockQueryOne.mockResolvedValueOnce(null);
       const result = await verifyCoverage(1);
       expect(result.beylaRunning).toBe(false);
       expect(result.verified).toBe(false);
@@ -299,12 +342,14 @@ describe('ebpf-coverage service', () => {
 
     it('should handle unreachable endpoint during verify', async () => {
       mockGetContainers.mockRejectedValueOnce(new Error('Connection refused'));
-      mockGet.mockReturnValueOnce({ name: 'spans' });
-      mockGet.mockReturnValueOnce(undefined);
+      mockQueryOne.mockResolvedValueOnce(null);
       const result = await verifyCoverage(1);
       expect(result.beylaRunning).toBe(false);
       expect(result.verified).toBe(false);
-      expect(mockRun).toHaveBeenCalledWith('unreachable', null, 1);
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE ebpf_coverage'),
+        ['unreachable', null, 1],
+      );
     });
   });
 
@@ -459,8 +504,8 @@ describe('ebpf-coverage service', () => {
   });
 
   describe('getCoverageSummary', () => {
-    it('should return aggregate stats including new statuses', () => {
-      mockAll.mockReturnValueOnce([
+    it('should return aggregate stats including new statuses', async () => {
+      mockQuery.mockResolvedValueOnce([
         { status: 'deployed', count: 5 },
         { status: 'planned', count: 2 },
         { status: 'excluded', count: 1 },
@@ -470,7 +515,7 @@ describe('ebpf-coverage service', () => {
         { status: 'unreachable', count: 2 },
         { status: 'incompatible', count: 1 },
       ]);
-      const summary = getCoverageSummary();
+      const summary = await getCoverageSummary();
       expect(summary.total).toBe(15);
       expect(summary.deployed).toBe(5);
       expect(summary.planned).toBe(2);
@@ -480,9 +525,9 @@ describe('ebpf-coverage service', () => {
       expect(summary.coveragePercent).toBe(33);
     });
 
-    it('should handle empty coverage', () => {
-      mockAll.mockReturnValueOnce([]);
-      const summary = getCoverageSummary();
+    it('should handle empty coverage', async () => {
+      mockQuery.mockResolvedValueOnce([]);
+      const summary = await getCoverageSummary();
       expect(summary.total).toBe(0);
       expect(summary.coveragePercent).toBe(0);
       expect(summary.not_deployed).toBe(0);

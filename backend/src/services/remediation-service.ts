@@ -305,7 +305,7 @@ async function enrichActionWithLlmAnalysis(
 
     await chatStream(
       [{ role: 'user', content: prompt }],
-      getEffectivePrompt('remediation'),
+      await getEffectivePrompt('remediation'),
       (chunk) => {
         rawResponse += chunk;
       },
@@ -316,10 +316,10 @@ async function enrichActionWithLlmAnalysis(
       log.warn({ actionId, insightId: insight.id }, 'Skipping remediation rationale enrichment due to unstructured LLM output');
       return;
     }
-    const updated = updateActionRationale(actionId, toStoredAnalysis(parsed));
+    const updated = await updateActionRationale(actionId, toStoredAnalysis(parsed));
     if (!updated) return;
 
-    const action = getAction(actionId);
+    const action = await getAction(actionId);
     if (action) {
       broadcastActionUpdate(action as unknown as Record<string, unknown>);
     }
@@ -328,9 +328,9 @@ async function enrichActionWithLlmAnalysis(
   }
 }
 
-export function suggestAction(
+export async function suggestAction(
   insight: Insight,
-): { actionId: string; actionType: string } | null {
+): Promise<{ actionId: string; actionType: string } | null> {
   const textToMatch = `${insight.title} ${insight.description} ${insight.suggested_action || ''}`;
   let pattern = pickActionPattern(textToMatch);
   if (!pattern) return null;
@@ -358,7 +358,7 @@ export function suggestAction(
     };
   }
 
-  if (hasPendingAction(insight.container_id, pattern.actionType)) {
+  if (await hasPendingAction(insight.container_id, pattern.actionType)) {
     log.debug(
       { containerId: insight.container_id, actionType: pattern.actionType },
       'Skipping duplicate pending action',
@@ -377,7 +377,7 @@ export function suggestAction(
     rationale: pattern.rationale,
   };
 
-  const inserted = insertAction(action);
+  const inserted = await insertAction(action);
   if (!inserted) {
     log.debug(
       { containerId: insight.container_id, actionType: pattern.actionType },
@@ -400,8 +400,8 @@ export function suggestAction(
   return { actionId, actionType: pattern.actionType };
 }
 
-export function approveAction(actionId: string, username: string): boolean {
-  const success = updateActionStatus(actionId, 'approved', { approved_by: username });
+export async function approveAction(actionId: string, username: string): Promise<boolean> {
+  const success = await updateActionStatus(actionId, 'approved', { approved_by: username });
   if (success) {
     log.info({ actionId, approvedBy: username }, 'Action approved');
     emitEvent({ type: 'remediation.approved', timestamp: new Date().toISOString(), data: { actionId, approvedBy: username } });
@@ -409,12 +409,12 @@ export function approveAction(actionId: string, username: string): boolean {
   return success;
 }
 
-export function rejectAction(
+export async function rejectAction(
   actionId: string,
   username: string,
   reason: string,
-): boolean {
-  const success = updateActionStatus(actionId, 'rejected', {
+): Promise<boolean> {
+  const success = await updateActionStatus(actionId, 'rejected', {
     rejected_by: username,
     rejection_reason: reason,
   });

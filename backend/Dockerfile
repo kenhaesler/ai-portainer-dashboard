@@ -1,7 +1,7 @@
 # Build stage — compile TypeScript to JavaScript
 FROM dhi.io/node:24-alpine3.23-dev AS builder
 
-# Install build dependencies for native modules (better-sqlite3)
+# Install build dependencies for native modules (pg-native optional)
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
@@ -15,7 +15,7 @@ RUN npm run build -w backend
 # Separate stage to build production dependencies with native bindings
 FROM dhi.io/node:24-alpine3.23-dev AS prod-deps
 
-# Install build dependencies for native modules (better-sqlite3)
+# Install build dependencies for native modules
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
@@ -51,7 +51,7 @@ COPY --chown=node:node --from=builder /app/backend/package.json ./
 # Copy production node_modules (hoisted to root by npm workspaces)
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/backend/dist/ dist/
-COPY --chown=node:node --from=builder /app/backend/src/db/migrations/ dist/db/migrations/
+COPY --chown=node:node --from=builder /app/backend/src/db/postgres-migrations/ dist/db/postgres-migrations/
 COPY --chown=node:node --from=builder /app/backend/src/db/timescale-migrations/ dist/db/timescale-migrations/
 
 USER node

@@ -141,7 +141,7 @@ export async function runMonitoringCycle(): Promise<void> {
       normalizeContainer(c.raw, c.endpointId, c.endpointName),
     );
 
-    insertMonitoringSnapshot({
+    await insertMonitoringSnapshot({
       containersRunning: normalizedContainers.filter((c) => c.state === 'running').length,
       containersStopped: normalizedContainers.filter((c) => c.state === 'stopped').length,
       containersUnhealthy: endpoints.reduce((acc, endpoint) => acc + endpoint.containersUnhealthy, 0),
@@ -515,9 +515,9 @@ export async function runMonitoringCycle(): Promise<void> {
       // Fire-and-forget: AI analysis inserts its own insight when complete
       (async () => {
         try {
-          const recentInsights = getRecentInsights(60);
+          const recentInsights = await getRecentInsights(60);
           const infraContext = buildInfrastructureContext(endpoints, normalizedContainers, recentInsights);
-          const userPrompt = getEffectivePrompt('monitoring_analysis');
+          const userPrompt = await getEffectivePrompt('monitoring_analysis');
           const systemPrompt = `${infraContext}\n\n${userPrompt}`;
 
           const analysisPrompt =
@@ -544,7 +544,7 @@ export async function runMonitoringCycle(): Promise<void> {
               description: aiResponse.trim().slice(0, 2000),
               suggested_action: null,
             };
-            insertInsight(aiInsight);
+            await insertInsight(aiInsight);
             broadcastInsight(aiInsight as Insight);
             log.info('AI analysis insight stored (async)');
           }
@@ -572,7 +572,7 @@ export async function runMonitoringCycle(): Promise<void> {
 
     // Batch insert all insights in a single transaction
     try {
-      insertInsights(allInsights);
+      await insertInsights(allInsights);
     } catch (err) {
       log.error({ err }, 'Batch insight insert failed');
     }
@@ -625,7 +625,7 @@ export async function runMonitoringCycle(): Promise<void> {
       }
 
       // Attempt to suggest a remediation action for this insight
-      const suggestedAction = suggestAction(insight as Insight);
+      const suggestedAction = await suggestAction(insight as Insight);
       if (suggestedAction) {
         suggestedActions.push({
           ...suggestedAction,
@@ -685,7 +685,7 @@ export async function runMonitoringCycle(): Promise<void> {
     throw err;
   } finally {
     try {
-      insertMonitoringCycle(Date.now() - startTime);
+      await insertMonitoringCycle(Date.now() - startTime);
     } catch (err) {
       log.warn({ err }, 'Failed to persist monitoring cycle duration');
     }

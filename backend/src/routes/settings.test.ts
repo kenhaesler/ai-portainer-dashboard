@@ -3,24 +3,28 @@ import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { settingsRoutes } from './settings.js';
 
-const mockGetUserDefaultLandingPage = vi.fn();
+const mockQueryOneUserDefaultLandingPage = vi.fn();
 const mockSetUserDefaultLandingPage = vi.fn();
-const mockAll = vi.fn().mockReturnValue([]);
-const mockGet = vi.fn().mockReturnValue(undefined);
-const mockRun = vi.fn().mockReturnValue({ changes: 1 });
+const mockQuery = vi.fn().mockResolvedValue([]);
+const mockQueryOne = vi.fn().mockResolvedValue(null);
+const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 
 vi.mock('../services/user-store.js', () => ({
-  getUserDefaultLandingPage: (...args: unknown[]) => mockGetUserDefaultLandingPage(...args),
+  getUserDefaultLandingPage: (...args: unknown[]) => mockQueryOneUserDefaultLandingPage(...args),
   setUserDefaultLandingPage: (...args: unknown[]) => mockSetUserDefaultLandingPage(...args),
 }));
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    prepare: () => ({
-      all: (...args: unknown[]) => mockAll(...args),
-      get: (...args: unknown[]) => mockGet(...args),
-      run: (...args: unknown[]) => mockRun(...args),
-    }),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    query: (...args: unknown[]) => mockQuery(...args),
+    queryOne: (...args: unknown[]) => mockQueryOne(...args),
+    execute: (...args: unknown[]) => mockExecute(...args),
+    transaction: vi.fn(async (fn: (db: Record<string, unknown>) => Promise<unknown>) => fn({
+      query: (...a: unknown[]) => mockQuery(...a),
+      queryOne: (...a: unknown[]) => mockQueryOne(...a),
+      execute: (...a: unknown[]) => mockExecute(...a),
+    })),
+    healthCheck: vi.fn(async () => true),
   }),
 }));
 
@@ -65,12 +69,12 @@ describe('settings preference routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetUserDefaultLandingPage.mockReturnValue('/');
+    mockQueryOneUserDefaultLandingPage.mockReturnValue('/');
     mockSetUserDefaultLandingPage.mockReturnValue(true);
   });
 
   it('gets current user landing page preference', async () => {
-    mockGetUserDefaultLandingPage.mockReturnValue('/ai-monitor');
+    mockQueryOneUserDefaultLandingPage.mockReturnValue('/ai-monitor');
 
     const response = await app.inject({
       method: 'GET',
@@ -80,7 +84,7 @@ describe('settings preference routes', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ defaultLandingPage: '/ai-monitor' });
-    expect(mockGetUserDefaultLandingPage).toHaveBeenCalledWith('u1');
+    expect(mockQueryOneUserDefaultLandingPage).toHaveBeenCalledWith('u1');
   });
 
   it('updates landing page preference for valid route', async () => {
@@ -140,7 +144,7 @@ describe('audit-log cursor pagination', () => {
       { id: 2, action: 'login', created_at: '2025-01-02T00:00:00Z' },
       { id: 1, action: 'login', created_at: '2025-01-01T00:00:00Z' },
     ];
-    mockAll.mockReturnValueOnce(rows);
+    mockQuery.mockResolvedValueOnce(rows);
 
     const response = await app.inject({
       method: 'GET',
@@ -159,7 +163,7 @@ describe('audit-log cursor pagination', () => {
     const rows = [
       { id: 2, action: 'login', created_at: '2025-01-02T00:00:00Z' },
     ];
-    mockAll.mockReturnValueOnce(rows);
+    mockQuery.mockResolvedValueOnce(rows);
 
     const response = await app.inject({
       method: 'GET',
@@ -175,7 +179,7 @@ describe('audit-log cursor pagination', () => {
   });
 
   it('accepts cursor parameter for next page', async () => {
-    mockAll.mockReturnValueOnce([
+    mockQuery.mockResolvedValueOnce([
       { id: 1, action: 'login', created_at: '2025-01-01T00:00:00Z' },
     ]);
 
@@ -192,7 +196,7 @@ describe('audit-log cursor pagination', () => {
   });
 
   it('remains backward compatible with offset pagination', async () => {
-    mockAll.mockReturnValueOnce([]);
+    mockQuery.mockResolvedValueOnce([]);
 
     const response = await app.inject({
       method: 'GET',
@@ -243,7 +247,7 @@ describe('settings security', () => {
   });
 
   it('redacts sensitive values for admin on GET /api/settings', async () => {
-    mockAll.mockReturnValueOnce([
+    mockQuery.mockResolvedValueOnce([
       { key: 'oidc.client_secret', value: 'super-secret', category: 'authentication' },
       { key: 'elasticsearch.api_key', value: 'es-key', category: 'logs' },
       { key: 'notifications.smtp_password', value: 'smtp-pass', category: 'notifications' },
@@ -311,7 +315,7 @@ describe('settings security', () => {
     expect(response.json()).toEqual({
       error: 'llm.ollama_url must use http:// or https://',
     });
-    expect(mockRun).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
 
     await app.close();
   });
@@ -341,7 +345,7 @@ describe('settings security', () => {
       key: 'oidc.issuer_url',
       value: 'https://auth.example.com',
     });
-    expect(mockRun).toHaveBeenCalled();
+    expect(mockExecute).toHaveBeenCalled();
 
     await app.close();
   });
@@ -355,7 +359,7 @@ describe('settings security', () => {
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
     });
-    mockGet.mockReturnValueOnce({ category: 'llm' });
+    mockQueryOne.mockResolvedValueOnce({ category: 'llm' });
 
     await app.register(settingsRoutes);
     await app.ready();
@@ -368,12 +372,9 @@ describe('settings security', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mockRun).toHaveBeenCalledWith(
-      'llm.model',
-      'llama3.2',
-      'llm',
-      'llama3.2',
-      'llm',
+    expect(mockExecute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO settings'),
+      ['llm.model', 'llama3.2', 'llm', 'llama3.2', 'llm'],
     );
 
     await app.close();

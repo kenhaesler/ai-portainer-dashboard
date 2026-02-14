@@ -18,7 +18,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async () => {
-    const esConfig = getElasticsearchConfig();
+    const esConfig = await getElasticsearchConfig();
     return {
       configured: esConfig !== null,
       endpoint: esConfig?.endpoint ? esConfig.endpoint.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') : null,
@@ -36,7 +36,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
-    const esConfig = getElasticsearchConfig();
+    const esConfig = await getElasticsearchConfig();
 
     if (!esConfig) {
       return reply.code(503).send({

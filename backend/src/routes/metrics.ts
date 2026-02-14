@@ -279,7 +279,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     `, [containerId, from.toISOString()]);
     const anomalyCount = { count: Number(anomalyRows[0]?.count ?? 0) };
 
-    const systemPrompt = getEffectivePrompt('metrics_summary');
+    const systemPrompt = await getEffectivePrompt('metrics_summary');
 
     const userPrompt = `Summarize the metrics for container "${containerName}" over the last ${timeRange}:
 

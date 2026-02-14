@@ -1,5 +1,5 @@
 import { Namespace } from 'socket.io';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('socket:remediation');
@@ -12,9 +12,9 @@ export function setupRemediationNamespace(ns: Namespace) {
     log.info({ userId }, 'Remediation client connected');
 
     // Send pending actions on connect
-    socket.on('actions:list', (data?: { status?: string }) => {
+    socket.on('actions:list', async (data?: { status?: string }) => {
       try {
-        const db = getDb();
+        const db = getDbForDomain('actions');
         let query = 'SELECT * FROM actions';
         const params: unknown[] = [];
 
@@ -24,7 +24,7 @@ export function setupRemediationNamespace(ns: Namespace) {
         }
 
         query += ' ORDER BY created_at DESC LIMIT 100';
-        const actions = db.prepare(query).all(...params);
+        const actions = await db.query(query, params);
         socket.emit('actions:list', { actions });
       } catch (err) {
         log.error({ err }, 'Failed to fetch actions');

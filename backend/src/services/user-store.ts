@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { hashPassword, comparePassword } from '../utils/crypto.js';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -39,31 +39,31 @@ function toSafe(user: User): UserSafe {
   return safe;
 }
 
-export function getUserById(id: string): User | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+export async function getUserById(id: string): Promise<User | undefined> {
+  const db = getDbForDomain('auth');
+  return await db.queryOne<User>('SELECT * FROM users WHERE id = ?', [id]) ?? undefined;
 }
 
-export function getUserByUsername(username: string): User | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM users WHERE username = ?').get(username) as User | undefined;
+export async function getUserByUsername(username: string): Promise<User | undefined> {
+  const db = getDbForDomain('auth');
+  return await db.queryOne<User>('SELECT * FROM users WHERE username = ?', [username]) ?? undefined;
 }
 
-export function listUsers(): UserSafe[] {
-  const db = getDb();
-  const users = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as User[];
+export async function listUsers(): Promise<UserSafe[]> {
+  const db = getDbForDomain('auth');
+  const users = await db.query<User>('SELECT * FROM users ORDER BY created_at ASC', []);
   return users.map(toSafe);
 }
 
 export async function createUser(username: string, password: string, role: Role): Promise<UserSafe> {
-  const db = getDb();
+  const db = getDbForDomain('auth');
   const id = crypto.randomUUID();
   const passwordHash = await hashPassword(password);
-  db.prepare(`
+  await db.execute(`
     INSERT INTO users (id, username, password_hash, role, default_landing_page)
     VALUES (?, ?, ?, ?, '/')
-  `).run(id, username, passwordHash, role);
-  const user = getUserById(id)!;
+  `, [id, username, passwordHash, role]);
+  const user = (await getUserById(id))!;
   return toSafe(user);
 }
 
@@ -71,8 +71,8 @@ export async function updateUser(
   id: string,
   updates: { username?: string; password?: string; role?: Role; default_landing_page?: string }
 ): Promise<UserSafe | undefined> {
-  const db = getDb();
-  const existing = getUserById(id);
+  const db = getDbForDomain('auth');
+  const existing = await getUserById(id);
   if (!existing) return undefined;
 
   const sets: string[] = [];
@@ -85,38 +85,38 @@ export async function updateUser(
 
   if (sets.length === 0) return toSafe(existing);
 
-  sets.push("updated_at = datetime('now')");
+  sets.push('updated_at = NOW()');
   values.push(id);
 
-  db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-  return toSafe(getUserById(id)!);
+  await db.execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, values);
+  return toSafe((await getUserById(id))!);
 }
 
-export function deleteUser(id: string): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM users WHERE id = ?').run(id);
+export async function deleteUser(id: string): Promise<boolean> {
+  const db = getDbForDomain('auth');
+  const result = await db.execute('DELETE FROM users WHERE id = ?', [id]);
   return result.changes > 0;
 }
 
 export async function authenticateUser(username: string, password: string): Promise<User | null> {
-  const user = getUserByUsername(username);
+  const user = await getUserByUsername(username);
   if (!user) return null;
   const valid = await comparePassword(password, user.password_hash);
   return valid ? user : null;
 }
 
-export function getUserDefaultLandingPage(userId: string): string {
-  const user = getUserById(userId);
+export async function getUserDefaultLandingPage(userId: string): Promise<string> {
+  const user = await getUserById(userId);
   return user?.default_landing_page || '/';
 }
 
-export function setUserDefaultLandingPage(userId: string, defaultLandingPage: string): boolean {
-  const db = getDb();
-  const result = db.prepare(`
+export async function setUserDefaultLandingPage(userId: string, defaultLandingPage: string): Promise<boolean> {
+  const db = getDbForDomain('auth');
+  const result = await db.execute(`
     UPDATE users
-    SET default_landing_page = ?, updated_at = datetime('now')
+    SET default_landing_page = ?, updated_at = NOW()
     WHERE id = ?
-  `).run(defaultLandingPage, userId);
+  `, [defaultLandingPage, userId]);
   return result.changes > 0;
 }
 
@@ -125,40 +125,39 @@ export function setUserDefaultLandingPage(userId: string, defaultLandingPage: st
  * or updates the role if it has changed. Uses the OIDC `sub` claim as the user ID.
  * Returns the user and whether the role was changed.
  */
-export function upsertOIDCUser(
+export async function upsertOIDCUser(
   sub: string,
   username: string,
   role: Role,
-): { user: UserSafe; roleChanged: boolean; previousRole?: Role } {
-  const db = getDb();
-  const existing = getUserById(sub);
+): Promise<{ user: UserSafe; roleChanged: boolean; previousRole?: Role }> {
+  const db = getDbForDomain('auth');
+  const existing = await getUserById(sub);
 
   if (existing) {
     if (existing.role === role) {
       return { user: toSafe(existing), roleChanged: false };
     }
     const previousRole = existing.role;
-    db.prepare(`
-      UPDATE users SET role = ?, username = ?, updated_at = datetime('now') WHERE id = ?
-    `).run(role, username, sub);
+    await db.execute(`
+      UPDATE users SET role = ?, username = ?, updated_at = NOW() WHERE id = ?
+    `, [role, username, sub]);
     log.info({ sub, username, previousRole, newRole: role }, 'OIDC user role updated');
-    return { user: toSafe(getUserById(sub)!), roleChanged: true, previousRole };
+    return { user: toSafe((await getUserById(sub))!), roleChanged: true, previousRole };
   }
 
   // Create new OIDC user with a random password hash (OIDC users don't use password auth)
   const randomPlaceholder = crypto.randomUUID();
-  db.prepare(`
+  await db.execute(`
     INSERT INTO users (id, username, password_hash, role, default_landing_page)
     VALUES (?, ?, ?, ?, '/')
-  `).run(sub, username, randomPlaceholder, role);
+  `, [sub, username, randomPlaceholder, role]);
   log.info({ sub, username, role }, 'OIDC user auto-provisioned');
-  return { user: toSafe(getUserById(sub)!), roleChanged: false };
+  return { user: toSafe((await getUserById(sub))!), roleChanged: false };
 }
 
 export async function ensureDefaultAdmin(): Promise<void> {
-  const db = getDb();
   const config = getConfig();
-  const existing = getUserByUsername(config.DASHBOARD_USERNAME);
+  const existing = await getUserByUsername(config.DASHBOARD_USERNAME);
   if (existing) return;
 
   log.info({ username: config.DASHBOARD_USERNAME }, 'Creating default admin user from env vars');
