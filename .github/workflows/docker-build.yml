@@ -64,6 +64,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           sbom: true
           provenance: mode=max
           cache-from: type=gha
@@ -113,6 +115,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           sbom: true
           provenance: mode=max
           cache-from: type=gha
