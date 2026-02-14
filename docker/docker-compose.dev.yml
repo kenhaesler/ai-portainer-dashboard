@@ -159,6 +159,9 @@ services:
   postgres-app:
     image: postgres:17-alpine
     restart: unless-stopped
+    ports:
+      # Expose on 5433 so backend tests can reach PG from the host
+      - "5433:5432"
     environment:
       POSTGRES_DB: portainer_dashboard
       POSTGRES_USER: app_user
@@ -171,6 +174,7 @@ services:
       start_period: 15s
     volumes:
       - postgres-app-data:/var/lib/postgresql/data
+      - ./init-test-db.sh:/docker-entrypoint-initdb.d/01-create-test-db.sh:ro
     networks:
       - dashboard-net
 

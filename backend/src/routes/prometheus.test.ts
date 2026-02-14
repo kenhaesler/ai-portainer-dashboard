@@ -1,30 +1,18 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import Database from 'better-sqlite3';
 import Fastify, { FastifyInstance } from 'fastify';
+import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 import { prometheusRoutes, resetPrometheusMetricsCacheForTests } from './prometheus.js';
 
-const db = new Database(':memory:');
+let appDb: AppDb;
+
 const mockConfig = {
   PROMETHEUS_METRICS_ENABLED: false,
   PROMETHEUS_BEARER_TOKEN: undefined as string | undefined,
 };
 
-// Wrap in-memory better-sqlite3 with AppDb interface (test double)
-const mockAppDb = {
-  query: vi.fn(async (sql: string, params: unknown[] = []) => {
-    return db.prepare(sql).all(...params);
-  }),
-  queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
-    return db.prepare(sql).get(...params) ?? null;
-  }),
-  execute: vi.fn(async (sql: string, params: unknown[] = []) => {
-    const result = db.prepare(sql).run(...params);
-    return { changes: result.changes };
-  }),
-};
-
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: () => mockAppDb,
+  getDbForDomain: () => appDb,
 }));
 
 vi.mock('../config/index.js', () => ({
@@ -37,37 +25,11 @@ vi.mock('../services/prompt-guard.js', () => ({
 
 describe('Prometheus Routes', () => {
   let app: FastifyInstance;
+  let pool: Awaited<ReturnType<typeof getTestPool>>;
 
   beforeAll(async () => {
-    db.exec(`
-      CREATE TABLE insights (
-        id TEXT PRIMARY KEY,
-        severity TEXT NOT NULL,
-        category TEXT NOT NULL,
-        title TEXT NOT NULL,
-        container_name TEXT,
-        is_acknowledged INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE actions (
-        id TEXT PRIMARY KEY,
-        status TEXT NOT NULL,
-        execution_duration_ms INTEGER
-      );
-      CREATE TABLE monitoring_snapshots (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        containers_running INTEGER NOT NULL,
-        containers_stopped INTEGER NOT NULL,
-        containers_unhealthy INTEGER NOT NULL,
-        endpoints_up INTEGER NOT NULL,
-        endpoints_down INTEGER NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE TABLE monitoring_cycles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        duration_ms INTEGER NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `);
+    appDb = await getTestDb();
+    pool = await getTestPool();
 
     app = Fastify({ logger: false });
     await app.register(prometheusRoutes);
@@ -76,16 +38,11 @@ describe('Prometheus Routes', () => {
 
   afterAll(async () => {
     await app.close();
-    db.close();
+    await closeTestDb();
   });
 
-  beforeEach(() => {
-    db.exec(`
-      DELETE FROM insights;
-      DELETE FROM actions;
-      DELETE FROM monitoring_snapshots;
-      DELETE FROM monitoring_cycles;
-    `);
+  beforeEach(async () => {
+    await truncateTestTables('insights', 'actions', 'monitoring_snapshots', 'monitoring_cycles');
     mockConfig.PROMETHEUS_METRICS_ENABLED = false;
     mockConfig.PROMETHEUS_BEARER_TOKEN = undefined;
     resetPrometheusMetricsCacheForTests();
@@ -100,25 +57,29 @@ describe('Prometheus Routes', () => {
   it('returns prometheus exposition text with dashboard metrics', async () => {
     mockConfig.PROMETHEUS_METRICS_ENABLED = true;
 
-    db.exec(`
-      INSERT INTO insights (id, severity, category, title, container_name, is_acknowledged)
+    await pool.query(`
+      INSERT INTO insights (id, severity, category, title, description, container_name, is_acknowledged)
       VALUES
-        ('i1', 'critical', 'anomaly', 'Anomalous cpu usage on "api"', 'api', 0),
-        ('i2', 'warning', 'security:image', 'High-risk image', 'api', 1),
-        ('i3', 'info', 'ai-analysis', 'AI summary', NULL, 0);
+        ('i1', 'critical', 'anomaly', 'Anomalous cpu usage on "api"', 'CPU anomaly detected', 'api', false),
+        ('i2', 'warning', 'security:image', 'High-risk image', 'Image vulnerability found', 'api', true),
+        ('i3', 'info', 'ai-analysis', 'AI summary', 'AI analysis complete', NULL, false)
+    `);
 
-      INSERT INTO actions (id, status, execution_duration_ms)
+    await pool.query(`
+      INSERT INTO actions (id, endpoint_id, container_id, container_name, action_type, rationale, status, execution_duration_ms)
       VALUES
-        ('a1', 'pending', NULL),
-        ('a2', 'completed', 2400),
-        ('a3', 'failed', 5000);
+        ('a1', 1, 'c1', 'api', 'restart', 'High CPU', 'pending', NULL),
+        ('a2', 1, 'c2', 'db', 'restart', 'OOM', 'completed', 2400),
+        ('a3', 1, 'c3', 'web', 'stop', 'Crash loop', 'failed', 5000)
+    `);
 
+    await pool.query(`
       INSERT INTO monitoring_snapshots (
         containers_running, containers_stopped, containers_unhealthy, endpoints_up, endpoints_down
-      ) VALUES (8, 3, 1, 2, 1);
-
-      INSERT INTO monitoring_cycles (duration_ms) VALUES (1800), (950);
+      ) VALUES (8, 3, 1, 2, 1)
     `);
+
+    await pool.query(`INSERT INTO monitoring_cycles (duration_ms) VALUES (1800), (950)`);
 
     const response = await app.inject({ method: 'GET', url: '/metrics' });
     expect(response.statusCode).toBe(200);
@@ -233,17 +194,17 @@ describe('Prometheus Routes', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-01T00:00:00.000Z'));
 
-    db.exec(`
-      INSERT INTO insights (id, severity, category, title, container_name, is_acknowledged)
-      VALUES ('i1', 'critical', 'anomaly', 'Anomalous cpu usage on "api"', 'api', 0);
+    await pool.query(`
+      INSERT INTO insights (id, severity, category, title, description, container_name, is_acknowledged)
+      VALUES ('i1', 'critical', 'anomaly', 'Anomalous cpu usage on "api"', 'CPU anomaly detected', 'api', false)
     `);
 
     let response = await app.inject({ method: 'GET', url: '/metrics' });
     expect(response.body).toContain('dashboard_insights_total{severity="critical",category="anomaly"} 1');
 
-    db.exec(`
-      INSERT INTO insights (id, severity, category, title, container_name, is_acknowledged)
-      VALUES ('i2', 'critical', 'anomaly', 'Anomalous cpu usage on "api"', 'api', 0);
+    await pool.query(`
+      INSERT INTO insights (id, severity, category, title, description, container_name, is_acknowledged)
+      VALUES ('i2', 'critical', 'anomaly', 'Anomalous cpu usage on "api"', 'CPU anomaly detected', 'api', false)
     `);
 
     response = await app.inject({ method: 'GET', url: '/metrics' });

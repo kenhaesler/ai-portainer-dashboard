@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import Database from 'better-sqlite3';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 import { tracesRoutes } from './traces.js';
 
-const db = new Database(':memory:');
+let appDb: AppDb;
 
-function insertSpan(span: {
+async function insertSpan(span: {
   id: string;
   traceId: string;
   parentSpanId?: string | null;
@@ -28,7 +29,7 @@ function insertSpan(span: {
   hostName?: string | null;
   telemetrySdkName?: string | null;
 }) {
-  db.prepare(`
+  await appDb.execute(`
     INSERT INTO spans (
       id, trace_id, parent_span_id, name, kind, status,
       start_time, end_time, duration_ms, service_name, attributes, trace_source,
@@ -36,91 +37,44 @@ function insertSpan(span: {
       service_namespace, container_name, k8s_namespace,
       url_full, network_transport, host_name, telemetry_sdk_name,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(
-    span.id,
-    span.traceId,
-    span.parentSpanId ?? null,
-    span.name,
-    span.kind,
-    span.status,
-    span.startTime,
-    span.startTime,
-    span.duration,
-    span.service,
-    '{}',
-    span.source,
-    span.httpMethod ?? null,
-    span.httpRoute ?? null,
-    span.httpStatusCode ?? null,
-    span.serviceNamespace ?? null,
-    span.containerName ?? null,
-    span.k8sNamespace ?? null,
-    span.urlFull ?? null,
-    span.networkTransport ?? null,
-    span.hostName ?? null,
-    span.telemetrySdkName ?? null,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+  `,
+    [
+      span.id,
+      span.traceId,
+      span.parentSpanId ?? null,
+      span.name,
+      span.kind,
+      span.status,
+      span.startTime,
+      span.startTime,
+      span.duration,
+      span.service,
+      span.source,
+      span.httpMethod ?? null,
+      span.httpRoute ?? null,
+      span.httpStatusCode ?? null,
+      span.serviceNamespace ?? null,
+      span.containerName ?? null,
+      span.k8sNamespace ?? null,
+      span.urlFull ?? null,
+      span.networkTransport ?? null,
+      span.hostName ?? null,
+      span.telemetrySdkName ?? null,
+    ],
   );
 }
 
-beforeAll(() => {
-  db.exec(`
-    CREATE TABLE spans (
-      id TEXT PRIMARY KEY,
-      trace_id TEXT NOT NULL,
-      parent_span_id TEXT,
-      name TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      status TEXT NOT NULL,
-      start_time TEXT NOT NULL,
-      end_time TEXT,
-      duration_ms INTEGER,
-      service_name TEXT NOT NULL,
-      attributes TEXT DEFAULT '{}',
-      trace_source TEXT DEFAULT 'http',
-      http_method TEXT,
-      http_route TEXT,
-      http_status_code INTEGER,
-      service_namespace TEXT,
-      service_instance_id TEXT,
-      service_version TEXT,
-      deployment_environment TEXT,
-      container_id TEXT,
-      container_name TEXT,
-      k8s_namespace TEXT,
-      k8s_pod_name TEXT,
-      k8s_container_name TEXT,
-      server_address TEXT,
-      server_port INTEGER,
-      client_address TEXT,
-      url_full TEXT,
-      url_scheme TEXT,
-      network_transport TEXT,
-      network_protocol_name TEXT,
-      network_protocol_version TEXT,
-      net_peer_name TEXT,
-      net_peer_port INTEGER,
-      host_name TEXT,
-      os_type TEXT,
-      process_pid INTEGER,
-      process_executable_name TEXT,
-      process_command TEXT,
-      telemetry_sdk_name TEXT,
-      telemetry_sdk_language TEXT,
-      telemetry_sdk_version TEXT,
-      otel_scope_name TEXT,
-      otel_scope_version TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
+beforeAll(async () => {
+  appDb = await getTestDb();
 });
 
-afterAll(() => {
-  db.close();
+afterAll(async () => {
+  await closeTestDb();
 });
 
-beforeEach(() => {
-  db.exec('DELETE FROM spans');
+beforeEach(async () => {
+  await truncateTestTables('spans');
 });
 
 describe('traces routes', () => {
@@ -143,7 +97,7 @@ describe('traces routes', () => {
   });
 
   it('GET /api/traces supports typed OTLP filters', async () => {
-    insertSpan({
+    await insertSpan({
       id: 'typed-ok',
       traceId: 'trace-typed',
       name: 'GET /users',
@@ -165,7 +119,7 @@ describe('traces routes', () => {
       telemetrySdkName: 'opentelemetry',
     });
 
-    insertSpan({
+    await insertSpan({
       id: 'typed-miss',
       traceId: 'trace-miss',
       name: 'POST /users',
@@ -200,7 +154,7 @@ describe('traces routes', () => {
   });
 
   it('GET /api/traces/service-map uses source + time filters', async () => {
-    insertSpan({
+    await insertSpan({
       id: 'root-http',
       traceId: 'trace-http',
       name: 'GET /old',
@@ -212,7 +166,7 @@ describe('traces routes', () => {
       source: 'http',
     });
 
-    insertSpan({
+    await insertSpan({
       id: 'root-ebpf',
       traceId: 'trace-ebpf',
       name: 'GET /users',
@@ -224,7 +178,7 @@ describe('traces routes', () => {
       source: 'ebpf',
     });
 
-    insertSpan({
+    await insertSpan({
       id: 'child-ebpf',
       traceId: 'trace-ebpf',
       parentSpanId: 'root-ebpf',
@@ -258,7 +212,7 @@ describe('traces routes', () => {
   });
 
   it('GET /api/traces/summary returns source-scoped counters', async () => {
-    insertSpan({
+    await insertSpan({
       id: 'sum-http',
       traceId: 'trace-http',
       name: 'GET /http',
@@ -270,7 +224,7 @@ describe('traces routes', () => {
       source: 'http',
     });
 
-    insertSpan({
+    await insertSpan({
       id: 'sum-ebpf',
       traceId: 'trace-ebpf',
       name: 'GET /ebpf',
@@ -283,7 +237,7 @@ describe('traces routes', () => {
       httpMethod: 'GET',
     });
 
-    insertSpan({
+    await insertSpan({
       id: 'sum-scheduler',
       traceId: 'trace-scheduler',
       name: 'job:cleanup',
@@ -317,21 +271,6 @@ describe('traces routes', () => {
     expect(body.sourceCounts).toEqual({ http: 1, ebpf: 1, scheduler: 1, unknown: 0 });
   });
 });
-
-// Wrap in-memory better-sqlite3 as AppDb interface for getDbForDomain (test double)
-const appDb = {
-  query: async (sql: string, params: unknown[] = []) => db.prepare(sql).all(...params),
-  queryOne: async (sql: string, params: unknown[] = []) => db.prepare(sql).get(...params) ?? null,
-  execute: async (sql: string, params: unknown[] = []) => {
-    const result = db.prepare(sql).run(...params);
-    return { changes: result.changes };
-  },
-  transaction: async (fn: (db: Record<string, unknown>) => Promise<unknown>) => {
-    const txn = db.transaction(() => fn(appDb));
-    return txn();
-  },
-  healthCheck: async () => true,
-};
 
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,

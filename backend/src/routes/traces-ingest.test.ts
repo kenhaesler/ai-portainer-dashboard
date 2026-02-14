@@ -1,36 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import Database from 'better-sqlite3';
 import Fastify, { FastifyInstance } from 'fastify';
 import protobuf from 'protobufjs';
+import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 import { tracesIngestRoutes } from './traces-ingest.js';
 
-const db = new Database(':memory:');
+let appDb: AppDb;
+
 const mockConfig = {
   TRACES_INGESTION_ENABLED: true,
   TRACES_INGESTION_API_KEY: 'test-api-key-12345',
-};
-
-// Wrap in-memory better-sqlite3 as AppDb interface for getDbForDomain (test double)
-// Replace NOW() with datetime('now') for SQLite compatibility in test DB
-const appDb = {
-  query: async (sql: string, params: unknown[] = []) => db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).all(...params),
-  queryOne: async (sql: string, params: unknown[] = []) => db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).get(...params) ?? null,
-  execute: async (sql: string, params: unknown[] = []) => {
-    const result = db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).run(...params);
-    return { changes: result.changes };
-  },
-  transaction: async (fn: (db: Record<string, unknown>) => Promise<unknown>) => {
-    db.exec('BEGIN');
-    try {
-      const result = await fn(appDb);
-      db.exec('COMMIT');
-      return result;
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
-  },
-  healthCheck: async () => true,
 };
 
 vi.mock('../db/app-db-router.js', () => ({
@@ -87,55 +66,7 @@ describe('Traces Ingest Routes', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    db.exec(`
-      CREATE TABLE spans (
-        id TEXT PRIMARY KEY,
-        trace_id TEXT NOT NULL,
-        parent_span_id TEXT,
-        name TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'ok',
-        start_time TEXT NOT NULL,
-        end_time TEXT,
-        duration_ms INTEGER,
-        service_name TEXT NOT NULL,
-        attributes TEXT DEFAULT '{}',
-        trace_source TEXT DEFAULT 'http',
-        http_method TEXT,
-        http_route TEXT,
-        http_status_code INTEGER,
-        service_namespace TEXT,
-        service_instance_id TEXT,
-        service_version TEXT,
-        deployment_environment TEXT,
-        container_id TEXT,
-        container_name TEXT,
-        k8s_namespace TEXT,
-        k8s_pod_name TEXT,
-        k8s_container_name TEXT,
-        server_address TEXT,
-        server_port INTEGER,
-        client_address TEXT,
-        url_full TEXT,
-        url_scheme TEXT,
-        network_transport TEXT,
-        network_protocol_name TEXT,
-        network_protocol_version TEXT,
-        net_peer_name TEXT,
-        net_peer_port INTEGER,
-        host_name TEXT,
-        os_type TEXT,
-        process_pid INTEGER,
-        process_executable_name TEXT,
-        process_command TEXT,
-        telemetry_sdk_name TEXT,
-        telemetry_sdk_language TEXT,
-        telemetry_sdk_version TEXT,
-        otel_scope_name TEXT,
-        otel_scope_version TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-    `);
+    appDb = await getTestDb();
 
     app = Fastify({ logger: false });
     await app.register(tracesIngestRoutes);
@@ -144,11 +75,11 @@ describe('Traces Ingest Routes', () => {
 
   afterAll(async () => {
     await app.close();
-    db.close();
+    await closeTestDb();
   });
 
-  beforeEach(() => {
-    db.exec('DELETE FROM spans');
+  beforeEach(async () => {
+    await truncateTestTables('spans');
     mockConfig.TRACES_INGESTION_ENABLED = true;
     mockConfig.TRACES_INGESTION_API_KEY = 'test-api-key-12345';
   });
@@ -169,11 +100,8 @@ describe('Traces Ingest Routes', () => {
     expect(body.accepted).toBe(2);
 
     // Verify spans were inserted
-    const rows = db.prepare('SELECT * FROM spans ORDER BY id').all() as Array<{
-      id: string;
-      trace_source: string;
-      service_name: string;
-    }>;
+    const pool = await getTestPool();
+    const { rows } = await pool.query('SELECT * FROM spans ORDER BY id');
     expect(rows).toHaveLength(2);
     expect(rows[0].trace_source).toBe('ebpf');
     expect(rows[0].service_name).toBe('my-app');
@@ -371,17 +299,14 @@ describe('Traces Ingest Routes', () => {
     const body = response.json();
     expect(body.accepted).toBe(1);
 
-    const rows = db.prepare('SELECT * FROM spans').all() as Array<{
-      trace_source: string;
-      service_name: string;
-      name: string;
-      attributes: string;
-    }>;
+    const pool = await getTestPool();
+    const { rows } = await pool.query('SELECT * FROM spans');
     expect(rows).toHaveLength(1);
     expect(rows[0].trace_source).toBe('ebpf');
     expect(rows[0].service_name).toBe('proto-app');
     expect(rows[0].name).toBe('GET /proto');
-    const attrs = JSON.parse(rows[0].attributes) as Record<string, unknown>;
+    // JSONB is auto-parsed by pg driver
+    const attrs = rows[0].attributes as Record<string, unknown>;
     expect(attrs['complex.array']).toEqual(['alpha', 3]);
     expect(attrs['complex.map']).toEqual({ role: 'edge' });
     expect(attrs['complex.bytes']).toBe(Buffer.from('hello').toString('base64'));

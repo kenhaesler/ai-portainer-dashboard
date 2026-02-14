@@ -18,9 +18,19 @@ export function convertPlaceholders(sql: string): string {
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
 
-    // Toggle string literal tracking on unescaped single quotes
-    if (ch === "'" && (i === 0 || sql[i - 1] !== "'")) {
-      inString = !inString;
+    if (ch === "'") {
+      if (inString) {
+        // Inside a string: '' is an escaped quote, not end-of-string
+        if (sql[i + 1] === "'") {
+          result += "''";
+          i++; // skip next quote
+          continue;
+        }
+        // Single quote ends the string
+        inString = false;
+      } else {
+        inString = true;
+      }
       result += ch;
       continue;
     }
@@ -44,9 +54,12 @@ export function convertPlaceholders(sql: string): string {
 
 export class PostgresAdapter implements AppDb {
   private poolOverride?: pg.Pool | pg.PoolClient;
+  /** True when poolOverride is a PoolClient (not a Pool). */
+  private isClient: boolean;
 
-  constructor(poolOrClient?: pg.Pool | pg.PoolClient) {
+  constructor(poolOrClient?: pg.Pool | pg.PoolClient, isClient = false) {
     this.poolOverride = poolOrClient;
+    this.isClient = isClient;
   }
 
   private async getPool(): Promise<pg.Pool | pg.PoolClient> {
@@ -76,11 +89,25 @@ export class PostgresAdapter implements AppDb {
   }
 
   async transaction<T>(fn: (db: AppDb) => Promise<T>): Promise<T> {
-    const pool = await getAppDb();
-    const client = await pool.connect();
+    const poolOrClient = await this.getPool();
+
+    if (this.isClient) {
+      // Already a PoolClient (e.g. nested transaction) — run inline with savepoint
+      await (poolOrClient as pg.PoolClient).query('BEGIN');
+      try {
+        const result = await fn(this);
+        await (poolOrClient as pg.PoolClient).query('COMMIT');
+        return result;
+      } catch (err) {
+        await (poolOrClient as pg.PoolClient).query('ROLLBACK');
+        throw err;
+      }
+    }
+
+    const client = await (poolOrClient as pg.Pool).connect();
     try {
       await client.query('BEGIN');
-      const txDb = new PostgresAdapter(client);
+      const txDb = new PostgresAdapter(client, true);
       const result = await fn(txDb);
       await client.query('COMMIT');
       return result;

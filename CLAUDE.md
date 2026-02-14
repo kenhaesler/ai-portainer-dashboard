@@ -26,7 +26,8 @@ npm run typecheck          # Type check
 npm test                   # All tests
 npm run test -w backend    # Backend only
 npm run test -w frontend   # Frontend only
-# Single file: npx vitest run src/path/file.test.ts --config backend/vitest.config.ts
+# Single file: cd backend && npx vitest run src/path/file.test.ts
+# Backend tests use real PostgreSQL (POSTGRES_TEST_URL env var, default: localhost:5433)
 # E2E: npx playwright test (requires running backend + frontend)
 # Docker: docker compose -f docker/docker-compose.dev.yml up -d
 ```
@@ -42,6 +43,7 @@ npm run test -w frontend   # Frontend only
 | `sockets/` | Socket.IO: `/llm` (chat), `/monitoring` (insights), `/remediation` (actions) |
 | `models/` | Zod schemas + database query functions |
 | `db/postgres-migrations/` | PostgreSQL migrations (auto-run via `getAppDb()`) |
+| `db/test-db-helper.ts` | Test PostgreSQL helper: `getTestDb()`, `truncateTestTables()`, `closeTestDb()` |
 | `scheduler/` | Background: metrics (60s), monitoring (5min), daily cleanup |
 
 ### Frontend (`frontend/src/`) — React 19, TypeScript, Vite, Tailwind CSS v4

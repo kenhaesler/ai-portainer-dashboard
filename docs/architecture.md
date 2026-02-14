@@ -388,6 +388,35 @@ docker compose -f docker/docker-compose.edge-agent.yml up -d
 
 Runs a **Portainer Edge Agent Standard** container locally for testing Edge features (e.g., endpoints registered as edge agents). Requires `EDGE_AGENT_ID` and `EDGE_AGENT_KEY` environment variables in `docker/.env` (obtained from Portainer UI when enrolling an edge agent). Port 8000 must be exposed on the Portainer instance for Edge tunnels.
 
+### Test Database Setup
+
+Backend tests use a **real PostgreSQL test database** instead of mocks or in-memory databases:
+
+- **Database**: `portainer_dashboard_test` on port **5433** (mapped from container port 5432)
+- **Initialization**: `docker/init-test-db.sh` creates the test database when the `postgres-app` container starts
+- **Test Utilities**: `backend/src/db/test-db-helper.ts` provides:
+  - `getTestDb()` — Returns a PostgreSQL pool connected to the test database
+  - `getTestPool()` — Returns the raw `pg.Pool` for advanced usage
+  - `truncateTestTables()` — Clears all tables between tests
+  - `closeTestDb()` — Closes the test pool connection
+- **Migrations**: Production migrations from `backend/src/db/postgres-migrations/` are automatically applied to the test database
+- **Configuration**: Set `POSTGRES_TEST_URL` environment variable to override the default connection string (default: `postgresql://postgres:postgres@localhost:5433/portainer_dashboard_test`)
+- **CI Support**: GitHub Actions workflow includes a `postgres-test` service container for running tests in CI
+
+**Running Tests**:
+```bash
+# All backend tests (requires test DB running)
+npm run test -w backend
+
+# Single test file
+cd backend && npx vitest run src/path/to/file.test.ts
+
+# Start test database
+docker compose -f docker/docker-compose.dev.yml up -d postgres-app
+```
+
+**Important**: Backend tests use `fileParallelism: false` in vitest config because tests share database tables. This ensures tests run sequentially to avoid conflicts.
+
 ---
 
 ## Project Structure

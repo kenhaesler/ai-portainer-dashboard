@@ -96,7 +96,7 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
   const monitoringDb = getDbForDomain('monitoring');
 
   const insights = await insightsDb.query<{ severity: string; category: string; total: number }>(
-    `SELECT severity, category, COUNT(*) as total
+    `SELECT severity, category, COUNT(*)::integer as total
      FROM insights
      GROUP BY severity, category`,
     [],
@@ -110,7 +110,7 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
          WHEN lower(title) LIKE '%memory%' THEN 'memory'
          ELSE 'unknown'
        END as metric_type,
-       COUNT(*) as total
+       COUNT(*)::integer as total
      FROM insights
      WHERE category = 'anomaly'
        AND container_name IS NOT NULL
@@ -119,7 +119,7 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
   );
 
   const actions = await actionsDb.query<{ status: string; total: number }>(
-    `SELECT status, COUNT(*) as total
+    `SELECT status, COUNT(*)::integer as total
      FROM actions
      GROUP BY status`,
     [],
@@ -134,7 +134,7 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
   );
 
   const activeAnomalies = await insightsDb.queryOne<{ count: number }>(
-    `SELECT COUNT(*) as count
+    `SELECT COUNT(*)::integer as count
      FROM insights
      WHERE category = 'anomaly' AND is_acknowledged = false`,
     [],
