@@ -254,4 +254,93 @@ describe('DataTable', () => {
       expect(screen.getByText('container-1')).toBeInTheDocument();
     });
   });
+
+  describe('server-side pagination mode', () => {
+    it('renders server pagination controls when serverPagination is provided', () => {
+      const onPageChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(10)}
+          serverPagination={{ total: 100, page: 1, pageSize: 10, onPageChange }}
+        />
+      );
+
+      expect(screen.getByTestId('server-pagination')).toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 10/)).toBeInTheDocument();
+      expect(screen.getByText(/100 total/)).toBeInTheDocument();
+    });
+
+    it('calls onPageChange when navigating server pages', () => {
+      const onPageChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(10)}
+          serverPagination={{ total: 100, page: 1, pageSize: 10, onPageChange }}
+        />
+      );
+
+      const nextBtn = screen.getByTestId('server-next-page');
+      fireEvent.click(nextBtn);
+      expect(onPageChange).toHaveBeenCalledWith(2);
+    });
+
+    it('disables prev button on first page', () => {
+      const onPageChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(10)}
+          serverPagination={{ total: 100, page: 1, pageSize: 10, onPageChange }}
+        />
+      );
+
+      const prevBtn = screen.getByTestId('server-prev-page');
+      expect(prevBtn).toBeDisabled();
+    });
+
+    it('disables next button on last page', () => {
+      const onPageChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(10)}
+          serverPagination={{ total: 100, page: 10, pageSize: 10, onPageChange }}
+        />
+      );
+
+      const nextBtn = screen.getByTestId('server-next-page');
+      expect(nextBtn).toBeDisabled();
+    });
+
+    it('does not show client pagination when server pagination is active', () => {
+      const onPageChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(10)}
+          serverPagination={{ total: 30, page: 1, pageSize: 10, onPageChange }}
+        />
+      );
+
+      // Should not have virtual scroll container
+      expect(screen.queryByTestId('virtual-scroll-container')).not.toBeInTheDocument();
+      // Should show server pagination, not client
+      expect(screen.getByTestId('server-pagination')).toBeInTheDocument();
+    });
+
+    it('hides pagination when total fits in one page', () => {
+      const onPageChange = vi.fn();
+      render(
+        <DataTable
+          columns={testColumns}
+          data={makeRows(5)}
+          serverPagination={{ total: 5, page: 1, pageSize: 10, onPageChange }}
+        />
+      );
+
+      expect(screen.queryByTestId('server-pagination')).not.toBeInTheDocument();
+    });
+  });
 });

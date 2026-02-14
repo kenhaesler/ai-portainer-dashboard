@@ -21,6 +21,13 @@ const VIRTUAL_THRESHOLD = 50;
 const SCROLL_CONTAINER_HEIGHT = 600;
 const SCROLL_TO_TOP_THRESHOLD = 20;
 
+export interface ServerPaginationProps {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+}
+
 interface DataTableProps<T> {
   columns: ColumnDef<T, any>[];
   data: T[];
@@ -29,6 +36,7 @@ interface DataTableProps<T> {
   pageSize?: number;
   onRowClick?: (row: T) => void;
   virtualScrolling?: boolean;
+  serverPagination?: ServerPaginationProps;
 }
 
 export function DataTable<T>({
@@ -39,13 +47,15 @@ export function DataTable<T>({
   pageSize = 10,
   onRowClick,
   virtualScrolling,
+  serverPagination,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const useVirtual = virtualScrolling ?? data.length > VIRTUAL_THRESHOLD;
+  const isServerPaginated = !!serverPagination;
+  const useVirtual = !isServerPaginated && (virtualScrolling ?? data.length > VIRTUAL_THRESHOLD);
 
   const table = useReactTable({
     data,
@@ -53,11 +63,11 @@ export function DataTable<T>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    ...(useVirtual ? {} : { getPaginationRowModel: getPaginationRowModel() }),
+    ...(useVirtual || isServerPaginated ? {} : { getPaginationRowModel: getPaginationRowModel() }),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     state: { sorting, columnFilters },
-    ...(useVirtual ? {} : { initialState: { pagination: { pageSize } } }),
+    ...(useVirtual || isServerPaginated ? {} : { initialState: { pagination: { pageSize } } }),
   });
 
   const { rows } = table.getRowModel();
@@ -105,6 +115,13 @@ export function DataTable<T>({
     ? (table.getColumn(searchKey)?.getFilterValue() as string) ?? ''
     : '';
   const isFiltered = searchValue.length > 0;
+
+  // Server pagination helpers
+  const serverPageCount = serverPagination
+    ? Math.ceil(serverPagination.total / serverPagination.pageSize)
+    : 0;
+  const canServerPrev = serverPagination ? serverPagination.page > 1 : false;
+  const canServerNext = serverPagination ? serverPagination.page < serverPageCount : false;
 
   const renderRow = (row: Row<T>) => (
     <tr
@@ -155,6 +172,37 @@ export function DataTable<T>({
       ))}
     </thead>
   );
+
+  const renderServerPagination = () => {
+    if (!serverPagination || serverPageCount <= 1) return null;
+
+    return (
+      <div className="flex items-center justify-between" data-testid="server-pagination">
+        <p className="text-sm text-muted-foreground">
+          Page {serverPagination.page} of {serverPageCount}
+          {' '}({serverPagination.total} total)
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
+            onClick={() => serverPagination.onPageChange(serverPagination.page - 1)}
+            disabled={!canServerPrev}
+            data-testid="server-prev-page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
+            onClick={() => serverPagination.onPageChange(serverPagination.page + 1)}
+            disabled={!canServerNext}
+            data-testid="server-next-page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div data-testid="data-table" className="space-y-4">
@@ -262,29 +310,33 @@ export function DataTable<T>({
             </table>
           </div>
 
-          {table.getPageCount() > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-                {' '}({data.length} total)
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
-                  onClick={() => table.previousPage()}
-                  disabled={!table.getCanPreviousPage()}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
-                  onClick={() => table.nextPage()}
-                  disabled={!table.getCanNextPage()}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+          {isServerPaginated ? (
+            renderServerPagination()
+          ) : (
+            table.getPageCount() > 1 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+                  {' '}({data.length} total)
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="inline-flex items-center justify-center rounded-md border border-input bg-background p-2 text-sm hover:bg-accent disabled:opacity-50"
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </div>
+            )
           )}
         </>
       )}

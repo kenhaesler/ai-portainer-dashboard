@@ -206,7 +206,7 @@ export default function LogViewerPage() {
   const [liveTail, setLiveTail] = useState(!potatoMode);
 
   const { data: endpoints = [] } = useEndpoints();
-  const { data: containers = [] } = useContainers(selectedEndpoint);
+  const { data: containers = [] } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
 
   useEffect(() => {
     if (endpoints.length > 0 && !selectedEndpoint) {

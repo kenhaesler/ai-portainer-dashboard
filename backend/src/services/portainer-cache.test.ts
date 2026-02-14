@@ -575,6 +575,61 @@ describe('stale-while-revalidate (cachedFetchSWR)', () => {
     await cachedFetchSWR('swr:disabled', 30, fetcher);
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it('returns L2 data when L1 misses and triggers background revalidation (#549)', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSWR } = await import('./portainer-cache.js');
+
+    // Pre-populate Redis (L2) with data — simulating L1 expired but L2 still has it
+    const redisKey = 'aidash:cache:swr:l2-fallback';
+    await redisClient.connect.call(redisClient);
+    await redisClient.set(redisKey, JSON.stringify('l2-value'));
+
+    const fetcher = vi.fn().mockResolvedValue('fresh-value');
+
+    // SWR call: L1 miss → L2 hit → return L2 data + background revalidation
+    const result = await cachedFetchSWR('swr:l2-fallback', 60, fetcher);
+    expect(result).toBe('l2-value');
+
+    // Let background revalidation complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Fetcher should have been called in the background
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls through to blocking fetch when both L1 and L2 miss (#549)', async () => {
+    const redisClient = createMockRedisClient();
+
+    vi.doMock('../config/index.js', () => ({
+      getConfig: () => ({
+        ...baseConfig,
+        REDIS_URL: 'redis://redis:6379',
+      }),
+    }));
+    vi.doMock('redis', () => ({
+      createClient: vi.fn(() => redisClient),
+    }));
+
+    const { cachedFetchSWR } = await import('./portainer-cache.js');
+    const fetcher = vi.fn().mockResolvedValue('fetched-value');
+
+    // Both L1 and L2 are empty
+    const result = await cachedFetchSWR('swr:total-miss', 60, fetcher);
+    expect(result).toBe('fetched-value');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('TtlCache.getWithStaleInfo', () => {

@@ -72,7 +72,7 @@ export default function PacketCapture() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
 
   const { data: endpoints } = useEndpoints();
-  const { data: containers } = useContainers(selectedEndpoint);
+  const { data: containers } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
   const { data: stacks } = useStacks();
   const { data: capturesData, refetch, isFetching } = useCaptures({ status: statusFilter });
   const [expandedAnalysis, setExpandedAnalysis] = useState<Set<string>>(new Set());

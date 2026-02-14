@@ -66,7 +66,7 @@ export default function WorkloadExplorerPage() {
 
   const { data: endpoints } = useEndpoints();
   const { data: stacks } = useStacks();
-  const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint);
+  const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 

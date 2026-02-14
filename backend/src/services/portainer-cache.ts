@@ -740,8 +740,28 @@ export function cachedFetchSWR<T>(
     return Promise.resolve(staleInfo.data);
   }
 
-  // No data at all — blocking fetch
-  return cachedFetch(key, ttlSeconds, fetcher);
+  // L1 missed — check L2 (Redis) for stale data before blocking on fetch
+  return cache.get<T>(key).then((l2Data) => {
+    if (l2Data !== undefined) {
+      // L2 hit: return immediately and revalidate in background
+      if (!inFlight.has(key)) {
+        const revalidate = (async () => {
+          try {
+            const data = await fetcher();
+            await cache.set(key, data, ttlSeconds);
+          } catch (err) {
+            log.warn({ key, err }, 'SWR L2 background revalidation failed');
+          }
+        })();
+        inFlight.set(key, revalidate);
+        revalidate.finally(() => { inFlight.delete(key); });
+      }
+      return l2Data;
+    }
+
+    // No data in L1 or L2 — blocking fetch
+    return cachedFetch(key, ttlSeconds, fetcher);
+  });
 }
 
 /**
