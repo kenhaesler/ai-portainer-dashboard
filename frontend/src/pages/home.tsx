@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
@@ -16,8 +16,9 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
-import { EndpointStatusBar } from '@/components/charts/endpoint-status-bar';
-import { WorkloadDistribution } from '@/components/charts/workload-distribution';
+import { EndpointHealthTreemap } from '@/components/charts/endpoint-health-treemap';
+import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
+import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
@@ -25,7 +26,6 @@ import { TiltCard } from '@/components/shared/tilt-card';
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
@@ -87,41 +87,16 @@ export default function HomePage() {
     },
   ], [navigate]);
 
-  const endpointBarData = useMemo(() => {
+  const endpointChartData = useMemo(() => {
     if (!endpoints) return [];
     return endpoints.map((ep) => ({
-      name: `${ep.name} (ID: ${ep.id})`,
+      id: ep.id,
+      name: ep.name,
       running: ep.containersRunning,
       stopped: ep.containersStopped,
-      unhealthy: ep.containersUnhealthy,
+      total: ep.totalContainers,
     }));
   }, [endpoints]);
-
-  const workloadData = useMemo(() => {
-    const search = new URLSearchParams(location.search);
-    const mockWorkloadCount = Number(search.get('mockWorkload') ?? 0);
-    if (mockWorkloadCount > 0) {
-      return Array.from({ length: mockWorkloadCount }, (_, i) => {
-        const base = 30 + (mockWorkloadCount - i) * 4;
-        const stopped = (i % 4) + (i > 6 ? 2 : 0);
-        const running = Math.max(1, base - stopped);
-        return {
-          endpoint: `endpoint-${String(i + 1).padStart(2, '0')}`,
-          containers: running + stopped,
-          running,
-          stopped,
-        };
-      });
-    }
-
-    if (!endpoints) return [];
-    return endpoints.map((ep) => ({
-      endpoint: `${ep.name} (ID: ${ep.id})`,
-      containers: ep.totalContainers,
-      running: ep.containersRunning,
-      stopped: ep.containersStopped,
-    }));
-  }, [endpoints, location.search]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
@@ -324,12 +299,11 @@ export default function HomePage() {
         </MotionReveal>
       )}
 
-      {/* Charts */}
+      {/* Row 3: Container States (1/3) + Endpoint Health Treemap (2/3) */}
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <SkeletonCard key={i} className="h-[380px]" />
-          ))}
+          <SkeletonCard className="h-[380px]" />
+          <SkeletonCard className="h-[380px] lg:col-span-2" />
         </div>
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
@@ -345,23 +319,47 @@ export default function HomePage() {
               </div>
             </div>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="lg:col-span-2">
             <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Endpoint Status
+                Endpoint Health
               </h3>
               <div className="flex-1 min-h-0">
-                <EndpointStatusBar data={endpointBarData} />
+                <EndpointHealthTreemap endpoints={endpointChartData} />
+              </div>
+            </div>
+          </MotionReveal>
+        </MotionStagger>
+      ) : null}
+
+      {/* Row 4: Top-10 Workload Bar (2/3) + Fleet Summary (1/3) */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SkeletonCard className="h-[420px] lg:col-span-2" />
+          <SkeletonCard className="h-[420px]" />
+        </div>
+      ) : data ? (
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+          <MotionReveal className="lg:col-span-2">
+            <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Top Workloads
+              </h3>
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <WorkloadTopBar endpoints={endpointChartData} />
               </div>
             </div>
           </MotionReveal>
           <MotionReveal>
-            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+            <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Workload Distribution
+                Fleet Summary
               </h3>
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                <WorkloadDistribution data={workloadData} />
+              <div className="flex-1 min-h-0">
+                <FleetSummaryCard
+                  endpoints={endpointChartData}
+                  totalContainers={data.kpis.total}
+                />
               </div>
             </div>
           </MotionReveal>
