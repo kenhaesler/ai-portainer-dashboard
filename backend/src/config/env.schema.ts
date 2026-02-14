@@ -161,6 +161,7 @@ export const envSchema = z.object({
 
   // Prompt Injection Guard
   LLM_PROMPT_GUARD_STRICT: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  PROMPT_GUARD_NEAR_MISS_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
 
   // MCP (Model Context Protocol)
   MCP_TOOL_TIMEOUT: z.coerce.number().int().min(1).max(600).default(60),

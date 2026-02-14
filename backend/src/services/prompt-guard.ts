@@ -257,6 +257,30 @@ export function isPromptInjection(input: string): PromptGuardResult {
     };
   }
 
+  // Near-miss monitoring: log borderline scores that passed but were close to threshold
+  let nearMissEnabled = true;
+  try {
+    const cfg = getConfig();
+    nearMissEnabled = (cfg as Record<string, unknown>).PROMPT_GUARD_NEAR_MISS_ENABLED !== false;
+  } catch {
+    // Config unavailable — default to enabled
+  }
+
+  if (nearMissEnabled) {
+    const nearMissLow = strict ? 0.2 : 0.3;
+    const nearMissHigh = strict ? 0.4 : 0.5;
+    if (heuristic.score >= nearMissLow && heuristic.score < nearMissHigh) {
+      log.warn(
+        {
+          score: heuristic.score,
+          inputSnippet: input.substring(0, 200),
+          patterns: heuristic.details.map((d) => d.label),
+        },
+        'prompt-guard-near-miss',
+      );
+    }
+  }
+
   return { blocked: false, score: heuristic.score };
 }
 
