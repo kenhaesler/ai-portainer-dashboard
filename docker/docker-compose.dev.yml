@@ -136,8 +136,7 @@ services:
       context: kali-mcp
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "8787:8000"
+    # No host port — only accessible from dashboard backend via kali-mcp:8000
     cap_add:
       - NET_RAW
       - NET_ADMIN
