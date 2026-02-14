@@ -54,9 +54,6 @@ export function KpiCard({
     prevValue.current = numericValue;
   }, [numericValue]);
 
-  // Hover state for detail expansion
-  const [hovered, setHovered] = useState(false);
-
   return (
     <SpotlightCard>
       <div
@@ -65,8 +62,6 @@ export function KpiCard({
           !potatoMode && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
           className,
         )}
-        onMouseEnter={() => !potatoMode && setHovered(true)}
-        onMouseLeave={() => !potatoMode && setHovered(false)}
       >
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
@@ -109,14 +104,9 @@ export function KpiCard({
           )}
         </div>
 
-        {/* Hover detail expansion */}
-        {hoverDetail && !potatoMode && (
-          <div
-            className={cn(
-              'overflow-hidden transition-all duration-200',
-              hovered ? 'mt-2 max-h-8 opacity-100' : 'max-h-0 opacity-0',
-            )}
-          >
+        {/* Detail information */}
+        {hoverDetail && (
+          <div className="mt-2">
             <p className="text-xs text-muted-foreground">{hoverDetail}</p>
           </div>
         )}
