@@ -693,7 +693,7 @@ export function McpServerRow({ server }: { server: McpServer }) {
               <input
                 value={editData.url}
                 onChange={e => setEditData(p => ({ ...p, url: e.target.value }))}
-                placeholder="http://mcp-server:3000/sse"
+                placeholder="http://kali-mcp:8000/mcp"
                 className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono"
               />
             </div>
@@ -790,7 +790,7 @@ function McpServersSection() {
               <input
                 value={formData.name}
                 onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
-                placeholder="my-mcp-server"
+                placeholder="kali-mcp"
                 className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
               />
             </div>
@@ -823,7 +823,7 @@ function McpServersSection() {
               <input
                 value={formData.url}
                 onChange={e => setFormData(p => ({ ...p, url: e.target.value }))}
-                placeholder="http://mcp-server:3000/sse"
+                placeholder="http://kali-mcp:8000/mcp"
                 className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono"
               />
             </div>
