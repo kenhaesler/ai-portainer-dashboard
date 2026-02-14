@@ -192,10 +192,11 @@ export default function LlmAssistantPage() {
               {selectedModel && (() => {
                 const useCase = getModelUseCase(selectedModel);
                 return (
-                  <div className="flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1">
-                    <Info className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className={`text-[11px] font-semibold ${useCase.color}`}>{useCase.label}</span>
-                    <span className="text-[11px] text-muted-foreground hidden lg:inline">— {useCase.description}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${useCase.color} border-current/20 bg-current/10`} style={{ backgroundColor: `color-mix(in srgb, currentColor 10%, transparent)`, borderColor: `color-mix(in srgb, currentColor 25%, transparent)` }}>
+                      {useCase.label}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground max-w-[200px] text-right hidden sm:inline">{useCase.description}</span>
                   </div>
                 );
               })()}

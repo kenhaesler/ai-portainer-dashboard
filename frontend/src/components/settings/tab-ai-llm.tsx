@@ -478,12 +478,11 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           {selectedModel && (() => {
             const useCase = getModelUseCase(selectedModel);
             return (
-              <div className="mt-2 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <span className={cn('text-xs font-semibold', useCase.color)}>{useCase.label}</span>
-                  <span className="text-xs text-muted-foreground"> — {useCase.description}</span>
-                </div>
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2">
+                <span className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shrink-0', useCase.color)} style={{ backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)', borderColor: 'color-mix(in srgb, currentColor 25%, transparent)' }}>
+                  {useCase.label}
+                </span>
+                <span className="text-xs text-muted-foreground min-w-0">{useCase.description}</span>
                 <button
                   type="button"
                   onClick={() => setShowUseCaseTable((v) => !v)}
