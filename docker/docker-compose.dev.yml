@@ -27,6 +27,8 @@ services:
       - LLM_OPENAI_ENDPOINT=${LLM_OPENAI_ENDPOINT:-}
       - LLM_BEARER_TOKEN=${LLM_BEARER_TOKEN:-}
       - LLM_VERIFY_SSL=${LLM_VERIFY_SSL:-true}
+      # Custom CA certificate for internal TLS verification (preferred over *_VERIFY_SSL=false)
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
       - NODE_OPTIONS=--use-system-ca
       - MONITORING_ENABLED=${MONITORING_ENABLED:-true}
       - MONITORING_INTERVAL_MINUTES=${MONITORING_INTERVAL_MINUTES:-5}
@@ -63,6 +65,8 @@ services:
     volumes:
       - ../backend/src:/app/backend/src
       - backend-data:/app/data
+      # Uncomment to mount custom CA certificate for internal TLS verification
+      # - ../certs/ca-bundle.crt:/certs/ca-bundle.crt:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -120,8 +124,11 @@ services:
       --appendonly no
       --requirepass ${REDIS_PASSWORD:-changeme-redis}
     # DEV ONLY: Redis defaults above use changeme-redis — never use in production
+    environment:
+      # REDISCLI_AUTH avoids exposing password via -a flag in process table
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-changeme-redis}
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme-redis}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -133,15 +140,14 @@ services:
       context: kali-mcp
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "8787:8000"
+    # No host port — only accessible from dashboard backend via kali-mcp:8000
     cap_add:
       - NET_RAW
       - NET_ADMIN
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
-      - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-all}
+      - ALLOWED_COMMANDS=${KALI_MCP_ALLOWED_COMMANDS:-whoami,id,uname,ip,df,free,ps,ss,ls,cat}
       - MCP_TOOL_TIMEOUT=${MCP_TOOL_TIMEOUT:-60}
     networks:
       - dashboard-net

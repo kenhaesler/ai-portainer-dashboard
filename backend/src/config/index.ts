@@ -8,6 +8,7 @@ const WEAK_JWT_SECRETS = new Set([
   'changeme',
   'changeme123',
   'default',
+  'generate-a-random-64-char-string',
   'password',
   'secret',
   'test',
@@ -19,6 +20,9 @@ const WEAK_DASHBOARD_PASSWORDS = new Set([
   'changeme',
   'changeme123',
   'changeme1234',
+  'changeme12345',
+  'changeme123456',
+  'changeme1234567890',
   'password',
   'password123',
   'password12345',
@@ -36,7 +40,26 @@ const WEAK_SERVICE_PASSWORDS = new Set([
   'default',
 ]);
 
+/**
+ * Calculate Shannon entropy in bits per character.
+ * Formula: -Σ p(x) * log2(p(x)) where p(x) is frequency of each character.
+ */
+export function shannonEntropy(s: string): number {
+  if (s.length === 0) return 0;
+  const freq = new Map<string, number>();
+  for (const ch of s) freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  let entropy = 0;
+  for (const count of freq.values()) {
+    const p = count / s.length;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+const MIN_PASSWORD_ENTROPY = 2.5;
+
 function validateJwtSecret(secret: string): void {
+  if (process.env.NODE_ENV !== 'production') return;
   if (WEAK_JWT_SECRETS.has(secret.toLowerCase())) {
     throw new Error('Invalid environment configuration:\n  JWT_SECRET: insecure JWT secret value is not allowed');
   }
@@ -77,6 +100,8 @@ function validatePrometheusToken(data: EnvConfig): void {
 }
 
 function validateDashboardCredentials(username: string, password: string): void {
+  if (process.env.NODE_ENV !== 'production') return;
+
   const normalizedPassword = password.toLowerCase();
   if (username === 'admin' && normalizedPassword === 'changeme123') {
     throw new Error(
@@ -87,6 +112,12 @@ function validateDashboardCredentials(username: string, password: string): void 
   if (WEAK_DASHBOARD_PASSWORDS.has(normalizedPassword)) {
     throw new Error(
       'Invalid environment configuration:\n  DASHBOARD_PASSWORD: weak dashboard password is not allowed'
+    );
+  }
+
+  if (shannonEntropy(password) < MIN_PASSWORD_ENTROPY) {
+    throw new Error(
+      'Invalid environment configuration:\n  DASHBOARD_PASSWORD: password entropy too low (must be >= 2.5 bits/char)'
     );
   }
 }

@@ -19,11 +19,32 @@ describe('config validation', () => {
     expect(() => getConfig()).toThrowError(/JWT_SECRET/i);
   });
 
-  it('rejects known weak JWT secret values', async () => {
+  it('rejects known weak JWT secret values in production', async () => {
+    process.env.NODE_ENV = 'production';
     process.env.JWT_SECRET = 'dev-secret-change-in-production-must-be-at-least-32-chars';
 
     const { getConfig } = await import('./index.js');
     expect(() => getConfig()).toThrowError(/insecure JWT secret/i);
+  });
+
+  it('rejects placeholder JWT secret in production', async () => {
+    process.env.NODE_ENV = 'production';
+    // Exact blocklist entry (32 chars minimum satisfied by the string itself)
+    process.env.JWT_SECRET = 'generate-a-random-64-char-string';
+    process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
+    process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/insecure JWT secret/i);
+  });
+
+  it('allows weak JWT secret in development', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.JWT_SECRET = 'dev-secret-change-in-production-must-be-at-least-32-chars';
+
+    const { getConfig } = await import('./index.js');
+    const config = getConfig();
+    expect(config.JWT_SECRET).toBe(process.env.JWT_SECRET);
   });
 
   it('rejects missing dashboard credentials', async () => {
@@ -34,12 +55,39 @@ describe('config validation', () => {
     expect(() => getConfig()).toThrowError(/DASHBOARD_USERNAME|DASHBOARD_PASSWORD/i);
   });
 
-  it('rejects weak dashboard passwords', async () => {
+  it('rejects weak dashboard passwords in production', async () => {
+    process.env.NODE_ENV = 'production';
     process.env.DASHBOARD_USERNAME = 'operator';
     process.env.DASHBOARD_PASSWORD = 'password12345';
 
     const { getConfig } = await import('./index.js');
     expect(() => getConfig()).toThrowError(/weak dashboard password/i);
+  });
+
+  it('rejects changeme+digit variants in production', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DASHBOARD_PASSWORD = 'changeme123456';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/weak dashboard password/i);
+  });
+
+  it('rejects changeme1234567890 in production', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DASHBOARD_PASSWORD = 'changeme1234567890';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/weak dashboard password/i);
+  });
+
+  it('allows weak dashboard passwords in development', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.DASHBOARD_USERNAME = 'admin';
+    process.env.DASHBOARD_PASSWORD = 'changeme12345';
+
+    const { getConfig } = await import('./index.js');
+    const config = getConfig();
+    expect(config.DASHBOARD_PASSWORD).toBe('changeme12345');
   });
 
   it('accepts secure auth secrets and credentials', async () => {
@@ -54,10 +102,70 @@ describe('config validation', () => {
     expect(config.JWT_SECRET).toBe(process.env.JWT_SECRET);
   });
 
+  describe('Shannon entropy validation (production only)', () => {
+    it('rejects low-entropy passwords in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.DASHBOARD_PASSWORD = 'aaaaaaaaaaaa'; // entropy = 0
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/password entropy too low/i);
+    });
+
+    it('accepts high-entropy passwords in production', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
+      process.env.REDIS_PASSWORD = 'strong-redis-pass-2024';
+      process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.DASHBOARD_PASSWORD).toBe('xK9#mP2$vL7@nQ4!');
+    });
+
+    it('skips entropy check in development', async () => {
+      process.env.NODE_ENV = 'development';
+      process.env.DASHBOARD_PASSWORD = 'aaaaaaaaaaaa';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.DASHBOARD_PASSWORD).toBe('aaaaaaaaaaaa');
+    });
+  });
+
+  describe('shannonEntropy function', () => {
+    it('returns 0 for empty string', async () => {
+      const { shannonEntropy } = await import('./index.js');
+      expect(shannonEntropy('')).toBe(0);
+    });
+
+    it('returns 0 for single repeated character', async () => {
+      const { shannonEntropy } = await import('./index.js');
+      expect(shannonEntropy('aaaaaaa')).toBe(0);
+    });
+
+    it('returns 1 for two equally distributed characters', async () => {
+      const { shannonEntropy } = await import('./index.js');
+      expect(shannonEntropy('ab')).toBeCloseTo(1.0, 5);
+    });
+
+    it('returns high entropy for diverse characters', async () => {
+      const { shannonEntropy } = await import('./index.js');
+      const entropy = shannonEntropy('xK9#mP2$vL7@nQ4!');
+      expect(entropy).toBeGreaterThan(3.5);
+    });
+
+    it('returns low entropy for repeated patterns', async () => {
+      const { shannonEntropy } = await import('./index.js');
+      const entropy = shannonEntropy('abcabcabcabc');
+      expect(entropy).toBeLessThan(2.0);
+    });
+  });
+
   describe('service password validation (production only)', () => {
     it('rejects weak Redis password in production', async () => {
       process.env.NODE_ENV = 'production';
       process.env.REDIS_PASSWORD = 'changeme-redis';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
 
       const { getConfig } = await import('./index.js');
       expect(() => getConfig()).toThrowError(/weak Redis password/i);
@@ -66,6 +174,7 @@ describe('config validation', () => {
     it('rejects weak TimescaleDB password in production', async () => {
       process.env.NODE_ENV = 'production';
       process.env.TIMESCALE_URL = 'postgresql://metrics_user:changeme-timescale@timescaledb:5432/metrics';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
 
       const { getConfig } = await import('./index.js');
       expect(() => getConfig()).toThrowError(/weak TimescaleDB password/i);
@@ -93,6 +202,7 @@ describe('config validation', () => {
       process.env.NODE_ENV = 'production';
       process.env.REDIS_PASSWORD = 'a-very-strong-redis-password-2024';
       process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
 
       const { getConfig } = await import('./index.js');
       const config = getConfig();
@@ -102,6 +212,7 @@ describe('config validation', () => {
     it('accepts strong TimescaleDB password in production', async () => {
       process.env.NODE_ENV = 'production';
       process.env.TIMESCALE_URL = 'postgresql://metrics_user:str0ng-ts-p4ss@timescaledb:5432/metrics';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
 
       const { getConfig } = await import('./index.js');
       const config = getConfig();
@@ -112,6 +223,7 @@ describe('config validation', () => {
       process.env.NODE_ENV = 'production';
       process.env.REDIS_PASSWORD = 'a-very-strong-redis-password-2024';
       process.env.TIMESCALE_URL = 'postgresql://metrics_user@timescaledb:5432/metrics';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
 
       const { getConfig } = await import('./index.js');
       const config = getConfig();

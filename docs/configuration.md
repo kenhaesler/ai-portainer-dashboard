@@ -35,13 +35,44 @@ The dashboard supports two LLM connection modes:
 1. **Native Ollama SDK** (default) — Used when `LLM_OPENAI_ENDPOINT` is not set and the Settings UI "Custom endpoint" toggle is off. Connects to `OLLAMA_BASE_URL` using the Ollama SDK with model pulling support.
 2. **OpenAI-compatible HTTP** — Used when `LLM_OPENAI_ENDPOINT` is set (or the Settings UI toggle is on). Sends standard `/v1/chat/completions` requests via `undici` fetch with SSL and auth handling. Works with OpenWebUI, LiteLLM, vLLM, or any OpenAI-compatible API.
 
-### SSL bypass details
+### Custom CA Certificates (Recommended for Production)
+
+For internal or self-signed certificates, mount a custom CA bundle instead of disabling TLS verification:
+
+```yaml
+services:
+  backend:
+    environment:
+      - NODE_EXTRA_CA_CERTS=/certs/ca-bundle.crt
+    volumes:
+      - ./certs/ca-bundle.crt:/certs/ca-bundle.crt:ro
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NODE_EXTRA_CA_CERTS` | Path to a PEM file with additional CA certificates | *(optional)* |
+
+**How it works:**
+- Node.js `--use-system-ca` (already set in Docker images) loads the OS trust store
+- `NODE_EXTRA_CA_CERTS` adds your internal CA on top — all standard TLS verification remains active
+- The backend passes the custom CA cert to undici Agents for both LLM and Portainer connections (undici does not read `NODE_EXTRA_CA_CERTS` by default, so the cert is passed explicitly via `connect.ca`)
+
+**Use cases:**
+- Enterprise with a private CA signing certs for internal services (OpenWebUI, Portainer)
+- Self-signed reverse proxy (Traefik/Nginx) in front of LLM endpoints
+- Mixed environments where some services use public certs and some use internal CA
+
+> **Prefer `NODE_EXTRA_CA_CERTS` over `LLM_VERIFY_SSL=false` in production.** The latter disables TLS verification for ALL outbound connections globally.
+
+### SSL bypass details (development fallback)
 
 When `LLM_VERIFY_SSL=false`:
 - `NODE_TLS_REJECT_UNAUTHORIZED=0` is set at process startup (before any imports), disabling TLS verification globally for all connections including the Ollama SDK's internal fetch
 - An `undici.Agent` with `connect: { rejectUnauthorized: false }` is created for direct HTTP calls via `llmFetch()`
 - The Ollama SDK is initialized with the custom `llmFetch` function to ensure it also respects SSL settings
 - The `--use-system-ca` Node.js flag is set in Docker images to trust system CA certificates
+
+> **Warning:** `LLM_VERIFY_SSL=false` disables TLS verification for ALL outbound connections — not just LLM endpoints. This includes Portainer API, Redis, TimescaleDB, and any other service. Use `NODE_EXTRA_CA_CERTS` instead for production.
 
 ### Safe exposure defaults (Prometheus + Ollama)
 

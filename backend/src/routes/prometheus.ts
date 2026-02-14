@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getConfig } from '../config/index.js';
 import { getDb } from '../db/sqlite.js';
+import { getPromptGuardNearMissTotal } from '../services/prompt-guard.js';
 
 const CACHE_TTL_MS = 15_000;
 
@@ -227,6 +228,10 @@ function buildMetricsPayload(): string {
     [0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120],
     snapshot.monitoringDurations,
   );
+
+  lines.push('# HELP prompt_guard_near_miss_total Prompt injection near-miss detections');
+  lines.push('# TYPE prompt_guard_near_miss_total counter');
+  renderMetric(lines, 'prompt_guard_near_miss_total', getPromptGuardNearMissTotal());
 
   lines.push('# HELP process_resident_memory_bytes Resident memory in bytes');
   lines.push('# TYPE process_resident_memory_bytes gauge');

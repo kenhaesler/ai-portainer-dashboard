@@ -1,4 +1,5 @@
 import { Agent, fetch as undiciFetch } from 'undici';
+import { readFileSync } from 'fs';
 import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -33,15 +34,34 @@ export function _resetClientState(): void {
   breakers.clear();
 }
 
+/** Read custom CA certificate from NODE_EXTRA_CA_CERTS if set */
+function getCustomCaCert(): Buffer | undefined {
+  const certPath = process.env.NODE_EXTRA_CA_CERTS;
+  if (!certPath) return undefined;
+  try {
+    return readFileSync(certPath);
+  } catch (err) {
+    log.warn({ err, certPath }, 'Failed to read custom CA certificate from NODE_EXTRA_CA_CERTS');
+    return undefined;
+  }
+}
+
 // Connection-pooled dispatcher (used for both SSL-bypass and normal connections)
 let pooledDispatcher: Agent | undefined;
 function getDispatcher(): Agent | undefined {
   const config = getConfig();
   if (pooledDispatcher) return pooledDispatcher;
+  const ca = getCustomCaCert();
+  const connectOptions: Record<string, unknown> = {};
+  if (!config.PORTAINER_VERIFY_SSL) {
+    connectOptions.rejectUnauthorized = false;
+  } else if (ca) {
+    connectOptions.ca = ca;
+  }
   const poolOptions = {
     connections: config.PORTAINER_MAX_CONNECTIONS,
     pipelining: 1,
-    ...(!config.PORTAINER_VERIFY_SSL && { connect: { rejectUnauthorized: false } }),
+    ...(Object.keys(connectOptions).length > 0 && { connect: connectOptions }),
   };
   pooledDispatcher = new Agent(poolOptions);
   return pooledDispatcher;

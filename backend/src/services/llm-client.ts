@@ -1,6 +1,7 @@
 import { Ollama } from 'ollama';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
 import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
@@ -11,17 +12,36 @@ import type { Insight } from '../models/monitoring.js';
 
 const log = createChildLogger('llm-client');
 
+/** Read custom CA certificate from NODE_EXTRA_CA_CERTS if set */
+function getCustomCaCert(): Buffer | undefined {
+  const certPath = process.env.NODE_EXTRA_CA_CERTS;
+  if (!certPath) return undefined;
+  try {
+    return readFileSync(certPath);
+  } catch (err) {
+    log.warn({ err, certPath }, 'Failed to read custom CA certificate from NODE_EXTRA_CA_CERTS');
+    return undefined;
+  }
+}
+
 /**
  * Cached undici Agent for LLM fetch calls.
  * When LLM_VERIFY_SSL=false, disables certificate verification so that
  * self-signed or internal-CA endpoints (e.g. OpenWebUI behind a reverse proxy) work.
+ * When NODE_EXTRA_CA_CERTS is set, passes the CA cert to undici (which does not
+ * read this env var automatically like Node's built-in TLS).
  */
 let llmDispatcher: Agent | undefined;
 export function getLlmDispatcher(): Agent | undefined {
   if (llmDispatcher) return llmDispatcher;
   const config = getConfig();
+  const ca = getCustomCaCert();
   if (!config.LLM_VERIFY_SSL) {
     llmDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+    return llmDispatcher;
+  }
+  if (ca) {
+    llmDispatcher = new Agent({ connect: { ca } });
     return llmDispatcher;
   }
   return undefined;

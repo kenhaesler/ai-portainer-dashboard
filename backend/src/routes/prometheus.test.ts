@@ -117,6 +117,9 @@ describe('Prometheus Routes', () => {
     expect(response.body).toContain('# TYPE dashboard_remediation_duration_seconds histogram');
     expect(response.body).toContain('# TYPE dashboard_monitoring_cycle_duration_seconds histogram');
     expect(response.body).toContain('# TYPE process_resident_memory_bytes gauge');
+    expect(response.body).toContain('# HELP prompt_guard_near_miss_total Prompt injection near-miss detections');
+    expect(response.body).toContain('# TYPE prompt_guard_near_miss_total counter');
+    expect(response.body).toContain('prompt_guard_near_miss_total 0');
   });
 
   it('enforces bearer token only when configured', async () => {

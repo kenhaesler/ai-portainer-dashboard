@@ -19,10 +19,11 @@ describe('security headers plugin', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['x-content-type-options']).toBe('nosniff');
-    expect(response.headers['x-frame-options']).toBe('DENY');
-    expect(response.headers['content-security-policy']).toContain("default-src 'none'");
     expect(response.headers['referrer-policy']).toBe('no-referrer');
     expect(response.headers['permissions-policy']).toContain('geolocation=()');
+    // X-Frame-Options and CSP are handled by nginx, not the backend
+    expect(response.headers['x-frame-options']).toBeUndefined();
+    expect(response.headers['content-security-policy']).toBeUndefined();
     expect(response.headers['strict-transport-security']).toBeUndefined();
 
     await app.close();

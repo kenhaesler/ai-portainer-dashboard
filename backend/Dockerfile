@@ -52,6 +52,7 @@ COPY --chown=node:node --from=builder /app/backend/package.json ./
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/backend/dist/ dist/
 COPY --chown=node:node --from=builder /app/backend/src/db/migrations/ dist/db/migrations/
+COPY --chown=node:node --from=builder /app/backend/src/db/timescale-migrations/ dist/db/timescale-migrations/
 
 USER node
 
