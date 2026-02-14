@@ -4,6 +4,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
 import { LoginLogo } from "@/components/icons/login-logo";
 import { useUiStore } from "@/stores/ui-store";
+import { PostLoginLoading } from "@/components/shared/post-login-loading";
+import { AnimatePresence } from "framer-motion";
 
 const PARTICLES = [
   { left: "8%", delay: "0s", duration: "12s", size: "7px" },
@@ -43,6 +45,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("changeme123");
   const [error, setError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
+  const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
 
   const stagedClass = useMemo(
     () => (reducedMotion ? "" : "login-stage-in"),
@@ -61,9 +64,17 @@ export default function LoginPage() {
     try {
       const { defaultLandingPage } = await login(username, password);
       setSubmitState("success");
+      
       const waitMs = reducedMotion ? 0 : 450;
       window.setTimeout(() => {
-        navigate(defaultLandingPage || "/", { replace: true });
+        if (reducedMotion) {
+          navigate(defaultLandingPage || "/", { replace: true });
+        } else {
+          setShowPostLoginLoading(true);
+          window.setTimeout(() => {
+            navigate(defaultLandingPage || "/", { replace: true });
+          }, 2500); // Show loading for 2.5 seconds
+        }
       }, waitMs);
     } catch (err) {
       setError(
@@ -85,6 +96,10 @@ export default function LoginPage() {
       className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4"
       data-reduced-motion={reducedMotion}
     >
+      <AnimatePresence>
+        {showPostLoginLoading && <PostLoginLoading />}
+      </AnimatePresence>
+
       <div
         className={`login-gradient-mesh ${reducedMotion ? "" : "login-gradient-mesh-animate"}`}
         aria-hidden="true"
