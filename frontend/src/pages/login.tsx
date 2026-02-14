@@ -52,7 +52,7 @@ export default function LoginPage() {
     [reducedMotion],
   );
 
-  if (isAuthenticated) {
+  if (isAuthenticated && !showPostLoginLoading) {
     return <Navigate to="/" replace />;
   }
 
