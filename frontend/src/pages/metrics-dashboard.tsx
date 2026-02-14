@@ -27,6 +27,7 @@ import { useContainerForecast, useForecasts, useAiForecastNarrative, type Capaci
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
+import { NetworkTrafficTooltip } from '@/components/charts/network-traffic-tooltip';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
@@ -531,10 +532,12 @@ export default function MetricsDashboardPage() {
                     <XAxis dataKey="network" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => formatBytes(Number(value))} />
                     <Tooltip
-                      formatter={(value: number, key: string) => [
-                        `${formatBytes(value)} MB/s`,
-                        key === 'rx' ? 'RX' : 'TX',
-                      ]}
+                      cursor={{ fill: 'transparent' }}
+                      content={
+                        <NetworkTrafficTooltip
+                          formatValue={(value) => `${formatBytes(value)} MB/s`}
+                        />
+                      }
                     />
                     <Legend />
                     <Bar dataKey="rx" name="RX" fill="#06b6d4" radius={[6, 6, 0, 0]} />
