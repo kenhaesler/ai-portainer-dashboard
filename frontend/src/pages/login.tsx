@@ -46,13 +46,14 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
   const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const stagedClass = useMemo(
     () => (reducedMotion ? "" : "login-stage-in"),
     [reducedMotion],
   );
 
-  if (isAuthenticated && !showPostLoginLoading) {
+  if (isAuthenticated && !isLoggingIn) {
     return <Navigate to="/" replace />;
   }
 
@@ -60,6 +61,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setSubmitState("loading");
+    setIsLoggingIn(true);
 
     try {
       const { defaultLandingPage } = await login(username, password);
@@ -81,6 +83,7 @@ export default function LoginPage() {
         err instanceof Error ? err.message : "Invalid username or password"
       );
       setSubmitState("idle");
+      setIsLoggingIn(false);
     }
   }
 
