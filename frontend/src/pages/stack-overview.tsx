@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Layers, LayoutGrid, List, AlertTriangle, Search } from 'lucide-react';
@@ -11,9 +11,8 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
-
-type ViewMode = 'grid' | 'table';
 
 interface StackWithEndpoint extends Stack {
   endpointName: string;
@@ -108,7 +107,8 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
 }
 
 export default function StackOverviewPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const viewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
+  const setViewMode = useUiStore((s) => s.setPageViewMode);
   const navigate = useNavigate();
 
   const { data: stacks, isLoading: stacksLoading, isError, error, refetch, isFetching } = useStacks();
@@ -266,7 +266,7 @@ export default function StackOverviewPage() {
           </div>
           <div className="flex items-center rounded-lg border p-1">
             <button
-              onClick={() => setViewMode('grid')}
+              onClick={() => setViewMode('stacks', 'grid')}
               className={cn(
                 'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                 viewMode === 'grid'
@@ -278,7 +278,7 @@ export default function StackOverviewPage() {
               <LayoutGrid className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setViewMode('table')}
+              onClick={() => setViewMode('stacks', 'table')}
               className={cn(
                 'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                 viewMode === 'table'

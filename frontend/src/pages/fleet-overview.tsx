@@ -10,9 +10,8 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
-
-type ViewMode = 'grid' | 'table';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
@@ -118,7 +117,10 @@ function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () =
 }
 
 export default function FleetOverviewPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const storedViewMode = useUiStore((s) => s.pageViewModes['fleet']);
+  const setPageViewMode = useUiStore((s) => s.setPageViewMode);
+  const viewMode = storedViewMode ?? 'grid';
+  const setViewMode = (mode: 'grid' | 'table') => setPageViewMode('fleet', mode);
   const [gridPage, setGridPage] = useState(1);
   const navigate = useNavigate();
 
@@ -126,12 +128,12 @@ export default function FleetOverviewPage() {
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
-  // Auto-switch to table view when endpoint count > 100
+  // Auto-switch to table view when endpoint count > 100 (only if user hasn't chosen)
   useEffect(() => {
-    if (endpoints && endpoints.length > AUTO_TABLE_THRESHOLD) {
-      setViewMode('table');
+    if (!storedViewMode && endpoints && endpoints.length > AUTO_TABLE_THRESHOLD) {
+      setPageViewMode('fleet', 'table');
     }
-  }, [endpoints]);
+  }, [endpoints, storedViewMode, setPageViewMode]);
 
   const handleEndpointClick = (endpointId: number) => {
     navigate(`/workloads?endpoint=${endpointId}`);
