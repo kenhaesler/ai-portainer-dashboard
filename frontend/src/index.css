@@ -1947,7 +1947,11 @@ html[data-potato-mode] body {
 /* ====== SPOTLIGHT CARD (mouse-follow radial glow) ====== */
 .spotlight-card {
   position: relative;
+  border-radius: var(--radius);
   overflow: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  clip-path: inset(0 round var(--radius));
 }
 
 .spotlight-card::before {
@@ -1958,10 +1962,12 @@ html[data-potato-mode] body {
   opacity: 0;
   transition: opacity 0.3s ease;
   background: radial-gradient(
-    600px circle at var(--x, 50%) var(--y, 50%),
-    rgba(255, 255, 255, 0.06),
-    transparent 40%
+    circle 300px at var(--x, 50%) var(--y, 50%),
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    transparent 80%
   );
+  clip-path: inset(0 round var(--radius));
 }
 
 .spotlight-card:hover::before {

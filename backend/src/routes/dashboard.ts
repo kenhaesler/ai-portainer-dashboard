@@ -15,9 +15,12 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       tags: ['Dashboard'],
       summary: 'Get dashboard summary with KPIs',
       security: [{ bearerAuth: [] }],
+      querystring: z.object({
+        recentLimit: z.coerce.number().int().min(1).max(50).default(20),
+      }),
     },
     preHandler: [fastify.authenticate],
-  }, async (_request, reply) => {
+  }, async (request, reply) => {
     let endpoints;
     try {
       endpoints = await cachedFetchSWR(
@@ -61,10 +64,12 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       },
     );
 
-    // Get recent containers from first few endpoints (parallel)
+    const { recentLimit } = request.query as { recentLimit: number };
+
+    // Get recent containers from all up endpoints (parallel)
     const recentContainers = [];
     const errors: string[] = [];
-    const upEndpoints = normalized.filter((e) => e.status === 'up').slice(0, 5);
+    const upEndpoints = normalized.filter((e) => e.status === 'up');
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>
         cachedFetchSWR(
@@ -93,7 +98,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       log.warn({ errors, endpointCount: upEndpoints.length }, 'Dashboard summary has no recent containers due to upstream errors');
     }
 
-    // Sort by created time, take latest 20
+    // Sort by created time, take latest N
     recentContainers.sort((a, b) => b.created - a.created);
 
     let security = { totalAudited: 0, flagged: 0, ignored: 0 };
@@ -107,7 +112,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     return {
       kpis: totals,
       security,
-      recentContainers: recentContainers.slice(0, 20),
+      recentContainers: recentContainers.slice(0, recentLimit),
       timestamp: new Date().toISOString(),
     };
   });

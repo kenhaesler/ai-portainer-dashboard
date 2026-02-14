@@ -51,19 +51,20 @@ export function TiltCard({ children, className, disabled }: TiltCardProps) {
   }
 
   return (
-    <div style={{ perspective: 1000 }} className={className}>
+    <div style={{ perspective: 1000, borderRadius: 'var(--radius)' }} className={className}>
       <motion.div
         ref={ref}
         style={{
           rotateX: springRotateX,
           rotateY: springRotateY,
           transformStyle: 'preserve-3d',
+          borderRadius: 'var(--radius)',
         }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         data-testid="tilt-card"
       >
-        <div style={{ transform: 'translateZ(50px)' }}>{children}</div>
+        <div style={{ transform: 'translateZ(50px)', borderRadius: 'var(--radius)' }}>{children}</div>
       </motion.div>
     </div>
   );

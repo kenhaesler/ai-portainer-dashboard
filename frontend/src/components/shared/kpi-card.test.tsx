@@ -114,8 +114,8 @@ describe('KpiCard', () => {
     expect(svg).toBeNull();
   });
 
-  it('should show hover detail on mouse enter', () => {
-    const { container } = render(
+  it('should show detail information when hoverDetail is provided', () => {
+    render(
       <KpiCard
         label="Running"
         value={15}
@@ -123,32 +123,10 @@ describe('KpiCard', () => {
       />,
     );
 
-    // Initially the detail text should be present but hidden (opacity 0)
+    // Detail text should be visible immediately (no hover required)
     const detail = screen.getByText('Last hour: +3 | Peak: 20 | Avg: 14');
     expect(detail).toBeInTheDocument();
-
-    // The inner card div (with the hover handler) is inside the SpotlightCard wrapper
-    const innerCard = container.querySelector('.bg-card')!;
-    fireEvent.mouseEnter(innerCard);
-    // The detail container should now be visible
-    expect(detail.parentElement).toHaveClass('opacity-100');
-  });
-
-  it('should hide hover detail on mouse leave', () => {
-    const { container } = render(
-      <KpiCard
-        label="Running"
-        value={15}
-        hoverDetail="Last hour: +3 | Peak: 20 | Avg: 14"
-      />,
-    );
-
-    const innerCard = container.querySelector('.bg-card')!;
-    fireEvent.mouseEnter(innerCard);
-    fireEvent.mouseLeave(innerCard);
-
-    const detail = screen.getByText('Last hour: +3 | Peak: 20 | Avg: 14');
-    expect(detail.parentElement).toHaveClass('opacity-0');
+    expect(detail.parentElement).toHaveClass('mt-2');
   });
 
   it('should not render hover detail section when hoverDetail is not provided', () => {

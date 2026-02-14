@@ -217,6 +217,44 @@ services:
     networks:
       - dashboard-net
 
+  timescale-backup:
+    image: prodrigestivill/postgres-backup-local:17
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_HOST: timescaledb
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: metrics
+      POSTGRES_USER: metrics_user
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}
+      POSTGRES_EXTRA_OPTS: ${TIMESCALE_BACKUP_EXTRA_OPTS:--Z6 --no-comments}
+      SCHEDULE: ${TIMESCALE_BACKUP_SCHEDULE:-0 3 * * *}
+      BACKUP_KEEP_DAYS: ${TIMESCALE_BACKUP_KEEP_DAYS:-7}
+      BACKUP_KEEP_WEEKS: ${TIMESCALE_BACKUP_KEEP_WEEKS:-4}
+      BACKUP_KEEP_MONTHS: ${TIMESCALE_BACKUP_KEEP_MONTHS:-0}
+      HEALTHCHECK_PORT: "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    volumes:
+      - timescale-backups:/backups
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - dashboard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "${TIMESCALE_BACKUP_CPU_LIMIT:-0.5}"
+          memory: "${TIMESCALE_BACKUP_MEM_LIMIT:-256M}"
+        reservations:
+          memory: 64M
+
   kali-mcp:
     build:
       context: ../tools/kali-mcp
@@ -238,6 +276,7 @@ volumes:
   backend-data:
   postgres-app-data:
   timescale-data:
+  timescale-backups:
 
 networks:
   dashboard-net:
