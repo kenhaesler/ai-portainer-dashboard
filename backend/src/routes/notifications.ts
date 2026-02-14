@@ -58,7 +58,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
-    const { channel } = request.body as { channel: 'teams' | 'email' };
+    const { channel } = request.body as { channel: 'teams' | 'email' | 'discord' | 'telegram' };
     const result = await sendTestNotification(channel);
 
     if (!result.success) {

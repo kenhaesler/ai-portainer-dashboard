@@ -5,6 +5,8 @@ import {
   escapeHtml,
   sendTeamsNotification,
   sendEmailNotification,
+  sendDiscordNotification,
+  sendTelegramNotification,
   notifyInsight,
   sendTestNotification,
   _resetCooldownMap,
@@ -35,6 +37,11 @@ const mockGetConfig = vi.fn().mockReturnValue({
   SMTP_FROM: 'AI Dashboard <noreply@example.com>',
   EMAIL_NOTIFICATIONS_ENABLED: false,
   EMAIL_RECIPIENTS: 'admin@example.com',
+  DISCORD_WEBHOOK_URL: '',
+  DISCORD_NOTIFICATIONS_ENABLED: false,
+  TELEGRAM_BOT_TOKEN: '',
+  TELEGRAM_CHAT_ID: '',
+  TELEGRAM_NOTIFICATIONS_ENABLED: false,
 });
 
 vi.mock('../config/index.js', () => ({
@@ -87,6 +94,11 @@ describe('notification-service', () => {
       SMTP_FROM: 'AI Dashboard <noreply@example.com>',
       EMAIL_NOTIFICATIONS_ENABLED: false,
       EMAIL_RECIPIENTS: 'admin@example.com',
+      DISCORD_WEBHOOK_URL: '',
+      DISCORD_NOTIFICATIONS_ENABLED: false,
+      TELEGRAM_BOT_TOKEN: '',
+      TELEGRAM_CHAT_ID: '',
+      TELEGRAM_NOTIFICATIONS_ENABLED: false,
     });
   });
 
@@ -677,6 +689,426 @@ describe('notification-service', () => {
 
       expect(result.success).toBe(true);
       expect(mockSendMail).toHaveBeenCalled();
+    });
+
+    it('should return success for discord test', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+        DISCORD_NOTIFICATIONS_ENABLED: true,
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      const result = await sendTestNotification('discord');
+
+      expect(result.success).toBe(true);
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    it('should return success for telegram test', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: '123456789:ABCDefGH-IJKlmnoPQRSTUVwxyz012345678',
+        TELEGRAM_CHAT_ID: '-1001234567890',
+        TELEGRAM_NOTIFICATIONS_ENABLED: true,
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });
+
+      const result = await sendTestNotification('telegram');
+
+      expect(result.success).toBe(true);
+      expect(mockFetch).toHaveBeenCalled();
+    });
+  });
+
+  describe('sendDiscordNotification', () => {
+    it('should POST embed to Discord webhook URL', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      await sendDiscordNotification({
+        title: 'CPU Spike',
+        body: 'CPU at 95%',
+        severity: 'critical',
+        containerName: 'web-app',
+        endpointId: 1,
+        eventType: 'anomaly',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://discord.com/api/webhooks/123456/abcdef',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.embeds).toHaveLength(1);
+      expect(callBody.embeds[0].title).toBe('CPU Spike');
+      expect(callBody.embeds[0].description).toBe('CPU at 95%');
+      expect(callBody.embeds[0].color).toBe(0xef4444);
+      expect(callBody.embeds[0].fields).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'Container', value: 'web-app', inline: true }),
+          expect.objectContaining({ name: 'Endpoint', value: '1', inline: true }),
+          expect.objectContaining({ name: 'Severity', value: 'critical', inline: true }),
+        ]),
+      );
+      expect(callBody.embeds[0].timestamp).toBeDefined();
+    });
+
+    it('should use warning color for warning severity', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      await sendDiscordNotification({
+        title: 'Warning',
+        body: 'test',
+        severity: 'warning',
+        eventType: 'anomaly',
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.embeds[0].color).toBe(0xeab308);
+    });
+
+    it('should use info color for info severity', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      await sendDiscordNotification({
+        title: 'Info',
+        body: 'test',
+        severity: 'info',
+        eventType: 'test',
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.embeds[0].color).toBe(0x3b82f6);
+    });
+
+    it('should use green color for unknown severity', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      await sendDiscordNotification({
+        title: 'Ok',
+        body: 'test',
+        severity: 'healthy',
+        eventType: 'test',
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.embeds[0].color).toBe(0x22c55e);
+    });
+
+    it('should throw on webhook failure', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: () => Promise.resolve('Rate limited'),
+      });
+
+      await expect(
+        sendDiscordNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Discord webhook failed (429)');
+    });
+
+    it('should throw when Discord webhook URL is not configured', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: '',
+      });
+
+      await expect(
+        sendDiscordNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Discord webhook URL not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should log notification on success', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      await sendDiscordNotification({
+        title: 'Test',
+        body: 'body',
+        severity: 'info',
+        eventType: 'test',
+      });
+
+      expect(mockDbPrepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'));
+    });
+  });
+
+  describe('SSRF prevention - Discord webhook URL validation', () => {
+    it('should reject non-discord.com URLs', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://evil.com/api/webhooks/123/abc',
+      });
+
+      await expect(
+        sendDiscordNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Discord webhook URL not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject HTTP (non-HTTPS) Discord URLs', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'http://discord.com/api/webhooks/123/abc',
+      });
+
+      await expect(
+        sendDiscordNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Discord webhook URL not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject Discord URLs without /api/webhooks/ path', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discord.com/channels/123/456',
+      });
+
+      await expect(
+        sendDiscordNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Discord webhook URL not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should accept discordapp.com webhook URLs', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://discordapp.com/api/webhooks/123/abc',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
+
+      await sendDiscordNotification({
+        title: 'Test',
+        body: 'body',
+        severity: 'info',
+        eventType: 'test',
+      });
+
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    it('should reject SSRF attempts via private IPs', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        DISCORD_WEBHOOK_URL: 'https://169.254.169.254/api/webhooks/123/abc',
+      });
+
+      await expect(
+        sendDiscordNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Discord webhook URL not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sendTelegramNotification', () => {
+    const validToken = '123456789:ABCDefGH-IJKlmnoPQRSTUVwxyz012345678';
+
+    it('should POST HTML message to Telegram API', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: validToken,
+        TELEGRAM_CHAT_ID: '-1001234567890',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });
+
+      await sendTelegramNotification({
+        title: 'CPU Spike',
+        body: 'CPU at 95%',
+        severity: 'critical',
+        containerName: 'web-app',
+        endpointId: 1,
+        eventType: 'anomaly',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `https://api.telegram.org/bot${validToken}/sendMessage`,
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.chat_id).toBe('-1001234567890');
+      expect(callBody.parse_mode).toBe('HTML');
+      expect(callBody.text).toContain('<b>CPU Spike</b>');
+      expect(callBody.text).toContain('CPU at 95%');
+      expect(callBody.text).toContain('<b>Container:</b> web-app');
+      expect(callBody.text).toContain('<b>Endpoint:</b> 1');
+      expect(callBody.text).toContain('<b>Severity:</b> critical');
+    });
+
+    it('should escape HTML in message content', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: validToken,
+        TELEGRAM_CHAT_ID: '-1001234567890',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });
+
+      await sendTelegramNotification({
+        title: '<script>alert(1)</script>',
+        body: 'CPU > 90% & memory < 10%',
+        severity: 'warning',
+        eventType: 'anomaly',
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.text).toContain('&lt;script&gt;');
+      expect(callBody.text).toContain('CPU &gt; 90% &amp; memory &lt; 10%');
+      expect(callBody.text).not.toContain('<script>');
+    });
+
+    it('should throw when bot token is not configured', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: '',
+        TELEGRAM_CHAT_ID: '-1001234567890',
+      });
+
+      await expect(
+        sendTelegramNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Telegram bot token or chat ID not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should throw when chat ID is not configured', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: validToken,
+        TELEGRAM_CHAT_ID: '',
+      });
+
+      await expect(
+        sendTelegramNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Telegram bot token or chat ID not configured');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should throw on invalid bot token format', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: 'invalid-token-format',
+        TELEGRAM_CHAT_ID: '-1001234567890',
+      });
+
+      await expect(
+        sendTelegramNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Telegram bot token format is invalid');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should throw on API failure', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: validToken,
+        TELEGRAM_CHAT_ID: '-1001234567890',
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: () => Promise.resolve('Forbidden'),
+      });
+
+      await expect(
+        sendTelegramNotification({
+          title: 'Test',
+          body: 'body',
+          severity: 'info',
+          eventType: 'test',
+        }),
+      ).rejects.toThrow('Telegram API failed (403)');
+    });
+
+    it('should log notification on success', async () => {
+      mockGetConfig.mockReturnValue({
+        ...mockGetConfig(),
+        TELEGRAM_BOT_TOKEN: validToken,
+        TELEGRAM_CHAT_ID: '-1001234567890',
+      });
+      mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });
+
+      await sendTelegramNotification({
+        title: 'Test',
+        body: 'body',
+        severity: 'info',
+        eventType: 'test',
+      });
+
+      expect(mockDbPrepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO notification_log'));
     });
   });
 });

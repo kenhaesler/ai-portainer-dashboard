@@ -14,6 +14,8 @@ import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../service
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
   'notifications.teams_webhook_url',
+  'notifications.discord_webhook_url',
+  'notifications.telegram_bot_token',
   'oidc.client_secret',
   'elasticsearch.api_key',
   'llm.custom_endpoint_token',

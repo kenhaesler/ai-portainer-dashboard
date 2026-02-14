@@ -26,6 +26,11 @@ export const DEFAULT_SETTINGS = {
     { key: 'notifications.smtp_user', label: 'SMTP Username', description: 'SMTP authentication username', type: 'string', defaultValue: '' },
     { key: 'notifications.smtp_password', label: 'SMTP Password', description: 'SMTP authentication password', type: 'password', defaultValue: '' },
     { key: 'notifications.email_recipients', label: 'Email Recipients', description: 'Comma-separated list of recipient email addresses', type: 'string', defaultValue: '' },
+    { key: 'notifications.discord_enabled', label: 'Enable Discord Notifications', description: 'Send alerts to Discord via webhook', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.discord_webhook_url', label: 'Discord Webhook URL', description: 'Discord channel incoming webhook URL (https://discord.com/api/webhooks/...)', type: 'password', defaultValue: '' },
+    { key: 'notifications.telegram_enabled', label: 'Enable Telegram Notifications', description: 'Send alerts via Telegram Bot API', type: 'boolean', defaultValue: 'false' },
+    { key: 'notifications.telegram_bot_token', label: 'Telegram Bot Token', description: 'Bot token from @BotFather (format: 123456:ABC-DEF...)', type: 'password', defaultValue: '' },
+    { key: 'notifications.telegram_chat_id', label: 'Telegram Chat ID', description: 'Chat, group, or channel ID to receive notifications', type: 'string', defaultValue: '' },
   ],
   cache: [
     { key: 'cache.container_ttl', label: 'Container Cache TTL', description: 'Time to cache container list (seconds)', type: 'number', defaultValue: '30', min: 5, max: 300 },
