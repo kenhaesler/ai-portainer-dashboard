@@ -140,6 +140,15 @@ export const envSchema = z.object({
   TEAMS_WEBHOOK_URL: z.string().url().optional(),
   TEAMS_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
 
+  // Notifications — Discord
+  DISCORD_WEBHOOK_URL: z.string().url().optional(),
+  DISCORD_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+
+  // Notifications — Telegram
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
+  TELEGRAM_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
+
   // Notifications — Email
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
