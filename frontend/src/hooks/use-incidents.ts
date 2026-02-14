@@ -7,8 +7,8 @@ export interface Incident {
   severity: 'critical' | 'warning' | 'info';
   status: 'active' | 'resolved';
   root_cause_insight_id: string | null;
-  related_insight_ids: string; // JSON array
-  affected_containers: string; // JSON array
+  related_insight_ids: string[]; // JSONB returns native array (pg driver auto-parses)
+  affected_containers: string[]; // JSONB returns native array (pg driver auto-parses)
   endpoint_id: number | null;
   endpoint_name: string | null;
   correlation_type: string;

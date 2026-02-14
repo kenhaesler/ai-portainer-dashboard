@@ -9,8 +9,8 @@ export interface Incident {
   severity: 'critical' | 'warning' | 'info';
   status: 'active' | 'resolved';
   root_cause_insight_id: string | null;
-  related_insight_ids: string; // JSON array
-  affected_containers: string; // JSON array
+  related_insight_ids: string[]; // JSONB returns native array (pg driver auto-parses)
+  affected_containers: string[]; // JSONB returns native array (pg driver auto-parses)
   endpoint_id: number | null;
   endpoint_name: string | null;
   correlation_type: string;
@@ -70,12 +70,12 @@ export async function addInsightToIncident(incidentId: string, insightId: string
 
   if (!incident) return;
 
-  const relatedIds: string[] = JSON.parse(incident.related_insight_ids);
+  const relatedIds: string[] = incident.related_insight_ids;
   if (!relatedIds.includes(insightId)) {
     relatedIds.push(insightId);
   }
 
-  const containers: string[] = JSON.parse(incident.affected_containers);
+  const containers: string[] = incident.affected_containers;
   if (containerName && !containers.includes(containerName)) {
     containers.push(containerName);
   }
@@ -146,7 +146,7 @@ export async function getActiveIncidentForContainer(
   for (const incident of incidents) {
     if (incident.endpoint_id !== null) {
       // Check related insights for matching container
-      const relatedIds: string[] = JSON.parse(incident.related_insight_ids);
+      const relatedIds: string[] = incident.related_insight_ids;
       const rootId = incident.root_cause_insight_id;
       const allIds = rootId ? [rootId, ...relatedIds] : relatedIds;
 

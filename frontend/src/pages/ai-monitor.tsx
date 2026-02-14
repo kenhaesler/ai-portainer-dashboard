@@ -450,7 +450,7 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
 
 function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const containers: string[] = JSON.parse(incident.affected_containers || '[]');
+  const containers: string[] = incident.affected_containers || [];
   const isActive = incident.status === 'active';
 
   return (

@@ -34,7 +34,7 @@ function sanitizeWebhook(webhook: Webhook) {
   return {
     ...webhook,
     secret: webhook.secret.slice(0, 8) + '...',
-    events: JSON.parse(webhook.events),
+    events: webhook.events,
   };
 }
 
