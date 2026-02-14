@@ -93,6 +93,6 @@ describe('CommandPalette', () => {
   it('does not include deprecated backups page in static page entries', () => {
     renderPalette();
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText('AI Settings')).toBeInTheDocument();
   });
 });
