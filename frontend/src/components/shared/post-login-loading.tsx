@@ -77,7 +77,7 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
         <motion.p
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.1 }}
           className="text-lg font-medium tracking-tight"
         >
           Initializing Intelligence
@@ -85,7 +85,7 @@ export function PostLoginLoading({ onComplete }: PostLoginLoadingProps) {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
+          transition={{ delay: 0.3 }}
           className="mt-2 flex items-center justify-center gap-2"
         >
           <span className="h-px w-8 bg-muted-foreground/30" />
