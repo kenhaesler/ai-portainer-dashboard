@@ -59,12 +59,12 @@ export function MonitoringTab({ editedValues, originalValues, onChange, isSaving
         disabled={isSaving}
         footerContent={<NotificationTestButtons />}
         status={
-          editedValues['notifications.teams_enabled'] === 'true' || editedValues['notifications.email_enabled'] === 'true'
+          editedValues['notifications.teams_enabled'] === 'true' || editedValues['notifications.email_enabled'] === 'true' || editedValues['notifications.discord_enabled'] === 'true' || editedValues['notifications.telegram_enabled'] === 'true'
             ? 'configured'
             : 'not-configured'
         }
         statusLabel={
-          editedValues['notifications.teams_enabled'] === 'true' || editedValues['notifications.email_enabled'] === 'true'
+          editedValues['notifications.teams_enabled'] === 'true' || editedValues['notifications.email_enabled'] === 'true' || editedValues['notifications.discord_enabled'] === 'true' || editedValues['notifications.telegram_enabled'] === 'true'
             ? 'Enabled'
             : 'Disabled'
         }
@@ -77,12 +77,10 @@ export function MonitoringTab({ editedValues, originalValues, onChange, isSaving
 }
 
 export function NotificationTestButtons() {
-  const [testingTeams, setTestingTeams] = useState(false);
-  const [testingEmail, setTestingEmail] = useState(false);
+  const [testingChannel, setTestingChannel] = useState<string | null>(null);
 
-  const handleTest = async (channel: 'teams' | 'email') => {
-    const setTesting = channel === 'teams' ? setTestingTeams : setTestingEmail;
-    setTesting(true);
+  const handleTest = async (channel: 'teams' | 'email' | 'discord' | 'telegram') => {
+    setTestingChannel(channel);
     try {
       const result = await api.post<{ success: boolean; error?: string }>('/api/notifications/test', { channel });
       if (result.success) {
@@ -93,31 +91,33 @@ export function NotificationTestButtons() {
     } catch (err) {
       toast.error(`Failed to send test ${channel} notification: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
-      setTesting(false);
+      setTestingChannel(null);
     }
   };
+
+  const channels: { id: 'teams' | 'email' | 'discord' | 'telegram'; label: string }[] = [
+    { id: 'teams', label: 'Test Teams' },
+    { id: 'email', label: 'Test Email' },
+    { id: 'discord', label: 'Test Discord' },
+    { id: 'telegram', label: 'Test Telegram' },
+  ];
 
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
       <Info className="h-4 w-4 text-muted-foreground shrink-0" />
       <span className="text-sm text-muted-foreground">Send a test notification to verify your configuration:</span>
-      <div className="flex items-center gap-2 ml-auto">
-        <button
-          onClick={() => handleTest('teams')}
-          disabled={testingTeams}
-          className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-        >
-          {testingTeams ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-          Test Teams
-        </button>
-        <button
-          onClick={() => handleTest('email')}
-          disabled={testingEmail}
-          className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-        >
-          {testingEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-          Test Email
-        </button>
+      <div className="flex flex-wrap items-center gap-2 ml-auto">
+        {channels.map((ch) => (
+          <button
+            key={ch.id}
+            onClick={() => handleTest(ch.id)}
+            disabled={testingChannel !== null}
+            className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {testingChannel === ch.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            {ch.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -125,7 +125,7 @@ export function NotificationTestButtons() {
 
 interface NotificationHistoryEntry {
   id: number;
-  channel: 'teams' | 'email';
+  channel: 'teams' | 'email' | 'discord' | 'telegram';
   event_type: string;
   title: string;
   body: string;
@@ -143,7 +143,7 @@ interface NotificationHistoryResponse {
   offset: number;
 }
 
-type ChannelFilter = 'all' | 'teams' | 'email';
+type ChannelFilter = 'all' | 'teams' | 'email' | 'discord' | 'telegram';
 type StatusFilter = 'all' | 'sent' | 'failed';
 type DateRangeFilter = 'all' | '24h' | '7d' | '30d';
 
@@ -236,6 +236,8 @@ export function NotificationHistoryPanel() {
                 { value: 'all', label: 'All' },
                 { value: 'teams', label: 'Teams' },
                 { value: 'email', label: 'Email' },
+                { value: 'discord', label: 'Discord' },
+                { value: 'telegram', label: 'Telegram' },
               ]}
             />
           </div>

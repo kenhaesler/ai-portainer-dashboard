@@ -55,12 +55,24 @@ function getSettingValue(key: string): string | null {
   }
 }
 
-function isChannelEnabled(channel: 'teams' | 'email'): boolean {
+function isChannelEnabled(channel: 'teams' | 'email' | 'discord' | 'telegram'): boolean {
   if (channel === 'teams') {
     const dbValue = getSettingValue('notifications.teams_enabled');
     if (dbValue !== null) return dbValue === 'true';
     const config = getConfig();
     return config.TEAMS_NOTIFICATIONS_ENABLED;
+  }
+  if (channel === 'discord') {
+    const dbValue = getSettingValue('notifications.discord_enabled');
+    if (dbValue !== null) return dbValue === 'true';
+    const config = getConfig();
+    return config.DISCORD_NOTIFICATIONS_ENABLED;
+  }
+  if (channel === 'telegram') {
+    const dbValue = getSettingValue('notifications.telegram_enabled');
+    if (dbValue !== null) return dbValue === 'true';
+    const config = getConfig();
+    return config.TELEGRAM_NOTIFICATIONS_ENABLED;
   }
   const dbValue = getSettingValue('notifications.email_enabled');
   if (dbValue !== null) return dbValue === 'true';
@@ -128,6 +140,29 @@ function getTeamsWebhookUrl(): string | undefined {
   if (!webhookUrl) return undefined;
   if (!validateWebhookUrl(webhookUrl)) {
     log.warn('Teams webhook URL must be a valid HTTPS URL');
+    return undefined;
+  }
+  return webhookUrl;
+}
+
+function validateDiscordWebhookUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (parsed.hostname === 'discord.com' || parsed.hostname === 'discordapp.com')
+      && parsed.pathname.startsWith('/api/webhooks/') && parsed.protocol === 'https:';
+  } catch { return false; }
+}
+
+function validateTelegramToken(token: string): boolean {
+  return /^\d+:[A-Za-z0-9_-]{30,50}$/.test(token);
+}
+
+function getDiscordWebhookUrl(): string | undefined {
+  const dbValue = getSettingValue('notifications.discord_webhook_url');
+  const webhookUrl = dbValue || getConfig().DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return undefined;
+  if (!validateDiscordWebhookUrl(webhookUrl)) {
+    log.warn('Discord webhook URL must be a valid HTTPS discord.com/discordapp.com URL');
     return undefined;
   }
   return webhookUrl;
@@ -331,6 +366,100 @@ async function sendEmailNotificationInner(payload: NotificationPayload): Promise
   log.info({ title: payload.title, recipients: recipients.length }, 'Email notification sent');
 }
 
+export async function sendDiscordNotification(payload: NotificationPayload): Promise<void> {
+  return withSpan('discord.notify', 'discord-notification', 'client', () =>
+    sendDiscordNotificationInner(payload),
+  );
+}
+
+async function sendDiscordNotificationInner(payload: NotificationPayload): Promise<void> {
+  const webhookUrl = getDiscordWebhookUrl();
+  if (!webhookUrl) {
+    throw new Error('Discord webhook URL not configured or invalid');
+  }
+
+  const colorMap: Record<string, number> = {
+    critical: 0xef4444, warning: 0xeab308, info: 0x3b82f6,
+  };
+  const color = colorMap[payload.severity] ?? 0x22c55e;
+
+  const embed = {
+    title: payload.title,
+    description: payload.body,
+    color,
+    fields: [
+      ...(payload.containerName ? [{ name: 'Container', value: payload.containerName, inline: true }] : []),
+      ...(payload.endpointId ? [{ name: 'Endpoint', value: String(payload.endpointId), inline: true }] : []),
+      { name: 'Severity', value: payload.severity, inline: true },
+    ],
+    timestamp: new Date().toISOString(),
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ embeds: [embed] }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Discord webhook failed (${response.status}): ${text}`);
+  }
+
+  logNotification('discord', payload, 'sent');
+  log.info({ title: payload.title }, 'Discord notification sent');
+}
+
+export async function sendTelegramNotification(payload: NotificationPayload): Promise<void> {
+  return withSpan('telegram.notify', 'telegram-notification', 'client', () =>
+    sendTelegramNotificationInner(payload),
+  );
+}
+
+async function sendTelegramNotificationInner(payload: NotificationPayload): Promise<void> {
+  const config = getConfig();
+  const token = getSettingValue('notifications.telegram_bot_token') || config.TELEGRAM_BOT_TOKEN;
+  const chatId = getSettingValue('notifications.telegram_chat_id') || config.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    throw new Error('Telegram bot token or chat ID not configured');
+  }
+  if (!validateTelegramToken(token)) {
+    throw new Error('Telegram bot token format is invalid');
+  }
+
+  const emojiMap: Record<string, string> = {
+    critical: '\u{1F534}', warning: '\u{1F7E1}', info: '\u{1F535}',
+  };
+  const emoji = emojiMap[payload.severity] ?? '\u{1F7E2}';
+
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const text = [
+    `${emoji} <b>${esc(payload.title)}</b>`,
+    '',
+    esc(payload.body),
+    '',
+    ...(payload.containerName ? [`<b>Container:</b> ${esc(payload.containerName)}`] : []),
+    ...(payload.endpointId ? [`<b>Endpoint:</b> ${payload.endpointId}`] : []),
+    `<b>Severity:</b> ${esc(payload.severity)}`,
+    `<b>Time:</b> ${new Date().toISOString()}`,
+  ].join('\n');
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Telegram API failed (${response.status}): ${errText}`);
+  }
+
+  logNotification('telegram', payload, 'sent');
+  log.info({ title: payload.title }, 'Telegram notification sent');
+}
+
 function isRateLimited(containerId: string | null | undefined, eventType: string): boolean {
   if (!containerId) return false;
   const key = `${containerId}:${eventType}`;
@@ -390,13 +519,37 @@ export async function notifyInsight(insight: Insight): Promise<void> {
     }
   }
 
+  if (isChannelEnabled('discord')) {
+    try {
+      await sendDiscordNotification(payload);
+      successCount++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`discord: ${msg}`);
+      logNotification('discord', payload, 'failed', msg);
+      log.warn({ err }, 'Discord notification failed');
+    }
+  }
+
+  if (isChannelEnabled('telegram')) {
+    try {
+      await sendTelegramNotification(payload);
+      successCount++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`telegram: ${msg}`);
+      logNotification('telegram', payload, 'failed', msg);
+      log.warn({ err }, 'Telegram notification failed');
+    }
+  }
+
   // Only record cooldown if at least one notification was delivered
   if (successCount > 0) {
     recordSent(insight.container_id, eventType);
   }
 }
 
-export async function sendTestNotification(channel: 'teams' | 'email'): Promise<{ success: boolean; error?: string }> {
+export async function sendTestNotification(channel: 'teams' | 'email' | 'discord' | 'telegram'): Promise<{ success: boolean; error?: string }> {
   const payload: NotificationPayload = {
     title: 'Test Notification',
     body: 'This is a test notification from AI Portainer Dashboard. If you see this, your notification channel is configured correctly.',
@@ -407,6 +560,10 @@ export async function sendTestNotification(channel: 'teams' | 'email'): Promise<
   try {
     if (channel === 'teams') {
       await sendTeamsNotification(payload);
+    } else if (channel === 'discord') {
+      await sendDiscordNotification(payload);
+    } else if (channel === 'telegram') {
+      await sendTelegramNotification(payload);
     } else {
       await sendEmailNotification(payload);
     }

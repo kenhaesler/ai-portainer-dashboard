@@ -392,13 +392,13 @@ export const SearchQuerySchema = z.object({
 
 // ─── Notification schemas ───────────────────────────────────────────
 export const NotificationHistoryQuerySchema = z.object({
-  channel: z.enum(['teams', 'email']).optional(),
+  channel: z.enum(['teams', 'email', 'discord', 'telegram']).optional(),
   limit: z.coerce.number().default(50),
   offset: z.coerce.number().default(0),
 });
 
 export const NotificationTestBodySchema = z.object({
-  channel: z.enum(['teams', 'email']),
+  channel: z.enum(['teams', 'email', 'discord', 'telegram']),
 });
 
 // ─── Cache Admin schemas ────────────────────────────────────────────
