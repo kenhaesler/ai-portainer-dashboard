@@ -77,7 +77,7 @@ export default function LoginPage() {
         setShowPostLoginLoading(true);
         window.setTimeout(() => {
           navigate(defaultLandingPage || "/", { replace: true });
-        }, 2000); // Reduced to 2 seconds for a snappier feel
+        }, 1000); // Reduced to 1 second minimum as requested
       }
     } catch (err) {
       setError(
