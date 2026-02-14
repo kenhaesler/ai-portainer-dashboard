@@ -8,6 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
 import { useLlmModels } from '@/hooks/use-llm-models';
+import { getModelUseCase } from '@/components/settings/model-use-cases';
 import { useMcpServers } from '@/hooks/use-mcp';
 import { usePromptProfiles, useSwitchProfile } from '@/hooks/use-prompt-profiles';
 import { useAuth } from '@/providers/auth-provider';
@@ -178,15 +179,25 @@ export default function LlmAssistantPage() {
           )}
           {/* Model Selector */}
           {modelsData && modelsData.models.length > 0 && (
-            <ThemedSelect
-              value={selectedModel}
-              onValueChange={(val) => setSelectedModel(val)}
-              disabled={isStreaming || isSending}
-              options={modelsData.models.map((model) => ({
-                value: model.name,
-                label: model.name,
-              }))}
-            />
+            <div className="flex items-center gap-2">
+              <ThemedSelect
+                value={selectedModel}
+                onValueChange={(val) => setSelectedModel(val)}
+                disabled={isStreaming || isSending}
+                options={modelsData.models.map((model) => ({
+                  value: model.name,
+                  label: model.name,
+                }))}
+              />
+              {selectedModel && (() => {
+                const useCase = getModelUseCase(selectedModel);
+                return (
+                  <span className={`text-xs font-semibold ${useCase.color}`} title={useCase.description}>
+                    {useCase.label}
+                  </span>
+                );
+              })()}
+            </div>
           )}
           <button
             onClick={handleClear}
