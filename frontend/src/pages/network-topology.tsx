@@ -37,7 +37,7 @@ export default function NetworkTopologyPage() {
   };
 
   const { data: endpoints } = useEndpoints();
-  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint);
+  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
   const { data: networks, isLoading: networksLoading, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
   const { interval, setInterval } = useAutoRefresh(30);

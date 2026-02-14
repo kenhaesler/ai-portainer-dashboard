@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 
 type Severity = 'critical' | 'warning' | 'info';
 
-interface Insight {
+export interface Insight {
   id: string;
   endpoint_id: number | null;
   endpoint_name: string | null;
@@ -24,12 +24,19 @@ interface AcknowledgeResponse {
   success: boolean;
 }
 
+const MAX_INSIGHTS = 1000;
+const BATCH_DEBOUNCE_MS = 300;
+
 export function useMonitoring() {
   const { monitoringSocket } = useSockets();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [subscribedSeverities, setSubscribedSeverities] = useState<Set<Severity>>(
     new Set(['critical', 'warning', 'info'])
   );
+
+  // Buffer for debounced batch updates
+  const batchBufferRef = useRef<Insight[]>([]);
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const historyQuery = useQuery<{ insights: Insight[]; total: number }>({
     queryKey: ['monitoring', 'insights'],
@@ -38,9 +45,32 @@ export function useMonitoring() {
 
   useEffect(() => {
     if (historyQuery.data?.insights) {
-      setInsights(historyQuery.data.insights);
+      setInsights(historyQuery.data.insights.slice(0, MAX_INSIGHTS));
     }
   }, [historyQuery.data]);
+
+  const flushBatch = useCallback(() => {
+    const buffered = batchBufferRef.current;
+    if (buffered.length === 0) return;
+    batchBufferRef.current = [];
+
+    setInsights((prev) => {
+      const merged = [...buffered, ...prev];
+      return merged.slice(0, MAX_INSIGHTS);
+    });
+  }, []);
+
+  const enqueueInsights = useCallback(
+    (newInsights: Insight[]) => {
+      batchBufferRef.current = [...newInsights, ...batchBufferRef.current];
+
+      if (batchTimerRef.current) {
+        clearTimeout(batchTimerRef.current);
+      }
+      batchTimerRef.current = setTimeout(flushBatch, BATCH_DEBOUNCE_MS);
+    },
+    [flushBatch]
+  );
 
   useEffect(() => {
     if (!monitoringSocket) return;
@@ -50,16 +80,28 @@ export function useMonitoring() {
 
     const handleNewInsight = (insight: Insight) => {
       if (subscribedSeverities.has(insight.severity)) {
-        setInsights((prev) => [insight, ...prev]);
+        enqueueInsights([insight]);
+      }
+    };
+
+    const handleBatchInsights = (batch: Insight[]) => {
+      const filtered = batch.filter((i) => subscribedSeverities.has(i.severity));
+      if (filtered.length > 0) {
+        enqueueInsights(filtered);
       }
     };
 
     monitoringSocket.on('insights:new', handleNewInsight);
+    monitoringSocket.on('insights:batch', handleBatchInsights);
 
     return () => {
       monitoringSocket.off('insights:new', handleNewInsight);
+      monitoringSocket.off('insights:batch', handleBatchInsights);
+      if (batchTimerRef.current) {
+        clearTimeout(batchTimerRef.current);
+      }
     };
-  }, [monitoringSocket, subscribedSeverities]);
+  }, [monitoringSocket, subscribedSeverities, enqueueInsights]);
 
   const subscribeSeverity = useCallback((severity: Severity) => {
     setSubscribedSeverities((prev) => {

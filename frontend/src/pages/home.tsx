@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
-import { useContainers } from '@/hooks/use-containers';
+import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useKpiHistory } from '@/hooks/use-kpi-history';
 import { KpiCard } from '@/components/shared/kpi-card';
@@ -29,15 +29,8 @@ export default function HomePage() {
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
-  const { data: allContainers } = useContainers();
+  const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: kpiHistory } = useKpiHistory(24);
-
-  const favoriteContainers = useMemo(() => {
-    if (!allContainers || favoriteIds.length === 0) return [];
-    return allContainers.filter((c) =>
-      favoriteIds.includes(`${c.endpointId}:${c.id}`),
-    );
-  }, [allContainers, favoriteIds]);
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
