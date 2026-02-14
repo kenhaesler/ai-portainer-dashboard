@@ -23,6 +23,7 @@ import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -308,26 +309,30 @@ export default function HomePage() {
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal>
-            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
-              <div className="flex-1 min-h-0">
-                <ContainerStatePie
-                  running={data.kpis.running}
-                  stopped={data.kpis.stopped}
-                  unhealthy={data.kpis.unhealthy}
-                />
+            <SpotlightCard>
+              <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
+                <div className="flex-1 min-h-0">
+                  <ContainerStatePie
+                    running={data.kpis.running}
+                    stopped={data.kpis.stopped}
+                    unhealthy={data.kpis.unhealthy}
+                  />
+                </div>
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
           <MotionReveal className="lg:col-span-2">
-            <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Endpoint Health
-              </h3>
-              <div className="flex-1 min-h-0">
-                <EndpointHealthTreemap endpoints={endpointChartData} />
+            <SpotlightCard>
+              <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Endpoint Health
+                </h3>
+                <div className="flex-1 min-h-0">
+                  <EndpointHealthTreemap endpoints={endpointChartData} />
+                </div>
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
         </MotionStagger>
       ) : null}
@@ -341,27 +346,31 @@ export default function HomePage() {
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal className="lg:col-span-2">
-            <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Top Workloads
-              </h3>
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                <WorkloadTopBar endpoints={endpointChartData} />
+            <SpotlightCard>
+              <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Top Workloads
+                </h3>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <WorkloadTopBar endpoints={endpointChartData} />
+                </div>
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
           <MotionReveal>
-            <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Fleet Summary
-              </h3>
-              <div className="flex-1 min-h-0">
-                <FleetSummaryCard
-                  endpoints={endpointChartData}
-                  totalContainers={data.kpis.total}
-                />
+            <SpotlightCard>
+              <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Fleet Summary
+                </h3>
+                <div className="flex-1 min-h-0">
+                  <FleetSummaryCard
+                    endpoints={endpointChartData}
+                    totalContainers={data.kpis.total}
+                  />
+                </div>
               </div>
-            </div>
+            </SpotlightCard>
           </MotionReveal>
         </MotionStagger>
       ) : null}
@@ -370,17 +379,21 @@ export default function HomePage() {
       {isLoading ? (
         <SkeletonCard className="h-[400px]" />
       ) : data ? (
-        <MotionReveal className="rounded-lg border bg-card p-6 shadow-sm">
-          <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-            Recent Containers
-          </h3>
-          <DataTable
-            columns={containerColumns}
-            data={data.recentContainers}
-            searchKey="name"
-            searchPlaceholder="Filter containers..."
-            pageSize={10}
-          />
+        <MotionReveal>
+          <SpotlightCard>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Recent Containers
+              </h3>
+              <DataTable
+                columns={containerColumns}
+                data={data.recentContainers}
+                searchKey="name"
+                searchPlaceholder="Filter containers..."
+                pageSize={10}
+              />
+            </div>
+          </SpotlightCard>
         </MotionReveal>
       ) : null}
     </MotionPage>
