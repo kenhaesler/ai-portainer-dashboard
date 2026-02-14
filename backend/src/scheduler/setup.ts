@@ -1,7 +1,7 @@
 import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { runMonitoringCycle } from '../services/monitoring-service.js';
+import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep } from '../services/monitoring-service.js';
 import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { recordNetworkSample } from '../services/network-rate-tracker.js';
@@ -477,6 +477,22 @@ export function startScheduler(): void {
   );
   intervals.push(cleanupInterval);
 
+  // Periodic sweep of expired anomaly cooldowns (every 15 minutes)
+  startCooldownSweep();
+
+  // Log process memory usage every 5 minutes at debug level
+  const memoryLogInterval = setInterval(() => {
+    const mem = process.memoryUsage();
+    log.debug({
+      rss: Math.round(mem.rss / 1024 / 1024),
+      heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+      external: Math.round(mem.external / 1024 / 1024),
+    }, 'Process memory usage (MB)');
+  }, 5 * 60 * 1000);
+  memoryLogInterval.unref();
+  intervals.push(memoryLogInterval);
+
   // Forward container-origin logs to Elasticsearch when enabled.
   startElasticsearchLogForwarder();
 
@@ -488,6 +504,7 @@ export function stopScheduler(): void {
     clearInterval(interval);
   }
   intervals.length = 0;
+  stopCooldownSweep();
   stopElasticsearchLogForwarder();
   stopWebhookListener();
   log.info('Scheduler stopped');

@@ -35,6 +35,48 @@ export function resetAnomalyCooldowns(): void {
   anomalyCooldowns.clear();
 }
 
+const COOLDOWN_SWEEP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+let cooldownSweepTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Remove expired entries from the anomalyCooldowns map. */
+export function sweepExpiredCooldowns(cooldownMinutes: number): number {
+  const cooldownMs = cooldownMinutes * 60_000;
+  const now = Date.now();
+  let swept = 0;
+  for (const [key, timestamp] of anomalyCooldowns) {
+    if (now - timestamp >= cooldownMs) {
+      anomalyCooldowns.delete(key);
+      swept++;
+    }
+  }
+  if (swept > 0) {
+    log.debug({ swept, remaining: anomalyCooldowns.size }, 'Swept expired anomaly cooldowns');
+  }
+  return swept;
+}
+
+/** Start periodic sweep of expired anomaly cooldowns (every 15 minutes). */
+export function startCooldownSweep(): void {
+  if (cooldownSweepTimer) return;
+  cooldownSweepTimer = setInterval(() => {
+    try {
+      const config = getConfig();
+      sweepExpiredCooldowns(config.ANOMALY_COOLDOWN_MINUTES);
+    } catch {
+      // Config may not be available during shutdown
+    }
+  }, COOLDOWN_SWEEP_INTERVAL_MS);
+  cooldownSweepTimer.unref();
+}
+
+/** Stop periodic cooldown sweep. */
+export function stopCooldownSweep(): void {
+  if (cooldownSweepTimer) {
+    clearInterval(cooldownSweepTimer);
+    cooldownSweepTimer = undefined;
+  }
+}
+
 let monitoringNamespace: Namespace | null = null;
 
 export function setMonitoringNamespace(ns: Namespace): void {

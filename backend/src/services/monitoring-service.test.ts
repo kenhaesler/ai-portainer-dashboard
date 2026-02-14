@@ -124,7 +124,7 @@ vi.mock('./incident-correlator.js', () => ({
 }));
 
 const { getConfig } = await import('../config/index.js');
-const { runMonitoringCycle, setMonitoringNamespace } = await import('./monitoring-service.js');
+const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep } = await import('./monitoring-service.js');
 
 describe('monitoring-service', () => {
   beforeEach(() => {
@@ -468,6 +468,62 @@ describe('monitoring-service', () => {
       // Default state: no namespace set (other tests don't set it)
       // runMonitoringCycle should complete without error
       await expect(runMonitoringCycle()).resolves.not.toThrow();
+    });
+  });
+
+  describe('anomalyCooldowns sweep (#547)', () => {
+    beforeEach(() => {
+      resetAnomalyCooldowns();
+    });
+
+    it('sweepExpiredCooldowns removes entries older than cooldown period', async () => {
+      // Set up: run a cycle that creates cooldown entries
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true,
+        z_score: 3.5,
+        current_value: 95.0,
+        mean: 40.0,
+        method: 'adaptive',
+      });
+
+      await runMonitoringCycle();
+
+      // Cooldown entries should exist now; sweep with 0 minutes removes all
+      const swept = sweepExpiredCooldowns(0);
+      expect(swept).toBeGreaterThan(0);
+    });
+
+    it('sweepExpiredCooldowns keeps recent entries', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true,
+        z_score: 3.5,
+        current_value: 95.0,
+        mean: 40.0,
+        method: 'adaptive',
+      });
+
+      await runMonitoringCycle();
+
+      // Sweep with a large cooldown period should keep everything
+      const swept = sweepExpiredCooldowns(999);
+      expect(swept).toBe(0);
+    });
+
+    it('sweepExpiredCooldowns returns 0 when map is empty', () => {
+      expect(sweepExpiredCooldowns(30)).toBe(0);
+    });
+
+    it('startCooldownSweep and stopCooldownSweep do not throw', () => {
+      expect(() => startCooldownSweep()).not.toThrow();
+      expect(() => stopCooldownSweep()).not.toThrow();
     });
   });
 });
