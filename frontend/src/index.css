@@ -1947,7 +1947,6 @@ html[data-potato-mode] body {
 /* ====== SPOTLIGHT CARD (mouse-follow radial glow) ====== */
 .spotlight-card {
   position: relative;
-  overflow: hidden;
   border-radius: var(--radius);
 }
 
@@ -1958,6 +1957,8 @@ html[data-potato-mode] body {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease;
+  border-radius: var(--radius);
+  overflow: hidden;
   background: radial-gradient(
     600px circle at var(--x, 50%) var(--y, 50%),
     rgba(255, 255, 255, 0.06),
