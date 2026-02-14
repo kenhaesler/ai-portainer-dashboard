@@ -48,6 +48,8 @@ export const envSchema = z.object({
   // Monitoring
   MONITORING_ENABLED: z.coerce.boolean().default(true),
   MONITORING_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(5),
+  MAX_INSIGHTS_PER_CYCLE: z.coerce.number().int().min(1).max(10000).default(500),
+  AI_ANALYSIS_ENABLED: z.coerce.boolean().default(true),
 
   // Metrics Collection
   METRICS_COLLECTION_ENABLED: z.coerce.boolean().default(true),
@@ -120,7 +122,7 @@ export const envSchema = z.object({
 
   // TimescaleDB (metrics + KPI storage)
   TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
-  TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
+  TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(50),
   METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   METRICS_ROLLUP_5MIN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
   METRICS_ROLLUP_1HOUR_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
@@ -130,6 +132,7 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3051),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   SQLITE_PATH: z.string().default('./data/dashboard.db'),
+  SQLITE_BUSY_TIMEOUT: z.coerce.number().int().min(1000).max(60000).default(5000),
 
   // HTTP/2 (opt-in, requires TLS cert/key)
   HTTP2_ENABLED: z.coerce.boolean().default(false),
@@ -204,11 +207,8 @@ export const envSchema = z.object({
   LOG_SHIPPING_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
 
   // Scalability Limits (#544, #547)
-  MAX_INSIGHTS_PER_CYCLE: z.coerce.number().int().min(1).default(500),
-  SQLITE_BUSY_TIMEOUT: z.coerce.number().int().min(100).default(5000),
   INSIGHTS_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   MAX_LLM_HISTORY_MESSAGES: z.coerce.number().int().min(1).default(50),
-  AI_ANALYSIS_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   LOG_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
 
   // Rate Limiting

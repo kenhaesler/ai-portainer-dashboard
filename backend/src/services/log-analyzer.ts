@@ -1,4 +1,6 @@
+import pLimit from 'p-limit';
 import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../config/index.js';
 import { chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { getContainerLogs } from './portainer-client.js';
@@ -76,20 +78,42 @@ export async function analyzeLogsForContainers(
   containers: Array<{ endpointId: number; containerId: string; containerName: string }>,
   maxContainers: number,
   tailLines: number,
+  priorityContainerIds?: string[],
 ): Promise<LogAnalysisResult[]> {
-  const toAnalyze = containers.slice(0, maxContainers);
-  const results: LogAnalysisResult[] = [];
+  // Prioritize containers with recent anomalies/restarts if a priority list is provided
+  let ordered = [...containers];
+  if (priorityContainerIds && priorityContainerIds.length > 0) {
+    const prioritySet = new Set(priorityContainerIds);
+    ordered.sort((a, b) => {
+      const aP = prioritySet.has(a.containerId) ? 0 : 1;
+      const bP = prioritySet.has(b.containerId) ? 0 : 1;
+      return aP - bP;
+    });
+  }
 
-  // Sequential calls to avoid overwhelming Ollama
-  for (const container of toAnalyze) {
-    const result = await analyzeContainerLogs(
-      container.endpointId,
-      container.containerId,
-      container.containerName,
-      tailLines,
-    );
-    if (result) {
-      results.push(result);
+  const toAnalyze = ordered.slice(0, maxContainers);
+  const config = getConfig();
+  const limit = pLimit(config.LOG_ANALYSIS_CONCURRENCY);
+
+  const settled = await Promise.allSettled(
+    toAnalyze.map((container) =>
+      limit(() =>
+        analyzeContainerLogs(
+          container.endpointId,
+          container.containerId,
+          container.containerName,
+          tailLines,
+        ),
+      ),
+    ),
+  );
+
+  const results: LogAnalysisResult[] = [];
+  for (const result of settled) {
+    if (result.status === 'fulfilled' && result.value) {
+      results.push(result.value);
+    } else if (result.status === 'rejected') {
+      log.warn({ err: result.reason }, 'Log analysis failed for container');
     }
   }
 

@@ -55,7 +55,6 @@ export interface DashboardSummary {
     flagged: number;
     ignored: number;
   };
-  endpoints: NormalizedEndpoint[];
   recentContainers: NormalizedContainer[];
   timestamp: string;
 }
