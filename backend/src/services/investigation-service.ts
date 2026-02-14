@@ -329,13 +329,13 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
 
   try {
     // Phase 1: Gather evidence
-    updateInvestigationStatus(investigationId, 'gathering');
+    await updateInvestigationStatus(investigationId, 'gathering');
     broadcastInvestigationUpdate(investigationId, 'gathering');
 
     const evidence = await gatherEvidence(insight);
 
     // Phase 2: LLM analysis
-    updateInvestigationStatus(investigationId, 'analyzing', {
+    await updateInvestigationStatus(investigationId, 'analyzing', {
       evidence_summary: JSON.stringify(evidence.evidenceSummary),
     });
     broadcastInvestigationUpdate(investigationId, 'analyzing');
@@ -345,7 +345,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
     let llmResponse = '';
     await chatStream(
       [{ role: 'user', content: prompt }],
-      getEffectivePrompt('root_cause'),
+      await getEffectivePrompt('root_cause'),
       (chunk) => { llmResponse += chunk; },
     );
 
@@ -353,7 +353,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
     const result = parseInvestigationResponse(llmResponse);
     const durationMs = Date.now() - startTime;
 
-    updateInvestigationStatus(investigationId, 'complete', {
+    await updateInvestigationStatus(investigationId, 'complete', {
       root_cause: result.root_cause,
       contributing_factors: JSON.stringify(result.contributing_factors),
       severity_assessment: result.severity_assessment,
@@ -365,7 +365,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
       completed_at: new Date().toISOString(),
     });
 
-    broadcastInvestigationComplete(investigationId);
+    await broadcastInvestigationComplete(investigationId);
 
     log.info(
       { investigationId, durationMs, confidence: result.confidence_score },
@@ -375,7 +375,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
     const durationMs = Date.now() - startTime;
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
 
-    updateInvestigationStatus(investigationId, 'failed', {
+    await updateInvestigationStatus(investigationId, 'failed', {
       error_message: errorMessage,
       analysis_duration_ms: durationMs,
       completed_at: new Date().toISOString(),
@@ -393,10 +393,10 @@ function broadcastInvestigationUpdate(investigationId: string, status: string): 
   investigationNamespace.to('severity:all').emit('investigation:update', { id: investigationId, status });
 }
 
-function broadcastInvestigationComplete(investigationId: string): void {
+async function broadcastInvestigationComplete(investigationId: string): Promise<void> {
   if (!investigationNamespace) return;
 
-  const investigation = getInvestigation(investigationId);
+  const investigation = await getInvestigation(investigationId);
   if (investigation) {
     investigationNamespace.to('severity:all').emit('investigation:complete', investigation);
   }
@@ -438,7 +438,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   }
 
   // Guard: DB cooldown (for durability across restarts)
-  const recent = getRecentInvestigationForContainer(
+  const recent = await getRecentInvestigationForContainer(
     insight.container_id,
     config.INVESTIGATION_COOLDOWN_MINUTES,
   );
@@ -460,7 +460,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   // All guards passed — create and run
   const investigationId = uuidv4();
 
-  insertInvestigation({
+  await insertInvestigation({
     id: investigationId,
     insight_id: insight.id,
     endpoint_id: insight.endpoint_id,

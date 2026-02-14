@@ -81,7 +81,7 @@ describe('webhookRoutes', () => {
 
   describe('GET /api/webhooks', () => {
     it('should list webhooks with masked secrets', async () => {
-      mockListWebhooks.mockReturnValue([
+      mockListWebhooks.mockResolvedValue([
         {
           id: 'wh-1',
           name: 'Test Hook',
@@ -107,7 +107,7 @@ describe('webhookRoutes', () => {
 
   describe('POST /api/webhooks', () => {
     it('should create a webhook', async () => {
-      mockCreateWebhook.mockReturnValue({
+      mockCreateWebhook.mockResolvedValue({
         id: 'wh-new',
         name: 'New Hook',
         url: 'https://example.com/hook',
@@ -185,14 +185,14 @@ describe('webhookRoutes', () => {
 
   describe('GET /api/webhooks/:id', () => {
     it('should return 404 for non-existent webhook', async () => {
-      mockGetWebhookById.mockReturnValue(undefined);
+      mockGetWebhookById.mockResolvedValue(undefined);
 
       const res = await app.inject({ method: 'GET', url: '/api/webhooks/non-existent' });
       expect(res.statusCode).toBe(404);
     });
 
     it('should return webhook details', async () => {
-      mockGetWebhookById.mockReturnValue({
+      mockGetWebhookById.mockResolvedValue({
         id: 'wh-1',
         name: 'Test',
         url: 'https://example.com/hook',
@@ -212,7 +212,7 @@ describe('webhookRoutes', () => {
 
   describe('PATCH /api/webhooks/:id', () => {
     it('should update a webhook', async () => {
-      mockUpdateWebhook.mockReturnValue({
+      mockUpdateWebhook.mockResolvedValue({
         id: 'wh-1',
         name: 'Updated',
         url: 'https://example.com/hook',
@@ -234,7 +234,7 @@ describe('webhookRoutes', () => {
     });
 
     it('should return 404 for non-existent webhook', async () => {
-      mockUpdateWebhook.mockReturnValue(undefined);
+      mockUpdateWebhook.mockResolvedValue(undefined);
 
       const res = await app.inject({
         method: 'PATCH',
@@ -270,7 +270,7 @@ describe('webhookRoutes', () => {
 
   describe('DELETE /api/webhooks/:id', () => {
     it('should delete a webhook', async () => {
-      mockDeleteWebhook.mockReturnValue(true);
+      mockDeleteWebhook.mockResolvedValue(true);
 
       const res = await app.inject({ method: 'DELETE', url: '/api/webhooks/wh-1' });
       expect(res.statusCode).toBe(200);
@@ -278,7 +278,7 @@ describe('webhookRoutes', () => {
     });
 
     it('should return 404 for non-existent webhook', async () => {
-      mockDeleteWebhook.mockReturnValue(false);
+      mockDeleteWebhook.mockResolvedValue(false);
 
       const res = await app.inject({ method: 'DELETE', url: '/api/webhooks/non-existent' });
       expect(res.statusCode).toBe(404);
@@ -303,7 +303,7 @@ describe('webhookRoutes', () => {
 
   describe('GET /api/webhooks/:id/deliveries', () => {
     it('should return delivery history', async () => {
-      mockGetWebhookById.mockReturnValue({
+      mockGetWebhookById.mockResolvedValue({
         id: 'wh-1',
         name: 'Test',
         url: 'https://example.com/hook',
@@ -315,7 +315,7 @@ describe('webhookRoutes', () => {
         updated_at: '2025-01-01T00:00:00Z',
       });
 
-      mockGetDeliveries.mockReturnValue({
+      mockGetDeliveries.mockResolvedValue({
         deliveries: [
           {
             id: 'del-1',

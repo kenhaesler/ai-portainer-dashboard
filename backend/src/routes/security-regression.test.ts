@@ -24,60 +24,73 @@ let mockRemediationAction: Record<string, unknown> | undefined;
 
 vi.mock('../db/sqlite.js', () => ({
   getDb: vi.fn(() => ({
-    prepare: vi.fn((query: string) => {
-      if (query.includes('SELECT * FROM actions WHERE id = ?')) {
-        return { get: vi.fn(() => mockRemediationAction) };
-      }
-      if (query.includes('UPDATE actions SET status = \'executing\'')) {
-        return {
-          run: vi.fn(() => {
-            if (mockRemediationAction) {
-              mockRemediationAction = { ...mockRemediationAction, status: 'executing' };
-            }
-            return { changes: 1 };
-          }),
-        };
-      }
-      if (query.includes('UPDATE actions') && query.includes('SET status = \'completed\'')) {
-        return {
-          run: vi.fn((executionResult: string, executionDurationMs: number) => {
-            if (mockRemediationAction) {
-              mockRemediationAction = {
-                ...mockRemediationAction,
-                status: 'completed',
-                execution_result: executionResult,
-                execution_duration_ms: executionDurationMs,
-              };
-            }
-            return { changes: 1 };
-          }),
-        };
-      }
-      if (query.includes('UPDATE actions') && query.includes('SET status = \'failed\'')) {
-        return {
-          run: vi.fn((executionResult: string, executionDurationMs: number) => {
-            if (mockRemediationAction) {
-              mockRemediationAction = {
-                ...mockRemediationAction,
-                status: 'failed',
-                execution_result: executionResult,
-                execution_duration_ms: executionDurationMs,
-              };
-            }
-            return { changes: 1 };
-          }),
-        };
-      }
-      return {
-        all: vi.fn(() => []),
-        get: vi.fn(() => undefined),
-        run: vi.fn(() => ({ changes: 0 })),
-      };
-    }),
+    prepare: vi.fn(() => ({
+      all: vi.fn(() => []),
+      get: vi.fn(() => undefined),
+      run: vi.fn(() => ({ changes: 0 })),
+    })),
     exec: vi.fn(),
     pragma: vi.fn(() => []),
   })),
   isDbHealthy: vi.fn(() => true),
+}));
+
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: vi.fn(() => ({
+    queryOne: vi.fn(async (sql: string) => {
+      if (sql.includes('SELECT * FROM actions WHERE id = ?')) {
+        return mockRemediationAction;
+      }
+      if (sql.includes('SELECT COUNT(*)')) {
+        return { count: 0 };
+      }
+      return null;
+    }),
+    query: vi.fn(async () => []),
+    execute: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('UPDATE actions') && sql.includes("status = 'executing'")) {
+        if (mockRemediationAction) {
+          mockRemediationAction = { ...mockRemediationAction, status: 'executing' };
+        }
+        return { changes: 1 };
+      }
+      if (sql.includes('UPDATE actions') && sql.includes("status = 'completed'")) {
+        if (mockRemediationAction) {
+          mockRemediationAction = {
+            ...mockRemediationAction,
+            status: 'completed',
+            execution_result: params[0] as string,
+            execution_duration_ms: params[1] as number,
+          };
+        }
+        return { changes: 1 };
+      }
+      if (sql.includes('UPDATE actions') && sql.includes("status = 'failed'")) {
+        if (mockRemediationAction) {
+          mockRemediationAction = {
+            ...mockRemediationAction,
+            status: 'failed',
+            execution_result: params[0] as string,
+            execution_duration_ms: params[1] as number,
+          };
+        }
+        return { changes: 1 };
+      }
+      if (sql.includes('UPDATE actions') && sql.includes("status = 'approved'")) {
+        if (mockRemediationAction) {
+          mockRemediationAction = { ...mockRemediationAction, status: 'approved' };
+        }
+        return { changes: 1 };
+      }
+      return { changes: 0 };
+    }),
+    transaction: vi.fn(async (fn: Function) => fn({
+      execute: vi.fn(async () => ({ changes: 0 })),
+      queryOne: vi.fn(async () => null),
+      query: vi.fn(async () => []),
+    })),
+    healthCheck: vi.fn(async () => true),
+  })),
 }));
 
 vi.mock('../db/timescale.js', () => ({
@@ -287,7 +300,7 @@ vi.mock('../services/otlp-protobuf.js', () => ({
 }));
 
 vi.mock('../services/trace-store.js', () => ({
-  insertSpans: vi.fn(),
+  insertSpans: vi.fn(async () => 0),
 }));
 
 vi.mock('../services/webhook-service.js', () => ({
@@ -306,12 +319,12 @@ vi.mock('../services/event-bus.js', () => ({
 }));
 
 vi.mock('../services/status-page-store.js', () => ({
-  getStatusPageConfig: vi.fn(() => ({ enabled: false })),
-  getOverallUptime: vi.fn(() => 100),
-  getEndpointUptime: vi.fn(() => []),
-  getLatestSnapshot: vi.fn(() => null),
-  getDailyUptimeBuckets: vi.fn(() => []),
-  getRecentIncidentsPublic: vi.fn(() => []),
+  getStatusPageConfig: vi.fn(async () => ({ enabled: false })),
+  getOverallUptime: vi.fn(async () => 100),
+  getEndpointUptime: vi.fn(async () => []),
+  getLatestSnapshot: vi.fn(async () => null),
+  getDailyUptimeBuckets: vi.fn(async () => []),
+  getRecentIncidentsPublic: vi.fn(async () => []),
 }));
 
 vi.mock('../services/capacity-forecaster.js', () => ({
@@ -342,7 +355,7 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   removeBeylaFromEndpoint: vi.fn().mockResolvedValue(undefined),
   deployBeylaBulk: vi.fn().mockResolvedValue([]),
   removeBeylaBulk: vi.fn().mockResolvedValue([]),
-  getEndpointOtlpOverride: vi.fn(() => null),
+  getEndpointOtlpOverride: vi.fn().mockResolvedValue(null),
   setEndpointOtlpOverride: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -373,8 +386,8 @@ vi.mock('../services/portainer-backup.js', () => ({
 }));
 
 vi.mock('../services/image-staleness.js', () => ({
-  getStalenessRecords: vi.fn(() => []),
-  getStalenessSummary: vi.fn(() => ({ total: 0, stale: 0 })),
+  getStalenessRecords: vi.fn().mockResolvedValue([]),
+  getStalenessSummary: vi.fn().mockResolvedValue({ total: 0, stale: 0 }),
   runStalenessChecks: vi.fn().mockResolvedValue(undefined),
 }));
 

@@ -68,7 +68,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const llmConfig = getEffectiveLlmConfig();
+    const llmConfig = await getEffectiveLlmConfig();
     const { query } = request.body;
     const startTime = Date.now();
 
@@ -83,7 +83,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
     try {
       const infraContext = await getInfrastructureSummary();
-      const systemPrompt = getEffectivePrompt('command_palette') + infraContext;
+      const systemPrompt = await getEffectivePrompt('command_palette') + infraContext;
 
       const messages = [
         { role: 'system' as const, content: systemPrompt },
@@ -114,7 +114,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const data = await response.json() as any;
         fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
       } else {
-        const ollama = createConfiguredOllamaClient(llmConfig);
+        const ollama = await createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: llmConfig.model,
           messages,
@@ -129,7 +129,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
       const completionTokens = estimateTokens(fullResponse);
       try {
-        insertLlmTrace({
+        await insertLlmTrace({
           trace_id: randomUUID(),
           model: llmConfig.model,
           prompt_tokens: promptTokens,
@@ -173,7 +173,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
     } catch (err) {
       // Record error trace
       try {
-        insertLlmTrace({
+        await insertLlmTrace({
           trace_id: randomUUID(),
           model: llmConfig.model,
           prompt_tokens: 0,
@@ -214,7 +214,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         // then fall back to Ollama-native /api/tags for proxies (e.g. ParisNeo)
         // that don't implement the OpenAI compatibility layer.
         const baseUrl = new URL(url);
-        const authHeaders = getAuthHeaders(token, getEffectiveLlmConfig().authType);
+        const authHeaders = getAuthHeaders(token, (await getEffectiveLlmConfig()).authType);
         const fetchOpts = {
           headers: { 'Content-Type': 'application/json', ...authHeaders },
           signal: AbortSignal.timeout(10_000),
@@ -247,9 +247,9 @@ export async function llmRoutes(fastify: FastifyInstance) {
       }
 
       // Test Ollama connection using provided URL or fallback to settings/config
-      const effectiveConfig = getEffectiveLlmConfig();
+      const effectiveConfig = await getEffectiveLlmConfig();
       const host = ollamaUrl || effectiveConfig.ollamaUrl;
-      const ollama = createConfiguredOllamaClient({ ...effectiveConfig, ollamaUrl: host });
+      const ollama = await createConfiguredOllamaClient({ ...effectiveConfig, ollamaUrl: host });
       const response = await ollama.list();
       const models = response.models.map((m) => m.name);
       return { ok: true, models };
@@ -283,7 +283,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       return { success: false, error: `No test fixture for feature: ${feature}` };
     }
 
-    const llmConfig = getEffectiveLlmConfig();
+    const llmConfig = await getEffectiveLlmConfig();
     const effectiveModel = model && model.trim() ? model.trim() : llmConfig.model;
 
     const messages = [
@@ -317,7 +317,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         const data = await response.json() as any;
         fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
       } else {
-        const ollama = createConfiguredOllamaClient(llmConfig);
+        const ollama = await createConfiguredOllamaClient(llmConfig);
         const response = await ollama.chat({
           model: effectiveModel,
           messages,
@@ -342,7 +342,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
       // Record trace
       try {
-        insertLlmTrace({
+        await insertLlmTrace({
           trace_id: randomUUID(),
           model: effectiveModel,
           prompt_tokens: promptTokens,
@@ -377,7 +377,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
       // Record error trace
       try {
-        insertLlmTrace({
+        await insertLlmTrace({
           trace_id: randomUUID(),
           model: effectiveModel,
           prompt_tokens: 0,
@@ -411,7 +411,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const llmConfig = getEffectiveLlmConfig();
+    const llmConfig = await getEffectiveLlmConfig();
     const customHost = request.query.host;
 
     try {
@@ -438,7 +438,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       }
 
       // Default: use Ollama SDK (prefer custom host from query over settings/env)
-      const ollama = createConfiguredOllamaClient({ ...llmConfig, ollamaUrl: customHost || llmConfig.ollamaUrl });
+      const ollama = await createConfiguredOllamaClient({ ...llmConfig, ollamaUrl: customHost || llmConfig.ollamaUrl });
       const response = await ollama.list();
       return {
         models: response.models.map((m) => ({

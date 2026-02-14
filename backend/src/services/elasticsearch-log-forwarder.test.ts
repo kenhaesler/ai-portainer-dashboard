@@ -48,7 +48,7 @@ describe('elasticsearch-log-forwarder', () => {
     resetElasticsearchLogForwarderState();
     global.fetch = mockFetch;
 
-    mockGetElasticsearchConfig.mockReturnValue({
+    mockGetElasticsearchConfig.mockResolvedValue({
       enabled: true,
       endpoint: 'https://logs.internal:9200',
       apiKey: 'abc123',
@@ -81,7 +81,7 @@ describe('elasticsearch-log-forwarder', () => {
   });
 
   it('does not run when elasticsearch is disabled', async () => {
-    mockGetElasticsearchConfig.mockReturnValue(null);
+    mockGetElasticsearchConfig.mockResolvedValue(null);
 
     await runElasticsearchLogForwardingCycle();
 
@@ -158,7 +158,7 @@ describe('elasticsearch-log-forwarder', () => {
     ]);
 
     let calls = 0;
-    mockGetElasticsearchConfig.mockImplementation(() => {
+    mockGetElasticsearchConfig.mockImplementation(async () => {
       calls += 1;
       if (calls >= 4) return null;
       return {
@@ -199,18 +199,18 @@ describe('elasticsearch-log-forwarder', () => {
       vi.useRealTimers();
     });
 
-    it('does not create timer when elasticsearch is disabled', () => {
-      mockGetElasticsearchConfig.mockReturnValue(null);
+    it('does not create timer when elasticsearch is disabled', async () => {
+      mockGetElasticsearchConfig.mockResolvedValue(null);
 
-      startElasticsearchLogForwarder();
+      await startElasticsearchLogForwarder();
 
       // Advance past the interval — no cycle should run
       vi.advanceTimersByTime(60_000);
       expect(mockGetEndpoints).not.toHaveBeenCalled();
     });
 
-    it('creates timer when elasticsearch is enabled', () => {
-      startElasticsearchLogForwarder();
+    it('creates timer when elasticsearch is enabled', async () => {
+      await startElasticsearchLogForwarder();
 
       // The immediate cycle should have triggered endpoint fetch
       expect(mockGetEndpoints).toHaveBeenCalled();

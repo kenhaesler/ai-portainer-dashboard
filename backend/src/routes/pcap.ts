@@ -81,7 +81,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     const parsed = CaptureListQuerySchema.safeParse(query);
     const options = parsed.success ? parsed.data : { limit: 50, offset: 0 };
 
-    const captures = listCaptures(options);
+    const captures = await listCaptures(options);
     return { captures };
   });
 
@@ -96,7 +96,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const capture = getCaptureById(id);
+    const capture = await getCaptureById(id);
 
     if (!capture) {
       return reply.status(404).send({ error: 'Capture not found' });
@@ -152,13 +152,13 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const filePath = getCaptureFilePath(id);
+    const filePath = await getCaptureFilePath(id);
 
     if (!filePath) {
       return reply.status(404).send({ error: 'Capture file not found' });
     }
 
-    const capture = getCaptureById(id);
+    const capture = await getCaptureById(id);
     const filename = capture?.capture_file || `capture_${id}.pcap`;
 
     const stream = fs.createReadStream(filePath);
@@ -218,8 +218,8 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
 
     try {
-      const capture = getCaptureById(id);
-      deleteCaptureById(id);
+      const capture = await getCaptureById(id);
+      await deleteCaptureById(id);
 
       writeAuditLog({
         user_id: request.user?.sub,

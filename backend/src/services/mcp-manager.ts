@@ -3,7 +3,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createChildLogger } from '../utils/logger.js';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 
 const log = createChildLogger('mcp-manager');
 
@@ -242,8 +242,8 @@ export async function executeMcpToolCall(
 export async function autoConnectAll(): Promise<void> {
   let servers: McpServerConfig[];
   try {
-    const db = getDb();
-    servers = db.prepare('SELECT * FROM mcp_servers WHERE enabled = 1').all() as McpServerConfig[];
+    const mcpDb = getDbForDomain('mcp');
+    servers = await mcpDb.query<McpServerConfig>('SELECT * FROM mcp_servers WHERE enabled = 1');
   } catch {
     log.debug('MCP servers table not ready yet, skipping auto-connect');
     return;

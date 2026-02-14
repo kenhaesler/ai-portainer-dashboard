@@ -5,6 +5,7 @@ import { healthRoutes } from './health.js';
 
 vi.mock('../db/sqlite.js', () => ({ isDbHealthy: vi.fn() }));
 vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
+vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
 vi.mock('../config/index.js', () => ({ getConfig: () => ({ PORTAINER_API_URL: 'http://localhost:9000', PORTAINER_API_KEY: 'test-api-key', OLLAMA_BASE_URL: 'http://localhost:11434' }) }));
 vi.mock('../services/portainer-cache.js', () => ({
   cache: {
@@ -15,10 +16,13 @@ vi.mock('../services/portainer-cache.js', () => ({
 
 import { isDbHealthy } from '../db/sqlite.js';
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
+import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
 import { cache } from '../services/portainer-cache.js';
 const mockIsDbHealthy = vi.mocked(isDbHealthy);
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);
 const mockIsMetricsDbReady = vi.mocked(isMetricsDbReady);
+const mockIsAppDbHealthy = vi.mocked(isAppDbHealthy);
+const mockIsAppDbReady = vi.mocked(isAppDbReady);
 const mockCache = vi.mocked(cache);
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -37,6 +41,8 @@ describe('Health Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: migrations applied, Redis not configured
+    mockIsAppDbHealthy.mockResolvedValue(true);
+    mockIsAppDbReady.mockReturnValue(true);
     mockIsMetricsDbReady.mockReturnValue(true);
     mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
     mockCache.ping.mockResolvedValue(false);
@@ -235,6 +241,7 @@ describe('Health Routes', () => {
       const r = await app.inject({ method: 'GET', url: '/health/ready/detail' });
       const b = JSON.parse(r.body);
       expect(b.checks).toHaveProperty('database');
+      expect(b.checks).toHaveProperty('appDb');
       expect(b.checks).toHaveProperty('metricsDb');
       expect(b.checks).toHaveProperty('portainer');
       expect(b.checks).toHaveProperty('ollama');

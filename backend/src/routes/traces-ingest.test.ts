@@ -10,8 +10,31 @@ const mockConfig = {
   TRACES_INGESTION_API_KEY: 'test-api-key-12345',
 };
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => db,
+// Wrap in-memory SQLite as AppDb interface for getDbForDomain
+// Replace NOW() with datetime('now') for SQLite compatibility
+const appDb = {
+  query: async (sql: string, params: unknown[] = []) => db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).all(...params),
+  queryOne: async (sql: string, params: unknown[] = []) => db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).get(...params) ?? null,
+  execute: async (sql: string, params: unknown[] = []) => {
+    const result = db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).run(...params);
+    return { changes: result.changes };
+  },
+  transaction: async (fn: Function) => {
+    db.exec('BEGIN');
+    try {
+      const result = await fn(appDb);
+      db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  },
+  healthCheck: async () => true,
+};
+
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => appDb,
 }));
 
 vi.mock('../config/index.js', () => ({

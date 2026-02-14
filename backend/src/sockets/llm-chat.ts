@@ -6,7 +6,7 @@ import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { getEffectiveLlmConfig } from '../services/settings-store.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
@@ -184,17 +184,17 @@ async function buildInfrastructureContextUncached(): Promise<string> {
     }
 
     // Fetch only top 5 critical/warning insights (lightweight)
-    const db = getDb();
-    const topIssues = db.prepare(`
-      SELECT severity, title, container_name, endpoint_name FROM insights
-      WHERE severity IN ('critical', 'warning')
-      ORDER BY created_at DESC LIMIT 5
-    `).all() as Array<{
+    const db = getDbForDomain('insights');
+    const topIssues = await db.query<{
       severity: string;
       title: string;
       container_name: string | null;
       endpoint_name: string | null;
-    }>;
+    }>(`
+      SELECT severity, title, container_name, endpoint_name FROM insights
+      WHERE severity IN ('critical', 'warning')
+      ORDER BY created_at DESC LIMIT 5
+    `, []);
 
     const endpointSummary = normalizedEndpoints
       .map(ep => `- ${ep.name} (${ep.status}): ${ep.containersRunning} running, ${ep.containersStopped} stopped`)
@@ -225,7 +225,7 @@ ${issuesSummary}
 
 // Stream an LLM call and collect the full response
 async function streamLlmCall(
-  llmConfig: ReturnType<typeof getEffectiveLlmConfig>,
+  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
   selectedModel: string,
   messages: ChatMessage[],
   onChunk: (text: string) => void,
@@ -289,7 +289,7 @@ async function streamLlmCall(
       }
     }
   } else {
-    const ollama = createConfiguredOllamaClient(llmConfig);
+    const ollama = await createConfiguredOllamaClient(llmConfig);
     const response = await ollama.chat({
       model: selectedModel,
       messages,
@@ -309,7 +309,7 @@ async function streamLlmCall(
 }
 
 async function streamOllamaRawCall(
-  llmConfig: ReturnType<typeof getEffectiveLlmConfig>,
+  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
   selectedModel: string,
   messages: ChatMessage[],
   onChunk: (text: string) => void,
@@ -474,7 +474,7 @@ export function formatChatContext(ctx: Record<string, unknown>): string {
  * Returns the response message which may contain tool_calls.
  */
 async function callOllamaWithNativeTools(
-  llmConfig: ReturnType<typeof getEffectiveLlmConfig>,
+  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
   selectedModel: string,
   messages: ChatMessage[],
 ): Promise<{ content: string; toolCalls: OllamaToolCall[] }> {
@@ -485,7 +485,7 @@ async function callOllamaWithNativeTools(
     return { content: '', toolCalls: [] };
   }
 
-  const ollama = createConfiguredOllamaClient(llmConfig);
+  const ollama = await createConfiguredOllamaClient(llmConfig);
   const response = await ollama.chat({
     model: selectedModel,
     messages,
@@ -533,7 +533,7 @@ export function setupLlmNamespace(ns: Namespace) {
         return;
       }
 
-      const llmConfig = getEffectiveLlmConfig();
+      const llmConfig = await getEffectiveLlmConfig();
       const selectedModel = data.model || llmConfig.model;
 
       // Get or create session history
@@ -545,10 +545,10 @@ export function setupLlmNamespace(ns: Namespace) {
       // Build infrastructure context
       const infrastructureContext = await buildInfrastructureContext();
       const toolPrompt = getToolSystemPrompt();
-      const mcpToolPrompt = getMcpToolPrompt();
+      const mcpToolPrompt = await getMcpToolPrompt();
 
       const additionalContext = data.context ? formatChatContext(data.context) : '';
-      const basePrompt = getEffectivePrompt('chat_assistant');
+      const basePrompt = await getEffectivePrompt('chat_assistant');
       // User's custom prompt comes LAST so it has highest priority for smaller LLMs
       const systemPromptCore = `${infrastructureContext}\n\n${additionalContext}\n\n${basePrompt}`;
       const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}${mcpToolPrompt}`;
@@ -674,7 +674,7 @@ export function setupLlmNamespace(ns: Namespace) {
                 const promptTokens = estimateTokens(messages.map(m => m.content).join(''));
                 const completionTokens = estimateTokens(finalResponse);
                 try {
-                  insertLlmTrace({
+                  await insertLlmTrace({
                     trace_id: randomUUID(), session_id: socket.id, model: selectedModel,
                     prompt_tokens: promptTokens, completion_tokens: completionTokens,
                     total_tokens: promptTokens + completionTokens, latency_ms: latencyMs,
@@ -862,7 +862,7 @@ export function setupLlmNamespace(ns: Namespace) {
         const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
         const completionTokens = estimateTokens(finalResponse);
         try {
-          insertLlmTrace({
+          await insertLlmTrace({
             trace_id: randomUUID(),
             session_id: socket.id,
             model: selectedModel,
@@ -886,7 +886,7 @@ export function setupLlmNamespace(ns: Namespace) {
 
         // Record error trace
         try {
-          insertLlmTrace({
+          await insertLlmTrace({
             trace_id: randomUUID(),
             session_id: socket.id,
             model: selectedModel,

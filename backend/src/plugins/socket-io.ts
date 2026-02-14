@@ -25,7 +25,7 @@ export async function authenticateSocketToken(token: unknown): Promise<SocketUse
     return null;
   }
 
-  const session = getSession(payload.sessionId);
+  const session = await getSession(payload.sessionId);
   if (!session) {
     return null;
   }
@@ -65,7 +65,7 @@ export async function verifyTransportRequest(
       return;
     }
 
-    const session = getSession(payload.sessionId);
+    const session = await getSession(payload.sessionId);
     if (!session || session.user_id !== payload.sub || session.username !== payload.username) {
       callback('Session invalid or revoked', false);
       return;

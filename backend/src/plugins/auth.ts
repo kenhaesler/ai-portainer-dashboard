@@ -22,7 +22,7 @@ export async function authenticateBearerHeader(authHeader?: string): Promise<Aut
     return null;
   }
 
-  const session = getSession(payload.sessionId);
+  const session = await getSession(payload.sessionId);
   if (!session) {
     return null;
   }

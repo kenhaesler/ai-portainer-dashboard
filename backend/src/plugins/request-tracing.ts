@@ -47,7 +47,7 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
     const spanId = ctx?.spanId ?? request.requestId ?? request.id;
 
     try {
-      insertSpan({
+      await insertSpan({
         id: spanId,
         trace_id: traceId,
         parent_span_id: null,

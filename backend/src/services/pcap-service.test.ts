@@ -31,13 +31,13 @@ vi.mock('./portainer-client.js', () => ({
   getArchive: (...args: unknown[]) => mockGetArchive(...args),
 }));
 
-const mockInsertCapture = vi.fn();
-const mockUpdateCaptureStatus = vi.fn();
-const mockGetCapture = vi.fn();
-const mockGetCaptures = vi.fn().mockReturnValue([]);
-const mockGetCapturesCount = vi.fn().mockReturnValue(0);
-const mockDeleteCapture = vi.fn();
-const mockCleanOldCaptures = vi.fn();
+const mockInsertCapture = vi.fn().mockResolvedValue(undefined);
+const mockUpdateCaptureStatus = vi.fn().mockResolvedValue(undefined);
+const mockGetCapture = vi.fn().mockResolvedValue(undefined);
+const mockGetCaptures = vi.fn().mockResolvedValue([]);
+const mockGetCapturesCount = vi.fn().mockResolvedValue(0);
+const mockDeleteCapture = vi.fn().mockResolvedValue(true);
+const mockCleanOldCaptures = vi.fn().mockResolvedValue(0);
 vi.mock('./pcap-store.js', () => ({
   insertCapture: (...args: unknown[]) => mockInsertCapture(...args),
   updateCaptureStatus: (...args: unknown[]) => mockUpdateCaptureStatus(...args),
@@ -63,7 +63,7 @@ const { buildTcpdumpCommand, extractFromTar, startCapture, stopCapture, getCaptu
 describe('pcap-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetCapturesCount.mockReturnValue(0);
+    mockGetCapturesCount.mockResolvedValue(0);
   });
 
   describe('buildTcpdumpCommand', () => {
@@ -163,7 +163,7 @@ describe('pcap-service', () => {
     });
 
     it('should throw when concurrency limit is reached', async () => {
-      mockGetCapturesCount.mockReturnValue(2);
+      mockGetCapturesCount.mockResolvedValue(2);
 
       await expect(startCapture({
         endpointId: 1,
@@ -173,10 +173,10 @@ describe('pcap-service', () => {
     });
 
     it('should create exec and start polling on success', async () => {
-      mockGetCapturesCount.mockReturnValue(0);
+      mockGetCapturesCount.mockResolvedValue(0);
       mockCreateExec.mockResolvedValue({ Id: 'exec-123' });
       mockStartExec.mockResolvedValue(undefined);
-      mockGetCapture.mockReturnValue({
+      mockGetCapture.mockResolvedValue({
         id: 'capture-id',
         status: 'capturing',
         endpoint_id: 1,
@@ -212,10 +212,10 @@ describe('pcap-service', () => {
     });
 
     it('should enforce max duration from config', async () => {
-      mockGetCapturesCount.mockReturnValue(0);
+      mockGetCapturesCount.mockResolvedValue(0);
       mockCreateExec.mockResolvedValue({ Id: 'exec-123' });
       mockStartExec.mockResolvedValue(undefined);
-      mockGetCapture.mockReturnValue({ id: 'x', status: 'capturing' });
+      mockGetCapture.mockResolvedValue({ id: 'x', status: 'capturing' });
 
       await startCapture({
         endpointId: 1,
@@ -230,7 +230,7 @@ describe('pcap-service', () => {
     });
 
     it('should mark as failed when exec creation fails', async () => {
-      mockGetCapturesCount.mockReturnValue(0);
+      mockGetCapturesCount.mockResolvedValue(0);
       mockCreateExec.mockRejectedValue(new Error('Container not found'));
 
       await expect(startCapture({
@@ -249,12 +249,12 @@ describe('pcap-service', () => {
 
   describe('stopCapture', () => {
     it('should throw when capture not found', async () => {
-      mockGetCapture.mockReturnValue(undefined);
+      mockGetCapture.mockResolvedValue(undefined);
       await expect(stopCapture('not-found')).rejects.toThrow('Capture not found');
     });
 
     it('should throw when capture is not in stoppable state', async () => {
-      mockGetCapture.mockReturnValue({ id: 'x', status: 'complete' });
+      mockGetCapture.mockResolvedValue({ id: 'x', status: 'complete' });
       await expect(stopCapture('x')).rejects.toThrow('Cannot stop capture in status: complete');
     });
 
@@ -263,9 +263,9 @@ describe('pcap-service', () => {
       // Second call: stopCaptureInternal → downloadAndProcessCapture → getCapture for status check after processing
       // Third call: final getCapture at end of stopCapture
       mockGetCapture
-        .mockReturnValueOnce({ id: 'x', status: 'capturing', endpoint_id: 1, container_id: 'abc' })
-        .mockReturnValueOnce({ id: 'x', status: 'complete', endpoint_id: 1, container_id: 'abc' })
-        .mockReturnValueOnce({ id: 'x', status: 'succeeded', endpoint_id: 1, container_id: 'abc' });
+        .mockResolvedValueOnce({ id: 'x', status: 'capturing', endpoint_id: 1, container_id: 'abc' })
+        .mockResolvedValueOnce({ id: 'x', status: 'complete', endpoint_id: 1, container_id: 'abc' })
+        .mockResolvedValueOnce({ id: 'x', status: 'succeeded', endpoint_id: 1, container_id: 'abc' });
       mockCreateExec.mockResolvedValue({ Id: 'kill-exec' });
       mockStartExec.mockResolvedValue(undefined);
       mockGetArchive.mockRejectedValue(new Error('no file'));
@@ -278,37 +278,37 @@ describe('pcap-service', () => {
   });
 
   describe('getCaptureById', () => {
-    it('should return capture from store', () => {
+    it('should return capture from store', async () => {
       const capture = { id: 'test', status: 'complete' };
-      mockGetCapture.mockReturnValue(capture);
-      expect(getCaptureById('test')).toEqual(capture);
+      mockGetCapture.mockResolvedValue(capture);
+      await expect(getCaptureById('test')).resolves.toEqual(capture);
     });
 
-    it('should return undefined for non-existent capture', () => {
-      mockGetCapture.mockReturnValue(undefined);
-      expect(getCaptureById('not-found')).toBeUndefined();
+    it('should return undefined for non-existent capture', async () => {
+      mockGetCapture.mockResolvedValue(undefined);
+      await expect(getCaptureById('not-found')).resolves.toBeUndefined();
     });
   });
 
   describe('deleteCaptureById', () => {
-    it('should throw when capture not found', () => {
-      mockGetCapture.mockReturnValue(undefined);
-      expect(() => deleteCaptureById('not-found')).toThrow('Capture not found');
+    it('should throw when capture not found', async () => {
+      mockGetCapture.mockResolvedValue(undefined);
+      await expect(deleteCaptureById('not-found')).rejects.toThrow('Capture not found');
     });
 
-    it('should throw when capture is active', () => {
-      mockGetCapture.mockReturnValue({ id: 'x', status: 'capturing' });
-      expect(() => deleteCaptureById('x')).toThrow('Cannot delete an active capture');
+    it('should throw when capture is active', async () => {
+      mockGetCapture.mockResolvedValue({ id: 'x', status: 'capturing' });
+      await expect(deleteCaptureById('x')).rejects.toThrow('Cannot delete an active capture');
     });
 
-    it('should delete capture and file', () => {
-      mockGetCapture.mockReturnValue({
+    it('should delete capture and file', async () => {
+      mockGetCapture.mockResolvedValue({
         id: 'x',
         status: 'complete',
         capture_file: 'capture_x.pcap',
       });
 
-      deleteCaptureById('x');
+      await deleteCaptureById('x');
 
       expect(mockDeleteCapture).toHaveBeenCalledWith('x');
     });

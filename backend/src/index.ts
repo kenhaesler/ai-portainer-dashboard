@@ -8,6 +8,7 @@ import { buildApp } from './app.js';
 import { getConfig } from './config/index.js';
 import { getDb, closeDb } from './db/sqlite.js';
 import { getMetricsDb, closeMetricsDb } from './db/timescale.js';
+import { getAppDb, closeAppDb } from './db/postgres.js';
 import { createChildLogger } from './utils/logger.js';
 import { setupLlmNamespace } from './sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './sockets/monitoring.js';
@@ -31,6 +32,7 @@ async function main() {
 
   // Initialize databases (runs migrations)
   getDb();
+  await getAppDb();
   await getMetricsDb();
 
   // Setup Socket.IO namespaces
@@ -43,7 +45,7 @@ async function main() {
   setInvestigationNamespace(app.ioNamespaces.monitoring);
 
   // Start background schedulers
-  startScheduler();
+  await startScheduler();
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
@@ -53,6 +55,7 @@ async function main() {
       await disconnectAll();
       await app.close();
       closeDb();
+      await closeAppDb();
       await closeMetricsDb();
       log.info('Graceful shutdown complete');
       process.exit(0);

@@ -29,6 +29,14 @@ vi.mock('../utils/logger.js', () => ({
 
 vi.mock('../services/infrastructure-service-classifier.js', () => ({
   getInfrastructureServicePatterns: vi.fn().mockReturnValue(['traefik', 'portainer_agent', 'beyla', 'redis']),
+  matchesInfrastructurePattern: vi.fn((name: string, patterns: string[]) => {
+    const normalized = name.toLowerCase();
+    return patterns.some((pattern) => (
+      normalized === pattern
+      || normalized.startsWith(`${pattern}-`)
+      || normalized.startsWith(`${pattern}_`)
+    ));
+  }),
   isInfrastructureService: vi.fn((name: string) => {
     const normalized = name.toLowerCase();
     return ['traefik', 'portainer_agent', 'beyla', 'redis'].some((pattern) => (

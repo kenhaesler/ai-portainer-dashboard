@@ -24,7 +24,7 @@ export async function explainAnomaly(
     let response = '';
     await chatStream(
       [{ role: 'user', content: userPrompt }],
-      getEffectivePrompt('anomaly_explainer'),
+      await getEffectivePrompt('anomaly_explainer'),
       (chunk) => { response += chunk; },
     );
 
@@ -116,7 +116,7 @@ export async function explainAnomalies(
     let response = '';
     await chatStream(
       [{ role: 'user', content: userPrompt }],
-      getEffectivePrompt('anomaly_explainer'),
+      await getEffectivePrompt('anomaly_explainer'),
       (chunk) => { response += chunk; },
     );
 

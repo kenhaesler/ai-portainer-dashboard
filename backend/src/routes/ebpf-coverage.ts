@@ -153,11 +153,11 @@ function normalizeManualOtlpEndpoint(
   return ensureOtlpPath(defaultUrl);
 }
 
-function resolveEndpointOtlpEndpoint(
+async function resolveEndpointOtlpEndpoint(
   endpointId: number,
   request: { headers: Record<string, unknown>; protocol: string },
-): string {
-  const override = getEndpointOtlpOverride(endpointId);
+): Promise<string> {
+  const override = await getEndpointOtlpOverride(endpointId);
   if (override) return override;
   return resolveDefaultOtlpEndpoint(request);
 }
@@ -172,7 +172,7 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async () => {
-    const coverage = getEndpointCoverage();
+    const coverage = await getEndpointCoverage();
     return { coverage };
   });
 
@@ -202,7 +202,7 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
     const { status, reason } = request.body as z.infer<typeof UpdateCoverageBodySchema>;
 
-    updateCoverageStatus(endpointId, status, reason);
+    await updateCoverageStatus(endpointId, status, reason);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -232,7 +232,7 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
   }, async (request) => {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
     const { otlpEndpointOverride } = request.body as z.infer<typeof UpdateOtlpOverrideBodySchema>;
-    setEndpointOtlpOverride(endpointId, otlpEndpointOverride);
+    await setEndpointOtlpOverride(endpointId, otlpEndpointOverride);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -307,13 +307,13 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
         protocol: request.protocol,
       })
       : undefined;
-    const resolvedOtlpEndpoint = requestedOtlpEndpoint || resolveEndpointOtlpEndpoint(endpointId, {
+    const resolvedOtlpEndpoint = requestedOtlpEndpoint || await resolveEndpointOtlpEndpoint(endpointId, {
       headers: request.headers as Record<string, unknown>,
       protocol: request.protocol,
     });
 
     if (requestedOtlpEndpoint) {
-      setEndpointOtlpOverride(endpointId, requestedOtlpEndpoint);
+      await setEndpointOtlpOverride(endpointId, requestedOtlpEndpoint);
     }
 
     const result = await deployBeyla(endpointId, {

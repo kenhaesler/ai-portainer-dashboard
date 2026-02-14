@@ -51,7 +51,7 @@ describe('userRoutes', () => {
 
   describe('GET /api/users', () => {
     it('should list users', async () => {
-      mockListUsers.mockReturnValue([
+      mockListUsers.mockResolvedValue([
         { id: 'u1', username: 'admin', role: 'admin', default_landing_page: '/', created_at: '', updated_at: '' },
       ]);
 
@@ -106,7 +106,7 @@ describe('userRoutes', () => {
 
   describe('DELETE /api/users/:id', () => {
     it('should delete a user', async () => {
-      mockDeleteUser.mockReturnValue(true);
+      mockDeleteUser.mockResolvedValue(true);
 
       const res = await app.inject({ method: 'DELETE', url: '/api/users/u2' });
       expect(res.statusCode).toBe(200);
@@ -118,7 +118,7 @@ describe('userRoutes', () => {
     });
 
     it('should return 404 for non-existent user', async () => {
-      mockDeleteUser.mockReturnValue(false);
+      mockDeleteUser.mockResolvedValue(false);
 
       const res = await app.inject({ method: 'DELETE', url: '/api/users/nonexist' });
       expect(res.statusCode).toBe(404);

@@ -110,8 +110,8 @@ export function createOllamaClient(host: string, authHeaders?: Record<string, st
  * Automatically injects auth headers when a token is configured,
  * enabling compatibility with authenticated Ollama proxies.
  */
-export function createConfiguredOllamaClient(llmConfig?: { ollamaUrl: string; customEndpointToken?: string; authType?: LlmAuthType }): Ollama {
-  const config = llmConfig ?? getEffectiveLlmConfig();
+export async function createConfiguredOllamaClient(llmConfig?: { ollamaUrl: string; customEndpointToken?: string; authType?: LlmAuthType }): Promise<Ollama> {
+  const config = llmConfig ?? await getEffectiveLlmConfig();
   const authHeaders = getAuthHeaders(config.customEndpointToken, config.authType);
   return createOllamaClient(config.ollamaUrl, authHeaders);
 }
@@ -157,7 +157,7 @@ async function chatStreamInner(
   systemPrompt: string,
   onChunk: (chunk: string) => void,
 ): Promise<string> {
-  const llmConfig = getEffectiveLlmConfig();
+  const llmConfig = await getEffectiveLlmConfig();
   const startTime = Date.now();
 
   const fullMessages: ChatMessage[] = [
@@ -227,7 +227,7 @@ async function chatStreamInner(
       }
     } else {
       // Use Ollama SDK with auth headers injected for proxy compatibility
-      const ollama = createConfiguredOllamaClient(llmConfig);
+      const ollama = await createConfiguredOllamaClient(llmConfig);
       const response = await ollama.chat({
         model: llmConfig.model,
         messages: fullMessages,
@@ -248,7 +248,7 @@ async function chatStreamInner(
     const completionTokens = estimateTokens(fullResponse);
 
     try {
-      insertLlmTrace({
+      await insertLlmTrace({
         trace_id: randomUUID(),
         model: llmConfig.model,
         prompt_tokens: promptTokens,
@@ -268,7 +268,7 @@ async function chatStreamInner(
   } catch (err) {
     const latencyMs = Date.now() - startTime;
     try {
-      insertLlmTrace({
+      await insertLlmTrace({
         trace_id: randomUUID(),
         model: llmConfig.model,
         prompt_tokens: estimateTokens(fullMessages.map((m) => m.content).join('')),
@@ -348,7 +348,7 @@ Provide concise, actionable recommendations. When suggesting changes, always exp
 
 export async function isOllamaAvailable(): Promise<boolean> {
   try {
-    const llmConfig = getEffectiveLlmConfig();
+    const llmConfig = await getEffectiveLlmConfig();
 
     // When custom endpoint is enabled, test that instead of Ollama
     if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
@@ -363,7 +363,7 @@ export async function isOllamaAvailable(): Promise<boolean> {
       return response.ok;
     }
 
-    const ollama = createConfiguredOllamaClient(llmConfig);
+    const ollama = await createConfiguredOllamaClient(llmConfig);
     await ollama.list();
     return true;
   } catch {
@@ -377,7 +377,7 @@ export async function isOllamaAvailable(): Promise<boolean> {
  * Called at backend startup so the LLM Assistant is ready without manual intervention.
  */
 export async function ensureModel(): Promise<void> {
-  const llmConfig = getEffectiveLlmConfig();
+  const llmConfig = await getEffectiveLlmConfig();
   const { model, ollamaUrl } = llmConfig;
 
   // Custom endpoints manage their own models — skip Ollama pull
@@ -387,7 +387,7 @@ export async function ensureModel(): Promise<void> {
   }
 
   try {
-    const ollama = createConfiguredOllamaClient(llmConfig);
+    const ollama = await createConfiguredOllamaClient(llmConfig);
     const { models } = await ollama.list();
     const installed = models.some((m) => m.name === model || m.name.startsWith(`${model}:`));
 

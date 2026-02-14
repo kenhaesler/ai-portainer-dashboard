@@ -318,6 +318,21 @@ describe('traces routes', () => {
   });
 });
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => db,
+// Wrap in-memory SQLite as AppDb interface for getDbForDomain
+const appDb = {
+  query: async (sql: string, params: unknown[] = []) => db.prepare(sql).all(...params),
+  queryOne: async (sql: string, params: unknown[] = []) => db.prepare(sql).get(...params) ?? null,
+  execute: async (sql: string, params: unknown[] = []) => {
+    const result = db.prepare(sql).run(...params);
+    return { changes: result.changes };
+  },
+  transaction: async (fn: Function) => {
+    const txn = db.transaction(() => fn(appDb));
+    return txn();
+  },
+  healthCheck: async () => true,
+};
+
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => appDb,
 }));

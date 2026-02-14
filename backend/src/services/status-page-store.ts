@@ -1,4 +1,4 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { getSetting } from './settings-store.js';
 
 export interface StatusPageConfig {
@@ -25,66 +25,71 @@ export interface UptimeDayBucket {
   uptime_pct: number;
 }
 
-export function getStatusPageConfig(): StatusPageConfig {
+export async function getStatusPageConfig(): Promise<StatusPageConfig> {
   return {
-    enabled: getSetting('status.page.enabled')?.value === 'true',
-    title: getSetting('status.page.title')?.value || 'System Status',
-    description: getSetting('status.page.description')?.value || '',
-    showIncidents: getSetting('status.page.show_incidents')?.value !== 'false',
-    autoRefreshSeconds: parseInt(getSetting('status.page.refresh_interval')?.value || '30', 10),
+    enabled: (await getSetting('status.page.enabled'))?.value === 'true',
+    title: (await getSetting('status.page.title'))?.value || 'System Status',
+    description: (await getSetting('status.page.description'))?.value || '',
+    showIncidents: (await getSetting('status.page.show_incidents'))?.value !== 'false',
+    autoRefreshSeconds: parseInt((await getSetting('status.page.refresh_interval'))?.value || '30', 10),
   };
 }
 
-export function getOverallUptime(hours: number): number {
-  const db = getDb();
-  const row = db.prepare(`
+export async function getOverallUptime(hours: number): Promise<number> {
+  const monitoringDb = getDbForDomain('monitoring');
+  const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
+
+  const row = await monitoringDb.queryOne<{ total_running: number; total_all: number }>(`
     SELECT
       COALESCE(SUM(containers_running), 0) as total_running,
       COALESCE(SUM(containers_running + containers_stopped + containers_unhealthy), 0) as total_all
     FROM monitoring_snapshots
-    WHERE created_at >= datetime('now', ?)
-  `).get(`-${hours} hours`) as { total_running: number; total_all: number } | undefined;
+    WHERE created_at >= ?
+  `, [cutoff]);
 
   if (!row || row.total_all === 0) return 100;
   return Math.round((row.total_running / row.total_all) * 10000) / 100;
 }
 
-export function getEndpointUptime(hours: number): number {
-  const db = getDb();
-  const row = db.prepare(`
+export async function getEndpointUptime(hours: number): Promise<number> {
+  const monitoringDb = getDbForDomain('monitoring');
+  const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
+
+  const row = await monitoringDb.queryOne<{ total_up: number; total_all: number }>(`
     SELECT
       COALESCE(SUM(endpoints_up), 0) as total_up,
       COALESCE(SUM(endpoints_up + endpoints_down), 0) as total_all
     FROM monitoring_snapshots
-    WHERE created_at >= datetime('now', ?)
-  `).get(`-${hours} hours`) as { total_up: number; total_all: number } | undefined;
+    WHERE created_at >= ?
+  `, [cutoff]);
 
   if (!row || row.total_all === 0) return 100;
   return Math.round((row.total_up / row.total_all) * 10000) / 100;
 }
 
-export function getLatestSnapshot(): {
+export async function getLatestSnapshot(): Promise<{
   containersRunning: number;
   containersStopped: number;
   containersUnhealthy: number;
   endpointsUp: number;
   endpointsDown: number;
   createdAt: string;
-} | null {
-  const db = getDb();
-  const row = db.prepare(`
-    SELECT containers_running, containers_stopped, containers_unhealthy,
-           endpoints_up, endpoints_down, created_at
-    FROM monitoring_snapshots
-    ORDER BY created_at DESC LIMIT 1
-  `).get() as {
+} | null> {
+  const monitoringDb = getDbForDomain('monitoring');
+
+  const row = await monitoringDb.queryOne<{
     containers_running: number;
     containers_stopped: number;
     containers_unhealthy: number;
     endpoints_up: number;
     endpoints_down: number;
     created_at: string;
-  } | undefined;
+  }>(`
+    SELECT containers_running, containers_stopped, containers_unhealthy,
+           endpoints_up, endpoints_down, created_at
+    FROM monitoring_snapshots
+    ORDER BY created_at DESC LIMIT 1
+  `);
 
   if (!row) return null;
 
@@ -98,22 +103,24 @@ export function getLatestSnapshot(): {
   };
 }
 
-export function getDailyUptimeBuckets(days: number): UptimeDayBucket[] {
-  const db = getDb();
-  const rows = db.prepare(`
-    SELECT
-      date(created_at) as date,
-      SUM(containers_running) as total_running,
-      SUM(containers_running + containers_stopped + containers_unhealthy) as total_all
-    FROM monitoring_snapshots
-    WHERE created_at >= datetime('now', ?)
-    GROUP BY date(created_at)
-    ORDER BY date ASC
-  `).all(`-${days} days`) as Array<{
+export async function getDailyUptimeBuckets(days: number): Promise<UptimeDayBucket[]> {
+  const monitoringDb = getDbForDomain('monitoring');
+  const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
+
+  const rows = await monitoringDb.query<{
     date: string;
     total_running: number;
     total_all: number;
-  }>;
+  }>(`
+    SELECT
+      DATE(created_at) as date,
+      SUM(containers_running) as total_running,
+      SUM(containers_running + containers_stopped + containers_unhealthy) as total_all
+    FROM monitoring_snapshots
+    WHERE created_at >= ?
+    GROUP BY DATE(created_at)
+    ORDER BY date ASC
+  `, [cutoff]);
 
   return rows.map((row) => ({
     date: row.date,
@@ -121,7 +128,7 @@ export function getDailyUptimeBuckets(days: number): UptimeDayBucket[] {
   }));
 }
 
-export function getRecentIncidentsPublic(limit: number = 10): Array<{
+export async function getRecentIncidentsPublic(limit: number = 10): Promise<Array<{
   id: string;
   title: string;
   severity: string;
@@ -129,20 +136,12 @@ export function getRecentIncidentsPublic(limit: number = 10): Array<{
   created_at: string;
   resolved_at: string | null;
   summary: string | null;
-}> {
-  const db = getDb();
-  return db.prepare(`
+}>> {
+  const incidentsDb = getDbForDomain('incidents');
+  return incidentsDb.query(`
     SELECT id, title, severity, status, created_at, resolved_at, summary
     FROM incidents
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(limit) as Array<{
-    id: string;
-    title: string;
-    severity: string;
-    status: string;
-    created_at: string;
-    resolved_at: string | null;
-    summary: string | null;
-  }>;
+  `, [limit]);
 }

@@ -1,22 +1,23 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 
-export function insertMonitoringCycle(durationMs: number): void {
-  const db = getDb();
-  db.prepare(
+const db = getDbForDomain('monitoring');
+
+export async function insertMonitoringCycle(durationMs: number): Promise<void> {
+  await db.execute(
     `INSERT INTO monitoring_cycles (duration_ms, created_at)
-     VALUES (?, datetime('now'))`,
-  ).run(durationMs);
+     VALUES (?, NOW())`,
+    [durationMs],
+  );
 }
 
-export function insertMonitoringSnapshot(data: {
+export async function insertMonitoringSnapshot(data: {
   containersRunning: number;
   containersStopped: number;
   containersUnhealthy: number;
   endpointsUp: number;
   endpointsDown: number;
-}): void {
-  const db = getDb();
-  db.prepare(
+}): Promise<void> {
+  await db.execute(
     `INSERT INTO monitoring_snapshots (
       containers_running,
       containers_stopped,
@@ -24,12 +25,13 @@ export function insertMonitoringSnapshot(data: {
       endpoints_up,
       endpoints_down,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-  ).run(
-    data.containersRunning,
-    data.containersStopped,
-    data.containersUnhealthy,
-    data.endpointsUp,
-    data.endpointsDown,
+    ) VALUES (?, ?, ?, ?, ?, NOW())`,
+    [
+      data.containersRunning,
+      data.containersStopped,
+      data.containersUnhealthy,
+      data.endpointsUp,
+      data.endpointsDown,
+    ],
   );
 }

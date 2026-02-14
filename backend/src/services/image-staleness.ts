@@ -1,8 +1,10 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('image-staleness');
+
+function db() { return getDbForDomain('image-staleness'); }
 
 export interface ImageStalenessRecord {
   id: number;
@@ -132,19 +134,18 @@ export async function checkImageStaleness(
 /**
  * Upsert a staleness check result into the database.
  */
-export function upsertStalenessRecord(result: StalenessCheckResult): void {
-  const db = getDb();
-  db.prepare(`
+export async function upsertStalenessRecord(result: StalenessCheckResult): Promise<void> {
+  await db().execute(`
     INSERT INTO image_staleness (image_name, image_tag, registry, local_digest, remote_digest, is_stale, days_since_update, last_checked_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
     ON CONFLICT(image_name, image_tag, registry)
     DO UPDATE SET
       local_digest = excluded.local_digest,
       remote_digest = excluded.remote_digest,
       is_stale = excluded.is_stale,
       days_since_update = excluded.days_since_update,
-      last_checked_at = datetime('now')
-  `).run(
+      last_checked_at = NOW()
+  `, [
     result.imageName,
     result.tag,
     result.registry,
@@ -152,36 +153,34 @@ export function upsertStalenessRecord(result: StalenessCheckResult): void {
     result.remoteDigest,
     result.isStale ? 1 : 0,
     result.daysSinceUpdate,
-  );
+  ]);
 }
 
 /**
  * Get all staleness records from the database.
  */
-export function getStalenessRecords(): ImageStalenessRecord[] {
-  const db = getDb();
-  return db.prepare('SELECT * FROM image_staleness ORDER BY is_stale DESC, last_checked_at DESC').all() as ImageStalenessRecord[];
+export async function getStalenessRecords(): Promise<ImageStalenessRecord[]> {
+  return db().query<ImageStalenessRecord>('SELECT * FROM image_staleness ORDER BY is_stale DESC, last_checked_at DESC');
 }
 
 /**
  * Get staleness summary stats.
  */
-export function getStalenessSummary(): { total: number; stale: number; upToDate: number; unchecked: number } {
-  const db = getDb();
-  const row = db.prepare(`
+export async function getStalenessSummary(): Promise<{ total: number; stale: number; upToDate: number; unchecked: number }> {
+  const row = await db().queryOne<{ total: number; stale: number; up_to_date: number; unchecked: number }>(`
     SELECT
       COUNT(*) as total,
       SUM(CASE WHEN is_stale = 1 THEN 1 ELSE 0 END) as stale,
       SUM(CASE WHEN is_stale = 0 AND remote_digest IS NOT NULL THEN 1 ELSE 0 END) as up_to_date,
       SUM(CASE WHEN remote_digest IS NULL THEN 1 ELSE 0 END) as unchecked
     FROM image_staleness
-  `).get() as { total: number; stale: number; up_to_date: number; unchecked: number };
+  `);
 
   return {
-    total: row.total,
-    stale: row.stale,
-    upToDate: row.up_to_date,
-    unchecked: row.unchecked,
+    total: row?.total ?? 0,
+    stale: row?.stale ?? 0,
+    upToDate: row?.up_to_date ?? 0,
+    unchecked: row?.unchecked ?? 0,
   };
 }
 
@@ -221,7 +220,7 @@ export async function runStalenessChecks(
 
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        upsertStalenessRecord(result.value);
+        await upsertStalenessRecord(result.value);
         checked++;
         if (result.value.isStale) staleCount++;
       }

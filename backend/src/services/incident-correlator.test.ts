@@ -5,19 +5,9 @@ import { insertIncident, addInsightToIncident, getActiveIncidentForContainer } f
 
 // Mock the stores
 vi.mock('./incident-store.js', () => ({
-  insertIncident: vi.fn(),
-  addInsightToIncident: vi.fn(),
-  getActiveIncidentForContainer: vi.fn(() => undefined),
-}));
-
-vi.mock('../db/sqlite.js', () => ({
-  getDb: vi.fn(() => ({
-    prepare: vi.fn(() => ({
-      run: vi.fn(),
-      get: vi.fn(),
-      all: vi.fn(() => []),
-    })),
-  })),
+  insertIncident: vi.fn(() => Promise.resolve()),
+  addInsightToIncident: vi.fn(() => Promise.resolve()),
+  getActiveIncidentForContainer: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('../config/index.js', () => ({
@@ -221,7 +211,7 @@ describe('incident-correlator', () => {
     });
 
     it('should add insight to existing incident when match found', async () => {
-      mockedGetActiveIncidentForContainer.mockReturnValueOnce({
+      mockedGetActiveIncidentForContainer.mockResolvedValueOnce({
         id: 'existing-incident',
         title: 'Existing',
         severity: 'warning',

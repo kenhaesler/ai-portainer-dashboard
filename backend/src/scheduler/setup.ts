@@ -285,15 +285,15 @@ export async function runImageStalenessCheck(): Promise<void> {
 
 async function runPortainerBackupSchedule(): Promise<void> {
   try {
-    const enabledSetting = getSetting('portainer_backup.enabled');
+    const enabledSetting = await getSetting('portainer_backup.enabled');
     if (enabledSetting?.value !== 'true') return;
 
-    const passwordSetting = getSetting('portainer_backup.password');
+    const passwordSetting = await getSetting('portainer_backup.password');
     const password = passwordSetting?.value || undefined;
 
     await createPortainerBackup(password);
 
-    const maxCountSetting = getSetting('portainer_backup.max_count');
+    const maxCountSetting = await getSetting('portainer_backup.max_count');
     const maxCount = parseInt(maxCountSetting?.value ?? '10', 10) || 10;
     cleanupOldPortainerBackups(maxCount);
 
@@ -315,7 +315,7 @@ export async function runCleanup(): Promise<void> {
   }
 
   try {
-    cleanupOldCaptures();
+    await cleanupOldCaptures();
   } catch (err) {
     log.error({ err }, 'PCAP captures cleanup failed');
   }
@@ -330,7 +330,7 @@ export async function runCleanup(): Promise<void> {
   }
 
   try {
-    const sessionsDeleted = cleanExpiredSessions();
+    const sessionsDeleted = await cleanExpiredSessions();
     if (sessionsDeleted > 0) {
       log.info({ deleted: sessionsDeleted }, 'Expired sessions cleaned up');
     }
@@ -340,7 +340,7 @@ export async function runCleanup(): Promise<void> {
 
   try {
     const config = getConfig();
-    const insightsDeleted = cleanupOldInsights(config.INSIGHTS_RETENTION_DAYS);
+    const insightsDeleted = await cleanupOldInsights(config.INSIGHTS_RETENTION_DAYS);
     if (insightsDeleted > 0) {
       log.info({ deleted: insightsDeleted }, 'Old insights cleaned up');
     }
@@ -373,7 +373,7 @@ async function warmCache(): Promise<void> {
   }
 }
 
-export function startScheduler(): void {
+export async function startScheduler(): Promise<void> {
   const config = getConfig();
 
   // Warm cache immediately to avoid thundering herd on first requests
@@ -465,9 +465,9 @@ export function startScheduler(): void {
   }
 
   // Portainer server backup schedule
-  const pbEnabledSetting = getSetting('portainer_backup.enabled');
+  const pbEnabledSetting = await getSetting('portainer_backup.enabled');
   if (pbEnabledSetting?.value === 'true') {
-    const pbIntervalSetting = getSetting('portainer_backup.interval_hours');
+    const pbIntervalSetting = await getSetting('portainer_backup.interval_hours');
     const pbIntervalHours = parseInt(pbIntervalSetting?.value ?? '24', 10) || 24;
     const pbIntervalMs = pbIntervalHours * 60 * 60 * 1000;
     log.info(
@@ -505,7 +505,7 @@ export function startScheduler(): void {
   intervals.push(memoryLogInterval);
 
   // Forward container-origin logs to Elasticsearch when enabled.
-  startElasticsearchLogForwarder();
+  await startElasticsearchLogForwarder();
 
   log.info({ taskCount: intervals.length }, 'Scheduler started');
 }

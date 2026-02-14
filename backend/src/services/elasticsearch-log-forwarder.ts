@@ -159,7 +159,7 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
   cycleInProgress = true;
 
   try {
-    const initialConfig = getElasticsearchConfig();
+    const initialConfig = await getElasticsearchConfig();
     if (!initialConfig?.enabled || !initialConfig.endpoint) {
       return;
     }
@@ -171,7 +171,7 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
     );
 
     for (const endpoint of endpoints) {
-      const endpointConfig = getElasticsearchConfig();
+      const endpointConfig = await getElasticsearchConfig();
       if (!endpointConfig?.enabled || !endpointConfig.endpoint) {
         log.info('Elasticsearch log forwarding disabled during cycle; stopping early');
         return;
@@ -185,7 +185,7 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
       const runningContainers = containers.filter((container) => container.State === 'running');
 
       for (const container of runningContainers) {
-        const liveConfig = getElasticsearchConfig();
+        const liveConfig = await getElasticsearchConfig();
         if (!liveConfig?.enabled || !liveConfig.endpoint) {
           log.info('Elasticsearch log forwarding disabled during cycle; stopping early');
           return;
@@ -250,12 +250,12 @@ export async function runElasticsearchLogForwardingCycle(): Promise<void> {
   }
 }
 
-export function startElasticsearchLogForwarder(): void {
+export async function startElasticsearchLogForwarder(): Promise<void> {
   if (forwarderTimer) {
     return;
   }
 
-  const config = getElasticsearchConfig();
+  const config = await getElasticsearchConfig();
   if (!config?.enabled || !config.endpoint) {
     log.info('Elasticsearch integration not enabled — skipping log forwarder');
     return;

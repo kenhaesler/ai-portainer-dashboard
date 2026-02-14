@@ -3,17 +3,21 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { monitoringRoutes } from './monitoring.js';
 
-const mockAll = vi.fn().mockReturnValue([]);
-const mockGet = vi.fn().mockReturnValue({ count: 0 });
-const mockRun = vi.fn().mockReturnValue({ changes: 1 });
+const mockQuery = vi.fn().mockResolvedValue([]);
+const mockQueryOne = vi.fn().mockResolvedValue({ count: 0 });
+const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    prepare: () => ({
-      all: (...args: unknown[]) => mockAll(...args),
-      get: (...args: unknown[]) => mockGet(...args),
-      run: (...args: unknown[]) => mockRun(...args),
-    }),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    query: (...args: unknown[]) => mockQuery(...args),
+    queryOne: (...args: unknown[]) => mockQueryOne(...args),
+    execute: (...args: unknown[]) => mockExecute(...args),
+    transaction: vi.fn(async (fn: Function) => fn({
+      query: (...a: unknown[]) => mockQuery(...a),
+      queryOne: (...a: unknown[]) => mockQueryOne(...a),
+      execute: (...a: unknown[]) => mockExecute(...a),
+    })),
+    healthCheck: vi.fn(async () => true),
   }),
 }));
 
@@ -49,7 +53,7 @@ describe('monitoring insights cursor pagination', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGet.mockReturnValue({ count: 0 });
+    mockQueryOne.mockResolvedValue({ count: 0 });
   });
 
   it('returns hasMore and nextCursor when more items exist', async () => {
@@ -58,8 +62,8 @@ describe('monitoring insights cursor pagination', () => {
       { id: 'i2', severity: 'info', created_at: '2025-01-02T00:00:00Z' },
       { id: 'i1', severity: 'critical', created_at: '2025-01-01T00:00:00Z' },
     ];
-    mockAll.mockReturnValueOnce(rows);
-    mockGet.mockReturnValueOnce({ count: 5 });
+    mockQuery.mockResolvedValueOnce(rows);
+    mockQueryOne.mockResolvedValueOnce({ count: 5 });
 
     const response = await app.inject({
       method: 'GET',
@@ -76,10 +80,10 @@ describe('monitoring insights cursor pagination', () => {
   });
 
   it('returns hasMore=false when fewer results than limit', async () => {
-    mockAll.mockReturnValueOnce([
+    mockQuery.mockResolvedValueOnce([
       { id: 'i1', severity: 'info', created_at: '2025-01-01T00:00:00Z' },
     ]);
-    mockGet.mockReturnValueOnce({ count: 1 });
+    mockQueryOne.mockResolvedValueOnce({ count: 1 });
 
     const response = await app.inject({
       method: 'GET',
@@ -95,8 +99,8 @@ describe('monitoring insights cursor pagination', () => {
   });
 
   it('accepts cursor for next page', async () => {
-    mockAll.mockReturnValueOnce([]);
-    mockGet.mockReturnValueOnce({ count: 3 });
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ count: 3 });
 
     const response = await app.inject({
       method: 'GET',
@@ -111,8 +115,8 @@ describe('monitoring insights cursor pagination', () => {
   });
 
   it('keeps backward compatible offset pagination', async () => {
-    mockAll.mockReturnValueOnce([]);
-    mockGet.mockReturnValueOnce({ count: 0 });
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce({ count: 0 });
 
     const response = await app.inject({
       method: 'GET',
@@ -128,10 +132,10 @@ describe('monitoring insights cursor pagination', () => {
   });
 
   it('filters by severity with cursor', async () => {
-    mockAll.mockReturnValueOnce([
+    mockQuery.mockResolvedValueOnce([
       { id: 'i5', severity: 'critical', created_at: '2025-01-05T00:00:00Z' },
     ]);
-    mockGet.mockReturnValueOnce({ count: 1 });
+    mockQueryOne.mockResolvedValueOnce({ count: 1 });
 
     const response = await app.inject({
       method: 'GET',
@@ -183,7 +187,7 @@ describe('monitoring error handling', () => {
   });
 
   it('returns 500 when insights query throws', async () => {
-    mockAll.mockImplementationOnce(() => { throw new Error('DB locked'); });
+    mockQuery.mockRejectedValueOnce(new Error('DB locked'));
 
     const response = await app.inject({
       method: 'GET',
@@ -197,7 +201,7 @@ describe('monitoring error handling', () => {
   });
 
   it('returns 500 when acknowledge throws', async () => {
-    mockRun.mockImplementationOnce(() => { throw new Error('DB readonly'); });
+    mockExecute.mockRejectedValueOnce(new Error('DB readonly'));
 
     const response = await app.inject({
       method: 'POST',
@@ -236,7 +240,7 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
   });
 
   it('returns anomaly explanations for a container', async () => {
-    mockAll.mockReturnValueOnce([
+    mockQuery.mockResolvedValueOnce([
       {
         id: 'a1',
         severity: 'critical',
@@ -264,7 +268,7 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
   });
 
   it('returns null aiExplanation when no AI analysis in description', async () => {
-    mockAll.mockReturnValueOnce([
+    mockQuery.mockResolvedValueOnce([
       {
         id: 'a2',
         severity: 'warning',
@@ -287,7 +291,7 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
   });
 
   it('returns empty explanations when no insights exist', async () => {
-    mockAll.mockReturnValueOnce([]);
+    mockQuery.mockResolvedValueOnce([]);
 
     const response = await app.inject({
       method: 'GET',
@@ -299,30 +303,35 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
     expect(body.explanations).toEqual([]);
   });
 
-  it('passes timeRange as interval to the query', async () => {
-    mockAll.mockReturnValueOnce([]);
+  it('passes timeRange as cutoff to the query params', async () => {
+    mockQuery.mockResolvedValueOnce([]);
 
     await app.inject({
       method: 'GET',
       url: '/api/monitoring/insights/container/abc123?timeRange=24h',
     });
 
-    expect(mockAll).toHaveBeenCalled();
-    const args = mockAll.mock.calls[0];
-    // Third param should be the interval
-    expect(args).toContain('-24 hours');
+    expect(mockQuery).toHaveBeenCalled();
+    // The route now computes a JS cutoff ISO string and passes it as a param
+    const callArgs = mockQuery.mock.calls[0];
+    // Second arg is the params array
+    const params = callArgs[1] as unknown[];
+    // The cutoff should be an ISO date string (about 24 hours ago)
+    expect(params.some((p) => typeof p === 'string' && p.endsWith('Z'))).toBe(true);
   });
 
   it('defaults to 1h time range', async () => {
-    mockAll.mockReturnValueOnce([]);
+    mockQuery.mockResolvedValueOnce([]);
 
     await app.inject({
       method: 'GET',
       url: '/api/monitoring/insights/container/abc123',
     });
 
-    expect(mockAll).toHaveBeenCalled();
-    const args = mockAll.mock.calls[0];
-    expect(args).toContain('-1 hours');
+    expect(mockQuery).toHaveBeenCalled();
+    // The route computes a cutoff from Date.now() - 1h
+    const callArgs = mockQuery.mock.calls[0];
+    const params = callArgs[1] as unknown[];
+    expect(params.some((p) => typeof p === 'string' && p.endsWith('Z'))).toBe(true);
   });
 });

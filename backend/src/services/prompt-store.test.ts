@@ -91,71 +91,71 @@ describe('prompt-store', () => {
   });
 
   describe('getEffectivePrompt', () => {
-    it('returns stored prompt when setting exists', () => {
+    it('returns stored prompt when setting exists', async () => {
       const custom = 'Custom system prompt for testing';
       mockGetSetting.mockReturnValue({ value: custom, key: 'prompts.chat_assistant.system_prompt', category: 'prompts', updated_at: '2025-01-01' });
 
-      const result = getEffectivePrompt('chat_assistant');
+      const result = await getEffectivePrompt('chat_assistant');
       expect(result).toBe(custom);
       expect(mockGetSetting).toHaveBeenCalledWith('prompts.chat_assistant.system_prompt');
     });
 
-    it('falls back to default when no stored setting', () => {
+    it('falls back to default when no stored setting', async () => {
       mockGetSetting.mockReturnValue(undefined);
 
-      const result = getEffectivePrompt('anomaly_explainer');
+      const result = await getEffectivePrompt('anomaly_explainer');
       expect(result).toBe(DEFAULT_PROMPTS.anomaly_explainer);
     });
 
-    it('falls back to default when stored value is empty string', () => {
+    it('falls back to default when stored value is empty string', async () => {
       mockGetSetting.mockReturnValue({ value: '', key: 'prompts.log_analyzer.system_prompt', category: 'prompts', updated_at: '2025-01-01' });
 
-      const result = getEffectivePrompt('log_analyzer');
+      const result = await getEffectivePrompt('log_analyzer');
       expect(result).toBe(DEFAULT_PROMPTS.log_analyzer);
     });
 
-    it('falls back to default when stored value is whitespace-only', () => {
+    it('falls back to default when stored value is whitespace-only', async () => {
       mockGetSetting.mockReturnValue({ value: '   \n  ', key: 'prompts.root_cause.system_prompt', category: 'prompts', updated_at: '2025-01-01' });
 
-      const result = getEffectivePrompt('root_cause');
+      const result = await getEffectivePrompt('root_cause');
       expect(result).toBe(DEFAULT_PROMPTS.root_cause);
     });
 
-    it('queries the correct settings key for each feature', () => {
+    it('queries the correct settings key for each feature', async () => {
       mockGetSetting.mockReturnValue(undefined);
 
-      getEffectivePrompt('capacity_forecast');
+      await getEffectivePrompt('capacity_forecast');
       expect(mockGetSetting).toHaveBeenCalledWith('prompts.capacity_forecast.system_prompt');
 
-      getEffectivePrompt('correlation_insights');
+      await getEffectivePrompt('correlation_insights');
       expect(mockGetSetting).toHaveBeenCalledWith('prompts.correlation_insights.system_prompt');
     });
 
-    it('returns default for monitoring_analysis when no override', () => {
+    it('returns default for monitoring_analysis when no override', async () => {
       mockGetSetting.mockReturnValue(undefined);
 
-      const result = getEffectivePrompt('monitoring_analysis');
+      const result = await getEffectivePrompt('monitoring_analysis');
       expect(result).toBe(DEFAULT_PROMPTS.monitoring_analysis);
       expect(result).toContain('infrastructure analyst');
     });
   });
 
   describe('getEffectiveLlmConfig', () => {
-    it('returns global config when no feature specified', () => {
-      const result = getEffectiveLlmConfig();
+    it('returns global config when no feature specified', async () => {
+      const result = await getEffectiveLlmConfig();
       expect(result).toEqual(GLOBAL_CONFIG);
       expect(mockGetGlobalLlmConfig).toHaveBeenCalledTimes(1);
     });
 
-    it('returns global config when feature has no overrides', () => {
+    it('returns global config when feature has no overrides', async () => {
       mockGetSetting.mockReturnValue(undefined);
 
-      const result = getEffectiveLlmConfig('chat_assistant');
+      const result = await getEffectiveLlmConfig('chat_assistant');
       expect(result.model).toBe('llama3.2');
       expect(result).not.toHaveProperty('temperature');
     });
 
-    it('applies model override when set', () => {
+    it('applies model override when set', async () => {
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'prompts.chat_assistant.model') {
           return { value: 'codellama', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -163,11 +163,11 @@ describe('prompt-store', () => {
         return undefined;
       });
 
-      const result = getEffectiveLlmConfig('chat_assistant');
+      const result = await getEffectiveLlmConfig('chat_assistant');
       expect(result.model).toBe('codellama');
     });
 
-    it('applies temperature override when set', () => {
+    it('applies temperature override when set', async () => {
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'prompts.anomaly_explainer.temperature') {
           return { value: '0.7', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -175,11 +175,11 @@ describe('prompt-store', () => {
         return undefined;
       });
 
-      const result = getEffectiveLlmConfig('anomaly_explainer') as Record<string, unknown>;
+      const result = await getEffectiveLlmConfig('anomaly_explainer') as Record<string, unknown>;
       expect(result.temperature).toBe(0.7);
     });
 
-    it('ignores empty model override', () => {
+    it('ignores empty model override', async () => {
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'prompts.log_analyzer.model') {
           return { value: '  ', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -187,11 +187,11 @@ describe('prompt-store', () => {
         return undefined;
       });
 
-      const result = getEffectiveLlmConfig('log_analyzer');
+      const result = await getEffectiveLlmConfig('log_analyzer');
       expect(result.model).toBe('llama3.2');
     });
 
-    it('ignores empty temperature override', () => {
+    it('ignores empty temperature override', async () => {
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'prompts.root_cause.temperature') {
           return { value: '', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -199,11 +199,11 @@ describe('prompt-store', () => {
         return undefined;
       });
 
-      const result = getEffectiveLlmConfig('root_cause');
+      const result = await getEffectiveLlmConfig('root_cause');
       expect(result).not.toHaveProperty('temperature');
     });
 
-    it('ignores NaN temperature override', () => {
+    it('ignores NaN temperature override', async () => {
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'prompts.remediation.temperature') {
           return { value: 'not-a-number', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -211,11 +211,11 @@ describe('prompt-store', () => {
         return undefined;
       });
 
-      const result = getEffectiveLlmConfig('remediation');
+      const result = await getEffectiveLlmConfig('remediation');
       expect(result).not.toHaveProperty('temperature');
     });
 
-    it('applies both model and temperature overrides together', () => {
+    it('applies both model and temperature overrides together', async () => {
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'prompts.pcap_analyzer.model') {
           return { value: 'mistral', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -226,7 +226,7 @@ describe('prompt-store', () => {
         return undefined;
       });
 
-      const result = getEffectiveLlmConfig('pcap_analyzer') as Record<string, unknown>;
+      const result = await getEffectiveLlmConfig('pcap_analyzer') as Record<string, unknown>;
       expect(result.model).toBe('mistral');
       expect(result.temperature).toBe(0.3);
       // Global fields preserved
@@ -236,55 +236,55 @@ describe('prompt-store', () => {
 
   describe('profile integration', () => {
     describe('getEffectivePrompt with profiles', () => {
-      it('uses profile prompt when non-default profile is active and has feature config', () => {
+      it('uses profile prompt when non-default profile is active and has feature config', async () => {
         mockGetSetting.mockReturnValue(undefined); // no per-feature override
         mockGetActiveProfileId.mockReturnValue('security-audit');
         mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Security-focused prompt' });
 
-        const result = getEffectivePrompt('chat_assistant');
+        const result = await getEffectivePrompt('chat_assistant');
         expect(result).toBe('Security-focused prompt');
       });
 
-      it('per-feature setting overrides profile prompt', () => {
+      it('per-feature setting overrides profile prompt', async () => {
         mockGetSetting.mockReturnValue({ value: 'Individual override', key: 'prompts.chat_assistant.system_prompt', category: 'prompts', updated_at: '2025-01-01' });
         mockGetActiveProfileId.mockReturnValue('security-audit');
         mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Security-focused prompt' });
 
-        const result = getEffectivePrompt('chat_assistant');
+        const result = await getEffectivePrompt('chat_assistant');
         expect(result).toBe('Individual override');
       });
 
-      it('falls back to default when profile has no config for feature', () => {
+      it('falls back to default when profile has no config for feature', async () => {
         mockGetSetting.mockReturnValue(undefined);
         mockGetActiveProfileId.mockReturnValue('security-audit');
         mockGetProfilePromptConfig.mockReturnValue(undefined);
 
-        const result = getEffectivePrompt('capacity_forecast');
+        const result = await getEffectivePrompt('capacity_forecast');
         expect(result).toBe(DEFAULT_PROMPTS.capacity_forecast);
       });
 
-      it('skips profile lookup when default profile is active', () => {
+      it('skips profile lookup when default profile is active', async () => {
         mockGetSetting.mockReturnValue(undefined);
         mockGetActiveProfileId.mockReturnValue('default');
 
-        const result = getEffectivePrompt('chat_assistant');
+        const result = await getEffectivePrompt('chat_assistant');
         expect(result).toBe(DEFAULT_PROMPTS.chat_assistant);
         expect(mockGetProfilePromptConfig).not.toHaveBeenCalled();
       });
     });
 
     describe('getEffectiveLlmConfig with profiles', () => {
-      it('uses profile model override when non-default profile is active', () => {
+      it('uses profile model override when non-default profile is active', async () => {
         mockGetSetting.mockReturnValue(undefined); // no per-feature override
         mockGetActiveProfileId.mockReturnValue('custom-1');
         mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Custom', model: 'codellama', temperature: 0.5 });
 
-        const result = getEffectiveLlmConfig('chat_assistant') as Record<string, unknown>;
+        const result = await getEffectiveLlmConfig('chat_assistant') as Record<string, unknown>;
         expect(result.model).toBe('codellama');
         expect(result.temperature).toBe(0.5);
       });
 
-      it('per-feature setting model overrides profile model', () => {
+      it('per-feature setting model overrides profile model', async () => {
         mockGetSetting.mockImplementation((key: string) => {
           if (key === 'prompts.chat_assistant.model') {
             return { value: 'mistral', key, category: 'prompts', updated_at: '2025-01-01' };
@@ -294,15 +294,15 @@ describe('prompt-store', () => {
         mockGetActiveProfileId.mockReturnValue('custom-1');
         mockGetProfilePromptConfig.mockReturnValue({ systemPrompt: 'Custom', model: 'codellama' });
 
-        const result = getEffectiveLlmConfig('chat_assistant');
+        const result = await getEffectiveLlmConfig('chat_assistant');
         expect(result.model).toBe('mistral');
       });
 
-      it('skips profile lookup when default profile is active', () => {
+      it('skips profile lookup when default profile is active', async () => {
         mockGetSetting.mockReturnValue(undefined);
         mockGetActiveProfileId.mockReturnValue('default');
 
-        const result = getEffectiveLlmConfig('chat_assistant');
+        const result = await getEffectiveLlmConfig('chat_assistant');
         expect(result.model).toBe('llama3.2');
         // Profile prompt config should not be called because active profile is default
         // (getActiveProfileId is called but getProfilePromptConfig should not be)

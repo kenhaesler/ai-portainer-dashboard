@@ -1,4 +1,4 @@
-import { getDb, prepareStmt } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import {
   getEndpoints,
   getContainers,
@@ -12,6 +12,8 @@ import {
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('ebpf-coverage');
+
+function db() { return getDbForDomain('ebpf'); }
 
 export type CoverageStatus = 'planned' | 'deployed' | 'excluded' | 'failed' | 'unknown' | 'not_deployed' | 'unreachable' | 'incompatible';
 
@@ -92,10 +94,10 @@ export interface CoverageSummary {
 /**
  * Returns coverage status for all endpoints by reading the ebpf_coverage table.
  */
-export function getEndpointCoverage(): CoverageRecord[] {
-  const rows = prepareStmt(
+export async function getEndpointCoverage(): Promise<CoverageRecord[]> {
+  const rows = await db().query<CoverageRow>(
     'SELECT * FROM ebpf_coverage ORDER BY endpoint_name ASC',
-  ).all() as CoverageRow[];
+  );
 
   return rows.map((row) => ({
     ...row,
@@ -110,35 +112,35 @@ export function getEndpointCoverage(): CoverageRecord[] {
 /**
  * Update an endpoint's eBPF coverage status.
  */
-export function updateCoverageStatus(
+export async function updateCoverageStatus(
   endpointId: number,
   status: CoverageStatus,
   reason?: string,
-): void {
-  prepareStmt(`
+): Promise<void> {
+  await db().execute(`
     UPDATE ebpf_coverage
-    SET status = ?, exclusion_reason = ?, updated_at = datetime('now')
+    SET status = ?, exclusion_reason = ?, updated_at = NOW()
     WHERE endpoint_id = ?
-  `).run(status, reason ?? null, endpointId);
+  `, [status, reason ?? null, endpointId]);
 
   log.info({ endpointId, status, reason }, 'Coverage status updated');
 }
 
-export function getEndpointOtlpOverride(endpointId: number): string | null {
-  const row = prepareStmt(`
+export async function getEndpointOtlpOverride(endpointId: number): Promise<string | null> {
+  const row = await db().queryOne<{ otlp_endpoint_override: string | null }>(`
     SELECT otlp_endpoint_override
     FROM ebpf_coverage
     WHERE endpoint_id = ?
-  `).get(endpointId) as { otlp_endpoint_override: string | null } | undefined;
+  `, [endpointId]);
   return row?.otlp_endpoint_override ?? null;
 }
 
-export function setEndpointOtlpOverride(endpointId: number, value: string | null): void {
-  prepareStmt(`
+export async function setEndpointOtlpOverride(endpointId: number, value: string | null): Promise<void> {
+  await db().execute(`
     UPDATE ebpf_coverage
-    SET otlp_endpoint_override = ?, updated_at = datetime('now')
+    SET otlp_endpoint_override = ?, updated_at = NOW()
     WHERE endpoint_id = ?
-  `).run(value, endpointId);
+  `, [value, endpointId]);
 }
 
 function isBeylaContainer(container: { Image: string; Labels?: Record<string, string> }): boolean {
@@ -170,7 +172,7 @@ async function findBeylaContainer(endpointId: number): Promise<{
   };
 }
 
-function updateLifecycleCoverage(
+async function updateLifecycleCoverage(
   endpointId: number,
   endpointName: string,
   status: CoverageStatus,
@@ -179,8 +181,8 @@ function updateLifecycleCoverage(
     containerId: string | null;
     managed: boolean;
   },
-): void {
-  prepareStmt(`
+): Promise<void> {
+  await db().execute(`
     INSERT INTO ebpf_coverage (endpoint_id, endpoint_name, status, beyla_enabled, beyla_container_id, beyla_managed)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(endpoint_id) DO UPDATE SET
@@ -190,15 +192,15 @@ function updateLifecycleCoverage(
       beyla_container_id = excluded.beyla_container_id,
       beyla_managed = excluded.beyla_managed,
       exclusion_reason = NULL,
-      updated_at = datetime('now')
-  `).run(
+      updated_at = NOW()
+  `, [
     endpointId,
     endpointName,
     status,
     values.beylaEnabled ? 1 : 0,
     values.containerId,
     values.managed ? 1 : 0,
-  );
+  ]);
 }
 
 /**
@@ -259,7 +261,7 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
   }
 
   if (!shouldRecreate && existing?.running) {
-    updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+    await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
       beylaEnabled: true,
       containerId: existing.containerId,
       managed: existing.managed,
@@ -280,7 +282,7 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
       const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
       if (postCheck !== 'deployed') throw err;
     }
-    updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+    await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
       beylaEnabled: true,
       containerId: existing.containerId,
       managed: existing.managed,
@@ -340,7 +342,7 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     if (postCheck !== 'deployed') throw err;
   }
 
-  updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
     beylaEnabled: true,
     containerId: created.Id,
     managed: true,
@@ -362,7 +364,7 @@ export async function disableBeyla(endpointId: number): Promise<BeylaActionResul
   }
 
   if (!existing.running) {
-    updateLifecycleCoverage(endpointId, endpoint.Name, 'failed', {
+    await updateLifecycleCoverage(endpointId, endpoint.Name, 'failed', {
       beylaEnabled: false,
       containerId: existing.containerId,
       managed: existing.managed,
@@ -377,7 +379,7 @@ export async function disableBeyla(endpointId: number): Promise<BeylaActionResul
 
   await stopContainer(endpointId, existing.containerId);
 
-  updateLifecycleCoverage(endpointId, endpoint.Name, 'failed', {
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'failed', {
     beylaEnabled: false,
     containerId: existing.containerId,
     managed: existing.managed,
@@ -400,7 +402,7 @@ export async function enableBeyla(endpointId: number): Promise<BeylaActionResult
 
   await startContainer(endpointId, existing.containerId);
 
-  updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'deployed', {
     beylaEnabled: true,
     containerId: existing.containerId,
     managed: existing.managed,
@@ -439,7 +441,7 @@ export async function removeBeylaFromEndpoint(endpointId: number, force = false)
     if (postCheck !== 'not_found') throw err;
   }
 
-  updateLifecycleCoverage(endpointId, endpoint.Name, 'not_deployed', {
+  await updateLifecycleCoverage(endpointId, endpoint.Name, 'not_deployed', {
     beylaEnabled: false,
     containerId: null,
     managed: false,
@@ -497,7 +499,6 @@ export async function removeBeylaBulk(endpointIds: number[], force = false): Pro
  */
 export async function syncEndpointCoverage(): Promise<number> {
   const endpoints = await getEndpoints();
-  const db = getDb();
   let added = 0;
 
   const upEndpoints = endpoints.filter((ep) => ep.Status === 1);
@@ -526,38 +527,37 @@ export async function syncEndpointCoverage(): Promise<number> {
     }
   }
 
-  const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO ebpf_coverage (endpoint_id, endpoint_name, status)
+  const insertSql = `
+    INSERT INTO ebpf_coverage (endpoint_id, endpoint_name, status)
     VALUES (?, ?, ?)
-  `);
+    ON CONFLICT DO NOTHING
+  `;
 
-  const updateNameStmt = db.prepare(`
-    UPDATE ebpf_coverage SET endpoint_name = ?, updated_at = datetime('now')
+  const updateNameSql = `
+    UPDATE ebpf_coverage SET endpoint_name = ?, updated_at = NOW()
     WHERE endpoint_id = ? AND endpoint_name != ?
-  `);
+  `;
 
-  const autoUpdateStmt = db.prepare(`
+  const autoUpdateSql = `
     UPDATE ebpf_coverage
-    SET status = ?, updated_at = datetime('now')
+    SET status = ?, updated_at = NOW()
     WHERE endpoint_id = ? AND status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible')
-  `);
+  `;
 
-  const txn = db.transaction(() => {
+  await db().transaction(async (txDb) => {
     for (const ep of endpoints) {
       const detected = detectedMap.get(ep.Id) ?? 'unknown';
-      const result = insertStmt.run(ep.Id, ep.Name, detected);
+      const result = await txDb.execute(insertSql, [ep.Id, ep.Name, detected]);
       if (result.changes > 0) {
         added++;
       } else {
-        updateNameStmt.run(ep.Name, ep.Id, ep.Name);
+        await txDb.execute(updateNameSql, [ep.Name, ep.Id, ep.Name]);
         if (detectedMap.has(ep.Id)) {
-          autoUpdateStmt.run(detected, ep.Id);
+          await txDb.execute(autoUpdateSql, [detected, ep.Id]);
         }
       }
     }
   });
-
-  txn();
 
   log.info({ total: endpoints.length, added, detected: detectedMap.size }, 'Endpoint coverage synced');
   return added;
@@ -570,41 +570,37 @@ export async function syncEndpointCoverage(): Promise<number> {
  * Updates status automatically based on findings.
  */
 export async function verifyCoverage(endpointId: number): Promise<{ verified: boolean; lastTraceAt: string | null; beylaRunning: boolean }> {
-  const db = getDb();
-
   const beylaDetection = await detectBeylaOnEndpoint(endpointId);
   const beylaRunning = beylaDetection === 'deployed';
 
-  const tableExists = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='spans'",
-  ).get();
-
   let lastTraceAt: string | null = null;
 
-  if (tableExists) {
-    const recentSpan = db.prepare(`
+  try {
+    const tracesDb = getDbForDomain('traces');
+    const recentSpan = await tracesDb.queryOne<{ start_time: string }>(`
       SELECT start_time FROM spans
       WHERE trace_source = 'ebpf'
-        AND start_time > datetime('now', '-10 minutes')
+        AND start_time > NOW() - INTERVAL '10 minutes'
       ORDER BY start_time DESC
       LIMIT 1
-    `).get() as { start_time: string } | undefined;
-
+    `);
     lastTraceAt = recentSpan?.start_time ?? null;
+  } catch {
+    // spans table may not exist yet; treat as no traces
   }
 
   const newStatus = detectionToCoverageStatus(beylaDetection);
   const verified = beylaRunning || lastTraceAt !== null;
 
   // Keep coverage status in sync with the latest detection result on every verify call.
-  prepareStmt(`
+  await db().execute(`
     UPDATE ebpf_coverage
     SET status = CASE WHEN status IN ('unknown', 'deployed', 'failed', 'not_deployed', 'unreachable', 'incompatible') THEN ? ELSE status END,
         last_trace_at = COALESCE(?, last_trace_at),
-        last_verified_at = datetime('now'),
-        updated_at = datetime('now')
+        last_verified_at = NOW(),
+        updated_at = NOW()
     WHERE endpoint_id = ?
-  `).run(newStatus, lastTraceAt, endpointId);
+  `, [newStatus, lastTraceAt, endpointId]);
 
   log.debug({ endpointId, verified, beylaRunning, lastTraceAt }, 'Coverage verified');
   return { verified, lastTraceAt, beylaRunning };
@@ -613,14 +609,12 @@ export async function verifyCoverage(endpointId: number): Promise<{ verified: bo
 /**
  * Return aggregate coverage stats.
  */
-export function getCoverageSummary(): CoverageSummary {
-  const db = getDb();
-
-  const rows = db.prepare(`
+export async function getCoverageSummary(): Promise<CoverageSummary> {
+  const rows = await db().query<{ status: CoverageStatus; count: number }>(`
     SELECT status, COUNT(*) as count
     FROM ebpf_coverage
     GROUP BY status
-  `).all() as { status: CoverageStatus; count: number }[];
+  `);
 
   const counts: Record<CoverageStatus, number> = {
     planned: 0,

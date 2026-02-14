@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '../models/api-schemas.js';
 import {
   getSecurityAudit,
@@ -31,7 +31,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
     };
 
     try {
-      const db = getDb();
+      const db = getDbForDomain('insights');
       const filterConditions: string[] = [];
       const filterParams: unknown[] = [];
 
@@ -63,18 +63,18 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
       // Fetch N+1 to determine hasMore
       const fetchLimit = limit + 1;
       const insights = cursor
-        ? db.prepare(`
+        ? await db.query<Record<string, unknown>>(`
             SELECT * FROM insights ${where}
             ORDER BY created_at DESC, id DESC LIMIT ?
-          `).all(...params, fetchLimit) as Array<Record<string, unknown>>
-        : db.prepare(`
+          `, [...params, fetchLimit])
+        : await db.query<Record<string, unknown>>(`
             SELECT * FROM insights ${where}
             ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
-          `).all(...params, fetchLimit, offset) as Array<Record<string, unknown>>;
+          `, [...params, fetchLimit, offset]);
 
-      const total = db.prepare(`
+      const total = await db.queryOne<{ count: number }>(`
         SELECT COUNT(*) as count FROM insights ${filterWhere}
-      `).get(...filterParams) as { count: number };
+      `, [...filterParams]);
 
       const hasMore = insights.length > limit;
       const items = hasMore ? insights.slice(0, limit) : insights;
@@ -85,7 +85,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
 
       return {
         insights: items,
-        total: total.count,
+        total: total?.count ?? 0,
         limit,
         offset,
         nextCursor,
@@ -113,27 +113,28 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
     };
 
     try {
-      const db = getDb();
+      const db = getDbForDomain('insights');
 
-      // Parse timeRange into an SQLite-compatible interval
-      let interval = '-1 hours';
+      // Parse timeRange into milliseconds and compute JS cutoff
+      let intervalMs = 3600_000; // default 1 hour
       const match = timeRange.match(/^(\d+)([mhd])$/);
       if (match) {
         const value = parseInt(match[1], 10);
         const unit = match[2];
         switch (unit) {
-          case 'm': interval = `-${value} minutes`; break;
-          case 'h': interval = `-${value} hours`; break;
-          case 'd': interval = `-${value} days`; break;
+          case 'm': intervalMs = value * 60_000; break;
+          case 'h': intervalMs = value * 3600_000; break;
+          case 'd': intervalMs = value * 86400_000; break;
         }
       }
+      const cutoff = new Date(Date.now() - intervalMs).toISOString();
 
       const conditions = [
         '(container_id = ? OR container_id LIKE ?)',
         "category IN ('anomaly', 'predictive')",
-        "created_at >= datetime('now', ?)",
+        'created_at >= ?',
       ];
-      const params: unknown[] = [containerId, `${containerId}%`, interval];
+      const params: unknown[] = [containerId, `${containerId}%`, cutoff];
 
       if (metricType) {
         conditions.push('title LIKE ?');
@@ -141,13 +142,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
       }
 
       const where = conditions.join(' AND ');
-      const rows = db.prepare(`
-        SELECT id, severity, category, title, description, suggested_action, created_at
-        FROM insights
-        WHERE ${where}
-        ORDER BY created_at DESC
-        LIMIT 50
-      `).all(...params) as Array<{
+      const rows = await db.query<{
         id: string;
         severity: string;
         category: string;
@@ -155,7 +150,13 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
         description: string;
         suggested_action: string | null;
         created_at: string;
-      }>;
+      }>(`
+        SELECT id, severity, category, title, description, suggested_action, created_at
+        FROM insights
+        WHERE ${where}
+        ORDER BY created_at DESC
+        LIMIT 50
+      `, [...params]);
 
       // Parse out AI Analysis from description field
       const explanations = rows.map((row) => {
@@ -192,8 +193,8 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     try {
-      const db = getDb();
-      db.prepare('UPDATE insights SET is_acknowledged = 1 WHERE id = ?').run(id);
+      const db = getDbForDomain('insights');
+      await db.execute('UPDATE insights SET is_acknowledged = 1 WHERE id = ?', [id]);
       return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -253,7 +254,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
         key: SECURITY_AUDIT_IGNORE_KEY,
         category: 'security',
         defaults: DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
-        patterns: getSecurityAuditIgnoreList(),
+        patterns: await getSecurityAuditIgnoreList(),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -276,7 +277,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
       : [];
 
     try {
-      const saved = setSecurityAuditIgnoreList(patterns);
+      const saved = await setSecurityAuditIgnoreList(patterns);
       return {
         success: true,
         key: SECURITY_AUDIT_IGNORE_KEY,

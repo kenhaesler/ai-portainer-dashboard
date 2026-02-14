@@ -36,7 +36,7 @@ export async function analyzeContainerLogs(
     let response = '';
     await chatStream(
       [{ role: 'user', content: `Analyze these container logs from "${containerName}":\n\n${logs.slice(0, 4000)}` }],
-      getEffectivePrompt('log_analyzer'),
+      await getEffectivePrompt('log_analyzer'),
       (chunk) => { response += chunk; },
     );
 

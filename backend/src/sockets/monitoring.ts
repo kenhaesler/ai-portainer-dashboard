@@ -1,5 +1,5 @@
 import { Namespace } from 'socket.io';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('socket:monitoring');
@@ -10,9 +10,9 @@ export function setupMonitoringNamespace(ns: Namespace) {
     log.info({ userId }, 'Monitoring client connected');
 
     // Send recent insights on connect
-    socket.on('insights:history', (data?: { limit?: number; severity?: string }) => {
+    socket.on('insights:history', async (data?: { limit?: number; severity?: string }) => {
       try {
-        const db = getDb();
+        const db = getDbForDomain('insights');
         const limit = data?.limit || 50;
 
         let query = 'SELECT * FROM insights';
@@ -26,7 +26,7 @@ export function setupMonitoringNamespace(ns: Namespace) {
         query += ' ORDER BY created_at DESC LIMIT ?';
         params.push(limit);
 
-        const insights = db.prepare(query).all(...params);
+        const insights = await db.query(query, params);
         socket.emit('insights:history', { insights });
       } catch (err) {
         log.error({ err }, 'Failed to fetch insight history');
@@ -35,17 +35,18 @@ export function setupMonitoringNamespace(ns: Namespace) {
     });
 
     // Send recent investigations on request
-    socket.on('investigations:history', (data?: { limit?: number }) => {
+    socket.on('investigations:history', async (data?: { limit?: number }) => {
       try {
-        const db = getDb();
+        const db = getDbForDomain('investigations');
         const limit = data?.limit || 50;
 
-        const investigations = db.prepare(
+        const investigations = await db.query(
           `SELECT i.*, ins.title as insight_title, ins.severity as insight_severity, ins.category as insight_category
            FROM investigations i
            LEFT JOIN insights ins ON i.insight_id = ins.id
-           ORDER BY i.created_at DESC LIMIT ?`
-        ).all(limit);
+           ORDER BY i.created_at DESC LIMIT ?`,
+          [limit]
+        );
 
         socket.emit('investigations:history', { investigations });
       } catch (err) {

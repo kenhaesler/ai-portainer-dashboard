@@ -129,8 +129,8 @@ vi.mock('./anomaly-explainer.js', () => ({
 }));
 
 vi.mock('./monitoring-telemetry-store.js', () => ({
-  insertMonitoringCycle: vi.fn(),
-  insertMonitoringSnapshot: vi.fn(),
+  insertMonitoringCycle: vi.fn().mockResolvedValue(undefined),
+  insertMonitoringSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./notification-service.js', () => ({

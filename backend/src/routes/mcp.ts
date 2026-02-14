@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import {
   connectServer,
@@ -32,14 +32,15 @@ const IdParamSchema = z.object({
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-function getServerById(id: number): McpServerConfig | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id) as McpServerConfig | undefined;
+async function getServerById(id: number): Promise<McpServerConfig | undefined> {
+  const mcpDb = getDbForDomain('mcp');
+  const row = await mcpDb.queryOne<McpServerConfig>('SELECT * FROM mcp_servers WHERE id = ?', [id]);
+  return row ?? undefined;
 }
 
-function getAllServers(): McpServerConfig[] {
-  const db = getDb();
-  return db.prepare('SELECT * FROM mcp_servers ORDER BY name ASC').all() as McpServerConfig[];
+async function getAllServers(): Promise<McpServerConfig[]> {
+  const mcpDb = getDbForDomain('mcp');
+  return mcpDb.query<McpServerConfig>('SELECT * FROM mcp_servers ORDER BY name ASC');
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    const servers = getAllServers();
+    const servers = await getAllServers();
     const connectedStatuses = getConnectedServers();
     const connectedMap = new Map(connectedStatuses.map(s => [s.name, s]));
 
@@ -83,7 +84,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
     const body = parsed.data;
-    const db = getDb();
+    const mcpDb = getDbForDomain('mcp');
 
     // Validate transport-specific requirements
     if (body.transport === 'stdio' && !body.command) {
@@ -111,18 +112,19 @@ export async function mcpRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const result = db.prepare(`
-        INSERT INTO mcp_servers (name, transport, command, url, args, env, enabled, disabled_tools)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        body.name,
-        body.transport,
-        body.command ?? null,
-        body.url ?? null,
-        body.args ?? null,
-        body.env ?? null,
-        body.enabled ? 1 : 0,
-        body.disabled_tools ?? null,
+      const result = await mcpDb.execute(
+        `INSERT INTO mcp_servers (name, transport, command, url, args, env, enabled, disabled_tools)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          body.name,
+          body.transport,
+          body.command ?? null,
+          body.url ?? null,
+          body.args ?? null,
+          body.env ?? null,
+          body.enabled ? 1 : 0,
+          body.disabled_tools ?? null,
+        ],
       );
 
       writeAuditLog({
@@ -165,12 +167,12 @@ export async function mcpRoutes(fastify: FastifyInstance) {
     if (!bodyParsed.success) return reply.code(400).send({ error: bodyParsed.error.issues[0]?.message ?? 'Invalid input' });
     const body = bodyParsed.data;
 
-    const existing = getServerById(id);
+    const existing = await getServerById(id);
     if (!existing) {
       return reply.code(404).send({ error: 'MCP server not found' });
     }
 
-    const db = getDb();
+    const mcpDb = getDbForDomain('mcp');
     const updates: string[] = [];
     const values: unknown[] = [];
 
@@ -190,7 +192,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
     updates.push("updated_at = datetime('now')");
     values.push(id);
 
-    db.prepare(`UPDATE mcp_servers SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    await mcpDb.execute(`UPDATE mcp_servers SET ${updates.join(', ')} WHERE id = ?`, values);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -203,7 +205,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
-    return getServerById(id);
+    return await getServerById(id);
   });
 
   // Delete an MCP server config
@@ -217,7 +219,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = IdParamSchema.safeParse(request.params).data ?? { id: NaN };
 
-    const existing = getServerById(id);
+    const existing = await getServerById(id);
     if (!existing) {
       return reply.code(404).send({ error: 'MCP server not found' });
     }
@@ -227,8 +229,8 @@ export async function mcpRoutes(fastify: FastifyInstance) {
       await disconnectServer(existing.name);
     }
 
-    const db = getDb();
-    db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(id);
+    const mcpDb = getDbForDomain('mcp');
+    await mcpDb.execute('DELETE FROM mcp_servers WHERE id = ?', [id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -254,7 +256,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = IdParamSchema.safeParse(request.params).data ?? { id: NaN };
 
-    const server = getServerById(id);
+    const server = await getServerById(id);
     if (!server) {
       return reply.code(404).send({ error: 'MCP server not found' });
     }
@@ -279,7 +281,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = IdParamSchema.safeParse(request.params).data ?? { id: NaN };
 
-    const server = getServerById(id);
+    const server = await getServerById(id);
     if (!server) {
       return reply.code(404).send({ error: 'MCP server not found' });
     }
@@ -299,7 +301,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = IdParamSchema.safeParse(request.params).data ?? { id: NaN };
 
-    const server = getServerById(id);
+    const server = await getServerById(id);
     if (!server) {
       return reply.code(404).send({ error: 'MCP server not found' });
     }

@@ -120,6 +120,10 @@ export const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
   REDIS_KEY_PREFIX: z.string().default('aidash:cache:'),
 
+  // App PostgreSQL (replaces SQLite for app data)
+  POSTGRES_APP_URL: z.string().default('postgresql://app_user:changeme@localhost:5433/portainer_dashboard'),
+  POSTGRES_APP_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(20),
+
   // TimescaleDB (metrics + KPI storage)
   TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
   TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(50),

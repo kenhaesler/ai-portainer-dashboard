@@ -3,16 +3,20 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { notificationRoutes } from './notifications.js';
 
-const mockAll = vi.fn().mockReturnValue([]);
-const mockGet = vi.fn().mockReturnValue({ count: 0 });
+const mockQuery = vi.fn().mockResolvedValue([]);
+const mockQueryOne = vi.fn().mockResolvedValue({ count: 0 });
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => ({
-    prepare: () => ({
-      all: (...args: unknown[]) => mockAll(...args),
-      get: (...args: unknown[]) => mockGet(...args),
-      run: vi.fn(),
-    }),
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => ({
+    query: (...args: unknown[]) => mockQuery(...args),
+    queryOne: (...args: unknown[]) => mockQueryOne(...args),
+    execute: vi.fn(async () => ({ changes: 1 })),
+    transaction: vi.fn(async (fn: Function) => fn({
+      query: (...a: unknown[]) => mockQuery(...a),
+      queryOne: (...a: unknown[]) => mockQueryOne(...a),
+      execute: vi.fn(async () => ({ changes: 1 })),
+    })),
+    healthCheck: vi.fn(async () => true),
   }),
 }));
 
@@ -40,8 +44,8 @@ describe('Notification Routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAll.mockReturnValue([]);
-    mockGet.mockReturnValue({ count: 0 });
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue({ count: 0 });
   });
 
   describe('GET /api/notifications/history', () => {
@@ -49,8 +53,8 @@ describe('Notification Routes', () => {
       const entries = [
         { id: 1, channel: 'teams', event_type: 'anomaly', title: 'CPU Spike', status: 'sent', created_at: '2024-01-01' },
       ];
-      mockAll.mockReturnValue(entries);
-      mockGet.mockReturnValue({ count: 1 });
+      mockQuery.mockResolvedValue(entries);
+      mockQueryOne.mockResolvedValue({ count: 1 });
 
       const response = await app.inject({
         method: 'GET',

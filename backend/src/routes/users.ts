@@ -13,7 +13,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    return listUsers();
+    return await listUsers();
   });
 
   // Create a user (admin only)
@@ -96,7 +96,7 @@ export async function userRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Cannot delete your own account' });
     }
 
-    const deleted = deleteUser(id);
+    const deleted = await deleteUser(id);
     if (!deleted) return reply.status(404).send({ error: 'User not found' });
 
     writeAuditLog({

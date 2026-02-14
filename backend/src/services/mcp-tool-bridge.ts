@@ -86,7 +86,7 @@ export function collectAllTools(): OllamaToolDefinition[] {
 // ─── System Prompt Supplement ────────────────────────────────────────────
 
 /** Build a text description of connected MCP tools for the system prompt. */
-export function getMcpToolPrompt(): string {
+export async function getMcpToolPrompt(): Promise<string> {
   const mcpTools = getAllMcpTools();
   if (mcpTools.length === 0) return '';
 
@@ -102,7 +102,7 @@ export function getMcpToolPrompt(): string {
     return `- **${tool.name}** (MCP server: ${tool.serverName}): ${tool.description}\n  Parameters:\n${params}`;
   }).join('\n\n');
 
-  const { toolTimeout } = getEffectiveMcpConfig();
+  const { toolTimeout } = await getEffectiveMcpConfig();
 
   return `\n\n## External MCP Tools
 

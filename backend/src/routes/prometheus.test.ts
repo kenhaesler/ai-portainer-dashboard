@@ -9,12 +9,30 @@ const mockConfig = {
   PROMETHEUS_BEARER_TOKEN: undefined as string | undefined,
 };
 
-vi.mock('../db/sqlite.js', () => ({
-  getDb: () => db,
+// Wrap in-memory SQLite with AppDb interface (query/queryOne/execute)
+const mockAppDb = {
+  query: vi.fn(async (sql: string, params: unknown[] = []) => {
+    return db.prepare(sql).all(...params);
+  }),
+  queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
+    return db.prepare(sql).get(...params) ?? null;
+  }),
+  execute: vi.fn(async (sql: string, params: unknown[] = []) => {
+    const result = db.prepare(sql).run(...params);
+    return { changes: result.changes };
+  }),
+};
+
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => mockAppDb,
 }));
 
 vi.mock('../config/index.js', () => ({
   getConfig: () => mockConfig,
+}));
+
+vi.mock('../services/prompt-guard.js', () => ({
+  getPromptGuardNearMissTotal: () => 0,
 }));
 
 describe('Prometheus Routes', () => {

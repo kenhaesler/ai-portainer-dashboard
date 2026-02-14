@@ -71,47 +71,53 @@ describe('sqlite prepareStmt', () => {
   });
 });
 
-describe('session-store uses prepareStmt', () => {
+describe('session-store uses AppDb', () => {
+  const mockDb = {
+    execute: vi.fn(async () => ({ changes: 0 })),
+    queryOne: vi.fn(async () => null),
+    query: vi.fn(async () => []),
+    transaction: vi.fn(async (fn: Function) => fn(mockDb)),
+    healthCheck: vi.fn(async () => true),
+  };
+
   beforeEach(() => {
     vi.resetModules();
+    vi.clearAllMocks();
   });
 
-  afterEach(async () => {
-    const { closeDb } = await import('./sqlite.js');
-    closeDb();
-  });
-
-  it('createSession and getSession work with cached statements', async () => {
-    vi.doMock('../config/index.js', () => ({
-      getConfig: vi.fn().mockReturnValue({ SQLITE_PATH: ':memory:' }),
+  it('createSession and getSession work through AppDb', async () => {
+    vi.doMock('./app-db-router.js', () => ({
+      getDbForDomain: vi.fn(() => mockDb),
     }));
-
-    const { getDb } = await import('./sqlite.js');
-    const db = getDb();
-
-    // Create sessions table manually for test
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        username TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        last_active TEXT NOT NULL,
-        is_valid INTEGER NOT NULL DEFAULT 1
-      )
-    `);
+    vi.doMock('../utils/logger.js', () => ({
+      createChildLogger: () => ({
+        info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
+      }),
+    }));
 
     const { createSession, getSession } = await import('../services/session-store.js');
 
-    const session = createSession('user-1', 'testuser');
+    const session = await createSession('user-1', 'testuser');
     expect(session.user_id).toBe('user-1');
     expect(session.username).toBe('testuser');
     expect(session.is_valid).toBe(1);
+    expect(mockDb.execute).toHaveBeenCalledTimes(1);
 
-    const retrieved = getSession(session.id);
+    // Mock getSession to return the session
+    mockDb.queryOne.mockResolvedValueOnce({
+      id: session.id,
+      user_id: 'user-1',
+      username: 'testuser',
+      created_at: session.created_at,
+      expires_at: session.expires_at,
+      last_active: session.last_active,
+      is_valid: 1,
+    });
+
+    const retrieved = await getSession(session.id);
     expect(retrieved).toBeDefined();
     expect(retrieved!.id).toBe(session.id);
+    expect(mockDb.queryOne).toHaveBeenCalledTimes(1);
   });
 });
 

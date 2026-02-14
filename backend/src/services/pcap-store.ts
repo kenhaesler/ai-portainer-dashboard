@@ -1,8 +1,10 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Capture, CaptureStatus } from '../models/pcap.js';
 
 const log = createChildLogger('pcap-store');
+
+function db() { return getDbForDomain('pcap'); }
 
 export interface CaptureInsert {
   id: string;
@@ -14,14 +16,13 @@ export interface CaptureInsert {
   max_packets?: number;
 }
 
-export function insertCapture(capture: CaptureInsert): void {
-  const db = getDb();
-  db.prepare(`
+export async function insertCapture(capture: CaptureInsert): Promise<void> {
+  await db().execute(`
     INSERT INTO pcap_captures (
       id, endpoint_id, container_id, container_name,
       status, filter, duration_seconds, max_packets, created_at
-    ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'))
-  `).run(
+    ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, NOW())
+  `, [
     capture.id,
     capture.endpoint_id,
     capture.container_id,
@@ -29,12 +30,12 @@ export function insertCapture(capture: CaptureInsert): void {
     capture.filter || null,
     capture.duration_seconds || null,
     capture.max_packets || null,
-  );
+  ]);
 
   log.debug({ captureId: capture.id }, 'Capture record inserted');
 }
 
-export function updateCaptureStatus(
+export async function updateCaptureStatus(
   id: string,
   status: CaptureStatus,
   updates?: {
@@ -47,8 +48,7 @@ export function updateCaptureStatus(
     started_at?: string;
     completed_at?: string;
   },
-): void {
-  const db = getDb();
+): Promise<void> {
   const sets = ['status = ?'];
   const params: unknown[] = [status];
 
@@ -63,15 +63,13 @@ export function updateCaptureStatus(
 
   params.push(id);
 
-  db.prepare(`UPDATE pcap_captures SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  await db().execute(`UPDATE pcap_captures SET ${sets.join(', ')} WHERE id = ?`, params);
   log.debug({ captureId: id, status }, 'Capture status updated');
 }
 
-export function getCapture(id: string): Capture | undefined {
-  const db = getDb();
-  return db
-    .prepare('SELECT * FROM pcap_captures WHERE id = ?')
-    .get(id) as Capture | undefined;
+export async function getCapture(id: string): Promise<Capture | undefined> {
+  const row = await db().queryOne<Capture>('SELECT * FROM pcap_captures WHERE id = ?', [id]);
+  return row ?? undefined;
 }
 
 export interface GetCapturesOptions {
@@ -81,8 +79,7 @@ export interface GetCapturesOptions {
   offset?: number;
 }
 
-export function getCaptures(options: GetCapturesOptions = {}): Capture[] {
-  const db = getDb();
+export async function getCaptures(options: GetCapturesOptions = {}): Promise<Capture[]> {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -100,45 +97,38 @@ export function getCaptures(options: GetCapturesOptions = {}): Capture[] {
   const limit = options.limit ?? 50;
   const offset = options.offset ?? 0;
 
-  return db
-    .prepare(`
-      SELECT * FROM pcap_captures
-      ${where}
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `)
-    .all(...params, limit, offset) as Capture[];
+  return db().query<Capture>(`
+    SELECT * FROM pcap_captures
+    ${where}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `, [...params, limit, offset]);
 }
 
-export function getCapturesCount(status?: CaptureStatus): number {
-  const db = getDb();
+export async function getCapturesCount(status?: CaptureStatus): Promise<number> {
   if (status) {
-    const row = db
-      .prepare('SELECT COUNT(*) as count FROM pcap_captures WHERE status = ?')
-      .get(status) as { count: number };
-    return row.count;
+    const row = await db().queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM pcap_captures WHERE status = ?', [status],
+    );
+    return row?.count ?? 0;
   }
-  const row = db
-    .prepare('SELECT COUNT(*) as count FROM pcap_captures')
-    .get() as { count: number };
-  return row.count;
+  const row = await db().queryOne<{ count: number }>(
+    'SELECT COUNT(*) as count FROM pcap_captures', [],
+  );
+  return row?.count ?? 0;
 }
 
-export function deleteCapture(id: string): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM pcap_captures WHERE id = ?').run(id);
+export async function deleteCapture(id: string): Promise<boolean> {
+  const result = await db().execute('DELETE FROM pcap_captures WHERE id = ?', [id]);
   return result.changes > 0;
 }
 
-export function cleanOldCaptures(retentionDays: number): number {
-  const db = getDb();
-  const result = db
-    .prepare(`
-      DELETE FROM pcap_captures
-      WHERE created_at < datetime('now', ? || ' days')
-        AND status IN ('complete', 'failed', 'succeeded')
-    `)
-    .run(`-${retentionDays}`);
+export async function cleanOldCaptures(retentionDays: number): Promise<number> {
+  const result = await db().execute(`
+    DELETE FROM pcap_captures
+    WHERE created_at < datetime(NOW(), ? || ' days')
+      AND status IN ('complete', 'failed', 'succeeded')
+  `, [`-${retentionDays}`]);
 
   if (result.changes > 0) {
     log.info({ deleted: result.changes, retentionDays }, 'Old captures cleaned up');
@@ -146,16 +136,14 @@ export function cleanOldCaptures(retentionDays: number): number {
   return result.changes;
 }
 
-export function updateCaptureAnalysis(id: string, analysisResult: string): void {
-  const db = getDb();
-  db.prepare('UPDATE pcap_captures SET analysis_result = ? WHERE id = ?').run(analysisResult, id);
+export async function updateCaptureAnalysis(id: string, analysisResult: string): Promise<void> {
+  await db().execute('UPDATE pcap_captures SET analysis_result = ? WHERE id = ?', [analysisResult, id]);
   log.debug({ captureId: id }, 'Capture analysis result updated');
 }
 
-export function getActiveCaptureIds(): string[] {
-  const db = getDb();
-  const rows = db
-    .prepare("SELECT id FROM pcap_captures WHERE status IN ('pending', 'capturing', 'processing')")
-    .all() as { id: string }[];
+export async function getActiveCaptureIds(): Promise<string[]> {
+  const rows = await db().query<{ id: string }>(
+    "SELECT id FROM pcap_captures WHERE status IN ('pending', 'capturing', 'processing')", [],
+  );
   return rows.map((r) => r.id);
 }

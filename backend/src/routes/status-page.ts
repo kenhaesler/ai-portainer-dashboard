@@ -16,13 +16,13 @@ export async function statusPageRoutes(fastify: FastifyInstance) {
       summary: 'Public status page data (unauthenticated)',
     },
   }, async (_request, reply) => {
-    const config = getStatusPageConfig();
+    const config = await getStatusPageConfig();
 
     if (!config.enabled) {
       return reply.status(404).send({ error: 'Status page is not enabled' });
     }
 
-    const snapshot = getLatestSnapshot();
+    const snapshot = await getLatestSnapshot();
     const hasStoppedOrUnhealthy =
       snapshot && (snapshot.containersStopped > 0 || snapshot.containersUnhealthy > 0);
     const hasDown = snapshot && snapshot.endpointsDown > 0;
@@ -39,14 +39,14 @@ export async function statusPageRoutes(fastify: FastifyInstance) {
       description: config.description,
       overallStatus,
       uptime: {
-        '24h': getOverallUptime(24),
-        '7d': getOverallUptime(168),
-        '30d': getOverallUptime(720),
+        '24h': await getOverallUptime(24),
+        '7d': await getOverallUptime(168),
+        '30d': await getOverallUptime(720),
       },
       endpointUptime: {
-        '24h': getEndpointUptime(24),
-        '7d': getEndpointUptime(168),
-        '30d': getEndpointUptime(720),
+        '24h': await getEndpointUptime(24),
+        '7d': await getEndpointUptime(168),
+        '30d': await getEndpointUptime(720),
       },
       snapshot: snapshot
         ? {
@@ -58,12 +58,12 @@ export async function statusPageRoutes(fastify: FastifyInstance) {
             lastChecked: snapshot.createdAt,
           }
         : null,
-      uptimeTimeline: getDailyUptimeBuckets(90),
+      uptimeTimeline: await getDailyUptimeBuckets(90),
       autoRefreshSeconds: config.autoRefreshSeconds,
     };
 
     if (config.showIncidents) {
-      response.recentIncidents = getRecentIncidentsPublic(10);
+      response.recentIncidents = await getRecentIncidentsPublic(10);
     }
 
     return response;

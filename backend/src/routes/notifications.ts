@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { sendTestNotification } from '../services/notification-service.js';
 import { NotificationHistoryQuerySchema, NotificationTestBodySchema } from '../models/api-schemas.js';
 
@@ -20,7 +20,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
       offset?: number;
     };
 
-    const db = getDb();
+    const db = getDbForDomain('notifications');
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -31,18 +31,18 @@ export async function notificationRoutes(fastify: FastifyInstance) {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const entries = db.prepare(`
+    const entries = await db.query(`
       SELECT * FROM notification_log ${where}
       ORDER BY created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, limit, offset);
+    `, [...params, limit, offset]);
 
-    const total = db.prepare(`
+    const total = await db.queryOne<{ count: number }>(`
       SELECT COUNT(*) as count FROM notification_log ${where}
-    `).get(...params) as { count: number };
+    `, [...params]);
 
     return {
       entries,
-      total: total.count,
+      total: total?.count ?? 0,
       limit,
       offset,
     };
