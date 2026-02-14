@@ -161,25 +161,25 @@ export default function LlmAssistantPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Profile Selector (admin-only) */}
-          {isAdmin && profiles.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Layers className="h-4 w-4 text-muted-foreground" />
-              <ThemedSelect
-                value={activeProfileId}
-                onValueChange={(val) => void handleProfileSwitch(val)}
-                disabled={isStreaming || isSending || switchProfile.isPending}
-                options={profiles.map((p) => ({
-                  value: p.id,
-                  label: `${p.name}${p.isBuiltIn ? ' ✦' : ''}`,
-                }))}
-              />
-            </div>
-          )}
-          {/* Model Selector */}
-          {modelsData && modelsData.models.length > 0 && (
-            <div className="flex items-center gap-2">
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-3">
+            {/* Profile Selector (admin-only) */}
+            {isAdmin && profiles.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <ThemedSelect
+                  value={activeProfileId}
+                  onValueChange={(val) => void handleProfileSwitch(val)}
+                  disabled={isStreaming || isSending || switchProfile.isPending}
+                  options={profiles.map((p) => ({
+                    value: p.id,
+                    label: `${p.name}${p.isBuiltIn ? ' ✦' : ''}`,
+                  }))}
+                />
+              </div>
+            )}
+            {/* Model Selector */}
+            {modelsData && modelsData.models.length > 0 && (
               <ThemedSelect
                 value={selectedModel}
                 onValueChange={(val) => setSelectedModel(val)}
@@ -189,27 +189,27 @@ export default function LlmAssistantPage() {
                   label: model.name,
                 }))}
               />
-              {selectedModel && (() => {
-                const useCase = getModelUseCase(selectedModel);
-                return (
-                  <>
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${useCase.color}`} style={{ backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)', borderColor: 'color-mix(in srgb, currentColor 25%, transparent)' }}>
-                      {useCase.label}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden xl:inline">{useCase.description}</span>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-          <button
-            onClick={handleClear}
-            disabled={messages.length === 0}
+            )}
+            <button
+              onClick={handleClear}
+              disabled={messages.length === 0}
             className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-all hover:bg-accent hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Trash2 className="h-4 w-4" />
-            Clear History
-          </button>
+              <Trash2 className="h-4 w-4" />
+              Clear History
+            </button>
+          </div>
+          {selectedModel && (() => {
+            const useCase = getModelUseCase(selectedModel);
+            return (
+              <div className="flex items-center justify-end gap-2">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${useCase.color}`} style={{ backgroundColor: 'color-mix(in srgb, currentColor 10%, transparent)', borderColor: 'color-mix(in srgb, currentColor 25%, transparent)' }}>
+                  {useCase.label}
+                </span>
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">{useCase.description}</span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
