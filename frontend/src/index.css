@@ -1948,6 +1948,7 @@ html[data-potato-mode] body {
 .spotlight-card {
   position: relative;
   overflow: hidden;
+  border-radius: var(--radius);
 }
 
 .spotlight-card::before {
