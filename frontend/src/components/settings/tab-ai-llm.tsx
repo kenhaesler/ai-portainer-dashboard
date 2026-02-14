@@ -487,10 +487,11 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
                 <button
                   type="button"
                   onClick={() => setShowUseCaseTable((v) => !v)}
-                  className="ml-auto shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="ml-auto shrink-0 inline-flex items-center gap-1 rounded-md border border-border/60 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                   title="View all model use-cases"
                 >
-                  {showUseCaseTable ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  {showUseCaseTable ? 'Hide' : 'All models'}
+                  {showUseCaseTable ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 </button>
               </div>
             );
