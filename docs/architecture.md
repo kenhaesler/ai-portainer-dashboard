@@ -366,7 +366,7 @@ sequenceDiagram
 | **Frontend** | React 19, TypeScript 5.7, Vite 6, Tailwind CSS v4, TanStack Query 5, Zustand 5, React Router 7 |
 | **UI Components** | Radix UI, Recharts, XYFlow, cmdk, Lucide Icons, Sonner |
 | **Backend** | Fastify 5, TypeScript 5.7, Socket.IO 4, Zod, Jose (JWT), bcrypt |
-| **Database** | PostgreSQL 17 (pg client), TimescaleDB (metrics) |
+| **Database** | PostgreSQL 17 (pg client), TimescaleDB (metrics), automated pg_dump backups via cron sidecar |
 | **AI** | Ollama (local LLM), optional OpenWebUI support |
 | **Logging** | Pino (backend), optional Elasticsearch log shipping via `_bulk` API (batched, retry with backoff) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions CI |
