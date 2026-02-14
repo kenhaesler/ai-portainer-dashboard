@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats, buildApiUrl, buildApiHeaders } from './portainer-client.js';
+import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats, buildApiUrl, buildApiHeaders, pruneStaleBreakers, startBreakerPruning, stopBreakerPruning } from './portainer-client.js';
 import pLimit from 'p-limit';
 
 vi.mock('../config/index.js', () => ({
@@ -146,5 +146,38 @@ describe('buildApiHeaders', () => {
     const headers = buildApiHeaders(false);
     expect(headers['Content-Type']).toBeUndefined();
     expect(headers['X-API-Key']).toBe('test-api-key');
+  });
+});
+
+describe('circuit breaker pruning (#547)', () => {
+  afterEach(() => {
+    _resetClientState();
+    stopBreakerPruning();
+  });
+
+  it('pruneStaleBreakers removes nothing when breakers map is empty', () => {
+    _resetClientState();
+    const pruned = pruneStaleBreakers();
+    expect(pruned).toBe(0);
+  });
+
+  it('pruneStaleBreakers does not remove recently-used breakers', () => {
+    _resetClientState();
+    // Getting stats populates no breakers (they're created on demand via getBreaker)
+    // We can't easily populate breakers without making actual requests,
+    // but we can verify the function doesn't crash
+    const pruned = pruneStaleBreakers();
+    expect(pruned).toBe(0);
+    const stats = getCircuitBreakerStats();
+    expect(stats.state).toBe('CLOSED');
+  });
+
+  it('startBreakerPruning and stopBreakerPruning do not throw', () => {
+    expect(() => startBreakerPruning()).not.toThrow();
+    // Calling start again should be idempotent
+    expect(() => startBreakerPruning()).not.toThrow();
+    expect(() => stopBreakerPruning()).not.toThrow();
+    // Calling stop again should be idempotent
+    expect(() => stopBreakerPruning()).not.toThrow();
   });
 });

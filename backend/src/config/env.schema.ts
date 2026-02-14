@@ -203,6 +203,14 @@ export const envSchema = z.object({
   LOG_SHIPPING_BATCH_SIZE: z.coerce.number().int().min(1).default(100),
   LOG_SHIPPING_FLUSH_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
 
+  // Scalability Limits (#544, #547)
+  MAX_INSIGHTS_PER_CYCLE: z.coerce.number().int().min(1).default(500),
+  SQLITE_BUSY_TIMEOUT: z.coerce.number().int().min(100).default(5000),
+  INSIGHTS_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+  MAX_LLM_HISTORY_MESSAGES: z.coerce.number().int().min(1).default(50),
+  AI_ANALYSIS_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  LOG_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+
   // Rate Limiting
   API_RATE_LIMIT: z.coerce.number().int().min(10).default(
     process.env.NODE_ENV === 'production' ? 600 : 1200

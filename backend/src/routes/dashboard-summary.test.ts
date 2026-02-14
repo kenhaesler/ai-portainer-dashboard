@@ -92,7 +92,8 @@ describe('Dashboard Summary Route', () => {
       stacks: 1,
     });
     expect(body.recentContainers).toEqual([]);
-    expect(body.endpoints).toHaveLength(1);
+    // endpoints array removed from summary to reduce payload (#544)
+    expect(body.endpoints).toBeUndefined();
 
     await app.close();
   });

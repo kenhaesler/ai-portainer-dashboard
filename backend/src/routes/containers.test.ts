@@ -45,12 +45,12 @@ const fakeEndpoint = (id: number, name: string, status = 1) => ({
   Snapshots: [],
 });
 
-const fakeContainer = (id: string, name: string) => ({
+const fakeContainer = (id: string, name: string, state = 'running') => ({
   Id: id,
   Names: [`/${name}`],
   Image: 'nginx:latest',
-  State: 'running',
-  Status: 'Up 2 hours',
+  State: state,
+  Status: state === 'running' ? 'Up 2 hours' : 'Exited (0) 1 hour ago',
   Created: 1700000000,
   Ports: [],
   Labels: {},
@@ -175,5 +175,212 @@ describe('containers routes', () => {
     const body = JSON.parse(res.body);
     expect(body.error).toBe('Unable to fetch container details from Portainer');
     expect(body.details).toContain('Container not found');
+  });
+});
+
+describe('pagination (#544)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setupContainers(count: number) {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    const containers = Array.from({ length: count }, (_, i) =>
+      fakeContainer(`id${i}`, `container-${i}`, i % 3 === 0 ? 'stopped' : 'running'),
+    );
+    mockGetContainers.mockResolvedValue(containers as any);
+  }
+
+  it('returns flat array when no pagination params (backward compat)', async () => {
+    setupContainers(5);
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(5);
+  });
+
+  it('returns paginated response when page is provided', async () => {
+    setupContainers(10);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?page=1&pageSize=3',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data).toHaveLength(3);
+    expect(body.total).toBe(10);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(3);
+  });
+
+  it('returns empty data for page beyond total', async () => {
+    setupContainers(5);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?page=100&pageSize=10',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data).toHaveLength(0);
+    expect(body.total).toBe(5);
+  });
+
+  it('filters by search term', async () => {
+    setupContainers(10);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?search=container-3',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    // Flat array (no pagination params)
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBe(1);
+    expect(body[0].name).toBe('container-3');
+  });
+
+  it('filters by state', async () => {
+    setupContainers(9);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?state=stopped&page=1&pageSize=50',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    // Containers at index 0, 3, 6 are stopped (i % 3 === 0)
+    expect(body.data).toHaveLength(3);
+    expect(body.total).toBe(3);
+    for (const c of body.data) {
+      expect(c.state).toBe('stopped');
+    }
+  });
+
+  it('combines search and state filters with pagination', async () => {
+    setupContainers(20);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?search=container-1&state=running&page=1&pageSize=50',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    for (const c of body.data) {
+      expect(c.name).toContain('container-1');
+      expect(c.state).toBe('running');
+    }
+  });
+
+  it('defaults pageSize to 50 when only page is given', async () => {
+    setupContainers(60);
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?page=1',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.data).toHaveLength(50);
+    expect(body.pageSize).toBe(50);
+  });
+});
+
+describe('container count endpoint (#544)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns total and counts by state', async () => {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    mockGetContainers.mockResolvedValue([
+      fakeContainer('a', 'web', 'running'),
+      fakeContainer('b', 'api', 'running'),
+      fakeContainer('c', 'db', 'stopped'),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/count' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.total).toBe(3);
+    expect(body.byState.running).toBe(2);
+    expect(body.byState.stopped).toBe(1);
+  });
+
+  it('returns 502 when Portainer is unreachable', async () => {
+    mockGetEndpoints.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/containers/count' });
+
+    expect(res.statusCode).toBe(502);
+  });
+});
+
+describe('favorites endpoint (#544)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns only requested containers', async () => {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    mockGetContainers.mockResolvedValue([
+      fakeContainer('abc', 'web'),
+      fakeContainer('def', 'api'),
+      fakeContainer('ghi', 'db'),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/favorites?ids=1:abc,1:ghi',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(2);
+    expect(body.map((c: any) => c.name).sort()).toEqual(['db', 'web']);
+  });
+
+  it('returns empty array for empty ids', async () => {
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/favorites?ids=',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(0);
+  });
+
+  it('returns empty when no containers match', async () => {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'prod')] as any);
+    mockGetContainers.mockResolvedValue([
+      fakeContainer('abc', 'web'),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/favorites?ids=1:nonexistent',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(0);
   });
 });
