@@ -1949,6 +1949,8 @@ html[data-potato-mode] body {
   position: relative;
   border-radius: var(--radius);
   overflow: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 }
 
 .spotlight-card::before {
@@ -1958,7 +1960,7 @@ html[data-potato-mode] body {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease;
-  border-radius: inherit;
+  border-radius: var(--radius);
   background: radial-gradient(
     circle 300px at var(--x, 50%) var(--y, 50%),
     rgba(255, 255, 255, 0.04) 0%,
