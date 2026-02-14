@@ -80,3 +80,20 @@ export function broadcastInsight(ns: Namespace, insight: Record<string, unknown>
   ns.to(`severity:${severity}`).emit('insights:new', insight);
   ns.to('severity:all').emit('insights:new', insight);
 }
+
+/**
+ * Broadcast a batch of insights in a single event.
+ * Also emits individual `insights:new` events per severity room for backward compatibility.
+ */
+export function broadcastInsightBatch(ns: Namespace, insights: Array<Record<string, unknown>>) {
+  if (insights.length === 0) return;
+
+  // Batch event for clients that support it
+  ns.to('severity:all').emit('insights:batch', insights);
+
+  // Per-severity room broadcasts for backward compat
+  for (const insight of insights) {
+    const severity = insight.severity as string;
+    ns.to(`severity:${severity}`).emit('insights:new', insight);
+  }
+}

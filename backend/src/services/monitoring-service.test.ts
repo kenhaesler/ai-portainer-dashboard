@@ -1,24 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Default config values used in tests
+const defaultConfig = {
+  ANOMALY_DETECTION_METHOD: 'adaptive',
+  ANOMALY_COOLDOWN_MINUTES: 0,
+  ANOMALY_THRESHOLD_PCT: 80,
+  ANOMALY_HARD_THRESHOLD_ENABLED: true,
+  PREDICTIVE_ALERTING_ENABLED: true,
+  PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
+  ANOMALY_EXPLANATION_ENABLED: true,
+  ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
+  INVESTIGATION_ENABLED: true,
+  INVESTIGATION_COOLDOWN_MINUTES: 30,
+  INVESTIGATION_MAX_CONCURRENT: 2,
+  ISOLATION_FOREST_ENABLED: false,
+  NLP_LOG_ANALYSIS_ENABLED: false,
+  NLP_LOG_ANALYSIS_MAX_PER_CYCLE: 3,
+  NLP_LOG_ANALYSIS_TAIL_LINES: 100,
+  MAX_INSIGHTS_PER_CYCLE: 500,
+  AI_ANALYSIS_ENABLED: false, // disabled by default in tests to avoid async side-effects
+};
+
 // Mock all dependencies
 vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    ANOMALY_DETECTION_METHOD: 'adaptive',
-    ANOMALY_COOLDOWN_MINUTES: 0,
-    ANOMALY_THRESHOLD_PCT: 80,
-    ANOMALY_HARD_THRESHOLD_ENABLED: true,
-    PREDICTIVE_ALERTING_ENABLED: true,
-    PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
-    ANOMALY_EXPLANATION_ENABLED: true,
-    ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
-    INVESTIGATION_ENABLED: true,
-    INVESTIGATION_COOLDOWN_MINUTES: 30,
-    INVESTIGATION_MAX_CONCURRENT: 2,
-    ISOLATION_FOREST_ENABLED: false,
-    NLP_LOG_ANALYSIS_ENABLED: false,
-    NLP_LOG_ANALYSIS_MAX_PER_CYCLE: 3,
-    NLP_LOG_ANALYSIS_TAIL_LINES: 100,
-  }),
+  getConfig: vi.fn().mockReturnValue(defaultConfig),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -74,9 +79,11 @@ vi.mock('./log-analyzer.js', () => ({
 }));
 
 const mockInsertInsight = vi.fn();
+const mockInsertInsights = vi.fn();
 const mockGetRecentInsights = vi.fn().mockReturnValue([]);
 vi.mock('./insights-store.js', () => ({
   insertInsight: (...args: unknown[]) => mockInsertInsight(...args),
+  insertInsights: (...args: unknown[]) => mockInsertInsights(...args),
   getRecentInsights: (...args: unknown[]) => mockGetRecentInsights(...args),
 }));
 
@@ -126,6 +133,12 @@ vi.mock('./incident-correlator.js', () => ({
 const { getConfig } = await import('../config/index.js');
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep } = await import('./monitoring-service.js');
 
+/** Helper: extract insights from the batch insertInsights call */
+function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {
+  if (mockInsertInsights.mock.calls.length === 0) return [];
+  return mockInsertInsights.mock.calls[0][0] as any[];
+}
+
 describe('monitoring-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -136,18 +149,47 @@ describe('monitoring-service', () => {
     mockIsOllamaAvailable.mockResolvedValue(false);
     mockGetCapacityForecasts.mockReturnValue([]);
     mockExplainAnomalies.mockResolvedValue(new Map());
-    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-      ANOMALY_DETECTION_METHOD: 'adaptive',
-      ANOMALY_COOLDOWN_MINUTES: 0,
-      ANOMALY_THRESHOLD_PCT: 80,
-      ANOMALY_HARD_THRESHOLD_ENABLED: true,
-      PREDICTIVE_ALERTING_ENABLED: true,
-      PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
-      ANOMALY_EXPLANATION_ENABLED: true,
-      ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
-      INVESTIGATION_ENABLED: true,
-      INVESTIGATION_COOLDOWN_MINUTES: 30,
-      INVESTIGATION_MAX_CONCURRENT: 2,
+    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({ ...defaultConfig });
+  });
+
+  describe('batch insight processing', () => {
+    it('uses insertInsights (batch) instead of per-insight insertInsight', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 3.5, current_value: 95.0, mean: 40.0, method: 'adaptive',
+      });
+
+      await runMonitoringCycle();
+
+      // Should use batch insert, NOT per-insight
+      expect(mockInsertInsights).toHaveBeenCalledTimes(1);
+      expect(mockInsertInsight).not.toHaveBeenCalled();
+    });
+
+    it('caps insights at MAX_INSIGHTS_PER_CYCLE', async () => {
+      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...defaultConfig,
+        MAX_INSIGHTS_PER_CYCLE: 2,
+        ANOMALY_COOLDOWN_MINUTES: 0,
+      });
+
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
+        { Id: 'c3', Names: ['/app-3'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 4.0, current_value: 95.0, mean: 40.0, method: 'adaptive',
+      });
+
+      await runMonitoringCycle();
+
+      const batch = mockInsertInsights.mock.calls[0][0] as unknown[];
+      expect(batch.length).toBeLessThanOrEqual(2);
     });
   });
 
@@ -170,14 +212,10 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      expect(mockInsertInsight).toHaveBeenCalledWith(
-        expect.objectContaining({
-          category: 'predictive',
-          severity: 'critical',
-          container_id: 'c1',
-          container_name: 'web-app',
-        }),
-      );
+      const insights = getInsertedInsights();
+      const predictive = insights.filter(i => i.category === 'predictive');
+      expect(predictive.length).toBe(1);
+      expect(predictive[0].severity).toBe('critical');
     });
 
     it('assigns correct severity based on timeToThreshold', async () => {
@@ -201,15 +239,12 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      const calls = mockInsertInsight.mock.calls;
-      const predictiveCalls = calls.filter(
-        (c: unknown[]) => (c[0] as { category: string }).category === 'predictive',
-      );
-
-      expect(predictiveCalls).toHaveLength(3);
-      expect((predictiveCalls[0][0] as { severity: string }).severity).toBe('critical'); // 3h
-      expect((predictiveCalls[1][0] as { severity: string }).severity).toBe('warning');  // 8h
-      expect((predictiveCalls[2][0] as { severity: string }).severity).toBe('info');     // 20h
+      const insights = getInsertedInsights();
+      const predictive = insights.filter(i => i.category === 'predictive');
+      expect(predictive).toHaveLength(3);
+      expect(predictive[0].severity).toBe('critical'); // 3h
+      expect(predictive[1].severity).toBe('warning');  // 8h
+      expect(predictive[2].severity).toBe('info');     // 20h
     });
 
     it('skips stable trend forecasts', async () => {
@@ -223,11 +258,9 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      const calls = mockInsertInsight.mock.calls;
-      const predictiveCalls = calls.filter(
-        (c: unknown[]) => (c[0] as { category: string }).category === 'predictive',
-      );
-      expect(predictiveCalls).toHaveLength(0);
+      const insights = getInsertedInsights();
+      const predictive = insights.filter(i => i.category === 'predictive');
+      expect(predictive).toHaveLength(0);
     });
 
     it('skips low confidence forecasts', async () => {
@@ -241,20 +274,16 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      const calls = mockInsertInsight.mock.calls;
-      const predictiveCalls = calls.filter(
-        (c: unknown[]) => (c[0] as { category: string }).category === 'predictive',
-      );
-      expect(predictiveCalls).toHaveLength(0);
+      const insights = getInsertedInsights();
+      const predictive = insights.filter(i => i.category === 'predictive');
+      expect(predictive).toHaveLength(0);
     });
 
     it('respects PREDICTIVE_ALERTING_ENABLED flag', async () => {
       (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ANOMALY_DETECTION_METHOD: 'adaptive',
+        ...defaultConfig,
         PREDICTIVE_ALERTING_ENABLED: false,
-        PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
         ANOMALY_EXPLANATION_ENABLED: false,
-        ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
       });
 
       mockGetCapacityForecasts.mockReturnValue([
@@ -287,7 +316,6 @@ describe('monitoring-service', () => {
       });
       mockIsOllamaAvailable.mockResolvedValue(true);
 
-      const explanationMap = new Map<string, string>();
       // We need to capture the insight ID dynamically since it's a UUID
       mockExplainAnomalies.mockImplementation(
         async (anomalies: Array<{ insight: { id: string } }>) => {
@@ -301,14 +329,12 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      // Check that insertInsight was called with enriched description
-      const anomalyCalls = mockInsertInsight.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { category: string }).category === 'anomaly',
-      );
+      // Check that batch insert was called with enriched description
+      const insights = getInsertedInsights();
+      const anomalyCalls = insights.filter(i => i.category === 'anomaly');
       expect(anomalyCalls.length).toBeGreaterThan(0);
-      const desc = (anomalyCalls[0][0] as { description: string }).description;
-      expect(desc).toContain('AI Analysis:');
-      expect(desc).toContain('batch job');
+      expect(anomalyCalls[0].description).toContain('AI Analysis:');
+      expect(anomalyCalls[0].description).toContain('batch job');
     });
 
     it('leaves description unchanged when LLM unavailable', async () => {
@@ -327,24 +353,16 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      const anomalyCalls = mockInsertInsight.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { category: string }).category === 'anomaly',
-      );
+      const insights = getInsertedInsights();
+      const anomalyCalls = insights.filter(i => i.category === 'anomaly');
       expect(anomalyCalls.length).toBeGreaterThan(0);
-      const desc = (anomalyCalls[0][0] as { description: string }).description;
-      expect(desc).not.toContain('AI Analysis:');
+      expect(anomalyCalls[0].description).not.toContain('AI Analysis:');
     });
 
     it('respects ANOMALY_EXPLANATION_ENABLED flag', async () => {
       (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ANOMALY_DETECTION_METHOD: 'adaptive',
-        ANOMALY_COOLDOWN_MINUTES: 0,
-        ANOMALY_THRESHOLD_PCT: 80,
-        ANOMALY_HARD_THRESHOLD_ENABLED: true,
-        PREDICTIVE_ALERTING_ENABLED: false,
-        PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
+        ...defaultConfig,
         ANOMALY_EXPLANATION_ENABLED: false,
-        ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
       });
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
       mockGetContainers.mockResolvedValue([
@@ -365,24 +383,28 @@ describe('monitoring-service', () => {
     });
   });
 
+  describe('AI analysis gate', () => {
+    it('skips AI analysis when AI_ANALYSIS_ENABLED is false', async () => {
+      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...defaultConfig,
+        AI_ANALYSIS_ENABLED: false,
+      });
+      mockIsOllamaAvailable.mockResolvedValue(true);
+
+      await runMonitoringCycle();
+
+      // chatStream should NOT be called for AI analysis
+      expect(mockChatStream).not.toHaveBeenCalled();
+    });
+  });
+
   describe('hard-threshold toggle', () => {
     it('does not create threshold anomalies when ANOMALY_HARD_THRESHOLD_ENABLED is false', async () => {
       (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ANOMALY_DETECTION_METHOD: 'adaptive',
-        ANOMALY_COOLDOWN_MINUTES: 0,
-        ANOMALY_THRESHOLD_PCT: 80,
+        ...defaultConfig,
         ANOMALY_HARD_THRESHOLD_ENABLED: false,
         PREDICTIVE_ALERTING_ENABLED: false,
-        PREDICTIVE_ALERT_THRESHOLD_HOURS: 24,
         ANOMALY_EXPLANATION_ENABLED: false,
-        ANOMALY_EXPLANATION_MAX_PER_CYCLE: 5,
-        INVESTIGATION_ENABLED: false,
-        INVESTIGATION_COOLDOWN_MINUTES: 30,
-        INVESTIGATION_MAX_CONCURRENT: 2,
-        ISOLATION_FOREST_ENABLED: false,
-        NLP_LOG_ANALYSIS_ENABLED: false,
-        NLP_LOG_ANALYSIS_MAX_PER_CYCLE: 3,
-        NLP_LOG_ANALYSIS_TAIL_LINES: 100,
       });
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
       mockGetContainers.mockResolvedValue([
@@ -393,9 +415,8 @@ describe('monitoring-service', () => {
 
       await runMonitoringCycle();
 
-      const anomalyCalls = mockInsertInsight.mock.calls.filter(
-        (c: unknown[]) => (c[0] as { category: string }).category === 'anomaly',
-      );
+      const insights = getInsertedInsights();
+      const anomalyCalls = insights.filter(i => i.category === 'anomaly');
       expect(anomalyCalls).toHaveLength(0);
     });
   });
@@ -447,7 +468,8 @@ describe('monitoring-service', () => {
   describe('cycle:complete emission', () => {
     it('emits cycle:complete with stats when namespace is set', async () => {
       const mockEmit = vi.fn();
-      setMonitoringNamespace({ emit: mockEmit, to: vi.fn() } as unknown as import('socket.io').Namespace);
+      const mockTo = vi.fn().mockReturnValue({ emit: vi.fn() });
+      setMonitoringNamespace({ emit: mockEmit, to: mockTo } as unknown as import('socket.io').Namespace);
 
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
       mockGetContainers.mockResolvedValue([

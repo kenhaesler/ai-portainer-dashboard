@@ -12,6 +12,7 @@ import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallRes
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks } from '../services/prompt-guard.js';
 import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
+import { getConfig } from '../config/index.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -148,7 +149,7 @@ const sessions = new Map<string, ChatMessage[]>();
 
 // Cached infrastructure context — shared across all chat sessions
 let cachedInfraContext: { text: string; expiresAt: number } | null = null;
-const INFRA_CONTEXT_TTL_MS = 30_000; // 30 seconds
+const INFRA_CONTEXT_TTL_MS = 120_000; // 2 minutes — reduces Portainer API pressure
 
 async function buildInfrastructureContext(): Promise<string> {
   if (cachedInfraContext && Date.now() < cachedInfraContext.expiresAt) {
@@ -170,104 +171,51 @@ async function buildInfrastructureContextUncached(): Promise<string> {
     );
     const normalizedEndpoints = endpoints.map(normalizeEndpoint);
 
-    // Fetch containers from all active endpoints
-    const allContainers = [];
-    for (const ep of normalizedEndpoints.filter(e => e.status === 'up').slice(0, 10)) {
-      try {
-        const containers = await cachedFetch(
-          getCacheKey('containers', ep.id),
-          TTL.CONTAINERS,
-          () => portainer.getContainers(ep.id),
-        );
-        allContainers.push(...containers.map(c => normalizeContainer(c, ep.id, ep.name)));
-      } catch (err) {
-        log.warn({ endpointId: ep.id }, 'Failed to fetch containers for endpoint');
-      }
+    // Count containers by state across all endpoints (lightweight summary)
+    let totalRunning = 0;
+    let totalStopped = 0;
+    let totalUnhealthy = 0;
+    let totalStacks = 0;
+    for (const ep of normalizedEndpoints) {
+      totalRunning += ep.containersRunning;
+      totalStopped += ep.containersStopped;
+      totalUnhealthy += ep.containersUnhealthy;
+      totalStacks += ep.stackCount;
     }
 
-    // Fetch insights from database
+    // Fetch only top 5 critical/warning insights (lightweight)
     const db = getDb();
-    const insights = db.prepare(`
-      SELECT * FROM insights
-      ORDER BY created_at DESC LIMIT 50
+    const topIssues = db.prepare(`
+      SELECT severity, title, container_name, endpoint_name FROM insights
+      WHERE severity IN ('critical', 'warning')
+      ORDER BY created_at DESC LIMIT 5
     `).all() as Array<{
-      id: string;
-      endpoint_id: number | null;
-      endpoint_name: string | null;
-      container_id: string | null;
-      container_name: string | null;
-      severity: 'critical' | 'warning' | 'info';
-      category: string;
+      severity: string;
       title: string;
-      description: string;
-      suggested_action: string | null;
-      is_acknowledged: number;
-      created_at: string;
+      container_name: string | null;
+      endpoint_name: string | null;
     }>;
 
-    // Build context summary
     const endpointSummary = normalizedEndpoints
-      .map(ep => `- ${ep.name} (${ep.status}): ${ep.containersRunning} running, ${ep.containersStopped} stopped, ${ep.stackCount} stacks`)
+      .map(ep => `- ${ep.name} (${ep.status}): ${ep.containersRunning} running, ${ep.containersStopped} stopped`)
       .join('\n');
 
-    const runningContainers = allContainers.filter(c => c.state === 'running');
-    const stoppedContainers = allContainers.filter(c => c.state === 'stopped');
-    const unhealthyContainers = allContainers.filter(c =>
-      c.state === 'dead' || c.state === 'paused' || c.state === 'unknown'
-    );
+    const issuesSummary = topIssues.length > 0
+      ? topIssues.map(i => `- [${i.severity.toUpperCase()}] ${i.title}${i.container_name ? ` (${i.container_name})` : ''}`).join('\n')
+      : 'No critical or warning issues.';
 
-    const containerSummary = `Total: ${allContainers.length}, Running: ${runningContainers.length}, Stopped: ${stoppedContainers.length}, Unhealthy: ${unhealthyContainers.length}`;
-
-    // Group containers by stack
-    const stacks = new Map<string, typeof allContainers>();
-    for (const container of allContainers) {
-      const stack = container.labels['com.docker.compose.project'];
-      if (stack) {
-        if (!stacks.has(stack)) stacks.set(stack, []);
-        stacks.get(stack)!.push(container);
-      }
-    }
-
-    const stackSummary = Array.from(stacks.entries())
-      .map(([name, containers]) => `- ${name}: ${containers.length} containers (${containers.filter(c => c.state === 'running').length} running)`)
-      .join('\n');
-
-    // Get recent insights (already sorted by database query)
-    const recentInsights = insights
-      .slice(0, 10)
-      .map(i => `- [${i.severity.toUpperCase()}] ${i.title}: ${i.description}${i.container_name ? ` (${i.container_name} on ${i.endpoint_name})` : ''}`)
-      .join('\n');
-
-    // Sample container details (top 20 most important ones)
-    const containerDetails = [
-      ...unhealthyContainers.slice(0, 5),
-      ...runningContainers.filter(c => c.labels['com.docker.compose.project']).slice(0, 10),
-      ...runningContainers.slice(0, 5)
-    ]
-      .slice(0, 20)
-      .map(c => {
-        const ips = Object.values(c.networkIPs);
-        const ipSuffix = ips.length > 0 ? ` [${ips.join(', ')}]` : '';
-        return `- ${c.name} (${c.image}): ${c.state} on ${c.endpointName}${ipSuffix}`;
-      })
-      .join('\n');
-
-    return `## Infrastructure Overview
+    return `## Infrastructure Summary
 
 ### Endpoints (${normalizedEndpoints.length})
 ${endpointSummary || 'No endpoints configured.'}
 
-### Containers Summary
-${containerSummary}
+### Containers
+Running: ${totalRunning}, Stopped: ${totalStopped}, Unhealthy: ${totalUnhealthy}, Stacks: ${totalStacks}
 
-### Stacks (${stacks.size})
-${stackSummary || 'No stacks detected.'}
+### Top Issues
+${issuesSummary}
 
-### Key Container Details
-${containerDetails || 'No containers available.'}
-
-### Recent Issues & Insights (${insights.length} total)
-${recentInsights || 'No recent insights.'}`;
+*For detailed container info, use tools like get_container_logs or get_container_metrics.*`;
 
   } catch (err) {
     log.error({ err }, 'Failed to build infrastructure context');
@@ -609,6 +557,7 @@ export function setupLlmNamespace(ns: Namespace) {
       history.push({ role: 'user', content: data.text });
 
       const startTime = Date.now();
+      const historyLimit = getConfig().MAX_LLM_HISTORY_MESSAGES;
 
       try {
         abortController = new AbortController();
@@ -616,7 +565,7 @@ export function setupLlmNamespace(ns: Namespace) {
 
         let messages: ChatMessage[] = [
           { role: 'system', content: systemPromptWithTools },
-          ...history.slice(-20),
+          ...history.slice(-historyLimit),
         ];
         let toolsEnabled = true;
         let plainRetryAttempted = false;
@@ -711,7 +660,7 @@ export function setupLlmNamespace(ns: Namespace) {
                 toolsEnabled = false;
                 messages = [
                   { role: 'system', content: systemPromptWithoutTools },
-                  ...history.slice(-20),
+                  ...history.slice(-historyLimit),
                 ];
                 // Fall through to streaming loop
               } else {
@@ -774,7 +723,7 @@ export function setupLlmNamespace(ns: Namespace) {
                 toolsEnabled = false;
                 messages = [
                   { role: 'system', content: systemPromptWithoutTools },
-                  ...history.slice(-20),
+                  ...history.slice(-historyLimit),
                 ];
                 continue;
               }
@@ -800,7 +749,7 @@ export function setupLlmNamespace(ns: Namespace) {
               }
               messages = [
                 { role: 'system', content: systemPromptWithoutTools },
-                ...history.slice(-20),
+                ...history.slice(-historyLimit),
               ];
               continue;
             }

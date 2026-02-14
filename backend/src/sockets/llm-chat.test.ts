@@ -83,6 +83,12 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
 }));
 
+vi.mock('../config/index.js', () => ({
+  getConfig: vi.fn(() => ({
+    MAX_LLM_HISTORY_MESSAGES: 50,
+  })),
+}));
+
 // ── Import the module under test AFTER mocks are registered ──
 import {
   isRecoverableToolCallParseError,

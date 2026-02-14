@@ -89,13 +89,82 @@ export function acknowledgeInsight(id: string): boolean {
   return false;
 }
 
-export function getRecentInsights(minutes: number): Insight[] {
+export function getRecentInsights(minutes: number, limit: number = 500): Insight[] {
   const db = getDb();
   return db
     .prepare(
       `SELECT * FROM insights
        WHERE created_at >= datetime('now', ? || ' minutes')
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC
+       LIMIT ?`,
     )
-    .all(`-${minutes}`) as Insight[];
+    .all(`-${minutes}`, limit) as Insight[];
+}
+
+/**
+ * Batch insert insights in a single transaction with deduplication.
+ * Skips insights where (container_id, category, title) already exists within the last 60 minutes.
+ */
+export function insertInsights(insights: InsightInsert[]): number {
+  if (insights.length === 0) return 0;
+
+  const db = getDb();
+  let inserted = 0;
+
+  const insertStmt = db.prepare(`
+    INSERT INTO insights (
+      id, endpoint_id, endpoint_name, container_id, container_name,
+      severity, category, title, description, suggested_action,
+      is_acknowledged, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
+  `);
+
+  const dedupeStmt = db.prepare(`
+    SELECT COUNT(*) as cnt FROM insights
+    WHERE container_id = ? AND category = ? AND title = ?
+      AND created_at >= datetime('now', '-60 minutes')
+  `);
+
+  const transaction = db.transaction(() => {
+    for (const insight of insights) {
+      // Deduplication check
+      if (insight.container_id) {
+        const row = dedupeStmt.get(insight.container_id, insight.category, insight.title) as { cnt: number };
+        if (row.cnt > 0) {
+          log.debug({ containerId: insight.container_id, category: insight.category, title: insight.title }, 'Duplicate insight skipped');
+          continue;
+        }
+      }
+
+      insertStmt.run(
+        insight.id,
+        insight.endpoint_id,
+        insight.endpoint_name,
+        insight.container_id,
+        insight.container_name,
+        insight.severity,
+        insight.category,
+        insight.title,
+        insight.description,
+        insight.suggested_action,
+      );
+      inserted++;
+    }
+  });
+
+  transaction();
+  log.info({ total: insights.length, inserted }, 'Batch insights inserted');
+  return inserted;
+}
+
+/**
+ * Delete insights older than the given number of days.
+ * Returns the number of deleted rows.
+ */
+export function cleanupOldInsights(retentionDays: number): number {
+  const db = getDb();
+  const result = db
+    .prepare(`DELETE FROM insights WHERE created_at < datetime('now', ? || ' days')`)
+    .run(`-${retentionDays}`);
+  return result.changes;
 }

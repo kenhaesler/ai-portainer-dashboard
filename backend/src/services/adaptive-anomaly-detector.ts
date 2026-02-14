@@ -148,6 +148,48 @@ function selectMethod(mean: number, stdDev: number, sampleCount: number): Detect
   return 'zscore';
 }
 
+export interface BatchDetectionItem {
+  containerId: string;
+  containerName: string;
+  metricType: string;
+  currentValue: number;
+}
+
+/**
+ * Batch anomaly detection: runs detectAnomalyAdaptive for each item concurrently
+ * using Promise.allSettled. Returns a Map keyed by `containerId:metricType`.
+ */
+export async function detectAnomaliesBatch(
+  items: BatchDetectionItem[],
+  method?: DetectionMethod,
+): Promise<Map<string, AnomalyDetection>> {
+  const results = new Map<string, AnomalyDetection>();
+  if (items.length === 0) return results;
+
+  const settled = await Promise.allSettled(
+    items.map(async (item) => {
+      const detection = await detectAnomalyAdaptive(
+        item.containerId,
+        item.containerName,
+        item.metricType,
+        item.currentValue,
+        method,
+      );
+      return { key: `${item.containerId}:${item.metricType}`, detection };
+    }),
+  );
+
+  for (const result of settled) {
+    if (result.status === 'fulfilled' && result.value.detection) {
+      results.set(result.value.key, result.value.detection);
+    } else if (result.status === 'rejected') {
+      log.warn({ err: result.reason }, 'Batch anomaly detection item failed');
+    }
+  }
+
+  return results;
+}
+
 function resolveDetectionMethod(
   requestedMethod: DetectionMethod,
   bollingerEnabled: boolean,

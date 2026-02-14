@@ -10,7 +10,7 @@ import { getLatestMetrics } from './metrics-store.js';
 import type { MetricInsert } from './metrics-store.js';
 import { detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
-import { insertInsight, getRecentInsights, type InsightInsert } from './insights-store.js';
+import { insertInsight, insertInsights, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { suggestAction } from './remediation-service.js';
@@ -487,103 +487,127 @@ export async function runMonitoringCycle(): Promise<void> {
       suggested_action: null,
     }));
 
-    // 6. Attempt AI analysis (with LLM fallback)
-    const aiInsights: InsightInsert[] = [];
+    // 6. Attempt AI analysis (fire-and-forget, gated by AI_ANALYSIS_ENABLED)
+    if (config.AI_ANALYSIS_ENABLED && ollamaAvailable) {
+      // Fire-and-forget: AI analysis inserts its own insight when complete
+      (async () => {
+        try {
+          const recentInsights = getRecentInsights(60);
+          const infraContext = buildInfrastructureContext(endpoints, normalizedContainers, recentInsights);
+          const userPrompt = getEffectivePrompt('monitoring_analysis');
+          const systemPrompt = `${infraContext}\n\n${userPrompt}`;
 
-    if (ollamaAvailable) {
-      try {
-        const recentInsights = getRecentInsights(60);
-        const infraContext = buildInfrastructureContext(endpoints, normalizedContainers, recentInsights);
-        const userPrompt = getEffectivePrompt('monitoring_analysis');
-        const systemPrompt = `${infraContext}\n\n${userPrompt}`;
+          const analysisPrompt =
+            'Analyze the current infrastructure state. Identify the top 3 most important ' +
+            'issues or recommendations. Be specific and actionable. Format each as a brief title and description.';
 
-        const analysisPrompt =
-          'Analyze the current infrastructure state. Identify the top 3 most important ' +
-          'issues or recommendations. Be specific and actionable. Format each as a brief title and description.';
+          let aiResponse = '';
+          await chatStream(
+            [{ role: 'user', content: analysisPrompt }],
+            systemPrompt,
+            (chunk) => { aiResponse += chunk; },
+          );
 
-        let aiResponse = '';
-        await chatStream(
-          [{ role: 'user', content: analysisPrompt }],
-          systemPrompt,
-          (chunk) => { aiResponse += chunk; },
-        );
-
-        if (aiResponse.trim()) {
-          aiInsights.push({
-            id: uuidv4(),
-            endpoint_id: null,
-            endpoint_name: null,
-            container_id: null,
-            container_name: null,
-            severity: 'info',
-            category: 'ai-analysis',
-            title: 'AI Infrastructure Analysis',
-            description: aiResponse.trim().slice(0, 2000),
-            suggested_action: null,
-          });
+          if (aiResponse.trim()) {
+            const aiInsight: InsightInsert = {
+              id: uuidv4(),
+              endpoint_id: null,
+              endpoint_name: null,
+              container_id: null,
+              container_name: null,
+              severity: 'info',
+              category: 'ai-analysis',
+              title: 'AI Infrastructure Analysis',
+              description: aiResponse.trim().slice(0, 2000),
+              suggested_action: null,
+            };
+            insertInsight(aiInsight);
+            broadcastInsight(aiInsight as Insight);
+            log.info('AI analysis insight stored (async)');
+          }
+        } catch (err) {
+          log.warn({ err }, 'AI analysis failed (async), using rule-based analysis only');
         }
-      } catch (err) {
-        log.warn({ err }, 'AI analysis failed, using rule-based analysis only');
-      }
+      })();
+    } else if (!config.AI_ANALYSIS_ENABLED) {
+      log.debug('AI analysis disabled via AI_ANALYSIS_ENABLED');
     } else {
       log.info('Ollama unavailable, using rule-based analysis only');
     }
 
-    // 7. Store all insights and suggest remediation actions
-    const allInsights = [...anomalyInsights, ...predictiveInsights, ...logAnalysisInsights, ...securityInsights, ...aiInsights];
+    // 7. Collect all insights, cap at MAX_INSIGHTS_PER_CYCLE, batch insert + batch broadcast
+    let allInsights = [...anomalyInsights, ...predictiveInsights, ...logAnalysisInsights, ...securityInsights];
+
+    // Cap at MAX_INSIGHTS_PER_CYCLE to prevent unbounded growth
+    if (allInsights.length > config.MAX_INSIGHTS_PER_CYCLE) {
+      log.warn(
+        { total: allInsights.length, cap: config.MAX_INSIGHTS_PER_CYCLE },
+        'Insight count exceeds MAX_INSIGHTS_PER_CYCLE, truncating',
+      );
+      allInsights = allInsights.slice(0, config.MAX_INSIGHTS_PER_CYCLE);
+    }
+
+    // Batch insert all insights in a single transaction
+    try {
+      insertInsights(allInsights);
+    } catch (err) {
+      log.error({ err }, 'Batch insight insert failed');
+    }
+
+    // Batch broadcast via Socket.IO
+    if (monitoringNamespace && allInsights.length > 0) {
+      // Batch event for modern clients
+      monitoringNamespace.to('severity:all').emit('insights:batch', allInsights);
+      // Per-severity broadcasts for backward compat
+      for (const insight of allInsights) {
+        monitoringNamespace.to(`severity:${insight.severity}`).emit('insights:new', insight);
+      }
+    }
+
+    // Post-insert processing: events, notifications, investigations, remediation
     const suggestedActions: Array<{ actionId: string; actionType: string; insightId: string }> = [];
-
     for (const insight of allInsights) {
-      try {
-        insertInsight(insight);
+      // Emit event for webhooks
+      const eventType = insight.category === 'anomaly' ? 'anomaly.detected' : 'insight.created';
+      emitEvent({
+        type: eventType,
+        timestamp: new Date().toISOString(),
+        data: {
+          insightId: insight.id,
+          severity: insight.severity,
+          category: insight.category,
+          title: insight.title,
+          description: insight.description,
+          containerId: insight.container_id,
+          containerName: insight.container_name,
+          endpointId: insight.endpoint_id,
+        },
+      });
 
-        // Broadcast insight in real-time via Socket.IO
-        broadcastInsight(insight as Insight);
+      // Send notification for critical/warning insights
+      if (insight.severity === 'critical' || insight.severity === 'warning') {
+        notifyInsight(insight as Insight).catch((err) =>
+          log.warn({ err, insightId: insight.id }, 'Failed to send notification'),
+        );
+      }
 
-        // Emit event for webhooks
-        const eventType = insight.category === 'anomaly' ? 'anomaly.detected' : 'insight.created';
-        emitEvent({
-          type: eventType,
-          timestamp: new Date().toISOString(),
-          data: {
-            insightId: insight.id,
-            severity: insight.severity,
-            category: insight.category,
-            title: insight.title,
-            description: insight.description,
-            containerId: insight.container_id,
-            containerName: insight.container_name,
-            endpointId: insight.endpoint_id,
-          },
+      // Trigger root cause investigation for anomaly and non-info predictive insights
+      if (
+        insight.category === 'anomaly' ||
+        (insight.category === 'predictive' && insight.severity !== 'info')
+      ) {
+        triggerInvestigation(insight as Insight).catch((err) => {
+          log.warn({ insightId: insight.id, err }, 'Failed to trigger investigation');
         });
+      }
 
-        // Send notification for critical/warning insights
-        if (insight.severity === 'critical' || insight.severity === 'warning') {
-          notifyInsight(insight as Insight).catch((err) =>
-            log.warn({ err, insightId: insight.id }, 'Failed to send notification'),
-          );
-        }
-
-        // Trigger root cause investigation for anomaly and non-info predictive insights
-        if (
-          insight.category === 'anomaly' ||
-          (insight.category === 'predictive' && insight.severity !== 'info')
-        ) {
-          triggerInvestigation(insight as Insight).catch((err) => {
-            log.warn({ insightId: insight.id, err }, 'Failed to trigger investigation');
-          });
-        }
-
-        // Attempt to suggest a remediation action for this insight
-        const suggestedAction = suggestAction(insight as Insight);
-        if (suggestedAction) {
-          suggestedActions.push({
-            ...suggestedAction,
-            insightId: insight.id,
-          });
-        }
-      } catch (err) {
-        log.warn({ insightId: insight.id, err }, 'Failed to insert insight');
+      // Attempt to suggest a remediation action for this insight
+      const suggestedAction = suggestAction(insight as Insight);
+      if (suggestedAction) {
+        suggestedActions.push({
+          ...suggestedAction,
+          insightId: insight.id,
+        });
       }
     }
 

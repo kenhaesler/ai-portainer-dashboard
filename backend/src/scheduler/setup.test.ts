@@ -119,6 +119,11 @@ vi.mock('../services/session-store.js', () => ({
   cleanExpiredSessions: (...args: unknown[]) => cleanExpiredSessionsMock(...args),
 }));
 
+const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
+vi.mock('../services/insights-store.js', () => ({
+  cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
+}));
+
 import {
   runCleanup,
   runImageStalenessCheck,
@@ -471,5 +476,39 @@ describe('scheduler/setup – runCleanup includes session cleanup', () => {
     await runCleanup();
 
     expect(cleanExpiredSessionsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('scheduler/setup – runCleanup includes insights cleanup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('calls cleanupOldInsights during cleanup', async () => {
+    cleanupOldInsightsMock.mockReturnValue(10);
+
+    await runCleanup();
+
+    expect(cleanupOldInsightsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when cleanupOldInsights fails', async () => {
+    cleanupOldInsightsMock.mockImplementation(() => {
+      throw new Error('DB locked');
+    });
+
+    await expect(runCleanup()).resolves.toBeUndefined();
+  });
+
+  it('passes INSIGHTS_RETENTION_DAYS from config', async () => {
+    const { getConfig } = await import('../config/index.js');
+    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+      METRICS_RETENTION_DAYS: 30,
+      INSIGHTS_RETENTION_DAYS: 14,
+    });
+
+    await runCleanup();
+
+    expect(cleanupOldInsightsMock).toHaveBeenCalledWith(14);
   });
 });

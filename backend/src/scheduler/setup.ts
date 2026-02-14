@@ -18,6 +18,7 @@ import { getImages } from '../services/portainer-client.js';
 import { runWithTraceContext } from '../services/trace-context.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
 import { cleanExpiredSessions } from '../services/session-store.js';
+import { cleanupOldInsights } from '../services/insights-store.js';
 
 const log = createChildLogger('scheduler');
 
@@ -335,6 +336,16 @@ export async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'Session cleanup failed');
+  }
+
+  try {
+    const config = getConfig();
+    const insightsDeleted = cleanupOldInsights(config.INSIGHTS_RETENTION_DAYS);
+    if (insightsDeleted > 0) {
+      log.info({ deleted: insightsDeleted }, 'Old insights cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Insights cleanup failed');
   }
 }
 
