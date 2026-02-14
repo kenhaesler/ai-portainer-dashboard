@@ -47,7 +47,7 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     }
 
     // Fetch related insights
-    const relatedIds: string[] = JSON.parse(incident.related_insight_ids);
+    const relatedIds: string[] = incident.related_insight_ids;
     const allIds = incident.root_cause_insight_id
       ? [incident.root_cause_insight_id, ...relatedIds]
       : relatedIds;

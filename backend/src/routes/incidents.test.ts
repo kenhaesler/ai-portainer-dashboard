@@ -84,7 +84,7 @@ describe('incidents routes', () => {
         id: 'inc-1',
         title: 'Test incident',
         root_cause_insight_id: 'insight-1',
-        related_insight_ids: '["insight-2"]',
+        related_insight_ids: ['insight-2'],
       } as never);
 
       const response = await app.inject({

@@ -15,7 +15,7 @@ export interface Webhook {
   name: string;
   url: string;
   secret: string;
-  events: string;
+  events: string[]; // JSONB returns native array (pg driver auto-parses)
   enabled: boolean;
   description: string | null;
   created_at: string;
@@ -247,7 +247,7 @@ export async function dispatchEvent(event: WebhookEvent): Promise<void> {
   const webhooks = (await listWebhooks()).filter((w) => w.enabled);
 
   for (const webhook of webhooks) {
-    const subscribedEvents: string[] = JSON.parse(webhook.events);
+    const subscribedEvents: string[] = webhook.events;
     const matches = subscribedEvents.some((pattern) => {
       if (pattern === '*') return true;
       if (pattern.endsWith('.*')) {
