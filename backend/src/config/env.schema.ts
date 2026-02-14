@@ -48,6 +48,8 @@ export const envSchema = z.object({
   // Monitoring
   MONITORING_ENABLED: z.coerce.boolean().default(true),
   MONITORING_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(5),
+  MAX_INSIGHTS_PER_CYCLE: z.coerce.number().int().min(1).max(10000).default(500),
+  AI_ANALYSIS_ENABLED: z.coerce.boolean().default(true),
 
   // Metrics Collection
   METRICS_COLLECTION_ENABLED: z.coerce.boolean().default(true),
@@ -130,6 +132,7 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3051),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   SQLITE_PATH: z.string().default('./data/dashboard.db'),
+  SQLITE_BUSY_TIMEOUT: z.coerce.number().int().min(1000).max(60000).default(5000),
 
   // HTTP/2 (opt-in, requires TLS cert/key)
   HTTP2_ENABLED: z.coerce.boolean().default(false),
