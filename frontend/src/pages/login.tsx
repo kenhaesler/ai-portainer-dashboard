@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
 import { LoginLogo } from "@/components/icons/login-logo";
@@ -99,9 +100,12 @@ export default function LoginPage() {
       className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4"
       data-reduced-motion={reducedMotion}
     >
-      <AnimatePresence>
-        {showPostLoginLoading && <PostLoginLoading />}
-      </AnimatePresence>
+      {createPortal(
+        <AnimatePresence>
+          {showPostLoginLoading && <PostLoginLoading />}
+        </AnimatePresence>,
+        document.body
+      )}
 
       <div
         className={`login-gradient-mesh ${reducedMotion ? "" : "login-gradient-mesh-animate"}`}
