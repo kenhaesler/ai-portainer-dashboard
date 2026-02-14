@@ -81,13 +81,13 @@ export async function getLlmStats(hoursBack: number = 24): Promise<LlmStats> {
       COALESCE(AVG(latency_ms), 0) as avg_latency_ms,
       COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 0) as error_rate
     FROM llm_traces
-    WHERE created_at >= datetime('now', ? || ' hours')
+    WHERE created_at >= NOW() + (? || ' hours')::INTERVAL
   `, [`-${hoursBack}`]);
 
   const modelBreakdown = await db.query<{ model: string; count: number; tokens: number }>(`
     SELECT model, COUNT(*) as count, COALESCE(SUM(total_tokens), 0) as tokens
     FROM llm_traces
-    WHERE created_at >= datetime('now', ? || ' hours')
+    WHERE created_at >= NOW() + (? || ' hours')::INTERVAL
     GROUP BY model
     ORDER BY count DESC
   `, [`-${hoursBack}`]);

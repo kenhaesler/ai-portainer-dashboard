@@ -12,7 +12,7 @@ vi.mock('../db/app-db-router.js', () => ({
     query: (...args: unknown[]) => mockQuery(...args),
     queryOne: (...args: unknown[]) => mockQueryOne(...args),
     execute: (...args: unknown[]) => mockExecute(...args),
-    transaction: vi.fn(async (fn: Function) => fn({
+    transaction: vi.fn(async (fn: (db: Record<string, unknown>) => Promise<unknown>) => fn({
       query: (...a: unknown[]) => mockQuery(...a),
       queryOne: (...a: unknown[]) => mockQueryOne(...a),
       execute: (...a: unknown[]) => mockExecute(...a),

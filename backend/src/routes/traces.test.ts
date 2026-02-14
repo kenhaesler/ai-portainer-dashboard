@@ -326,7 +326,7 @@ const appDb = {
     const result = db.prepare(sql).run(...params);
     return { changes: result.changes };
   },
-  transaction: async (fn: Function) => {
+  transaction: async (fn: (db: Record<string, unknown>) => Promise<unknown>) => {
     const txn = db.transaction(() => fn(appDb));
     return txn();
   },

@@ -16,11 +16,11 @@ export async function getSetting(key: string): Promise<Setting | null> {
 export async function setSetting(key: string, value: string, category: string): Promise<void> {
   await db().execute(`
     INSERT INTO settings (key, value, category, updated_at)
-    VALUES (?, ?, ?, datetime('now'))
+    VALUES (?, ?, ?, NOW())
     ON CONFLICT(key) DO UPDATE SET
       value = excluded.value,
       category = excluded.category,
-      updated_at = datetime('now')
+      updated_at = NOW()
   `, [key, value, category]);
 
   log.debug({ key, category }, 'Setting saved');

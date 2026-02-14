@@ -122,7 +122,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
           body.url ?? null,
           body.args ?? null,
           body.env ?? null,
-          body.enabled ? 1 : 0,
+          body.enabled,
           body.disabled_tools ?? null,
         ],
       );
@@ -141,7 +141,7 @@ export async function mcpRoutes(fastify: FastifyInstance) {
       return reply.code(201).send({
         id: result.lastInsertRowid,
         ...body,
-        enabled: body.enabled ? 1 : 0,
+        enabled: body.enabled,
       });
     } catch (err: any) {
       if (err?.code === '23505') {
@@ -182,14 +182,14 @@ export async function mcpRoutes(fastify: FastifyInstance) {
     if (body.url !== undefined) { updates.push('url = ?'); values.push(body.url); }
     if (body.args !== undefined) { updates.push('args = ?'); values.push(body.args); }
     if (body.env !== undefined) { updates.push('env = ?'); values.push(body.env); }
-    if (body.enabled !== undefined) { updates.push('enabled = ?'); values.push(body.enabled ? 1 : 0); }
+    if (body.enabled !== undefined) { updates.push('enabled = ?'); values.push(body.enabled); }
     if (body.disabled_tools !== undefined) { updates.push('disabled_tools = ?'); values.push(body.disabled_tools); }
 
     if (updates.length === 0) {
       return reply.code(400).send({ error: 'No fields to update' });
     }
 
-    updates.push("updated_at = datetime('now')");
+    updates.push("updated_at = NOW()");
     values.push(id);
 
     await mcpDb.execute(`UPDATE mcp_servers SET ${updates.join(', ')} WHERE id = ?`, values);

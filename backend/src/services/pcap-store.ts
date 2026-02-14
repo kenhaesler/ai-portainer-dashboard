@@ -126,7 +126,7 @@ export async function deleteCapture(id: string): Promise<boolean> {
 export async function cleanOldCaptures(retentionDays: number): Promise<number> {
   const result = await db().execute(`
     DELETE FROM pcap_captures
-    WHERE created_at < datetime(NOW(), ? || ' days')
+    WHERE created_at < NOW() + (? || ' days')::INTERVAL
       AND status IN ('complete', 'failed', 'succeeded')
   `, [`-${retentionDays}`]);
 

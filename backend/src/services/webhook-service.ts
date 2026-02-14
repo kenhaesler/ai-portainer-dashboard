@@ -16,7 +16,7 @@ export interface Webhook {
   url: string;
   secret: string;
   events: string;
-  enabled: number;
+  enabled: boolean;
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -73,7 +73,7 @@ export async function createWebhook(input: CreateWebhookInput): Promise<Webhook>
   await db().execute(`
     INSERT INTO webhooks (id, name, url, secret, events, enabled, description)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [id, input.name, input.url, secret, events, input.enabled !== false ? 1 : 0, input.description ?? null]);
+  `, [id, input.name, input.url, secret, events, input.enabled !== false, input.description ?? null]);
 
   return (await getWebhookById(id))!;
 }
@@ -98,7 +98,7 @@ export async function updateWebhook(id: string, input: UpdateWebhookInput): Prom
   if (input.url !== undefined) { updates.push('url = ?'); values.push(input.url); }
   if (input.secret !== undefined) { updates.push('secret = ?'); values.push(input.secret); }
   if (input.events !== undefined) { updates.push('events = ?'); values.push(JSON.stringify(input.events)); }
-  if (input.enabled !== undefined) { updates.push('enabled = ?'); values.push(input.enabled ? 1 : 0); }
+  if (input.enabled !== undefined) { updates.push('enabled = ?'); values.push(input.enabled); }
   if (input.description !== undefined) { updates.push('description = ?'); values.push(input.description); }
 
   if (updates.length === 0) return existing;

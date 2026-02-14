@@ -19,7 +19,7 @@ const appDb = {
     const result = db.prepare(sql.replace(/NOW\(\)/g, "datetime('now')")).run(...params);
     return { changes: result.changes };
   },
-  transaction: async (fn: Function) => {
+  transaction: async (fn: (db: Record<string, unknown>) => Promise<unknown>) => {
     db.exec('BEGIN');
     try {
       const result = await fn(appDb);

@@ -24,7 +24,7 @@ export async function insertInsight(insight: InsightInsert): Promise<void> {
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, suggested_action,
       is_acknowledged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())`,
     [
       insight.id,
       insight.endpoint_id,
@@ -61,7 +61,7 @@ export async function getInsights(options: GetInsightsOptions = {}): Promise<Ins
 
   if (options.acknowledged !== undefined) {
     conditions.push('is_acknowledged = ?');
-    params.push(options.acknowledged ? 1 : 0);
+    params.push(options.acknowledged);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -79,7 +79,7 @@ export async function getInsights(options: GetInsightsOptions = {}): Promise<Ins
 export async function acknowledgeInsight(id: string): Promise<boolean> {
   const db = getDbForDomain('insights');
   const result = await db.execute(
-    'UPDATE insights SET is_acknowledged = 1 WHERE id = ?',
+    'UPDATE insights SET is_acknowledged = true WHERE id = ?',
     [id],
   );
 
@@ -94,7 +94,7 @@ export async function getRecentInsights(minutes: number, limit: number = 500): P
   const db = getDbForDomain('insights');
   return db.query<Insight>(
     `SELECT * FROM insights
-     WHERE created_at >= datetime('now', ? || ' minutes')
+     WHERE created_at >= NOW() + (? || ' minutes')::INTERVAL
      ORDER BY created_at DESC
      LIMIT ?`,
     [`-${minutes}`, limit],
@@ -115,13 +115,13 @@ export async function insertInsights(insights: InsightInsert[]): Promise<number>
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, suggested_action,
       is_acknowledged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())
   `;
 
   const dedupeSQL = `
     SELECT COUNT(*) as cnt FROM insights
     WHERE container_id = ? AND category = ? AND title = ?
-      AND created_at >= datetime('now', '-60 minutes')
+      AND created_at >= NOW() - INTERVAL '60 minutes'
   `;
 
   const inserted = await db.transaction(async (txDb) => {
@@ -168,7 +168,7 @@ export async function insertInsights(insights: InsightInsert[]): Promise<number>
 export async function cleanupOldInsights(retentionDays: number): Promise<number> {
   const db = getDbForDomain('insights');
   const result = await db.execute(
-    `DELETE FROM insights WHERE created_at < datetime('now', ? || ' days')`,
+    `DELETE FROM insights WHERE created_at < NOW() + (? || ' days')::INTERVAL`,
     [`-${retentionDays}`],
   );
   return result.changes;

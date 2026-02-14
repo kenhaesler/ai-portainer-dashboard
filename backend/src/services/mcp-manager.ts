@@ -17,7 +17,7 @@ export interface McpServerConfig {
   url?: string | null;
   args?: string | null;       // JSON array
   env?: string | null;        // JSON object
-  enabled: number;
+  enabled: boolean;
   disabled_tools?: string | null; // JSON array of tool names
 }
 
@@ -243,7 +243,7 @@ export async function autoConnectAll(): Promise<void> {
   let servers: McpServerConfig[];
   try {
     const mcpDb = getDbForDomain('mcp');
-    servers = await mcpDb.query<McpServerConfig>('SELECT * FROM mcp_servers WHERE enabled = 1');
+    servers = await mcpDb.query<McpServerConfig>('SELECT * FROM mcp_servers WHERE enabled = true');
   } catch {
     log.debug('MCP servers table not ready yet, skipping auto-connect');
     return;

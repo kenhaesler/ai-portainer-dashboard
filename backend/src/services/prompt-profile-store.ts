@@ -29,7 +29,7 @@ interface PromptProfileRow {
   id: string;
   name: string;
   description: string;
-  is_built_in: number;
+  is_built_in: boolean;
   prompts_json: string;
   created_at: string;
   updated_at: string;
@@ -50,7 +50,7 @@ function rowToProfile(row: PromptProfileRow): PromptProfile {
     id: row.id,
     name: row.name,
     description: row.description,
-    isBuiltIn: row.is_built_in === 1,
+    isBuiltIn: !!row.is_built_in,
     prompts,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -87,7 +87,7 @@ export async function createProfile(
 
   await db().execute(`
     INSERT INTO prompt_profiles (id, name, description, is_built_in, prompts_json, created_at, updated_at)
-    VALUES (?, ?, ?, 0, ?, NOW(), NOW())
+    VALUES (?, ?, ?, false, ?, NOW(), NOW())
   `, [id, name, description, promptsJson]);
 
   log.info({ id, name }, 'Profile created');
@@ -138,7 +138,7 @@ export async function deleteProfile(id: string): Promise<boolean> {
   }
 
   const result = await db().execute(
-    'DELETE FROM prompt_profiles WHERE id = ? AND is_built_in = 0', [id],
+    'DELETE FROM prompt_profiles WHERE id = ? AND is_built_in = false', [id],
   );
   if (result.changes > 0) {
     log.info({ id, name: profile.name }, 'Profile deleted');

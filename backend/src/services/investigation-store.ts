@@ -128,7 +128,7 @@ export async function getRecentInvestigationForContainer(
   return await db.queryOne<Investigation>(`
     SELECT * FROM investigations
     WHERE container_id = ?
-      AND created_at >= datetime('now', ? || ' minutes')
+      AND created_at >= NOW() + (? || ' minutes')::INTERVAL
       AND status != 'failed'
     ORDER BY created_at DESC
     LIMIT 1

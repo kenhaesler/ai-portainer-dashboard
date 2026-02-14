@@ -41,7 +41,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
       }
       if (acknowledged !== undefined) {
         filterConditions.push('is_acknowledged = ?');
-        filterParams.push(acknowledged ? 1 : 0);
+        filterParams.push(acknowledged);
       }
 
       const filterWhere = filterConditions.length > 0
@@ -194,7 +194,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     try {
       const db = getDbForDomain('insights');
-      await db.execute('UPDATE insights SET is_acknowledged = 1 WHERE id = ?', [id]);
+      await db.execute('UPDATE insights SET is_acknowledged = true WHERE id = ?', [id]);
       return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';

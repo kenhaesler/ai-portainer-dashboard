@@ -136,7 +136,7 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
   const activeAnomalies = await insightsDb.queryOne<{ count: number }>(
     `SELECT COUNT(*) as count
      FROM insights
-     WHERE category = 'anomaly' AND is_acknowledged = 0`,
+     WHERE category = 'anomaly' AND is_acknowledged = false`,
     [],
   );
 

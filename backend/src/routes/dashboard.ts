@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
@@ -116,12 +117,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       tags: ['Dashboard'],
       summary: 'Get KPI history for sparklines (last 24h)',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          hours: { type: 'number', default: 24 },
-        },
-      },
+      querystring: z.object({
+        hours: z.coerce.number().default(24),
+      }),
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {

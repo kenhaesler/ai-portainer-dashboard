@@ -45,7 +45,7 @@ export async function insertIncident(incident: IncidentInsert): Promise<void> {
       related_insight_ids, affected_containers, endpoint_id, endpoint_name,
       correlation_type, correlation_confidence, insight_count, summary,
       created_at, updated_at
-    ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
   `, [
     incident.id,
     incident.title,
@@ -83,7 +83,7 @@ export async function addInsightToIncident(incidentId: string, insightId: string
   await db.execute(`
     UPDATE incidents
     SET related_insight_ids = ?, affected_containers = ?,
-        insight_count = ?, updated_at = datetime('now')
+        insight_count = ?, updated_at = NOW()
     WHERE id = ?
   `, [
     JSON.stringify(relatedIds),
@@ -138,7 +138,7 @@ export async function getActiveIncidentForContainer(
   const incidents = await db.query<Incident>(`
     SELECT * FROM incidents
     WHERE status = 'active'
-      AND created_at >= datetime('now', ? || ' minutes')
+      AND created_at >= NOW() + (? || ' minutes')::INTERVAL
     ORDER BY created_at DESC
   `, [`-${withinMinutes}`]);
 
@@ -169,7 +169,7 @@ export async function getActiveIncidentForContainer(
 export async function resolveIncident(id: string): Promise<void> {
   const db = getDbForDomain('incidents');
   await db.execute(`
-    UPDATE incidents SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now')
+    UPDATE incidents SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
     WHERE id = ?
   `, [id]);
   log.info({ incidentId: id }, 'Incident resolved');

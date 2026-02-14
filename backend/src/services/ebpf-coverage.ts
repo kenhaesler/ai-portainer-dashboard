@@ -27,9 +27,9 @@ export interface CoverageRecord {
   endpoint_id: number;
   endpoint_name: string;
   status: CoverageStatus;
-  beyla_enabled: number;
+  beyla_enabled: boolean;
   beyla_container_id: string | null;
-  beyla_managed: number;
+  beyla_managed: boolean;
   otlp_endpoint_override: string | null;
   drifted: boolean;
   exclusion_reason: string | null;

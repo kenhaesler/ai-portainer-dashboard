@@ -13,7 +13,7 @@ export interface ImageStalenessRecord {
   registry: string;
   local_digest: string | null;
   remote_digest: string | null;
-  is_stale: number;
+  is_stale: boolean;
   days_since_update: number | null;
   last_checked_at: string;
   created_at: string;
@@ -151,7 +151,7 @@ export async function upsertStalenessRecord(result: StalenessCheckResult): Promi
     result.registry,
     result.localDigest,
     result.remoteDigest,
-    result.isStale ? 1 : 0,
+    result.isStale,
     result.daysSinceUpdate,
   ]);
 }
@@ -170,8 +170,8 @@ export async function getStalenessSummary(): Promise<{ total: number; stale: num
   const row = await db().queryOne<{ total: number; stale: number; up_to_date: number; unchecked: number }>(`
     SELECT
       COUNT(*) as total,
-      SUM(CASE WHEN is_stale = 1 THEN 1 ELSE 0 END) as stale,
-      SUM(CASE WHEN is_stale = 0 AND remote_digest IS NOT NULL THEN 1 ELSE 0 END) as up_to_date,
+      SUM(CASE WHEN is_stale = true THEN 1 ELSE 0 END) as stale,
+      SUM(CASE WHEN is_stale = false AND remote_digest IS NOT NULL THEN 1 ELSE 0 END) as up_to_date,
       SUM(CASE WHEN remote_digest IS NULL THEN 1 ELSE 0 END) as unchecked
     FROM image_staleness
   `);

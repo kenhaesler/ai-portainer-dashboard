@@ -1,6 +1,6 @@
 FROM dhi.io/node:24-alpine3.23-dev
 
-# Install build dependencies for native modules (better-sqlite3) and runtime tools
+# Install build dependencies for native modules and runtime tools
 RUN apk add --no-cache python3 make g++ dumb-init su-exec tcpdump wget
 
 WORKDIR /app

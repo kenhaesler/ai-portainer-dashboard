@@ -71,7 +71,7 @@ vi.mock('../db/app-db-router.js', () => ({
       }
       return { changes: 0 };
     }),
-    transaction: vi.fn(async (fn: Function) => fn({
+    transaction: vi.fn(async (fn: (db: Record<string, unknown>) => Promise<unknown>) => fn({
       execute: vi.fn(async () => ({ changes: 0 })),
       queryOne: vi.fn(async () => null),
       query: vi.fn(async () => []),
