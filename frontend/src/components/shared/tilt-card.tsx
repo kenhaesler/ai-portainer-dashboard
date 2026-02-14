@@ -1,5 +1,6 @@
 import { useRef, useCallback } from 'react';
 import { motion, useMotionValue, useSpring, useReducedMotion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 
 interface TiltCardProps {
@@ -47,24 +48,25 @@ export function TiltCard({ children, className, disabled }: TiltCardProps) {
   }, [rotateX, rotateY]);
 
   if (isTiltDisabled) {
-    return <div className={className}>{children}</div>;
+    return <div className={cn('h-full', className)}>{children}</div>;
   }
 
   return (
-    <div style={{ perspective: 1000, borderRadius: 'var(--radius)' }} className={className}>
+    <div style={{ perspective: 1000, borderRadius: 'var(--radius-lg)' }} className={cn('h-full', className)}>
       <motion.div
         ref={ref}
+        className="h-full"
         style={{
           rotateX: springRotateX,
           rotateY: springRotateY,
           transformStyle: 'preserve-3d',
-          borderRadius: 'var(--radius)',
+          borderRadius: 'var(--radius-lg)',
         }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         data-testid="tilt-card"
       >
-        <div style={{ transform: 'translateZ(50px)', borderRadius: 'var(--radius)' }}>{children}</div>
+        <div className="h-full" style={{ transform: 'translateZ(50px)', borderRadius: 'var(--radius-lg)' }}>{children}</div>
       </motion.div>
     </div>
   );

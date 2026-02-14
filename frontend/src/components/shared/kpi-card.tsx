@@ -55,10 +55,10 @@ export function KpiCard({
   }, [numericValue]);
 
   return (
-    <SpotlightCard>
+    <SpotlightCard className="h-full">
       <div
         className={cn(
-          'rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
+          'h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
           !potatoMode && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
           className,
         )}

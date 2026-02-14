@@ -188,7 +188,7 @@ export default function HomePage() {
         </div>
       ) : data ? (
         <MotionStagger className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5" stagger={0.05}>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
               <KpiCard
                 label="Endpoints"
@@ -202,7 +202,7 @@ export default function HomePage() {
               />
             </TiltCard>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
               <KpiCard
                 label="Running Containers"
@@ -216,7 +216,7 @@ export default function HomePage() {
               />
             </TiltCard>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
               <KpiCard
                 label="Stopped Containers"
@@ -230,7 +230,7 @@ export default function HomePage() {
               />
             </TiltCard>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
               <KpiCard
                 label="Stacks"
@@ -242,12 +242,12 @@ export default function HomePage() {
               />
             </TiltCard>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
               <button
                 type="button"
                 onClick={() => navigate('/security/audit')}
-                className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+                className="block h-full w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
               >
                 <KpiCard
                   label="Security Findings"
