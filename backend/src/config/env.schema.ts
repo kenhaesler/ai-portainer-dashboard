@@ -26,7 +26,7 @@ export const envSchema = z.object({
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
   PORTAINER_API_KEY: z.string().min(1).default(''),
   PORTAINER_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
-  PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(10),
+  PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(30),
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
   PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
   PORTAINER_CB_RESET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
