@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useAuth } from '@/providers/auth-provider';
 
 export interface DashboardKpis {
   endpoints: number;
@@ -62,11 +63,14 @@ export interface DashboardSummary {
 
 export function useDashboard() {
   const { interval, enabled } = useAutoRefresh(30);
+  const { isAuthenticated, token } = useAuth();
 
   return useQuery<DashboardSummary>({
     queryKey: ['dashboard', 'summary'],
     queryFn: () => api.get<DashboardSummary>('/api/dashboard/summary'),
+    enabled: isAuthenticated && !!token,
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchInterval: enabled ? interval * 1000 : false,
   });

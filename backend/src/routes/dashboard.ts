@@ -87,10 +87,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     }
 
     if (upEndpoints.length > 0 && recentContainers.length === 0 && errors.length > 0) {
-      return reply.code(502).send({
-        error: 'Failed to fetch containers from Portainer',
-        details: errors,
-      });
+      // Degrade gracefully: home can still render KPIs/endpoints/security while
+      // recent container samples are temporarily unavailable.
+      log.warn({ errors, endpointCount: upEndpoints.length }, 'Dashboard summary has no recent containers due to upstream errors');
     }
 
     // Sort by created time, take latest 20
