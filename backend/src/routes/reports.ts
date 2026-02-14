@@ -5,6 +5,10 @@ import {
   getInfrastructureServicePatterns,
   isInfrastructureService,
 } from '../services/infrastructure-service-classifier.js';
+import { isUndefinedTableError } from '../services/metrics-store.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('reports-routes');
 
 interface AggRow {
   container_id: string;
@@ -84,7 +88,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       querystring: ReportsQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
+    try {
     const { timeRange: tr, endpointId, containerId, includeInfrastructure, excludeInfrastructure: rawExcludeInfrastructure } = request.query as {
       timeRange?: string;
       endpointId?: number;
@@ -261,6 +266,13 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       fleetSummary,
       recommendations,
     };
+    } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn('Metrics table not ready for utilization report');
+        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      throw err;
+    }
   });
 
   // Trend data endpoint — hourly aggregation for charts
@@ -272,7 +284,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       querystring: ReportsQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
+    try {
     const { timeRange: tr, endpointId, containerId, includeInfrastructure, excludeInfrastructure: rawExcludeInfrastructure } = request.query as {
       timeRange?: string;
       endpointId?: number;
@@ -366,6 +379,13 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       excludeInfrastructure,
       trends,
     };
+    } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn('Metrics table not ready for trend report');
+        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      throw err;
+    }
   });
 
   fastify.get('/api/reports/management', {
@@ -376,7 +396,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       querystring: ReportsQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
+    try {
     const {
       timeRange: tr,
       endpointId,
@@ -552,5 +573,12 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       topServices,
       topInsights: recommendations,
     };
+    } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn('Metrics table not ready for management report');
+        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      throw err;
+    }
   });
 }

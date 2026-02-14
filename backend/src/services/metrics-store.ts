@@ -4,6 +4,18 @@ import type { Metric } from '../models/metrics.js';
 
 const log = createChildLogger('metrics-store');
 
+/**
+ * Check if a database error is PostgreSQL 42P01 (undefined_table).
+ * This happens when the metrics hypertable hasn't been created yet.
+ */
+export function isUndefinedTableError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    'code' in err &&
+    (err as { code: string }).code === '42P01'
+  );
+}
+
 export interface MetricInsert {
   endpoint_id: number;
   container_id: string;

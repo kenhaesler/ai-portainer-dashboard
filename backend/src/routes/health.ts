@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { isDbHealthy } from '../db/sqlite.js';
-import { isMetricsDbHealthy } from '../db/timescale.js';
+import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { getConfig } from '../config/index.js';
 import { cache } from '../services/portainer-cache.js';
 import { HealthResponseSchema, ReadinessResponseSchema } from '../models/api-schemas.js';
@@ -18,9 +18,14 @@ async function runChecks(): Promise<{ checks: Record<string, DependencyCheck>; o
 
   // Check TimescaleDB (metrics, KPI snapshots)
   const tsHealthy = await isMetricsDbHealthy();
-  checks.metricsDb = tsHealthy
-    ? { status: 'healthy' }
-    : { status: 'unhealthy', error: 'TimescaleDB query failed' };
+  const migrationsReady = isMetricsDbReady();
+  if (tsHealthy && migrationsReady) {
+    checks.metricsDb = { status: 'healthy' };
+  } else if (tsHealthy && !migrationsReady) {
+    checks.metricsDb = { status: 'degraded', error: 'TimescaleDB connected but migrations not applied — metrics table may be missing' };
+  } else {
+    checks.metricsDb = { status: 'unhealthy', error: 'TimescaleDB query failed' };
+  }
 
   // Check Portainer
   try {
