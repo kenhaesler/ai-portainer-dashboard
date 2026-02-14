@@ -4,6 +4,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useFavoriteContainers } from '@/hooks/use-containers';
+import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useKpiHistory } from '@/hooks/use-kpi-history';
 import { KpiCard } from '@/components/shared/kpi-card';
@@ -30,6 +31,7 @@ export default function HomePage() {
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
+  const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
@@ -86,14 +88,14 @@ export default function HomePage() {
   ], [navigate]);
 
   const endpointBarData = useMemo(() => {
-    if (!data?.endpoints) return [];
-    return data.endpoints.map((ep) => ({
+    if (!endpoints) return [];
+    return endpoints.map((ep) => ({
       name: `${ep.name} (ID: ${ep.id})`,
       running: ep.containersRunning,
       stopped: ep.containersStopped,
       unhealthy: ep.containersUnhealthy,
     }));
-  }, [data?.endpoints]);
+  }, [endpoints]);
 
   const workloadData = useMemo(() => {
     const search = new URLSearchParams(location.search);
@@ -112,14 +114,14 @@ export default function HomePage() {
       });
     }
 
-    if (!data?.endpoints) return [];
-    return data.endpoints.map((ep) => ({
+    if (!endpoints) return [];
+    return endpoints.map((ep) => ({
       endpoint: `${ep.name} (ID: ${ep.id})`,
       containers: ep.totalContainers,
       running: ep.containersRunning,
       stopped: ep.containersStopped,
     }));
-  }, [data?.endpoints, location.search]);
+  }, [endpoints, location.search]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
