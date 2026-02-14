@@ -120,8 +120,11 @@ services:
       --appendonly no
       --requirepass ${REDIS_PASSWORD:-changeme-redis}
     # DEV ONLY: Redis defaults above use changeme-redis — never use in production
+    environment:
+      # REDISCLI_AUTH avoids exposing password via -a flag in process table
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-changeme-redis}
     healthcheck:
-      test: ["CMD", "sh", "-c", "REDISCLI_AUTH=$${REDIS_PASSWORD:-changeme-redis} redis-cli ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 15s
       timeout: 5s
       retries: 5

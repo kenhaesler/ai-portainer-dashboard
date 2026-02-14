@@ -129,8 +129,11 @@ services:
       --save ""
       --appendonly no
       --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    environment:
+      # REDISCLI_AUTH avoids exposing password via -a flag in process table
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
-      test: ["CMD", "sh", "-c", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 15s
       timeout: 5s
       retries: 5
