@@ -85,17 +85,17 @@ describe('session-store performance benchmarks', () => {
 
   it('session lookup completes in under 2ms (PostgreSQL target)', async () => {
     // Create a session
-    const sessionId = await createSession('user-123', 'alice');
+    const session = await createSession('user-123', 'alice');
 
     // Warm up (first query may be slower due to connection)
-    await getSession(sessionId);
+    await getSession(session.id);
 
     // Benchmark: measure 100 lookups
     const iterations = 100;
     const start = performance.now();
 
     for (let i = 0; i < iterations; i++) {
-      await getSession(sessionId);
+      await getSession(session.id);
     }
 
     const end = performance.now();
@@ -108,9 +108,11 @@ describe('session-store performance benchmarks', () => {
   it('session creation completes in under 5ms', async () => {
     const iterations = 50;
     const start = performance.now();
+    const sessions = [];
 
     for (let i = 0; i < iterations; i++) {
-      await createSession(`user-${i}`, `user${i}`);
+      const session = await createSession(`user-${i}`, `user${i}`);
+      sessions.push(session);
     }
 
     const end = performance.now();
@@ -118,19 +120,20 @@ describe('session-store performance benchmarks', () => {
 
     // Session creation should be reasonably fast
     expect(avgMs).toBeLessThan(5);
+    expect(sessions).toHaveLength(iterations);
   });
 
   it('session invalidation completes in under 3ms', async () => {
     // Create sessions to invalidate
-    const sessionIds = await Promise.all(
+    const sessions = await Promise.all(
       Array.from({ length: 50 }, (_, i) => createSession(`user-${i}`, `user${i}`))
     );
 
-    const iterations = sessionIds.length;
+    const iterations = sessions.length;
     const start = performance.now();
 
-    for (const sessionId of sessionIds) {
-      await invalidateSession(sessionId);
+    for (const session of sessions) {
+      await invalidateSession(session.id);
     }
 
     const end = performance.now();
