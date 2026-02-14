@@ -184,6 +184,7 @@ export default function LlmAssistantPage() {
                 value={selectedModel}
                 onValueChange={(val) => setSelectedModel(val)}
                 disabled={isStreaming || isSending}
+                className="min-w-[200px]"
                 options={modelsData.models.map((model) => ({
                   value: model.name,
                   label: model.name,
