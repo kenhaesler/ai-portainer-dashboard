@@ -1960,13 +1960,13 @@ html[data-potato-mode] body {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease;
-  border-radius: var(--radius);
   background: radial-gradient(
     circle 300px at var(--x, 50%) var(--y, 50%),
     rgba(255, 255, 255, 0.04) 0%,
     rgba(255, 255, 255, 0.02) 40%,
     transparent 80%
   );
+  clip-path: inset(0 round var(--radius));
 }
 
 .spotlight-card:hover::before {
