@@ -65,17 +65,17 @@ export default function LoginPage() {
       const { defaultLandingPage } = await login(username, password);
       setSubmitState("success");
       
-      const waitMs = reducedMotion ? 0 : 450;
-      window.setTimeout(() => {
-        if (reducedMotion) {
+      if (reducedMotion) {
+        window.setTimeout(() => {
           navigate(defaultLandingPage || "/", { replace: true });
-        } else {
-          setShowPostLoginLoading(true);
-          window.setTimeout(() => {
-            navigate(defaultLandingPage || "/", { replace: true });
-          }, 2500); // Show loading for 2.5 seconds
-        }
-      }, waitMs);
+        }, 0);
+      } else {
+        // Show the high-quality loading screen immediately
+        setShowPostLoginLoading(true);
+        window.setTimeout(() => {
+          navigate(defaultLandingPage || "/", { replace: true });
+        }, 3500); // Increased to 3.5 seconds for better impact
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Invalid username or password"
