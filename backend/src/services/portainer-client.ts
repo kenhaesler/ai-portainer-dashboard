@@ -94,8 +94,14 @@ function isPortainerFailure(error: unknown): boolean {
 }
 
 // Per-endpoint circuit breakers — prevents one failing endpoint from cascading to all
-const breakers = new Map<string, CircuitBreaker>();
+interface BreakerEntry {
+  breaker: CircuitBreaker;
+  lastUsed: number;
+}
+const breakers = new Map<string, BreakerEntry>();
 const ENDPOINT_PATH_RE = /\/api\/endpoints\/(\d+)\//;
+const BREAKER_PRUNE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const BREAKER_MAX_IDLE_MS = 60 * 60 * 1000; // 1 hour
 
 function extractBreakerKey(path: string): string {
   const match = path.match(ENDPOINT_PATH_RE);
@@ -104,25 +110,59 @@ function extractBreakerKey(path: string): string {
 
 function getBreaker(path: string): CircuitBreaker {
   const key = extractBreakerKey(path);
-  let breaker = breakers.get(key);
-  if (!breaker) {
-    const config = getConfig();
-    breaker = new CircuitBreaker({
-      name: `portainer-api:${key}`,
-      failureThreshold: config.PORTAINER_CB_FAILURE_THRESHOLD,
-      resetTimeoutMs: config.PORTAINER_CB_RESET_TIMEOUT_MS,
-      isFailure: isPortainerFailure,
-    });
-    breakers.set(key, breaker);
+  const entry = breakers.get(key);
+  if (entry) {
+    entry.lastUsed = Date.now();
+    return entry.breaker;
   }
+  const config = getConfig();
+  const breaker = new CircuitBreaker({
+    name: `portainer-api:${key}`,
+    failureThreshold: config.PORTAINER_CB_FAILURE_THRESHOLD,
+    resetTimeoutMs: config.PORTAINER_CB_RESET_TIMEOUT_MS,
+    isFailure: isPortainerFailure,
+  });
+  breakers.set(key, { breaker, lastUsed: Date.now() });
   return breaker;
+}
+
+/** Remove breakers for endpoints not seen in the last hour */
+export function pruneStaleBreakers(): number {
+  const cutoff = Date.now() - BREAKER_MAX_IDLE_MS;
+  let pruned = 0;
+  for (const [key, entry] of breakers) {
+    if (entry.lastUsed < cutoff) {
+      breakers.delete(key);
+      pruned++;
+    }
+  }
+  if (pruned > 0) {
+    log.info({ pruned, remaining: breakers.size }, 'Pruned stale circuit breakers');
+  }
+  return pruned;
+}
+
+// Periodic breaker cleanup timer
+let breakerPruneTimer: ReturnType<typeof setInterval> | undefined;
+
+export function startBreakerPruning(): void {
+  if (breakerPruneTimer) return;
+  breakerPruneTimer = setInterval(pruneStaleBreakers, BREAKER_PRUNE_INTERVAL_MS);
+  breakerPruneTimer.unref(); // Don't block process exit
+}
+
+export function stopBreakerPruning(): void {
+  if (breakerPruneTimer) {
+    clearInterval(breakerPruneTimer);
+    breakerPruneTimer = undefined;
+  }
 }
 
 /** Returns circuit breaker stats aggregated across all endpoints. */
 export function getCircuitBreakerStats() {
   const allStats: Record<string, ReturnType<CircuitBreaker['getStats']>> = {};
-  for (const [key, breaker] of breakers) {
-    allStats[key] = breaker.getStats();
+  for (const [key, entry] of breakers) {
+    allStats[key] = entry.breaker.getStats();
   }
   // Return the worst state as the top-level summary
   const states = Object.values(allStats);

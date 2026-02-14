@@ -22,6 +22,11 @@ class TtlCache {
   private store = new Map<string, CacheEntry<unknown>>();
   private hits = 0;
   private misses = 0;
+  private readonly maxSize: number;
+
+  constructor(maxSize = 5000) {
+    this.maxSize = maxSize;
+  }
 
   get<T>(key: string): T | undefined {
     const entry = this.store.get(key);
@@ -56,6 +61,25 @@ class TtlCache {
       staleAt: now + ttlSeconds * 1000 * staleFraction,
       expiresAt: now + ttlSeconds * 1000,
     });
+    // LRU eviction: remove oldest entries (by staleAt) when over maxSize
+    if (this.store.size > this.maxSize) {
+      this.evictOldest(this.store.size - this.maxSize);
+    }
+  }
+
+  /** Evict `count` entries with the earliest staleAt timestamps */
+  private evictOldest(count: number): void {
+    const entries = [...this.store.entries()]
+      .sort((a, b) => a[1].staleAt - b[1].staleAt);
+    for (let i = 0; i < count && i < entries.length; i++) {
+      this.store.delete(entries[i][0]);
+    }
+    log.debug({ evicted: count, remaining: this.store.size }, 'LRU eviction triggered');
+  }
+
+  /** Current number of entries in the cache */
+  size(): number {
+    return this.store.size;
   }
 
   invalidate(key: string): void {

@@ -75,7 +75,11 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
-vi.mock('../services/monitoring-service.js', () => ({ runMonitoringCycle: vi.fn() }));
+vi.mock('../services/monitoring-service.js', () => ({
+  runMonitoringCycle: vi.fn(),
+  startCooldownSweep: vi.fn(),
+  stopCooldownSweep: vi.fn(),
+}));
 vi.mock('../services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn() }));
 vi.mock('../services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn(),

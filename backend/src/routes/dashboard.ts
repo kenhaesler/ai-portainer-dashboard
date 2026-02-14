@@ -106,7 +106,6 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     return {
       kpis: totals,
       security,
-      endpoints: normalized,
       recentContainers: recentContainers.slice(0, 20),
       timestamp: new Date().toISOString(),
     };
