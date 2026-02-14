@@ -4,7 +4,7 @@ import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod
 import { healthRoutes } from './health.js';
 
 vi.mock('../db/sqlite.js', () => ({ isDbHealthy: vi.fn() }));
-vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn() }));
+vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 vi.mock('../config/index.js', () => ({ getConfig: () => ({ PORTAINER_API_URL: 'http://localhost:9000', PORTAINER_API_KEY: 'test-api-key', OLLAMA_BASE_URL: 'http://localhost:11434' }) }));
 vi.mock('../services/portainer-cache.js', () => ({
   cache: {
@@ -14,10 +14,11 @@ vi.mock('../services/portainer-cache.js', () => ({
 }));
 
 import { isDbHealthy } from '../db/sqlite.js';
-import { isMetricsDbHealthy } from '../db/timescale.js';
+import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { cache } from '../services/portainer-cache.js';
 const mockIsDbHealthy = vi.mocked(isDbHealthy);
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);
+const mockIsMetricsDbReady = vi.mocked(isMetricsDbReady);
 const mockCache = vi.mocked(cache);
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -35,7 +36,8 @@ describe('Health Routes', () => {
   afterAll(async () => { await app.close(); });
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: Redis not configured
+    // Default: migrations applied, Redis not configured
+    mockIsMetricsDbReady.mockReturnValue(true);
     mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
     mockCache.ping.mockResolvedValue(false);
   });
@@ -133,6 +135,16 @@ describe('Health Routes', () => {
       const b = JSON.parse(r.body);
       expect(b.timestamp).toBeDefined();
       expect(new Date(b.timestamp).toISOString()).toBe(b.timestamp);
+    });
+    it('should return degraded metricsDb when connected but migrations not applied', async () => {
+      mockIsDbHealthy.mockReturnValue(true);
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
+      mockIsMetricsDbReady.mockReturnValue(false);
+      mockFetch.mockResolvedValue({ ok: true });
+      const r = await app.inject({ method: 'GET', url: '/health/ready' });
+      const b = JSON.parse(r.body);
+      expect(b.status).toBe('degraded');
+      expect(b.checks.metricsDb.status).toBe('degraded');
     });
     it('should handle all services unhealthy', async () => {
       mockIsDbHealthy.mockReturnValue(false);

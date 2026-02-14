@@ -11,6 +11,8 @@ vi.mock('../db/timescale.js', () => ({
 
 vi.mock('../services/metrics-store.js', () => ({
   getNetworkRates: vi.fn(),
+  isUndefinedTableError: (err: unknown) =>
+    err instanceof Error && 'code' in err && (err as { code: string }).code === '42P01',
 }));
 
 vi.mock('../services/metrics-rollup-selector.js', () => ({
@@ -252,6 +254,34 @@ describe('metrics routes', () => {
   });
 
   describe('error handling', () => {
+    it('should return 503 when metrics table does not exist (42P01)', async () => {
+      const pgError = Object.assign(new Error('relation "metrics" does not exist'), { code: '42P01' });
+      mockQuery.mockRejectedValueOnce(pgError);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/1/abc123?metricType=cpu&timeRange=1h',
+      });
+
+      expect(response.statusCode).toBe(503);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Metrics database not ready');
+    });
+
+    it('should return 503 when anomalies query hits missing table (42P01)', async () => {
+      const pgError = Object.assign(new Error('relation "metrics" does not exist'), { code: '42P01' });
+      mockQuery.mockRejectedValueOnce(pgError);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/anomalies?limit=10',
+      });
+
+      expect(response.statusCode).toBe(503);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Metrics database not ready');
+    });
+
     it('should return 500 when metrics query fails', async () => {
       mockQuery.mockRejectedValueOnce(new Error('DB connection lost'));
 

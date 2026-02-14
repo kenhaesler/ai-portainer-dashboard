@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getMetricsDb } from '../db/timescale.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
-import { getNetworkRates, getAllNetworkRates } from '../services/metrics-store.js';
+import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
@@ -120,6 +120,10 @@ export async function metricsRoutes(fastify: FastifyInstance) {
         data: decimated,
       };
     } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn({ endpointId, containerId }, 'Metrics table not ready — TimescaleDB migrations may not have run');
+        return (reply as any).code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet. TimescaleDB migrations may still be pending.' });
+      }
       log.error({ err, endpointId, containerId }, 'Failed to query metrics');
       return (reply as any).code(500).send({ error: 'Failed to query metrics', details: err instanceof Error ? err.message : 'Unknown error' });
     }
@@ -154,6 +158,10 @@ export async function metricsRoutes(fastify: FastifyInstance) {
 
       return { anomalies: recentMetrics };
     } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn('Metrics table not ready for anomaly query');
+        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to query anomalies');
       return reply.code(500).send({ error: 'Failed to query anomalies', details: msg });
