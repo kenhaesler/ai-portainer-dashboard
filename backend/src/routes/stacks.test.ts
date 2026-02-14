@@ -8,6 +8,7 @@ vi.mock('../services/portainer-client.js', () => ({
   getStacks: vi.fn(),
   getStack: vi.fn(),
   getStacksByEndpoint: vi.fn(),
+  getContainers: vi.fn(),
 }));
 
 vi.mock('../services/portainer-cache.js', () => ({
@@ -30,6 +31,7 @@ import * as portainer from '../services/portainer-client.js';
 const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
 const mockGetStack = vi.mocked(portainer.getStack);
 const mockGetStacksByEndpoint = vi.mocked(portainer.getStacksByEndpoint);
+const mockGetContainers = vi.mocked(portainer.getContainers);
 
 function buildApp() {
   const app = Fastify();
@@ -69,6 +71,18 @@ const fakeStack = (id: number, name: string, endpointId = 1) => ({
   EndpointId: endpointId,
   Status: 1,
   Env: [],
+});
+
+const fakeContainer = (id: string, labels: Record<string, string> = {}) => ({
+  Id: id,
+  Names: [`/${id}`],
+  Image: 'test:latest',
+  State: 'running',
+  Status: 'Up 1 hour',
+  Created: 0,
+  Ports: [],
+  Labels: labels,
+  NetworkSettings: { Networks: {} },
 });
 
 describe('stacks routes', () => {
@@ -176,5 +190,101 @@ describe('stacks routes', () => {
     expect(res.statusCode).toBe(502);
     const body = JSON.parse(res.body);
     expect(body.error).toBe('Unable to fetch stack details from Portainer');
+  });
+
+  // --- compose-label fallback tests ---
+
+  it('infers compose stacks from container labels when Portainer returns zero stacks', async () => {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'local')] as any);
+    mockGetStacksByEndpoint.mockResolvedValueOnce([] as any);
+    mockGetContainers.mockResolvedValueOnce([
+      fakeContainer('c1', { 'com.docker.compose.project': 'my-app' }),
+      fakeContainer('c2', { 'com.docker.compose.project': 'my-app' }),
+      fakeContainer('c3', { 'com.docker.compose.project': 'other-app' }),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stacks' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(2);
+    const names = body.map((s: any) => s.name).sort();
+    expect(names).toEqual(['my-app', 'other-app']);
+    const myApp = body.find((s: any) => s.name === 'my-app');
+    expect(myApp.source).toBe('compose-label');
+    expect(myApp.containerCount).toBe(2);
+    expect(myApp.id).toBeLessThan(0); // synthetic negative ID
+  });
+
+  it('returns both Portainer and inferred stacks without duplicates', async () => {
+    mockGetEndpoints.mockResolvedValue([
+      fakeEndpoint(1, 'managed'),
+      fakeEndpoint(2, 'unmanaged'),
+    ] as any);
+    mockGetStacksByEndpoint
+      .mockResolvedValueOnce([fakeStack(10, 'web-app', 1)] as any)
+      .mockResolvedValueOnce([] as any);
+    mockGetContainers.mockResolvedValueOnce([
+      fakeContainer('c1', { 'com.docker.compose.project': 'infra' }),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stacks' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(2);
+    expect(body.find((s: any) => s.name === 'web-app').source).toBe('portainer');
+    expect(body.find((s: any) => s.name === 'infra').source).toBe('compose-label');
+  });
+
+  it('deduplicates when Portainer stack name matches compose project label', async () => {
+    mockGetEndpoints.mockResolvedValue([
+      fakeEndpoint(1, 'ep1'),
+      fakeEndpoint(2, 'ep2'),
+    ] as any);
+    mockGetStacksByEndpoint
+      .mockResolvedValueOnce([fakeStack(10, 'my-app', 1)] as any)
+      .mockResolvedValueOnce([] as any);
+    mockGetContainers.mockResolvedValueOnce([
+      fakeContainer('c1', { 'com.docker.compose.project': 'my-app' }),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stacks' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(1);
+    expect(body[0].source).toBe('portainer');
+  });
+
+  it('skips container fetch for endpoints that have Portainer stacks', async () => {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'managed')] as any);
+    mockGetStacksByEndpoint.mockResolvedValueOnce([fakeStack(1, 'web-app', 1)] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stacks' });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetContainers).not.toHaveBeenCalled();
+  });
+
+  it('recognizes com.docker.stack.namespace label', async () => {
+    mockGetEndpoints.mockResolvedValue([fakeEndpoint(1, 'local')] as any);
+    mockGetStacksByEndpoint.mockResolvedValueOnce([] as any);
+    mockGetContainers.mockResolvedValueOnce([
+      fakeContainer('c1', { 'com.docker.stack.namespace': 'swarm-stack' }),
+    ] as any);
+
+    const app = buildApp();
+    const res = await app.inject({ method: 'GET', url: '/api/stacks' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toHaveLength(1);
+    expect(body[0].name).toBe('swarm-stack');
+    expect(body[0].source).toBe('compose-label');
   });
 });

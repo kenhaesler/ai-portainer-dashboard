@@ -58,6 +58,8 @@ export interface NormalizedStack {
   createdAt?: number;
   updatedAt?: number;
   envCount: number;
+  source: 'portainer' | 'compose-label';
+  containerCount?: number;
 }
 
 export interface NormalizedNetwork {
@@ -216,7 +218,25 @@ export function normalizeStack(s: Stack): NormalizedStack {
     createdAt: s.CreationDate,
     updatedAt: s.UpdateDate,
     envCount: s.Env?.length || 0,
+    source: 'portainer',
   };
+}
+
+/** Label keys used to detect compose project membership on containers. */
+export const COMPOSE_PROJECT_LABELS = [
+  'com.docker.compose.project',
+  'com.docker.stack.namespace',
+  'io.portainer.stack.name',
+] as const;
+
+/** Simple string hash → negative number to avoid collision with Portainer IDs. */
+export function syntheticStackId(endpointId: number, projectName: string): number {
+  let hash = 0;
+  const key = `${endpointId}:${projectName}`;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  }
+  return -Math.abs(hash || 1);
 }
 
 export function normalizeNetwork(
