@@ -15,7 +15,10 @@ Project-specific security requirements for the AI Portainer Dashboard. Reference
 - All API inputs validated with Zod schemas at route level
 - Parameterized SQL queries only — never concatenate user input
 - Sanitize user content rendered in frontend (no raw `dangerouslySetInnerHTML`)
-- CSP headers for production deployments
+- CSP headers set in `frontend/nginx.conf` (single source of truth — backend does not set CSP)
+  - `script-src 'self'` — no `unsafe-inline` (React app is fully bundled)
+  - `style-src 'self' 'unsafe-inline'` — required by Tailwind CSS / Framer Motion runtime styles
+  - `connect-src 'self' ws: wss:` — allows both unencrypted and encrypted WebSockets; for TLS-only deployments remove `ws:` and keep `wss:` only
 
 ## LLM Prompt Injection Guard
 
@@ -41,6 +44,8 @@ Configurable: `LLM_PROMPT_GUARD_STRICT` env var.
 - External API calls respect `PORTAINER_VERIFY_SSL` setting
 - WebSocket connections authenticated via same JWT mechanism as REST
 - CORS via `@fastify/cors` — no wildcard origins in production
+- **Security header ownership**: nginx is the single source of truth for browser-facing headers (`CSP`, `X-Frame-Options`, `X-XSS-Protection`). The backend sets API-level headers only (`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`)
+- **WebSocket protocol**: CSP currently allows both `ws:` and `wss:` to support deployments without TLS. For production with TLS, edit `frontend/nginx.conf` and remove `ws:` from `connect-src`
 
 ## Security Regression Tests
 

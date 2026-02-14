@@ -50,6 +50,8 @@ jobs:
           file: ./backend/Dockerfile
           tags: backend-smoke-test:latest
           load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Smoke test — validate tcpdump shared libraries
         run: docker run --rm backend-smoke-test:latest tcpdump --version
@@ -64,6 +66,8 @@ jobs:
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
           sbom: true
           provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   docker-frontend:
     name: Frontend Image
@@ -111,3 +115,5 @@ jobs:
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
           sbom: true
           provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
