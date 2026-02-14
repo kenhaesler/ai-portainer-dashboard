@@ -69,6 +69,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { LlmModel, LlmTestPromptResponse } from '@/hooks/use-llm-models';
 
 const LazyAiFeedbackPanel = lazy(() => import('@/pages/settings-ai-feedback').then((m) => ({ default: m.AiFeedbackPanel })));
+import { getModelUseCase } from './model-use-cases';
 
 /** Keys that belong to LLM configuration (excluded from parent auto-save). */
 export const LLM_SETTING_KEYS = DEFAULT_SETTINGS.llm.map((s) => s.key);
@@ -473,6 +474,18 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           {!modelsLoading && models.length === 0 && (
             <p className="text-xs text-amber-500">Could not fetch models. Enter model name manually or click Scan Models.</p>
           )}
+          {selectedModel && (() => {
+            const useCase = getModelUseCase(selectedModel);
+            return (
+              <div className="mt-2 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <span className={cn('text-xs font-semibold', useCase.color)}>{useCase.label}</span>
+                  <span className="text-xs text-muted-foreground"> — {useCase.description}</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Temperature */}
