@@ -180,13 +180,13 @@ export default function HomePage() {
 
       {/* KPI Cards */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : data ? (
-        <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-5" stagger={0.05}>
           <MotionReveal>
             <TiltCard>
               <KpiCard
