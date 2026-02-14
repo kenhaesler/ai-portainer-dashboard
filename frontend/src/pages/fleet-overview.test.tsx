@@ -25,6 +25,7 @@ vi.mock('@/hooks/use-force-refresh', () => ({
 
 import { useEndpoints } from '@/hooks/use-endpoints';
 import type { Endpoint } from '@/hooks/use-endpoints';
+import { useUiStore } from '@/stores/ui-store';
 
 const mockUseEndpoints = vi.mocked(useEndpoints);
 
@@ -69,6 +70,7 @@ describe('FleetOverviewPage — Edge metadata', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockNavigate.mockClear();
+    useUiStore.setState({ pageViewModes: {} });
   });
 
   it('renders Edge Agent Standard badge for Edge endpoints', () => {

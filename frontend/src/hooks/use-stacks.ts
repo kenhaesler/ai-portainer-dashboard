@@ -10,6 +10,8 @@ export interface Stack {
   createdAt?: number;
   updatedAt?: number;
   envCount: number;
+  source?: 'portainer' | 'compose-label';
+  containerCount?: number;
 }
 
 export function useStacks() {

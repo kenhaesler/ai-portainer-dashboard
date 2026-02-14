@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Layers, LayoutGrid, List, AlertTriangle } from 'lucide-react';
+import { Layers, LayoutGrid, List, AlertTriangle, Search } from 'lucide-react';
 import { useStacks, type Stack } from '@/hooks/use-stacks';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -11,15 +11,25 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
-
-type ViewMode = 'grid' | 'table';
 
 interface StackWithEndpoint extends Stack {
   endpointName: string;
 }
 
+function DiscoveredBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+      <Search className="h-3 w-3" />
+      Discovered
+    </span>
+  );
+}
+
 function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () => void }) {
+  const isInferred = stack.source === 'compose-label';
+
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return 'N/A';
     return new Date(timestamp * 1000).toLocaleDateString();
@@ -55,7 +65,7 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
           </div>
           <div>
             <h3 className="font-semibold">{stack.name}</h3>
-            <p className="text-xs text-muted-foreground">ID: {stack.id}</p>
+            {isInferred ? <DiscoveredBadge /> : <p className="text-xs text-muted-foreground">ID: {stack.id}</p>}
           </div>
         </div>
         <StatusBadge status={stack.status} />
@@ -76,8 +86,8 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
             <p className="mt-1 text-sm font-medium">{getStackType(stack.type)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Env Vars</p>
-            <p className="mt-1 text-sm font-medium">{stack.envCount}</p>
+            <p className="text-xs text-muted-foreground">{isInferred ? 'Containers' : 'Env Vars'}</p>
+            <p className="mt-1 text-sm font-medium">{isInferred ? stack.containerCount ?? 0 : stack.envCount}</p>
           </div>
         </div>
 
@@ -97,7 +107,8 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
 }
 
 export default function StackOverviewPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const viewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
+  const setViewMode = useUiStore((s) => s.setPageViewMode);
   const navigate = useNavigate();
 
   const { data: stacks, isLoading: stacksLoading, isError, error, refetch, isFetching } = useStacks();
@@ -142,9 +153,12 @@ export default function StackOverviewPage() {
       accessorKey: 'name',
       header: 'Name',
       cell: ({ row }) => (
-        <div>
+        <div className="flex items-center gap-2">
           <span className="font-medium">{row.original.name}</span>
-          <span className="ml-2 text-xs text-muted-foreground">(ID: {row.original.id})</span>
+          {row.original.source === 'compose-label'
+            ? <DiscoveredBadge />
+            : <span className="text-xs text-muted-foreground">(ID: {row.original.id})</span>
+          }
         </div>
       ),
     },
@@ -169,8 +183,11 @@ export default function StackOverviewPage() {
       cell: ({ getValue }) => getStackType(getValue<number>()),
     },
     {
-      accessorKey: 'envCount',
-      header: 'Env Vars',
+      id: 'envOrContainers',
+      header: 'Details',
+      cell: ({ row }) => row.original.source === 'compose-label'
+        ? `${row.original.containerCount ?? 0} containers`
+        : `${row.original.envCount} env vars`,
     },
     {
       accessorKey: 'createdAt',
@@ -249,7 +266,7 @@ export default function StackOverviewPage() {
           </div>
           <div className="flex items-center rounded-lg border p-1">
             <button
-              onClick={() => setViewMode('grid')}
+              onClick={() => setViewMode('stacks', 'grid')}
               className={cn(
                 'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                 viewMode === 'grid'
@@ -261,7 +278,7 @@ export default function StackOverviewPage() {
               <LayoutGrid className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setViewMode('table')}
+              onClick={() => setViewMode('stacks', 'table')}
               className={cn(
                 'inline-flex items-center justify-center rounded-md p-2 transition-colors',
                 viewMode === 'table'
@@ -286,9 +303,9 @@ export default function StackOverviewPage() {
       ) : stacksWithEndpoints.length === 0 ? (
         <div className="rounded-lg border bg-card p-8 text-center">
           <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-4 font-medium">No stacks found</p>
+          <p className="mt-4 font-medium">No stacks or compose projects detected</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            There are no Docker Stacks deployed across your endpoints
+            There are no Docker Stacks or Compose projects deployed across your endpoints
           </p>
         </div>
       ) : viewMode === 'grid' ? (
