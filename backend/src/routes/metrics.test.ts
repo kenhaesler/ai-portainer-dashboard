@@ -279,7 +279,7 @@ describe('metrics routes', () => {
       expect(body.error).toBe('Failed to query anomalies');
     });
 
-    it('should return 500 when network rates fail', async () => {
+    it('should fall back to in-memory tracker when TimescaleDB fails', async () => {
       mockGetNetworkRates.mockRejectedValueOnce(new Error('store error'));
 
       const response = await app.inject({
@@ -287,9 +287,10 @@ describe('metrics routes', () => {
         url: '/api/metrics/network-rates/1',
       });
 
-      expect(response.statusCode).toBe(500);
+      // Falls back gracefully instead of returning 500
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Failed to fetch network rates');
+      expect(body.rates).toBeDefined();
     });
   });
 

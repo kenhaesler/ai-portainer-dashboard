@@ -1,7 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { getMetricsDb } from '../db/timescale.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
-import { getNetworkRates } from '../services/metrics-store.js';
+import { getNetworkRates, getAllNetworkRates } from '../services/metrics-store.js';
+import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
 import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
@@ -166,16 +167,43 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async (request, reply) => {
+  }, async (request) => {
     const { endpointId } = request.params as { endpointId: string };
+    const eid = Number(endpointId);
     try {
-      const rates = await getNetworkRates(Number(endpointId));
-      return { rates };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      log.error({ err, endpointId }, 'Failed to fetch network rates');
-      return reply.code(500).send({ error: 'Failed to fetch network rates', details: msg });
+      const rates = await getNetworkRates(eid);
+      // If TimescaleDB returned data, use it; otherwise fall through to live tracker
+      if (Object.keys(rates).length > 0) {
+        return { rates };
+      }
+    } catch {
+      // TimescaleDB unavailable — fall through to in-memory tracker
+      log.debug({ endpointId }, 'TimescaleDB unavailable for network rates, using in-memory tracker');
     }
+    // Fallback: in-memory rates computed from scheduler's Docker stats collection
+    const rates = getRatesForEndpoint(eid);
+    return { rates };
+  });
+
+  // Network rates across all endpoints (for "All endpoints" view)
+  fastify.get('/api/metrics/network-rates', {
+    schema: {
+      tags: ['Metrics'],
+      summary: 'Get network I/O rates for all containers across all endpoints',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    try {
+      const rates = await getAllNetworkRates();
+      if (Object.keys(rates).length > 0) {
+        return { rates };
+      }
+    } catch {
+      log.debug('TimescaleDB unavailable for all network rates, using in-memory tracker');
+    }
+    const rates = getAllRates();
+    return { rates };
   });
 
   // AI-powered metrics summary (SSE streaming)

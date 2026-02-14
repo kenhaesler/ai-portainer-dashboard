@@ -4,6 +4,7 @@ import { createChildLogger } from '../utils/logger.js';
 import { runMonitoringCycle } from '../services/monitoring-service.js';
 import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
+import { recordNetworkSample } from '../services/network-rate-tracker.js';
 import { getEndpoints, getContainers } from '../services/portainer-client.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
@@ -74,6 +75,8 @@ async function collectEndpointMetrics(
       continue;
     }
     const { stats, container, containerName } = result.value;
+    // Feed in-memory rate tracker (works without TimescaleDB)
+    recordNetworkSample(endpointId, container.Id, stats.networkRxBytes, stats.networkTxBytes);
     metrics.push(
       {
         endpoint_id: endpointId,

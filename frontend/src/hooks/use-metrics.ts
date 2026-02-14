@@ -152,9 +152,11 @@ export function useNetworkRates(endpointId?: number) {
   const isPageVisible = usePageVisibility();
 
   return useQuery<{ rates: Record<string, NetworkRate> }>({
-    queryKey: ['metrics', 'network-rates', endpointId],
-    queryFn: () => api.get(`/api/metrics/network-rates/${endpointId}`),
-    enabled: Boolean(endpointId),
+    queryKey: ['metrics', 'network-rates', endpointId ?? 'all'],
+    queryFn: () =>
+      endpointId
+        ? api.get(`/api/metrics/network-rates/${endpointId}`)
+        : api.get('/api/metrics/network-rates'),
     refetchInterval: getHeavyRefetchInterval({
       defaultIntervalMs: 60_000,
       potatoMode,
