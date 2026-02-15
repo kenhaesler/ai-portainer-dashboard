@@ -30,7 +30,7 @@ import { SpotlightCard } from '@/components/shared/spotlight-card';
 export default function HomePage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
-  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(10);
+  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);

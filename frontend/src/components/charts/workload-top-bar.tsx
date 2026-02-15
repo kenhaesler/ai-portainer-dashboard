@@ -23,8 +23,8 @@ interface ChartRow {
 function buildChartData(endpoints: WorkloadTopBarProps['endpoints']): ChartRow[] {
   if (!endpoints || endpoints.length === 0) return [];
   const sorted = [...endpoints].sort((a, b) => b.total - a.total);
-  const top = sorted.slice(0, 10);
-  const rest = sorted.slice(10);
+  const top = sorted.slice(0, 8);
+  const rest = sorted.slice(8);
 
   const rows: ChartRow[] = top.map((ep) => ({
     label: ep.name,
