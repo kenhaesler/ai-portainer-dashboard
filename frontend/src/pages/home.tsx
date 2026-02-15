@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert, Search } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -34,6 +34,7 @@ export default function HomePage() {
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
+  const [containerSearch, setContainerSearch] = useState('');
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -382,15 +383,30 @@ export default function HomePage() {
         <MotionReveal>
           <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Recent Containers
-              </h3>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Recent Containers
+                </h3>
+                <div className="relative w-full sm:w-64">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    data-testid="container-search"
+                    type="text"
+                    placeholder="Filter containers..."
+                    value={containerSearch}
+                    onChange={(e) => setContainerSearch(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background py-2 pl-9 pr-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
               <DataTable
                 columns={containerColumns}
                 data={data.recentContainers}
                 searchKey="name"
                 searchPlaceholder="Filter containers..."
-                pageSize={10}
+                pageSize={50}
+                hideSearch
+                externalSearchValue={containerSearch}
               />
             </div>
           </SpotlightCard>
