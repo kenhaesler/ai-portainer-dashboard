@@ -118,7 +118,7 @@ interface OctagonCardProps {
 function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps) {
   const colors = HEALTH_COLORS[level];
   const pct = total > 0 ? Math.round((running / total) * 100) : 0;
-  const shadowId = `octagon-shadow-${level}`;
+  const blurId = `blur-${level}`;
 
   return (
     <motion.button
@@ -129,7 +129,7 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
       title={`${name} — ${running}/${total} running (${pct}%)`}
     >
       <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 group-hover:scale-105">
-        {/* SVG octagon with rounded corners and octagonal shadow */}
+        {/* SVG with layered octagons for shadow effect */}
         <svg
           width={SIZE}
           height={SIZE}
@@ -138,27 +138,28 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
           aria-hidden="true"
         >
           <defs>
-            {/* Define octagonal drop shadow filter */}
-            <filter id={shadowId} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceAlpha" stdDeviation="4" />
-              <feOffset dx="0" dy="4" result="offsetblur" />
-              <feComponentTransfer>
-                <feFuncA type="linear" slope="0.35" />
-              </feComponentTransfer>
-              <feMerge>
-                <feMergeNode />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
+            {/* Gaussian blur for shadow layer */}
+            <filter id={blurId} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
             </filter>
           </defs>
 
-          {/* Main octagon with shadow */}
+          {/* Shadow layer - blurred octagon offset downward */}
+          <g transform="translate(0, 4)" opacity="0.4" filter={`url(#${blurId})`}>
+            <path d={SVG_PATH} fill={colors.shadow} />
+          </g>
+
+          {/* Second shadow layer - subtle glow */}
+          <g opacity="0.2" filter={`url(#${blurId})`}>
+            <path d={SVG_PATH} fill={colors.shadow} />
+          </g>
+
+          {/* Main octagon on top */}
           <path
             d={SVG_PATH}
             fill={colors.fill}
             stroke={colors.stroke}
             strokeWidth={1.5}
-            filter={`url(#${shadowId})`}
           />
         </svg>
 
