@@ -883,8 +883,8 @@ aside nav:hover {
 }
 
 .apple-dark {
-  & button:not(aside button),
-  & [role="button"]:not(aside [role="button"]) {
+  & button:not(aside button):not(.octagon-button),
+  & [role="button"]:not(aside [role="button"]):not(.octagon-button) {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
@@ -2063,4 +2063,22 @@ body::after {
     border-color: var(--color-border);
     background: var(--color-card);
   }
+}
+
+/* ====== OCTAGON BUTTON OVERRIDE ====== */
+/* Force octagon buttons to have no background in all states and themes */
+.octagon-button,
+.octagon-button:hover,
+.octagon-button:focus,
+.octagon-button:active {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+}
+
+.apple-light .octagon-button:hover,
+.apple-dark .octagon-button:hover {
+  background: transparent !important;
+  border-color: transparent !important;
 }
