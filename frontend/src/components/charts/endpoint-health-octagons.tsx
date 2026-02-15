@@ -123,15 +123,17 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
     <motion.button
       variants={itemVariants}
       onClick={onClick}
-      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&:hover]:bg-transparent [&:focus]:bg-transparent [&:active]:bg-transparent"
+      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 !bg-transparent hover:!bg-transparent focus:!bg-transparent active:!bg-transparent before:!hidden after:!hidden"
       data-testid={`octagon-${name}`}
       style={{
-        background: 'transparent',
+        background: 'transparent !important',
         border: 'none',
+        boxShadow: 'none',
+        outline: 'none',
         WebkitTapHighlightColor: 'transparent'
       }}
     >
-      <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 hover:scale-105">
+      <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 hover:scale-105 cursor-pointer">
         {/* SVG with layered octagons for shadow effect */}
         <svg
           width={SIZE}
