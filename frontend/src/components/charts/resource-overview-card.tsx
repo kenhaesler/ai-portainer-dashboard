@@ -22,17 +22,13 @@ export function computeResourceAggregates(
     return { cpuPercent: 0, memoryPercent: 0 };
   }
 
-  const totalCpu = endpoints.reduce((sum, ep) => sum + (ep.totalCpu ?? 0), 0);
-  const totalMemory = endpoints.reduce((sum, ep) => sum + (ep.totalMemory ?? 0), 0);
-  const count = endpoints.length;
-
-  // totalCpu and totalMemory are already percentages (0-100), so just average them
-  const avgCpu = count > 0 ? totalCpu / count : 0;
-  const avgMemory = count > 0 ? totalMemory / count : 0;
-
+  // TODO: Implement proper CPU/memory usage aggregation
+  // Current endpoint data only has totalCpu (cores) and totalMemory (bytes) as capacity values,
+  // not actual usage percentages. Proper implementation requires aggregating container stats.
+  // For now, return 0 to avoid showing incorrect values.
   return {
-    cpuPercent: Math.min(100, Math.round(avgCpu * 100) / 100),
-    memoryPercent: Math.min(100, Math.round(avgMemory * 100) / 100),
+    cpuPercent: 0,
+    memoryPercent: 0,
   };
 }
 

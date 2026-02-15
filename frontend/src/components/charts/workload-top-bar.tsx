@@ -132,7 +132,7 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
           <YAxis
             type="category"
             dataKey="label"
-            tick={{ fontSize: 11, fill: 'hsl(var(--foreground) / 0.9)' }}
+            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
             axisLine={false}
             tickLine={false}
             width={160}
