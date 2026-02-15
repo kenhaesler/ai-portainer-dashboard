@@ -147,9 +147,11 @@ export function AppLayout() {
   useKeyboardShortcut(
     [{ key: 'k', metaKey: true }, { key: 'k', ctrlKey: true }],
     () => {
-      setCommandPaletteOpen(!commandPaletteOpen);
+      // Read fresh value from store to avoid stale closure
+      const currentOpen = useUiStore.getState().commandPaletteOpen;
+      setCommandPaletteOpen(!currentOpen);
     },
-    [commandPaletteOpen],
+    [setCommandPaletteOpen],
   );
 
   // Page transition direction
