@@ -1,8 +1,9 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useDashboardResources } from '@/hooks/use-dashboard-resources';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -15,7 +16,7 @@ import { SmartRefreshControls } from '@/components/shared/smart-refresh-controls
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
-import { EndpointHealthTreemap } from '@/components/charts/endpoint-health-treemap';
+import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
 import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
 import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
 import { ResourceOverviewCard } from '@/components/charts/resource-overview-card';
@@ -24,17 +25,32 @@ import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
-import { NlqSearchBar } from '@/components/shared/nlq-search-bar';
+import { ContainerSmartSearch } from '@/components/shared/container-smart-search';
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useDashboard();
+  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval, enabled, toggle } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
+  const [containerSearch, setContainerSearch] = useState('');
+
+  // Filter containers based on search
+  const filteredContainers = useMemo(() => {
+    if (!data || !containerSearch) return data?.recentContainers ?? [];
+    const searchLower = containerSearch.toLowerCase();
+    return data.recentContainers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(searchLower) ||
+        c.image.toLowerCase().includes(searchLower) ||
+        c.state.toLowerCase().includes(searchLower) ||
+        c.status.toLowerCase().includes(searchLower),
+    );
+  }, [data, containerSearch]);
 
   // Track the last successful data update time
   const lastUpdatedRef = useRef<Date | null>(null);
@@ -116,6 +132,16 @@ export default function HomePage() {
       totalMemory: ep.totalMemory,
     }));
   }, [endpoints]);
+
+  const stackChartData = useMemo(() => {
+    if (!resourcesData?.topStacks) return [];
+    return resourcesData.topStacks.map((stack) => ({
+      name: stack.name,
+      running: stack.runningCount,
+      stopped: stack.stoppedCount,
+      total: stack.containerCount,
+    }));
+  }, [resourcesData]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
@@ -352,7 +378,7 @@ export default function HomePage() {
                   Endpoint Health
                 </h3>
                 <div className="flex-1 min-h-0">
-                  <EndpointHealthTreemap endpoints={endpointChartData} />
+                  <EndpointHealthOctagons endpoints={endpointChartData} />
                 </div>
               </div>
             </SpotlightCard>
@@ -361,18 +387,18 @@ export default function HomePage() {
       ) : null}
 
       {/* Resource Overview + Top Workloads + Fleet Summary */}
-      {isLoading ? (
+      {isLoading || isLoadingResources ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <SkeletonCard className="h-[88px]" />
             <SkeletonCard className="h-[88px]" />
           </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <SkeletonCard className="h-[420px] lg:col-span-2" />
-            <SkeletonCard className="h-[420px]" />
+            <SkeletonCard className="h-[520px] lg:col-span-2" />
+            <SkeletonCard className="h-[520px]" />
           </div>
         </div>
-      ) : data ? (
+      ) : data && resourcesData ? (
         <div className="space-y-4">
           <MotionReveal>
             <SpotlightCard>
@@ -384,19 +410,25 @@ export default function HomePage() {
           <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
             <MotionReveal className="lg:col-span-2">
               <SpotlightCard>
-                <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                     Top Workloads
                   </h3>
+                  <div className="mb-4">
+                    <ResourceOverviewCard
+                      cpuPercent={resourcesData.fleetCpuPercent}
+                      memoryPercent={resourcesData.fleetMemoryPercent}
+                    />
+                  </div>
                   <div className="flex-1 min-h-0 overflow-y-auto">
-                    <WorkloadTopBar endpoints={endpointChartData} />
+                    <WorkloadTopBar endpoints={stackChartData} />
                   </div>
                 </div>
               </SpotlightCard>
             </MotionReveal>
             <MotionReveal>
               <SpotlightCard>
-                <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                     Fleet Summary
                   </h3>
@@ -413,18 +445,6 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      {/* NLQ Search Bar */}
-      <MotionReveal>
-        <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-              AI Search
-            </h3>
-            <NlqSearchBar />
-          </div>
-        </SpotlightCard>
-      </MotionReveal>
-
       {/* Recent Containers Table */}
       {isLoading ? (
         <SkeletonCard className="h-[400px]" />
@@ -435,34 +455,40 @@ export default function HomePage() {
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Recent Containers
               </h3>
+              {/* Smart search with filtering + LLM */}
+              <div className="mb-6">
+                <ContainerSmartSearch
+                  value={containerSearch}
+                  onChange={setContainerSearch}
+                  onClear={() => setContainerSearch('')}
+                />
+              </div>
               {/* Desktop table */}
               <div className="hidden sm:block">
                 <DataTable
                   columns={containerColumns}
-                  data={data.recentContainers}
-                  searchKey="name"
-                  searchPlaceholder="Filter containers..."
+                  data={filteredContainers}
                   pageSize={10}
                 />
               </div>
               {/* Mobile card list */}
               <div className="block sm:hidden space-y-3">
-                {data.recentContainers.slice(0, 10).map((container) => (
-                  <button
-                    key={`${container.endpointId}-${container.id}`}
-                    onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-                    className="flex w-full items-center gap-3 rounded-xl border bg-card/60 p-4 text-left transition-colors hover:bg-accent/50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{container.name}</p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(container.image, 40)}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <StatusBadge status={container.state} />
-                        <span className="text-xs text-muted-foreground">{container.endpointName}</span>
+                {filteredContainers.slice(0, 10).map((container) => (
+                    <button
+                      key={`${container.endpointId}-${container.id}`}
+                      onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+                      className="flex w-full items-center gap-3 rounded-xl border bg-card/60 p-4 text-left transition-colors hover:bg-accent/50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{container.name}</p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(container.image, 40)}</p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <StatusBadge status={container.state} />
+                          <span className="text-xs text-muted-foreground">{container.endpointName}</span>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))}
               </div>
             </div>
           </SpotlightCard>

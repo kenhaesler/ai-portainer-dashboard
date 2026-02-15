@@ -95,16 +95,13 @@ export function CommandPalette() {
         activeElement.isContentEditable
       );
 
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setOpen(!open);
-      }
+      // Only handle "/" shortcut here - Cmd+K is handled in app-layout.tsx
       if (e.key === '/' && !isEditable) {
         e.preventDefault();
         setOpen(true);
       }
     },
-    [open, setOpen]
+    [setOpen]
   );
 
   useEffect(() => {

@@ -876,15 +876,15 @@ aside nav:hover {
   }
 
   & button:not(.bg-primary):not(.bg-destructive):hover,
-  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):not(.octagon-button):hover {
     background: rgba(99, 102, 241, 0.1) !important;
     border-color: rgba(99, 102, 241, 0.3) !important;
   }
 }
 
 .apple-dark {
-  & button:not(aside button),
-  & [role="button"]:not(aside [role="button"]) {
+  & button:not(aside button):not(.octagon-button),
+  & [role="button"]:not(aside [role="button"]):not(.octagon-button) {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
@@ -904,7 +904,7 @@ aside nav:hover {
   }
 
   & button:not(.bg-primary):not(.bg-destructive):hover,
-  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):not(.octagon-button):hover {
     background: rgba(129, 140, 248, 0.15) !important;
     border-color: rgba(129, 140, 248, 0.3) !important;
   }
@@ -2063,4 +2063,22 @@ body::after {
     border-color: var(--color-border);
     background: var(--color-card);
   }
+}
+
+/* ====== OCTAGON BUTTON OVERRIDE ====== */
+/* Force octagon buttons to have no background in all states and themes */
+.octagon-button,
+.octagon-button:hover,
+.octagon-button:focus,
+.octagon-button:active {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+}
+
+.apple-light .octagon-button:hover,
+.apple-dark .octagon-button:hover {
+  background: transparent !important;
+  border-color: transparent !important;
 }

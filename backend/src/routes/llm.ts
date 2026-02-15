@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'crypto';
 import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../config/index.js';
 import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
@@ -69,8 +70,12 @@ export async function llmRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const llmConfig = await getEffectiveLlmConfig();
+    const config = getConfig();
     const { query } = request.body;
     const startTime = Date.now();
+
+    // Use AI_SEARCH_MODEL if set, fall back to model from settings/env (Ollama only)
+    let searchModel = config.AI_SEARCH_MODEL;
 
     const guardResult = isPromptInjection(query);
     if (guardResult.blocked) {
@@ -92,36 +97,33 @@ export async function llmRoutes(fastify: FastifyInstance) {
 
       let fullResponse = '';
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await llmFetch(llmConfig.customEndpointUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-          },
-          body: JSON.stringify({
-            model: llmConfig.model,
-            messages,
-            stream: false,
-            format: 'json',
-          }),
-        });
+      // Ollama only: try AI_SEARCH_MODEL, fall back to settings model if not available
+      const ollama = await createConfiguredOllamaClient(llmConfig);
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json() as any;
-        fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
-      } else {
-        const ollama = await createConfiguredOllamaClient(llmConfig);
+      try {
         const response = await ollama.chat({
-          model: llmConfig.model,
+          model: searchModel,
           messages,
           stream: false,
           format: 'json',
         });
         fullResponse = response.message?.content || '';
+      } catch (modelErr) {
+        // If model not found, fall back to the model from settings
+        const errorMsg = modelErr instanceof Error ? modelErr.message : String(modelErr);
+        if (errorMsg.includes('not found') && searchModel !== llmConfig.model) {
+          log.warn({ searchModel, fallbackModel: llmConfig.model }, 'AI_SEARCH_MODEL not found in Ollama, falling back to settings model');
+          searchModel = llmConfig.model;
+          const response = await ollama.chat({
+            model: searchModel,
+            messages,
+            stream: false,
+            format: 'json',
+          });
+          fullResponse = response.message?.content || '';
+        } else {
+          throw modelErr;
+        }
       }
 
       // Record success trace
@@ -131,7 +133,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       try {
         await insertLlmTrace({
           trace_id: randomUUID(),
-          model: llmConfig.model,
+          model: searchModel,
           prompt_tokens: promptTokens,
           completion_tokens: completionTokens,
           total_tokens: promptTokens + completionTokens,
@@ -175,7 +177,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       try {
         await insertLlmTrace({
           trace_id: randomUUID(),
-          model: llmConfig.model,
+          model: searchModel,
           prompt_tokens: 0,
           completion_tokens: 0,
           total_tokens: 0,

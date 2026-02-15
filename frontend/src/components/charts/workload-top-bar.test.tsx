@@ -25,7 +25,7 @@ describe('buildChartData', () => {
     expect(buildChartData([])).toEqual([]);
   });
 
-  it('returns all endpoints when fewer than 10 (no Others row)', () => {
+  it('returns all endpoints when fewer than 8 (no Others row)', () => {
     const endpoints = [
       makeEndpoint(1, 'A', 10, 2),  // total=12
       makeEndpoint(2, 'B', 8, 1),   // total=9
@@ -48,14 +48,14 @@ describe('buildChartData', () => {
     expect(rows.map((r) => r.label)).toEqual(['Big', 'Medium', 'Small']);
   });
 
-  it('aggregates beyond top 10 into Others row', () => {
+  it('aggregates beyond top 8 into Others row', () => {
     const endpoints = Array.from({ length: 15 }, (_, i) =>
       makeEndpoint(i + 1, `EP-${i + 1}`, 20 + (15 - i), i),
     );
     const rows = buildChartData(endpoints);
-    expect(rows).toHaveLength(11); // 10 + 1 Others
-    const others = rows[10];
-    expect(others.label).toBe('Others (5 more)');
+    expect(rows).toHaveLength(9); // 8 + 1 Others
+    const others = rows[8];
+    expect(others.label).toBe('Others (7 more)');
     expect(others.endpointId).toBeUndefined();
     expect(others.running).toBeGreaterThanOrEqual(0);
     expect(others.stopped).toBeGreaterThanOrEqual(0);

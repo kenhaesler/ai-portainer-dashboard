@@ -79,7 +79,7 @@ export const ResourceOverviewCard = memo(function ResourceOverviewCard({
   if (endpoints && endpoints.length > 0) {
     const totalCpu = endpoints.reduce((sum, ep) => sum + ep.totalCpu, 0);
     const totalMemory = endpoints.reduce((sum, ep) => sum + ep.totalMemory, 0);
-    
+
     return (
       <div className="space-y-3">
         <div className="text-sm font-medium text-muted-foreground">

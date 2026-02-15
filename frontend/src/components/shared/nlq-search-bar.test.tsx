@@ -16,10 +16,10 @@ vi.mock('@/hooks/use-nl-query', () => ({
   useNlQuery: () => mockNlQuery,
 }));
 
-function renderBar() {
+function renderBar(props = {}) {
   return render(
     <MemoryRouter>
-      <NlqSearchBar />
+      <NlqSearchBar {...props} />
     </MemoryRouter>,
   );
 }
@@ -122,5 +122,25 @@ describe('NlqSearchBar', () => {
   it('has accessible label on search input', () => {
     renderBar();
     expect(screen.getByLabelText('Natural language search')).toBeDefined();
+  });
+
+  describe('container scope', () => {
+    it('renders container-specific placeholder', () => {
+      renderBar({ scope: 'container' });
+      expect(screen.getByPlaceholderText(/search containers by name, cpu, memory/i)).toBeDefined();
+    });
+
+    it('renders container-specific example queries', () => {
+      renderBar({ scope: 'container' });
+      expect(screen.getByText('containers using >80% CPU')).toBeDefined();
+      expect(screen.getByText('stopped nginx containers')).toBeDefined();
+      expect(screen.getByText('high memory usage')).toBeDefined();
+      expect(screen.getByText('running containers')).toBeDefined();
+    });
+
+    it('uses custom placeholder when provided', () => {
+      renderBar({ scope: 'container', placeholder: 'Custom search prompt' });
+      expect(screen.getByPlaceholderText('Custom search prompt')).toBeDefined();
+    });
   });
 });

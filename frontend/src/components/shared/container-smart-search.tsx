@@ -4,39 +4,32 @@ import { Search, Sparkles, Loader2, ArrowRight, AlertCircle, X } from 'lucide-re
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
 import { cn } from '@/lib/utils';
 
-const EXAMPLE_QUERIES_DEFAULT = [
-  'high memory containers',
-  'running nginx',
-  'stopped containers',
-  'top CPU consumers',
-];
-
-const EXAMPLE_QUERIES_CONTAINER = [
+const EXAMPLE_QUERIES = [
   'containers using >80% CPU',
   'stopped nginx containers',
   'high memory usage',
   'running containers',
 ];
 
-interface NlqSearchBarProps {
-  scope?: 'default' | 'container';
+interface ContainerSmartSearchProps {
+  value: string;
+  onChange: (value: string) => void;
+  onClear?: () => void;
   placeholder?: string;
 }
 
-export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarProps) {
+export function ContainerSmartSearch({
+  value,
+  onChange,
+  onClear,
+  placeholder = 'Search containers by name, CPU, memory, or status...',
+}: ContainerSmartSearchProps) {
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
   const [result, setResult] = useState<NlQueryResult | null>(null);
   const nlQuery = useNlQuery();
 
-  const exampleQueries = scope === 'container' ? EXAMPLE_QUERIES_CONTAINER : EXAMPLE_QUERIES_DEFAULT;
-  const defaultPlaceholder =
-    scope === 'container'
-      ? 'Search containers by name, CPU, memory, or status...'
-      : 'Ask about your containers... (e.g., \'show high memory containers\')';
-
-  const handleSearch = useCallback(() => {
-    const trimmed = query.trim();
+  const handleLlmSearch = useCallback(() => {
+    const trimmed = value.trim();
     if (!trimmed || nlQuery.isPending) return;
     setResult(null);
     nlQuery.mutate(trimmed, {
@@ -44,11 +37,11 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
       onError: () =>
         setResult({ action: 'error', text: 'Failed to process query. Is the LLM service available?' }),
     });
-  }, [query, nlQuery]);
+  }, [value, nlQuery]);
 
   const handleExampleClick = useCallback(
     (example: string) => {
-      setQuery(example);
+      onChange(example);
       setResult(null);
       nlQuery.mutate(example, {
         onSuccess: (data) => setResult(data),
@@ -56,13 +49,24 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
           setResult({ action: 'error', text: 'Failed to process query. Is the LLM service available?' }),
       });
     },
-    [nlQuery],
+    [nlQuery, onChange],
   );
 
-  const clearResult = useCallback(() => {
+  const handleClear = useCallback(() => {
     setResult(null);
-    setQuery('');
-  }, []);
+    onChange('');
+    onClear?.();
+  }, [onChange, onClear]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLlmSearch();
+      }
+    },
+    [handleLlmSearch],
+  );
 
   return (
     <div className="space-y-3">
@@ -77,18 +81,13 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
         </div>
         <input
           type="text"
-          value={query}
+          value={value}
           onChange={(e) => {
-            setQuery(e.target.value);
+            onChange(e.target.value);
             if (result) setResult(null);
           }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleSearch();
-            }
-          }}
-          placeholder={placeholder || defaultPlaceholder}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
           className={cn(
             'w-full rounded-xl border bg-card/80 py-3 pl-11 pr-12 text-sm backdrop-blur-sm',
             'placeholder:text-muted-foreground/50',
@@ -97,11 +96,11 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
             // Prevent iOS zoom on focus
             'text-[16px] sm:text-sm',
           )}
-          aria-label="Natural language search"
+          aria-label="Smart container search"
         />
-        {query && (
+        {value && (
           <button
-            onClick={clearResult}
+            onClick={handleClear}
             className="absolute inset-y-0 right-0 flex items-center pr-4 text-muted-foreground hover:text-foreground"
             aria-label="Clear search"
           >
@@ -110,10 +109,10 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
         )}
       </div>
 
-      {/* Example query chips */}
-      {!result && !nlQuery.isPending && (
+      {/* Example query chips - only show when no search value */}
+      {!value && !result && !nlQuery.isPending && (
         <div className="flex flex-wrap gap-2">
-          {exampleQueries.map((example) => (
+          {EXAMPLE_QUERIES.map((example) => (
             <button
               key={example}
               onClick={() => handleExampleClick(example)}
@@ -132,6 +131,13 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
         </div>
       )}
 
+      {/* Hint text */}
+      {value && !result && !nlQuery.isPending && (
+        <p className="text-xs text-muted-foreground">
+          Filtering locally... Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Enter</kbd> for AI search
+        </p>
+      )}
+
       {/* Loading state */}
       {nlQuery.isPending && (
         <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -141,7 +147,7 @@ export function NlqSearchBar({ scope = 'default', placeholder }: NlqSearchBarPro
           </div>
           <div>
             <p className="text-sm font-medium text-primary">Processing query...</p>
-            <p className="text-xs text-muted-foreground">Analyzing infrastructure</p>
+            <p className="text-xs text-muted-foreground">Analyzing containers with AI</p>
           </div>
         </div>
       )}
