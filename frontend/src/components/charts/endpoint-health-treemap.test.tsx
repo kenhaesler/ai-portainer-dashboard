@@ -68,7 +68,7 @@ describe('EndpointHealthTreemap', () => {
     expect(screen.getByTestId('responsive-container')).toBeInTheDocument();
   });
 
-  it('filters out endpoints with 0 total containers', () => {
+  it('renders endpoints even when total containers are 0', () => {
     const endpoints = [
       makeEndpoint(1, 'HasContainers', 5, 2),
       makeEndpoint(2, 'EmptyEndpoint', 0, 0),
@@ -78,14 +78,14 @@ describe('EndpointHealthTreemap', () => {
     expect(screen.queryByText('No endpoint data')).not.toBeInTheDocument();
   });
 
-  it('shows empty state when all endpoints have 0 containers', () => {
+  it('does not show empty state when all endpoints have 0 containers', () => {
     const endpoints = [
       makeEndpoint(1, 'Empty1', 0, 0),
       makeEndpoint(2, 'Empty2', 0, 0),
     ];
 
     renderWithRouter(<EndpointHealthTreemap endpoints={endpoints} />);
-    expect(screen.getByText('No endpoint data')).toBeInTheDocument();
+    expect(screen.queryByText('No endpoint data')).not.toBeInTheDocument();
   });
 });
 
