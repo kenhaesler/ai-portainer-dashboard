@@ -24,6 +24,7 @@ import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { NlqSearchBar } from '@/components/shared/nlq-search-bar';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -412,6 +413,18 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {/* NLQ Search Bar */}
+      <MotionReveal>
+        <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+              AI Search
+            </h3>
+            <NlqSearchBar />
+          </div>
+        </SpotlightCard>
+      </MotionReveal>
+
       {/* Recent Containers Table */}
       {isLoading ? (
         <SkeletonCard className="h-[400px]" />
@@ -422,13 +435,35 @@ export default function HomePage() {
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Recent Containers
               </h3>
-              <DataTable
-                columns={containerColumns}
-                data={data.recentContainers}
-                searchKey="name"
-                searchPlaceholder="Filter containers..."
-                pageSize={10}
-              />
+              {/* Desktop table */}
+              <div className="hidden sm:block">
+                <DataTable
+                  columns={containerColumns}
+                  data={data.recentContainers}
+                  searchKey="name"
+                  searchPlaceholder="Filter containers..."
+                  pageSize={10}
+                />
+              </div>
+              {/* Mobile card list */}
+              <div className="block sm:hidden space-y-3">
+                {data.recentContainers.slice(0, 10).map((container) => (
+                  <button
+                    key={`${container.endpointId}-${container.id}`}
+                    onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+                    className="flex w-full items-center gap-3 rounded-xl border bg-card/60 p-4 text-left transition-colors hover:bg-accent/50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{container.name}</p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(container.image, 40)}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <StatusBadge status={container.state} />
+                        <span className="text-xs text-muted-foreground">{container.endpointName}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           </SpotlightCard>
         </MotionReveal>
