@@ -163,9 +163,11 @@ export async function runMetricsCollection(): Promise<void> {
     );
 
     const metricsToInsert: MetricInsert[] = [];
-    for (const result of endpointResults) {
+    for (let i = 0; i < endpointResults.length; i++) {
+      const result = endpointResults[i];
       if (result.status === 'rejected') {
-        log.warn({ err: result.reason }, 'Failed to collect metrics for endpoint');
+        const endpoint = liveCapableEndpoints[i];
+        log.warn({ endpointId: endpoint.Id, endpointName: endpoint.Name, err: result.reason }, 'Failed to collect metrics for endpoint');
         continue;
       }
       metricsToInsert.push(...result.value);
@@ -349,6 +351,28 @@ export async function runCleanup(): Promise<void> {
   }
 }
 
+async function waitForPortainer(): Promise<boolean> {
+  const maxRetries = 10;
+  const retryDelayMs = 2000;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await getEndpoints();
+      log.info({ attempt }, 'Portainer connectivity verified');
+      return true;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        log.warn({ attempt, maxRetries, err }, 'Waiting for Portainer to be ready...');
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      } else {
+        log.error({ err }, 'Portainer not reachable after maximum retries');
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
 async function warmCache(): Promise<void> {
   log.info('Warming cache: endpoints + containers');
   try {
@@ -375,6 +399,12 @@ async function warmCache(): Promise<void> {
 
 export async function startScheduler(): Promise<void> {
   const config = getConfig();
+
+  // Wait for Portainer to be ready before starting background tasks
+  const portainerReady = await waitForPortainer();
+  if (!portainerReady) {
+    log.warn('Scheduler starting without Portainer connectivity — will retry in background');
+  }
 
   // Warm cache immediately to avoid thundering herd on first requests
   warmCache().catch(() => {});

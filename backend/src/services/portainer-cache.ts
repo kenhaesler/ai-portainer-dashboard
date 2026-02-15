@@ -731,10 +731,13 @@ export function cachedFetchSWR<T>(
             await cache.set(key, data, ttlSeconds);
           } catch (err) {
             log.warn({ key, err }, 'SWR background revalidation failed');
+          } finally {
+            inFlight.delete(key);
           }
         })();
         inFlight.set(key, revalidate);
-        revalidate.finally(() => { inFlight.delete(key); });
+        // Attach .catch() to prevent unhandled rejection if something unexpected happens
+        revalidate.catch(() => {});
       }
     }
     return Promise.resolve(staleInfo.data);
