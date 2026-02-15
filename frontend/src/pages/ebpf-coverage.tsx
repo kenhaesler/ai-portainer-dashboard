@@ -22,6 +22,7 @@ import {
   useDisableBeyla,
   useEnableBeyla,
   useRemoveBeyla,
+  useDeleteStaleCoverage,
 } from '@/hooks/use-ebpf-coverage';
 import type { CoverageRecord } from '@/hooks/use-ebpf-coverage';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -126,7 +127,7 @@ function CoverageRow({
   record: CoverageRecord;
 }) {
   const [pendingAction, setPendingAction] = useState<null | {
-    action: 'deploy' | 'disable' | 'enable' | 'remove';
+    action: 'deploy' | 'disable' | 'enable' | 'remove' | 'delete_stale';
     title: string;
     description: string;
     destructive?: boolean;
@@ -138,13 +139,15 @@ function CoverageRow({
   const disableMutation = useDisableBeyla();
   const enableMutation = useEnableBeyla();
   const removeMutation = useRemoveBeyla();
+  const deleteStaleMutation = useDeleteStaleCoverage();
   const hint = STATUS_HINTS[record.status];
   const mutationPending =
     verifyMutation.isPending ||
     deployMutation.isPending ||
     disableMutation.isPending ||
     enableMutation.isPending ||
-    removeMutation.isPending;
+    removeMutation.isPending ||
+    deleteStaleMutation.isPending;
 
   const openActionDialog = (action: 'deploy' | 'disable' | 'enable' | 'remove') => {
     if (action === 'deploy') {
@@ -190,6 +193,15 @@ function CoverageRow({
     });
   };
 
+  const openDeleteStaleDialog = () => {
+    setPendingAction({
+      action: 'delete_stale',
+      title: `Delete stale endpoint ${record.endpoint_name}?`,
+      description: 'This removes only the local eBPF coverage metadata row from the dashboard database.',
+      destructive: true,
+    });
+  };
+
   const runPendingAction = () => {
     if (!pendingAction) return;
     if (pendingAction.action === 'deploy') {
@@ -201,6 +213,7 @@ function CoverageRow({
     if (pendingAction.action === 'disable') disableMutation.mutate(record.endpoint_id);
     if (pendingAction.action === 'enable') enableMutation.mutate(record.endpoint_id);
     if (pendingAction.action === 'remove') removeMutation.mutate({ endpointId: record.endpoint_id, force: true });
+    if (pendingAction.action === 'delete_stale') deleteStaleMutation.mutate(record.endpoint_id);
     setPendingAction(null);
   };
 
@@ -285,6 +298,15 @@ function CoverageRow({
                 Deploy
               </button>
             )}
+            <button
+              onClick={openDeleteStaleDialog}
+              disabled={mutationPending}
+              className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              data-testid="delete-stale-btn"
+              title="Delete stale coverage record"
+            >
+              Delete stale
+            </button>
           </div>
         </td>
       </tr>

@@ -187,7 +187,7 @@ export function CommandPalette() {
             aria-hidden="true"
           />
 
-          {/* Command dialog */}
+          {/* Command dialog - macOS Tahoe Style */}
           <motion.div
             initial={{ opacity: 0, scale: 0.98, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -206,7 +206,7 @@ export function CommandPalette() {
                 }
               }}
             >
-              {/* Search Header - Slimmer & More Spacious */}
+              {/* Search Header - High Density */}
               <div className="relative flex items-center px-10">
                 <div className="flex h-[72px] w-full items-center gap-5">
                   <div className="flex shrink-0 items-center justify-center">
@@ -227,7 +227,7 @@ export function CommandPalette() {
                     placeholder="Search or Ask Neural AI..."
                     className={cn(
                       'h-full w-full bg-transparent text-xl font-medium tracking-tight text-white outline-none',
-                      'placeholder:text-white/15'
+                      'placeholder:text-white/10'
                     )}
                     value={query}
                     onValueChange={(v) => { setQuery(v); setAiResult(null); }}
@@ -475,7 +475,7 @@ export function CommandPalette() {
                 {/* 6. Recent History */}
                 {hasRecent && (
                   <Command.Group
-                    heading="Neural History"
+                    heading="Recent Neural Interactions"
                     className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                   >
                     {recent.map((item) => (

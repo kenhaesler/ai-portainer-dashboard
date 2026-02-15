@@ -2,6 +2,36 @@
 
 The dashboard uses a `pg_dump`-based backup sidecar (`prodrigestivill/postgres-backup-local:17`) that runs alongside the TimescaleDB container. Backups are compressed SQL dumps stored in a dedicated Docker volume.
 
+## Quick Setup
+
+```bash
+# 1) Create env file
+cp docker/.env.example docker/.env
+
+# 2) Set required secrets in docker/.env
+# TIMESCALE_PASSWORD=...
+# POSTGRES_APP_PASSWORD=...
+# REDIS_PASSWORD=...
+
+# 3) (Optional) tune backup schedule/retention
+# TIMESCALE_BACKUP_SCHEDULE=0 3 * * *
+# TIMESCALE_BACKUP_KEEP_DAYS=7
+# TIMESCALE_BACKUP_KEEP_WEEKS=4
+# TIMESCALE_BACKUP_KEEP_MONTHS=0
+# TIMESCALE_BACKUP_EXTRA_OPTS=-Z6 --no-comments
+
+# 4) Start stack
+docker compose -f docker/docker-compose.yml up -d
+
+# 5) Trigger an immediate backup (optional)
+docker compose -f docker/docker-compose.yml exec timescale-backup /backup.sh
+
+# 6) Check backup health
+docker compose -f docker/docker-compose.yml exec timescale-backup curl -s http://localhost:8080/
+```
+
+Backups are written to the `timescale-backups` Docker volume (`/backups` inside the `timescale-backup` container).
+
 ## How It Works
 
 | Setting | Default | Description |

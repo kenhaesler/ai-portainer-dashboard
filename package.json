@@ -20,8 +20,6 @@
     "loadtest:bench": "docker compose -f docker/docker-compose.loadtest.yml run --rm bench",
     "loadtest:llm": "docker compose -f docker/docker-compose.loadtest.yml run --rm llm",
     "loadtest:all": "docker compose -f docker/docker-compose.loadtest.yml run --rm all",
-    "loadtest:edge": "docker compose -f docker/docker-compose.edge-loadtest.yml run --rm edge-observer-a",
-    "loadtest:edge:multi": "docker compose -f docker/docker-compose.edge-loadtest.yml up --build --scale edge-observer-a=3 --scale edge-observer-b=3 --abort-on-container-exit edge-observer-a edge-observer-b",
     "test:e2e": "npx playwright test"
   },
   "devDependencies": {

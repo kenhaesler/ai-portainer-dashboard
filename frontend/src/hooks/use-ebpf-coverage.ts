@@ -193,3 +193,19 @@ export function useRemoveBeyla() {
     },
   });
 }
+
+export function useDeleteStaleCoverage() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean }, Error, number>({
+    mutationFn: async (endpointId) => api.delete(`/api/ebpf/coverage/${endpointId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });
+      queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage', 'summary'] });
+      toast.success('Stale endpoint removed');
+    },
+    onError: (error) => {
+      toast.error('Failed to remove stale endpoint', { description: error.message });
+    },
+  });
+}

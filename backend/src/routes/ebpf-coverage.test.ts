@@ -5,6 +5,7 @@ import { ebpfCoverageRoutes } from './ebpf-coverage.js';
 import {
   getEndpointCoverage,
   updateCoverageStatus,
+  deleteCoverageRecord,
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
@@ -32,6 +33,7 @@ vi.mock('node:os', () => ({
 vi.mock('../services/ebpf-coverage.js', () => ({
   getEndpointCoverage: vi.fn(async () => []),
   updateCoverageStatus: vi.fn(async () => {}),
+  deleteCoverageRecord: vi.fn(async () => true),
   syncEndpointCoverage: vi.fn(async () => 0),
   verifyCoverage: vi.fn(async () => ({ verified: false, lastTraceAt: null, beylaRunning: false })),
   getCoverageSummary: vi.fn(async () => ({
@@ -71,6 +73,7 @@ vi.mock('../utils/logger.js', () => ({
 
 const mockedGetEndpointCoverage = vi.mocked(getEndpointCoverage);
 const mockedUpdateCoverageStatus = vi.mocked(updateCoverageStatus);
+const mockedDeleteCoverageRecord = vi.mocked(deleteCoverageRecord);
 const mockedSyncEndpointCoverage = vi.mocked(syncEndpointCoverage);
 const mockedVerifyCoverage = vi.mocked(verifyCoverage);
 const mockedGetCoverageSummary = vi.mocked(getCoverageSummary);
@@ -253,6 +256,42 @@ describe('ebpf-coverage routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.payload);
       expect(body.added).toBe(0);
+    });
+  });
+
+  describe('DELETE /api/ebpf/coverage/:endpointId', () => {
+    it('should delete stale coverage record', async () => {
+      mockedDeleteCoverageRecord.mockResolvedValueOnce(true);
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/ebpf/coverage/1',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeleteCoverageRecord).toHaveBeenCalledWith(1);
+      expect(JSON.parse(response.payload)).toEqual({ success: true });
+    });
+
+    it('should return 404 when coverage record is missing', async () => {
+      mockedDeleteCoverageRecord.mockResolvedValueOnce(false);
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/ebpf/coverage/999',
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(JSON.parse(response.payload)).toEqual({ error: 'Coverage record not found' });
+    });
+
+    it('should reject non-numeric endpoint ID', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/api/ebpf/coverage/abc',
+      });
+
+      expect(response.statusCode).toBe(400);
     });
   });
 

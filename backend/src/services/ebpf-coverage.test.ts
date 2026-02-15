@@ -37,6 +37,7 @@ vi.mock('../utils/logger.js', () => ({
 import {
   getEndpointCoverage,
   updateCoverageStatus,
+  deleteCoverageRecord,
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
@@ -198,6 +199,28 @@ describe('ebpf-coverage service', () => {
         expect.stringContaining('UPDATE ebpf_coverage'),
         ['incompatible', 'Edge Agent', 5],
       );
+    });
+  });
+
+  describe('deleteCoverageRecord', () => {
+    it('returns true when a row is deleted', async () => {
+      mockExecute.mockResolvedValueOnce({ changes: 1 });
+
+      const deleted = await deleteCoverageRecord(42);
+
+      expect(deleted).toBe(true);
+      expect(mockExecute).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM ebpf_coverage'),
+        [42],
+      );
+    });
+
+    it('returns false when no matching row exists', async () => {
+      mockExecute.mockResolvedValueOnce({ changes: 0 });
+
+      const deleted = await deleteCoverageRecord(999);
+
+      expect(deleted).toBe(false);
     });
   });
 

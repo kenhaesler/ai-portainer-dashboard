@@ -333,6 +333,7 @@ vi.mock('../services/metric-correlator.js', () => ({
 vi.mock('../services/ebpf-coverage.js', () => ({
   getEndpointCoverage: vi.fn().mockResolvedValue([]),
   updateCoverageStatus: vi.fn().mockResolvedValue(undefined),
+  deleteCoverageRecord: vi.fn().mockResolvedValue(true),
   syncEndpointCoverage: vi.fn().mockResolvedValue(undefined),
   verifyCoverage: vi.fn().mockResolvedValue(undefined),
   getCoverageSummary: vi.fn().mockResolvedValue({ total: 0, deployed: 0 }),
