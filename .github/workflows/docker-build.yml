@@ -68,8 +68,6 @@ jobs:
           cache-to: type=gha,mode=max
           sbom: true
           provenance: mode=max
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   docker-frontend:
     name: Frontend Image
@@ -119,5 +117,3 @@ jobs:
           cache-to: type=gha,mode=max
           sbom: true
           provenance: mode=max
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
