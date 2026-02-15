@@ -127,10 +127,15 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
       role="button"
       tabIndex={0}
       aria-label={`${name} endpoint - ${running}/${total} running`}
-      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
+      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer select-none [-webkit-user-select:none] [-webkit-tap-highlight-color:transparent]"
       data-testid={`octagon-${name}`}
+      style={{
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+        WebkitTapHighlightColor: 'transparent'
+      }}
     >
-      <div className="relative w-[110px] h-[110px] m-[2px] transition-all duration-150 hover:scale-105">
+      <div className="relative w-[110px] h-[110px] m-[4px] transition-all duration-150 hover:scale-105">
         {/* SVG with layered octagons for shadow effect */}
         <svg
           width={SIZE}
