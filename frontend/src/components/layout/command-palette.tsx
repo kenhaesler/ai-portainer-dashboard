@@ -206,17 +206,17 @@ export function CommandPalette() {
                 }
               }}
             >
-              {/* Search Header */}
-              <div className="relative flex items-center px-8">
-                <div className="flex h-[96px] w-full items-center gap-6">
+              {/* Search Header - Slimmer & More Spacious */}
+              <div className="relative flex items-center px-10">
+                <div className="flex h-[72px] w-full items-center gap-5">
                   <div className="flex shrink-0 items-center justify-center">
                     {isNl ? (
-                      <Sparkles className="h-8 w-8 text-primary animate-pulse" />
+                      <Sparkles className="h-6 w-6 text-primary animate-pulse" />
                     ) : (
                       <div className="relative">
-                        <FileSearch className="h-8 w-8 text-white/30" />
+                        <FileSearch className="h-6 w-6 text-white/30" />
                         <motion.div 
-                          className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-primary/50 blur-[3px]"
+                          className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-primary/50 blur-[2px]"
                           animate={{ opacity: [0.4, 0.9, 0.4] }}
                           transition={{ duration: 2, repeat: Infinity }}
                         />
@@ -226,8 +226,8 @@ export function CommandPalette() {
                   <Command.Input
                     placeholder="Search or Ask Neural AI..."
                     className={cn(
-                      'h-full w-full bg-transparent text-[26px] font-semibold tracking-tight text-white outline-none',
-                      'placeholder:text-white/10'
+                      'h-full w-full bg-transparent text-xl font-medium tracking-tight text-white outline-none',
+                      'placeholder:text-white/15'
                     )}
                     value={query}
                     onValueChange={(v) => { setQuery(v); setAiResult(null); }}
@@ -245,12 +245,12 @@ export function CommandPalette() {
                       <button
                         onClick={handleAiQuery}
                         disabled={nlQuery.isPending}
-                        className="flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-black uppercase tracking-[0.15em] text-white shadow-[0_0_25px_rgba(99,102,241,0.5)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                       >
                         {nlQuery.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <Sparkles className="h-4 w-4" />
+                          <Sparkles className="h-3.5 w-3.5" />
                         )}
                         <span>Neural Run</span>
                       </button>
@@ -259,9 +259,9 @@ export function CommandPalette() {
                 </div>
               </div>
 
-              {/* Separator */}
+              {/* Separator - Even more subtle */}
               {(query.trim().length > 0 || recent.length > 0) && (
-                <div className="mx-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                <div className="mx-10 h-px bg-white/[0.05]" />
               )}
 
               <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-4 selection:bg-primary/40">
