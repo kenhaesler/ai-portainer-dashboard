@@ -41,6 +41,9 @@ export const envSchema = z.object({
   LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'), // Auth header type for LLM endpoint tokens
   LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
 
+  // AI Search specific model (defaults to llama3.2:latest - change to qwen3:30b for better reasoning)
+  AI_SEARCH_MODEL: z.string().default('llama3.2:latest'),
+
   // Kibana (optional)
   KIBANA_ENDPOINT: z.string().url().optional(),
   KIBANA_API_KEY: z.string().optional(),

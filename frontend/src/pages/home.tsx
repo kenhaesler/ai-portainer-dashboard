@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert, Search } from 'lucide-react';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useDashboardResources } from '@/hooks/use-dashboard-resources';
 import { useFavoriteContainers } from '@/hooks/use-containers';
@@ -12,8 +12,7 @@ import { KpiCard } from '@/components/shared/kpi-card';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
+import { SmartRefreshControls } from '@/components/shared/smart-refresh-controls';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
@@ -26,18 +25,40 @@ import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { ContainerSmartSearch } from '@/components/shared/container-smart-search';
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useDashboard();
   const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
-  const { interval, setInterval } = useAutoRefresh(30);
+  const { interval, setInterval, enabled, toggle } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
   const [containerSearch, setContainerSearch] = useState('');
+
+  // Filter containers based on search
+  const filteredContainers = useMemo(() => {
+    if (!data || !containerSearch) return data?.recentContainers ?? [];
+    const searchLower = containerSearch.toLowerCase();
+    return data.recentContainers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(searchLower) ||
+        c.image.toLowerCase().includes(searchLower) ||
+        c.state.toLowerCase().includes(searchLower) ||
+        c.status.toLowerCase().includes(searchLower),
+    );
+  }, [data, containerSearch]);
+
+  // Track the last successful data update time
+  const lastUpdatedRef = useRef<Date | null>(null);
+  useEffect(() => {
+    if (dataUpdatedAt > 0) {
+      lastUpdatedRef.current = new Date(dataUpdatedAt);
+    }
+  }, [dataUpdatedAt]);
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -100,6 +121,15 @@ export default function HomePage() {
       running: ep.containersRunning,
       stopped: ep.containersStopped,
       total: ep.totalContainers,
+    }));
+  }, [endpoints]);
+
+  const resourceEndpoints = useMemo(() => {
+    if (!endpoints) return [];
+    return endpoints.map((ep) => ({
+      name: ep.name,
+      totalCpu: ep.totalCpu,
+      totalMemory: ep.totalMemory,
     }));
   }, [endpoints]);
 
@@ -180,17 +210,22 @@ export default function HomePage() {
   return (
     <MotionPage>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
             Dashboard overview with KPIs, charts, and recent containers
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
-          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
-        </div>
+        <SmartRefreshControls
+          interval={interval}
+          enabled={enabled}
+          onIntervalChange={setInterval}
+          onToggle={toggle}
+          onRefresh={() => forceRefresh()}
+          isRefreshing={isFetching || isForceRefreshing}
+          lastUpdated={lastUpdatedRef.current}
+        />
       </div>
 
       {/* KPI Cards */}
@@ -351,48 +386,63 @@ export default function HomePage() {
         </MotionStagger>
       ) : null}
 
-      {/* Top Workloads + Fleet Summary */}
+      {/* Resource Overview + Top Workloads + Fleet Summary */}
       {isLoading || isLoadingResources ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <SkeletonCard className="h-[520px] lg:col-span-2" />
-          <SkeletonCard className="h-[520px]" />
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SkeletonCard className="h-[88px]" />
+            <SkeletonCard className="h-[88px]" />
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <SkeletonCard className="h-[520px] lg:col-span-2" />
+            <SkeletonCard className="h-[520px]" />
+          </div>
         </div>
       ) : data && resourcesData ? (
-        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
-          <MotionReveal className="lg:col-span-2">
-            <SpotlightCard>
-              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                  Top Workloads
-                </h3>
-                <div className="mb-4">
-                  <ResourceOverviewCard
-                    cpuPercent={resourcesData.fleetCpuPercent}
-                    memoryPercent={resourcesData.fleetMemoryPercent}
-                  />
-                </div>
-                <div className="flex-1 min-h-0 overflow-y-auto">
-                  <WorkloadTopBar endpoints={stackChartData} />
-                </div>
-              </div>
-            </SpotlightCard>
-          </MotionReveal>
+        <div className="space-y-4">
           <MotionReveal>
             <SpotlightCard>
-              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                  Fleet Summary
-                </h3>
-                <div className="flex-1 min-h-0">
-                  <FleetSummaryCard
-                    endpoints={endpointChartData}
-                    totalContainers={data.kpis.total}
-                  />
-                </div>
+              <div className="rounded-lg border bg-card p-4 shadow-sm">
+                <ResourceOverviewCard endpoints={resourceEndpoints} />
               </div>
             </SpotlightCard>
           </MotionReveal>
-        </MotionStagger>
+          <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+            <MotionReveal className="lg:col-span-2">
+              <SpotlightCard>
+                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                    Top Workloads
+                  </h3>
+                  <div className="mb-4">
+                    <ResourceOverviewCard
+                      cpuPercent={resourcesData.fleetCpuPercent}
+                      memoryPercent={resourcesData.fleetMemoryPercent}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <WorkloadTopBar endpoints={stackChartData} />
+                  </div>
+                </div>
+              </SpotlightCard>
+            </MotionReveal>
+            <MotionReveal>
+              <SpotlightCard>
+                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                    Fleet Summary
+                  </h3>
+                  <div className="flex-1 min-h-0">
+                    <FleetSummaryCard
+                      endpoints={endpointChartData}
+                      totalContainers={data.kpis.total}
+                    />
+                  </div>
+                </div>
+              </SpotlightCard>
+            </MotionReveal>
+          </MotionStagger>
+        </div>
       ) : null}
 
       {/* Recent Containers Table */}
@@ -402,31 +452,44 @@ export default function HomePage() {
         <MotionReveal>
           <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  Recent Containers
-                </h3>
-                <div className="relative w-full sm:w-64">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    data-testid="container-search"
-                    type="text"
-                    placeholder="Filter containers..."
-                    value={containerSearch}
-                    onChange={(e) => setContainerSearch(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background py-2 pl-9 pr-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                </div>
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Recent Containers
+              </h3>
+              {/* Smart search with filtering + LLM */}
+              <div className="mb-6">
+                <ContainerSmartSearch
+                  value={containerSearch}
+                  onChange={setContainerSearch}
+                  onClear={() => setContainerSearch('')}
+                />
               </div>
-              <DataTable
-                columns={containerColumns}
-                data={data.recentContainers}
-                searchKey="name"
-                searchPlaceholder="Filter containers..."
-                pageSize={50}
-                hideSearch
-                externalSearchValue={containerSearch}
-              />
+              {/* Desktop table */}
+              <div className="hidden sm:block">
+                <DataTable
+                  columns={containerColumns}
+                  data={filteredContainers}
+                  pageSize={10}
+                />
+              </div>
+              {/* Mobile card list */}
+              <div className="block sm:hidden space-y-3">
+                {filteredContainers.slice(0, 10).map((container) => (
+                    <button
+                      key={`${container.endpointId}-${container.id}`}
+                      onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+                      className="flex w-full items-center gap-3 rounded-xl border bg-card/60 p-4 text-left transition-colors hover:bg-accent/50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{container.name}</p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(container.image, 40)}</p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <StatusBadge status={container.state} />
+                          <span className="text-xs text-muted-foreground">{container.endpointName}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+              </div>
             </div>
           </SpotlightCard>
         </MotionReveal>

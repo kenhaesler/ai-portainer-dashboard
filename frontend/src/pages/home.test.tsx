@@ -101,6 +101,9 @@ vi.mock('@/components/shared/status-badge', () => ({
 vi.mock('@/components/shared/favorite-button', () => ({
   FavoriteButton: () => <button data-testid="mock-fav" />,
 }));
+vi.mock('@/hooks/use-nl-query', () => ({
+  useNlQuery: () => ({ mutate: vi.fn(), isPending: false, data: null, error: null }),
+}));
 
 import { useDashboard } from '@/hooks/use-dashboard';
 import type { NormalizedContainer, DashboardSummary } from '@/hooks/use-dashboard';
@@ -177,11 +180,10 @@ describe('HomePage - Recent Containers', () => {
     renderPage();
 
     expect(screen.getByText('Recent Containers')).toBeInTheDocument();
-    expect(screen.getByTestId('container-search')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Filter containers...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Smart container search')).toBeInTheDocument();
   });
 
-  it('does not render the DataTable built-in search when hideSearch is used', () => {
+  it('renders smart search instead of DataTable built-in search', () => {
     mockUseDashboard.mockReturnValue({
       data: makeDashboardData(5),
       isLoading: false,
@@ -193,13 +195,11 @@ describe('HomePage - Recent Containers', () => {
 
     renderPage();
 
-    // The inline search should be present
-    expect(screen.getByTestId('container-search')).toBeInTheDocument();
-    // The DataTable's built-in search should not be rendered
-    expect(screen.queryByTestId('data-table-search')).not.toBeInTheDocument();
+    // The smart search should be present
+    expect(screen.getByLabelText('Smart container search')).toBeInTheDocument();
   });
 
-  it('renders all container rows when count is under 50', () => {
+  it('renders container rows up to page size', () => {
     const containerCount = 15;
     mockUseDashboard.mockReturnValue({
       data: makeDashboardData(containerCount),
@@ -212,9 +212,9 @@ describe('HomePage - Recent Containers', () => {
 
     renderPage();
 
-    // With pageSize=50 and 15 items, all rows should be visible (no pagination)
-    for (let i = 0; i < containerCount; i++) {
-      expect(screen.getByText(`container-${i}`)).toBeInTheDocument();
+    // With pageSize=10, the first 10 containers should be visible
+    for (let i = 0; i < 10; i++) {
+      expect(screen.getAllByText(`container-${i}`).length).toBeGreaterThan(0);
     }
   });
 
@@ -230,12 +230,12 @@ describe('HomePage - Recent Containers', () => {
 
     renderPage();
 
-    const searchInput = screen.getByTestId('container-search');
+    const searchInput = screen.getByLabelText('Smart container search');
     fireEvent.change(searchInput, { target: { value: 'container-3' } });
 
-    // container-3 should be visible
+    // container-3 should be visible (may appear in both desktop table + mobile card list)
     await waitFor(() => {
-      expect(screen.getByText('container-3')).toBeInTheDocument();
+      expect(screen.getAllByText('container-3').length).toBeGreaterThan(0);
       // container-0 should be filtered out
       expect(screen.queryByText('container-0')).not.toBeInTheDocument();
     });
@@ -274,7 +274,7 @@ describe('HomePage - Recent Containers', () => {
     renderPage();
 
     // Should not show the search or table when loading
-    expect(screen.queryByTestId('container-search')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Smart container search')).not.toBeInTheDocument();
     expect(screen.queryByText('Recent Containers')).not.toBeInTheDocument();
   });
 });

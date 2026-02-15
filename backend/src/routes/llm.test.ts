@@ -86,6 +86,13 @@ vi.mock('../services/llm-client.js', () => ({
   })),
 }));
 
+// Mock config
+vi.mock('../config/index.js', () => ({
+  getConfig: vi.fn().mockReturnValue({
+    AI_SEARCH_MODEL: 'llama3.2:latest',
+  }),
+}));
+
 // Mock logger
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
@@ -364,7 +371,7 @@ describe('LLM Routes', () => {
 
       expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
       const trace = mockInsertLlmTrace.mock.calls[0][0];
-      expect(trace.model).toBe('llama3.2');
+      expect(trace.model).toBe('llama3.2:latest');
       expect(trace.status).toBe('success');
       expect(trace.user_query).toBe('test query for tracing');
       expect(trace.latency_ms).toBeGreaterThanOrEqual(0);
