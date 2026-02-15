@@ -177,7 +177,7 @@ export function CommandPalette() {
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4">
-          {/* Backdrop - Deeper blur */}
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -187,7 +187,7 @@ export function CommandPalette() {
             aria-hidden="true"
           />
 
-          {/* Command dialog - macOS Tahoe Style */}
+          {/* Command dialog */}
           <motion.div
             initial={{ opacity: 0, scale: 0.98, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -206,7 +206,7 @@ export function CommandPalette() {
                 }
               }}
             >
-              {/* Search Header - High Density */}
+              {/* Search Header */}
               <div className="relative flex items-center px-8">
                 <div className="flex h-[96px] w-full items-center gap-6">
                   <div className="flex shrink-0 items-center justify-center">
@@ -259,7 +259,7 @@ export function CommandPalette() {
                 </div>
               </div>
 
-              {/* Separator - Subtle gradient */}
+              {/* Separator */}
               {(query.trim().length > 0 || recent.length > 0) && (
                 <div className="mx-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
               )}
@@ -279,7 +279,7 @@ export function CommandPalette() {
                   </div>
                 )}
 
-                {/* AI Loading State */}
+                {/* 1. AI Result - Highest Priority */}
                 {nlQuery.isPending && (
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.98 }}
@@ -299,7 +299,6 @@ export function CommandPalette() {
                   </motion.div>
                 )}
 
-                {/* AI Result - Premium Card */}
                 {aiResult && (
                   <motion.div 
                     initial={{ opacity: 0, y: 12 }}
@@ -345,46 +344,12 @@ export function CommandPalette() {
                   </motion.div>
                 )}
 
-                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (
-                  <Command.Empty className="py-28 text-center">
-                    <div className="mb-6 flex justify-center">
-                      <AlertCircle className="h-12 w-12 text-white/10" />
-                    </div>
-                    <p className="text-xl font-bold text-white/60 tracking-tight">No results for "{query}"</p>
-                    <p className="mt-2 text-sm font-medium text-white/20 uppercase tracking-[0.15em]">Refine search or try Neural Run</p>
-                  </Command.Empty>
-                )}
-
-                {hasRecent && (
-                  <Command.Group
-                    heading="Recent Neural Interactions"
-                    className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
-                  >
-                    {recent.map((item) => (
-                      <Command.Item
-                        key={item.term}
-                        value={item.term}
-                        onSelect={() => setQuery(item.term)}
-                        className={cn(
-                          'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                          'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
-                        )}
-                      >
-                        <Clock className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
-                        <span className="flex-1 font-semibold tracking-tight">{item.term}</span>
-                        <span className="text-[12px] font-black opacity-10 aria-selected:opacity-50 uppercase tracking-widest">
-                          {formatRelative(item.lastUsed)}
-                        </span>
-                      </Command.Item>
-                    ))}
-                  </Command.Group>
-                )}
-
                 {query.trim().length >= 2 && (
                   <>
+                    {/* 2. Containers - Essential infrastructure */}
                     {containers.length > 0 && (
                       <Command.Group
-                        heading="Containers"
+                        heading="Infrastructure Units"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                       >
                         {containers.map((container) => (
@@ -414,9 +379,68 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
 
+                    {/* 3. Navigation - Core pages */}
+                    <Command.Group
+                      heading="Neural Navigation"
+                      className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
+                    >
+                      <div className="grid grid-cols-2 gap-2">
+                        {pages.map((page) => (
+                          <Command.Item
+                            key={page.to}
+                            value={page.label}
+                            onSelect={() => navigateTo(page.to)}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
+                              'text-white/60 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-xl aria-selected:shadow-primary/20'
+                            )}
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.03] aria-selected:bg-white/20">
+                              <page.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
+                            </div>
+                            <span className="font-bold truncate tracking-tight">{page.label}</span>
+                          </Command.Item>
+                        ))}
+                      </div>
+                    </Command.Group>
+
+                    {/* 4. Stacks - High level groupings */}
+                    {stacks.length > 0 && (
+                      <Command.Group
+                        heading="Resource Stacks"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
+                      >
+                        {stacks.map((stack) => (
+                          <Command.Item
+                            key={stack.id}
+                            value={`stack-${stack.name}`}
+                            onSelect={() => {
+                              onSearchSelect();
+                              navigateTo('/stacks');
+                            }}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                            )}
+                          >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-white/[0.03] aria-selected:bg-white/20 shadow-inner">
+                              <Boxes className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold tracking-tight">{stack.name}</span>
+                              <span className="text-[13px] font-medium text-white/20 aria-selected:text-white/70">
+                                {stack.status} • Endpoint {stack.endpointId}
+                              </span>
+                            </div>
+                          </Command.Item>
+                        ))}
+                      </Command.Group>
+                    )}
+
+                    {/* 5. Images - Assets */}
                     {images.length > 0 && (
                       <Command.Group
-                        heading="Images"
+                        heading="Binary Blueprints"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                       >
                         {images.map((image) => (
@@ -445,7 +469,38 @@ export function CommandPalette() {
                         ))}
                       </Command.Group>
                     )}
+                  </>
+                )}
 
+                {/* 6. Recent History */}
+                {hasRecent && (
+                  <Command.Group
+                    heading="Neural History"
+                    className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
+                  >
+                    {recent.map((item) => (
+                      <Command.Item
+                        key={item.term}
+                        value={item.term}
+                        onSelect={() => setQuery(item.term)}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                          'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                        )}
+                      >
+                        <Clock className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
+                        <span className="flex-1 font-semibold tracking-tight">{item.term}</span>
+                        <span className="text-[12px] font-black opacity-10 aria-selected:opacity-50 uppercase tracking-widest">
+                          {formatRelative(item.lastUsed)}
+                        </span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+
+                {query.trim().length >= 2 && (
+                  <>
+                    {/* 7. Logs - High volume data */}
                     {logs.length > 0 && (
                       <Command.Group
                         heading="Neural Log Stream"
@@ -478,30 +533,7 @@ export function CommandPalette() {
                   </>
                 )}
 
-                <Command.Group
-                  heading="Navigation"
-                  className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
-                >
-                  <div className="grid grid-cols-2 gap-2">
-                    {pages.map((page) => (
-                      <Command.Item
-                        key={page.to}
-                        value={page.label}
-                        onSelect={() => navigateTo(page.to)}
-                        className={cn(
-                          'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
-                          'text-white/60 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-xl aria-selected:shadow-primary/20'
-                        )}
-                      >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.03] aria-selected:bg-white/20">
-                          <page.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
-                        </div>
-                        <span className="font-bold truncate tracking-tight">{page.label}</span>
-                      </Command.Item>
-                    ))}
-                  </div>
-                </Command.Group>
-
+                {/* 8. System Controller */}
                 <Command.Group
                   heading="Neural Controller"
                   className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
@@ -532,6 +564,16 @@ export function CommandPalette() {
                     </div>
                   </Command.Item>
                 </Command.Group>
+
+                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (
+                  <Command.Empty className="py-28 text-center">
+                    <div className="mb-6 flex justify-center">
+                      <AlertCircle className="h-12 w-12 text-white/10" />
+                    </div>
+                    <p className="text-xl font-bold text-white/60 tracking-tight">No results for "{query}"</p>
+                    <p className="mt-2 text-sm font-medium text-white/20 uppercase tracking-[0.15em]">Refine search or try Neural Run</p>
+                  </Command.Empty>
+                )}
               </Command.List>
 
               {/* High-End Footer */}
