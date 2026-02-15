@@ -291,6 +291,7 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
   useDisableBeyla: () => ({ mutate: vi.fn(), isPending: false }),
   useEnableBeyla: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveBeyla: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteStaleCoverage: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ---------------------------------------------------------------------------

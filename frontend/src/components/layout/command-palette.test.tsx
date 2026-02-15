@@ -102,6 +102,8 @@ describe('CommandPalette (Neural Search)', () => {
 
   it('does not include deprecated backups page in static page entries', () => {
     renderPalette();
+    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    fireEvent.change(input, { target: { value: 'se' } });
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
     // In our new pages list, Settings is just "Settings"
     expect(screen.getByText('Settings')).toBeInTheDocument();
