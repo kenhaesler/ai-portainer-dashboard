@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 export interface WorkloadTopBarProps {
   endpoints: Array<{
-    id: number;
+    id?: number;
     name: string;
     running: number;
     stopped: number;
@@ -23,14 +23,14 @@ interface ChartRow {
 function buildChartData(endpoints: WorkloadTopBarProps['endpoints']): ChartRow[] {
   if (!endpoints || endpoints.length === 0) return [];
   const sorted = [...endpoints].sort((a, b) => b.total - a.total);
-  const top = sorted.slice(0, 10);
-  const rest = sorted.slice(10);
+  const top = sorted.slice(0, 8);
+  const rest = sorted.slice(8);
 
   const rows: ChartRow[] = top.map((ep) => ({
     label: ep.name,
     running: ep.running,
     stopped: ep.stopped,
-    endpointId: ep.id,
+    endpointId: ep.id, // May be undefined for stacks
   }));
 
   if (rest.length > 0) {
@@ -53,12 +53,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     <div className="rounded-xl bg-popover/95 backdrop-blur-sm border border-border px-3 py-2 shadow-lg">
       <p className="text-xs font-medium mb-1.5 text-foreground">{label}</p>
       <div className="flex items-center gap-2 text-xs">
-        <div className="w-2 h-2 rounded-full bg-emerald-400" />
+        <div className="w-2 h-2 rounded-full bg-emerald-500" />
         <span className="text-muted-foreground">Running:</span>
         <span className="font-medium">{running}</span>
       </div>
       <div className="flex items-center gap-2 text-xs">
-        <div className="w-2 h-2 rounded-full bg-red-400" />
+        <div className="w-2 h-2 rounded-full bg-red-500" />
         <span className="text-muted-foreground">Stopped:</span>
         <span className="font-medium">{stopped}</span>
       </div>
@@ -67,6 +67,34 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <span className="font-medium text-foreground">{running + stopped}</span>
       </div>
     </div>
+  );
+};
+
+const CustomYAxisTick = ({ x, y, payload }: any) => {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="end"
+      className="text-[11px] fill-muted-foreground"
+      dy={4}
+    >
+      {payload.value}
+    </text>
+  );
+};
+
+const CustomXAxisTick = ({ x, y, payload }: any) => {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      className="text-[11px] fill-muted-foreground"
+      dy={12}
+    >
+      {payload.value}
+    </text>
   );
 };
 
@@ -97,9 +125,10 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
   const chartHeight = Math.max(120, chartData.length * rowHeight + 24);
 
   const handleBarClick = (data: any) => {
-    if (data?.endpointId != null) {
+    if (data?.endpointId != null && typeof data.endpointId === 'number') {
       navigate(`/endpoints/${data.endpointId}`);
     }
+    // For stacks without endpoint ID, clicking does nothing
   };
 
   return (
@@ -113,18 +142,18 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
         >
           <defs>
             <linearGradient id="topBarRunning" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#6ee7b7" />
-              <stop offset="100%" stopColor="#34d399" />
+              <stop offset="0%" stopColor="#34d399" />
+              <stop offset="100%" stopColor="#10b981" />
             </linearGradient>
             <linearGradient id="topBarStopped" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#fca5a5" />
-              <stop offset="100%" stopColor="#f87171" />
+              <stop offset="0%" stopColor="#f87171" />
+              <stop offset="100%" stopColor="#ef4444" />
             </linearGradient>
           </defs>
 
           <XAxis
             type="number"
-            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+            tick={<CustomXAxisTick />}
             axisLine={false}
             tickLine={false}
             allowDecimals={false}
@@ -132,7 +161,7 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
           <YAxis
             type="category"
             dataKey="label"
-            tick={{ fontSize: 11, fill: 'hsl(var(--foreground) / 0.9)' }}
+            tick={<CustomYAxisTick />}
             axisLine={false}
             tickLine={false}
             width={160}
@@ -164,11 +193,11 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
 
       <div className="flex justify-center gap-5 pt-2">
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-emerald-300 to-emerald-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500" />
           <span className="text-xs text-muted-foreground">Running</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-300 to-red-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-400 to-red-500" />
           <span className="text-xs text-muted-foreground">Stopped</span>
         </div>
       </div>

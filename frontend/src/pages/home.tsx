@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert, Search } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useDashboardResources } from '@/hooks/use-dashboard-resources';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -16,7 +17,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
-import { EndpointHealthTreemap } from '@/components/charts/endpoint-health-treemap';
+import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
 import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
 import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
 import { ResourceOverviewCard } from '@/components/charts/resource-overview-card';
@@ -29,12 +30,14 @@ import { SpotlightCard } from '@/components/shared/spotlight-card';
 export default function HomePage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
+  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
+  const [containerSearch, setContainerSearch] = useState('');
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -100,14 +103,15 @@ export default function HomePage() {
     }));
   }, [endpoints]);
 
-  const resourceEndpoints = useMemo(() => {
-    if (!endpoints) return [];
-    return endpoints.map((ep) => ({
-      name: ep.name,
-      totalCpu: ep.totalCpu,
-      totalMemory: ep.totalMemory,
+  const stackChartData = useMemo(() => {
+    if (!resourcesData?.topStacks) return [];
+    return resourcesData.topStacks.map((stack) => ({
+      name: stack.name,
+      running: stack.runningCount,
+      stopped: stack.stoppedCount,
+      total: stack.containerCount,
     }));
-  }, [endpoints]);
+  }, [resourcesData]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
@@ -339,7 +343,7 @@ export default function HomePage() {
                   Endpoint Health
                 </h3>
                 <div className="flex-1 min-h-0">
-                  <EndpointHealthTreemap endpoints={endpointChartData} />
+                  <EndpointHealthOctagons endpoints={endpointChartData} />
                 </div>
               </div>
             </SpotlightCard>
@@ -347,57 +351,48 @@ export default function HomePage() {
         </MotionStagger>
       ) : null}
 
-      {/* Resource Overview + Top Workloads + Fleet Summary */}
-      {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SkeletonCard className="h-[88px]" />
-            <SkeletonCard className="h-[88px]" />
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <SkeletonCard className="h-[420px] lg:col-span-2" />
-            <SkeletonCard className="h-[420px]" />
-          </div>
+      {/* Top Workloads + Fleet Summary */}
+      {isLoading || isLoadingResources ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SkeletonCard className="h-[520px] lg:col-span-2" />
+          <SkeletonCard className="h-[520px]" />
         </div>
-      ) : data ? (
-        <div className="space-y-4">
-          <MotionReveal>
+      ) : data && resourcesData ? (
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+          <MotionReveal className="lg:col-span-2">
             <SpotlightCard>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <ResourceOverviewCard endpoints={resourceEndpoints} />
+              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Top Workloads
+                </h3>
+                <div className="mb-4">
+                  <ResourceOverviewCard
+                    cpuPercent={resourcesData.fleetCpuPercent}
+                    memoryPercent={resourcesData.fleetMemoryPercent}
+                  />
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <WorkloadTopBar endpoints={stackChartData} />
+                </div>
               </div>
             </SpotlightCard>
           </MotionReveal>
-          <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
-            <MotionReveal className="lg:col-span-2">
-              <SpotlightCard>
-                <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                    Top Workloads
-                  </h3>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <WorkloadTopBar endpoints={endpointChartData} />
-                  </div>
+          <MotionReveal>
+            <SpotlightCard>
+              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Fleet Summary
+                </h3>
+                <div className="flex-1 min-h-0">
+                  <FleetSummaryCard
+                    endpoints={endpointChartData}
+                    totalContainers={data.kpis.total}
+                  />
                 </div>
-              </SpotlightCard>
-            </MotionReveal>
-            <MotionReveal>
-              <SpotlightCard>
-                <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                    Fleet Summary
-                  </h3>
-                  <div className="flex-1 min-h-0">
-                    <FleetSummaryCard
-                      endpoints={endpointChartData}
-                      totalContainers={data.kpis.total}
-                    />
-                  </div>
-                </div>
-              </SpotlightCard>
-            </MotionReveal>
-          </MotionStagger>
-        </div>
+              </div>
+            </SpotlightCard>
+          </MotionReveal>
+        </MotionStagger>
       ) : null}
 
       {/* Recent Containers Table */}
@@ -407,15 +402,30 @@ export default function HomePage() {
         <MotionReveal>
           <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Recent Containers
-              </h3>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Recent Containers
+                </h3>
+                <div className="relative w-full sm:w-64">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    data-testid="container-search"
+                    type="text"
+                    placeholder="Filter containers..."
+                    value={containerSearch}
+                    onChange={(e) => setContainerSearch(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background py-2 pl-9 pr-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
               <DataTable
                 columns={containerColumns}
                 data={data.recentContainers}
                 searchKey="name"
                 searchPlaceholder="Filter containers..."
-                pageSize={10}
+                pageSize={50}
+                hideSearch
+                externalSearchValue={containerSearch}
               />
             </div>
           </SpotlightCard>
