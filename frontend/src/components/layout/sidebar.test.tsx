@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar, getSidebarBottomClass } from './sidebar';
+import { useUiStore } from '@/stores/ui-store';
 
 vi.mock('@/hooks/use-remediation', () => ({
   useRemediationActions: vi.fn(),
@@ -26,6 +27,13 @@ function renderSidebar() {
 }
 
 describe('Sidebar', () => {
+  beforeEach(() => {
+    useUiStore.setState({
+      sidebarCollapsed: false,
+      collapsedGroups: {},
+    });
+  });
+
   it('uses collapsed-feed spacing for sidebar bottom offset', () => {
     expect(getSidebarBottomClass()).toBe('md:bottom-12');
   });
@@ -53,7 +61,7 @@ describe('Sidebar', () => {
     renderSidebar();
 
     // Remediation link should exist but no badge
-    expect(screen.getByText('AI Remediation')).toBeInTheDocument();
+    expect(screen.getByText('Remediation')).toBeInTheDocument();
     // No destructive badge elements should exist
     const badges = document.querySelectorAll('.bg-destructive');
     expect(badges).toHaveLength(0);
@@ -66,7 +74,7 @@ describe('Sidebar', () => {
 
     renderSidebar();
 
-    expect(screen.getByText('AI Remediation')).toBeInTheDocument();
+    expect(screen.getByText('Remediation')).toBeInTheDocument();
     const badges = document.querySelectorAll('.bg-destructive');
     expect(badges).toHaveLength(0);
   });
@@ -93,7 +101,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Operations')).toBeInTheDocument();
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
-    expect(screen.getByText('AI Settings')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
   it('renders collapse toggle button', () => {

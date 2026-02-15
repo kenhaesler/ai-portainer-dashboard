@@ -18,10 +18,10 @@ function renderNav(initialRoute = '/') {
 describe('MobileBottomNav', () => {
   it('renders primary navigation items', () => {
     renderNav();
-    expect(screen.getByText('AI Home')).toBeTruthy();
-    expect(screen.getByText('AI Workloads')).toBeTruthy();
-    expect(screen.getByText('AI Health')).toBeTruthy();
-    expect(screen.getByText('AI Metrics')).toBeTruthy();
+    expect(screen.getByText('Home')).toBeTruthy();
+    expect(screen.getByText('Workloads')).toBeTruthy();
+    expect(screen.getByText('Health')).toBeTruthy();
+    expect(screen.getByText('Metrics')).toBeTruthy();
   });
 
   it('renders More button', () => {
@@ -34,8 +34,8 @@ describe('MobileBottomNav', () => {
     const moreButton = screen.getByLabelText('More pages');
     fireEvent.click(moreButton);
     expect(screen.getByText('More Pages')).toBeTruthy();
-    expect(screen.getByText('AI Fleet')).toBeTruthy();
-    expect(screen.getByText('AI Settings')).toBeTruthy();
+    expect(screen.getByText('Fleet')).toBeTruthy();
+    expect(screen.getByText('Settings')).toBeTruthy();
   });
 
   it('closes drawer when Close button is clicked', () => {
@@ -57,10 +57,10 @@ describe('MobileBottomNav', () => {
   it('shows secondary nav items in the drawer grid', () => {
     renderNav();
     fireEvent.click(screen.getByLabelText('More pages'));
-    expect(screen.getByText('AI Stacks')).toBeTruthy();
-    expect(screen.getByText('AI Monitor')).toBeTruthy();
-    expect(screen.getByText('AI Remediation')).toBeTruthy();
-    expect(screen.getByText('AI Traces')).toBeTruthy();
-    expect(screen.getByText('AI Assistant')).toBeTruthy();
+    expect(screen.getByText('Stacks')).toBeTruthy();
+    expect(screen.getByText('Monitor')).toBeTruthy();
+    expect(screen.getByText('Remediation')).toBeTruthy();
+    expect(screen.getByText('Traces')).toBeTruthy();
+    expect(screen.getByText('Assistant')).toBeTruthy();
   });
 });
