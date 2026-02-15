@@ -130,7 +130,10 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
         border: 'none',
         boxShadow: 'none',
         outline: 'none',
-        WebkitTapHighlightColor: 'transparent'
+        WebkitTapHighlightColor: 'transparent',
+        WebkitAppearance: 'none',
+        appearance: 'none',
+        MozAppearance: 'none'
       }}
     >
       <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 hover:scale-105 cursor-pointer">
