@@ -136,7 +136,7 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
         MozAppearance: 'none'
       }}
     >
-      <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 hover:scale-105 cursor-pointer">
+      <div className="relative w-[110px] h-[110px] m-[2px] transition-all duration-150 hover:scale-105 cursor-pointer">
         {/* SVG with layered octagons for shadow effect */}
         <svg
           width={SIZE}
@@ -223,7 +223,7 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
     <div className="flex h-full flex-col">
       {/* Octagon grid */}
       <motion.div
-        className="flex flex-wrap justify-center items-start gap-1 flex-1 content-start overflow-y-auto py-2"
+        className="flex flex-wrap justify-center items-start gap-0 flex-1 content-start overflow-y-auto py-2"
         variants={{
           hidden: { opacity: 1 },
           visible: {
