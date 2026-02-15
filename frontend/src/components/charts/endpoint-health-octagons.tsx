@@ -1,6 +1,6 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { duration, easing } from '@/lib/motion-tokens';
 
@@ -117,20 +117,17 @@ interface OctagonCardProps {
 
 function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps) {
   const colors = HEALTH_COLORS[level];
-  const pct = total > 0 ? Math.round((running / total) * 100) : 0;
   const blurId = `blur-${level}`;
-  const [showTooltip, setShowTooltip] = useState(false);
 
   return (
     <motion.button
       variants={itemVariants}
       onClick={onClick}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-      className="group relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       data-testid={`octagon-${name}`}
+      style={{ background: 'transparent', border: 'none' }}
     >
-      <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 group-hover:scale-105">
+      <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 hover:scale-105">
         {/* SVG with layered octagons for shadow effect */}
         <svg
           width={SIZE}
@@ -175,25 +172,6 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
           </span>
         </div>
       </div>
-
-      {/* Custom glassmorphic tooltip */}
-      <AnimatePresence>
-        {showTooltip && (
-          <motion.div
-            initial={{ opacity: 0, y: 5, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 5, scale: 0.95 }}
-            transition={{ duration: 0.15, ease: easing.out }}
-            className="absolute left-1/2 -translate-x-1/2 top-[130px] z-50 pointer-events-none"
-          >
-            <div className="px-3 py-2 rounded-lg bg-popover/95 backdrop-blur-sm border border-border/60 shadow-lg">
-              <p className="text-xs font-medium text-popover-foreground whitespace-nowrap">
-                {name} — {running}/{total} running ({pct}%)
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.button>
   );
 }
