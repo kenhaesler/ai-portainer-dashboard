@@ -876,7 +876,7 @@ aside nav:hover {
   }
 
   & button:not(.bg-primary):not(.bg-destructive):hover,
-  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):not(.octagon-button):hover {
     background: rgba(99, 102, 241, 0.1) !important;
     border-color: rgba(99, 102, 241, 0.3) !important;
   }
@@ -904,7 +904,7 @@ aside nav:hover {
   }
 
   & button:not(.bg-primary):not(.bg-destructive):hover,
-  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):not(.octagon-button):hover {
     background: rgba(129, 140, 248, 0.15) !important;
     border-color: rgba(129, 140, 248, 0.3) !important;
   }
