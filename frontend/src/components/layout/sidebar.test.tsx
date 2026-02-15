@@ -61,7 +61,7 @@ describe('Sidebar', () => {
     renderSidebar();
 
     // Remediation link should exist but no badge
-    expect(screen.getByText('Remediation')).toBeInTheDocument();
+    expect(screen.getByText('AI Remediation')).toBeInTheDocument();
     // No destructive badge elements should exist
     const badges = document.querySelectorAll('.bg-destructive');
     expect(badges).toHaveLength(0);
@@ -74,7 +74,7 @@ describe('Sidebar', () => {
 
     renderSidebar();
 
-    expect(screen.getByText('Remediation')).toBeInTheDocument();
+    expect(screen.getByText('AI Remediation')).toBeInTheDocument();
     const badges = document.querySelectorAll('.bg-destructive');
     expect(badges).toHaveLength(0);
   });
@@ -101,7 +101,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Intelligence')).toBeInTheDocument();
     expect(screen.getByText('Operations')).toBeInTheDocument();
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText('AI Settings')).toBeInTheDocument();
   });
 
   it('renders collapse toggle button', () => {
