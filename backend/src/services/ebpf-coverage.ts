@@ -126,6 +126,19 @@ export async function updateCoverageStatus(
   log.info({ endpointId, status, reason }, 'Coverage status updated');
 }
 
+/**
+ * Delete an endpoint coverage record by endpoint id.
+ * Returns true when a row was deleted, false when no record exists.
+ */
+export async function deleteCoverageRecord(endpointId: number): Promise<boolean> {
+  const result = await db().execute(`
+    DELETE FROM ebpf_coverage
+    WHERE endpoint_id = ?
+  `, [endpointId]);
+
+  return result.changes > 0;
+}
+
 export async function getEndpointOtlpOverride(endpointId: number): Promise<string | null> {
   const row = await db().queryOne<{ otlp_endpoint_override: string | null }>(`
     SELECT otlp_endpoint_override

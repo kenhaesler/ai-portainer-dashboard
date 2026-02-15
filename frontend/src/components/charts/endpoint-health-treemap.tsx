@@ -28,6 +28,7 @@ const HEALTH_COLORS = {
   good: '#22c55e',    // green-500
   warning: '#f59e0b', // amber-500
   critical: '#ef4444', // red-500
+  empty: '#94a3b8', // slate-400
 } as const;
 
 function getHealthColor(ratio: number): string {
@@ -110,6 +111,7 @@ function CustomTooltip({ active, payload }: any) {
   if (!active || !payload?.[0]) return null;
   const { name, running, stopped, total, healthRatio } = payload[0].payload as TreemapEntry;
   const pct = Math.round(healthRatio * 100);
+  const hasTotals = total > 0;
 
   return (
     <div className="rounded-xl bg-popover/95 backdrop-blur-sm border border-border px-3 py-2 shadow-lg">
@@ -129,8 +131,13 @@ function CustomTooltip({ active, payload }: any) {
         </div>
         <div className="mt-1 pt-1 border-t border-border flex justify-between gap-4">
           <span className="text-muted-foreground">Health</span>
-          <span className="font-medium">{pct}%</span>
+          <span className="font-medium">{hasTotals ? `${pct}%` : 'N/A'}</span>
         </div>
+        {!hasTotals && (
+          <div className="pt-1 text-[11px] text-muted-foreground">
+            No containers reported
+          </div>
+        )}
       </div>
     </div>
   );
@@ -144,18 +151,18 @@ export const EndpointHealthTreemap = memo(function EndpointHealthTreemap({
 
   const treemapData = useMemo(() => {
     return endpoints
-      .filter((ep) => ep.total > 0)
       .map((ep): TreemapEntry => {
-        const healthRatio = ep.total > 0 ? ep.running / ep.total : 0;
+        const hasTotals = ep.total > 0;
+        const healthRatio = hasTotals ? ep.running / ep.total : 0;
         return {
           name: ep.name,
-          size: ep.total,
+          size: Math.max(ep.total, 1),
           id: ep.id,
           running: ep.running,
           stopped: ep.stopped,
           total: ep.total,
           healthRatio,
-          fill: getHealthColor(healthRatio),
+          fill: hasTotals ? getHealthColor(healthRatio) : HEALTH_COLORS.empty,
         };
       });
   }, [endpoints]);

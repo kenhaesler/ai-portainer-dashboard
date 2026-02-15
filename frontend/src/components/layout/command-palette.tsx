@@ -45,34 +45,30 @@ interface PageEntry {
 }
 
 const pages: PageEntry[] = [
-  { label: 'AI Home', to: '/', icon: LayoutDashboard },
-  { label: 'AI Workload Explorer', to: '/workloads', icon: Boxes },
-  { label: 'AI Fleet Overview', to: '/fleet', icon: Ship },
-  { label: 'AI Container Health', to: '/health', icon: HeartPulse },
-  { label: 'AI Image Footprint', to: '/images', icon: PackageOpen },
-  { label: 'AI Network Topology', to: '/topology', icon: Network },
-  { label: 'AI Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-  { label: 'AI Monitor', to: '/ai-monitor', icon: Brain },
-  { label: 'AI Trace Explorer', to: '/traces', icon: GitBranch },
-  { label: 'AI LLM Assistant', to: '/assistant', icon: MessageSquare },
-  { label: 'AI LLM Observability', to: '/llm-observability', icon: Activity },
-  { label: 'AI Remediation', to: '/remediation', icon: Shield },
-  { label: 'AI Security Audit', to: '/security/audit', icon: Shield },
-  { label: 'AI Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
-  { label: 'AI Settings', to: '/settings', icon: Settings },
+  { label: 'Home', to: '/', icon: LayoutDashboard },
+  { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
+  { label: 'Fleet Overview', to: '/fleet', icon: Ship },
+  { label: 'Container Health', to: '/health', icon: HeartPulse },
+  { label: 'Image Footprint', to: '/images', icon: PackageOpen },
+  { label: 'Network Topology', to: '/topology', icon: Network },
+  { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
+  { label: 'Monitor', to: '/ai-monitor', icon: Brain },
+  { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
+  { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
+  { label: 'LLM Observability', to: '/llm-observability', icon: Activity },
+  { label: 'Remediation', to: '/remediation', icon: Shield },
+  { label: 'Security Audit', to: '/security/audit', icon: Shield },
+  { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
+  { label: 'Settings', to: '/settings', icon: Settings },
   { label: 'Webhooks', to: '/webhooks', icon: Webhook },
   { label: 'Users', to: '/users', icon: Users },
 ];
 
-/** Heuristic: detect if input looks like a natural language question rather than a name search */
 function isNaturalLanguageQuery(input: string): boolean {
   const trimmed = input.trim().toLowerCase();
   if (trimmed.length < 5) return false;
-  // Starts with question words
   if (/^(what|which|how|show|list|find|are|is|why|where|who|when|compare|help|tell)\b/.test(trimmed)) return true;
-  // Ends with a question mark
   if (trimmed.endsWith('?')) return true;
-  // Contains question-like phrases
   if (/\b(using more than|greater than|less than|running|stopped|restarted|unhealthy|memory|cpu)\b/.test(trimmed)) return true;
   return false;
 }
@@ -131,16 +127,12 @@ export function CommandPalette() {
     setAiResult(null);
     nlQuery.mutate(query.trim(), {
       onSuccess: (result) => {
-        if (result.action === 'navigate' && result.page) {
-          setAiResult(result);
-        } else {
-          setAiResult(result);
-        }
+        setAiResult(result);
       },
       onError: () => {
         setAiResult({
           action: 'error',
-          text: 'AI queries are currently unavailable.',
+          text: 'Neural services are currently unreachable.',
         });
       },
     });
@@ -158,7 +150,7 @@ export function CommandPalette() {
 
   const formatRelative = (timestamp: number) => {
     const diff = Date.now() - timestamp;
-    if (diff < 60_000) return 'just now';
+    if (diff < 60_000) return 'Just now';
     if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
     if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
     return `${Math.floor(diff / 86_400_000)}d ago`;
@@ -169,9 +161,6 @@ export function CommandPalette() {
   const stacks = data?.stacks ?? [];
   const logs = data?.logs ?? [];
   const hasRecent = query.trim().length === 0 && recent.length > 0;
-  const hasSearchResults = query.trim().length >= 2 && (
-    containers.length + images.length + stacks.length + logs.length > 0
-  );
 
   const toggleTheme = () => {
     const next = theme === 'apple-dark' ? 'apple-light' : theme === 'apple-light' ? 'system' : 'apple-dark';
@@ -184,31 +173,29 @@ export function CommandPalette() {
     setOpen(false);
   };
 
-  if (!open) return null;
-
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/40 backdrop-blur-[8px]"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
 
-          {/* Command dialog */}
+          {/* Command dialog - macOS Tahoe Style */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -20 }}
+            initial={{ opacity: 0, scale: 0.98, y: -20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            exit={{ opacity: 0, scale: 0.98, y: -10 }}
+            transition={{ type: "spring", damping: 28, stiffness: 350 }}
             className={cn(
-              "relative z-50 w-full max-w-xl overflow-hidden rounded-2xl border bg-card/70 backdrop-blur-2xl shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]",
-              isNl && "border-primary/30 ring-1 ring-primary/20 shadow-[0_0_40px_-12px_rgba(99,102,241,0.2)]"
+              "relative z-[101] w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/10 bg-[#1c1c1e]/85 backdrop-blur-[45px] shadow-[0_40px_120px_rgba(0,0,0,0.8)]",
+              isNl && "border-primary/50 ring-1 ring-primary/30 shadow-[0_0_60px_-12px_rgba(99,102,241,0.3)]"
             )}
           >
             <Command
@@ -219,20 +206,28 @@ export function CommandPalette() {
                 }
               }}
             >
-              <div className="relative flex items-center border-b border-border/50 px-4">
-                <div className="flex h-14 w-full items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+              {/* Search Header - High Density */}
+              <div className="relative flex items-center px-10">
+                <div className="flex h-[72px] w-full items-center gap-5">
+                  <div className="flex shrink-0 items-center justify-center">
                     {isNl ? (
-                      <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                      <Sparkles className="h-6 w-6 text-primary animate-pulse" />
                     ) : (
-                      <FileSearch className="h-5 w-5 text-muted-foreground" />
+                      <div className="relative">
+                        <FileSearch className="h-6 w-6 text-white/30" />
+                        <motion.div 
+                          className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-primary/50 blur-[2px]"
+                          animate={{ opacity: [0.4, 0.9, 0.4] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        />
+                      </div>
                     )}
                   </div>
                   <Command.Input
-                    placeholder="Ask AI or search your infrastructure..."
+                    placeholder="Search or Ask Neural AI..."
                     className={cn(
-                      'h-full w-full bg-transparent text-base text-foreground outline-none',
-                      'placeholder:text-muted-foreground/60'
+                      'h-full w-full bg-transparent text-xl font-medium tracking-tight text-white outline-none',
+                      'placeholder:text-white/10'
                     )}
                     value={query}
                     onValueChange={(v) => { setQuery(v); setAiResult(null); }}
@@ -245,99 +240,80 @@ export function CommandPalette() {
                     autoFocus
                   />
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-4">
                     {isNl && query.trim().length >= 5 && (
                       <button
                         onClick={handleAiQuery}
                         disabled={nlQuery.isPending}
-                        className="flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                       >
                         {nlQuery.isPending ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <Sparkles className="h-3 w-3" />
+                          <Sparkles className="h-3.5 w-3.5" />
                         )}
-                        <span>Ask AI</span>
-                        <kbd className="ml-1 hidden font-mono text-[10px] opacity-70 md:inline">⌘↵</kbd>
+                        <span>Neural Run</span>
                       </button>
                     )}
-                    <button 
-                      onClick={() => setOpen(false)}
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-                    >
-                      <kbd className="text-[10px] font-mono">ESC</kbd>
-                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Options Bar */}
-              <div className="flex items-center justify-between bg-muted/30 px-4 py-2 border-b border-border/40">
-                <label className="flex cursor-pointer items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={includeLogs}
-                    onChange={(e) => setIncludeLogs(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-border accent-primary"
-                  />
-                  <span>Search across logs</span>
-                </label>
-                
-                <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <kbd className="rounded bg-muted px-1 py-0.5 font-mono">↑↓</kbd>
-                    <span>Move</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <kbd className="rounded bg-muted px-1 py-0.5 font-mono">↵</kbd>
-                    <span>Select</span>
-                  </span>
-                </div>
-              </div>
+              {/* Separator - Even more subtle */}
+              {(query.trim().length > 0 || recent.length > 0) && (
+                <div className="mx-10 h-px bg-white/[0.05]" />
+              )}
 
-              <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-2">
+              <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-4 selection:bg-primary/40">
                 {query.trim().length < 2 && !recent.length && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <div className="mb-4 rounded-full bg-muted p-4">
-                      <LayoutDashboard className="h-8 w-8 text-muted-foreground/40" />
-                    </div>
-                    <p className="text-sm font-medium text-foreground">Start typing to search...</p>
-                    <p className="text-xs text-muted-foreground">Search containers, images, stacks, or ask AI a question.</p>
+                  <div className="flex flex-col items-center justify-center py-28 text-center">
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="mb-8 rounded-[32px] bg-white/[0.03] p-8 border border-white/5 shadow-inner"
+                    >
+                      <Brain className="h-16 w-16 text-primary/40" />
+                    </motion.div>
+                    <p className="text-2xl font-bold tracking-tight text-white/80">Neural Search</p>
+                    <p className="mt-2 text-sm font-bold text-white/20 uppercase tracking-[0.3em]">AI-Powered Infrastructure Intelligence</p>
                   </div>
                 )}
 
-                {/* AI Loading State */}
+                {/* 1. AI Result - Highest Priority */}
                 {nlQuery.isPending && (
-                  <div className="m-2 rounded-xl bg-primary/5 p-4 border border-primary/10">
-                    <div className="flex items-center gap-3 text-sm text-primary">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="m-4 rounded-[24px] bg-primary/5 p-8 border border-primary/20 shadow-lg"
+                  >
+                    <div className="flex items-center gap-6">
                       <div className="relative">
-                        <Sparkles className="h-5 w-5 animate-pulse" />
-                        <motion.div 
-                          className="absolute inset-0 h-5 w-5 animate-ping rounded-full bg-primary/20"
-                          initial={false}
-                        />
+                        <div className="h-10 w-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+                        <Sparkles className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-primary" />
                       </div>
-                      <span className="font-medium">AI is analyzing your infrastructure...</span>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-lg font-bold tracking-tight text-primary">Neural processing...</span>
+                        <span className="text-xs font-medium text-primary/40 uppercase tracking-widest">Analyzing infrastructure graph</span>
+                      </div>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
-                {/* AI Result */}
                 {aiResult && (
                   <motion.div 
-                    initial={{ opacity: 0, y: 5 }}
+                    initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="m-2 overflow-hidden rounded-xl border border-primary/20 bg-primary/5"
+                    className="m-4 overflow-hidden rounded-[24px] bg-primary/10 border border-primary/20 shadow-[0_12px_40px_rgba(0,0,0,0.3)]"
                   >
                     {aiResult.action === 'answer' && (
-                      <div className="flex items-start gap-3 p-4">
-                        <div className="rounded-lg bg-primary/20 p-2 text-primary">
-                          <Sparkles className="h-5 w-5" />
+                      <div className="flex items-start gap-6 p-8">
+                        <div className="rounded-[20px] bg-primary/20 p-4 text-primary shadow-inner">
+                          <Sparkles className="h-8 w-8" />
                         </div>
-                        <div className="flex-1 space-y-2">
-                          <p className="text-sm font-semibold leading-relaxed text-foreground">{aiResult.text}</p>
+                        <div className="flex-1 space-y-3">
+                          <p className="text-[19px] font-semibold leading-relaxed text-white tracking-tight">{aiResult.text}</p>
                           {aiResult.description && (
-                            <p className="text-xs leading-relaxed text-muted-foreground/80">{aiResult.description}</p>
+                            <p className="text-[14px] font-medium leading-relaxed text-white/40">{aiResult.description}</p>
                           )}
                         </div>
                       </div>
@@ -345,70 +321,36 @@ export function CommandPalette() {
                     {aiResult.action === 'navigate' && aiResult.page && (
                       <button
                         onClick={() => navigateTo(aiResult.page!)}
-                        className="flex w-full items-center gap-4 p-4 text-left transition-colors hover:bg-primary/10"
+                        className="group flex w-full items-center gap-6 p-8 text-left transition-all hover:bg-primary/20"
                       >
-                        <div className="rounded-lg bg-primary/20 p-2 text-primary">
-                          <ArrowRight className="h-5 w-5" />
+                        <div className="rounded-[20px] bg-primary/20 p-4 text-primary group-hover:scale-110 transition-transform">
+                          <ArrowRight className="h-8 w-8" />
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-bold text-foreground">{aiResult.description || 'View result'}</p>
-                          <p className="text-xs text-primary/70">{aiResult.page}</p>
+                          <p className="text-[19px] font-bold text-white tracking-tight">{aiResult.description || 'View Insight'}</p>
+                          <p className="text-[14px] font-medium text-primary/60">{aiResult.page}</p>
                         </div>
-                        <div className="rounded-full bg-background/50 px-2 py-1 text-[10px] font-bold uppercase tracking-tight text-primary">
-                          Jump to page
+                        <div className="rounded-full bg-white/10 px-5 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-white/50 group-hover:bg-primary group-hover:text-white transition-colors">
+                          Execute
                         </div>
                       </button>
                     )}
                     {aiResult.action === 'error' && (
-                      <div className="flex items-center gap-3 p-4 text-sm text-destructive">
-                        <AlertCircle className="h-5 w-5" />
-                        <span className="font-medium">{aiResult.text}</span>
+                      <div className="flex items-center gap-6 p-8 text-base text-destructive font-bold">
+                        <AlertCircle className="h-8 w-8" />
+                        <span>{aiResult.text}</span>
                       </div>
                     )}
                   </motion.div>
                 )}
 
-                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (
-                  <Command.Empty className="py-12 text-center">
-                    <div className="mb-3 flex justify-center">
-                      <AlertCircle className="h-8 w-8 text-muted-foreground/30" />
-                    </div>
-                    <p className="text-sm font-medium">No results found for "{query}"</p>
-                    <p className="text-xs text-muted-foreground">Try a different search term or ask AI.</p>
-                  </Command.Empty>
-                )}
-
-                {hasRecent && (
-                  <Command.Group
-                    heading="Recent Searches"
-                    className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
-                  >
-                    {recent.map((item) => (
-                      <Command.Item
-                        key={item.term}
-                        value={item.term}
-                        onSelect={() => setQuery(item.term)}
-                        className={cn(
-                          'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
-                          'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
-                        )}
-                      >
-                        <Clock className="h-4 w-4 shrink-0 opacity-60" />
-                        <span className="flex-1 font-medium">{item.term}</span>
-                        <span className="text-[10px] font-medium text-muted-foreground opacity-60">
-                          {formatRelative(item.lastUsed)}
-                        </span>
-                      </Command.Item>
-                    ))}
-                  </Command.Group>
-                )}
-
                 {query.trim().length >= 2 && (
                   <>
+                    {/* 2. Containers - Essential infrastructure */}
                     {containers.length > 0 && (
                       <Command.Group
-                        heading="Containers"
-                        className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
+                        heading="Infrastructure Units"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                       >
                         {containers.map((container) => (
                           <Command.Item
@@ -419,16 +361,16 @@ export function CommandPalette() {
                               navigateTo(`/containers/${container.endpointId}/${container.id}?tab=overview`);
                             }}
                             className={cn(
-                              'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                              'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
+                              'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
                             )}
                           >
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/50">
-                              <Package className="h-4 w-4 opacity-70" />
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-white/[0.03] aria-selected:bg-white/20 shadow-inner">
+                              <Package className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
                             </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold">{container.name}</span>
-                              <span className="text-[11px] text-muted-foreground line-clamp-1">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold tracking-tight">{container.name}</span>
+                              <span className="text-[13px] font-medium text-white/20 aria-selected:text-white/60 line-clamp-1">
                                 {container.image} • {container.endpointName}
                               </span>
                             </div>
@@ -437,42 +379,36 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
 
-                    {images.length > 0 && (
-                      <Command.Group
-                        heading="Images"
-                        className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
-                      >
-                        {images.map((image) => (
+                    {/* 3. Navigation - Core pages */}
+                    <Command.Group
+                      heading="Neural Navigation"
+                      className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
+                    >
+                      <div className="grid grid-cols-2 gap-2">
+                        {pages.map((page) => (
                           <Command.Item
-                            key={`${image.id}-${image.endpointId}`}
-                            value={`image-${image.name}`}
-                            onSelect={() => {
-                              onSearchSelect();
-                              navigateTo('/images');
-                            }}
+                            key={page.to}
+                            value={page.label}
+                            onSelect={() => navigateTo(page.to)}
                             className={cn(
-                              'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                              'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
+                              'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
+                              'text-white/60 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-xl aria-selected:shadow-primary/20'
                             )}
                           >
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/50">
-                              <Layers className="h-4 w-4 opacity-70" />
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.03] aria-selected:bg-white/20">
+                              <page.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
                             </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold">{image.name}</span>
-                              <span className="text-[11px] text-muted-foreground">
-                                {image.tags[0] || 'untagged'} • {image.endpointName || `Endpoint ${image.endpointId}`}
-                              </span>
-                            </div>
+                            <span className="font-bold truncate tracking-tight">{page.label}</span>
                           </Command.Item>
                         ))}
-                      </Command.Group>
-                    )}
+                      </div>
+                    </Command.Group>
 
+                    {/* 4. Stacks - High level groupings */}
                     {stacks.length > 0 && (
                       <Command.Group
-                        heading="Stacks"
-                        className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
+                        heading="Resource Stacks"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                       >
                         {stacks.map((stack) => (
                           <Command.Item
@@ -483,16 +419,16 @@ export function CommandPalette() {
                               navigateTo('/stacks');
                             }}
                             className={cn(
-                              'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                              'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
+                              'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
                             )}
                           >
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/50">
-                              <Boxes className="h-4 w-4 opacity-70" />
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-white/[0.03] aria-selected:bg-white/20 shadow-inner">
+                              <Boxes className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
                             </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold">{stack.name}</span>
-                              <span className="text-[11px] text-muted-foreground">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold tracking-tight">{stack.name}</span>
+                              <span className="text-[13px] font-medium text-white/20 aria-selected:text-white/70">
                                 {stack.status} • Endpoint {stack.endpointId}
                               </span>
                             </div>
@@ -501,10 +437,74 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
 
+                    {/* 5. Images - Assets */}
+                    {images.length > 0 && (
+                      <Command.Group
+                        heading="Binary Blueprints"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
+                      >
+                        {images.map((image) => (
+                          <Command.Item
+                            key={`${image.id}-${image.endpointId}`}
+                            value={`image-${image.name}`}
+                            onSelect={() => {
+                              onSearchSelect();
+                              navigateTo('/images');
+                            }}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                            )}
+                          >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-white/[0.03] aria-selected:bg-white/20 shadow-inner">
+                              <Layers className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold tracking-tight">{image.name}</span>
+                              <span className="text-[13px] font-medium text-white/20 aria-selected:text-white/60">
+                                {image.tags[0] || 'untagged'} • {image.endpointName}
+                              </span>
+                            </div>
+                          </Command.Item>
+                        ))}
+                      </Command.Group>
+                    )}
+                  </>
+                )}
+
+                {/* 6. Recent History */}
+                {hasRecent && (
+                  <Command.Group
+                    heading="Recent Neural Interactions"
+                    className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
+                  >
+                    {recent.map((item) => (
+                      <Command.Item
+                        key={item.term}
+                        value={item.term}
+                        onSelect={() => setQuery(item.term)}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                          'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                        )}
+                      >
+                        <Clock className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
+                        <span className="flex-1 font-semibold tracking-tight">{item.term}</span>
+                        <span className="text-[12px] font-black opacity-10 aria-selected:opacity-50 uppercase tracking-widest">
+                          {formatRelative(item.lastUsed)}
+                        </span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+
+                {query.trim().length >= 2 && (
+                  <>
+                    {/* 7. Logs - High volume data */}
                     {logs.length > 0 && (
                       <Command.Group
-                        heading="Log Entries"
-                        className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
+                        heading="Neural Log Stream"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                       >
                         {logs.map((logItem) => (
                           <Command.Item
@@ -515,14 +515,14 @@ export function CommandPalette() {
                               navigateTo(`/containers/${logItem.endpointId}/${logItem.containerId}?tab=logs`);
                             }}
                             className={cn(
-                              'flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                              'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
+                              'flex cursor-pointer items-start gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
                             )}
                           >
-                            <ScrollText className="mt-1 h-4 w-4 shrink-0 opacity-60" />
-                            <div className="flex flex-col">
-                              <span className="font-bold">{logItem.containerName}</span>
-                              <span className="text-[11px] leading-normal text-muted-foreground/80 line-clamp-2">
+                            <ScrollText className="mt-1 h-6 w-6 shrink-0 opacity-30 aria-selected:opacity-100" />
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold tracking-tight">{logItem.containerName}</span>
+                              <span className="text-[13px] font-medium leading-relaxed text-white/20 aria-selected:text-white/70 line-clamp-2">
                                 {logItem.message}
                               </span>
                             </div>
@@ -533,59 +533,66 @@ export function CommandPalette() {
                   </>
                 )}
 
+                {/* 8. System Controller */}
                 <Command.Group
-                  heading="Navigation"
-                  className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
-                >
-                  {pages.map((page) => (
-                    <Command.Item
-                      key={page.to}
-                      value={page.label}
-                      onSelect={() => navigateTo(page.to)}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                        'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
-                      )}
-                    >
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/30">
-                        <page.icon className="h-3.5 w-3.5 opacity-70" />
-                      </div>
-                      <span className="font-medium">{page.label}</span>
-                    </Command.Item>
-                  ))}
-                </Command.Group>
-
-                <Command.Group
-                  heading="System"
-                  className="p-1 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-widest [&_[cmdk-group-heading]]:text-muted-foreground/60"
+                  heading="Neural Controller"
+                  className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-white/10"
                 >
                   <Command.Item
                     value="Refresh page"
                     onSelect={refresh}
                     className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                      'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
+                      'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                      'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
                     )}
                   >
-                    <RefreshCw className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    <span className="font-medium">Refresh Workspace</span>
+                    <RefreshCw className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
+                    <span className="font-bold tracking-tight text-white/80">Reload Neural Workspace</span>
                   </Command.Item>
                   <Command.Item
                     value="Toggle theme"
                     onSelect={toggleTheme}
                     className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                      'text-foreground aria-selected:bg-primary/10 aria-selected:text-primary'
+                      'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                      'text-white/70 aria-selected:bg-primary aria-selected:text-white aria-selected:shadow-2xl aria-selected:shadow-primary/30'
                     )}
                   >
-                    <Palette className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    <Palette className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
                     <div className="flex flex-1 items-center justify-between">
-                      <span className="font-medium">Cycle UI Theme</span>
-                      <span className="text-[10px] font-bold text-muted-foreground/60">{theme}</span>
+                      <span className="font-bold tracking-tight text-white/80">Neural Atmosphere</span>
+                      <span className="text-[11px] font-black uppercase tracking-widest text-white/20 aria-selected:text-white/60">{theme}</span>
                     </div>
                   </Command.Item>
                 </Command.Group>
+
+                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (
+                  <Command.Empty className="py-28 text-center">
+                    <div className="mb-6 flex justify-center">
+                      <AlertCircle className="h-12 w-12 text-white/10" />
+                    </div>
+                    <p className="text-xl font-bold text-white/60 tracking-tight">No results for "{query}"</p>
+                    <p className="mt-2 text-sm font-medium text-white/20 uppercase tracking-[0.15em]">Refine search or try Neural Run</p>
+                  </Command.Empty>
+                )}
               </Command.List>
+
+              {/* High-End Footer */}
+              <div className="flex items-center justify-between border-t border-white/5 px-8 py-5 bg-white/[0.01]">
+                <div className="flex items-center gap-6">
+                  <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.15em] text-white/15">
+                    <kbd className="rounded-[6px] bg-white/5 px-2 py-1 font-mono text-white/30 border border-white/5 shadow-inner">↑↓</kbd>
+                    <span>Traverse</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.15em] text-white/15">
+                    <kbd className="rounded-[6px] bg-white/5 px-2 py-1 font-mono text-white/30 border border-white/5 shadow-inner">↵</kbd>
+                    <span>Execute</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 text-[11px] font-black uppercase tracking-[0.15em] text-white/15">
+                  <span className="text-[10px] opacity-50">Powered by</span>
+                  <span className="text-primary/60 tracking-[0.3em]">AI Intelligence</span>
+                </div>
+              </div>
             </Command>
           </motion.div>
         </div>

@@ -1,8 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import EbpfCoveragePage from './ebpf-coverage';
+
+const mockSyncMutate = vi.fn();
+const mockVerifyMutate = vi.fn();
+const mockDeployMutate = vi.fn();
+const mockDisableMutate = vi.fn();
+const mockEnableMutate = vi.fn();
+const mockRemoveMutate = vi.fn();
+const mockDeleteStaleMutate = vi.fn();
 
 vi.mock('@/hooks/use-ebpf-coverage', () => ({
   useEbpfCoverage: vi.fn(() => ({
@@ -94,27 +102,31 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
     isLoading: false,
   })),
   useSyncCoverage: vi.fn(() => ({
-    mutate: vi.fn(),
+    mutate: mockSyncMutate,
     isPending: false,
   })),
   useVerifyCoverage: vi.fn(() => ({
-    mutate: vi.fn(),
+    mutate: mockVerifyMutate,
     isPending: false,
   })),
   useDeployBeyla: vi.fn(() => ({
-    mutate: vi.fn(),
+    mutate: mockDeployMutate,
     isPending: false,
   })),
   useDisableBeyla: vi.fn(() => ({
-    mutate: vi.fn(),
+    mutate: mockDisableMutate,
     isPending: false,
   })),
   useEnableBeyla: vi.fn(() => ({
-    mutate: vi.fn(),
+    mutate: mockEnableMutate,
     isPending: false,
   })),
   useRemoveBeyla: vi.fn(() => ({
-    mutate: vi.fn(),
+    mutate: mockRemoveMutate,
+    isPending: false,
+  })),
+  useDeleteStaleCoverage: vi.fn(() => ({
+    mutate: mockDeleteStaleMutate,
     isPending: false,
   })),
 }));
@@ -209,6 +221,18 @@ describe('EbpfCoveragePage', () => {
     // deploy shown for non-deployed-ish rows, remove shown for deployed/failed rows
     expect(screen.getAllByTestId('deploy-btn').length).toBe(4);
     expect(screen.getAllByTestId('remove-btn').length).toBe(2);
+    expect(screen.getAllByTestId('delete-stale-btn').length).toBe(6);
+  });
+
+  it('opens delete stale dialog and confirms delete', () => {
+    renderWithProviders(<EbpfCoveragePage />);
+    const deleteButtons = screen.getAllByTestId('delete-stale-btn');
+    fireEvent.click(deleteButtons[0]);
+
+    expect(screen.getByTestId('ebpf-action-dialog')).toBeTruthy();
+    fireEvent.click(screen.getByText('Confirm'));
+
+    expect(mockDeleteStaleMutate).toHaveBeenCalledWith(1);
   });
 
   it('renders table headers', () => {
