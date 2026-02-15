@@ -4,6 +4,7 @@ import { networkInterfaces } from 'node:os';
 import {
   getEndpointCoverage,
   updateCoverageStatus,
+  deleteCoverageRecord,
   syncEndpointCoverage,
   verifyCoverage,
   getCoverageSummary,
@@ -216,6 +217,37 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
     });
 
     log.info({ endpointId, status }, 'Coverage status updated via API');
+    return { success: true };
+  });
+
+  // Delete stale coverage record (admin only)
+  fastify.delete('/api/ebpf/coverage/:endpointId', {
+    schema: {
+      tags: ['eBPF Coverage'],
+      summary: 'Delete a stale eBPF coverage record for an endpoint',
+      security: [{ bearerAuth: [] }],
+      params: EndpointIdParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
+    const deleted = await deleteCoverageRecord(endpointId);
+
+    if (!deleted) {
+      return reply.code(404).send({ error: 'Coverage record not found' });
+    }
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'ebpf_coverage.delete',
+      target_type: 'endpoint',
+      target_id: String(endpointId),
+      details: { deleted: true },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
     return { success: true };
   });
 

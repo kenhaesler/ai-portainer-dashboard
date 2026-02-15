@@ -3,6 +3,7 @@ import { Cpu, HardDrive, Network } from 'lucide-react';
 import { useContainerMetrics, useNetworkRates } from '@/hooks/use-metrics';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
+import { NetworkTrafficTooltip } from '@/components/charts/network-traffic-tooltip';
 import {
   BarChart,
   Bar,
@@ -174,10 +175,12 @@ export function ContainerMetricsViewer({
                   <XAxis dataKey="network" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `${(Number(value) / (1024 * 1024)).toFixed(2)}`} />
                   <Tooltip
-                    formatter={(value: number, key: string) => [
-                      `${(value / (1024 * 1024)).toFixed(2)} MB/s`,
-                      key === 'rx' ? 'RX' : 'TX',
-                    ]}
+                    cursor={{ fill: 'transparent' }}
+                    content={
+                      <NetworkTrafficTooltip
+                        formatValue={(value) => `${(value / (1024 * 1024)).toFixed(2)} MB/s`}
+                      />
+                    }
                   />
                   <Legend />
                   <Bar dataKey="rx" name="RX" fill="#06b6d4" radius={[6, 6, 0, 0]} />

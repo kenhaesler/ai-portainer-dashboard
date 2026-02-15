@@ -80,6 +80,12 @@ docker compose -f docker/docker-compose.dev.yml up -d
 docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
 ```
 
+Production compose security note:
+- Backend API (`:3051`) is bound to `127.0.0.1` only in `docker/docker-compose.yml`.
+- Browser/API traffic should enter through frontend nginx on `:8080` (`/api/*` and `/socket.io/*` are proxied internally to `backend:3051`).
+- For host-local debugging, use `curl http://127.0.0.1:3051/health`.
+- For remote debugging, use an authenticated tunnel (for example SSH local forward) instead of exposing `:3051` publicly.
+
 **Without Docker:**
 
 ```bash
@@ -143,6 +149,7 @@ Default credentials: `admin` / `changeme123`
 | [MCP / Kali Lab Setup](docs/mcp-kali-setup.md) | Claude Code MCP integration and smoke test prompts |
 | [Test Workloads](docs/test-workloads.md) | Multi-stack test containers for development |
 | [eBPF Trace Ingestion](docs/ebpf-trace-ingestion.md) | Beyla integration for distributed tracing |
+| [TimescaleDB Backups](docs/timescaledb-backup.md) | Backup schedule, retention, manual backup, and restore workflow |
 | [Time-Series Storage Research](docs/time-series-storage-research.md) | Scaling metrics storage beyond SQLite |
 
 ---
@@ -159,7 +166,6 @@ npm test                   # Run all tests
 npm run test -w backend    # Tests for backend only
 npm run test -w frontend   # Tests for frontend only
 npm run test:watch         # Watch mode
-npm run loadtest:edge      # Edge observer load test
 ```
 
 Docker development (preferred):
