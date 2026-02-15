@@ -70,6 +70,34 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+const CustomYAxisTick = ({ x, y, payload }: any) => {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="end"
+      className="text-[11px] fill-muted-foreground"
+      dy={4}
+    >
+      {payload.value}
+    </text>
+  );
+};
+
+const CustomXAxisTick = ({ x, y, payload }: any) => {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      className="text-[11px] fill-muted-foreground"
+      dy={12}
+    >
+      {payload.value}
+    </text>
+  );
+};
+
 export const WorkloadTopBar = memo(function WorkloadTopBar({
   endpoints,
   isLoading,
@@ -124,7 +152,7 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
 
           <XAxis
             type="number"
-            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+            tick={<CustomXAxisTick />}
             axisLine={false}
             tickLine={false}
             allowDecimals={false}
@@ -132,7 +160,7 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
           <YAxis
             type="category"
             dataKey="label"
-            tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+            tick={<CustomYAxisTick />}
             axisLine={false}
             tickLine={false}
             width={160}
