@@ -173,7 +173,10 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
         </svg>
 
         {/* Inner content */}
-        <div className={cn('relative flex flex-col items-center justify-center h-full px-3', colors.text)}>
+        <div
+          className={cn('relative flex flex-col items-center justify-center h-full px-3 pointer-events-none', colors.text)}
+          style={{ background: 'transparent !important' }}
+        >
           <span className="text-[11px] font-semibold leading-tight text-center line-clamp-2 max-w-[80px]">
             {name}
           </span>
