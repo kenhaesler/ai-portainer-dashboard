@@ -53,12 +53,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     <div className="rounded-xl bg-popover/95 backdrop-blur-sm border border-border px-3 py-2 shadow-lg">
       <p className="text-xs font-medium mb-1.5 text-foreground">{label}</p>
       <div className="flex items-center gap-2 text-xs">
-        <div className="w-2 h-2 rounded-full bg-emerald-400" />
+        <div className="w-2 h-2 rounded-full bg-emerald-500" />
         <span className="text-muted-foreground">Running:</span>
         <span className="font-medium">{running}</span>
       </div>
       <div className="flex items-center gap-2 text-xs">
-        <div className="w-2 h-2 rounded-full bg-red-400" />
+        <div className="w-2 h-2 rounded-full bg-red-500" />
         <span className="text-muted-foreground">Stopped:</span>
         <span className="font-medium">{stopped}</span>
       </div>
@@ -113,12 +113,12 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
         >
           <defs>
             <linearGradient id="topBarRunning" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#6ee7b7" />
-              <stop offset="100%" stopColor="#34d399" />
+              <stop offset="0%" stopColor="#34d399" />
+              <stop offset="100%" stopColor="#10b981" />
             </linearGradient>
             <linearGradient id="topBarStopped" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#fca5a5" />
-              <stop offset="100%" stopColor="#f87171" />
+              <stop offset="0%" stopColor="#f87171" />
+              <stop offset="100%" stopColor="#ef4444" />
             </linearGradient>
           </defs>
 
@@ -164,11 +164,11 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
 
       <div className="flex justify-center gap-5 pt-2">
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-emerald-300 to-emerald-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500" />
           <span className="text-xs text-muted-foreground">Running</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-300 to-red-400" />
+          <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-400 to-red-500" />
           <span className="text-xs text-muted-foreground">Stopped</span>
         </div>
       </div>
