@@ -347,57 +347,45 @@ export default function HomePage() {
         </MotionStagger>
       ) : null}
 
-      {/* Resource Overview + Top Workloads + Fleet Summary */}
+      {/* Top Workloads + Fleet Summary */}
       {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SkeletonCard className="h-[88px]" />
-            <SkeletonCard className="h-[88px]" />
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <SkeletonCard className="h-[420px] lg:col-span-2" />
-            <SkeletonCard className="h-[420px]" />
-          </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SkeletonCard className="h-[520px] lg:col-span-2" />
+          <SkeletonCard className="h-[520px]" />
         </div>
       ) : data ? (
-        <div className="space-y-4">
-          <MotionReveal>
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+          <MotionReveal className="lg:col-span-2">
             <SpotlightCard>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <ResourceOverviewCard endpoints={resourceEndpoints} />
+              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Top Workloads
+                </h3>
+                <div className="mb-4">
+                  <ResourceOverviewCard endpoints={resourceEndpoints} />
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <WorkloadTopBar endpoints={endpointChartData} />
+                </div>
               </div>
             </SpotlightCard>
           </MotionReveal>
-          <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
-            <MotionReveal className="lg:col-span-2">
-              <SpotlightCard>
-                <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                    Top Workloads
-                  </h3>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <WorkloadTopBar endpoints={endpointChartData} />
-                  </div>
+          <MotionReveal>
+            <SpotlightCard>
+              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Fleet Summary
+                </h3>
+                <div className="flex-1 min-h-0">
+                  <FleetSummaryCard
+                    endpoints={endpointChartData}
+                    totalContainers={data.kpis.total}
+                  />
                 </div>
-              </SpotlightCard>
-            </MotionReveal>
-            <MotionReveal>
-              <SpotlightCard>
-                <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                    Fleet Summary
-                  </h3>
-                  <div className="flex-1 min-h-0">
-                    <FleetSummaryCard
-                      endpoints={endpointChartData}
-                      totalContainers={data.kpis.total}
-                    />
-                  </div>
-                </div>
-              </SpotlightCard>
-            </MotionReveal>
-          </MotionStagger>
-        </div>
+              </div>
+            </SpotlightCard>
+          </MotionReveal>
+        </MotionStagger>
       ) : null}
 
       {/* Recent Containers Table */}
