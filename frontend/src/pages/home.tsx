@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
@@ -11,7 +11,8 @@ import { KpiCard } from '@/components/shared/kpi-card';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { SmartRefreshControls } from '@/components/shared/smart-refresh-controls';
+import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
+import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
@@ -27,21 +28,13 @@ import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useDashboard();
+  const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
-  const { interval, setInterval, enabled, toggle } = useAutoRefresh(30);
+  const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
-
-  // Track the last successful data update time
-  const lastUpdatedRef = useRef<Date | null>(null);
-  useEffect(() => {
-    if (dataUpdatedAt > 0) {
-      lastUpdatedRef.current = new Date(dataUpdatedAt);
-    }
-  }, [dataUpdatedAt]);
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -183,22 +176,17 @@ export default function HomePage() {
   return (
     <MotionPage>
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
             Dashboard overview with KPIs, charts, and recent containers
           </p>
         </div>
-        <SmartRefreshControls
-          interval={interval}
-          enabled={enabled}
-          onIntervalChange={setInterval}
-          onToggle={toggle}
-          onRefresh={() => forceRefresh()}
-          isRefreshing={isFetching || isForceRefreshing}
-          lastUpdated={lastUpdatedRef.current}
-        />
+        <div className="flex items-center gap-2">
+          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+        </div>
       </div>
 
       {/* KPI Cards */}
