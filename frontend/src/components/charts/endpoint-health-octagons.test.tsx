@@ -14,11 +14,12 @@ vi.mock('framer-motion', () => ({
       return <button {...rest}>{children}</button>;
     },
     div: ({ children, ...props }: any) => {
-      const { variants: _v, initial: _i, animate: _a, ...rest } = props;
+      const { variants: _v, initial: _i, animate: _a, exit: _e, transition: _t, ...rest } = props;
       return <div {...rest}>{children}</div>;
     },
   },
   useReducedMotion: () => false,
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
 const ENDPOINTS = [
