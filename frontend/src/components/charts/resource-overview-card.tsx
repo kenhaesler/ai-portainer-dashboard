@@ -26,9 +26,13 @@ export function computeResourceAggregates(
   const totalMemory = endpoints.reduce((sum, ep) => sum + (ep.totalMemory ?? 0), 0);
   const count = endpoints.length;
 
+  // totalCpu and totalMemory are already percentages (0-100), so just average them
+  const avgCpu = count > 0 ? totalCpu / count : 0;
+  const avgMemory = count > 0 ? totalMemory / count : 0;
+
   return {
-    cpuPercent: count > 0 ? Math.round((totalCpu / count) * 100) / 100 : 0,
-    memoryPercent: count > 0 ? Math.round((totalMemory / count) * 100) / 100 : 0,
+    cpuPercent: Math.min(100, Math.round(avgCpu * 100) / 100),
+    memoryPercent: Math.min(100, Math.round(avgMemory * 100) / 100),
   };
 }
 

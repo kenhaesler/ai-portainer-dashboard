@@ -46,6 +46,14 @@ describe('computeResourceAggregates', () => {
     expect(result.cpuPercent).toBe(100);
     expect(result.memoryPercent).toBe(100);
   });
+
+  it('clamps values exceeding 100% to 100%', () => {
+    const result = computeResourceAggregates([
+      { name: 'overflow', totalCpu: 150, totalMemory: 120 },
+    ]);
+    expect(result.cpuPercent).toBe(100);
+    expect(result.memoryPercent).toBe(100);
+  });
 });
 
 describe('ResourceOverviewCard', () => {
