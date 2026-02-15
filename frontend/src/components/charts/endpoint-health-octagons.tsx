@@ -120,23 +120,17 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
   const blurId = `blur-${level}`;
 
   return (
-    <motion.button
+    <motion.div
       variants={itemVariants}
       onClick={onClick}
-      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 !bg-transparent hover:!bg-transparent focus:!bg-transparent active:!bg-transparent before:!hidden after:!hidden"
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
+      role="button"
+      tabIndex={0}
+      aria-label={`${name} endpoint - ${running}/${total} running`}
+      className="relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
       data-testid={`octagon-${name}`}
-      style={{
-        background: 'transparent !important',
-        border: 'none',
-        boxShadow: 'none',
-        outline: 'none',
-        WebkitTapHighlightColor: 'transparent',
-        WebkitAppearance: 'none',
-        appearance: 'none',
-        MozAppearance: 'none'
-      }}
     >
-      <div className="relative w-[110px] h-[110px] m-[2px] transition-all duration-150 hover:scale-105 cursor-pointer">
+      <div className="relative w-[110px] h-[110px] m-[2px] transition-all duration-150 hover:scale-105">
         {/* SVG with layered octagons for shadow effect */}
         <svg
           width={SIZE}
@@ -181,7 +175,7 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
           </span>
         </div>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 

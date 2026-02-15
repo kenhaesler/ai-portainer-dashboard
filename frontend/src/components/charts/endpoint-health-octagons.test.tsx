@@ -9,10 +9,6 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('framer-motion', () => ({
   motion: {
-    button: ({ children, ...props }: any) => {
-      const { variants: _v, initial: _i, animate: _a, whileHover: _w, ...rest } = props;
-      return <button {...rest}>{children}</button>;
-    },
     div: ({ children, ...props }: any) => {
       const { variants: _v, initial: _i, animate: _a, ...rest } = props;
       return <div {...rest}>{children}</div>;
