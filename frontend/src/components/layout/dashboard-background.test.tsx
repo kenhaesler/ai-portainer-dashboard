@@ -27,7 +27,6 @@ describe('DashboardBackground', () => {
     useThemeStore.setState({ dashboardBackground: 'gradient-mesh' });
     render(<DashboardBackground />);
     expect(screen.getByTestId('dashboard-gradient')).toBeInTheDocument();
-    expect(screen.getByTestId('powered-by-ai-bg')).toBeInTheDocument();
   });
 
   it('does not render particles when background is "gradient-mesh"', () => {
@@ -85,7 +84,6 @@ describe('DashboardBackground', () => {
       useThemeStore.setState({ dashboardBackground: bg });
       render(<DashboardBackground />);
       expect(screen.getByTestId('retro-bg')).toBeInTheDocument();
-      expect(screen.getByTestId('powered-by-ai-bg')).toBeInTheDocument();
     }
   );
 

@@ -59,13 +59,13 @@ describe('CommandPalette', () => {
   it('renders recent searches when query is empty', () => {
     useSearchStore.setState({ recent: [{ term: 'postgres', lastUsed: Date.now() }] });
     renderPalette();
-    expect(screen.getByText('Recent')).toBeInTheDocument();
+    expect(screen.getByText('Recent Searches')).toBeInTheDocument();
     expect(screen.getByText('postgres')).toBeInTheDocument();
   });
 
   it('renders container results when searching', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or ask a question about your infrastructure...');
+    const input = screen.getByPlaceholderText('Ask AI or search your infrastructure...');
     fireEvent.change(input, { target: { value: 'web' } });
     expect(screen.getByText('Containers')).toBeInTheDocument();
     expect(screen.getByText('web-frontend')).toBeInTheDocument();
@@ -73,25 +73,27 @@ describe('CommandPalette', () => {
 
   it('shows Ask AI button for natural language queries', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or ask a question about your infrastructure...');
+    const input = screen.getByPlaceholderText('Ask AI or search your infrastructure...');
     fireEvent.change(input, { target: { value: 'what containers are running' } });
     expect(screen.getByText('Ask AI')).toBeInTheDocument();
   });
 
   it('does not show Ask AI button for simple searches', () => {
     renderPalette();
-    const input = screen.getByPlaceholderText('Search or ask a question about your infrastructure...');
+    const input = screen.getByPlaceholderText('Ask AI or search your infrastructure...');
     fireEvent.change(input, { target: { value: 'nginx' } });
     expect(screen.queryByText('Ask AI')).toBeNull();
   });
 
-  it('shows keyboard shortcut hint for AI queries', () => {
+  it('shows the empty state helper text', () => {
     renderPalette();
-    expect(screen.getByText('ask AI')).toBeInTheDocument();
+    expect(screen.getByText('Search containers, images, stacks, or ask AI a question.')).toBeInTheDocument();
   });
 
   it('does not include deprecated backups page in static page entries', () => {
     renderPalette();
+    const input = screen.getByPlaceholderText('Ask AI or search your infrastructure...');
+    fireEvent.change(input, { target: { value: 'se' } });
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
     expect(screen.getByText('AI Settings')).toBeInTheDocument();
   });
