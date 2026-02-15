@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useDashboardResources } from '@/hooks/use-dashboard-resources';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -29,6 +30,7 @@ import { SpotlightCard } from '@/components/shared/spotlight-card';
 export default function HomePage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
+  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(10);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
@@ -100,14 +102,15 @@ export default function HomePage() {
     }));
   }, [endpoints]);
 
-  const resourceEndpoints = useMemo(() => {
-    if (!endpoints) return [];
-    return endpoints.map((ep) => ({
-      name: ep.name,
-      totalCpu: ep.totalCpu,
-      totalMemory: ep.totalMemory,
+  const stackChartData = useMemo(() => {
+    if (!resourcesData?.topStacks) return [];
+    return resourcesData.topStacks.map((stack) => ({
+      name: stack.name,
+      running: stack.runningCount,
+      stopped: stack.stoppedCount,
+      total: stack.containerCount,
     }));
-  }, [endpoints]);
+  }, [resourcesData]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
@@ -348,12 +351,12 @@ export default function HomePage() {
       ) : null}
 
       {/* Top Workloads + Fleet Summary */}
-      {isLoading ? (
+      {isLoading || isLoadingResources ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <SkeletonCard className="h-[520px] lg:col-span-2" />
           <SkeletonCard className="h-[520px]" />
         </div>
-      ) : data ? (
+      ) : data && resourcesData ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal className="lg:col-span-2">
             <SpotlightCard>
@@ -362,10 +365,13 @@ export default function HomePage() {
                   Top Workloads
                 </h3>
                 <div className="mb-4">
-                  <ResourceOverviewCard endpoints={resourceEndpoints} />
+                  <ResourceOverviewCard
+                    cpuPercent={resourcesData.fleetCpuPercent}
+                    memoryPercent={resourcesData.fleetMemoryPercent}
+                  />
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto">
-                  <WorkloadTopBar endpoints={endpointChartData} />
+                  <WorkloadTopBar endpoints={stackChartData} />
                 </div>
               </div>
             </SpotlightCard>

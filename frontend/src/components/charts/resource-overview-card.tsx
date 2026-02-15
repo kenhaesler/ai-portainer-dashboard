@@ -1,35 +1,10 @@
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import { Cpu, MemoryStick } from 'lucide-react';
 
 export interface ResourceOverviewCardProps {
-  endpoints: Array<{
-    name: string;
-    totalCpu: number;
-    totalMemory: number;
-  }>;
-  isLoading?: boolean;
-}
-
-interface ResourceData {
   cpuPercent: number;
   memoryPercent: number;
-}
-
-export function computeResourceAggregates(
-  endpoints: ResourceOverviewCardProps['endpoints'],
-): ResourceData {
-  if (!endpoints || endpoints.length === 0) {
-    return { cpuPercent: 0, memoryPercent: 0 };
-  }
-
-  // TODO: Implement proper CPU/memory usage aggregation
-  // Current endpoint data only has totalCpu (cores) and totalMemory (bytes) as capacity values,
-  // not actual usage percentages. Proper implementation requires aggregating container stats.
-  // For now, return 0 to avoid showing incorrect values.
-  return {
-    cpuPercent: 0,
-    memoryPercent: 0,
-  };
+  isLoading?: boolean;
 }
 
 function ProgressBar({ percent, variant }: { percent: number; variant: 'cpu' | 'memory' }) {
@@ -79,11 +54,10 @@ function SingleResourceCard({
 }
 
 export const ResourceOverviewCard = memo(function ResourceOverviewCard({
-  endpoints,
+  cpuPercent,
+  memoryPercent,
   isLoading,
 }: ResourceOverviewCardProps) {
-  const data = useMemo(() => computeResourceAggregates(endpoints), [endpoints]);
-
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -97,13 +71,13 @@ export const ResourceOverviewCard = memo(function ResourceOverviewCard({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <SingleResourceCard
         label="Overall CPU Usage"
-        percent={data.cpuPercent}
+        percent={cpuPercent}
         variant="cpu"
         icon={<Cpu className="h-4 w-4" />}
       />
       <SingleResourceCard
         label="Overall Memory Usage"
-        percent={data.memoryPercent}
+        percent={memoryPercent}
         variant="memory"
         icon={<MemoryStick className="h-4 w-4" />}
       />

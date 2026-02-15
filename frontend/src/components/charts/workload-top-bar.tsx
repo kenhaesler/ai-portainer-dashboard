@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 export interface WorkloadTopBarProps {
   endpoints: Array<{
-    id: number;
+    id?: number;
     name: string;
     running: number;
     stopped: number;
@@ -30,7 +30,7 @@ function buildChartData(endpoints: WorkloadTopBarProps['endpoints']): ChartRow[]
     label: ep.name,
     running: ep.running,
     stopped: ep.stopped,
-    endpointId: ep.id,
+    endpointId: ep.id, // May be undefined for stacks
   }));
 
   if (rest.length > 0) {
@@ -125,9 +125,10 @@ export const WorkloadTopBar = memo(function WorkloadTopBar({
   const chartHeight = Math.max(120, chartData.length * rowHeight + 24);
 
   const handleBarClick = (data: any) => {
-    if (data?.endpointId != null) {
+    if (data?.endpointId != null && typeof data.endpointId === 'number') {
       navigate(`/endpoints/${data.endpointId}`);
     }
+    // For stacks without endpoint ID, clicking does nothing
   };
 
   return (
