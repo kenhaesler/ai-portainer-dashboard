@@ -37,6 +37,8 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   virtualScrolling?: boolean;
   serverPagination?: ServerPaginationProps;
+  hideSearch?: boolean;
+  externalSearchValue?: string;
 }
 
 export function DataTable<T>({
@@ -48,6 +50,8 @@ export function DataTable<T>({
   onRowClick,
   virtualScrolling,
   serverPagination,
+  hideSearch,
+  externalSearchValue,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -69,6 +73,13 @@ export function DataTable<T>({
     state: { sorting, columnFilters },
     ...(useVirtual || isServerPaginated ? {} : { initialState: { pagination: { pageSize } } }),
   });
+
+  // Sync external search value into column filter
+  useEffect(() => {
+    if (searchKey && externalSearchValue !== undefined) {
+      table.getColumn(searchKey)?.setFilterValue(externalSearchValue);
+    }
+  }, [externalSearchValue, searchKey, table]);
 
   const { rows } = table.getRowModel();
 
@@ -206,25 +217,27 @@ export function DataTable<T>({
 
   return (
     <div data-testid="data-table" className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        {searchKey && (
-          <input
-            data-testid="data-table-search"
-            type="text"
-            placeholder={searchPlaceholder}
-            value={searchValue}
-            onChange={(e) => table.getColumn(searchKey)?.setFilterValue(e.target.value)}
-            className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        )}
-        {useVirtual && (
-          <p className="shrink-0 text-sm text-muted-foreground" data-testid="virtual-row-count">
-            {isFiltered
-              ? `${filteredCount} of ${totalCount} match${filteredCount !== 1 ? '' : 'es'}`
-              : `${totalCount} total`}
-          </p>
-        )}
-      </div>
+      {!hideSearch && (
+        <div className="flex items-center justify-between gap-4">
+          {searchKey && (
+            <input
+              data-testid="data-table-search"
+              type="text"
+              placeholder={searchPlaceholder}
+              value={searchValue}
+              onChange={(e) => table.getColumn(searchKey)?.setFilterValue(e.target.value)}
+              className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          )}
+          {useVirtual && (
+            <p className="shrink-0 text-sm text-muted-foreground" data-testid="virtual-row-count">
+              {isFiltered
+                ? `${filteredCount} of ${totalCount} match${filteredCount !== 1 ? '' : 'es'}`
+                : `${totalCount} total`}
+            </p>
+          )}
+        </div>
+      )}
 
       {useVirtual ? (
         <div className="relative rounded-md border">
