@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert, Search } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -16,7 +16,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { ContainerStatePie } from '@/components/charts/container-state-pie';
-import { EndpointHealthTreemap } from '@/components/charts/endpoint-health-treemap';
+import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
 import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
 import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
 import { useFavoritesStore } from '@/stores/favorites-store';
@@ -34,6 +34,7 @@ export default function HomePage() {
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
+  const [containerSearch, setContainerSearch] = useState('');
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -329,7 +330,7 @@ export default function HomePage() {
                   Endpoint Health
                 </h3>
                 <div className="flex-1 min-h-0">
-                  <EndpointHealthTreemap endpoints={endpointChartData} />
+                  <EndpointHealthOctagons endpoints={endpointChartData} />
                 </div>
               </div>
             </SpotlightCard>
