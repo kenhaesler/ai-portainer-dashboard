@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
 import { LoginLogo } from "@/components/icons/login-logo";
 import { useUiStore } from "@/stores/ui-store";
+import { PostLoginLoading } from "@/components/shared/post-login-loading";
+import { AnimatePresence } from "framer-motion";
 
 const PARTICLES = [
   { left: "8%", delay: "0s", duration: "12s", size: "7px" },
@@ -43,13 +46,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("changeme123");
   const [error, setError] = useState<string | null>(null);
   const [submitState, setSubmitState] = useState<"idle" | "loading" | "success">("idle");
+  const [showPostLoginLoading, setShowPostLoginLoading] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const stagedClass = useMemo(
     () => (reducedMotion ? "" : "login-stage-in"),
     [reducedMotion],
   );
 
-  if (isAuthenticated) {
+  if (isAuthenticated && !isLoggingIn) {
     return <Navigate to="/" replace />;
   }
 
@@ -57,19 +62,29 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setSubmitState("loading");
+    setIsLoggingIn(true);
 
     try {
       const { defaultLandingPage } = await login(username, password);
       setSubmitState("success");
-      const waitMs = reducedMotion ? 0 : 450;
-      window.setTimeout(() => {
-        navigate(defaultLandingPage || "/", { replace: true });
-      }, waitMs);
+      
+      if (reducedMotion) {
+        window.setTimeout(() => {
+          navigate(defaultLandingPage || "/", { replace: true });
+        }, 0);
+      } else {
+        // Show the high-quality loading screen immediately
+        setShowPostLoginLoading(true);
+        window.setTimeout(() => {
+          navigate(defaultLandingPage || "/", { replace: true });
+        }, 1000); // Reduced to 1 second minimum as requested
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Invalid username or password"
       );
       setSubmitState("idle");
+      setIsLoggingIn(false);
     }
   }
 
@@ -85,6 +100,13 @@ export default function LoginPage() {
       className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4"
       data-reduced-motion={reducedMotion}
     >
+      {createPortal(
+        <AnimatePresence>
+          {showPostLoginLoading && <PostLoginLoading />}
+        </AnimatePresence>,
+        document.body
+      )}
+
       <div
         className={`login-gradient-mesh ${reducedMotion ? "" : "login-gradient-mesh-animate"}`}
         aria-hidden="true"
