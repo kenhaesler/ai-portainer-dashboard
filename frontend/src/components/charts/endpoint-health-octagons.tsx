@@ -16,10 +16,10 @@ export interface EndpointHealthOctagonsProps {
 }
 
 const HEALTH_COLORS = {
-  good: { bg: 'bg-emerald-500/85', text: 'text-white', border: 'border-emerald-400/30' },
-  warning: { bg: 'bg-amber-500/85', text: 'text-white', border: 'border-amber-400/30' },
-  critical: { bg: 'bg-red-500/85', text: 'text-white', border: 'border-red-400/30' },
-  empty: { bg: 'bg-slate-400/60', text: 'text-white', border: 'border-slate-300/30' },
+  good: { fill: 'rgba(16,185,129,0.85)', stroke: 'rgba(52,211,153,0.4)', text: 'text-white', shadow: 'rgba(16,185,129,0.35)' },
+  warning: { fill: 'rgba(245,158,11,0.85)', stroke: 'rgba(251,191,36,0.4)', text: 'text-white', shadow: 'rgba(245,158,11,0.35)' },
+  critical: { fill: 'rgba(239,68,68,0.85)', stroke: 'rgba(248,113,113,0.4)', text: 'text-white', shadow: 'rgba(239,68,68,0.35)' },
+  empty: { fill: 'rgba(148,163,184,0.6)', stroke: 'rgba(203,213,225,0.3)', text: 'text-white', shadow: 'rgba(148,163,184,0.2)' },
 } as const;
 
 type HealthLevel = keyof typeof HEALTH_COLORS;
@@ -35,7 +35,67 @@ function getHealthLevel(running: number, total: number): HealthLevel {
 /** Exported for testing */
 export { getHealthLevel as getHealthLevel_testable };
 
-const OCTAGON_CLIP = 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)';
+/**
+ * Build an SVG octagon path with rounded corners.
+ * The octagon is inscribed in a square of size `s`, with corners cut by `c` pixels.
+ * `r` controls the corner rounding radius.
+ */
+function octagonPath(s: number, c: number, r: number): string {
+  // 8 vertices of the octagon (clockwise from top-left cut)
+  const pts: [number, number][] = [
+    [c, 0],
+    [s - c, 0],
+    [s, c],
+    [s, s - c],
+    [s - c, s],
+    [c, s],
+    [0, s - c],
+    [0, c],
+  ];
+
+  // Build path with rounded corners using quadratic bezier at each vertex
+  const segments: string[] = [];
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const [cx, cy] = pts[i];
+    const [px, py] = pts[(i - 1 + n) % n];
+    const [nx, ny] = pts[(i + 1) % n];
+
+    // Points along the edges, offset by `r` from the vertex
+    const dx1 = px - cx, dy1 = py - cy;
+    const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+    const ax = cx + (dx1 / len1) * r;
+    const ay = cy + (dy1 / len1) * r;
+
+    const dx2 = nx - cx, dy2 = ny - cy;
+    const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+    const bx = cx + (dx2 / len2) * r;
+    const by = cy + (dy2 / len2) * r;
+
+    if (i === 0) {
+      segments.push(`M ${ax} ${ay}`);
+    } else {
+      segments.push(`L ${ax} ${ay}`);
+    }
+    segments.push(`Q ${cx} ${cy} ${bx} ${by}`);
+  }
+
+  // Close back to the start
+  const [cx0, cy0] = pts[0];
+  const [pxLast, pyLast] = pts[n - 1];
+  const dx = pxLast - cx0, dy = pyLast - cy0;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const closePt = `${cx0 + (dx / len) * r} ${cy0 + (dy / len) * r}`;
+  segments.push(`L ${closePt}`);
+  segments.push('Z');
+
+  return segments.join(' ');
+}
+
+const SIZE = 110;
+const CUT = 33; // ~30% of size
+const CORNER_RADIUS = 8;
+const SVG_PATH = octagonPath(SIZE, CUT, CORNER_RADIUS);
 
 const itemVariants = {
   hidden: { opacity: 0, scale: 0.85 },
@@ -67,16 +127,25 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
       data-testid={`octagon-${name}`}
       title={`${name} — ${running}/${total} running (${pct}%)`}
     >
-      {/* Octagonal outer shape */}
       <div
-        className={cn(
-          'relative w-[110px] h-[110px] m-[5px] transition-transform duration-150',
-          'group-hover:scale-105',
-        )}
-        style={{ clipPath: OCTAGON_CLIP }}
+        className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 group-hover:scale-105"
+        style={{ filter: `drop-shadow(0 4px 8px ${colors.shadow}) drop-shadow(0 1px 3px ${colors.shadow})` }}
       >
-        {/* Background fill */}
-        <div className={cn('absolute inset-0', colors.bg, 'backdrop-blur-sm')} />
+        {/* SVG octagon with rounded corners */}
+        <svg
+          width={SIZE}
+          height={SIZE}
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          className="absolute inset-0"
+          aria-hidden="true"
+        >
+          <path
+            d={SVG_PATH}
+            fill={colors.fill}
+            stroke={colors.stroke}
+            strokeWidth={1.5}
+          />
+        </svg>
 
         {/* Inner content */}
         <div className={cn('relative flex flex-col items-center justify-center h-full px-3', colors.text)}>
