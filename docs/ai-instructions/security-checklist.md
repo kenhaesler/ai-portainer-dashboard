@@ -5,7 +5,7 @@ Project-specific security requirements for the AI Portainer Dashboard. Reference
 ## Authentication & Authorization
 
 - JWT via `jose` with 32+ character secrets in production
-- Session store in SQLite — tokens validated server-side on every request
+- Session store in PostgreSQL — tokens validated server-side on every request
 - OIDC/SSO via `openid-client` v6 — PKCE required for all authorization code flows
 - Rate limiting on login endpoints (configurable via `LOGIN_RATE_LIMIT`)
 - Auth decorator: `fastify.authenticate` — all protected `/api/*` routes must use it
