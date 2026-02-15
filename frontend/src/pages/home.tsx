@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert, Search } from 'lucide-react';
 import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useDashboardResources } from '@/hooks/use-dashboard-resources';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -19,6 +20,7 @@ import { ContainerStatePie } from '@/components/charts/container-state-pie';
 import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
 import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
 import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
+import { ResourceOverviewCard } from '@/components/charts/resource-overview-card';
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
@@ -28,6 +30,7 @@ import { SpotlightCard } from '@/components/shared/spotlight-card';
 export default function HomePage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
+  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
@@ -99,6 +102,16 @@ export default function HomePage() {
       total: ep.totalContainers,
     }));
   }, [endpoints]);
+
+  const stackChartData = useMemo(() => {
+    if (!resourcesData?.topStacks) return [];
+    return resourcesData.topStacks.map((stack) => ({
+      name: stack.name,
+      running: stack.runningCount,
+      stopped: stack.stoppedCount,
+      total: stack.containerCount,
+    }));
+  }, [resourcesData]);
 
   // Derive sparkline arrays from KPI history snapshots
   const sparklines = useMemo(() => {
@@ -338,29 +351,35 @@ export default function HomePage() {
         </MotionStagger>
       ) : null}
 
-      {/* Row 4: Top-10 Workload Bar (2/3) + Fleet Summary (1/3) */}
-      {isLoading ? (
+      {/* Top Workloads + Fleet Summary */}
+      {isLoading || isLoadingResources ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <SkeletonCard className="h-[420px] lg:col-span-2" />
-          <SkeletonCard className="h-[420px]" />
+          <SkeletonCard className="h-[520px] lg:col-span-2" />
+          <SkeletonCard className="h-[520px]" />
         </div>
-      ) : data ? (
+      ) : data && resourcesData ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal className="lg:col-span-2">
             <SpotlightCard>
-              <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
                 <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                   Top Workloads
                 </h3>
+                <div className="mb-4">
+                  <ResourceOverviewCard
+                    cpuPercent={resourcesData.fleetCpuPercent}
+                    memoryPercent={resourcesData.fleetMemoryPercent}
+                  />
+                </div>
                 <div className="flex-1 min-h-0 overflow-y-auto">
-                  <WorkloadTopBar endpoints={endpointChartData} />
+                  <WorkloadTopBar endpoints={stackChartData} />
                 </div>
               </div>
             </SpotlightCard>
           </MotionReveal>
           <MotionReveal>
             <SpotlightCard>
-              <div className="flex h-[420px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+              <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
                 <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                   Fleet Summary
                 </h3>
