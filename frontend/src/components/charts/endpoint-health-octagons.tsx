@@ -118,6 +118,7 @@ interface OctagonCardProps {
 function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps) {
   const colors = HEALTH_COLORS[level];
   const pct = total > 0 ? Math.round((running / total) * 100) : 0;
+  const shadowId = `octagon-shadow-${level}`;
 
   return (
     <motion.button
@@ -127,11 +128,8 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
       data-testid={`octagon-${name}`}
       title={`${name} — ${running}/${total} running (${pct}%)`}
     >
-      <div
-        className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 group-hover:scale-105"
-        style={{ filter: `drop-shadow(0 4px 8px ${colors.shadow}) drop-shadow(0 1px 3px ${colors.shadow})` }}
-      >
-        {/* SVG octagon with rounded corners */}
+      <div className="relative w-[110px] h-[110px] m-[5px] transition-all duration-150 group-hover:scale-105">
+        {/* SVG octagon with rounded corners and octagonal shadow */}
         <svg
           width={SIZE}
           height={SIZE}
@@ -139,11 +137,28 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
           className="absolute inset-0"
           aria-hidden="true"
         >
+          <defs>
+            {/* Define octagonal drop shadow filter */}
+            <filter id={shadowId} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="4" />
+              <feOffset dx="0" dy="4" result="offsetblur" />
+              <feComponentTransfer>
+                <feFuncA type="linear" slope="0.35" />
+              </feComponentTransfer>
+              <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Main octagon with shadow */}
           <path
             d={SVG_PATH}
             fill={colors.fill}
             stroke={colors.stroke}
             strokeWidth={1.5}
+            filter={`url(#${shadowId})`}
           />
         </svg>
 
