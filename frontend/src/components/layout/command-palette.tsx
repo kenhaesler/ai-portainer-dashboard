@@ -95,11 +95,11 @@ function isNaturalLanguageQuery(input: string): boolean {
   return false;
 }
 
-export type SearchCategory = 'all' | 'containers' | 'logs';
+export type SearchCategory = 'all' | 'containers' | 'settings';
 
 const categories: { id: SearchCategory; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'containers', label: 'Containers', icon: Package },
-  { id: 'logs', label: 'Logs', icon: ScrollText },
+  { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 export function CommandPalette() {
@@ -149,9 +149,9 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  // Auto-enable log search when logs category is active
+  // Always include logs in search results
   useEffect(() => {
-    setIncludeLogs(activeCategory === 'logs' || activeCategory === 'all');
+    setIncludeLogs(true);
   }, [activeCategory]);
 
   const isNl = isNaturalLanguageQuery(query);
@@ -199,16 +199,16 @@ export function CommandPalette() {
   // Filter results based on active category
   const containers = activeCategory === 'all' || activeCategory === 'containers' ? allContainers : [];
   const images = activeCategory === 'all' || activeCategory === 'containers' ? allImages : [];
-  const logs = activeCategory === 'all' || activeCategory === 'logs' ? allLogs : [];
+  const logs = activeCategory === 'all' ? allLogs : [];
   const filteredPages = activeCategory === 'all'
     ? pages
     : activeCategory === 'containers'
       ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/fleet' || p.to === '/images')
-      : activeCategory === 'logs'
-        ? pages.filter((p) => p.to === '/edge-logs')
+      : activeCategory === 'settings'
+        ? pages.filter((p) => p.to === '/settings' || p.to === '/users' || p.to === '/webhooks')
         : pages;
 
-  const filteredSettings = activeCategory === 'all' ? settingsEntries : [];
+  const filteredSettings = activeCategory === 'all' || activeCategory === 'settings' ? settingsEntries : [];
 
   // Client-side endpoint (node) filtering
   const filteredEndpoints = (activeCategory === 'all' || activeCategory === 'containers') && lowerQuery.length >= 2

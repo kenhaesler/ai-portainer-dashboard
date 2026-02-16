@@ -92,7 +92,7 @@ describe('CommandPalette (Spotlight Style)', () => {
     const categoryButtons = screen.getByTestId('category-buttons');
     expect(categoryButtons).toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter by Logs')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by Settings')).toBeInTheDocument();
   });
 
   it('category buttons are visible in both idle and typing states', () => {
@@ -114,12 +114,12 @@ describe('CommandPalette (Spotlight Style)', () => {
     // With 'all' category, containers should be visible
     expect(screen.getByText('web-frontend')).toBeInTheDocument();
 
-    // Click Logs category
-    const logsBtn = screen.getByLabelText('Filter by Logs');
-    fireEvent.click(logsBtn);
-    expect(logsBtn).toHaveAttribute('aria-pressed', 'true');
+    // Click Settings category
+    const settingsBtn = screen.getByLabelText('Filter by Settings');
+    fireEvent.click(settingsBtn);
+    expect(settingsBtn).toHaveAttribute('aria-pressed', 'true');
 
-    // Container results should be hidden when logs filter is active
+    // Container results should be hidden when settings filter is active
     expect(screen.queryByText('Infrastructure Units')).not.toBeInTheDocument();
   });
 
