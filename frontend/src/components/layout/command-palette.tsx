@@ -23,6 +23,7 @@ import {
   Plug,
   HardDriveDownload,
   Palette,
+  Server,
   Package,
   Layers,
   ScrollText,
@@ -35,6 +36,7 @@ import {
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useGlobalSearch } from '@/hooks/use-global-search';
+import { useEndpoints } from '@/hooks/use-endpoints';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSearch } from '@/providers/search-provider';
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
@@ -110,6 +112,7 @@ export function CommandPalette() {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const debouncedQuery = useDebouncedValue(query, 250);
   const { data, isLoading } = useGlobalSearch(debouncedQuery, open, includeLogs);
+  const { data: endpoints } = useEndpoints();
   const { recent, addRecent } = useSearch();
   const nlQuery = useNlQuery();
 
@@ -205,6 +208,11 @@ export function CommandPalette() {
         : pages;
 
   const filteredSettings = activeCategory === 'all' ? settingsEntries : [];
+
+  // Client-side endpoint (node) filtering
+  const filteredEndpoints = (activeCategory === 'all' || activeCategory === 'containers') && query.trim().length >= 2
+    ? (endpoints ?? []).filter((ep) => ep.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 6)
+    : [];
 
   const hasRecent = query.trim().length === 0 && recent.length > 0;
 
@@ -398,6 +406,36 @@ export function CommandPalette() {
                               <span className="font-bold tracking-tight">{container.name}</span>
                               <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70 line-clamp-1">
                                 {container.image} • {container.endpointName}
+                              </span>
+                            </div>
+                          </Command.Item>
+                        ))}
+                      </Command.Group>
+                    )}
+
+                    {/* Nodes / Endpoints */}
+                    {filteredEndpoints.length > 0 && (
+                      <Command.Group
+                        heading="Nodes"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
+                      >
+                        {filteredEndpoints.map((ep) => (
+                          <Command.Item
+                            key={`endpoint-${ep.id}`}
+                            value={`node-${ep.name}`}
+                            onSelect={() => navigateTo(`/fleet?endpoint=${ep.id}`)}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
+                            )}
+                          >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-muted/50 shadow-inner">
+                              <Server className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold tracking-tight">{ep.name}</span>
+                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70">
+                                {ep.status === 'up' ? 'Online' : 'Offline'} • {ep.totalContainers} containers • {ep.stackCount} stacks
                               </span>
                             </div>
                           </Command.Item>

@@ -7,6 +7,15 @@ import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
 
+vi.mock('@/hooks/use-endpoints', () => ({
+  useEndpoints: vi.fn(() => ({
+    data: [
+      { id: 1, name: 'prod-server', status: 'up', totalContainers: 12, stackCount: 3 },
+      { id: 2, name: 'dev-server', status: 'up', totalContainers: 5, stackCount: 1 },
+    ],
+  })),
+}));
+
 vi.mock('@/hooks/use-global-search', () => ({
   useGlobalSearch: vi.fn(() => ({
     data: {
