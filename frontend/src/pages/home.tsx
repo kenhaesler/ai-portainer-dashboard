@@ -2,10 +2,9 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
-import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
-import { useDashboardResources } from '@/hooks/use-dashboard-resources';
+import { type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useDashboardFull } from '@/hooks/use-dashboard-full';
 import { useFavoriteContainers } from '@/hooks/use-containers';
-import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useKpiHistory } from '@/hooks/use-kpi-history';
 import { KpiCard } from '@/components/shared/kpi-card';
@@ -29,13 +28,16 @@ import { ContainerSmartSearch } from '@/components/shared/container-smart-search
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
-  const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
+  // Unified fetch: summary + resources + endpoints in one request
+  const { data: fullData, isLoading, isError, error, refetch, isFetching } = useDashboardFull(8);
+  const data = fullData?.summary;
+  const resourcesData = fullData?.resources;
+  const endpoints = fullData?.endpoints;
+  const isLoadingResources = isLoading;
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
-  const { data: endpoints } = useEndpoints();
   const { data: kpiHistory } = useKpiHistory(24);
   const [containerSearch, setContainerSearch] = useState('');
 

@@ -9,6 +9,7 @@ import {
   stopContainer,
   removeContainer,
 } from './portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('ebpf-coverage');
@@ -171,7 +172,11 @@ async function findBeylaContainer(endpointId: number): Promise<{
   running: boolean;
   managed: boolean;
 } | null> {
-  const containers = await getContainers(endpointId, true);
+  const containers = await cachedFetchSWR(
+    getCacheKey('containers', endpointId),
+    TTL.CONTAINERS,
+    () => getContainers(endpointId, true),
+  );
   const beyla = containers.find(isBeylaContainer);
 
   if (!beyla) {
@@ -230,7 +235,11 @@ export async function detectBeylaOnEndpoint(endpointId: number, endpointType?: n
     return 'incompatible';
   }
   try {
-    const containers = await getContainers(endpointId, true);
+    const containers = await cachedFetchSWR(
+      getCacheKey('containers', endpointId),
+      TTL.CONTAINERS,
+      () => getContainers(endpointId, true),
+    );
     const beyla = containers.find((c) =>
       c.Image.toLowerCase().includes('grafana/beyla') ||
       c.Image.toLowerCase().includes('beyla'),

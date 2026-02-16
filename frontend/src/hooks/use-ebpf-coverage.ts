@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { usePageVisibility } from '@/hooks/use-page-visibility';
 
 export interface CoverageRecord {
   endpoint_id: number;
@@ -33,18 +34,22 @@ export interface CoverageSummary {
 }
 
 export function useEbpfCoverage() {
+  const isPageVisible = usePageVisibility();
+
   return useQuery<{ coverage: CoverageRecord[] }>({
     queryKey: ['ebpf', 'coverage'],
     queryFn: () => api.get('/api/ebpf/coverage'),
-    refetchInterval: 30_000,
+    refetchInterval: isPageVisible ? 120_000 : false,
   });
 }
 
 export function useEbpfCoverageSummary() {
+  const isPageVisible = usePageVisibility();
+
   return useQuery<CoverageSummary>({
     queryKey: ['ebpf', 'coverage', 'summary'],
     queryFn: () => api.get('/api/ebpf/coverage/summary'),
-    refetchInterval: 30_000,
+    refetchInterval: isPageVisible ? 120_000 : false,
   });
 }
 
