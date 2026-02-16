@@ -7,15 +7,6 @@ import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
 
-// Mock framer-motion to avoid animation issues in tests
-vi.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}));
-
 vi.mock('@/components/icons/sidebar-logo', () => ({
   SidebarLogo: () => <svg data-testid="sidebar-logo" />,
 }));
@@ -184,8 +175,7 @@ describe('CommandPalette (Spotlight Style)', () => {
     expect(dialog?.className).toContain('z-[101]');
     expect(dialog?.className).toContain('w-full');
 
-    // The width animation is handled by framer-motion, not CSS classes
-    // Just verify typing updates the query state
+    // Verify typing updates the query state
     const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
     fireEvent.change(input, { target: { value: 'test' } });
     expect((input as HTMLInputElement).value).toBe('test');
@@ -201,10 +191,9 @@ describe('CommandPalette (Spotlight Style)', () => {
     expect(screen.queryByText('Reload Neural Workspace')).not.toBeInTheDocument();
   });
 
-  it('respects prefers-reduced-motion via framer-motion', () => {
+  it('respects prefers-reduced-motion via CSS utility classes', () => {
     renderPalette();
     const dialog = screen.getByPlaceholderText('Search or Ask Neural AI...').closest('[class*="z-[101]"]');
-    // Framer-motion handles motion-reduce internally, just verify dialog exists
     expect(dialog).toBeInTheDocument();
     expect(dialog?.className).toContain('z-[101]');
   });
