@@ -12,7 +12,7 @@ vi.mock('../services/portainer-client.js', () => ({
 vi.mock('../services/portainer-cache.js', () => ({
   cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
   getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 30, CONTAINERS: 15 },
+  TTL: { ENDPOINTS: 30, CONTAINERS: 15, STATS: 60 },
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -25,10 +25,13 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import * as portainer from '../services/portainer-client.js';
+import { cachedFetchSWR, getCacheKey } from '../services/portainer-cache.js';
 
 const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
 const mockGetContainers = vi.mocked(portainer.getContainers);
 const mockGetContainer = vi.mocked(portainer.getContainer);
+const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
+const mockGetCacheKey = vi.mocked(getCacheKey);
 
 function buildApp() {
   const app = Fastify();
@@ -175,6 +178,27 @@ describe('containers routes', () => {
     const body = JSON.parse(res.body);
     expect(body.error).toBe('Unable to fetch container details from Portainer');
     expect(body.details).toContain('Container not found');
+  });
+
+  it('should cache container detail responses via cachedFetchSWR (#728)', async () => {
+    mockGetContainer.mockResolvedValue(fakeContainer('abc123', 'web') as any);
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers/1/abc123',
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // Verify cachedFetchSWR was called with the container-detail cache key
+    const swr = mockCachedFetchSWR.mock.calls.find((call) => {
+      const key = call[0] as string;
+      return key.includes('container-detail');
+    });
+    expect(swr).toBeDefined();
+    // TTL should be STATS (60s)
+    expect(swr![1]).toBe(60);
   });
 });
 

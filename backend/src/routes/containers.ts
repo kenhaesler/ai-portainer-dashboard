@@ -218,7 +218,11 @@ export async function containersRoutes(fastify: FastifyInstance) {
       containerId: string;
     };
     try {
-      const container = await portainer.getContainer(endpointId, containerId);
+      const container = await cachedFetchSWR(
+        getCacheKey('container-detail', endpointId, containerId),
+        TTL.STATS, // 60s TTL — detail changes infrequently, matches scheduler interval
+        () => portainer.getContainer(endpointId, containerId),
+      );
       return container;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';

@@ -6,7 +6,7 @@ import { normalizeEndpoint, normalizeContainer } from '../services/portainer-nor
 import { getKpiHistory } from '../services/kpi-store.js';
 import { createChildLogger } from '../utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '../services/security-audit.js';
-import { collectMetrics } from '../services/metrics-collector.js';
+import { getLatestMetricsBatch } from '../services/metrics-store.js';
 
 const log = createChildLogger('route:dashboard');
 
@@ -199,16 +199,17 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // Fetch stats for all running containers (parallel, with limit)
+    // Read latest metrics from TimescaleDB (collected by the scheduler every 60s)
+    // instead of hitting Portainer's stats API for every running container.
     const runningContainers = allContainers.filter((c) => c.container.state === 'running');
+    const runningContainerIds = runningContainers.map((c) => c.container.id);
 
-    const statsResults = await Promise.allSettled(
-      runningContainers.map(({ container, endpointId }) =>
-        collectMetrics(endpointId, container.id)
-          .then((metrics) => ({ containerId: container.id, metrics }))
-          .catch(() => null),
-      ),
-    );
+    let storedMetrics = new Map<string, Record<string, number>>();
+    try {
+      storedMetrics = await getLatestMetricsBatch(runningContainerIds);
+    } catch (err) {
+      log.warn({ err }, 'Failed to read stored metrics from TimescaleDB, resource data will be empty');
+    }
 
     // Aggregate fleet-wide CPU/memory
     let totalCpuPercent = 0;
@@ -217,16 +218,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     const containerMetrics = new Map<string, { cpu: number; memory: number; memoryBytes: number }>();
 
-    for (const result of statsResults) {
-      if (result.status === 'fulfilled' && result.value) {
-        const { containerId, metrics } = result.value;
-        containerMetrics.set(containerId, {
-          cpu: metrics.cpu,
-          memory: metrics.memory,
-          memoryBytes: metrics.memoryBytes,
-        });
-        totalCpuPercent += metrics.cpu;
-        totalMemoryPercent += metrics.memory;
+    for (const { container } of runningContainers) {
+      const metrics = storedMetrics.get(container.id);
+      if (metrics && (metrics.cpu !== undefined || metrics.memory !== undefined)) {
+        const cpu = metrics.cpu ?? 0;
+        const memory = metrics.memory ?? 0;
+        const memoryBytes = metrics.memory_bytes ?? 0;
+        containerMetrics.set(container.id, { cpu, memory, memoryBytes });
+        totalCpuPercent += cpu;
+        totalMemoryPercent += memory;
         statsCount++;
       }
     }

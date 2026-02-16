@@ -7,7 +7,7 @@ const mockGetKpiHistory = vi.fn();
 const mockGetEndpoints = vi.fn();
 const mockGetContainers = vi.fn();
 const mockGetSecurityAudit = vi.fn();
-const mockCollectMetrics = vi.fn();
+const mockGetLatestMetricsBatch = vi.fn();
 
 vi.mock('../services/kpi-store.js', () => ({
   getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
@@ -50,8 +50,8 @@ vi.mock('../services/security-audit.js', () => ({
   buildSecurityAuditSummary: () => ({ totalAudited: 0, flagged: 0, ignored: 0 }),
 }));
 
-vi.mock('../services/metrics-collector.js', () => ({
-  collectMetrics: (...args: unknown[]) => mockCollectMetrics(...args),
+vi.mock('../services/metrics-store.js', () => ({
+  getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -243,13 +243,33 @@ describe('Dashboard Routes', () => {
 
   describe('GET /api/dashboard/resources', () => {
     beforeEach(() => {
-      mockCollectMetrics.mockResolvedValue({
-        cpu: 45.5,
-        memory: 62.3,
-        memoryBytes: 1024 * 1024 * 500, // 500 MB
-        networkRxBytes: 1000,
-        networkTxBytes: 2000,
-      });
+      // Default: return metrics for any requested containers
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 45.5, memory: 62.3, memory_bytes: 1024 * 1024 * 500 }],
+        ['c-2', { cpu: 45.5, memory: 62.3, memory_bytes: 1024 * 1024 * 500 }],
+      ]));
+    });
+
+    it('reads metrics from TimescaleDB instead of calling Portainer stats API', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      const containers = [
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ];
+
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 50.0, memory: 60.0, memory_bytes: 1024 * 1024 * 500 }],
+      ]));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
+
+      expect(res.statusCode).toBe(200);
+      // Verify getLatestMetricsBatch was called with the running container IDs
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledWith(['c-1']);
+
+      await app.close();
     });
 
     it('aggregates fleet-wide CPU and memory usage', async () => {
@@ -261,9 +281,10 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
-      mockCollectMetrics
-        .mockResolvedValueOnce({ cpu: 40.0, memory: 50.0, memoryBytes: 1024 * 1024 * 400 })
-        .mockResolvedValueOnce({ cpu: 60.0, memory: 70.0, memoryBytes: 1024 * 1024 * 600 });
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 40.0, memory: 50.0, memory_bytes: 1024 * 1024 * 400 }],
+        ['c-2', { cpu: 60.0, memory: 70.0, memory_bytes: 1024 * 1024 * 600 }],
+      ]));
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
@@ -289,6 +310,11 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 45.5, memory: 62.3, memory_bytes: 1024 * 1024 * 500 }],
+        ['c-2', { cpu: 45.5, memory: 62.3, memory_bytes: 1024 * 1024 * 500 }],
+        ['c-3', { cpu: 45.5, memory: 62.3, memory_bytes: 1024 * 1024 * 500 }],
+      ]));
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
@@ -343,9 +369,10 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
-      mockCollectMetrics
-        .mockResolvedValueOnce({ cpu: 10.0, memory: 10.0, memoryBytes: 1024 * 1024 * 100 }) // low stack
-        .mockResolvedValueOnce({ cpu: 80.0, memory: 90.0, memoryBytes: 1024 * 1024 * 800 }); // high stack
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 10.0, memory: 10.0, memory_bytes: 1024 * 1024 * 100 }],
+        ['c-2', { cpu: 80.0, memory: 90.0, memory_bytes: 1024 * 1024 * 800 }],
+      ]));
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
@@ -368,6 +395,12 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
+      // Return metrics for all 15 containers
+      const batchMap = new Map<string, Record<string, number>>();
+      for (let i = 0; i < 15; i++) {
+        batchMap.set(`c-${i}`, { cpu: 10 + i, memory: 20 + i, memory_bytes: 1024 * 1024 * (100 + i) });
+      }
+      mockGetLatestMetricsBatch.mockResolvedValue(batchMap);
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources?topN=5' });
@@ -402,6 +435,7 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map());
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
@@ -419,7 +453,7 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
-    it('handles stats collection failures gracefully', async () => {
+    it('handles metrics store failure gracefully', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = [
         makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
@@ -428,9 +462,11 @@ describe('Dashboard Routes', () => {
 
       mockGetEndpoints.mockResolvedValue(endpoints);
       mockGetContainers.mockResolvedValue(containers);
-      mockCollectMetrics
-        .mockResolvedValueOnce({ cpu: 40.0, memory: 50.0, memoryBytes: 1024 * 1024 * 400 })
-        .mockRejectedValueOnce(new Error('Stats not available'));
+      // Simulate TimescaleDB failure — returns only partial data
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([
+        ['c-1', { cpu: 40.0, memory: 50.0, memory_bytes: 1024 * 1024 * 400 }],
+        // c-2 has no stored metrics
+      ]));
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
@@ -444,6 +480,30 @@ describe('Dashboard Routes', () => {
 
       // Both stacks should still appear, but only 'web' has resource data
       expect(data.topStacks).toHaveLength(2);
+
+      await app.close();
+    });
+
+    it('handles complete metrics store failure gracefully', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      const containers = [
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ];
+
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue(containers);
+      mockGetLatestMetricsBatch.mockRejectedValue(new Error('TimescaleDB unavailable'));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/resources' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      // Should degrade gracefully with 0% usage
+      expect(data.fleetCpuPercent).toBe(0);
+      expect(data.fleetMemoryPercent).toBe(0);
+      expect(data.topStacks).toHaveLength(1);
 
       await app.close();
     });

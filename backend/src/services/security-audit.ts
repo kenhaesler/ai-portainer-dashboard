@@ -105,7 +105,15 @@ export function isIgnoredContainer(containerName: string, patterns: string[]): b
   return patterns.some((pattern) => matchesPattern(containerName, pattern));
 }
 
-export async function getSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
+/** TTL for the full audit result cache (5 minutes). */
+const SECURITY_AUDIT_TTL = 300;
+
+/**
+ * Run the full security audit computation — fetches endpoints, containers,
+ * and inspects each container for host config. This is the expensive inner
+ * function; callers should prefer the cached `getSecurityAudit()` wrapper.
+ */
+async function computeSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
   const ignorePatterns = await getSecurityAuditIgnoreList();
   const endpoints = await cachedFetch(
     getCacheKey('endpoints'),
@@ -181,6 +189,20 @@ export async function getSecurityAudit(endpointId?: number): Promise<SecurityAud
   }
 
   return entries;
+}
+
+/**
+ * Get the security audit results, cached with a 5-minute TTL.
+ * The dashboard summary calls this on every request — caching prevents
+ * N+1 container inspect calls from thundering on every page load.
+ */
+export async function getSecurityAudit(endpointId?: number): Promise<SecurityAuditEntry[]> {
+  const cacheKey = getCacheKey('security-audit', endpointId ?? 'all');
+  return cachedFetch(
+    cacheKey,
+    SECURITY_AUDIT_TTL,
+    () => computeSecurityAudit(endpointId),
+  );
 }
 
 export function buildSecurityAuditSummary(entries: SecurityAuditEntry[]): {
