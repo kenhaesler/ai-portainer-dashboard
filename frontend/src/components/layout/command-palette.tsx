@@ -18,6 +18,11 @@ import {
   Webhook,
   Users,
   Settings,
+  Settings2,
+  Bot,
+  Plug,
+  HardDriveDownload,
+  Palette,
   Package,
   Layers,
   ScrollText,
@@ -59,6 +64,23 @@ const pages: PageEntry[] = [
   { label: 'Settings', to: '/settings', icon: Settings },
   { label: 'Webhooks', to: '/webhooks', icon: Webhook },
   { label: 'Users', to: '/users', icon: Users },
+];
+
+interface SettingsEntry {
+  label: string;
+  keywords: string;
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const settingsEntries: SettingsEntry[] = [
+  { label: 'General Settings', keywords: 'general cache redis polling interval', to: '/settings?tab=general', icon: Settings2 },
+  { label: 'Security Settings', keywords: 'security auth oidc sso password login rbac jwt session', to: '/settings?tab=security', icon: Shield },
+  { label: 'AI & LLM Settings', keywords: 'ai llm ollama model prompt anthropic claude openai', to: '/settings?tab=ai', icon: Bot },
+  { label: 'Monitoring Settings', keywords: 'monitoring notifications email smtp teams discord telegram alerts', to: '/settings?tab=monitoring', icon: Activity },
+  { label: 'Integrations Settings', keywords: 'integrations webhooks elasticsearch portainer api', to: '/settings?tab=integrations', icon: Plug },
+  { label: 'Infrastructure Settings', keywords: 'infrastructure backup database postgres timescale', to: '/settings?tab=infrastructure', icon: HardDriveDownload },
+  { label: 'Appearance Settings', keywords: 'appearance theme dark light apple catppuccin background animation', to: '/settings?tab=appearance', icon: Palette },
 ];
 
 function isNaturalLanguageQuery(input: string): boolean {
@@ -188,6 +210,9 @@ export function CommandPalette() {
           : activeCategory === 'logs'
             ? pages.filter((p) => p.to === '/edge-logs')
             : pages;
+
+  // Show settings entries when category is 'all' or 'settings'
+  const filteredSettings = activeCategory === 'all' || activeCategory === 'settings' ? settingsEntries : [];
 
   const hasRecent = query.trim().length === 0 && recent.length > 0;
 
@@ -409,6 +434,33 @@ export function CommandPalette() {
                                 <page.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
                               </div>
                               <span className="font-bold truncate tracking-tight">{page.label}</span>
+                            </Command.Item>
+                          ))}
+                        </div>
+                      </Command.Group>
+                    )}
+
+                    {/* Settings tabs - deep links */}
+                    {filteredSettings.length > 0 && (
+                      <Command.Group
+                        heading="Settings"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
+                      >
+                        <div className="grid grid-cols-2 gap-2">
+                          {filteredSettings.map((entry) => (
+                            <Command.Item
+                              key={entry.to}
+                              value={`${entry.label} ${entry.keywords}`}
+                              onSelect={() => navigateTo(entry.to)}
+                              className={cn(
+                                'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
+                                'text-foreground/60 aria-selected:bg-muted/60 aria-selected:text-foreground'
+                              )}
+                            >
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-muted/30 aria-selected:bg-muted/50">
+                                <entry.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
+                              </div>
+                              <span className="font-bold truncate tracking-tight">{entry.label}</span>
                             </Command.Item>
                           ))}
                         </div>
