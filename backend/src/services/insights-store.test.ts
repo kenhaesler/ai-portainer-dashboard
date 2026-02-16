@@ -71,40 +71,46 @@ describe('insights-store', () => {
   });
 
   describe('insertInsights (batch)', () => {
-    it('inserts multiple insights in a transaction', async () => {
+    it('inserts multiple insights in a transaction and returns their IDs', async () => {
       // Transaction mock: call the callback with a transactional db mock
       const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
       const txQueryOne = vi.fn().mockResolvedValue({ cnt: 0 });
       const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
-      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<number>) => fn(txDb));
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<Set<string>>) => fn(txDb));
 
       const insights = [
         makeInsight({ id: 'id-1' }),
         makeInsight({ id: 'id-2', container_id: 'c2', container_name: 'api' }),
       ];
 
-      const inserted = await insertInsights(insights);
+      const insertedIds = await insertInsights(insights);
 
-      expect(inserted).toBe(2);
+      expect(insertedIds).toBeInstanceOf(Set);
+      expect(insertedIds.size).toBe(2);
+      expect(insertedIds.has('id-1')).toBe(true);
+      expect(insertedIds.has('id-2')).toBe(true);
       expect(txExecute).toHaveBeenCalledTimes(2);
     });
 
-    it('deduplicates insights with same container_id, category, title within 60min', async () => {
+    it('deduplicates insights and only returns actually-inserted IDs', async () => {
       const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
       const txQueryOne = vi.fn()
         .mockResolvedValueOnce({ cnt: 1 }) // first insight is a duplicate
         .mockResolvedValueOnce({ cnt: 0 }); // second is unique
       const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
-      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<number>) => fn(txDb));
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<Set<string>>) => fn(txDb));
 
       const insights = [
         makeInsight({ id: 'dup-1' }),
         makeInsight({ id: 'unique-1', container_id: 'c2' }),
       ];
 
-      const inserted = await insertInsights(insights);
+      const insertedIds = await insertInsights(insights);
 
-      expect(inserted).toBe(1);
+      expect(insertedIds).toBeInstanceOf(Set);
+      expect(insertedIds.size).toBe(1);
+      expect(insertedIds.has('dup-1')).toBe(false);
+      expect(insertedIds.has('unique-1')).toBe(true);
       expect(txExecute).toHaveBeenCalledTimes(1);
     });
 
@@ -112,22 +118,25 @@ describe('insights-store', () => {
       const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
       const txQueryOne = vi.fn();
       const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
-      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<number>) => fn(txDb));
+      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<Set<string>>) => fn(txDb));
 
       const insights = [
         makeInsight({ id: 'no-container', container_id: null }),
       ];
 
-      const inserted = await insertInsights(insights);
+      const insertedIds = await insertInsights(insights);
 
-      expect(inserted).toBe(1);
+      expect(insertedIds).toBeInstanceOf(Set);
+      expect(insertedIds.size).toBe(1);
+      expect(insertedIds.has('no-container')).toBe(true);
       // Dedup query should NOT be called for null container_id
       expect(txQueryOne).not.toHaveBeenCalled();
     });
 
-    it('returns 0 for empty array', async () => {
-      const inserted = await insertInsights([]);
-      expect(inserted).toBe(0);
+    it('returns empty set for empty array', async () => {
+      const insertedIds = await insertInsights([]);
+      expect(insertedIds).toBeInstanceOf(Set);
+      expect(insertedIds.size).toBe(0);
     });
   });
 

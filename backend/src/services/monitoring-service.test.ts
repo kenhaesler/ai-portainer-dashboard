@@ -94,7 +94,10 @@ vi.mock('./log-analyzer.js', () => ({
 }));
 
 const mockInsertInsight = vi.fn();
-const mockInsertInsights = vi.fn();
+/** Default mock: returns all insight IDs as inserted (no deduplication). */
+const mockInsertInsights = vi.fn().mockImplementation(
+  async (insights: Array<{ id: string }>) => new Set(insights.map((i) => i.id)),
+);
 const mockGetRecentInsights = vi.fn().mockReturnValue([]);
 vi.mock('./insights-store.js', () => ({
   insertInsight: (...args: unknown[]) => mockInsertInsight(...args),
@@ -114,8 +117,9 @@ vi.mock('./remediation-service.js', () => ({
   suggestAction: () => null,
 }));
 
+const mockTriggerInvestigation = vi.fn().mockResolvedValue(undefined);
 vi.mock('./investigation-service.js', () => ({
-  triggerInvestigation: vi.fn().mockResolvedValue(undefined),
+  triggerInvestigation: (...args: unknown[]) => mockTriggerInvestigation(...args),
 }));
 
 const mockGetCapacityForecasts = vi.fn().mockReturnValue([]);
@@ -141,8 +145,9 @@ vi.mock('./event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 
+const mockCorrelateInsights = vi.fn().mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });
 vi.mock('./incident-correlator.js', () => ({
-  correlateInsights: () => Promise.resolve({ incidentsCreated: 0, insightsGrouped: 0 }),
+  correlateInsights: (...args: unknown[]) => mockCorrelateInsights(...args),
 }));
 
 const { getConfig } = await import('../config/index.js');
@@ -177,6 +182,12 @@ describe('monitoring-service', () => {
     mockIsOllamaAvailable.mockResolvedValue(false);
     mockGetCapacityForecasts.mockReturnValue([]);
     mockExplainAnomalies.mockResolvedValue(new Map());
+    // Re-apply the default insertInsights implementation (returns all IDs as inserted)
+    mockInsertInsights.mockImplementation(
+      async (insights: Array<{ id: string }>) => new Set(insights.map((i) => i.id)),
+    );
+    mockTriggerInvestigation.mockResolvedValue(undefined);
+    mockCorrelateInsights.mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });
     (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({ ...defaultConfig });
   });
 
@@ -537,6 +548,91 @@ describe('monitoring-service', () => {
       // Default state: no namespace set (other tests don't set it)
       // runMonitoringCycle should complete without error
       await expect(runMonitoringCycle()).resolves.not.toThrow();
+    });
+  });
+
+  describe('deduplication filters downstream FK references (#693)', () => {
+    it('does not trigger investigation for deduplicated (skipped) insights', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/api-svc'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 4.5, current_value: 95.0, mean: 40.0, method: 'adaptive',
+      });
+
+      // Simulate deduplication: only the first container's insights are actually inserted
+      mockInsertInsights.mockImplementation(async (insights: Array<{ id: string; container_id: string | null }>) => {
+        const ids = new Set<string>();
+        for (const ins of insights) {
+          if (ins.container_id === 'c1') ids.add(ins.id);
+          // c2 insights are "deduplicated" — not inserted
+        }
+        return ids;
+      });
+
+      await runMonitoringCycle();
+
+      // triggerInvestigation should only be called for c1 insights (actually inserted)
+      for (const call of mockTriggerInvestigation.mock.calls) {
+        const insight = call[0] as { container_id: string };
+        expect(insight.container_id).toBe('c1');
+      }
+      // Verify c2 was NOT passed to triggerInvestigation
+      const c2Calls = mockTriggerInvestigation.mock.calls.filter(
+        (call) => (call[0] as { container_id: string }).container_id === 'c2',
+      );
+      expect(c2Calls).toHaveLength(0);
+    });
+
+    it('does not pass deduplicated insights to correlateInsights', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/api-svc'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 4.5, current_value: 95.0, mean: 40.0, method: 'adaptive',
+      });
+
+      // Only c1 insights inserted, c2 deduplicated
+      mockInsertInsights.mockImplementation(async (insights: Array<{ id: string; container_id: string | null }>) => {
+        const ids = new Set<string>();
+        for (const ins of insights) {
+          if (ins.container_id === 'c1') ids.add(ins.id);
+        }
+        return ids;
+      });
+
+      await runMonitoringCycle();
+
+      // correlateInsights should only receive c1 insights
+      expect(mockCorrelateInsights).toHaveBeenCalledTimes(1);
+      const correlatedInsights = mockCorrelateInsights.mock.calls[0][0] as Array<{ container_id: string }>;
+      for (const ins of correlatedInsights) {
+        expect(ins.container_id).toBe('c1');
+      }
+    });
+
+    it('skips investigation and correlation entirely when all insights are deduplicated', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 4.5, current_value: 95.0, mean: 40.0, method: 'adaptive',
+      });
+
+      // All insights deduplicated — none actually inserted
+      mockInsertInsights.mockResolvedValue(new Set<string>());
+
+      await runMonitoringCycle();
+
+      // No investigations should be triggered
+      expect(mockTriggerInvestigation).not.toHaveBeenCalled();
+      // No correlation should happen (no inserted insights)
+      expect(mockCorrelateInsights).not.toHaveBeenCalled();
     });
   });
 
