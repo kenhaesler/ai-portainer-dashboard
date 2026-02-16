@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -36,66 +36,73 @@ function getHealthLevel(running: number, total: number): HealthLevel {
 export { getHealthLevel as getHealthLevel_testable };
 
 /**
- * Build an SVG octagon path with rounded corners.
- * The octagon is inscribed in a square of size `s`, with corners cut by `c` pixels.
- * `r` controls the corner rounding radius.
+ * Build a flat-top hexagon SVG path with rounded corners.
+ * Flat-top: the two flat edges are on top and bottom.
+ * `w` = width, `h` = height (for a regular hexagon h = w * sqrt(3)/2).
+ * `r` = corner rounding radius.
  */
-function octagonPath(s: number, c: number, r: number): string {
-  // 8 vertices of the octagon (clockwise from top-left cut)
+function hexagonPath(w: number, h: number, r: number): string {
+  const cx = w / 2;
+  const cy = h / 2;
+  // 6 vertices of a flat-top hexagon (clockwise from top-right)
   const pts: [number, number][] = [
-    [c, 0],
-    [s - c, 0],
-    [s, c],
-    [s, s - c],
-    [s - c, s],
-    [c, s],
-    [0, s - c],
-    [0, c],
+    [cx + w / 4, 0],        // top-right
+    [w, cy],                 // right
+    [cx + w / 4, h],         // bottom-right
+    [cx - w / 4, h],         // bottom-left
+    [0, cy],                 // left
+    [cx - w / 4, 0],         // top-left
   ];
 
-  // Build path with rounded corners using quadratic bezier at each vertex
   const segments: string[] = [];
   const n = pts.length;
   for (let i = 0; i < n; i++) {
-    const [cx, cy] = pts[i];
+    const [vx, vy] = pts[i];
     const [px, py] = pts[(i - 1 + n) % n];
     const [nx, ny] = pts[(i + 1) % n];
 
-    // Points along the edges, offset by `r` from the vertex
-    const dx1 = px - cx, dy1 = py - cy;
+    const dx1 = px - vx, dy1 = py - vy;
     const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-    const ax = cx + (dx1 / len1) * r;
-    const ay = cy + (dy1 / len1) * r;
+    const ax = vx + (dx1 / len1) * r;
+    const ay = vy + (dy1 / len1) * r;
 
-    const dx2 = nx - cx, dy2 = ny - cy;
+    const dx2 = nx - vx, dy2 = ny - vy;
     const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-    const bx = cx + (dx2 / len2) * r;
-    const by = cy + (dy2 / len2) * r;
+    const bx = vx + (dx2 / len2) * r;
+    const by = vy + (dy2 / len2) * r;
 
     if (i === 0) {
       segments.push(`M ${ax} ${ay}`);
     } else {
       segments.push(`L ${ax} ${ay}`);
     }
-    segments.push(`Q ${cx} ${cy} ${bx} ${by}`);
+    segments.push(`Q ${vx} ${vy} ${bx} ${by}`);
   }
 
-  // Close back to the start
-  const [cx0, cy0] = pts[0];
+  // Close path
+  const [vx0, vy0] = pts[0];
   const [pxLast, pyLast] = pts[n - 1];
-  const dx = pxLast - cx0, dy = pyLast - cy0;
+  const dx = pxLast - vx0, dy = pyLast - vy0;
   const len = Math.sqrt(dx * dx + dy * dy);
-  const closePt = `${cx0 + (dx / len) * r} ${cy0 + (dy / len) * r}`;
-  segments.push(`L ${closePt}`);
+  segments.push(`L ${vx0 + (dx / len) * r} ${vy0 + (dy / len) * r}`);
   segments.push('Z');
 
   return segments.join(' ');
 }
 
-const SIZE = 110;
-const CUT = 33; // ~30% of size
-const CORNER_RADIUS = 8;
-const SVG_PATH = octagonPath(SIZE, CUT, CORNER_RADIUS);
+// Hexagon dimensions — flat-top: width is the wider axis
+const HEX_W = 116;
+const HEX_H = Math.round(HEX_W * (Math.sqrt(3) / 2)); // ~100
+const CORNER_RADIUS = 6;
+const SVG_PATH = hexagonPath(HEX_W, HEX_H, CORNER_RADIUS);
+
+// Honeycomb layout constants (flat-top, odd-column-offset)
+// Horizontal spacing: 3/4 hex width so angled edges interlock, plus small gap
+const COL_STEP = Math.round(HEX_W * 0.78);
+// Vertical spacing between rows
+const ROW_STEP = HEX_H + 8;
+// Odd-column vertical offset: half hex height for honeycomb nesting
+const COL_OFFSET_Y = Math.round(HEX_H / 2) + 2;
 
 const itemVariants = {
   hidden: { opacity: 0, scale: 0.85 },
@@ -106,7 +113,7 @@ const itemVariants = {
   },
 };
 
-interface OctagonCardProps {
+interface HexagonCardProps {
   name: string;
   running: number;
   total: number;
@@ -115,9 +122,9 @@ interface OctagonCardProps {
   index: number;
 }
 
-function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps) {
+function HexagonCard({ name, running, total, level, onClick }: HexagonCardProps) {
   const colors = HEALTH_COLORS[level];
-  const blurId = `blur-${level}`;
+  const blurId = `hex-blur-${level}`;
 
   return (
     <motion.div
@@ -127,43 +134,44 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
       role="button"
       tabIndex={0}
       aria-label={`${name} endpoint - ${running}/${total} running`}
-      className="octagon-button relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer select-none [-webkit-user-select:none] [-webkit-tap-highlight-color:transparent] hover:!bg-transparent"
+      className="octagon-button absolute focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer select-none [-webkit-user-select:none] [-webkit-tap-highlight-color:transparent] hover:!bg-transparent"
       data-testid={`octagon-${name}`}
       style={{
         WebkitUserSelect: 'none',
         WebkitTouchCallout: 'none',
         WebkitTapHighlightColor: 'transparent',
-        background: 'transparent !important',
-        border: 'none !important'
+        background: 'transparent',
+        border: 'none',
       }}
     >
-      <div className="relative w-[110px] h-[110px] m-[4px] transition-all duration-150 hover:scale-105">
-        {/* SVG with layered octagons for shadow effect */}
+      <div
+        className="relative transition-all duration-150 hover:scale-105"
+        style={{ width: HEX_W, height: HEX_H }}
+      >
         <svg
-          width={SIZE}
-          height={SIZE}
-          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          width={HEX_W}
+          height={HEX_H}
+          viewBox={`0 0 ${HEX_W} ${HEX_H}`}
           className="absolute inset-0"
           aria-hidden="true"
         >
           <defs>
-            {/* Gaussian blur for shadow layer */}
             <filter id={blurId} x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="3" />
             </filter>
           </defs>
 
-          {/* Shadow layer - blurred octagon offset downward */}
-          <g transform="translate(0, 4)" opacity="0.4" filter={`url(#${blurId})`}>
+          {/* Shadow layer */}
+          <g transform="translate(0, 3)" opacity="0.4" filter={`url(#${blurId})`}>
             <path d={SVG_PATH} fill={colors.shadow} />
           </g>
 
-          {/* Second shadow layer - subtle glow */}
+          {/* Glow layer */}
           <g opacity="0.2" filter={`url(#${blurId})`}>
             <path d={SVG_PATH} fill={colors.shadow} />
           </g>
 
-          {/* Main octagon on top */}
+          {/* Main hexagon */}
           <path
             d={SVG_PATH}
             fill={colors.fill}
@@ -175,7 +183,7 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
         {/* Inner content */}
         <div
           className={cn('relative flex flex-col items-center justify-center h-full px-3 [&:hover]:!bg-transparent', colors.text)}
-          style={{ background: 'transparent !important' }}
+          style={{ background: 'transparent' }}
         >
           <span className="text-[11px] font-semibold leading-tight text-center line-clamp-2 max-w-[80px]">
             {name}
@@ -189,12 +197,71 @@ function OctagonCard({ name, running, total, level, onClick }: OctagonCardProps)
   );
 }
 
+/**
+ * Compute honeycomb grid positions (flat-top, odd-column-offset).
+ * Items fill left-to-right per row. Odd columns are shifted down by COL_OFFSET_Y
+ * so hexagons nest into each other like a beehive / honeymesh.
+ * Returns { positions, totalWidth, totalHeight }.
+ */
+function computeHoneycombLayout(
+  count: number,
+  containerWidth: number,
+): { positions: { x: number; y: number }[]; totalWidth: number; totalHeight: number } {
+  if (count === 0 || containerWidth <= 0) {
+    return { positions: [], totalWidth: 0, totalHeight: 0 };
+  }
+
+  // How many columns fit in the container?
+  const maxCols = Math.max(1, Math.floor((containerWidth - HEX_W) / COL_STEP) + 1);
+
+  const positions: { x: number; y: number }[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const col = i % maxCols;
+    const row = Math.floor(i / maxCols);
+    const isOddCol = col % 2 === 1;
+
+    const x = col * COL_STEP;
+    const y = row * ROW_STEP + (isOddCol ? COL_OFFSET_Y : 0);
+
+    positions.push({ x, y });
+  }
+
+  // Center the whole grid horizontally
+  const maxX = positions.length > 0 ? Math.max(...positions.map((p) => p.x)) + HEX_W : 0;
+  const offsetX = Math.round((containerWidth - maxX) / 2);
+  for (const pos of positions) {
+    pos.x += offsetX;
+  }
+
+  const maxY = positions.length > 0 ? Math.max(...positions.map((p) => p.y)) + HEX_H : 0;
+  return { positions, totalWidth: containerWidth, totalHeight: maxY };
+}
+
 export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
   endpoints,
   isLoading,
 }: EndpointHealthOctagonsProps) {
   const navigate = useNavigate();
   const reducedMotion = useReducedMotion();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    // Set initial width
+    setContainerWidth(el.clientWidth);
+
+    return () => observer.disconnect();
+  }, []);
 
   const items = useMemo(() => {
     return endpoints.map((ep) => ({
@@ -202,6 +269,11 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
       level: getHealthLevel(ep.running, ep.total),
     }));
   }, [endpoints]);
+
+  const layout = useMemo(
+    () => computeHoneycombLayout(items.length, containerWidth),
+    [items.length, containerWidth],
+  );
 
   const handleClick = useCallback(() => {
     navigate('/fleet');
@@ -225,31 +297,43 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Octagon grid */}
-      <motion.div
-        className="flex flex-wrap justify-center items-start gap-0 flex-1 content-start overflow-y-auto py-2"
-        variants={{
-          hidden: { opacity: 1 },
-          visible: {
-            opacity: 1,
-            transition: { staggerChildren: reducedMotion ? 0 : 0.04 },
-          },
-        }}
-        initial={reducedMotion ? false : 'hidden'}
-        animate="visible"
-      >
-        {items.map((ep, i) => (
-          <OctagonCard
-            key={ep.id}
-            name={ep.name}
-            running={ep.running}
-            total={ep.total}
-            level={ep.level}
-            onClick={handleClick}
-            index={i}
-          />
-        ))}
-      </motion.div>
+      {/* Hexagon honeycomb grid */}
+      <div ref={containerRef} className="flex-1 overflow-y-auto py-2">
+        <motion.div
+          className="relative w-full"
+          style={{ height: layout.totalHeight || 'auto' }}
+          variants={{
+            hidden: { opacity: 1 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: reducedMotion ? 0 : 0.04 },
+            },
+          }}
+          initial={reducedMotion ? false : 'hidden'}
+          animate="visible"
+        >
+          {items.map((ep, i) => {
+            const pos = layout.positions[i];
+            if (!pos) return null;
+            return (
+              <div
+                key={ep.id}
+                className="absolute"
+                style={{ left: pos.x, top: pos.y }}
+              >
+                <HexagonCard
+                  name={ep.name}
+                  running={ep.running}
+                  total={ep.total}
+                  level={ep.level}
+                  onClick={handleClick}
+                  index={i}
+                />
+              </div>
+            );
+          })}
+        </motion.div>
+      </div>
 
       {/* Legend */}
       <div className="flex justify-center gap-5 pt-3 shrink-0">

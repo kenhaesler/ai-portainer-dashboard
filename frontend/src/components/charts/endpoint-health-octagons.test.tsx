@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EndpointHealthOctagons, getHealthLevel_testable } from './endpoint-health-octagons';
 
 const mockNavigate = vi.fn();
@@ -17,6 +17,31 @@ vi.mock('framer-motion', () => ({
   useReducedMotion: () => false,
 }));
 
+// Store the ResizeObserver callback so we can trigger it in tests
+let resizeCallback: ResizeObserverCallback | null = null;
+beforeEach(() => {
+  mockNavigate.mockReset();
+  resizeCallback = null;
+  global.ResizeObserver = vi.fn().mockImplementation((cb: ResizeObserverCallback) => {
+    resizeCallback = cb;
+    return {
+      observe: vi.fn(),
+      disconnect: vi.fn(),
+      unobserve: vi.fn(),
+    };
+  });
+});
+
+/** Render and trigger ResizeObserver with a simulated container width */
+function renderWithWidth(ui: React.ReactElement, width = 600) {
+  const result = render(ui);
+  // Trigger the resize callback to set containerWidth
+  act(() => {
+    resizeCallback?.([{ contentRect: { width, height: 400 } } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+  });
+  return result;
+}
+
 const ENDPOINTS = [
   { id: 1, name: 'Production', running: 9, stopped: 1, total: 10 },
   { id: 2, name: 'Staging', running: 4, stopped: 4, total: 8 },
@@ -25,12 +50,8 @@ const ENDPOINTS = [
 ];
 
 describe('EndpointHealthOctagons', () => {
-  beforeEach(() => {
-    mockNavigate.mockReset();
-  });
-
-  it('renders one octagon per endpoint', () => {
-    render(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
+  it('renders one hexagon per endpoint', () => {
+    renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     expect(screen.getByTestId('octagon-Production')).toBeInTheDocument();
     expect(screen.getByTestId('octagon-Staging')).toBeInTheDocument();
     expect(screen.getByTestId('octagon-Dev')).toBeInTheDocument();
@@ -38,7 +59,7 @@ describe('EndpointHealthOctagons', () => {
   });
 
   it('displays endpoint name and running count', () => {
-    render(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
+    renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     expect(screen.getByText('Production')).toBeInTheDocument();
     expect(screen.getByText('9/10 running')).toBeInTheDocument();
     expect(screen.getByText('No containers')).toBeInTheDocument();
@@ -55,16 +76,25 @@ describe('EndpointHealthOctagons', () => {
   });
 
   it('navigates to /fleet on click', () => {
-    render(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
+    renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     fireEvent.click(screen.getByTestId('octagon-Production'));
     expect(mockNavigate).toHaveBeenCalledWith('/fleet');
   });
 
   it('renders the legend', () => {
-    render(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
+    renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     expect(screen.getByText('>80% healthy')).toBeInTheDocument();
     expect(screen.getByText('50-80%')).toBeInTheDocument();
     expect(screen.getByText('<50%')).toBeInTheDocument();
+  });
+
+  it('renders SVG hexagon paths', () => {
+    const { container } = renderWithWidth(
+      <EndpointHealthOctagons endpoints={[ENDPOINTS[0]]} />,
+    );
+    const paths = container.querySelectorAll('path');
+    // Each hexagon has 3 paths: shadow, glow, main
+    expect(paths.length).toBe(3);
   });
 });
 

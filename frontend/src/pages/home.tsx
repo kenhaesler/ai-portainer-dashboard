@@ -124,15 +124,6 @@ export default function HomePage() {
     }));
   }, [endpoints]);
 
-  const resourceEndpoints = useMemo(() => {
-    if (!endpoints) return [];
-    return endpoints.map((ep) => ({
-      name: ep.name,
-      totalCpu: ep.totalCpu,
-      totalMemory: ep.totalMemory,
-    }));
-  }, [endpoints]);
-
   const stackChartData = useMemo(() => {
     if (!resourcesData?.topStacks) return [];
     return resourcesData.topStacks.map((stack) => ({
@@ -386,28 +377,14 @@ export default function HomePage() {
         </MotionStagger>
       ) : null}
 
-      {/* Resource Overview + Top Workloads + Fleet Summary */}
+      {/* Top Workloads + Fleet Summary */}
       {isLoading || isLoadingResources ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SkeletonCard className="h-[88px]" />
-            <SkeletonCard className="h-[88px]" />
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <SkeletonCard className="h-[520px] lg:col-span-2" />
-            <SkeletonCard className="h-[520px]" />
-          </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SkeletonCard className="h-[520px] lg:col-span-2" />
+          <SkeletonCard className="h-[520px]" />
         </div>
       ) : data && resourcesData ? (
-        <div className="space-y-4">
-          <MotionReveal>
-            <SpotlightCard>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <ResourceOverviewCard endpoints={resourceEndpoints} />
-              </div>
-            </SpotlightCard>
-          </MotionReveal>
-          <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
             <MotionReveal className="lg:col-span-2">
               <SpotlightCard>
                 <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
@@ -442,7 +419,6 @@ export default function HomePage() {
               </SpotlightCard>
             </MotionReveal>
           </MotionStagger>
-        </div>
       ) : null}
 
       {/* Recent Containers Table */}
