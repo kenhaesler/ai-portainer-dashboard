@@ -104,9 +104,10 @@ export async function getRecentInsights(minutes: number, limit: number = 500): P
 /**
  * Batch insert insights in a single transaction with deduplication.
  * Skips insights where (container_id, category, title) already exists within the last 60 minutes.
+ * Returns the set of actually-inserted insight IDs so callers can filter downstream operations.
  */
-export async function insertInsights(insights: InsightInsert[]): Promise<number> {
-  if (insights.length === 0) return 0;
+export async function insertInsights(insights: InsightInsert[]): Promise<Set<string>> {
+  if (insights.length === 0) return new Set();
 
   const db = getDbForDomain('insights');
 
@@ -124,8 +125,8 @@ export async function insertInsights(insights: InsightInsert[]): Promise<number>
       AND created_at >= NOW() - INTERVAL '60 minutes'
   `;
 
-  const inserted = await db.transaction(async (txDb) => {
-    let count = 0;
+  const insertedIds = await db.transaction(async (txDb) => {
+    const ids = new Set<string>();
     for (const insight of insights) {
       // Deduplication check
       if (insight.container_id) {
@@ -152,13 +153,13 @@ export async function insertInsights(insights: InsightInsert[]): Promise<number>
         insight.description,
         insight.suggested_action,
       ]);
-      count++;
+      ids.add(insight.id);
     }
-    return count;
+    return ids;
   });
 
-  log.info({ total: insights.length, inserted }, 'Batch insights inserted');
-  return inserted;
+  log.info({ total: insights.length, inserted: insertedIds.size }, 'Batch insights inserted');
+  return insertedIds;
 }
 
 /**

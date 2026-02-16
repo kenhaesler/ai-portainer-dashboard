@@ -571,8 +571,10 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     // Batch insert all insights in a single transaction
+    // Returns the set of actually-inserted IDs (deduplication may skip some)
+    let insertedIds = new Set<string>();
     try {
-      await insertInsights(allInsights);
+      insertedIds = await insertInsights(allInsights);
     } catch (err) {
       log.error({ err }, 'Batch insight insert failed');
     }
@@ -588,9 +590,13 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     // Post-insert processing: events, notifications, investigations, remediation
+    // Only trigger investigations/incidents for insights that were actually inserted into the DB.
+    // Deduplicated insights have no DB row, so referencing their IDs would cause FK violations (#693).
     const suggestedActions: Array<{ actionId: string; actionType: string; insightId: string }> = [];
     for (const insight of allInsights) {
-      // Emit event for webhooks
+      const wasInserted = insertedIds.has(insight.id);
+
+      // Emit event for webhooks (safe regardless of DB state)
       const eventType = insight.category === 'anomaly' ? 'anomaly.detected' : 'insight.created';
       emitEvent({
         type: eventType,
@@ -607,17 +613,19 @@ export async function runMonitoringCycle(): Promise<void> {
         },
       });
 
-      // Send notification for critical/warning insights
+      // Send notification for critical/warning insights (safe regardless of DB state)
       if (insight.severity === 'critical' || insight.severity === 'warning') {
         notifyInsight(insight as Insight).catch((err) =>
           log.warn({ err, insightId: insight.id }, 'Failed to send notification'),
         );
       }
 
-      // Trigger root cause investigation for anomaly and non-info predictive insights
+      // Trigger root cause investigation only for actually-inserted insights (#693)
       if (
-        insight.category === 'anomaly' ||
-        (insight.category === 'predictive' && insight.severity !== 'info')
+        wasInserted && (
+          insight.category === 'anomaly' ||
+          (insight.category === 'predictive' && insight.severity !== 'info')
+        )
       ) {
         triggerInvestigation(insight as Insight).catch((err) => {
           log.warn({ insightId: insight.id, err }, 'Failed to trigger investigation');
@@ -635,9 +643,11 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     // 8. Correlate insights into incidents (alert grouping)
-    if (allInsights.length > 0) {
+    // Only correlate actually-inserted insights to avoid FK violations (#693)
+    const insertedInsightsList = allInsights.filter((ins) => insertedIds.has(ins.id));
+    if (insertedInsightsList.length > 0) {
       try {
-        const storedInsights = allInsights.map((ins) => ({
+        const storedInsights = insertedInsightsList.map((ins) => ({
           ...ins,
           is_acknowledged: 0,
           created_at: new Date().toISOString(),
