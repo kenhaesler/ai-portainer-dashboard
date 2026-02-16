@@ -101,8 +101,8 @@ export async function runFullSync(): Promise<SyncResult> {
     const syncId = await store.createSyncStatus('full');
 
     try {
-      if (!harbor.isHarborConfigured()) {
-        throw new Error('Harbor is not configured — set HARBOR_API_URL, HARBOR_ROBOT_NAME, HARBOR_ROBOT_SECRET');
+      if (!(await harbor.isHarborConfiguredAsync())) {
+        throw new Error('Harbor is not configured — set HARBOR_API_URL, HARBOR_ROBOT_NAME, HARBOR_ROBOT_SECRET or configure via Settings UI');
       }
 
       log.info('Starting full Harbor vulnerability sync');

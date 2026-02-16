@@ -20,7 +20,8 @@ import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '.
 import { cleanExpiredSessions } from '../services/session-store.js';
 import { cleanupOldInsights } from '../services/insights-store.js';
 import { runFullSync as runHarborSync } from '../services/harbor-sync.js';
-import { isHarborConfigured } from '../services/harbor-client.js';
+import { isHarborConfiguredAsync } from '../services/harbor-client.js';
+import { getEffectiveHarborConfig } from '../services/settings-store.js';
 import { cleanupOldVulnerabilities } from '../services/harbor-vulnerability-store.js';
 
 const log = createChildLogger('scheduler');
@@ -520,11 +521,12 @@ export async function startScheduler(): Promise<void> {
     setTimeout(() => { runWithTraceContext({ source: 'scheduler' }, runImageStalenessCheck).catch(() => {}); }, 30_000);
   }
 
-  // Harbor vulnerability sync
-  if (config.HARBOR_SYNC_ENABLED && isHarborConfigured()) {
-    const harborIntervalMs = config.HARBOR_SYNC_INTERVAL_MINUTES * 60 * 1000;
+  // Harbor vulnerability sync (reads from DB settings with env var fallback)
+  const harborConfig = await getEffectiveHarborConfig();
+  if (harborConfig.enabled && await isHarborConfiguredAsync()) {
+    const harborIntervalMs = harborConfig.syncIntervalMinutes * 60 * 1000;
     log.info(
-      { intervalMinutes: config.HARBOR_SYNC_INTERVAL_MINUTES },
+      { intervalMinutes: harborConfig.syncIntervalMinutes },
       'Starting Harbor vulnerability sync scheduler',
     );
     const harborInterval = setInterval(
