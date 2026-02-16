@@ -230,7 +230,7 @@ export function CommandPalette() {
                   value={query}
                   onValueChange={(v) => { setQuery(v); setAiResult(null); }}
                   onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && isNl) {
+                    if (e.key === 'Enter' && isNl) {
                       e.preventDefault();
                       handleAiQuery();
                     }
