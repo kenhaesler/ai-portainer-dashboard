@@ -18,8 +18,6 @@ import {
   Webhook,
   Users,
   Settings,
-  RefreshCw,
-  Palette,
   Package,
   Layers,
   ScrollText,
@@ -30,7 +28,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
-import { useThemeStore } from '@/stores/theme-store';
 import { cn } from '@/lib/utils';
 import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
@@ -86,7 +83,6 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const open = useUiStore((s) => s.commandPaletteOpen);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
-  const { theme, setTheme } = useThemeStore();
   const [query, setQuery] = useState('');
   const [includeLogs, setIncludeLogs] = useState(false);
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
@@ -194,17 +190,6 @@ export function CommandPalette() {
 
   const hasRecent = query.trim().length === 0 && recent.length > 0;
 
-  const toggleTheme = () => {
-    const next = theme === 'apple-dark' ? 'apple-light' : theme === 'apple-light' ? 'system' : 'apple-dark';
-    setTheme(next);
-    setOpen(false);
-  };
-
-  const refresh = () => {
-    window.location.reload();
-    setOpen(false);
-  };
-
   if (!open) return null;
 
   return (
@@ -231,14 +216,8 @@ export function CommandPalette() {
                 }
               }}
             >
-              {/* Title & Subtitle */}
-              <div className="px-7 pt-5 pb-1">
-                <p className="text-sm font-bold tracking-tight text-foreground/80">Neural Search</p>
-                <p className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-[0.2em]">AI-Powered Infrastructure Intelligence</p>
-              </div>
-
               {/* Unified Search Bar: Logo + Input + Category Buttons in one bar */}
-              <div className="relative flex items-center h-[56px] mx-7 mb-4 rounded-2xl bg-muted/40">
+              <div className="relative flex items-center h-[56px] mx-7 mt-5 mb-4 rounded-2xl bg-muted/40">
                 {/* Logo */}
                 <div className="flex shrink-0 items-center justify-center pl-5 pr-3" data-testid="search-logo">
                   <SidebarLogo />
@@ -390,15 +369,15 @@ export function CommandPalette() {
                             }}
                             className={cn(
                               'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                              'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                              'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
                             )}
                           >
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-primary-foreground/20 shadow-inner">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-muted/50 shadow-inner">
                               <Package className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
                             </div>
                             <div className="flex flex-col gap-0.5">
                               <span className="font-bold tracking-tight">{container.name}</span>
-                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-primary-foreground/80 line-clamp-1">
+                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70 line-clamp-1">
                                 {container.image} • {container.endpointName}
                               </span>
                             </div>
@@ -421,10 +400,10 @@ export function CommandPalette() {
                               onSelect={() => navigateTo(page.to)}
                               className={cn(
                                 'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
-                                'text-foreground/60 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-xl aria-selected:shadow-primary/20'
+                                'text-foreground/60 aria-selected:bg-muted/60 aria-selected:text-foreground'
                               )}
                             >
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-muted/30 aria-selected:bg-primary-foreground/20">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-muted/30 aria-selected:bg-muted/50">
                                 <page.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
                               </div>
                               <span className="font-bold truncate tracking-tight">{page.label}</span>
@@ -450,15 +429,15 @@ export function CommandPalette() {
                             }}
                             className={cn(
                               'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                              'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                              'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
                             )}
                           >
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-primary-foreground/20 shadow-inner">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-muted/50 shadow-inner">
                               <Boxes className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
                             </div>
                             <div className="flex flex-col gap-0.5">
                               <span className="font-bold tracking-tight">{stack.name}</span>
-                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-primary-foreground/80">
+                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70">
                                 {stack.status} • Endpoint {stack.endpointId}
                               </span>
                             </div>
@@ -483,15 +462,15 @@ export function CommandPalette() {
                             }}
                             className={cn(
                               'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                              'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                              'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
                             )}
                           >
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-primary-foreground/20 shadow-inner">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-muted/50 shadow-inner">
                               <Layers className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
                             </div>
                             <div className="flex flex-col gap-0.5">
                               <span className="font-bold tracking-tight">{image.name}</span>
-                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-primary-foreground/80">
+                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70">
                                 {image.tags[0] || 'untagged'} • {image.endpointName}
                               </span>
                             </div>
@@ -515,7 +494,7 @@ export function CommandPalette() {
                         onSelect={() => setQuery(item.term)}
                         className={cn(
                           'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                          'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                          'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
                         )}
                       >
                         <Clock className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
@@ -546,13 +525,13 @@ export function CommandPalette() {
                             }}
                             className={cn(
                               'flex cursor-pointer items-start gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                              'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
+                              'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
                             )}
                           >
                             <ScrollText className="mt-1 h-6 w-6 shrink-0 opacity-30 aria-selected:opacity-100" />
                             <div className="flex flex-col gap-1">
                               <span className="font-bold tracking-tight">{logItem.containerName}</span>
-                              <span className="text-[13px] font-medium leading-relaxed text-muted-foreground/50 aria-selected:text-primary-foreground/80 line-clamp-2">
+                              <span className="text-[13px] font-medium leading-relaxed text-muted-foreground/50 aria-selected:text-foreground/70 line-clamp-2">
                                 {logItem.message}
                               </span>
                             </div>
@@ -561,40 +540,6 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
                   </>
-                )}
-
-                {/* 8. System Controller */}
-                {activeCategory === 'all' && (
-                  <Command.Group
-                    heading="Neural Controller"
-                    className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
-                  >
-                    <Command.Item
-                      value="Refresh page"
-                      onSelect={refresh}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                        'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
-                      )}
-                    >
-                      <RefreshCw className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
-                      <span className="font-bold tracking-tight text-foreground/80">Reload Neural Workspace</span>
-                    </Command.Item>
-                    <Command.Item
-                      value="Toggle theme"
-                      onSelect={toggleTheme}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
-                        'text-foreground/70 aria-selected:bg-primary aria-selected:text-primary-foreground aria-selected:shadow-2xl aria-selected:shadow-primary/30'
-                      )}
-                    >
-                      <Palette className="h-6 w-6 shrink-0 opacity-20 aria-selected:opacity-100" />
-                      <div className="flex flex-1 items-center justify-between">
-                        <span className="font-bold tracking-tight text-foreground/80">Neural Atmosphere</span>
-                        <span className="text-[11px] font-black uppercase tracking-widest text-muted-foreground/50 aria-selected:text-primary-foreground/80">{theme}</span>
-                      </div>
-                    </Command.Item>
-                  </Command.Group>
                 )}
 
                 {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (

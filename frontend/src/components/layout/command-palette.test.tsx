@@ -68,12 +68,6 @@ describe('CommandPalette (Spotlight Style)', () => {
     useSearchStore.setState({ recent: [] });
   });
 
-  it('renders title and subtitle above search bar', () => {
-    renderPalette();
-    expect(screen.getByText('Neural Search')).toBeInTheDocument();
-    expect(screen.getByText(/AI-Powered Infrastructure Intelligence/i)).toBeInTheDocument();
-  });
-
   it('renders inline logo on search row', () => {
     renderPalette();
     expect(screen.getByTestId('search-logo')).toBeInTheDocument();
@@ -179,16 +173,6 @@ describe('CommandPalette (Spotlight Style)', () => {
     const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
     fireEvent.change(input, { target: { value: 'test' } });
     expect((input as HTMLInputElement).value).toBe('test');
-  });
-
-  it('hides system controller when a category filter is active', () => {
-    renderPalette();
-    // Neural Controller visible by default
-    expect(screen.getByText('Reload Neural Workspace')).toBeInTheDocument();
-
-    // Activate containers category
-    fireEvent.click(screen.getByLabelText('Filter by Containers'));
-    expect(screen.queryByText('Reload Neural Workspace')).not.toBeInTheDocument();
   });
 
   it('respects prefers-reduced-motion via CSS utility classes', () => {
