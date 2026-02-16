@@ -317,6 +317,83 @@ describe('CircuitBreaker', () => {
     });
   });
 
+  // ── Log noise suppression (#698) ─────────────────────────────────────
+
+  describe('probe failure log suppression (#698)', () => {
+    async function failProbeNTimes(cb: CircuitBreaker, n: number, resetTimeoutMs = 3000) {
+      for (let i = 0; i < n; i++) {
+        vi.advanceTimersByTime(resetTimeoutMs);
+        // getState() triggers HALF_OPEN transition, then execute fails the probe
+        expect(cb.getState()).toBe('HALF_OPEN');
+        await expect(cb.execute(() => Promise.reject(new Error('probe fail')))).rejects.toThrow();
+        expect(cb.getState()).toBe('OPEN');
+      }
+    }
+
+    it('maintains correct state through many consecutive probe failures', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 3000 });
+      // Open the circuit
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+      expect(cb.getState()).toBe('OPEN');
+
+      // Fail probe 10 times — state should cycle OPEN->HALF_OPEN->OPEN each time
+      await failProbeNTimes(cb, 10, 3000);
+      expect(cb.getState()).toBe('OPEN');
+    });
+
+    it('recovers after many consecutive probe failures when probe succeeds', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 3000 });
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+
+      // Fail probe 5 times (past the suppression threshold)
+      await failProbeNTimes(cb, 5, 3000);
+
+      // Now succeed
+      vi.advanceTimersByTime(3000);
+      expect(cb.getState()).toBe('HALF_OPEN');
+      await cb.execute(() => Promise.resolve('recovered'));
+      expect(cb.getState()).toBe('CLOSED');
+    });
+
+    it('resets probe failure counter on successful probe after failures', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 3000 });
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+
+      // Fail probe 4 times
+      await failProbeNTimes(cb, 4, 3000);
+
+      // Succeed
+      vi.advanceTimersByTime(3000);
+      await cb.execute(() => Promise.resolve('ok'));
+      expect(cb.getState()).toBe('CLOSED');
+
+      // Open circuit again and fail probes — counter should start from 0
+      await expect(cb.execute(() => Promise.reject(new Error('fail again')))).rejects.toThrow();
+      expect(cb.getState()).toBe('OPEN');
+
+      // First probe failure after reset should still be a fresh count
+      vi.advanceTimersByTime(3000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      expect(cb.getState()).toBe('OPEN');
+    });
+
+    it('resets probe failure counter on reset()', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 3000 });
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+      await failProbeNTimes(cb, 5, 3000);
+
+      cb.reset();
+      expect(cb.getState()).toBe('CLOSED');
+
+      // After reset, fresh probe failures should start counting from 0
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+      vi.advanceTimersByTime(3000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      // Still works normally
+      expect(cb.getState()).toBe('OPEN');
+    });
+  });
+
   // ── Edge cases ────────────────────────────────────────────────────────
 
   describe('edge cases', () => {

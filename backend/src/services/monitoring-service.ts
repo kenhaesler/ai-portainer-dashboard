@@ -31,6 +31,14 @@ const log = createChildLogger('monitoring-service');
 // Per-container+metric cooldown tracker: key = `${containerId}:${metricType}`, value = timestamp (ms)
 const anomalyCooldowns = new Map<string, number>();
 
+// Track previous cycle stats for delta-based logging
+let previousCycleStats: Record<string, number> | null = null;
+
+/** Exposed for testing — reset previous cycle stats. */
+export function resetPreviousCycleStats(): void {
+  previousCycleStats = null;
+}
+
 /** Clear all cooldown entries (used in tests). */
 export function resetAnomalyCooldowns(): void {
   anomalyCooldowns.clear();
@@ -129,12 +137,19 @@ export async function runMonitoringCycle(): Promise<void> {
         return containers.map((c) => ({ raw: c, endpointId: ep.Id, endpointName: ep.Name }));
       }),
     );
+    let containerFetchFailures = 0;
     for (const result of containerResults) {
       if (result.status === 'fulfilled') {
         allContainers.push(...result.value);
       } else {
-        log.warn({ err: result.reason }, 'Failed to fetch containers for endpoint');
+        containerFetchFailures++;
       }
+    }
+    if (containerFetchFailures > 0) {
+      log.warn(
+        { failedEndpoints: containerFetchFailures, totalEndpoints: rawEndpoints.length },
+        'Failed to fetch containers for some endpoints',
+      );
     }
 
     const normalizedContainers = allContainers.map((c) =>
@@ -158,6 +173,7 @@ export async function runMonitoringCycle(): Promise<void> {
       (c) => c.raw.State === 'running' && !edgeAsyncEndpointIds.has(c.endpointId),
     );
 
+    let metricsReadFailures = 0;
     for (const container of runningContainers) {
       try {
         const latest = await getLatestMetrics(container.raw.Id);
@@ -191,12 +207,15 @@ export async function runMonitoringCycle(): Promise<void> {
             value: latest.memory_bytes,
           });
         }
-      } catch (err) {
-        log.warn(
-          { containerId: container.raw.Id, err },
-          'Failed to read latest metrics for container',
-        );
+      } catch {
+        metricsReadFailures++;
       }
+    }
+    if (metricsReadFailures > 0) {
+      log.warn(
+        { failedContainers: metricsReadFailures, totalContainers: runningContainers.length },
+        'Failed to read latest metrics for some containers',
+      );
     }
 
     // 3. Run security scan on all containers
@@ -665,22 +684,39 @@ export async function runMonitoringCycle(): Promise<void> {
     }
 
     const duration = Date.now() - startTime;
-    log.info(
-      {
-        duration,
-        endpoints: endpoints.length,
-        containers: allContainers.length,
-        metricsFromDb: metricsFromDb.length,
-        securityFindings: allFindings.length,
-        anomalies: anomalyInsights.length,
-        predictiveAlerts: predictiveInsights.length,
-        logAnalysisInsights: logAnalysisInsights.length,
-        aiAvailable: ollamaAvailable,
-        totalInsights: allInsights.length,
-        suggestedActions: suggestedActions.length,
-      },
-      'Monitoring cycle completed',
-    );
+    const currentStats: Record<string, number> = {
+      endpoints: endpoints.length,
+      containers: allContainers.length,
+      totalInsights: allInsights.length,
+      anomalies: anomalyInsights.length,
+      securityFindings: allFindings.length,
+    };
+
+    // Delta-based logging: only log at INFO when counts change significantly (>10%)
+    const hasSignificantDelta = !previousCycleStats || Object.keys(currentStats).some((key) => {
+      const prev = previousCycleStats![key] ?? 0;
+      const curr = currentStats[key];
+      if (prev === 0 && curr === 0) return false;
+      if (prev === 0) return curr > 0;
+      return Math.abs(curr - prev) / prev > 0.1;
+    });
+    previousCycleStats = { ...currentStats };
+
+    const summaryPayload = {
+      duration,
+      ...currentStats,
+      metricsFromDb: metricsFromDb.length,
+      predictiveAlerts: predictiveInsights.length,
+      logAnalysisInsights: logAnalysisInsights.length,
+      aiAvailable: ollamaAvailable,
+      suggestedActions: suggestedActions.length,
+    };
+
+    if (hasSignificantDelta) {
+      log.info(summaryPayload, 'Monitoring cycle completed');
+    } else {
+      log.debug(summaryPayload, 'Monitoring cycle completed (no significant changes)');
+    }
 
     if (monitoringNamespace) {
       monitoringNamespace.emit('cycle:complete', {

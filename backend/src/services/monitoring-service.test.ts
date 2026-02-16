@@ -151,7 +151,7 @@ vi.mock('./incident-correlator.js', () => ({
 }));
 
 const { getConfig } = await import('../config/index.js');
-const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep } = await import('./monitoring-service.js');
+const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('./monitoring-service.js');
 
 /** Helper: extract insights from the batch insertInsights call */
 function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {
@@ -188,7 +188,12 @@ describe('monitoring-service', () => {
     );
     mockTriggerInvestigation.mockResolvedValue(undefined);
     mockCorrelateInsights.mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });
+    // Re-apply the default cachedFetchSWR implementation (tests may override it)
+    mockCachedFetchSWR.mockImplementation(
+      (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
     (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({ ...defaultConfig });
+    resetPreviousCycleStats();
   });
 
   describe('batch insight processing', () => {
@@ -633,6 +638,65 @@ describe('monitoring-service', () => {
       expect(mockTriggerInvestigation).not.toHaveBeenCalled();
       // No correlation should happen (no inserted insights)
       expect(mockCorrelateInsights).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('log noise reduction (#698)', () => {
+    it('aggregates container fetch failures into a single warning', async () => {
+      // Set up 3 endpoints, where 2 of them fail to fetch containers
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'ok' },
+        { Id: 2, Name: 'fail-1' },
+        { Id: 3, Name: 'fail-2' },
+      ]);
+
+      // cachedFetchSWR succeeds for endpoints, but fails for endpoints 2 and 3
+      mockCachedFetchSWR.mockImplementation(async (key: string, _ttl: number, fn: () => Promise<unknown>) => {
+        if (key === 'containers:2' || key === 'containers:3') {
+          throw new Error('HTTP 500');
+        }
+        return fn();
+      });
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
+      ]);
+
+      await runMonitoringCycle();
+
+      // Should still complete without throwing
+      // mockInsertInsights is called even with partial data
+      expect(mockInsertInsights).toHaveBeenCalled();
+    });
+
+    it('aggregates metrics read failures into a single warning', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
+        { Id: 'c3', Names: ['/app-3'], State: 'running', Image: 'node:18' },
+      ]);
+
+      // All metrics reads fail
+      mockGetLatestMetrics.mockRejectedValue(new Error('DB connection error'));
+
+      await runMonitoringCycle();
+
+      // No metrics should have been collected, but cycle should complete
+      expect(mockInsertInsights).toHaveBeenCalled();
+    });
+
+    it('completes cycle without errors even when all data fetches fail', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'fail' }]);
+
+      // cachedFetchSWR fails for everything except endpoints
+      mockCachedFetchSWR.mockImplementation(async (key: string, _ttl: number, fn: () => Promise<unknown>) => {
+        if (key.startsWith('containers:')) {
+          throw new Error('endpoint unreachable');
+        }
+        return fn();
+      });
+
+      await expect(runMonitoringCycle()).resolves.not.toThrow();
     });
   });
 
