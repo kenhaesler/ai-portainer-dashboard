@@ -232,7 +232,7 @@ export function CommandPalette() {
             )}
           >
             <Command
-              className="flex flex-col [&_[cmdk-input-wrapper]]:!border-0 [&_[cmdk-input-wrapper]]:!bg-transparent [&_[cmdk-input-wrapper]]:!shadow-none [&_[cmdk-input-wrapper]]:!ring-0 [&_[cmdk-input-wrapper]]:!outline-none [&_[cmdk-input-wrapper]]:flex [&_[cmdk-input-wrapper]]:items-center"
+              className="flex flex-col"
               onKeyDown={(e: React.KeyboardEvent) => {
                 if (e.key === 'Escape') {
                   setOpen(false);
