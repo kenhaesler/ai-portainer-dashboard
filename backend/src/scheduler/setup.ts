@@ -70,9 +70,10 @@ async function collectEndpointMetrics(
   );
 
   const metrics: MetricInsert[] = [];
+  let containerMetricsFailures = 0;
   for (const result of results) {
     if (result.status === 'rejected') {
-      log.warn({ err: result.reason }, 'Failed to collect metrics for container');
+      containerMetricsFailures++;
       continue;
     }
     const { stats, container, containerName } = result.value;
@@ -114,6 +115,12 @@ async function collectEndpointMetrics(
         metric_type: 'network_tx_bytes',
         value: stats.networkTxBytes,
       },
+    );
+  }
+  if (containerMetricsFailures > 0) {
+    log.warn(
+      { failedContainers: containerMetricsFailures, totalContainers: running.length, endpointId },
+      'Failed to collect metrics for some containers',
     );
   }
   return metrics;
@@ -163,14 +170,20 @@ export async function runMetricsCollection(): Promise<void> {
     );
 
     const metricsToInsert: MetricInsert[] = [];
+    let endpointMetricsFailures = 0;
     for (let i = 0; i < endpointResults.length; i++) {
       const result = endpointResults[i];
       if (result.status === 'rejected') {
-        const endpoint = liveCapableEndpoints[i];
-        log.warn({ endpointId: endpoint.Id, endpointName: endpoint.Name, err: result.reason }, 'Failed to collect metrics for endpoint');
+        endpointMetricsFailures++;
         continue;
       }
       metricsToInsert.push(...result.value);
+    }
+    if (endpointMetricsFailures > 0) {
+      log.warn(
+        { failedEndpoints: endpointMetricsFailures, totalEndpoints: liveCapableEndpoints.length },
+        'Failed to collect metrics for some endpoints',
+      );
     }
 
     if (metricsToInsert.length > 0) {
