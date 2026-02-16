@@ -16,6 +16,15 @@ vi.mock('@/hooks/use-endpoints', () => ({
   })),
 }));
 
+vi.mock('@/hooks/use-stacks', () => ({
+  useStacks: vi.fn(() => ({
+    data: [
+      { id: 1, name: 'web-stack', status: 'active', endpointId: 1, containerCount: 4 },
+      { id: 2, name: 'monitoring-stack', status: 'active', endpointId: 1, containerCount: 3 },
+    ],
+  })),
+}));
+
 vi.mock('@/hooks/use-global-search', () => ({
   useGlobalSearch: vi.fn(() => ({
     data: {

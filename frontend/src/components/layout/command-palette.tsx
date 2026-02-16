@@ -37,6 +37,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useEndpoints } from '@/hooks/use-endpoints';
+import { useStacks } from '@/hooks/use-stacks';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSearch } from '@/providers/search-provider';
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
@@ -113,6 +114,7 @@ export function CommandPalette() {
   const debouncedQuery = useDebouncedValue(query, 250);
   const { data, isLoading } = useGlobalSearch(debouncedQuery, open, includeLogs);
   const { data: endpoints } = useEndpoints();
+  const { data: allStacksData } = useStacks();
   const { recent, addRecent } = useSearch();
   const nlQuery = useNlQuery();
 
@@ -191,13 +193,12 @@ export function CommandPalette() {
 
   const allContainers = data?.containers ?? [];
   const allImages = data?.images ?? [];
-  const allStacks = data?.stacks ?? [];
   const allLogs = data?.logs ?? [];
+  const lowerQuery = query.trim().toLowerCase();
 
   // Filter results based on active category
   const containers = activeCategory === 'all' || activeCategory === 'containers' ? allContainers : [];
   const images = activeCategory === 'all' || activeCategory === 'containers' ? allImages : [];
-  const stacks = activeCategory === 'all' || activeCategory === 'containers' ? allStacks : [];
   const logs = activeCategory === 'all' || activeCategory === 'logs' ? allLogs : [];
   const filteredPages = activeCategory === 'all'
     ? pages
@@ -210,8 +211,13 @@ export function CommandPalette() {
   const filteredSettings = activeCategory === 'all' ? settingsEntries : [];
 
   // Client-side endpoint (node) filtering
-  const filteredEndpoints = (activeCategory === 'all' || activeCategory === 'containers') && query.trim().length >= 2
-    ? (endpoints ?? []).filter((ep) => ep.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 6)
+  const filteredEndpoints = (activeCategory === 'all' || activeCategory === 'containers') && lowerQuery.length >= 2
+    ? (endpoints ?? []).filter((ep) => ep.name.toLowerCase().includes(lowerQuery)).slice(0, 6)
+    : [];
+
+  // Client-side stack filtering
+  const filteredStacks = (activeCategory === 'all' || activeCategory === 'containers') && lowerQuery.length >= 2
+    ? (allStacksData ?? []).filter((s) => s.name.toLowerCase().includes(lowerQuery)).slice(0, 6)
     : [];
 
   const hasRecent = query.trim().length === 0 && recent.length > 0;
@@ -497,19 +503,19 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
 
-                    {/* 4. Stacks - High level groupings */}
-                    {stacks.length > 0 && (
+                    {/* 4. Stacks */}
+                    {filteredStacks.length > 0 && (
                       <Command.Group
-                        heading="Resource Stacks"
+                        heading="Stacks"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
-                        {stacks.map((stack) => (
+                        {filteredStacks.map((stack) => (
                           <Command.Item
-                            key={stack.id}
+                            key={`stack-${stack.id}`}
                             value={`stack-${stack.name}`}
                             onSelect={() => {
                               onSearchSelect();
-                              navigateTo('/stacks');
+                              navigateTo(`/workloads?stack=${stack.name}`);
                             }}
                             className={cn(
                               'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
@@ -522,7 +528,7 @@ export function CommandPalette() {
                             <div className="flex flex-col gap-0.5">
                               <span className="font-bold tracking-tight">{stack.name}</span>
                               <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70">
-                                {stack.status} • Endpoint {stack.endpointId}
+                                {stack.status} • {stack.containerCount ?? 0} containers
                               </span>
                             </div>
                           </Command.Item>
@@ -626,7 +632,7 @@ export function CommandPalette() {
                   </>
                 )}
 
-                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (
+                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !filteredStacks.length && !filteredEndpoints.length && !logs.length && (
                   <Command.Empty className="py-28 text-center">
                     <div className="mb-6 flex justify-center">
                       <AlertCircle className="h-12 w-12 text-muted-foreground/20" />
