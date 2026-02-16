@@ -7,7 +7,7 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 | Directory | Purpose |
 |-----------|---------|
 | `routes/` | REST API endpoints by feature (auth, containers, metrics, monitoring) |
-| `services/` | Portainer client, anomaly detection (z-score), monitoring, hybrid cache (Redis + in-memory) |
+| `services/` | Portainer client, anomaly detection (z-score), monitoring, hybrid cache (Redis + in-memory), Harbor client (vulnerability sync) |
 | `sockets/` | Socket.IO: `/llm` (chat), `/monitoring` (insights), `/remediation` (actions) |
 | `models/` | Zod schemas + database query functions |
 | `db/postgres-migrations/` | PostgreSQL migrations (auto-run via `getAppDb()`) |
