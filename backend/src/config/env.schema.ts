@@ -173,6 +173,15 @@ export const envSchema = z.object({
   WEBHOOKS_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(5),
   WEBHOOKS_RETRY_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
 
+  // Harbor Registry (Vulnerability Management)
+  HARBOR_API_URL: optionalUrl,
+  HARBOR_ROBOT_NAME: z.string().optional(),
+  HARBOR_ROBOT_SECRET: z.string().optional(),
+  HARBOR_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  HARBOR_SYNC_ENABLED: z.coerce.boolean().default(false),
+  HARBOR_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+  HARBOR_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+
   // Image Staleness
   IMAGE_STALENESS_CHECK_ENABLED: z.coerce.boolean().default(true),
   IMAGE_STALENESS_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),

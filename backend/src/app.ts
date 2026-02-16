@@ -49,6 +49,7 @@ import { mcpRoutes } from './routes/mcp.js';
 import { promptProfileRoutes } from './routes/prompt-profiles.js';
 import { llmFeedbackRoutes } from './routes/llm-feedback.js';
 import { edgeJobsRoutes } from './routes/edge-jobs.js';
+import { harborVulnerabilityRoutes } from './routes/harbor-vulnerabilities.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -140,6 +141,7 @@ export async function buildApp() {
   await app.register(promptProfileRoutes);
   await app.register(llmFeedbackRoutes);
   await app.register(edgeJobsRoutes);
+  await app.register(harborVulnerabilityRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);

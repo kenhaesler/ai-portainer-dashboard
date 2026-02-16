@@ -32,7 +32,7 @@ import { AppearanceTab } from '@/components/settings/tab-appearance';
 // Re-export for tests and other consumers
 export { LlmSettingsSection, getRedisSystemInfo };
 export { AiPromptsTab } from '@/components/settings/tab-ai-llm';
-export { ElasticsearchSettingsSection } from '@/components/settings/tab-integrations';
+export { ElasticsearchSettingsSection, HarborSettingsSection } from '@/components/settings/tab-integrations';
 export { SecurityAuditSettingsSection } from '@/components/settings/tab-security';
 export { NotificationHistoryPanel, NotificationTestButtons } from '@/components/settings/tab-monitoring';
 
@@ -162,6 +162,12 @@ export default function SettingsPage() {
     'webhooks.enabled',
     'portainer_backup.enabled',
     'portainer_backup.interval_hours',
+    'harbor.enabled',
+    'harbor.api_url',
+    'harbor.robot_name',
+    'harbor.robot_secret',
+    'harbor.verify_ssl',
+    'harbor.sync_interval_minutes',
   ], []);
 
   const changesRequireRestart = useMemo(

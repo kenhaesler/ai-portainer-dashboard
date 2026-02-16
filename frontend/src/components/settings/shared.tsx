@@ -92,6 +92,14 @@ export const DEFAULT_SETTINGS = {
     { key: 'edge.staleness_threshold_minutes', label: 'Staleness Threshold', description: 'Minutes since last Edge Agent check-in before data is marked stale', type: 'number', defaultValue: '5', min: 1, max: 60 },
     { key: 'edge.checkin_warning_multiplier', label: 'Check-in Warning Multiplier', description: 'Show warning when time since last check-in exceeds this multiple of the check-in interval', type: 'number', defaultValue: '3', min: 2, max: 10 },
   ],
+  harbor: [
+    { key: 'harbor.enabled', label: 'Enable Harbor Integration', description: 'Enable vulnerability management via Harbor Registry', type: 'boolean', defaultValue: 'false' },
+    { key: 'harbor.api_url', label: 'Harbor API URL', description: 'URL of your Harbor Registry (e.g., https://harbor.example.com)', type: 'string', defaultValue: '' },
+    { key: 'harbor.robot_name', label: 'Robot Account Name', description: 'Harbor robot account username (e.g., robot$dashboard)', type: 'string', defaultValue: '' },
+    { key: 'harbor.robot_secret', label: 'Robot Account Secret', description: 'Harbor robot account secret/password', type: 'password', defaultValue: '' },
+    { key: 'harbor.verify_ssl', label: 'Verify SSL', description: 'Verify SSL certificates when connecting to Harbor', type: 'boolean', defaultValue: 'true' },
+    { key: 'harbor.sync_interval_minutes', label: 'Sync Interval (minutes)', description: 'How often to sync vulnerabilities from Harbor', type: 'number', defaultValue: '30', min: 5, max: 1440 },
+  ],
 } as const;
 
 export type SettingCategory = keyof typeof DEFAULT_SETTINGS;

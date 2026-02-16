@@ -12,6 +12,7 @@ import {
   Brain,
   BarChart3,
   Shield,
+  ShieldAlert,
   GitBranch,
   MessageSquare,
   Activity,
@@ -29,6 +30,7 @@ import { SidebarLogo } from '@/components/icons/sidebar-logo';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { useRemediationActions } from '@/hooks/use-remediation';
+import { useHarborEnabled } from '@/hooks/use-harbor-vulnerabilities';
 import { usePrefetch } from '@/hooks/use-prefetch';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -38,6 +40,8 @@ interface NavItem {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: number;
+  /** When true, the item is hidden from the sidebar. */
+  hidden?: boolean;
 }
 
 interface NavGroup {
@@ -85,6 +89,7 @@ const navigation: NavGroup[] = [
     items: [
       { label: 'Log Viewer', to: '/logs', icon: ScrollText },
       { label: 'Security Audit', to: '/security/audit', icon: Shield },
+      { label: 'Vulnerabilities', to: '/security/vulnerabilities', icon: ShieldAlert },
       { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
       { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
       { label: 'Reports', to: '/reports', icon: FileBarChart },
@@ -172,6 +177,7 @@ export function Sidebar() {
   const dashboardBackground = useThemeStore((s) => s.dashboardBackground);
   const { data: pendingActions } = useRemediationActions('pending');
   const pendingCount = pendingActions?.length ?? 0;
+  const { data: harborEnabled } = useHarborEnabled();
   const reducedMotion = useReducedMotion();
   const navRef = useRef<HTMLElement>(null);
   const hasAnimatedBg = dashboardBackground !== 'none';
@@ -186,6 +192,17 @@ export function Sidebar() {
     '/comparison': prefetchContainers,
     '/images': prefetchImages,
   };
+
+  // Compute effective nav — hide items that are feature-gated
+  const effectiveNavigation = navigation.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      if (item.to === '/security/vulnerabilities') {
+        return harborEnabled?.enabled === true;
+      }
+      return !item.hidden;
+    }),
+  }));
 
   return (
     <TooltipPrimitive.Provider delayDuration={200}>
@@ -238,7 +255,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav ref={navRef} className="relative flex-1 overflow-y-auto py-4">
-          {navigation.map((group, groupIndex) => {
+          {effectiveNavigation.map((group, groupIndex) => {
             const isGroupCollapsed = collapsedGroups[group.title] && !sidebarCollapsed;
             return (
               <div key={group.title} className="mb-2">

@@ -31,6 +31,7 @@ const LogViewer = lazy(() => import('@/pages/log-viewer'));
 const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
 const SecurityAudit = lazy(() => import('@/pages/security-audit'));
 const EbpfCoverage = lazy(() => import('@/pages/ebpf-coverage'));
+const HarborVulnerabilities = lazy(() => import('@/pages/harbor-vulnerabilities'));
 
 function PageLoader() {
   return (
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
       { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
       { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
       { path: 'security/audit', element: <LazyPage><SecurityAudit /></LazyPage> },
+      { path: 'security/vulnerabilities', element: <LazyPage><HarborVulnerabilities /></LazyPage> },
       { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
       { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
       { path: 'webhooks', element: <Navigate to="/settings?tab=webhooks" replace /> },

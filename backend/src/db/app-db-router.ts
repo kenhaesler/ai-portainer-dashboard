@@ -27,6 +27,7 @@
  * - 'reports': reports, infrastructure_patterns
  * - 'backup': backup metadata
  * - 'remediation': remediation-related
+ * - 'harbor-vulnerabilities': harbor_vulnerabilities, harbor_vulnerability_exceptions, harbor_sync_status
  */
 import type { AppDb } from './app-db.js';
 import { PostgresAdapter } from './postgres-adapter.js';
@@ -35,7 +36,8 @@ export type AppDbDomain =
   | 'traces' | 'audit' | 'llm-traces' | 'monitoring' | 'notifications'
   | 'auth' | 'settings' | 'insights' | 'actions' | 'investigations' | 'incidents'
   | 'webhooks' | 'pcap' | 'feedback' | 'mcp' | 'prompts' | 'ebpf'
-  | 'image-staleness' | 'status-page' | 'reports' | 'backup' | 'remediation';
+  | 'image-staleness' | 'status-page' | 'reports' | 'backup' | 'remediation'
+  | 'harbor-vulnerabilities';
 
 // Singleton adapter (reused across all calls)
 let pgAdapter: PostgresAdapter | null = null;
