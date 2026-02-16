@@ -222,17 +222,17 @@ export function CommandPalette() {
 
           {/* Command dialog - Spotlight Style */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
             className={cn(
               "relative z-[101] w-full max-w-3xl overflow-hidden rounded-[28px] border border-white/10 bg-[#1c1c1e]/85 backdrop-blur-[45px] shadow-[0_40px_120px_rgba(0,0,0,0.8)]",
               isNl && "border-primary/50 ring-1 ring-primary/30 shadow-[0_0_60px_-12px_rgba(99,102,241,0.3)]"
             )}
           >
             <Command
-              className="flex flex-col"
+              className="flex flex-col [&_[cmdk-input-wrapper]]:!border-0 [&_[cmdk-input-wrapper]]:!bg-transparent [&_[cmdk-input-wrapper]]:!shadow-none [&_[cmdk-input-wrapper]]:!ring-0 [&_[cmdk-input-wrapper]]:!outline-none [&_[cmdk-input-wrapper]]:flex [&_[cmdk-input-wrapper]]:items-center"
               onKeyDown={(e: React.KeyboardEvent) => {
                 if (e.key === 'Escape') {
                   setOpen(false);
@@ -256,7 +256,7 @@ export function CommandPalette() {
 
                   <Command.Input
                     placeholder="Search or Ask Neural AI..."
-                    className="h-full flex-1 bg-transparent text-base font-medium tracking-tight text-white outline-none placeholder:text-white/30"
+                    className="h-full flex-1 border-0 bg-transparent text-base font-medium tracking-tight text-white shadow-none ring-0 outline-none placeholder:text-white/30 focus:ring-0 focus:border-0 focus:outline-none"
                     value={query}
                     onValueChange={(v) => { setQuery(v); setAiResult(null); }}
                     onKeyDown={(e: React.KeyboardEvent) => {
