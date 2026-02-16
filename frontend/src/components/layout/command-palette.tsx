@@ -245,48 +245,49 @@ export function CommandPalette() {
                 <p className="text-[11px] font-medium text-white/20 uppercase tracking-[0.2em]">AI-Powered Infrastructure Intelligence</p>
               </div>
 
-              {/* Search Row: Logo + Input + Category Buttons */}
-              <div className="relative flex items-center gap-2 px-7 pb-4">
-                {/* Search Bar with Logo Inside */}
-                <div className="flex flex-1 items-center gap-4 rounded-2xl bg-white/[0.02] px-5 backdrop-blur-sm h-[56px]">
-                  {/* Logo as prefix icon inside search bar */}
-                  <div className="flex shrink-0 items-center justify-center" data-testid="search-logo">
-                    <SidebarLogo />
-                  </div>
-
-                  <Command.Input
-                    placeholder="Search or Ask Neural AI..."
-                    className="h-full flex-1 border-0 bg-transparent text-base font-medium tracking-tight text-white shadow-none ring-0 outline-none placeholder:text-white/30 focus:ring-0 focus:border-0 focus:outline-none"
-                    value={query}
-                    onValueChange={(v) => { setQuery(v); setAiResult(null); }}
-                    onKeyDown={(e: React.KeyboardEvent) => {
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && isNl) {
-                        e.preventDefault();
-                        handleAiQuery();
-                      }
-                    }}
-                    autoFocus
-                  />
-
-                  {/* Neural Run Button */}
-                  {isNl && query.trim().length >= 5 && (
-                    <button
-                      onClick={handleAiQuery}
-                      disabled={nlQuery.isPending}
-                      className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-5 py-2 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
-                    >
-                      {nlQuery.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      <span>Neural Run</span>
-                    </button>
-                  )}
+              {/* Unified Search Bar: Logo + Input + Category Buttons in one bar */}
+              <div className="relative flex items-center h-[56px] mx-7 mb-4 rounded-2xl bg-white/[0.04]">
+                {/* Logo */}
+                <div className="flex shrink-0 items-center justify-center pl-5 pr-3" data-testid="search-logo">
+                  <SidebarLogo />
                 </div>
 
-                {/* Category Focus Buttons - styled to match search bar */}
-                <div className="flex shrink-0 items-center gap-2" data-testid="category-buttons">
+                {/* Input */}
+                <Command.Input
+                  placeholder="Search or Ask Neural AI..."
+                  className="!h-full !flex-1 !border-0 !bg-transparent !text-base !font-medium !tracking-tight !text-white !shadow-none !ring-0 !outline-none placeholder:!text-white/30 focus:!ring-0 focus:!border-0 focus:!outline-none focus:!shadow-none"
+                  value={query}
+                  onValueChange={(v) => { setQuery(v); setAiResult(null); }}
+                  onKeyDown={(e: React.KeyboardEvent) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && isNl) {
+                      e.preventDefault();
+                      handleAiQuery();
+                    }
+                  }}
+                  autoFocus
+                />
+
+                {/* Neural Run Button */}
+                {isNl && query.trim().length >= 5 && (
+                  <button
+                    onClick={handleAiQuery}
+                    disabled={nlQuery.isPending}
+                    className="flex shrink-0 items-center gap-2 rounded-full bg-primary mr-2 px-5 py-2 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                  >
+                    {nlQuery.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    <span>Neural Run</span>
+                  </button>
+                )}
+
+                {/* Separator line before category buttons */}
+                <div className="h-8 w-px bg-white/10 shrink-0" />
+
+                {/* Category Focus Buttons */}
+                <div className="flex shrink-0 items-center" data-testid="category-buttons">
                   {categories.map((cat) => (
                     <button
                       key={cat.id}
@@ -295,10 +296,10 @@ export function CommandPalette() {
                       aria-label={`Filter by ${cat.label}`}
                       aria-pressed={activeCategory === cat.id}
                       className={cn(
-                        "flex h-[56px] w-[56px] items-center justify-center rounded-2xl backdrop-blur-sm transition-all duration-150 motion-reduce:transition-none",
+                        "flex h-[56px] w-[48px] items-center justify-center transition-colors duration-150 motion-reduce:transition-none first:ml-0 last:rounded-r-2xl",
                         activeCategory === cat.id
-                          ? "bg-primary/20 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)]"
-                          : "bg-white/[0.02] text-white/30 hover:text-white/60 hover:bg-white/[0.04]"
+                          ? "text-primary"
+                          : "text-white/30 hover:text-white/60"
                       )}
                     >
                       <cat.icon className="h-5 w-5" />
