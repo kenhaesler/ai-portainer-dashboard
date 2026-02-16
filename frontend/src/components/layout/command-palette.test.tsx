@@ -75,8 +75,6 @@ describe('CommandPalette (Spotlight Style)', () => {
     expect(categoryButtons).toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Logs')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter by Metrics')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter by Settings')).toBeInTheDocument();
   });
 
   it('category buttons are visible in both idle and typing states', () => {

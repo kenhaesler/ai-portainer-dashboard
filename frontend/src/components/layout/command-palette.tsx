@@ -92,13 +92,11 @@ function isNaturalLanguageQuery(input: string): boolean {
   return false;
 }
 
-export type SearchCategory = 'all' | 'containers' | 'logs' | 'metrics' | 'settings';
+export type SearchCategory = 'all' | 'containers' | 'logs';
 
 const categories: { id: SearchCategory; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'containers', label: 'Containers', icon: Package },
   { id: 'logs', label: 'Logs', icon: ScrollText },
-  { id: 'metrics', label: 'Metrics', icon: BarChart3 },
-  { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
 export function CommandPalette() {
@@ -198,21 +196,15 @@ export function CommandPalette() {
   const images = activeCategory === 'all' || activeCategory === 'containers' ? allImages : [];
   const stacks = activeCategory === 'all' || activeCategory === 'containers' ? allStacks : [];
   const logs = activeCategory === 'all' || activeCategory === 'logs' ? allLogs : [];
-  // Settings & metrics categories filter to navigation pages only
   const filteredPages = activeCategory === 'all'
     ? pages
-    : activeCategory === 'settings'
-      ? pages.filter((p) => p.to === '/settings' || p.to === '/users' || p.to === '/webhooks')
-      : activeCategory === 'metrics'
-        ? pages.filter((p) => p.to === '/metrics' || p.to === '/ai-monitor' || p.to === '/traces' || p.to === '/llm-observability')
-        : activeCategory === 'containers'
-          ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/fleet' || p.to === '/images')
-          : activeCategory === 'logs'
-            ? pages.filter((p) => p.to === '/edge-logs')
-            : pages;
+    : activeCategory === 'containers'
+      ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/fleet' || p.to === '/images')
+      : activeCategory === 'logs'
+        ? pages.filter((p) => p.to === '/edge-logs')
+        : pages;
 
-  // Show settings entries when category is 'all' or 'settings'
-  const filteredSettings = activeCategory === 'all' || activeCategory === 'settings' ? settingsEntries : [];
+  const filteredSettings = activeCategory === 'all' ? settingsEntries : [];
 
   const hasRecent = query.trim().length === 0 && recent.length > 0;
 
