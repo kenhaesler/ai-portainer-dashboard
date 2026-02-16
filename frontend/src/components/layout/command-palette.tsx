@@ -18,6 +18,12 @@ import {
   Webhook,
   Users,
   Settings,
+  Settings2,
+  Bot,
+  Plug,
+  HardDriveDownload,
+  Palette,
+  Server,
   Package,
   Layers,
   ScrollText,
@@ -30,6 +36,8 @@ import {
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useGlobalSearch } from '@/hooks/use-global-search';
+import { useEndpoints } from '@/hooks/use-endpoints';
+import { useStacks } from '@/hooks/use-stacks';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSearch } from '@/providers/search-provider';
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
@@ -61,6 +69,23 @@ const pages: PageEntry[] = [
   { label: 'Users', to: '/users', icon: Users },
 ];
 
+interface SettingsEntry {
+  label: string;
+  keywords: string;
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const settingsEntries: SettingsEntry[] = [
+  { label: 'General Settings', keywords: 'general cache redis polling interval', to: '/settings?tab=general', icon: Settings2 },
+  { label: 'Security Settings', keywords: 'security auth oidc sso password login rbac jwt session', to: '/settings?tab=security', icon: Shield },
+  { label: 'AI & LLM Settings', keywords: 'ai llm ollama model prompt anthropic claude openai', to: '/settings?tab=ai', icon: Bot },
+  { label: 'Monitoring Settings', keywords: 'monitoring notifications email smtp teams discord telegram alerts', to: '/settings?tab=monitoring', icon: Activity },
+  { label: 'Integrations Settings', keywords: 'integrations webhooks elasticsearch portainer api', to: '/settings?tab=integrations', icon: Plug },
+  { label: 'Infrastructure Settings', keywords: 'infrastructure backup database postgres timescale', to: '/settings?tab=infrastructure', icon: HardDriveDownload },
+  { label: 'Appearance Settings', keywords: 'appearance theme dark light apple catppuccin background animation', to: '/settings?tab=appearance', icon: Palette },
+];
+
 function isNaturalLanguageQuery(input: string): boolean {
   const trimmed = input.trim().toLowerCase();
   if (trimmed.length < 5) return false;
@@ -70,12 +95,10 @@ function isNaturalLanguageQuery(input: string): boolean {
   return false;
 }
 
-export type SearchCategory = 'all' | 'containers' | 'logs' | 'metrics' | 'settings';
+export type SearchCategory = 'all' | 'containers' | 'settings';
 
 const categories: { id: SearchCategory; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'containers', label: 'Containers', icon: Package },
-  { id: 'logs', label: 'Logs', icon: ScrollText },
-  { id: 'metrics', label: 'Metrics', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -87,8 +110,11 @@ export function CommandPalette() {
   const [includeLogs, setIncludeLogs] = useState(false);
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const [activeCategory, setActiveCategory] = useState<SearchCategory>('all');
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const debouncedQuery = useDebouncedValue(query, 250);
   const { data, isLoading } = useGlobalSearch(debouncedQuery, open, includeLogs);
+  const { data: endpoints } = useEndpoints();
+  const { data: allStacksData } = useStacks();
   const { recent, addRecent } = useSearch();
   const nlQuery = useNlQuery();
 
@@ -123,9 +149,9 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  // Auto-enable log search when logs category is active
+  // Always include logs in search results
   useEffect(() => {
-    setIncludeLogs(activeCategory === 'logs' || activeCategory === 'all');
+    setIncludeLogs(true);
   }, [activeCategory]);
 
   const isNl = isNaturalLanguageQuery(query);
@@ -167,26 +193,32 @@ export function CommandPalette() {
 
   const allContainers = data?.containers ?? [];
   const allImages = data?.images ?? [];
-  const allStacks = data?.stacks ?? [];
   const allLogs = data?.logs ?? [];
+  const lowerQuery = query.trim().toLowerCase();
 
   // Filter results based on active category
   const containers = activeCategory === 'all' || activeCategory === 'containers' ? allContainers : [];
   const images = activeCategory === 'all' || activeCategory === 'containers' ? allImages : [];
-  const stacks = activeCategory === 'all' || activeCategory === 'containers' ? allStacks : [];
-  const logs = activeCategory === 'all' || activeCategory === 'logs' ? allLogs : [];
-  // Settings & metrics categories filter to navigation pages only
+  const logs = activeCategory === 'all' ? allLogs : [];
   const filteredPages = activeCategory === 'all'
     ? pages
-    : activeCategory === 'settings'
-      ? pages.filter((p) => p.to === '/settings' || p.to === '/users' || p.to === '/webhooks')
-      : activeCategory === 'metrics'
-        ? pages.filter((p) => p.to === '/metrics' || p.to === '/ai-monitor' || p.to === '/traces' || p.to === '/llm-observability')
-        : activeCategory === 'containers'
-          ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/fleet' || p.to === '/images')
-          : activeCategory === 'logs'
-            ? pages.filter((p) => p.to === '/edge-logs')
-            : pages;
+    : activeCategory === 'containers'
+      ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/fleet' || p.to === '/images')
+      : activeCategory === 'settings'
+        ? pages.filter((p) => p.to === '/settings' || p.to === '/users' || p.to === '/webhooks')
+        : pages;
+
+  const filteredSettings = activeCategory === 'all' || activeCategory === 'settings' ? settingsEntries : [];
+
+  // Client-side endpoint (node) filtering
+  const filteredEndpoints = (activeCategory === 'all' || activeCategory === 'containers') && lowerQuery.length >= 2
+    ? (endpoints ?? []).filter((ep) => ep.name.toLowerCase().includes(lowerQuery)).slice(0, 6)
+    : [];
+
+  // Client-side stack filtering
+  const filteredStacks = (activeCategory === 'all' || activeCategory === 'containers') && lowerQuery.length >= 2
+    ? (allStacksData ?? []).filter((s) => s.name.toLowerCase().includes(lowerQuery)).slice(0, 6)
+    : [];
 
   const hasRecent = query.trim().length === 0 && recent.length > 0;
 
@@ -214,6 +246,11 @@ export function CommandPalette() {
                 if (e.key === 'Escape') {
                   setOpen(false);
                 }
+                if (e.key === 'Enter' && isNl) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleAiQuery();
+                }
               }}
             >
               {/* Unified Search Bar: Logo + Input + Category Buttons in one bar */}
@@ -225,16 +262,10 @@ export function CommandPalette() {
 
                 {/* Input */}
                 <Command.Input
-                  placeholder="Search or Ask Neural AI..."
+                  placeholder={hoveredCategory ? `Filter by ${hoveredCategory}...` : 'Search or Ask Neural AI...'}
                   className="!h-full !flex-1 !border-0 !bg-transparent !text-base !font-medium !tracking-tight !text-foreground !shadow-none !ring-0 !outline-none placeholder:!text-muted-foreground/50 focus:!ring-0 focus:!border-0 focus:!outline-none focus:!shadow-none"
                   value={query}
                   onValueChange={(v) => { setQuery(v); setAiResult(null); }}
-                  onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && isNl) {
-                      e.preventDefault();
-                      handleAiQuery();
-                    }
-                  }}
                   autoFocus
                 />
 
@@ -263,6 +294,8 @@ export function CommandPalette() {
                     <button
                       key={cat.id}
                       onClick={() => setActiveCategory(activeCategory === cat.id ? 'all' : cat.id)}
+                      onMouseEnter={() => setHoveredCategory(cat.label)}
+                      onMouseLeave={() => setHoveredCategory(null)}
                       title={cat.label}
                       aria-label={`Filter by ${cat.label}`}
                       aria-pressed={activeCategory === cat.id}
@@ -386,6 +419,36 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
 
+                    {/* Nodes / Endpoints */}
+                    {filteredEndpoints.length > 0 && (
+                      <Command.Group
+                        heading="Nodes"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
+                      >
+                        {filteredEndpoints.map((ep) => (
+                          <Command.Item
+                            key={`endpoint-${ep.id}`}
+                            value={`node-${ep.name}`}
+                            onSelect={() => navigateTo(`/fleet?endpoint=${ep.id}`)}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
+                              'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'
+                            )}
+                          >
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-muted/30 aria-selected:bg-muted/50 shadow-inner">
+                              <Server className="h-6 w-6 opacity-40 aria-selected:opacity-100" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold tracking-tight">{ep.name}</span>
+                              <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70">
+                                {ep.status === 'up' ? 'Online' : 'Offline'} • {ep.totalContainers} containers • {ep.stackCount} stacks
+                              </span>
+                            </div>
+                          </Command.Item>
+                        ))}
+                      </Command.Group>
+                    )}
+
                     {/* 3. Navigation - Core pages (filtered by category) */}
                     {filteredPages.length > 0 && (
                       <Command.Group
@@ -413,19 +476,46 @@ export function CommandPalette() {
                       </Command.Group>
                     )}
 
-                    {/* 4. Stacks - High level groupings */}
-                    {stacks.length > 0 && (
+                    {/* Settings tabs - deep links */}
+                    {filteredSettings.length > 0 && (
                       <Command.Group
-                        heading="Resource Stacks"
+                        heading="Settings"
                         className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
                       >
-                        {stacks.map((stack) => (
+                        <div className="grid grid-cols-2 gap-2">
+                          {filteredSettings.map((entry) => (
+                            <Command.Item
+                              key={entry.to}
+                              value={`${entry.label} ${entry.keywords}`}
+                              onSelect={() => navigateTo(entry.to)}
+                              className={cn(
+                                'flex cursor-pointer items-center gap-4 rounded-[16px] px-5 py-4 text-[15px] transition-all',
+                                'text-foreground/60 aria-selected:bg-muted/60 aria-selected:text-foreground'
+                              )}
+                            >
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-muted/30 aria-selected:bg-muted/50">
+                                <entry.icon className="h-4.5 w-4.5 opacity-40 aria-selected:opacity-100" />
+                              </div>
+                              <span className="font-bold truncate tracking-tight">{entry.label}</span>
+                            </Command.Item>
+                          ))}
+                        </div>
+                      </Command.Group>
+                    )}
+
+                    {/* 4. Stacks */}
+                    {filteredStacks.length > 0 && (
+                      <Command.Group
+                        heading="Stacks"
+                        className="px-2 pb-4 [&_[cmdk-group-heading]]:px-6 [&_[cmdk-group-heading]]:py-4 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-black [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.25em] [&_[cmdk-group-heading]]:text-muted-foreground/30"
+                      >
+                        {filteredStacks.map((stack) => (
                           <Command.Item
-                            key={stack.id}
+                            key={`stack-${stack.id}`}
                             value={`stack-${stack.name}`}
                             onSelect={() => {
                               onSearchSelect();
-                              navigateTo('/stacks');
+                              navigateTo(`/workloads?stack=${stack.name}`);
                             }}
                             className={cn(
                               'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
@@ -438,7 +528,7 @@ export function CommandPalette() {
                             <div className="flex flex-col gap-0.5">
                               <span className="font-bold tracking-tight">{stack.name}</span>
                               <span className="text-[13px] font-medium text-muted-foreground/50 aria-selected:text-foreground/70">
-                                {stack.status} • Endpoint {stack.endpointId}
+                                {stack.status} • {stack.containerCount ?? 0} containers
                               </span>
                             </div>
                           </Command.Item>
@@ -542,7 +632,7 @@ export function CommandPalette() {
                   </>
                 )}
 
-                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !stacks.length && !logs.length && (
+                {query.trim().length >= 2 && !isLoading && !containers.length && !images.length && !filteredStacks.length && !filteredEndpoints.length && !logs.length && (
                   <Command.Empty className="py-28 text-center">
                     <div className="mb-6 flex justify-center">
                       <AlertCircle className="h-12 w-12 text-muted-foreground/20" />

@@ -7,6 +7,24 @@ import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
 
+vi.mock('@/hooks/use-endpoints', () => ({
+  useEndpoints: vi.fn(() => ({
+    data: [
+      { id: 1, name: 'prod-server', status: 'up', totalContainers: 12, stackCount: 3 },
+      { id: 2, name: 'dev-server', status: 'up', totalContainers: 5, stackCount: 1 },
+    ],
+  })),
+}));
+
+vi.mock('@/hooks/use-stacks', () => ({
+  useStacks: vi.fn(() => ({
+    data: [
+      { id: 1, name: 'web-stack', status: 'active', endpointId: 1, containerCount: 4 },
+      { id: 2, name: 'monitoring-stack', status: 'active', endpointId: 1, containerCount: 3 },
+    ],
+  })),
+}));
+
 vi.mock('@/hooks/use-global-search', () => ({
   useGlobalSearch: vi.fn(() => ({
     data: {
@@ -74,8 +92,6 @@ describe('CommandPalette (Spotlight Style)', () => {
     const categoryButtons = screen.getByTestId('category-buttons');
     expect(categoryButtons).toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter by Logs')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter by Metrics')).toBeInTheDocument();
     expect(screen.getByLabelText('Filter by Settings')).toBeInTheDocument();
   });
 
@@ -98,12 +114,12 @@ describe('CommandPalette (Spotlight Style)', () => {
     // With 'all' category, containers should be visible
     expect(screen.getByText('web-frontend')).toBeInTheDocument();
 
-    // Click Logs category
-    const logsBtn = screen.getByLabelText('Filter by Logs');
-    fireEvent.click(logsBtn);
-    expect(logsBtn).toHaveAttribute('aria-pressed', 'true');
+    // Click Settings category
+    const settingsBtn = screen.getByLabelText('Filter by Settings');
+    fireEvent.click(settingsBtn);
+    expect(settingsBtn).toHaveAttribute('aria-pressed', 'true');
 
-    // Container results should be hidden when logs filter is active
+    // Container results should be hidden when settings filter is active
     expect(screen.queryByText('Infrastructure Units')).not.toBeInTheDocument();
   });
 
@@ -154,7 +170,7 @@ describe('CommandPalette (Spotlight Style)', () => {
     const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
     fireEvent.change(input, { target: { value: 'se' } });
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getAllByText('Settings').length).toBeGreaterThan(0);
   });
 
   it('starts compact and expands when typing', () => {
