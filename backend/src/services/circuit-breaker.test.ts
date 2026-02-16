@@ -223,6 +223,9 @@ describe('CircuitBreaker', () => {
         failures: 0,
         successes: 0,
         lastFailure: undefined,
+        consecutiveProbeFailures: 0,
+        currentResetTimeoutMs: 5000,
+        degraded: false,
       });
     });
 
@@ -252,6 +255,9 @@ describe('CircuitBreaker', () => {
         failures: 0,
         successes: 0,
         lastFailure: undefined,
+        consecutiveProbeFailures: 0,
+        currentResetTimeoutMs: 5000,
+        degraded: false,
       });
     });
 
@@ -301,7 +307,8 @@ describe('CircuitBreaker', () => {
       states.push(cb.getState());
       await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
       states.push(cb.getState());
-      vi.advanceTimersByTime(3000);
+      // After 1st probe failure, timeout doubles to 6000ms
+      vi.advanceTimersByTime(6000);
       states.push(cb.getState());
       await cb.execute(() => Promise.resolve('ok'));
       states.push(cb.getState());
@@ -320,9 +327,13 @@ describe('CircuitBreaker', () => {
   // ── Log noise suppression (#698) ─────────────────────────────────────
 
   describe('probe failure log suppression (#698)', () => {
-    async function failProbeNTimes(cb: CircuitBreaker, n: number, resetTimeoutMs = 3000) {
+    /** Advance through N probe failures, accounting for exponential backoff. */
+    async function failProbeNTimes(cb: CircuitBreaker, n: number, baseResetTimeoutMs = 3000) {
+      let currentTimeout = baseResetTimeoutMs;
       for (let i = 0; i < n; i++) {
-        vi.advanceTimersByTime(resetTimeoutMs);
+        // Use the actual currentResetTimeoutMs from stats for accurate timing
+        currentTimeout = cb.getStats().currentResetTimeoutMs;
+        vi.advanceTimersByTime(currentTimeout);
         // getState() triggers HALF_OPEN transition, then execute fails the probe
         expect(cb.getState()).toBe('HALF_OPEN');
         await expect(cb.execute(() => Promise.reject(new Error('probe fail')))).rejects.toThrow();
@@ -348,8 +359,9 @@ describe('CircuitBreaker', () => {
       // Fail probe 5 times (past the suppression threshold)
       await failProbeNTimes(cb, 5, 3000);
 
-      // Now succeed
-      vi.advanceTimersByTime(3000);
+      // Now succeed — need to wait for current backoff timeout
+      const currentTimeout = cb.getStats().currentResetTimeoutMs;
+      vi.advanceTimersByTime(currentTimeout);
       expect(cb.getState()).toBe('HALF_OPEN');
       await cb.execute(() => Promise.resolve('recovered'));
       expect(cb.getState()).toBe('CLOSED');
@@ -362,8 +374,9 @@ describe('CircuitBreaker', () => {
       // Fail probe 4 times
       await failProbeNTimes(cb, 4, 3000);
 
-      // Succeed
-      vi.advanceTimersByTime(3000);
+      // Succeed — use current backoff timeout
+      const currentTimeout = cb.getStats().currentResetTimeoutMs;
+      vi.advanceTimersByTime(currentTimeout);
       await cb.execute(() => Promise.resolve('ok'));
       expect(cb.getState()).toBe('CLOSED');
 
@@ -371,7 +384,7 @@ describe('CircuitBreaker', () => {
       await expect(cb.execute(() => Promise.reject(new Error('fail again')))).rejects.toThrow();
       expect(cb.getState()).toBe('OPEN');
 
-      // First probe failure after reset should still be a fresh count
+      // First probe failure after reset should use base timeout (3000ms)
       vi.advanceTimersByTime(3000);
       await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
       expect(cb.getState()).toBe('OPEN');
@@ -384,8 +397,9 @@ describe('CircuitBreaker', () => {
 
       cb.reset();
       expect(cb.getState()).toBe('CLOSED');
+      expect(cb.getStats().currentResetTimeoutMs).toBe(3000);
 
-      // After reset, fresh probe failures should start counting from 0
+      // After reset, fresh probe failures should start counting from 0 with base timeout
       await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
       vi.advanceTimersByTime(3000);
       await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
@@ -413,6 +427,147 @@ describe('CircuitBreaker', () => {
           throw new Error('sync');
         }),
       ).rejects.toThrow('sync');
+    });
+  });
+
+  // ── Exponential backoff (#694) ──────────────────────────────────────
+
+  describe('exponential backoff (#694)', () => {
+    async function openCircuit(cb: CircuitBreaker, threshold = 1) {
+      for (let i = 0; i < threshold; i++) {
+        await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+      }
+      expect(cb.getState()).toBe('OPEN');
+    }
+
+    it('doubles reset timeout after each consecutive probe failure', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 1000 });
+      await openCircuit(cb);
+
+      // 1st probe failure: timeout stays at base, but after failure it doubles to 2000ms
+      vi.advanceTimersByTime(1000);
+      expect(cb.getState()).toBe('HALF_OPEN');
+      await expect(cb.execute(() => Promise.reject(new Error('pf1')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(2000);
+
+      // Need 2000ms now to transition
+      vi.advanceTimersByTime(1999);
+      expect(cb.getState()).toBe('OPEN');
+      vi.advanceTimersByTime(1);
+      expect(cb.getState()).toBe('HALF_OPEN');
+
+      // 2nd probe failure: doubles to 4000ms
+      await expect(cb.execute(() => Promise.reject(new Error('pf2')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(4000);
+
+      // Need 4000ms now
+      vi.advanceTimersByTime(3999);
+      expect(cb.getState()).toBe('OPEN');
+      vi.advanceTimersByTime(1);
+      expect(cb.getState()).toBe('HALF_OPEN');
+    });
+
+    it('caps backoff at 300000ms (5 minutes)', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 100000 });
+      await openCircuit(cb);
+
+      // 1st probe failure: 100000 → 200000
+      vi.advanceTimersByTime(100000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(200000);
+
+      // 2nd probe failure: 200000 → 300000 (capped)
+      vi.advanceTimersByTime(200000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(300000);
+
+      // 3rd probe failure: stays at 300000 (cap)
+      vi.advanceTimersByTime(300000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(300000);
+    });
+
+    it('resets backoff to base on successful probe', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 1000 });
+      await openCircuit(cb);
+
+      // Fail twice to escalate timeout: 1000 → 2000 → 4000
+      vi.advanceTimersByTime(1000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      vi.advanceTimersByTime(2000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(4000);
+
+      // Now succeed
+      vi.advanceTimersByTime(4000);
+      await cb.execute(() => Promise.resolve('ok'));
+      expect(cb.getState()).toBe('CLOSED');
+      expect(cb.getStats().currentResetTimeoutMs).toBe(1000);
+    });
+
+    it('resets backoff to base on reset()', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 1000 });
+      await openCircuit(cb);
+
+      vi.advanceTimersByTime(1000);
+      await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(2000);
+
+      cb.reset();
+      expect(cb.getStats().currentResetTimeoutMs).toBe(1000);
+    });
+  });
+
+  // ── isDegraded (#694) ───────────────────────────────────────────────
+
+  describe('isDegraded (#694)', () => {
+    async function failProbes(cb: CircuitBreaker, n: number, resetTimeoutMs: number) {
+      let currentTimeout = resetTimeoutMs;
+      for (let i = 0; i < n; i++) {
+        vi.advanceTimersByTime(currentTimeout);
+        expect(cb.getState()).toBe('HALF_OPEN');
+        await expect(cb.execute(() => Promise.reject(new Error('pf')))).rejects.toThrow();
+        expect(cb.getState()).toBe('OPEN');
+        currentTimeout = Math.min(currentTimeout * 2, 300000);
+      }
+    }
+
+    it('returns false when circuit is CLOSED', () => {
+      const cb = createBreaker();
+      expect(cb.isDegraded()).toBe(false);
+    });
+
+    it('returns false when OPEN but below degraded threshold', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 1000 });
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+      expect(cb.getState()).toBe('OPEN');
+      expect(cb.isDegraded()).toBe(false);
+
+      // Fail 4 probes (threshold is 5)
+      await failProbes(cb, 4, 1000);
+      expect(cb.isDegraded()).toBe(false);
+    });
+
+    it('returns true after 5 consecutive probe failures', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 1000 });
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+
+      await failProbes(cb, 5, 1000);
+      expect(cb.isDegraded()).toBe(true);
+      expect(cb.getStats().degraded).toBe(true);
+    });
+
+    it('clears degraded status on successful probe', async () => {
+      const cb = createBreaker({ failureThreshold: 1, resetTimeoutMs: 1000 });
+      await expect(cb.execute(() => Promise.reject(new Error('fail')))).rejects.toThrow();
+      await failProbes(cb, 5, 1000);
+      expect(cb.isDegraded()).toBe(true);
+
+      // Wait for the current backoff (after 5 failures: 1000 * 2^5 = 32000ms)
+      vi.advanceTimersByTime(32000);
+      await cb.execute(() => Promise.resolve('recovered'));
+      expect(cb.getState()).toBe('CLOSED');
+      expect(cb.isDegraded()).toBe(false);
     });
   });
 });

@@ -9,34 +9,48 @@ const log = createChildLogger('anomaly-explainer');
  * Use LLM to explain a single anomaly in 2-3 plain-English sentences.
  * Returns the explanation string, or null on failure.
  */
+function isTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('timeout') || msg.includes('aborted') || err.name === 'TimeoutError';
+}
+
 export async function explainAnomaly(
   insight: InsightInsert,
   anomalyDescription: string,
 ): Promise<string | null> {
-  try {
-    const userPrompt =
-      `Explain this container anomaly in 2-3 sentences for an ops engineer. ` +
-      `What does it mean and what might cause it?\n\n` +
-      `Container: ${insight.container_name ?? 'unknown'}\n` +
-      `Title: ${insight.title}\n` +
-      `Details: ${anomalyDescription}`;
+  const userPrompt =
+    `Explain this container anomaly in 2-3 sentences for an ops engineer. ` +
+    `What does it mean and what might cause it?\n\n` +
+    `Container: ${insight.container_name ?? 'unknown'}\n` +
+    `Title: ${insight.title}\n` +
+    `Details: ${anomalyDescription}`;
 
-    let response = '';
-    await chatStream(
-      [{ role: 'user', content: userPrompt }],
-      await getEffectivePrompt('anomaly_explainer'),
-      (chunk) => { response += chunk; },
-    );
+  // Try up to 2 attempts (initial + 1 retry for timeout errors)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      let response = '';
+      await chatStream(
+        [{ role: 'user', content: userPrompt }],
+        await getEffectivePrompt('anomaly_explainer'),
+        (chunk) => { response += chunk; },
+      );
 
-    const trimmed = response.trim();
-    if (!trimmed) return null;
+      const trimmed = response.trim();
+      if (!trimmed) return null;
 
-    // Cap at 500 chars to keep descriptions readable
-    return trimmed.slice(0, 500);
-  } catch (err) {
-    log.warn({ err, insightId: insight.id }, 'Failed to explain anomaly');
-    return null;
+      // Cap at 500 chars to keep descriptions readable
+      return trimmed.slice(0, 500);
+    } catch (err) {
+      if (attempt === 0 && isTimeoutError(err)) {
+        log.warn({ insightId: insight.id }, 'Anomaly explanation timed out, retrying once');
+        continue;
+      }
+      log.warn({ err, insightId: insight.id }, 'Failed to explain anomaly');
+      return null;
+    }
   }
+  return null;
 }
 
 /**

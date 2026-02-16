@@ -40,6 +40,7 @@ const mockGetContainers = vi.fn().mockResolvedValue([]);
 vi.mock('./portainer-client.js', () => ({
   getEndpoints: () => mockGetEndpoints(),
   getContainers: (...args: unknown[]) => mockGetContainers(...args),
+  isEndpointDegraded: () => false,
 }));
 
 const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
