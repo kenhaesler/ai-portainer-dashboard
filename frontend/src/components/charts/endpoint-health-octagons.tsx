@@ -296,9 +296,9 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       {/* Hexagon honeycomb grid */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto py-2">
+      <div ref={containerRef} className="py-2">
         <motion.div
           className="relative w-full"
           style={{ height: layout.totalHeight || 'auto' }}

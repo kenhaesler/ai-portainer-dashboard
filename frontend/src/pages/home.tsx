@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
@@ -12,10 +12,10 @@ import { KpiCard } from '@/components/shared/kpi-card';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { SmartRefreshControls } from '@/components/shared/smart-refresh-controls';
+import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
+import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
-import { ContainerStatePie } from '@/components/charts/container-state-pie';
 import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
 import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
 import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
@@ -29,10 +29,10 @@ import { ContainerSmartSearch } from '@/components/shared/container-smart-search
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useDashboard();
+  const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
   const { data: resourcesData, isLoading: isLoadingResources } = useDashboardResources(8);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
-  const { interval, setInterval, enabled, toggle } = useAutoRefresh(30);
+  const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: endpoints } = useEndpoints();
@@ -51,14 +51,6 @@ export default function HomePage() {
         c.status.toLowerCase().includes(searchLower),
     );
   }, [data, containerSearch]);
-
-  // Track the last successful data update time
-  const lastUpdatedRef = useRef<Date | null>(null);
-  useEffect(() => {
-    if (dataUpdatedAt > 0) {
-      lastUpdatedRef.current = new Date(dataUpdatedAt);
-    }
-  }, [dataUpdatedAt]);
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -208,15 +200,10 @@ export default function HomePage() {
             Dashboard overview with KPIs, charts, and recent containers
           </p>
         </div>
-        <SmartRefreshControls
-          interval={interval}
-          enabled={enabled}
-          onIntervalChange={setInterval}
-          onToggle={toggle}
-          onRefresh={() => forceRefresh()}
-          isRefreshing={isFetching || isForceRefreshing}
-          lastUpdated={lastUpdatedRef.current}
-        />
+        <div className="flex items-center gap-2">
+          <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
+          <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -340,41 +327,20 @@ export default function HomePage() {
         </MotionReveal>
       )}
 
-      {/* Row 3: Container States (1/3) + Endpoint Health Treemap (2/3) */}
+      {/* Endpoint Health — full width, dynamic height */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <SkeletonCard className="h-[380px]" />
-          <SkeletonCard className="h-[380px] lg:col-span-2" />
-        </div>
+        <SkeletonCard className="h-[300px]" />
       ) : data ? (
-        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
-          <MotionReveal>
-            <SpotlightCard>
-              <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
-                <div className="flex-1 min-h-0">
-                  <ContainerStatePie
-                    running={data.kpis.running}
-                    stopped={data.kpis.stopped}
-                    unhealthy={data.kpis.unhealthy}
-                  />
-                </div>
-              </div>
-            </SpotlightCard>
-          </MotionReveal>
-          <MotionReveal className="lg:col-span-2">
-            <SpotlightCard>
-              <div className="flex h-[380px] flex-col rounded-lg border bg-card p-6 shadow-sm">
-                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                  Endpoint Health
-                </h3>
-                <div className="flex-1 min-h-0">
-                  <EndpointHealthOctagons endpoints={endpointChartData} />
-                </div>
-              </div>
-            </SpotlightCard>
-          </MotionReveal>
-        </MotionStagger>
+        <MotionReveal>
+          <SpotlightCard>
+            <div className="flex flex-col rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Endpoint Health
+              </h3>
+              <EndpointHealthOctagons endpoints={endpointChartData} />
+            </div>
+          </SpotlightCard>
+        </MotionReveal>
       ) : null}
 
       {/* Top Workloads + Fleet Summary */}
