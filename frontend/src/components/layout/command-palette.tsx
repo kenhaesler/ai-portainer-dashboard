@@ -225,12 +225,16 @@ export function CommandPalette() {
           {/* Command dialog - Spotlight Style */}
           <motion.div
             initial={{ opacity: 0, scale: 0.98, y: -20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              y: 0,
+              maxWidth: isExpanded ? '42rem' : '32rem'
+            }}
             exit={{ opacity: 0, scale: 0.98, y: -10 }}
             transition={{ type: "spring", damping: 28, stiffness: 350 }}
             className={cn(
-              "relative z-[101] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[#1c1c1e]/85 backdrop-blur-[45px] shadow-[0_40px_120px_rgba(0,0,0,0.8)] transition-[max-width] duration-300 ease-out motion-reduce:transition-none",
-              isExpanded ? "max-w-2xl" : "max-w-lg",
+              "relative z-[101] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[#1c1c1e]/85 backdrop-blur-[45px] shadow-[0_40px_120px_rgba(0,0,0,0.8)]",
               isNl && "border-primary/50 ring-1 ring-primary/30 shadow-[0_0_60px_-12px_rgba(99,102,241,0.3)]"
             )}
           >
