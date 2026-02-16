@@ -63,6 +63,21 @@ export async function getEffectiveMcpConfig() {
   return { toolTimeout };
 }
 
+/**
+ * Read Harbor config from the settings DB, falling back to env vars.
+ * Called per-request so that Settings page changes take effect immediately.
+ */
+export async function getEffectiveHarborConfig() {
+  const config = getConfig();
+  const enabled = (await getSetting('harbor.enabled'))?.value === 'true' || config.HARBOR_SYNC_ENABLED;
+  const apiUrl = (await getSetting('harbor.api_url'))?.value || config.HARBOR_API_URL;
+  const robotName = (await getSetting('harbor.robot_name'))?.value || config.HARBOR_ROBOT_NAME;
+  const robotSecret = (await getSetting('harbor.robot_secret'))?.value || config.HARBOR_ROBOT_SECRET;
+  const verifySsl = ((await getSetting('harbor.verify_ssl'))?.value ?? String(config.HARBOR_VERIFY_SSL)) !== 'false';
+  const syncIntervalMinutes = parseInt((await getSetting('harbor.sync_interval_minutes'))?.value || '', 10) || config.HARBOR_SYNC_INTERVAL_MINUTES;
+  return { enabled, apiUrl, robotName, robotSecret, verifySsl, syncIntervalMinutes };
+}
+
 export async function deleteSetting(key: string): Promise<boolean> {
   const result = await db().execute('DELETE FROM settings WHERE key = ?', [key]);
 

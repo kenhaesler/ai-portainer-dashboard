@@ -86,6 +86,16 @@ export function useHarborStatus() {
   });
 }
 
+/** Lightweight check for sidebar visibility — no connection test. */
+export function useHarborEnabled() {
+  return useQuery<{ enabled: boolean }>({
+    queryKey: ['harbor-enabled'],
+    queryFn: () => api.get<{ enabled: boolean }>('/api/harbor/enabled'),
+    staleTime: 300_000, // 5 minutes
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useHarborVulnerabilities(options: {
   severity?: string;
   inUse?: boolean;

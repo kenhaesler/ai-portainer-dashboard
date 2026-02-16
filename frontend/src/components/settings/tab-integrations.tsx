@@ -7,6 +7,7 @@ import {
   Globe,
   Loader2,
   Search,
+  ShieldAlert,
   Webhook,
   Wifi,
 } from 'lucide-react';
@@ -39,6 +40,14 @@ export function IntegrationsTab({ editedValues, originalValues, onChange, isSavi
 
       {/* Elasticsearch Settings */}
       <ElasticsearchSettingsSection
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={onChange}
+        disabled={isSaving}
+      />
+
+      {/* Harbor Registry */}
+      <HarborSettingsSection
         values={editedValues}
         originalValues={originalValues}
         onChange={onChange}
@@ -331,6 +340,240 @@ export function ElasticsearchSettingsSection({
               <p className="mt-1 text-xs">
                 Cluster: {testResult.cluster_name ?? 'unknown'} | Status: {testResult.status ?? 'unknown'} | Nodes: {testResult.number_of_nodes ?? 'n/a'}
               </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Harbor Registry Settings
+// ---------------------------------------------------------------------------
+
+interface HarborTestConnectionResponse {
+  ok: boolean;
+  error?: string;
+}
+
+interface HarborSettingsSectionProps {
+  values: Record<string, string>;
+  originalValues: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  disabled?: boolean;
+}
+
+export function HarborSettingsSection({
+  values,
+  originalValues,
+  onChange,
+  disabled,
+}: HarborSettingsSectionProps) {
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<HarborTestConnectionResponse | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+
+  const enabled = values['harbor.enabled'] === 'true';
+  const apiUrl = values['harbor.api_url'] ?? '';
+  const robotName = values['harbor.robot_name'] ?? '';
+  const robotSecret = values['harbor.robot_secret'] ?? '';
+  const verifySsl = values['harbor.verify_ssl'] !== 'false';
+  const syncInterval = values['harbor.sync_interval_minutes'] ?? '30';
+
+  const hasChanges = [
+    'harbor.enabled',
+    'harbor.api_url',
+    'harbor.robot_name',
+    'harbor.robot_secret',
+    'harbor.verify_ssl',
+    'harbor.sync_interval_minutes',
+  ].some((key) => values[key] !== originalValues[key]);
+
+  const urlValidationError = useMemo(() => {
+    if (!apiUrl.trim()) return null; // optional until enabled
+    try {
+      const parsed = new URL(apiUrl);
+      if (!/^https?:$/.test(parsed.protocol)) {
+        return 'URL must start with http:// or https://';
+      }
+      return null;
+    } catch {
+      return 'Enter a valid URL (e.g., https://harbor.example.com)';
+    }
+  }, [apiUrl]);
+
+  const canTest = apiUrl.trim() && robotName.trim() && !urlValidationError;
+
+  const handleTestConnection = async () => {
+    if (!canTest) return;
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.get<HarborTestConnectionResponse>('/api/harbor/status');
+      setTestResult({ ok: result.connected ?? false, error: result.connectionError });
+    } catch (err) {
+      setTestResult({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Connection test failed',
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5" />
+          <h2 className="text-lg font-semibold">Harbor Registry</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+            enabled
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          )}>
+            {enabled ? 'Enabled' : 'Disabled'}
+          </span>
+          {hasChanges && (
+            <span className="text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+              Modified
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Connect to your Harbor Registry to sync, prioritize, and manage container image vulnerabilities.
+          Requires a robot account with read access to projects and the Security Hub API.
+        </p>
+
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <label className="font-medium">Enable vulnerability management</label>
+            <p className="text-sm text-muted-foreground mt-0.5">Sync vulnerabilities and show the Vulnerabilities page in the sidebar.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange('harbor.enabled', enabled ? 'false' : 'true')}
+            disabled={disabled}
+            aria-label="Toggle Harbor integration"
+            className={cn(
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              enabled ? 'bg-primary' : 'bg-muted',
+              disabled && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            <span
+              className={cn(
+                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                enabled ? 'translate-x-6' : 'translate-x-1'
+              )}
+            />
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Harbor API URL</span>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-background px-3"
+              value={apiUrl}
+              onChange={(e) => onChange('harbor.api_url', e.target.value)}
+              placeholder="https://harbor.example.com"
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Sync Interval (minutes)</span>
+            <input
+              type="number"
+              className="h-9 w-full rounded-md border border-input bg-background px-3"
+              value={syncInterval}
+              onChange={(e) => onChange('harbor.sync_interval_minutes', e.target.value)}
+              min={5}
+              max={1440}
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Robot Account Name</span>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-background px-3"
+              value={robotName}
+              onChange={(e) => onChange('harbor.robot_name', e.target.value)}
+              placeholder="robot$dashboard"
+              disabled={disabled}
+            />
+          </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Robot Account Secret</span>
+            <div className="relative">
+              <input
+                className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10"
+                value={robotSecret}
+                onChange={(e) => onChange('harbor.robot_secret', e.target.value)}
+                type={showSecret ? 'text' : 'password'}
+                placeholder="••••••••"
+                disabled={disabled}
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
+        </div>
+
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={verifySsl}
+            onChange={(e) => onChange('harbor.verify_ssl', String(e.target.checked))}
+            disabled={disabled}
+          />
+          Verify SSL
+        </label>
+
+        {urlValidationError && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">{urlValidationError}</p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={disabled || isTesting || !canTest}
+            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+            Test Connection
+          </button>
+        </div>
+
+        {testResult && (
+          <div className={cn(
+            'rounded-md border p-3 text-sm',
+            testResult.ok
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300'
+              : 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300'
+          )}>
+            <div className="flex items-center gap-1">
+              {testResult.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              <span className="font-medium">{testResult.ok ? 'Connection successful' : 'Connection failed'}</span>
+            </div>
+            {!testResult.ok && testResult.error && (
+              <p className="mt-1 text-xs">{testResult.error}</p>
             )}
           </div>
         )}

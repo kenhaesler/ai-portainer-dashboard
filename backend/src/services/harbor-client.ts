@@ -3,6 +3,7 @@ import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
+import { getEffectiveHarborConfig } from './settings-store.js';
 
 const log = createChildLogger('harbor-client');
 
@@ -170,9 +171,16 @@ function buildHeaders(): Record<string, string> {
   return headers;
 }
 
+/** Sync check using env vars only (for scheduler startup). */
 export function isHarborConfigured(): boolean {
   const config = getConfig();
   return !!(config.HARBOR_API_URL && config.HARBOR_ROBOT_NAME && config.HARBOR_ROBOT_SECRET);
+}
+
+/** Async check merging settings DB with env vars. */
+export async function isHarborConfiguredAsync(): Promise<boolean> {
+  const cfg = await getEffectiveHarborConfig();
+  return !!(cfg.apiUrl && cfg.robotName && cfg.robotSecret);
 }
 
 interface FetchOptions {

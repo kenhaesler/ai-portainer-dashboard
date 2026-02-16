@@ -1,7 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createChildLogger } from '../utils/logger.js';
+import { writeAuditLog } from '../services/audit-logger.js';
 import * as harborClient from '../services/harbor-client.js';
+import { getEffectiveHarborConfig } from '../services/settings-store.js';
 import * as vulnStore from '../services/harbor-vulnerability-store.js';
 import { runFullSync } from '../services/harbor-sync.js';
 
@@ -20,7 +22,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async () => {
-    const configured = harborClient.isHarborConfigured();
+    const configured = await harborClient.isHarborConfiguredAsync();
     if (!configured) {
       return { configured: false, connected: false, lastSync: null };
     }
@@ -38,6 +40,21 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     };
   });
 
+  /** Lightweight config check for the Settings page (no connection test). */
+  fastify.get('/api/harbor/enabled', {
+    schema: {
+      tags: ['Harbor'],
+      summary: 'Check if Harbor integration is enabled (for sidebar visibility)',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async () => {
+    const cfg = await getEffectiveHarborConfig();
+    return {
+      enabled: cfg.enabled && !!(cfg.apiUrl && cfg.robotName && cfg.robotSecret),
+    };
+  });
+
   // ---------------------------------------------------------------------------
   // Security Summary (from Harbor, live)
   // ---------------------------------------------------------------------------
@@ -50,7 +67,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
-    if (!harborClient.isHarborConfigured()) {
+    if (!await harborClient.isHarborConfiguredAsync()) {
       return reply.code(503).send({ error: 'Harbor is not configured' });
     }
 
@@ -123,7 +140,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (_request, reply) => {
-    if (!harborClient.isHarborConfigured()) {
+    if (!await harborClient.isHarborConfiguredAsync()) {
       return reply.code(503).send({ error: 'Harbor is not configured' });
     }
 
@@ -147,10 +164,20 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
-  }, async (_request, reply) => {
-    if (!harborClient.isHarborConfigured()) {
+  }, async (request, reply) => {
+    if (!await harborClient.isHarborConfiguredAsync()) {
       return reply.code(503).send({ error: 'Harbor is not configured' });
     }
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'harbor.sync_triggered',
+      target_type: 'harbor',
+      target_id: 'full-sync',
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
 
     // Run sync in the background to avoid request timeout
     const syncPromise = runFullSync();
@@ -203,15 +230,24 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       expires_at?: string;
     };
 
-    const user = (request as unknown as { user?: { username?: string } }).user;
-    const createdBy = user?.username ?? 'unknown';
+    const createdBy = request.user?.username ?? 'unknown';
 
     const exception = await vulnStore.createException({
       ...body,
       created_by: createdBy,
     });
 
-    log.info({ cveId: body.cve_id, scope: body.scope, createdBy }, 'CVE exception created');
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'harbor.exception_created',
+      target_type: 'cve_exception',
+      target_id: body.cve_id,
+      details: { scope: body.scope, justification: body.justification },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
     return exception;
   });
 
@@ -233,7 +269,16 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: 'Exception not found' });
     }
 
-    log.info({ exceptionId: id }, 'CVE exception deactivated');
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'harbor.exception_deactivated',
+      target_type: 'cve_exception',
+      target_id: String(id),
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
     return { success: true };
   });
 }

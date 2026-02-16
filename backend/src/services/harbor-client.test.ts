@@ -28,6 +28,17 @@ vi.mock('./trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
+vi.mock('./settings-store.js', () => ({
+  getEffectiveHarborConfig: vi.fn(() => Promise.resolve({
+    enabled: true,
+    apiUrl: 'https://harbor.example.com',
+    robotName: 'robot$test',
+    robotSecret: 'test-secret',
+    verifySsl: true,
+    syncIntervalMinutes: 30,
+  })),
+}));
+
 import { fetch as undiciFetch } from 'undici';
 import { isHarborConfigured, testConnection, _resetHarborClientState } from './harbor-client.js';
 

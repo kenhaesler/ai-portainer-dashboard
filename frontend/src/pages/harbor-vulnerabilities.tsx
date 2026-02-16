@@ -424,7 +424,7 @@ function VulnerabilityRow({
                         className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >
                         <ExternalLink className="h-3 w-3" />
-                        {new URL(url).hostname}
+                        {(() => { try { return new URL(url).hostname; } catch { return url; } })()}
                       </a>
                     ))}
                   </div>

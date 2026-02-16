@@ -20,8 +20,9 @@ const SENSITIVE_KEYS = new Set([
   'elasticsearch.api_key',
   'llm.custom_endpoint_token',
   'portainer_backup.password',
+  'harbor.robot_secret',
 ]);
-const SECURITY_CRITICAL_URL_KEYS = new Set(['llm.ollama_url', 'oidc.issuer_url']);
+const SECURITY_CRITICAL_URL_KEYS = new Set(['llm.ollama_url', 'oidc.issuer_url', 'harbor.api_url']);
 
 const REDACTED = '••••••••';
 const LANDING_PAGE_OPTIONS = new Set([
