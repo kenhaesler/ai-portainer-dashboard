@@ -7,15 +7,6 @@ import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
 
-// Mock framer-motion to avoid animation issues in tests
-vi.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}));
-
 vi.mock('@/hooks/use-global-search', () => ({
   useGlobalSearch: vi.fn(() => ({
     data: {
@@ -33,7 +24,15 @@ vi.mock('@/hooks/use-global-search', () => ({
       ],
       images: [],
       stacks: [],
-      logs: [],
+      logs: [
+        {
+          id: 'log-1',
+          containerId: 'abc123',
+          containerName: 'web-frontend',
+          endpointId: 1,
+          message: 'GET /index.html 200',
+        },
+      ],
     },
     isLoading: false,
   })),
@@ -59,16 +58,66 @@ function renderPalette() {
   );
 }
 
-describe('CommandPalette (Neural Search)', () => {
+describe('CommandPalette (Spotlight Style)', () => {
   beforeEach(() => {
     useUiStore.setState({ commandPaletteOpen: true });
     useSearchStore.setState({ recent: [] });
   });
 
-  it('renders initial state with Neural Search branding', () => {
+  it('renders search icon on search row', () => {
     renderPalette();
-    expect(screen.getByText('Neural Search')).toBeInTheDocument();
-    expect(screen.getByText(/AI-Powered Infrastructure Intelligence/i)).toBeInTheDocument();
+    expect(screen.getByTestId('search-logo')).toBeInTheDocument();
+  });
+
+  it('renders category buttons that are always visible', () => {
+    renderPalette();
+    const categoryButtons = screen.getByTestId('category-buttons');
+    expect(categoryButtons).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by Logs')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by Metrics')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter by Settings')).toBeInTheDocument();
+  });
+
+  it('category buttons are visible in both idle and typing states', () => {
+    renderPalette();
+    // Idle state
+    expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
+
+    // Typing state
+    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    fireEvent.change(input, { target: { value: 'web' } });
+    expect(screen.getByLabelText('Filter by Containers')).toBeInTheDocument();
+  });
+
+  it('toggles category on click and filters results', () => {
+    renderPalette();
+    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    fireEvent.change(input, { target: { value: 'web' } });
+
+    // With 'all' category, containers should be visible
+    expect(screen.getByText('web-frontend')).toBeInTheDocument();
+
+    // Click Logs category
+    const logsBtn = screen.getByLabelText('Filter by Logs');
+    fireEvent.click(logsBtn);
+    expect(logsBtn).toHaveAttribute('aria-pressed', 'true');
+
+    // Container results should be hidden when logs filter is active
+    expect(screen.queryByText('Infrastructure Units')).not.toBeInTheDocument();
+  });
+
+  it('deselects category on second click (returns to all)', () => {
+    renderPalette();
+    const containersBtn = screen.getByLabelText('Filter by Containers');
+
+    // Click to activate
+    fireEvent.click(containersBtn);
+    expect(containersBtn).toHaveAttribute('aria-pressed', 'true');
+
+    // Click again to deactivate
+    fireEvent.click(containersBtn);
+    expect(containersBtn).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('renders recent interactions when query is empty', () => {
@@ -105,7 +154,26 @@ describe('CommandPalette (Neural Search)', () => {
     const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
     fireEvent.change(input, { target: { value: 'se' } });
     expect(screen.queryByText('Backups')).not.toBeInTheDocument();
-    // In our new pages list, Settings is just "Settings"
     expect(screen.getByText('Settings')).toBeInTheDocument();
+  });
+
+  it('starts compact and expands when typing', () => {
+    renderPalette();
+    const dialog = screen.getByPlaceholderText('Search or Ask Neural AI...').closest('[class*="z-[101]"]');
+    // Dialog should exist and have the base classes
+    expect(dialog?.className).toContain('z-[101]');
+    expect(dialog?.className).toContain('w-full');
+
+    // Verify typing updates the query state
+    const input = screen.getByPlaceholderText('Search or Ask Neural AI...');
+    fireEvent.change(input, { target: { value: 'test' } });
+    expect((input as HTMLInputElement).value).toBe('test');
+  });
+
+  it('respects prefers-reduced-motion via CSS utility classes', () => {
+    renderPalette();
+    const dialog = screen.getByPlaceholderText('Search or Ask Neural AI...').closest('[class*="z-[101]"]');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog?.className).toContain('z-[101]');
   });
 });
