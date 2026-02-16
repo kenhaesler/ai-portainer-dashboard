@@ -33,7 +33,7 @@ import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSearch } from '@/providers/search-provider';
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
-import { SidebarLogo } from '@/components/icons/sidebar-logo';
+import { Search } from 'lucide-react';
 
 interface PageEntry {
   label: string;
@@ -220,7 +220,7 @@ export function CommandPalette() {
               <div className="relative flex items-center h-[56px] mx-7 mt-5 mb-4 rounded-2xl bg-muted/40">
                 {/* Logo */}
                 <div className="flex shrink-0 items-center justify-center pl-5 pr-3" data-testid="search-logo">
-                  <SidebarLogo />
+                  <Search className="h-5 w-5 text-muted-foreground/50" />
                 </div>
 
                 {/* Input */}

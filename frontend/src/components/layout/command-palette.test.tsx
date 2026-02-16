@@ -7,10 +7,6 @@ import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
 
-vi.mock('@/components/icons/sidebar-logo', () => ({
-  SidebarLogo: () => <svg data-testid="sidebar-logo" />,
-}));
-
 vi.mock('@/hooks/use-global-search', () => ({
   useGlobalSearch: vi.fn(() => ({
     data: {
@@ -68,10 +64,9 @@ describe('CommandPalette (Spotlight Style)', () => {
     useSearchStore.setState({ recent: [] });
   });
 
-  it('renders inline logo on search row', () => {
+  it('renders search icon on search row', () => {
     renderPalette();
     expect(screen.getByTestId('search-logo')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-logo')).toBeInTheDocument();
   });
 
   it('renders category buttons that are always visible', () => {
