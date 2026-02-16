@@ -19,6 +19,9 @@ import { runWithTraceContext } from '../services/trace-context.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
 import { cleanExpiredSessions } from '../services/session-store.js';
 import { cleanupOldInsights } from '../services/insights-store.js';
+import { runFullSync as runHarborSync } from '../services/harbor-sync.js';
+import { isHarborConfigured } from '../services/harbor-client.js';
+import { cleanupOldVulnerabilities } from '../services/harbor-vulnerability-store.js';
 
 const log = createChildLogger('scheduler');
 
@@ -363,6 +366,15 @@ export async function runCleanup(): Promise<void> {
   } catch (err) {
     log.error({ err }, 'Insights cleanup failed');
   }
+
+  try {
+    const vulnDeleted = await cleanupOldVulnerabilities(30);
+    if (vulnDeleted > 0) {
+      log.info({ deleted: vulnDeleted }, 'Old Harbor vulnerability records cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Harbor vulnerability cleanup failed');
+  }
 }
 
 async function waitForPortainer(): Promise<boolean> {
@@ -506,6 +518,35 @@ export async function startScheduler(): Promise<void> {
     intervals.push(stalenessInterval);
     // Run once after a short delay to let the system warm up
     setTimeout(() => { runWithTraceContext({ source: 'scheduler' }, runImageStalenessCheck).catch(() => {}); }, 30_000);
+  }
+
+  // Harbor vulnerability sync
+  if (config.HARBOR_SYNC_ENABLED && isHarborConfigured()) {
+    const harborIntervalMs = config.HARBOR_SYNC_INTERVAL_MINUTES * 60 * 1000;
+    log.info(
+      { intervalMinutes: config.HARBOR_SYNC_INTERVAL_MINUTES },
+      'Starting Harbor vulnerability sync scheduler',
+    );
+    const harborInterval = setInterval(
+      () => runWithTraceContext({ source: 'scheduler' }, async () => {
+        try {
+          const result = await runHarborSync();
+          if (result.error) {
+            log.warn({ error: result.error }, 'Harbor sync completed with errors');
+          }
+        } catch (err) {
+          log.error({ err }, 'Harbor vulnerability sync failed');
+        }
+      }),
+      harborIntervalMs,
+    );
+    intervals.push(harborInterval);
+    // Run once after warm-up delay
+    setTimeout(() => {
+      runWithTraceContext({ source: 'scheduler' }, async () => {
+        try { await runHarborSync(); } catch { /* logged inside */ }
+      }).catch(() => {});
+    }, 60_000);
   }
 
   // Portainer server backup schedule

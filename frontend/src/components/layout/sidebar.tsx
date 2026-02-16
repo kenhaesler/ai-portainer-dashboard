@@ -12,6 +12,7 @@ import {
   Brain,
   BarChart3,
   Shield,
+  ShieldAlert,
   GitBranch,
   MessageSquare,
   Activity,
@@ -85,6 +86,7 @@ const navigation: NavGroup[] = [
     items: [
       { label: 'Log Viewer', to: '/logs', icon: ScrollText },
       { label: 'Security Audit', to: '/security/audit', icon: Shield },
+      { label: 'Vulnerabilities', to: '/security/vulnerabilities', icon: ShieldAlert },
       { label: 'Edge Agent Logs', to: '/edge-logs', icon: FileSearch },
       { label: 'Packet Capture', to: '/packet-capture', icon: Radio },
       { label: 'Reports', to: '/reports', icon: FileBarChart },
