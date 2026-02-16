@@ -97,8 +97,6 @@ export function CommandPalette() {
   const { recent, addRecent } = useSearch();
   const nlQuery = useNlQuery();
 
-  const isExpanded = query.trim().length > 0;
-
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const activeElement = document.activeElement as HTMLElement | null;
@@ -224,17 +222,12 @@ export function CommandPalette() {
 
           {/* Command dialog - Spotlight Style */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.98, y: -20 }}
-            animate={{
-              opacity: 1,
-              scale: 1,
-              y: 0,
-              maxWidth: isExpanded ? '42rem' : '32rem'
-            }}
-            exit={{ opacity: 0, scale: 0.98, y: -10 }}
-            transition={{ type: "spring", damping: 28, stiffness: 350 }}
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             className={cn(
-              "relative z-[101] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[#1c1c1e]/85 backdrop-blur-[45px] shadow-[0_40px_120px_rgba(0,0,0,0.8)]",
+              "relative z-[101] w-full max-w-3xl overflow-hidden rounded-[28px] border border-white/10 bg-[#1c1c1e]/85 backdrop-blur-[45px] shadow-[0_40px_120px_rgba(0,0,0,0.8)]",
               isNl && "border-primary/50 ring-1 ring-primary/30 shadow-[0_0_60px_-12px_rgba(99,102,241,0.3)]"
             )}
           >
@@ -255,10 +248,7 @@ export function CommandPalette() {
               {/* Search Row: Logo + Input + Category Buttons */}
               <div className="relative flex items-center gap-2 px-7 pb-4">
                 {/* Search Bar with Logo Inside */}
-                <div className={cn(
-                  "flex flex-1 items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.02] px-5 backdrop-blur-sm transition-[height] duration-200 ease-out motion-reduce:transition-none",
-                  isExpanded ? "h-[60px]" : "h-[52px]"
-                )}>
+                <div className="flex flex-1 items-center gap-4 rounded-2xl bg-white/[0.02] px-5 backdrop-blur-sm h-[56px]">
                   {/* Logo as prefix icon inside search bar */}
                   <div className="flex shrink-0 items-center justify-center" data-testid="search-logo">
                     <SidebarLogo />
@@ -266,11 +256,7 @@ export function CommandPalette() {
 
                   <Command.Input
                     placeholder="Search or Ask Neural AI..."
-                    className={cn(
-                      'h-full flex-1 bg-transparent font-medium tracking-tight text-white outline-none transition-[font-size] duration-200 ease-out motion-reduce:transition-none',
-                      'placeholder:text-white/30',
-                      isExpanded ? 'text-lg' : 'text-base'
-                    )}
+                    className="h-full flex-1 bg-transparent text-base font-medium tracking-tight text-white outline-none placeholder:text-white/30"
                     value={query}
                     onValueChange={(v) => { setQuery(v); setAiResult(null); }}
                     onKeyDown={(e: React.KeyboardEvent) => {
@@ -309,11 +295,10 @@ export function CommandPalette() {
                       aria-label={`Filter by ${cat.label}`}
                       aria-pressed={activeCategory === cat.id}
                       className={cn(
-                        "flex items-center justify-center rounded-2xl border transition-all duration-150 motion-reduce:transition-none backdrop-blur-sm",
-                        isExpanded ? "h-[60px] w-[60px]" : "h-[52px] w-[52px]",
+                        "flex h-[56px] w-[56px] items-center justify-center rounded-2xl backdrop-blur-sm transition-all duration-150 motion-reduce:transition-none",
                         activeCategory === cat.id
-                          ? "bg-primary/20 border-primary/40 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)]"
-                          : "bg-white/[0.02] border-white/10 text-white/30 hover:text-white/60 hover:bg-white/[0.04] hover:border-white/20"
+                          ? "bg-primary/20 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)]"
+                          : "bg-white/[0.02] text-white/30 hover:text-white/60 hover:bg-white/[0.04]"
                       )}
                     >
                       <cat.icon className="h-5 w-5" />
@@ -323,7 +308,7 @@ export function CommandPalette() {
               </div>
 
               {/* Separator */}
-              {(isExpanded || recent.length > 0) && (
+              {(query.trim().length > 0 || recent.length > 0) && (
                 <div className="mx-7 h-px bg-white/[0.05]" />
               )}
 
