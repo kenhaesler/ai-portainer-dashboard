@@ -14,7 +14,7 @@ vi.mock('./trace-context.js', () => ({
 }));
 
 vi.mock('./harbor-client.js', () => ({
-  isHarborConfigured: vi.fn(() => true),
+  isHarborConfiguredAsync: vi.fn(() => Promise.resolve(true)),
   listVulnerabilities: vi.fn(),
 }));
 
@@ -140,7 +140,7 @@ describe('harbor-sync', () => {
   });
 
   it('handles Harbor not configured', async () => {
-    vi.mocked(harborClient.isHarborConfigured).mockReturnValueOnce(false);
+    vi.mocked(harborClient.isHarborConfiguredAsync).mockResolvedValueOnce(false);
 
     const result = await runFullSync();
     expect(result.error).toContain('not configured');

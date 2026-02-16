@@ -108,21 +108,54 @@ export interface HarborCVEAllowlist {
 }
 
 // ---------------------------------------------------------------------------
+// Resolved config type (DB settings with env var fallback)
+// ---------------------------------------------------------------------------
+
+interface ResolvedHarborConfig {
+  apiUrl: string;
+  robotName: string;
+  robotSecret: string;
+  verifySsl: boolean;
+  concurrency: number;
+}
+
+async function resolveConfig(): Promise<ResolvedHarborConfig> {
+  const effective = await getEffectiveHarborConfig();
+  const envConfig = getConfig();
+  return {
+    apiUrl: effective.apiUrl || '',
+    robotName: effective.robotName || '',
+    robotSecret: effective.robotSecret || '',
+    verifySsl: effective.verifySsl,
+    concurrency: envConfig.HARBOR_CONCURRENCY,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Client internals
 // ---------------------------------------------------------------------------
 
 let limiter: ReturnType<typeof pLimit> | undefined;
-function getLimiter(): ReturnType<typeof pLimit> {
-  if (!limiter) limiter = pLimit(getConfig().HARBOR_CONCURRENCY);
+let limiterConcurrency: number | undefined;
+function getLimiter(concurrency: number): ReturnType<typeof pLimit> {
+  if (!limiter || limiterConcurrency !== concurrency) {
+    limiter = pLimit(concurrency);
+    limiterConcurrency = concurrency;
+  }
   return limiter;
 }
 
 let pooledDispatcher: Agent | undefined;
-function getDispatcher(): Agent | undefined {
-  const config = getConfig();
-  if (pooledDispatcher) return pooledDispatcher;
+let lastVerifySsl: boolean | undefined;
+function getDispatcher(verifySsl: boolean): Agent | undefined {
+  if (pooledDispatcher && lastVerifySsl === verifySsl) return pooledDispatcher;
+  // Recreate dispatcher when SSL setting changes
+  if (pooledDispatcher) {
+    pooledDispatcher.close().catch(() => {});
+    pooledDispatcher = undefined;
+  }
   const connectOptions: Record<string, unknown> = {};
-  if (!config.HARBOR_VERIFY_SSL) {
+  if (!verifySsl) {
     connectOptions.rejectUnauthorized = false;
   }
   pooledDispatcher = new Agent({
@@ -130,6 +163,7 @@ function getDispatcher(): Agent | undefined {
     pipelining: 1,
     ...(Object.keys(connectOptions).length > 0 && { connect: connectOptions }),
   });
+  lastVerifySsl = verifySsl;
   return pooledDispatcher;
 }
 
@@ -146,32 +180,32 @@ export class HarborError extends Error {
 /** Exported for testing — resets cached state */
 export function _resetHarborClientState(): void {
   limiter = undefined;
+  limiterConcurrency = undefined;
   pooledDispatcher = undefined;
+  lastVerifySsl = undefined;
 }
 
-function buildUrl(path: string): string {
-  const config = getConfig();
-  if (!config.HARBOR_API_URL) throw new HarborError('HARBOR_API_URL is not configured');
-  const base = config.HARBOR_API_URL.replace(/\/+$/, '');
+function buildUrl(apiUrl: string, path: string): string {
+  if (!apiUrl) throw new HarborError('HARBOR_API_URL is not configured');
+  const base = apiUrl.replace(/\/+$/, '');
   return `${base}/api/v2.0${path}`;
 }
 
-function buildHeaders(): Record<string, string> {
-  const config = getConfig();
+function buildHeaders(robotName: string, robotSecret: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
-  if (config.HARBOR_ROBOT_NAME && config.HARBOR_ROBOT_SECRET) {
+  if (robotName && robotSecret) {
     const credentials = Buffer.from(
-      `${config.HARBOR_ROBOT_NAME}:${config.HARBOR_ROBOT_SECRET}`,
+      `${robotName}:${robotSecret}`,
     ).toString('base64');
     headers['Authorization'] = `Basic ${credentials}`;
   }
   return headers;
 }
 
-/** Sync check using env vars only (for scheduler startup). */
+/** Sync check using env vars only (kept for backward compatibility). */
 export function isHarborConfigured(): boolean {
   const config = getConfig();
   return !!(config.HARBOR_API_URL && config.HARBOR_ROBOT_NAME && config.HARBOR_ROBOT_SECRET);
@@ -192,9 +226,10 @@ interface FetchOptions {
 
 async function harborFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { method = 'GET', timeout = 15000 } = options;
-  return getLimiter()(() =>
+  const cfg = await resolveConfig();
+  return getLimiter(cfg.concurrency)(() =>
     withSpan(`harbor ${method} ${path}`, 'harbor-api', 'client', () =>
-      harborFetchInner<T>(path, options, timeout),
+      harborFetchInner<T>(path, options, timeout, cfg),
     ),
   );
 }
@@ -203,10 +238,11 @@ async function harborFetchInner<T>(
   path: string,
   options: FetchOptions,
   timeout: number,
+  cfg: ResolvedHarborConfig,
 ): Promise<T> {
   const { method = 'GET', body, query } = options;
 
-  let url = buildUrl(path);
+  let url = buildUrl(cfg.apiUrl, path);
   if (query) {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
@@ -216,10 +252,10 @@ async function harborFetchInner<T>(
     if (qs) url += `?${qs}`;
   }
 
-  const dispatcher = getDispatcher();
+  const dispatcher = getDispatcher(cfg.verifySsl);
   const response = await undiciFetch(url, {
     method,
-    headers: buildHeaders(),
+    headers: buildHeaders(cfg.robotName, cfg.robotSecret),
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(timeout),
     ...(dispatcher && { dispatcher }),
@@ -250,12 +286,13 @@ async function harborFetchPaginated<T>(
   query: Record<string, string | number | boolean> = {},
   maxPages = 10,
 ): Promise<PaginatedResult<T>> {
+  const cfg = await resolveConfig();
   const pageSize = 100;
   const allItems: T[] = [];
   let total = 0;
 
   for (let page = 1; page <= maxPages; page++) {
-    const url = buildUrl(path);
+    const url = buildUrl(cfg.apiUrl, path);
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== '') params.set(k, String(v));
@@ -264,12 +301,12 @@ async function harborFetchPaginated<T>(
     params.set('page_size', String(pageSize));
     const fullUrl = `${url}?${params.toString()}`;
 
-    const dispatcher = getDispatcher();
-    const response = await getLimiter()(() =>
+    const dispatcher = getDispatcher(cfg.verifySsl);
+    const response = await getLimiter(cfg.concurrency)(() =>
       withSpan(`harbor GET ${path} page=${page}`, 'harbor-api', 'client', async () => {
         const res = await undiciFetch(fullUrl, {
           method: 'GET',
-          headers: buildHeaders(),
+          headers: buildHeaders(cfg.robotName, cfg.robotSecret),
           signal: AbortSignal.timeout(15000),
           ...(dispatcher && { dispatcher }),
         });
@@ -353,6 +390,7 @@ export async function listVulnerabilities(options: {
   page?: number;
   pageSize?: number;
 } = {}): Promise<PaginatedResult<HarborVulnerabilityItem>> {
+  const cfg = await resolveConfig();
   const query: Record<string, string | number | boolean> = {
     with_tag: true,
     tune_count: true,
@@ -370,19 +408,19 @@ export async function listVulnerabilities(options: {
   query['page'] = page;
   query['page_size'] = pageSize;
 
-  const url = buildUrl('/security/vul');
+  const url = buildUrl(cfg.apiUrl, '/security/vul');
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     params.set(k, String(v));
   }
   const fullUrl = `${url}?${params.toString()}`;
 
-  const dispatcher = getDispatcher();
-  const response = await getLimiter()(() =>
+  const dispatcher = getDispatcher(cfg.verifySsl);
+  const response = await getLimiter(cfg.concurrency)(() =>
     withSpan('harbor GET /security/vul', 'harbor-api', 'client', async () => {
       const res = await undiciFetch(fullUrl, {
         method: 'GET',
-        headers: buildHeaders(),
+        headers: buildHeaders(cfg.robotName, cfg.robotSecret),
         signal: AbortSignal.timeout(30000),
         ...(dispatcher && { dispatcher }),
       });

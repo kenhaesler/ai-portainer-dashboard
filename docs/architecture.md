@@ -20,7 +20,7 @@ The project follows a **Monorepo** structure with a **Client-Server (Full-stack)
 
 *   **Layered Backend:** The backend is organized into functional layers:
     *   `routes/`: REST API endpoints.
-    *   `services/`: Business logic and external integrations (Portainer, Ollama, Redis).
+    *   `services/`: Business logic and external integrations (Portainer, Ollama, Redis, Harbor).
     *   `models/`: Zod schemas and database query logic.
     *   `scheduler/`: Background jobs for metrics collection and anomaly detection. Endpoints and containers are processed in parallel (`METRICS_ENDPOINT_CONCURRENCY`, `METRICS_CONTAINER_CONCURRENCY`) with a mutex guard to prevent overlapping cycles.
 *   **Frontend State Management:**
@@ -113,6 +113,7 @@ Backend request flow is organized by route modules, with most Portainer-facing r
 | Investigations | `/api/investigations*` | `services/investigation-store.ts` (PostgreSQL) |
 | Backup | `/api/backup*` | `services/backup-service.ts` (pg_dump/pg_restore), `services/audit-logger.ts` |
 | Cache Admin | `/api/admin/cache/*` | `services/portainer-cache.ts`, `services/audit-logger.ts` |
+| Harbor | `/api/harbor/*` | `services/harbor-client.ts`, `services/harbor-sync.ts`, `services/settings-store.ts`, PostgreSQL |
 | PCAP | `/api/pcap/*` | `services/pcap-service.ts`, `services/audit-logger.ts` |
 | Health | `/health`, `/health/ready`, `/health/ready/detail` | `db/postgres.ts`, `db/timescale.ts`, `services/portainer-cache.ts` (Redis ping) |
 
@@ -186,7 +187,7 @@ graph LR
             subgraph SvcRow2[" "]
                 direction LR
                 SvcIncident["<b>Incidents &amp; Response</b><br/>Incident Correlator · Summarizer<br/>Alert Similarity · Investigation<br/>Remediation"]
-                SvcTrace["<b>Tracing &amp; Security</b><br/>Trace Store · OTLP Transformer<br/>PCAP Service · PCAP Analysis<br/>Security Scanner · Image Staleness"]
+                SvcTrace["<b>Tracing &amp; Security</b><br/>Trace Store · OTLP Transformer<br/>PCAP Service · PCAP Analysis<br/>Security Scanner · Image Staleness<br/>Harbor Client · Harbor Sync"]
                 SvcInfra["<b>Infrastructure</b><br/>OIDC · Session Store · Audit Logger<br/>Notifications · Webhooks · Backup<br/>ES Forwarder · Kibana Client"]
             end
         end
@@ -196,6 +197,7 @@ graph LR
             J1(["Metrics<br/><i>60s</i>"])
             J2(["Monitoring<br/><i>5min</i>"])
             J3(["Cleanup<br/><i>daily</i>"])
+            J4(["Harbor Sync<br/><i>30min</i>"])
         end
 
         DB[("PostgreSQL 17")]
@@ -262,6 +264,7 @@ graph LR
                 Redis(["Redis"])
                 Kibana(["Elasticsearch"])
                 TimescaleDB(["TimescaleDB"])
+                Harbor(["Harbor Registry"])
             end
         end
     end
@@ -275,6 +278,7 @@ graph LR
     SvcCore -- "API" --> Ollama
     SvcCore -- "cache" --> Redis
     SvcInfra -. "optional" .-> Kibana
+    SvcTrace -- "REST v2.0" --> Harbor
     SvcMetrics -. "scale" .-> TimescaleDB
 
     %% Database
@@ -432,6 +436,7 @@ ai-portainer-dashboard/
 │       │   ├── monitoring.ts       #   Insights & acknowledgments
 │       │   ├── remediation.ts      #   Action approval workflow
 │       │   ├── settings.ts         #   Configuration & audit log
+│       │   ├── harbor-vulnerabilities.ts #  Harbor vulnerability management API
 │       │   ├── security-regression.test.ts # Auth sweep, injection vectors, rate limits
 │       │   └── ...                 #   Dashboard, endpoints, images, etc.
 │       ├── services/               # Business logic
@@ -452,6 +457,8 @@ ai-portainer-dashboard/
 │       │   ├── monitoring-service.ts#  Monitoring cycle orchestration
 │       │   ├── metrics-collector.ts#   CPU/memory collection
 │       │   ├── otel-exporter.ts   #   OTLP/HTTP JSON span export to external collectors
+│       │   ├── harbor-client.ts  #   Harbor Registry API client (vulnerability data)
+│       │   ├── harbor-sync.ts    #   Periodic vulnerability sync from Harbor
 │       │   └── ...                 #   Sessions, settings, audit, backup
 │       ├── sockets/                # Socket.IO namespaces
 │       │   ├── llm-chat.ts         #   /llm — streaming chat
