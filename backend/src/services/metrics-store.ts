@@ -145,6 +145,37 @@ export async function getLatestMetrics(
   return result;
 }
 
+/**
+ * Batch fetch the latest metrics for multiple containers in a single query.
+ * Returns a map of containerId -> { metric_type: value }.
+ * Much more efficient than calling getLatestMetrics() per container.
+ */
+export async function getLatestMetricsBatch(
+  containerIds: string[],
+): Promise<Map<string, Record<string, number>>> {
+  const result = new Map<string, Record<string, number>>();
+  if (containerIds.length === 0) return result;
+
+  const db = await getMetricsDb();
+  const { rows } = await db.query(
+    `SELECT DISTINCT ON (container_id, metric_type) container_id, metric_type, value
+     FROM metrics
+     WHERE container_id = ANY($1)
+     ORDER BY container_id, metric_type, timestamp DESC`,
+    [containerIds],
+  );
+
+  for (const row of rows) {
+    if (!result.has(row.container_id)) {
+      result.set(row.container_id, {});
+    }
+    result.get(row.container_id)![row.metric_type] = row.value;
+  }
+
+  log.debug({ containerCount: containerIds.length, resultCount: result.size }, 'Batch metrics fetched');
+  return result;
+}
+
 export interface NetworkRate {
   rxBytesPerSec: number;
   txBytesPerSec: number;

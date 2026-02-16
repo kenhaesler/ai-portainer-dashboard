@@ -136,28 +136,41 @@ describe('security-audit service', () => {
     expect(api?.posture.privileged).toBe(false);
   });
 
-  it('uses cachedFetch for endpoints, containers, and inspect calls', async () => {
+  it('uses cachedFetch for the full audit result and inner calls', async () => {
     await getSecurityAudit();
 
     const calls = mockCachedFetch.mock.calls;
-    // 1 endpoints call + 1 containers call + 2 inspect calls (c1, c2) = 4
-    expect(calls).toHaveLength(4);
+    // 1 outer audit cache + 1 endpoints + 1 containers + 2 inspect calls = 5
+    expect(calls).toHaveLength(5);
+
+    // Outer audit cache: key='security-audit:all', TTL=300 (5 min)
+    expect(calls[0][0]).toBe('security-audit:all');
+    expect(calls[0][1]).toBe(300);
 
     // Endpoints: key='endpoints', TTL=900
-    expect(calls[0][0]).toBe('endpoints');
-    expect(calls[0][1]).toBe(900);
+    expect(calls[1][0]).toBe('endpoints');
+    expect(calls[1][1]).toBe(900);
 
     // Containers: key='containers:1', TTL=300
-    expect(calls[1][0]).toBe('containers:1');
-    expect(calls[1][1]).toBe(300);
-
-    // Inspect: key='inspect:1:c1', TTL=300
-    expect(calls[2][0]).toBe('inspect:1:c1');
+    expect(calls[2][0]).toBe('containers:1');
     expect(calls[2][1]).toBe(300);
 
-    // Inspect: key='inspect:1:c2', TTL=300
-    expect(calls[3][0]).toBe('inspect:1:c2');
+    // Inspect: key='inspect:1:c1', TTL=300
+    expect(calls[3][0]).toBe('inspect:1:c1');
     expect(calls[3][1]).toBe(300);
+
+    // Inspect: key='inspect:1:c2', TTL=300
+    expect(calls[4][0]).toBe('inspect:1:c2');
+    expect(calls[4][1]).toBe(300);
+  });
+
+  it('caches scoped audit results separately by endpointId', async () => {
+    await getSecurityAudit(42);
+
+    const calls = mockCachedFetch.mock.calls;
+    // Outer audit cache should include the endpointId in the key
+    expect(calls[0][0]).toBe('security-audit:42');
+    expect(calls[0][1]).toBe(300);
   });
 
   it('computes audit summary counts', () => {
