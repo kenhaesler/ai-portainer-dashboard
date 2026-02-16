@@ -253,21 +253,22 @@ export function CommandPalette() {
               </div>
 
               {/* Search Row: Logo + Input + Category Buttons */}
-              <div className="relative flex items-center px-7 pb-4">
+              <div className="relative flex items-center gap-2 px-7 pb-4">
+                {/* Search Bar with Logo Inside */}
                 <div className={cn(
-                  "flex w-full items-center gap-3 transition-[height] duration-200 ease-out motion-reduce:transition-none",
-                  isExpanded ? "h-[52px]" : "h-[44px]"
+                  "flex flex-1 items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.02] px-5 backdrop-blur-sm transition-[height] duration-200 ease-out motion-reduce:transition-none",
+                  isExpanded ? "h-[60px]" : "h-[52px]"
                 )}>
-                  {/* Inline Logo */}
-                  <div className="flex shrink-0 items-center justify-center h-7 w-7 rounded-lg bg-white/[0.04] border border-white/5" data-testid="search-logo">
+                  {/* Logo as prefix icon inside search bar */}
+                  <div className="flex shrink-0 items-center justify-center" data-testid="search-logo">
                     <SidebarLogo />
                   </div>
 
                   <Command.Input
                     placeholder="Search or Ask Neural AI..."
                     className={cn(
-                      'h-full w-full bg-transparent font-medium tracking-tight text-white outline-none transition-[font-size] duration-200 ease-out motion-reduce:transition-none',
-                      'placeholder:text-white/10',
+                      'h-full flex-1 bg-transparent font-medium tracking-tight text-white outline-none transition-[font-size] duration-200 ease-out motion-reduce:transition-none',
+                      'placeholder:text-white/30',
                       isExpanded ? 'text-lg' : 'text-base'
                     )}
                     value={query}
@@ -286,37 +287,38 @@ export function CommandPalette() {
                     <button
                       onClick={handleAiQuery}
                       disabled={nlQuery.isPending}
-                      className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                      className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-5 py-2 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                     >
                       {nlQuery.isPending ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
-                        <Sparkles className="h-3 w-3" />
+                        <Sparkles className="h-3.5 w-3.5" />
                       )}
                       <span>Neural Run</span>
                     </button>
                   )}
+                </div>
 
-                  {/* Category Focus Buttons */}
-                  <div className="flex shrink-0 items-center gap-1.5" data-testid="category-buttons">
-                    {categories.map((cat) => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setActiveCategory(activeCategory === cat.id ? 'all' : cat.id)}
-                        title={cat.label}
-                        aria-label={`Filter by ${cat.label}`}
-                        aria-pressed={activeCategory === cat.id}
-                        className={cn(
-                          "flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-150 motion-reduce:transition-none",
-                          activeCategory === cat.id
-                            ? "bg-primary/20 border-primary/40 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)]"
-                            : "bg-white/[0.03] border-white/5 text-white/25 hover:text-white/50 hover:border-white/10"
-                        )}
-                      >
-                        <cat.icon className="h-3.5 w-3.5" />
-                      </button>
-                    ))}
-                  </div>
+                {/* Category Focus Buttons - styled to match search bar */}
+                <div className="flex shrink-0 items-center gap-2" data-testid="category-buttons">
+                  {categories.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveCategory(activeCategory === cat.id ? 'all' : cat.id)}
+                      title={cat.label}
+                      aria-label={`Filter by ${cat.label}`}
+                      aria-pressed={activeCategory === cat.id}
+                      className={cn(
+                        "flex items-center justify-center rounded-2xl border transition-all duration-150 motion-reduce:transition-none backdrop-blur-sm",
+                        isExpanded ? "h-[60px] w-[60px]" : "h-[52px] w-[52px]",
+                        activeCategory === cat.id
+                          ? "bg-primary/20 border-primary/40 text-primary shadow-[0_0_12px_rgba(99,102,241,0.2)]"
+                          : "bg-white/[0.02] border-white/10 text-white/30 hover:text-white/60 hover:bg-white/[0.04] hover:border-white/20"
+                      )}
+                    >
+                      <cat.icon className="h-5 w-5" />
+                    </button>
+                  ))}
                 </div>
               </div>
 
