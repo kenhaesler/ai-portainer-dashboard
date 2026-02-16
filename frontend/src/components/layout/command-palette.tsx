@@ -87,6 +87,7 @@ export function CommandPalette() {
   const [includeLogs, setIncludeLogs] = useState(false);
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const [activeCategory, setActiveCategory] = useState<SearchCategory>('all');
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const debouncedQuery = useDebouncedValue(query, 250);
   const { data, isLoading } = useGlobalSearch(debouncedQuery, open, includeLogs);
   const { recent, addRecent } = useSearch();
@@ -230,7 +231,7 @@ export function CommandPalette() {
 
                 {/* Input */}
                 <Command.Input
-                  placeholder="Search or Ask Neural AI..."
+                  placeholder={hoveredCategory ? `Filter by ${hoveredCategory}...` : 'Search or Ask Neural AI...'}
                   className="!h-full !flex-1 !border-0 !bg-transparent !text-base !font-medium !tracking-tight !text-foreground !shadow-none !ring-0 !outline-none placeholder:!text-muted-foreground/50 focus:!ring-0 focus:!border-0 focus:!outline-none focus:!shadow-none"
                   value={query}
                   onValueChange={(v) => { setQuery(v); setAiResult(null); }}
@@ -262,6 +263,8 @@ export function CommandPalette() {
                     <button
                       key={cat.id}
                       onClick={() => setActiveCategory(activeCategory === cat.id ? 'all' : cat.id)}
+                      onMouseEnter={() => setHoveredCategory(cat.label)}
+                      onMouseLeave={() => setHoveredCategory(null)}
                       title={cat.label}
                       aria-label={`Filter by ${cat.label}`}
                       aria-pressed={activeCategory === cat.id}
