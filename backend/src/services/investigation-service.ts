@@ -334,6 +334,30 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
 
     const evidence = await gatherEvidence(insight);
 
+    // Phase 1.5: Evidence quality check (#697) — abort if insufficient data
+    const hasLogs = Boolean(evidence.logs && evidence.logs.trim().length > 50);
+    const hasMetrics = Boolean(evidence.metrics && evidence.metrics.length > 0);
+    if (!hasLogs && !hasMetrics) {
+      const durationMs = Date.now() - startTime;
+      log.info(
+        { investigationId, durationMs },
+        'Investigation aborted: insufficient evidence (no logs or metrics)',
+      );
+      await updateInvestigationStatus(investigationId, 'complete', {
+        root_cause: 'Insufficient evidence to determine root cause',
+        contributing_factors: '[]',
+        severity_assessment: 'unknown',
+        recommended_actions: '[]',
+        confidence_score: 0.1,
+        ai_summary: 'Investigation aborted due to insufficient evidence — no logs or metrics available for analysis.',
+        analysis_duration_ms: durationMs,
+        llm_model: config.OLLAMA_MODEL,
+        completed_at: new Date().toISOString(),
+      });
+      broadcastInvestigationUpdate(investigationId, 'complete');
+      return;
+    }
+
     // Phase 2: LLM analysis
     await updateInvestigationStatus(investigationId, 'analyzing', {
       evidence_summary: JSON.stringify(evidence.evidenceSummary),
@@ -402,6 +426,8 @@ async function broadcastInvestigationComplete(investigationId: string): Promise<
   }
 }
 
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+
 export async function triggerInvestigation(insight: Insight): Promise<void> {
   const config = getConfig();
 
@@ -414,6 +440,18 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   // Guard: must have container context
   if (!insight.container_id || !insight.endpoint_id) {
     log.debug({ insightId: insight.id }, 'Skipping investigation: no container context');
+    return;
+  }
+
+  // Guard: severity threshold (#697) — skip low-severity insights
+  const minSeverity = (config as Record<string, unknown>).INVESTIGATION_MIN_SEVERITY as string ?? 'warning';
+  const insightOrder = SEVERITY_ORDER[insight.severity] ?? 2;
+  const minOrder = SEVERITY_ORDER[minSeverity] ?? 1;
+  if (insightOrder > minOrder) {
+    log.debug(
+      { insightId: insight.id, severity: insight.severity, minSeverity },
+      'Skipping investigation: severity below threshold',
+    );
     return;
   }
 

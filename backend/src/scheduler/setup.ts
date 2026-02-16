@@ -5,7 +5,7 @@ import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep } from '../se
 import { collectMetrics } from '../services/metrics-collector.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/metrics-store.js';
 import { recordNetworkSample } from '../services/network-rate-tracker.js';
-import { getEndpoints, getContainers } from '../services/portainer-client.js';
+import { getEndpoints, getContainers, isEndpointDegraded } from '../services/portainer-client.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { cleanupOldCaptures } from '../services/pcap-service.js';
 import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
@@ -146,10 +146,11 @@ export async function runMetricsCollection(): Promise<void> {
     );
 
     // Skip Edge Async endpoints — they lack persistent tunnels for live stats
+    // Also skip endpoints whose circuit breaker is degraded (#694/#695)
     const normalized = endpoints.map(normalizeEndpoint);
     const liveCapableEndpoints = endpoints.filter((_ep, i) => {
       const n = normalized[i];
-      return n.capabilities.liveStats;
+      return n.capabilities.liveStats && !isEndpointDegraded(_ep.Id);
     });
 
     if (liveCapableEndpoints.length < endpoints.length) {

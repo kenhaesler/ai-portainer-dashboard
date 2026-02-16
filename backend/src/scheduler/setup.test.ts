@@ -27,6 +27,7 @@ vi.mock('../services/portainer-client.js', () => ({
   getEndpoints: (...args: unknown[]) => getEndpointsMock(...args),
   getContainers: (...args: unknown[]) => getContainersMock(...args),
   getImages: (...args: unknown[]) => getImagesMock(...args),
+  isEndpointDegraded: () => false,
 }));
 
 vi.mock('../services/image-staleness.js', () => ({

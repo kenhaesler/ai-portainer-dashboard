@@ -16,6 +16,9 @@ export interface CircuitBreakerStats {
   failures: number;
   successes: number;
   lastFailure?: Date;
+  consecutiveProbeFailures: number;
+  currentResetTimeoutMs: number;
+  degraded: boolean;
 }
 
 export class CircuitBreakerOpenError extends Error {
@@ -30,6 +33,12 @@ export class CircuitBreakerOpenError extends Error {
 /** Number of consecutive probe failures before switching to DEBUG-level logging. */
 const PROBE_FAILURE_LOG_THRESHOLD = 3;
 
+/** Number of consecutive probe failures before the breaker is considered degraded. */
+const DEGRADED_THRESHOLD = 5;
+
+/** Maximum backoff multiplier (2^n) — caps at 300 000 ms (5 minutes). */
+const MAX_RESET_TIMEOUT_MS = 300_000;
+
 export class CircuitBreaker {
   private state: CircuitState = 'CLOSED';
   private failures = 0;
@@ -37,16 +46,19 @@ export class CircuitBreaker {
   private lastFailure?: Date;
   private openedAt?: number;
   private consecutiveProbeFailures = 0;
+  /** Grows exponentially after each consecutive probe failure, resets on success. */
+  private currentResetTimeoutMs: number;
 
   private readonly cbName: string;
   private readonly failureThreshold: number;
-  private readonly resetTimeoutMs: number;
+  private readonly baseResetTimeoutMs: number;
   private readonly isFailure: (error: unknown) => boolean;
 
   constructor(options: CircuitBreakerOptions) {
     this.cbName = options.name ?? 'default';
     this.failureThreshold = options.failureThreshold;
-    this.resetTimeoutMs = options.resetTimeoutMs;
+    this.baseResetTimeoutMs = options.resetTimeoutMs;
+    this.currentResetTimeoutMs = options.resetTimeoutMs;
     this.isFailure = options.isFailure ?? (() => true);
   }
 
@@ -56,7 +68,7 @@ export class CircuitBreaker {
         this.state = 'HALF_OPEN';
         this.logTransition('Circuit breaker transitioning to HALF_OPEN');
       } else {
-        throw new CircuitBreakerOpenError(this.cbName, this.resetTimeoutMs);
+        throw new CircuitBreakerOpenError(this.cbName, this.currentResetTimeoutMs);
       }
     }
 
@@ -86,7 +98,19 @@ export class CircuitBreaker {
       failures: this.failures,
       successes: this.successes,
       lastFailure: this.lastFailure,
+      consecutiveProbeFailures: this.consecutiveProbeFailures,
+      currentResetTimeoutMs: this.currentResetTimeoutMs,
+      degraded: this.isDegraded(),
     };
+  }
+
+  /**
+   * Returns true when the breaker has failed enough consecutive probes
+   * to be considered degraded. Callers can use this to skip the endpoint
+   * entirely rather than waiting for the next probe cycle.
+   */
+  isDegraded(): boolean {
+    return this.state === 'OPEN' && this.consecutiveProbeFailures >= DEGRADED_THRESHOLD;
   }
 
   reset(): void {
@@ -94,6 +118,7 @@ export class CircuitBreaker {
     this.failures = 0;
     this.successes = 0;
     this.consecutiveProbeFailures = 0;
+    this.currentResetTimeoutMs = this.baseResetTimeoutMs;
     this.lastFailure = undefined;
     this.openedAt = undefined;
     log.info({ name: this.cbName }, 'Circuit breaker reset to CLOSED');
@@ -101,7 +126,7 @@ export class CircuitBreaker {
 
   private shouldTransitionToHalfOpen(): boolean {
     if (!this.openedAt) return false;
-    return Date.now() - this.openedAt >= this.resetTimeoutMs;
+    return Date.now() - this.openedAt >= this.currentResetTimeoutMs;
   }
 
   private onSuccess(): void {
@@ -117,6 +142,7 @@ export class CircuitBreaker {
       this.state = 'CLOSED';
       this.failures = 0;
       this.consecutiveProbeFailures = 0;
+      this.currentResetTimeoutMs = this.baseResetTimeoutMs;
     }
     this.successes++;
   }
@@ -141,6 +167,11 @@ export class CircuitBreaker {
       }
       this.state = 'OPEN';
       this.openedAt = Date.now();
+      // Exponential backoff: double the reset timeout after each consecutive probe failure
+      this.currentResetTimeoutMs = Math.min(
+        this.currentResetTimeoutMs * 2,
+        MAX_RESET_TIMEOUT_MS,
+      );
       return;
     }
     if (this.failures >= this.failureThreshold) {

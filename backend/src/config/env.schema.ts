@@ -40,6 +40,7 @@ export const envSchema = z.object({
   LLM_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
   LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'), // Auth header type for LLM endpoint tokens
   LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  LLM_REQUEST_TIMEOUT: z.coerce.number().int().min(5000).max(600000).default(120000),
 
   // AI Search specific model (defaults to llama3.2:latest - change to qwen3:30b for better reasoning)
   AI_SEARCH_MODEL: z.string().default('llama3.2:latest'),
@@ -104,6 +105,7 @@ export const envSchema = z.object({
   INVESTIGATION_MAX_CONCURRENT: z.coerce.number().int().min(1).default(2),
   INVESTIGATION_LOG_TAIL_LINES: z.coerce.number().int().min(10).default(50),
   INVESTIGATION_METRICS_WINDOW_MINUTES: z.coerce.number().int().min(5).default(60),
+  INVESTIGATION_MIN_SEVERITY: z.enum(['critical', 'warning', 'info']).default('warning'),
 
   // Packet Capture (PCAP)
   PCAP_ENABLED: z.coerce.boolean().default(false),

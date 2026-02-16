@@ -158,7 +158,9 @@ async function chatStreamInner(
   onChunk: (chunk: string) => void,
 ): Promise<string> {
   const llmConfig = await getEffectiveLlmConfig();
+  const config = getConfig();
   const startTime = Date.now();
+  const requestTimeoutMs = config.LLM_REQUEST_TIMEOUT;
 
   const fullMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -185,6 +187,7 @@ async function chatStreamInner(
           messages: fullMessages,
           stream: true,
         }),
+        signal: AbortSignal.timeout(requestTimeoutMs),
       });
 
       if (!response.ok) {

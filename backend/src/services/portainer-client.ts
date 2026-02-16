@@ -126,6 +126,14 @@ function getBreaker(path: string): CircuitBreaker {
   return breaker;
 }
 
+/** Check whether the circuit breaker for a given endpoint is degraded (persistently failing). */
+export function isEndpointDegraded(endpointId: number): boolean {
+  const key = `endpoint-${endpointId}`;
+  const entry = breakers.get(key);
+  if (!entry) return false;
+  return entry.breaker.isDegraded();
+}
+
 /** Remove breakers for endpoints not seen in the last hour */
 export function pruneStaleBreakers(): number {
   const cutoff = Date.now() - BREAKER_MAX_IDLE_MS;

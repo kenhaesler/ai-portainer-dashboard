@@ -18,7 +18,7 @@ vi.mock('./settings-store.js', () => ({
 }));
 
 // Mock config (for getLlmDispatcher)
-const mockEnvConfig = vi.fn().mockReturnValue({ LLM_VERIFY_SSL: true });
+const mockEnvConfig = vi.fn().mockReturnValue({ LLM_VERIFY_SSL: true, LLM_REQUEST_TIMEOUT: 120000 });
 vi.mock('../config/index.js', () => ({
   getConfig: (...args: unknown[]) => mockEnvConfig(...args),
 }));

@@ -754,10 +754,13 @@ export function cachedFetchSWR<T>(
             await cache.set(key, data, ttlSeconds);
           } catch (err) {
             log.warn({ key, err }, 'SWR L2 background revalidation failed');
+          } finally {
+            inFlight.delete(key);
           }
         })();
         inFlight.set(key, revalidate);
-        revalidate.finally(() => { inFlight.delete(key); });
+        // Prevent unhandled rejection warning if something unexpected escapes the try/catch
+        revalidate.catch(() => {});
       }
       return l2Data;
     }

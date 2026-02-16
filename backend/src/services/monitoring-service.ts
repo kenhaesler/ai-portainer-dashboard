@@ -2,7 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { getEndpoints, getContainers } from './portainer-client.js';
+import { getEndpoints, getContainers, isEndpointDegraded } from './portainer-client.js';
+import { CircuitBreakerOpenError } from './circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.js';
 import { scanContainer } from './security-scanner.js';
@@ -127,8 +128,24 @@ export async function runMonitoringCycle(): Promise<void> {
     }> = [];
 
     // Fetch containers for all endpoints in parallel (they are cached by the scheduler)
+    // Skip endpoints whose circuit breaker is degraded (persistently failing) — #694/#695
+    let skippedDegraded = 0;
+    const activeEndpoints = rawEndpoints.filter((ep) => {
+      if (isEndpointDegraded(ep.Id)) {
+        skippedDegraded++;
+        return false;
+      }
+      return true;
+    });
+    if (skippedDegraded > 0) {
+      log.debug(
+        { skippedDegraded, totalEndpoints: rawEndpoints.length },
+        'Skipping degraded endpoints in monitoring cycle',
+      );
+    }
+
     const containerResults = await Promise.allSettled(
-      rawEndpoints.map(async (ep) => {
+      activeEndpoints.map(async (ep) => {
         const containers = await cachedFetchSWR(
           getCacheKey('containers', ep.Id),
           TTL.CONTAINERS,
@@ -138,17 +155,28 @@ export async function runMonitoringCycle(): Promise<void> {
       }),
     );
     let containerFetchFailures = 0;
+    let circuitBreakerSkips = 0;
     for (const result of containerResults) {
       if (result.status === 'fulfilled') {
         allContainers.push(...result.value);
       } else {
-        containerFetchFailures++;
+        if (result.reason instanceof CircuitBreakerOpenError) {
+          circuitBreakerSkips++;
+        } else {
+          containerFetchFailures++;
+        }
       }
     }
     if (containerFetchFailures > 0) {
       log.warn(
-        { failedEndpoints: containerFetchFailures, totalEndpoints: rawEndpoints.length },
+        { failedEndpoints: containerFetchFailures, totalEndpoints: activeEndpoints.length },
         'Failed to fetch containers for some endpoints',
+      );
+    }
+    if (circuitBreakerSkips > 0) {
+      log.debug(
+        { circuitBreakerSkips, totalEndpoints: activeEndpoints.length },
+        'Skipped endpoints with open circuit breakers',
       );
     }
 

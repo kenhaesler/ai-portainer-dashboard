@@ -9,6 +9,7 @@ vi.mock('../config/index.js', () => ({
     INVESTIGATION_MAX_CONCURRENT: 2,
     INVESTIGATION_LOG_TAIL_LINES: 50,
     INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
+    INVESTIGATION_MIN_SEVERITY: 'warning',
     OLLAMA_MODEL: 'llama3.2',
   }),
 }));
@@ -514,6 +515,30 @@ Hope this helps!`;
           container_name: 'web-app',
         }),
       );
+    });
+
+    it('should skip when insight severity is below INVESTIGATION_MIN_SEVERITY (#697)', async () => {
+      const insight = makeInsight({ severity: 'info' });
+      await triggerInvestigation(insight);
+
+      expect(mockInsertInvestigation).not.toHaveBeenCalled();
+    });
+
+    it('should allow critical severity when min is warning (#697)', async () => {
+      mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"critical","recommended_actions":[],"confidence_score":0.9}');
+      mockGetContainerLogs.mockResolvedValue('some logs');
+      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 10, sample_count: 30 });
+      mockGetMetrics.mockReturnValue([{ value: 60 }]);
+      mockGetContainers.mockResolvedValue([]);
+      mockGetInvestigation.mockReturnValue({ id: 'inv-1', status: 'complete' });
+
+      // Use unique container_id to avoid cooldown collision
+      const insight = makeInsight({ severity: 'critical', container_id: 'critical-test-1' });
+      await triggerInvestigation(insight);
+
+      expect(mockInsertInvestigation).toHaveBeenCalled();
     });
   });
 });
