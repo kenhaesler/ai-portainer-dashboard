@@ -401,6 +401,66 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     mockParseToolCalls.mockReturnValue(null);
   });
 
+  it('emits chat:status events during message processing', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
+
+    // Simple response with no tool calls
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        return (async function* () {
+          yield { message: { content: 'Hello!' } };
+        })();
+      }
+      return { message: { content: 'Hello!', tool_calls: [] } };
+    });
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    await chatHandler!({ text: 'Hi' });
+
+    const statusEvents = emitted.filter(e => e.event === 'chat:status');
+    expect(statusEvents.length).toBeGreaterThanOrEqual(2);
+
+    // Verify status phases are emitted
+    const phases = statusEvents.map(e => e.args[0].phase);
+    expect(phases).toContain('init');
+    expect(phases).toContain('context');
+
+    // Verify status messages are strings
+    for (const event of statusEvents) {
+      expect(typeof event.args[0].message).toBe('string');
+      expect(event.args[0].message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('emits model loading status before LLM call', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
+
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        return (async function* () {
+          yield { message: { content: 'Response' } };
+        })();
+      }
+      return { message: { content: 'Response', tool_calls: [] } };
+    });
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+    await chatHandler!({ text: 'Show me containers' });
+
+    const statusEvents = emitted.filter(e => e.event === 'chat:status');
+    const modelPhases = statusEvents.filter(e => e.args[0].phase === 'model');
+    expect(modelPhases.length).toBeGreaterThanOrEqual(1);
+    expect(modelPhases[0].args[0].message).toContain('llama3.2');
+  });
+
   it('generates a partial summary via LLM when tool iteration limit is reached', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 2 }));
 

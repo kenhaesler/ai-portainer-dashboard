@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, Info } from 'lucide-react';
+import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
+import { useSockets } from '@/providers/socket-provider';
 import { useLlmModels } from '@/hooks/use-llm-models';
 import { getModelUseCase } from '@/components/settings/model-use-cases';
 import { useMcpServers } from '@/hooks/use-mcp';
@@ -62,7 +63,8 @@ export default function LlmAssistantPage() {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { messages, isStreaming, currentResponse, activeToolCalls, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
+  const { messages, isStreaming, currentResponse, activeToolCalls, statusMessage, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
+  const { llmSocket } = useSockets();
   const { data: modelsData } = useLlmModels();
   const { data: mcpServers } = useMcpServers();
   const { role } = useAuth();
@@ -261,25 +263,13 @@ export default function LlmAssistantPage() {
 
             {/* Loading indicator - shown while waiting for response */}
             {isSending && !isStreaming && (
-              <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex-shrink-0">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
-                    <Bot className="h-5 w-5 text-white" />
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 backdrop-blur-sm p-4 shadow-sm border border-border/50">
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1">
-                        <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
-                        <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
-                        <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" />
-                      </div>
-                      <ShimmerText className="text-[13px]">Thinking...</ShimmerText>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <ThinkingIndicator
+                statusMessage={statusMessage}
+                onCancel={() => {
+                  setIsSending(false);
+                  llmSocket?.emit('chat:cancel');
+                }}
+              />
             )}
 
             {/* Tool call indicator */}
@@ -336,6 +326,12 @@ export default function LlmAssistantPage() {
 
           {/* Input Area */}
           <div className="border-t bg-background/80 backdrop-blur-sm p-4">
+            {!llmSocket?.connected && (
+              <div className="flex items-center gap-2 mb-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                <WifiOff className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>Reconnecting to AI service...</span>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="flex gap-3">
               <input
                 ref={inputRef}
@@ -343,12 +339,12 @@ export default function LlmAssistantPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about your infrastructure..."
-                disabled={isStreaming || isSending}
+                disabled={isStreaming || isSending || !llmSocket?.connected}
                 className="flex-1 rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-all"
               />
               <button
                 type="submit"
-                disabled={!input.trim() || isStreaming || isSending}
+                disabled={!input.trim() || isStreaming || isSending || !llmSocket?.connected}
                 className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-blue-500/25 transition-all hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 <Send className="h-4 w-4" />
@@ -357,6 +353,49 @@ export default function LlmAssistantPage() {
             </form>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ThinkingIndicator({ statusMessage, onCancel }: { statusMessage: string | null; onCancel: () => void }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed((prev) => prev + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const displayStatus = statusMessage || 'Thinking...';
+  const showSlowWarning = elapsed >= 15;
+
+  return (
+    <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300" data-testid="thinking-indicator">
+      <div className="flex-shrink-0">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+          <Bot className="h-5 w-5 text-white" />
+        </div>
+      </div>
+      <div className="flex-1 space-y-2">
+        <div className="rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 backdrop-blur-sm p-4 shadow-sm border border-border/50">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+            <ShimmerText className="text-[13px]">{displayStatus}</ShimmerText>
+            <span className="text-xs text-muted-foreground tabular-nums ml-auto">{elapsed}s</span>
+          </div>
+          {showSlowWarning && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              This is taking longer than usual. The model may be loading for the first time.
+            </p>
+          )}
+        </div>
+        <button
+          onClick={onCancel}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors"
+        >
+          <X className="h-3 w-3" />
+          Cancel
+        </button>
       </div>
     </div>
   );

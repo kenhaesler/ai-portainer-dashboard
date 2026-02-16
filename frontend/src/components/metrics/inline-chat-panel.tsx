@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
-import { Bot, Send, X, User, AlertCircle, Wrench, CheckCircle2, XCircle } from 'lucide-react';
+import { Bot, Send, X, User, AlertCircle, Wrench, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
@@ -52,6 +52,7 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
     isStreaming,
     currentResponse,
     activeToolCalls,
+    statusMessage,
     sendMessage,
     cancelGeneration,
     clearHistory,
@@ -208,15 +209,7 @@ export const InlineChatPanel = memo(function InlineChatPanel({ open, onClose, co
 
           {/* Thinking indicator */}
           {isSending && !isStreaming && (
-            <div className="flex gap-3">
-              <BotAvatar />
-              <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
-                <div className="flex items-center gap-2">
-                  <LoadingDots />
-                  <span className="text-xs text-muted-foreground">Thinking...</span>
-                </div>
-              </div>
-            </div>
+            <CompactThinkingIndicator statusMessage={statusMessage} />
           )}
 
           {/* Tool call indicator */}
@@ -292,6 +285,33 @@ function LoadingDots() {
       <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
       <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
       <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-bounce" />
+    </div>
+  );
+}
+
+function CompactThinkingIndicator({ statusMessage }: { statusMessage: string | null }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed((prev) => prev + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex gap-3" data-testid="compact-thinking-indicator">
+      <BotAvatar />
+      <div className="rounded-xl bg-muted/50 p-3 border border-border/50">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+          <span className="text-xs text-muted-foreground">{statusMessage || 'Thinking...'}</span>
+          <span className="text-[10px] text-muted-foreground/60 tabular-nums">{elapsed}s</span>
+        </div>
+        {elapsed >= 15 && (
+          <p className="mt-1.5 text-[10px] text-muted-foreground/60">
+            Model may be loading...
+          </p>
+        )}
+      </div>
     </div>
   );
 }

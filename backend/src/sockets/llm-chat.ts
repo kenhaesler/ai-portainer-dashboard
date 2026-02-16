@@ -533,6 +533,9 @@ export function setupLlmNamespace(ns: Namespace) {
         return;
       }
 
+      // Emit status updates so the frontend can show progress during long waits
+      socket.emit('chat:status', { message: 'Preparing request...', phase: 'init' });
+
       const llmConfig = await getEffectiveLlmConfig();
       const selectedModel = data.model || llmConfig.model;
 
@@ -543,6 +546,7 @@ export function setupLlmNamespace(ns: Namespace) {
       const history = sessions.get(socket.id)!;
 
       // Build infrastructure context
+      socket.emit('chat:status', { message: 'Building infrastructure context...', phase: 'context' });
       const infrastructureContext = await buildInfrastructureContext();
       const toolPrompt = getToolSystemPrompt();
       const mcpToolPrompt = await getMcpToolPrompt();
@@ -585,6 +589,7 @@ export function setupLlmNamespace(ns: Namespace) {
         // This only works with local Ollama (not custom endpoints).
         if (!llmConfig.customEnabled && toolsEnabled) {
           try {
+            socket.emit('chat:status', { message: `Loading model ${selectedModel}...`, phase: 'model' });
             log.debug({ userId, model: selectedModel }, 'Attempting native Ollama tool calling');
             const nativeResult = await callOllamaWithNativeTools(llmConfig, selectedModel, messages);
             log.debug({ userId, toolCallCount: nativeResult.toolCalls.length, hasContent: !!nativeResult.content }, 'Native tool call result');
@@ -696,6 +701,9 @@ export function setupLlmNamespace(ns: Namespace) {
         // Every iteration streams chunks to the client. If tool calls are detected,
         // we emit chat:tool_response_pending to clear the streamed tool-call JSON,
         // then the next iteration streams the follow-up response progressively.
+        if (toolIteration === 0) {
+          socket.emit('chat:status', { message: `Waiting for ${selectedModel}...`, phase: 'model' });
+        }
         while (toolIteration < llmConfig.maxToolIterations) {
           let iterationResponse = '';
 
