@@ -410,8 +410,8 @@ export function HarborSettingsSection({
     setIsTesting(true);
     setTestResult(null);
     try {
-      const result = await api.get<HarborTestConnectionResponse>('/api/harbor/status');
-      setTestResult({ ok: result.connected ?? false, error: result.connectionError });
+      const status = await api.get<{ configured: boolean; connected: boolean; connectionError?: string }>('/api/harbor/status');
+      setTestResult({ ok: status.connected, error: status.connectionError });
     } catch (err) {
       setTestResult({
         ok: false,

@@ -93,7 +93,8 @@ describe('HarborVulnerabilitiesPage', () => {
   it('renders summary cards', () => {
     render(<HarborVulnerabilitiesPage />);
     expect(screen.getByText('Total Vulnerabilities')).toBeInTheDocument();
-    expect(screen.getByText('Critical')).toBeInTheDocument();
+    // 'Critical' appears in both summary card and severity badges
+    expect(screen.getAllByText('Critical').length).toBeGreaterThan(0);
     expect(screen.getByText('In-Use Critical')).toBeInTheDocument();
     expect(screen.getByText('Fixable')).toBeInTheDocument();
     expect(screen.getByText('Excepted')).toBeInTheDocument();
