@@ -214,6 +214,11 @@ export function CommandPalette() {
                 if (e.key === 'Escape') {
                   setOpen(false);
                 }
+                if (e.key === 'Enter' && isNl) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleAiQuery();
+                }
               }}
             >
               {/* Unified Search Bar: Logo + Input + Category Buttons in one bar */}
@@ -229,12 +234,6 @@ export function CommandPalette() {
                   className="!h-full !flex-1 !border-0 !bg-transparent !text-base !font-medium !tracking-tight !text-foreground !shadow-none !ring-0 !outline-none placeholder:!text-muted-foreground/50 focus:!ring-0 focus:!border-0 focus:!outline-none focus:!shadow-none"
                   value={query}
                   onValueChange={(v) => { setQuery(v); setAiResult(null); }}
-                  onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === 'Enter' && isNl) {
-                      e.preventDefault();
-                      handleAiQuery();
-                    }
-                  }}
                   autoFocus
                 />
 
