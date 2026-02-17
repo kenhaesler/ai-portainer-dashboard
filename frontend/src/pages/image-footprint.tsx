@@ -252,7 +252,7 @@ export default function ImageFootprintPage() {
 
       {/* Staleness Summary */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <MotionStagger className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-6 md:grid-cols-3" stagger={0.05}>
           <MotionReveal>
             <TiltCard>
               <div className="rounded-lg border bg-card p-4 shadow-sm">
