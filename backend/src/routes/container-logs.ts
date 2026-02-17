@@ -11,6 +11,7 @@ import {
   cleanupEdgeJob,
 } from '../services/edge-async-log-fetcher.js';
 import { IncrementalDockerFrameDecoder } from '../services/docker-frame-decoder.js';
+import { authenticateBearerHeader } from '../plugins/auth.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('container-logs-route');
@@ -163,6 +164,7 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
   });
 
   // GET: SSE streaming endpoint for real-time log tailing
+  // Accepts Bearer token via query param (?token=...) since EventSource cannot set headers.
   fastify.get('/api/containers/:endpointId/:containerId/logs/stream', {
     schema: {
       tags: ['Containers'],
@@ -171,7 +173,19 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       params: ContainerParamsSchema,
       querystring: ContainerLogStreamQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [async (request, reply) => {
+      // Allow token via query param for SSE (EventSource cannot set Authorization header)
+      const { token } = request.query as { token?: string };
+      if (!request.headers.authorization && token) {
+        const user = await authenticateBearerHeader(`Bearer ${token}`);
+        if (!user) {
+          return reply.code(401).send({ error: 'Invalid or expired token' });
+        }
+        request.user = user;
+        return;
+      }
+      return fastify.authenticate(request, reply);
+    }],
   }, async (request, reply) => {
     const { endpointId, containerId } = request.params as {
       endpointId: number;

@@ -110,11 +110,14 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       log.warn({ err }, 'Failed to fetch security audit summary');
     }
 
+    const partial = errors.length > 0;
+
     return {
       kpis: totals,
       security,
       recentContainers: recentContainers.slice(0, recentLimit),
       timestamp: new Date().toISOString(),
+      ...(partial ? { partial, failedEndpoints: errors } : {}),
     };
   });
 
@@ -177,6 +180,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     // Get all containers from all up endpoints
     const allContainers: Array<{ container: any; endpointId: number; endpointName: string }> = [];
+    const resourceErrors: string[] = [];
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>
         cachedFetchSWR(
@@ -196,6 +200,11 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           endpointId: ep.id,
           endpointName: ep.name,
         })));
+      } else {
+        const ep = upEndpoints[i];
+        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+        log.warn({ endpointId: ep.id, endpointName: ep.name, err: result.reason }, 'Failed to fetch containers for endpoint');
+        resourceErrors.push(`${ep.name}: ${msg}`);
       }
     }
 
@@ -296,11 +305,223 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     });
 
     const topStacks = stacks.slice(0, topN);
+    const resourcePartial = resourceErrors.length > 0;
 
     return {
       fleetCpuPercent,
       fleetMemoryPercent,
       topStacks,
+      ...(resourcePartial ? { partial: true, failedEndpoints: resourceErrors } : {}),
+    };
+  });
+
+  // Unified endpoint: returns summary + resources in a single request to reduce
+  // redundant frontend fetches. Both sub-responses share the same endpoint/container
+  // data so only one Portainer round-trip is needed instead of two.
+  fastify.get('/api/dashboard/full', {
+    schema: {
+      tags: ['Dashboard'],
+      summary: 'Get combined dashboard summary + resources in one request',
+      security: [{ bearerAuth: [] }],
+      querystring: z.object({
+        recentLimit: z.coerce.number().int().min(1).max(50).default(20),
+        topN: z.coerce.number().int().min(1).max(20).default(10),
+      }),
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const { recentLimit, topN } = request.query as { recentLimit: number; topN: number };
+
+    // --- Shared data: fetch endpoints + containers once ---
+    let rawEndpoints;
+    try {
+      rawEndpoints = await cachedFetchSWR(
+        getCacheKey('endpoints'),
+        TTL.ENDPOINTS,
+        () => portainer.getEndpoints(),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err }, 'Failed to fetch endpoints from Portainer');
+      return reply.code(502).send({
+        error: 'Unable to connect to Portainer',
+        details: msg,
+      });
+    }
+
+    const normalized = rawEndpoints.map(normalizeEndpoint);
+    const upEndpoints = normalized.filter((e) => e.status === 'up');
+
+    // Fetch all containers (shared between summary and resources)
+    const allNormalizedContainers: Array<{ container: any; endpointId: number; endpointName: string }> = [];
+    const errors: string[] = [];
+    const settled = await Promise.allSettled(
+      upEndpoints.map((ep) =>
+        cachedFetchSWR(
+          getCacheKey('containers', ep.id),
+          TTL.CONTAINERS,
+          () => portainer.getContainers(ep.id),
+        ).then((containers) => ({ ep, containers })),
+      ),
+    );
+
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      if (result.status === 'fulfilled') {
+        const { ep, containers } = result.value;
+        allNormalizedContainers.push(...containers.map((c) => ({
+          container: normalizeContainer(c, ep.id, ep.name),
+          endpointId: ep.id,
+          endpointName: ep.name,
+        })));
+      } else {
+        const ep = upEndpoints[i];
+        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+        log.warn({ endpointId: ep.id, endpointName: ep.name, err: result.reason }, 'Failed to fetch containers for endpoint');
+        errors.push(`${ep.name}: ${msg}`);
+      }
+    }
+
+    // --- Build summary ---
+    const totals = normalized.reduce(
+      (acc, ep) => ({
+        endpoints: acc.endpoints + 1,
+        endpointsUp: acc.endpointsUp + (ep.status === 'up' ? 1 : 0),
+        endpointsDown: acc.endpointsDown + (ep.status === 'down' ? 1 : 0),
+        running: acc.running + ep.containersRunning,
+        stopped: acc.stopped + ep.containersStopped,
+        healthy: acc.healthy + ep.containersHealthy,
+        unhealthy: acc.unhealthy + ep.containersUnhealthy,
+        total: acc.total + ep.totalContainers,
+        stacks: acc.stacks + ep.stackCount,
+      }),
+      {
+        endpoints: 0,
+        endpointsUp: 0,
+        endpointsDown: 0,
+        running: 0,
+        stopped: 0,
+        healthy: 0,
+        unhealthy: 0,
+        total: 0,
+        stacks: 0,
+      },
+    );
+
+    const recentContainers = allNormalizedContainers
+      .map((c) => c.container)
+      .sort((a: any, b: any) => b.created - a.created)
+      .slice(0, recentLimit);
+
+    let security = { totalAudited: 0, flagged: 0, ignored: 0 };
+    try {
+      const auditEntries = await getSecurityAudit();
+      security = buildSecurityAuditSummary(auditEntries);
+    } catch (err) {
+      log.warn({ err }, 'Failed to fetch security audit summary');
+    }
+
+    // --- Build resources ---
+    const runningContainers = allNormalizedContainers.filter((c) => c.container.state === 'running');
+    const runningContainerIds = runningContainers.map((c) => c.container.id);
+
+    let storedMetrics = new Map<string, Record<string, number>>();
+    try {
+      storedMetrics = await getLatestMetricsBatch(runningContainerIds);
+    } catch (err) {
+      log.warn({ err }, 'Failed to read stored metrics from TimescaleDB, resource data will be empty');
+    }
+
+    let totalCpuPercent = 0;
+    let totalMemoryPercent = 0;
+    let statsCount = 0;
+    const containerMetrics = new Map<string, { cpu: number; memory: number; memoryBytes: number }>();
+
+    for (const { container } of runningContainers) {
+      const metrics = storedMetrics.get(container.id);
+      if (metrics && (metrics.cpu !== undefined || metrics.memory !== undefined)) {
+        const cpu = metrics.cpu ?? 0;
+        const memory = metrics.memory ?? 0;
+        const memoryBytes = metrics.memory_bytes ?? 0;
+        containerMetrics.set(container.id, { cpu, memory, memoryBytes });
+        totalCpuPercent += cpu;
+        totalMemoryPercent += memory;
+        statsCount++;
+      }
+    }
+
+    const fleetCpuPercent = statsCount > 0 ? Math.round((totalCpuPercent / statsCount) * 100) / 100 : 0;
+    const fleetMemoryPercent = statsCount > 0 ? Math.round((totalMemoryPercent / statsCount) * 100) / 100 : 0;
+
+    const stackMap = new Map<string, {
+      containerCount: number;
+      runningCount: number;
+      stoppedCount: number;
+      cpuPercent: number;
+      memoryPercent: number;
+      memoryBytes: number;
+    }>();
+
+    for (const { container } of allNormalizedContainers) {
+      const stackName = container.labels['com.docker.compose.project'] || 'No Stack';
+      if (!stackMap.has(stackName)) {
+        stackMap.set(stackName, {
+          containerCount: 0,
+          runningCount: 0,
+          stoppedCount: 0,
+          cpuPercent: 0,
+          memoryPercent: 0,
+          memoryBytes: 0,
+        });
+      }
+      const stack = stackMap.get(stackName)!;
+      stack.containerCount++;
+      if (container.state === 'running') {
+        stack.runningCount++;
+        const m = containerMetrics.get(container.id);
+        if (m) {
+          stack.cpuPercent += m.cpu;
+          stack.memoryPercent += m.memory;
+          stack.memoryBytes += m.memoryBytes;
+        }
+      } else if (container.state === 'stopped') {
+        stack.stoppedCount++;
+      }
+    }
+
+    const stacks = Array.from(stackMap.entries())
+      .map(([name, stats]) => ({
+        name,
+        containerCount: stats.containerCount,
+        runningCount: stats.runningCount,
+        stoppedCount: stats.stoppedCount,
+        cpuPercent: stats.runningCount > 0
+          ? Math.round((stats.cpuPercent / stats.runningCount) * 100) / 100
+          : 0,
+        memoryPercent: stats.runningCount > 0
+          ? Math.round((stats.memoryPercent / stats.runningCount) * 100) / 100
+          : 0,
+        memoryBytes: stats.memoryBytes,
+      }))
+      .sort((a, b) => (b.cpuPercent + b.memoryPercent) - (a.cpuPercent + a.memoryPercent))
+      .slice(0, topN);
+
+    const partial = errors.length > 0;
+
+    return {
+      summary: {
+        kpis: totals,
+        security,
+        recentContainers,
+        timestamp: new Date().toISOString(),
+      },
+      resources: {
+        fleetCpuPercent,
+        fleetMemoryPercent,
+        topStacks: stacks,
+      },
+      endpoints: normalized,
+      ...(partial ? { partial, failedEndpoints: errors } : {}),
     };
   });
 }

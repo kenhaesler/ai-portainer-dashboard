@@ -34,6 +34,7 @@ async function fetchAllContainers(endpointIdFilter?: number) {
 
   const results: ReturnType<typeof normalizeContainer>[] = [];
   const errors: string[] = [];
+  const failedEndpoints: number[] = [];
   const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
   const settled = await Promise.allSettled(
     upEndpoints.map((ep) =>
@@ -54,10 +55,11 @@ async function fetchAllContainers(endpointIdFilter?: number) {
       const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
       log.warn({ endpointId: ep.Id, endpointName: ep.Name, err: result.reason }, 'Failed to fetch containers for endpoint');
       errors.push(`${ep.Name}: ${msg}`);
+      failedEndpoints.push(ep.Id);
     }
   }
 
-  return { results, errors, upEndpoints };
+  return { results, errors, failedEndpoints, upEndpoints };
 }
 
 export async function containersRoutes(fastify: FastifyInstance) {
@@ -118,6 +120,8 @@ export async function containersRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const partial = errors.length > 0;
+
     if (upEndpoints.length > 0 && allContainers.length === 0 && errors.length > 0) {
       return reply.code(502).send({
         error: 'Failed to fetch containers from Portainer',
@@ -136,7 +140,11 @@ export async function containersRoutes(fastify: FastifyInstance) {
     }
 
     // If no pagination params, return flat array (backward compat)
+    // When some endpoints failed, wrap in object with partial flag
     if (page === undefined && pageSize === undefined) {
+      if (partial) {
+        return { data: filtered, partial, failedEndpoints: errors };
+      }
       return filtered;
     }
 
@@ -147,7 +155,13 @@ export async function containersRoutes(fastify: FastifyInstance) {
     const start = (effectivePage - 1) * effectivePageSize;
     const data = filtered.slice(start, start + effectivePageSize);
 
-    return { data, total, page: effectivePage, pageSize: effectivePageSize };
+    return {
+      data,
+      total,
+      page: effectivePage,
+      pageSize: effectivePageSize,
+      ...(partial ? { partial, failedEndpoints: errors } : {}),
+    };
   });
 
   // Container count summary

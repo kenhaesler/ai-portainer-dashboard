@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Search, Download, WrapText, Activity, ArrowDown } from 'lucide-react';
+import { Search, Download, WrapText, Activity, ArrowDown, Radio } from 'lucide-react';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useContainers } from '@/hooks/use-containers';
 import { api } from '@/lib/api';
@@ -11,6 +11,7 @@ import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useUiStore } from '@/stores/ui-store';
 import { usePageVisibility } from '@/hooks/use-page-visibility';
+import { useLogStream } from '@/hooks/use-log-stream';
 
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
 const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
@@ -229,13 +230,29 @@ export default function LogViewerPage() {
     [containers, selectedContainers],
   );
 
+  // SSE streaming for live tail (falls back to polling if SSE fails)
+  const streamContainers = useMemo(
+    () => selectedContainerModels.map((c) => ({
+      id: c.id,
+      name: c.name,
+      endpointId: c.endpointId,
+    })),
+    [selectedContainerModels],
+  );
+  const { streamedEntries, isStreaming, isFallback } = useLogStream({
+    containers: streamContainers,
+    enabled: liveTail && isPageVisible,
+  });
+
+  // Use polling only for: initial fetch, or when live tail is off, or SSE fallback
+  const usePollingForLiveTail = liveTail && isPageVisible && isFallback;
   const containerQueries = useQueries({
     queries: selectedContainerModels.map((container) => ({
       queryKey: ['log-viewer', container.endpointId, container.id, bufferSize],
       queryFn: () => api.get<LogsResponse>(`/api/containers/${container.endpointId}/${container.id}/logs`, {
         params: { tail: bufferSize, timestamps: true },
       }),
-      refetchInterval: liveTail && isPageVisible ? 2000 : false,
+      refetchInterval: usePollingForLiveTail ? 2000 : false,
       enabled: true,
     })),
   });
@@ -243,6 +260,7 @@ export default function LogViewerPage() {
   const regex = useMemo(() => buildRegex(searchPattern), [searchPattern]);
 
   const mergedEntries = useMemo(() => {
+    // Base entries from the initial/polled fetch
     const parsed = containerQueries.flatMap((query, idx) => {
       const container = selectedContainerModels[idx];
       if (!container || !query.data?.logs) return [];
@@ -252,8 +270,10 @@ export default function LogViewerPage() {
         logs: query.data.logs,
       });
     });
-    return sortByTimestamp(parsed).slice(-bufferSize);
-  }, [containerQueries, selectedContainerModels, bufferSize]);
+    // Append SSE streamed entries (incremental, no duplicates since SSE starts from 'now')
+    const all = [...parsed, ...streamedEntries];
+    return sortByTimestamp(all).slice(-bufferSize);
+  }, [containerQueries, selectedContainerModels, bufferSize, streamedEntries]);
 
   const filteredEntries = useMemo(() => {
     return mergedEntries.filter((entry) => {
@@ -370,6 +390,15 @@ export default function LogViewerPage() {
             <Activity className="mr-1 inline h-4 w-4" />
             Live Tail {liveTail ? 'ON' : 'OFF'}
           </button>
+          {liveTail && isStreaming && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+              <Radio className="h-3 w-3 animate-pulse" />
+              SSE
+            </span>
+          )}
+          {liveTail && isFallback && (
+            <span className="text-xs text-amber-400">Polling (SSE unavailable)</span>
+          )}
           <button
             onClick={() => setLineWrap((v) => !v)}
             className={cn(

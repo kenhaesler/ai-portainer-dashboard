@@ -142,6 +142,39 @@ describe('harbor-client', () => {
     });
   });
 
+  describe('listVulnerabilities (#741)', () => {
+    it('returns total: 0 when x-total-count header is missing', async () => {
+      const mockItems = [{ cve_id: 'CVE-2024-0001', severity: 'High' }];
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockItems,
+        headers: new Headers(), // no x-total-count header
+      } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
+
+      const { listVulnerabilities } = await import('./harbor-client.js');
+      const result = await listVulnerabilities({ page: 1, pageSize: 100 });
+      expect(result.total).toBe(0);
+      expect(result.items).toEqual(mockItems);
+    });
+
+    it('returns parsed total when x-total-count header is present', async () => {
+      const mockItems = [{ cve_id: 'CVE-2024-0002', severity: 'Critical' }];
+      const headers = new Headers();
+      headers.set('x-total-count', '500');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockItems,
+        headers,
+      } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
+
+      const { listVulnerabilities } = await import('./harbor-client.js');
+      const result = await listVulnerabilities({ page: 1, pageSize: 100 });
+      expect(result.total).toBe(500);
+    });
+  });
+
   describe('DB settings override env vars', () => {
     it('uses DB settings for URL and credentials when different from env', async () => {
       mockGetEffectiveHarborConfig.mockResolvedValueOnce({

@@ -29,6 +29,10 @@ vi.mock('@/hooks/use-dashboard', () => ({
   useDashboard: vi.fn(),
 }));
 
+vi.mock('@/hooks/use-dashboard-full', () => ({
+  useDashboardFull: vi.fn(),
+}));
+
 vi.mock('@/hooks/use-containers', () => ({
   useFavoriteContainers: () => ({ data: [] }),
 }));
@@ -105,10 +109,10 @@ vi.mock('@/hooks/use-nl-query', () => ({
   useNlQuery: () => ({ mutate: vi.fn(), isPending: false, data: null, error: null }),
 }));
 
-import { useDashboard } from '@/hooks/use-dashboard';
+import { useDashboardFull } from '@/hooks/use-dashboard-full';
 import type { NormalizedContainer, DashboardSummary } from '@/hooks/use-dashboard';
 
-const mockUseDashboard = vi.mocked(useDashboard);
+const mockUseDashboardFull = vi.mocked(useDashboardFull);
 
 function makeContainer(i: number): NormalizedContainer {
   return {
@@ -126,26 +130,34 @@ function makeContainer(i: number): NormalizedContainer {
   };
 }
 
-function makeDashboardData(containerCount: number): DashboardSummary {
+function makeDashboardData(containerCount: number) {
   return {
-    kpis: {
-      endpoints: 2,
-      endpointsUp: 2,
-      endpointsDown: 0,
-      running: containerCount,
-      stopped: 0,
-      healthy: containerCount,
-      unhealthy: 0,
-      total: containerCount,
-      stacks: 1,
+    summary: {
+      kpis: {
+        endpoints: 2,
+        endpointsUp: 2,
+        endpointsDown: 0,
+        running: containerCount,
+        stopped: 0,
+        healthy: containerCount,
+        unhealthy: 0,
+        total: containerCount,
+        stacks: 1,
+      },
+      security: {
+        totalAudited: 10,
+        flagged: 0,
+        ignored: 0,
+      },
+      recentContainers: Array.from({ length: containerCount }, (_, i) => makeContainer(i)),
+      timestamp: new Date().toISOString(),
+    } as DashboardSummary,
+    resources: {
+      fleetCpuPercent: 50,
+      fleetMemoryPercent: 60,
+      topStacks: [],
     },
-    security: {
-      totalAudited: 10,
-      flagged: 0,
-      ignored: 0,
-    },
-    recentContainers: Array.from({ length: containerCount }, (_, i) => makeContainer(i)),
-    timestamp: new Date().toISOString(),
+    endpoints: [],
   };
 }
 
@@ -168,7 +180,7 @@ describe('HomePage - Recent Containers', () => {
   });
 
   it('renders the Recent Containers section with title and inline search', () => {
-    mockUseDashboard.mockReturnValue({
+    mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(5),
       isLoading: false,
       isError: false,
@@ -184,7 +196,7 @@ describe('HomePage - Recent Containers', () => {
   });
 
   it('renders smart search instead of DataTable built-in search', () => {
-    mockUseDashboard.mockReturnValue({
+    mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(5),
       isLoading: false,
       isError: false,
@@ -201,7 +213,7 @@ describe('HomePage - Recent Containers', () => {
 
   it('renders container rows up to page size', () => {
     const containerCount = 15;
-    mockUseDashboard.mockReturnValue({
+    mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(containerCount),
       isLoading: false,
       isError: false,
@@ -219,7 +231,7 @@ describe('HomePage - Recent Containers', () => {
   });
 
   it('filters containers when typing in the inline search', async () => {
-    mockUseDashboard.mockReturnValue({
+    mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(10),
       isLoading: false,
       isError: false,
@@ -242,7 +254,7 @@ describe('HomePage - Recent Containers', () => {
   });
 
   it('renders all expected columns', () => {
-    mockUseDashboard.mockReturnValue({
+    mockUseDashboardFull.mockReturnValue({
       data: makeDashboardData(3),
       isLoading: false,
       isError: false,
@@ -262,7 +274,7 @@ describe('HomePage - Recent Containers', () => {
   });
 
   it('shows skeleton when loading', () => {
-    mockUseDashboard.mockReturnValue({
+    mockUseDashboardFull.mockReturnValue({
       data: undefined,
       isLoading: true,
       isError: false,

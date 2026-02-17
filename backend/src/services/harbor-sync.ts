@@ -115,26 +115,31 @@ export async function runFullSync(): Promise<SyncResult> {
       const allVulns: harbor.HarborVulnerabilityItem[] = [];
       let page = 1;
       const pageSize = 100;
+      const maxPages = 500;
       let hasMore = true;
 
       while (hasMore) {
         const result = await harbor.listVulnerabilities({ page, pageSize });
         allVulns.push(...result.items);
 
-        if (result.items.length < pageSize || (result.total > 0 && allVulns.length >= result.total)) {
+        // Primary termination: fewer items than page size means last page
+        if (result.items.length < pageSize) {
+          hasMore = false;
+        } else if (result.total > 0 && allVulns.length >= result.total) {
+          // Secondary termination: total count from header (when available)
           hasMore = false;
         } else {
           page++;
         }
 
-        // Safety limit
-        if (page > 100) {
-          log.warn('Hit pagination safety limit (100 pages), stopping fetch');
+        // Safety limit — configurable via maxPages (default 500 = 50k items)
+        if (page > maxPages) {
+          log.warn({ maxPages, fetched: allVulns.length }, 'Hit pagination safety limit, stopping fetch');
           break;
         }
       }
 
-      log.debug({ vulnCount: allVulns.length }, 'Fetched vulnerabilities from Harbor');
+      log.info({ vulnCount: allVulns.length, pages: page }, 'Fetched vulnerabilities from Harbor');
 
       // Step 3: Correlate with running containers and build insert records
       let inUseCount = 0;

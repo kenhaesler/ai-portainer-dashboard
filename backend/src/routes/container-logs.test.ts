@@ -34,6 +34,10 @@ vi.mock('../services/docker-frame-decoder.js', () => ({
   })),
 }));
 
+vi.mock('../plugins/auth.js', () => ({
+  authenticateBearerHeader: vi.fn(),
+}));
+
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
     info: vi.fn(),

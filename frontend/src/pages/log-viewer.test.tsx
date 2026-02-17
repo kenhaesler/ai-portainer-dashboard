@@ -28,6 +28,15 @@ vi.mock('@/hooks/use-page-visibility', () => ({
   usePageVisibility: () => mockUsePageVisibility(),
 }));
 
+vi.mock('@/hooks/use-log-stream', () => ({
+  useLogStream: () => ({
+    streamedEntries: [],
+    isStreaming: false,
+    isFallback: false,
+    reset: vi.fn(),
+  }),
+}));
+
 vi.mock('@/hooks/use-endpoints', () => ({
   useEndpoints: () => ({
     data: [{ id: 1, name: 'Local Docker' }],
