@@ -167,7 +167,6 @@ export function useLogStream({
       }
       sources.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerKey, enabled, timestamps]);
 
   return { streamedEntries, isStreaming, isFallback, reset };
