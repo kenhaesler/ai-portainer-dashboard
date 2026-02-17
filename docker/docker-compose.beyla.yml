@@ -20,7 +20,7 @@ services:
       BEYLA_OPEN_PORT: "${BEYLA_OPEN_PORT:-80,443,3000-9999}"
       BEYLA_SERVICE_NAMESPACE: "portainer-apps"
       # Beyla auto-appends /v1/traces to the base endpoint URL
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://backend:3051/api/traces/otlp"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://backend:443/api/traces/otlp"
       OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
       # Disable metrics export — we only ingest traces
       OTEL_METRICS_EXPORTER: "none"

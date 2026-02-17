@@ -84,6 +84,23 @@ services:
     networks:
       - dashboard-net
     restart: unless-stopped
+    labels:
+      traefik.enable: "true"
+      # Router: accept only POST /api/traces/otlp — higher priority than the frontend catch-all.
+      # Traefik reaches the backend directly over dashboard-net (no published port needed).
+      traefik.http.routers.beyla-otlp.rule: Host(`${DASHBOARD_DOMAIN:?DASHBOARD_DOMAIN is required}`) && PathPrefix(`/api/traces/otlp`) && Method(`POST`)
+      traefik.http.routers.beyla-otlp.entrypoints: websecure
+      traefik.http.routers.beyla-otlp.tls: "true"
+      traefik.http.routers.beyla-otlp.priority: "500"
+      traefik.http.routers.beyla-otlp.middlewares: beyla-ip-allow@docker,beyla-rate-limit@docker
+      traefik.http.routers.beyla-otlp.service: beyla-backend
+      # Service: backend Fastify on port 3051
+      traefik.http.services.beyla-backend.loadbalancer.server.port: "3051"
+      # Middleware: restrict to Beyla source networks (replace CIDRs with your actual ranges)
+      traefik.http.middlewares.beyla-ip-allow.ipallowlist.sourcerange: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # Middleware: rate limit — 100 req/s average, burst up to 200
+      traefik.http.middlewares.beyla-rate-limit.ratelimit.average: "100"
+      traefik.http.middlewares.beyla-rate-limit.ratelimit.burst: "200"
     deploy:
       resources:
         limits:

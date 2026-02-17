@@ -102,7 +102,7 @@ services:
     environment:
       BEYLA_OPEN_PORT: "80"
       BEYLA_SERVICE_NAMESPACE: "web-platform"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://host.docker.internal:3051/api/traces/otlp"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://host.docker.internal:443/api/traces/otlp"
       OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
       OTEL_METRICS_EXPORTER: "none"
       OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=ebpf-trace-key-change-me"
