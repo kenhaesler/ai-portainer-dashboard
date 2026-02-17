@@ -49,6 +49,7 @@ vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid-1234' });
 
 // ── Test Data ──────────────────────────────────────────────────────
 
+// String-based rows (defensive / legacy format)
 const DEFAULT_PROFILE_ROW = {
   id: 'default',
   name: 'Default',
@@ -82,6 +83,43 @@ const CUSTOM_PROFILE_ROW = {
   }),
   created_at: '2025-01-02T00:00:00',
   updated_at: '2025-01-02T00:00:00',
+};
+
+// JSONB-style rows: pg driver auto-deserializes JSONB into native JS objects.
+// These simulate what PostgreSQL actually returns at runtime.
+const SECURITY_PROFILE_ROW_JSONB = {
+  id: 'security-audit',
+  name: 'Security Audit',
+  description: 'Focus on CVEs, lateral movement, compliance',
+  is_built_in: true,
+  prompts_json: {
+    chat_assistant: { systemPrompt: 'Security-focused assistant' },
+    anomaly_explainer: { systemPrompt: 'Security anomaly explainer' },
+  },
+  created_at: '2025-01-01T00:00:00',
+  updated_at: '2025-01-01T00:00:00',
+};
+
+const CUSTOM_PROFILE_ROW_JSONB = {
+  id: 'custom-1',
+  name: 'My Custom',
+  description: 'Custom profile',
+  is_built_in: false,
+  prompts_json: {
+    chat_assistant: { systemPrompt: 'Custom assistant', model: 'codellama', temperature: 0.5 },
+  },
+  created_at: '2025-01-02T00:00:00',
+  updated_at: '2025-01-02T00:00:00',
+};
+
+const DEFAULT_PROFILE_ROW_JSONB = {
+  id: 'default',
+  name: 'Default',
+  description: 'Standard balanced prompts for general operations',
+  is_built_in: true,
+  prompts_json: {},
+  created_at: '2025-01-01T00:00:00',
+  updated_at: '2025-01-01T00:00:00',
 };
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -362,6 +400,104 @@ describe('prompt-profile-store', () => {
 
       const config = await getProfilePromptConfig('chat_assistant');
       expect(config).toBeUndefined();
+    });
+  });
+
+  // ── JSONB Regression Tests (Issue #757) ─────────────────────────────
+  // The pg driver auto-deserializes JSONB columns into native JS objects.
+  // The old code called JSON.parse() on these objects, which coerced them
+  // to "[object Object]" and failed, falling back to empty {}.
+
+  describe('JSONB regression: prompts_json as pre-parsed object', () => {
+    it('handles prompts_json as a native object (pg driver JSONB behavior)', async () => {
+      mockAll.mockReturnValue([SECURITY_PROFILE_ROW_JSONB]);
+
+      const [profile] = await getAllProfiles();
+      expect(profile.prompts).toEqual({
+        chat_assistant: { systemPrompt: 'Security-focused assistant' },
+        anomaly_explainer: { systemPrompt: 'Security anomaly explainer' },
+      });
+    });
+
+    it('handles prompts_json as an empty object', async () => {
+      mockAll.mockReturnValue([DEFAULT_PROFILE_ROW_JSONB]);
+
+      const [profile] = await getAllProfiles();
+      expect(profile.prompts).toEqual({});
+    });
+
+    it('preserves model and temperature from JSONB objects', async () => {
+      mockGetSetting.mockReturnValue({ value: 'custom-1' });
+      mockGet.mockReturnValue(CUSTOM_PROFILE_ROW_JSONB);
+
+      const config = await getProfilePromptConfig('chat_assistant');
+      expect(config).toBeDefined();
+      expect(config!.systemPrompt).toBe('Custom assistant');
+      expect(config!.model).toBe('codellama');
+      expect(config!.temperature).toBe(0.5);
+    });
+
+    it('getProfileById works with JSONB pre-parsed row', async () => {
+      mockGet.mockReturnValue(SECURITY_PROFILE_ROW_JSONB);
+
+      const profile = await getProfileById('security-audit');
+      expect(profile).toBeDefined();
+      expect(profile!.prompts.chat_assistant.systemPrompt).toBe('Security-focused assistant');
+      expect(profile!.prompts.anomaly_explainer.systemPrompt).toBe('Security anomaly explainer');
+    });
+
+    it('does not double-parse: object input is used directly, not stringified then parsed', async () => {
+      // This is the exact bug from #757: passing an object to JSON.parse()
+      // coerces it to "[object Object]" which fails. Verify the fix works.
+      const rowWithObject = {
+        ...DEFAULT_PROFILE_ROW_JSONB,
+        id: 'test-object',
+        prompts_json: { chat_assistant: { systemPrompt: 'Direct object' } },
+      };
+      mockGet.mockReturnValue(rowWithObject);
+
+      const profile = await getProfileById('test-object');
+      expect(profile).toBeDefined();
+      expect(profile!.prompts).toEqual({ chat_assistant: { systemPrompt: 'Direct object' } });
+      // Key assertion: prompts should NOT be empty (which was the bug behavior)
+      expect(Object.keys(profile!.prompts).length).toBeGreaterThan(0);
+    });
+
+    it('still handles string prompts_json for backward compatibility', async () => {
+      // Ensure string input still works (defensive, in case of edge cases)
+      mockAll.mockReturnValue([SECURITY_PROFILE_ROW]);
+
+      const [profile] = await getAllProfiles();
+      expect(profile.prompts).toEqual({
+        chat_assistant: { systemPrompt: 'Security-focused assistant' },
+        anomaly_explainer: { systemPrompt: 'Security anomaly explainer' },
+      });
+    });
+
+    it('handles null prompts_json gracefully', async () => {
+      const rowWithNull = { ...DEFAULT_PROFILE_ROW_JSONB, prompts_json: null as unknown };
+      mockAll.mockReturnValue([rowWithNull]);
+
+      const [profile] = await getAllProfiles();
+      expect(profile.prompts).toEqual({});
+    });
+
+    it('mixed string and object rows are both parsed correctly', async () => {
+      // Simulate a scenario where some rows come as strings, others as objects
+      mockAll.mockReturnValue([
+        SECURITY_PROFILE_ROW,      // string prompts_json
+        CUSTOM_PROFILE_ROW_JSONB,  // object prompts_json (pg JSONB)
+      ]);
+
+      const profiles = await getAllProfiles();
+      expect(profiles).toHaveLength(2);
+
+      // String row parsed correctly
+      expect(profiles[0].prompts.chat_assistant.systemPrompt).toBe('Security-focused assistant');
+
+      // Object row used directly
+      expect(profiles[1].prompts.chat_assistant.systemPrompt).toBe('Custom assistant');
+      expect(profiles[1].prompts.chat_assistant.model).toBe('codellama');
     });
   });
 });
