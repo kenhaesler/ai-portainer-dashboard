@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useOIDCStatus } from "@/hooks/use-oidc";
 import { LoginLogo } from "@/components/icons/login-logo";
 import { useUiStore } from "@/stores/ui-store";
 import { PostLoginLoading } from "@/components/shared/post-login-loading";
 import { AnimatePresence } from "framer-motion";
+import { api } from "@/lib/api";
 
 const PARTICLES = [
   { left: "8%", delay: "0s", duration: "12s", size: "7px" },
@@ -38,6 +40,7 @@ function usePrefersReducedMotion(): boolean {
 export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: oidcStatus } = useOIDCStatus();
   const potatoMode = useUiStore((state) => state.potatoMode);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -75,9 +78,28 @@ export default function LoginPage() {
       } else {
         // Show the high-quality loading screen immediately
         setShowPostLoginLoading(true);
-        window.setTimeout(() => {
-          navigate(defaultLandingPage || "/", { replace: true });
-        }, 1000); // Reduced to 1 second minimum as requested
+
+        // Start prefetching dashboard data in the background while the loading
+        // screen is visible, so the home page can render instantly on arrival.
+        const prefetchPromise = queryClient.prefetchQuery({
+          queryKey: ['dashboard', 'full', 8],
+          queryFn: () => api.get('/api/dashboard/full?topN=8'),
+          staleTime: 60 * 1000,
+        });
+
+        const minTimer = new Promise<void>((resolve) =>
+          window.setTimeout(resolve, 1000),
+        );
+        // Cap total wait at 5 s so slow networks don't trap users on the screen.
+        const maxTimer = new Promise<void>((resolve) =>
+          window.setTimeout(resolve, 5000),
+        );
+
+        // Navigate when the minimum animation has played AND either the data is
+        // ready or the max timeout fires, whichever comes first.
+        Promise.all([minTimer, Promise.race([prefetchPromise, maxTimer])]).then(
+          () => navigate(defaultLandingPage || "/", { replace: true }),
+        );
       }
     } catch (err) {
       setError(
