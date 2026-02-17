@@ -61,9 +61,17 @@ vi.mock('./security-scanner.js', () => ({
   scanContainer: () => [],
 }));
 
-const mockGetLatestMetrics = vi.fn().mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
+const mockGetLatestMetricsBatch = vi.fn().mockImplementation(
+  async (containerIds: string[]) => {
+    const map = new Map<string, Record<string, number>>();
+    for (const id of containerIds) {
+      map.set(id, { cpu: 50, memory: 60, memory_bytes: 1024 });
+    }
+    return map;
+  },
+);
 vi.mock('./metrics-store.js', () => ({
-  getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
+  getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
 const mockDetectAnomalyAdaptive = vi.fn().mockReturnValue(null);
@@ -165,7 +173,15 @@ describe('monitoring-service', () => {
     vi.clearAllMocks();
     mockGetEndpoints.mockResolvedValue([]);
     mockGetContainers.mockResolvedValue([]);
-    mockGetLatestMetrics.mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
+    mockGetLatestMetricsBatch.mockImplementation(
+      async (containerIds: string[]) => {
+        const map = new Map<string, Record<string, number>>();
+        for (const id of containerIds) {
+          map.set(id, { cpu: 50, memory: 60, memory_bytes: 1024 });
+        }
+        return map;
+      },
+    );
     mockDetectAnomalyAdaptive.mockReturnValue(null);
     // Re-apply the delegating implementation (clearAllMocks removes it)
     mockDetectAnomaliesBatch.mockImplementation(
@@ -474,7 +490,7 @@ describe('monitoring-service', () => {
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
-      mockGetLatestMetrics.mockResolvedValue({ cpu: 95, memory: 40, memory_bytes: 1024 });
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([['c1', { cpu: 95, memory: 40, memory_bytes: 1024 }]]));
       mockDetectAnomalyAdaptive.mockReturnValue(null);
 
       await runMonitoringCycle();
@@ -515,17 +531,33 @@ describe('monitoring-service', () => {
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:2', 300, expect.any(Function));
     });
 
-    it('reads metrics from DB instead of collecting from Portainer API', async () => {
+    it('reads metrics from DB using a single batch call instead of per-container calls', async () => {
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
-      mockGetLatestMetrics.mockResolvedValue({ cpu: 75, memory: 80, memory_bytes: 2048 });
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([['c1', { cpu: 75, memory: 80, memory_bytes: 2048 }]]));
 
       await runMonitoringCycle();
 
-      // Should read from DB using getLatestMetrics
-      expect(mockGetLatestMetrics).toHaveBeenCalledWith('c1');
+      // Should use a single batch call with all container IDs
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledTimes(1);
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledWith(['c1']);
+    });
+
+    it('issues one batch metrics query for all running containers', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/api'], State: 'running', Image: 'node:18' },
+        { Id: 'c3', Names: ['/web'], State: 'exited', Image: 'node:18' },
+      ]);
+
+      await runMonitoringCycle();
+
+      // Single call with only the two running container IDs (exited excluded)
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledTimes(1);
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledWith(['c1', 'c2']);
     });
   });
 
@@ -677,8 +709,8 @@ describe('monitoring-service', () => {
         { Id: 'c3', Names: ['/app-3'], State: 'running', Image: 'node:18' },
       ]);
 
-      // All metrics reads fail
-      mockGetLatestMetrics.mockRejectedValue(new Error('DB connection error'));
+      // Batch metrics read fails
+      mockGetLatestMetricsBatch.mockRejectedValue(new Error('DB connection error'));
 
       await runMonitoringCycle();
 
