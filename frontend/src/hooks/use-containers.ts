@@ -28,12 +28,26 @@ export interface PaginatedContainers {
   pageSize: number;
 }
 
+interface PartialContainersResponse {
+  data: Container[];
+  partial?: boolean;
+  failedEndpoints?: string[];
+}
+
 export interface UseContainersParams {
   page?: number;
   pageSize?: number;
   search?: string;
   state?: string;
   endpointId?: number;
+}
+
+function normalizeContainersResponse(
+  response: Container[] | PartialContainersResponse,
+): Container[] {
+  if (Array.isArray(response)) return response;
+  if (response && Array.isArray(response.data)) return response.data;
+  return [];
 }
 
 /**
@@ -52,7 +66,8 @@ export function useContainers(params?: UseContainersParams) {
 
       const qs = searchParams.toString();
       const path = qs ? `/api/containers?${qs}` : '/api/containers';
-      return api.get<Container[]>(path);
+      const response = await api.get<Container[] | PartialContainersResponse>(path);
+      return normalizeContainersResponse(response);
     },
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
