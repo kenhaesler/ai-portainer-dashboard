@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { HardDrive, Layers, Tag, AlertTriangle, X, Server, Clock, CheckCircle2, Loader2 } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useImages, type DockerImage } from '@/hooks/use-images';
@@ -11,11 +12,11 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { DataTable } from '@/components/shared/data-table';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
-import { formatBytes } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { formatBytes, truncate } from '@/lib/utils';
 
 export default function ImageFootprintPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>(undefined);
@@ -75,6 +76,100 @@ export default function ImageFootprintPage() {
         registry: img.registry,
       }));
   }, [images]);
+
+  const sortedImages = useMemo(() => {
+    if (!images) return [];
+    return [...images].sort((a, b) => b.size - a.size);
+  }, [images]);
+
+  const imageColumns: ColumnDef<DockerImage, any>[] = useMemo(() => [
+    {
+      accessorKey: 'name',
+      header: 'Image',
+      size: 280,
+      cell: ({ row }) => {
+        const image = row.original;
+        return (
+          <button
+            onClick={() => setSelectedImage(image)}
+            className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
+          >
+            {truncate(image.name, 45)}
+          </button>
+        );
+      },
+    },
+    {
+      accessorKey: 'tags',
+      header: 'Tags',
+      cell: ({ row }) => {
+        const tags = row.original.tags;
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center rounded-md bg-muted/50 px-2 py-0.5 text-xs font-mono text-muted-foreground"
+              >
+                {tag.split(':')[1] || tag}
+              </span>
+            ))}
+            {tags.length > 3 && (
+              <span className="text-xs text-muted-foreground">+{tags.length - 3} more</span>
+            )}
+            {tags.length === 0 && (
+              <span className="text-xs text-muted-foreground">No tags</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'size',
+      header: 'Size',
+      cell: ({ getValue }) => (
+        <span className="font-mono text-sm">{formatBytes(getValue<number>())}</span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const staleness = stalenessMap.get(row.original.name);
+        if (!staleness) return <span className="text-xs text-muted-foreground">Unchecked</span>;
+        return staleness.isStale ? (
+          <span className="inline-flex items-center gap-1 rounded-md bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+            <AlertTriangle className="h-3 w-3" /> Update Available
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+            <CheckCircle2 className="h-3 w-3" /> Up to Date
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'registry',
+      header: 'Registry',
+      cell: ({ getValue }) => (
+        <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+          {getValue<string>()}
+        </span>
+      ),
+    },
+    ...(!selectedEndpoint ? [{
+      accessorKey: 'endpointName' as const,
+      header: 'Endpoint',
+      cell: ({ row }: { row: any }) => {
+        const image = row.original as DockerImage;
+        return (
+          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-900/30 dark:text-slate-300">
+            {image.endpointName || `Endpoint ${image.endpointId}`}
+          </span>
+        );
+      },
+    } satisfies ColumnDef<DockerImage, any>] : []),
+  ], [stalenessMap, selectedEndpoint]);
 
   if (isError) {
     return (
@@ -256,7 +351,7 @@ export default function ImageFootprintPage() {
                   Registry Distribution
                 </h3>
                 <p className="mb-4 text-xs text-muted-foreground">
-                  Inner ring shows registry distribution, outer ring shows individual images.
+                  Shows total image size grouped by container registry.
                 </p>
                 <ImageSunburst data={sunburstData} />
               </div>
@@ -282,81 +377,13 @@ export default function ImageFootprintPage() {
         <MotionReveal>
           <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">All Images</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 pl-2 pr-3 font-medium">Image</th>
-                      <th className="pb-3 font-medium">Tags</th>
-                      <th className="pb-3 font-medium">Size</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium">Registry</th>
-                      {!selectedEndpoint && <th className="pb-3 font-medium">Endpoint</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {images
-                      .sort((a, b) => b.size - a.size)
-                      .map((image) => (
-                        <tr
-                          key={`${image.id}-${image.endpointId}`}
-                          className={cn(
-                            'cursor-pointer transition-colors hover:bg-accent/50',
-                            selectedImage?.id === image.id && 'bg-accent'
-                          )}
-                          onClick={() => setSelectedImage(image)}
-                        >
-                          <td className="py-3 pl-2 pr-3">
-                            <span className="font-medium">{image.name}</span>
-                          </td>
-                          <td className="py-3">
-                            <div className="flex flex-wrap gap-1">
-                              {image.tags.slice(0, 3).map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="inline-flex items-center rounded bg-secondary px-2 py-0.5 text-xs"
-                                >
-                                  {tag.split(':')[1] || tag}
-                                </span>
-                              ))}
-                              {image.tags.length > 3 && (
-                                <span className="text-xs text-muted-foreground">
-                                  +{image.tags.length - 3} more
-                                </span>
-                              )}
-                              {image.tags.length === 0 && (
-                                <span className="text-xs text-muted-foreground">No tags</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 font-mono text-sm">{formatBytes(image.size)}</td>
-                          <td className="py-3">
-                            {(() => {
-                              const staleness = stalenessMap.get(image.name);
-                              if (!staleness) return <span className="text-xs text-muted-foreground">Unchecked</span>;
-                              return staleness.isStale ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-                                  <AlertTriangle className="h-3 w-3" /> Update Available
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                  <CheckCircle2 className="h-3 w-3" /> Up to Date
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="py-3 text-sm text-muted-foreground">{image.registry}</td>
-                          {!selectedEndpoint && (
-                            <td className="py-3 text-sm text-muted-foreground">
-                              {image.endpointName || `Endpoint ${image.endpointId}`}
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                columns={imageColumns}
+                data={sortedImages}
+                searchKey="name"
+                searchPlaceholder="Search images by name..."
+                pageSize={15}
+              />
             </div>
           </SpotlightCard>
         </MotionReveal>

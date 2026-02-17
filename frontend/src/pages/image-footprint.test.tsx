@@ -92,6 +92,30 @@ vi.mock('@/components/shared/spotlight-card', () => ({
   SpotlightCard: ({ children }: any) => <div>{children}</div>,
 }));
 
+vi.mock('@/components/shared/data-table', () => ({
+  DataTable: ({ columns, data, searchPlaceholder }: any) => (
+    <div data-testid="data-table">
+      <input placeholder={searchPlaceholder} />
+      <table>
+        <thead>
+          <tr>
+            {columns.map((col: any) => (
+              <th key={col.header}>{col.header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row: any, i: number) => (
+            <tr key={i}>
+              <td>{row.name}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ),
+}));
+
 import ImageFootprintPage from './image-footprint';
 
 describe('ImageFootprintPage', () => {
@@ -99,14 +123,25 @@ describe('ImageFootprintPage', () => {
     vi.clearAllMocks();
   });
 
-  it('adds left padding to the first table column header and cell', () => {
+  it('renders the DataTable with image data and search', () => {
     render(<ImageFootprintPage />);
 
-    const imageHeader = screen.getByRole('columnheader', { name: 'Image' });
-    expect(imageHeader.className).toContain('pl-2');
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search images by name...')).toBeInTheDocument();
+    expect(screen.getByText('nginx')).toBeInTheDocument();
+  });
 
-    const imageCell = screen.getByText('nginx').closest('td');
-    expect(imageCell).not.toBeNull();
-    expect(imageCell?.className).toContain('pl-2');
+  it('renders charts and page header', () => {
+    render(<ImageFootprintPage />);
+
+    expect(screen.getByText('Image Footprint')).toBeInTheDocument();
+    expect(screen.getByTestId('image-treemap')).toBeInTheDocument();
+    expect(screen.getByTestId('image-sunburst')).toBeInTheDocument();
+  });
+
+  it('wraps the page in MotionPage', () => {
+    render(<ImageFootprintPage />);
+
+    expect(screen.getByTestId('motion-page')).toBeInTheDocument();
   });
 });
