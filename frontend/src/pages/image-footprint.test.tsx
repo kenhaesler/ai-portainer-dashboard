@@ -88,6 +88,15 @@ vi.mock('@/components/shared/spotlight-card', () => ({
   SpotlightCard: ({ children }: any) => <div>{children}</div>,
 }));
 
+vi.mock('@/components/shared/kpi-card', () => ({
+  KpiCard: ({ label, value }: any) => (
+    <div data-testid="kpi-card">
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  ),
+}));
+
 vi.mock('@/components/shared/data-table', () => ({
   DataTable: ({ columns, data, searchPlaceholder }: any) => (
     <div data-testid="data-table">

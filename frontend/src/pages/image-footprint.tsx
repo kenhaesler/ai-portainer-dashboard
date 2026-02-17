@@ -13,6 +13,7 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { DataTable } from '@/components/shared/data-table';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
@@ -250,40 +251,38 @@ export default function ImageFootprintPage() {
         )}
       </div>
 
-      {/* Staleness Summary */}
+      {/* Staleness Summary — same grid pattern as Home KPI row */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <MotionStagger className="grid grid-cols-1 gap-6 sm:grid-cols-3" stagger={0.05}>
-          <MotionReveal>
+        <MotionStagger className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
+          <MotionReveal className="h-full">
             <TiltCard>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Layers className="h-4 w-4" />
-                  <span>Checked</span>
-                </div>
-                <p className="mt-1 text-2xl font-bold">{stalenessData.summary.total}</p>
-              </div>
+              <KpiCard
+                label="Checked"
+                value={stalenessData.summary.total}
+                icon={<Layers className="h-5 w-5" />}
+              />
             </TiltCard>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-sm text-emerald-600">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Up to Date</span>
-                </div>
-                <p className="mt-1 text-2xl font-bold text-emerald-600">{stalenessData.summary.upToDate}</p>
-              </div>
+              <KpiCard
+                label="Up to Date"
+                value={stalenessData.summary.upToDate}
+                icon={<CheckCircle2 className="h-5 w-5" />}
+                trend="up"
+                trendValue={`of ${stalenessData.summary.total} checked`}
+              />
             </TiltCard>
           </MotionReveal>
-          <MotionReveal>
+          <MotionReveal className="h-full">
             <TiltCard>
-              <div className="rounded-lg border bg-card p-4 shadow-sm">
-                <div className="flex items-center gap-2 text-sm text-yellow-600">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>Stale</span>
-                </div>
-                <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
-              </div>
+              <KpiCard
+                label="Stale"
+                value={stalenessData.summary.stale}
+                icon={<AlertTriangle className="h-5 w-5" />}
+                trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
+                trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
+              />
             </TiltCard>
           </MotionReveal>
         </MotionStagger>
@@ -291,12 +290,12 @@ export default function ImageFootprintPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <SkeletonCard className="h-[500px]" />
           <SkeletonCard className="h-[500px]" />
         </div>
       ) : images && images.length > 0 ? (
-        <MotionStagger className="grid grid-cols-1 gap-6 lg:grid-cols-2" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.05}>
           {/* Treemap */}
           <MotionReveal>
             <SpotlightCard>
