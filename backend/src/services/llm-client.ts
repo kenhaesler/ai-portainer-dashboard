@@ -2,6 +2,7 @@ import { Ollama } from 'ollama';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
+import pLimit from 'p-limit';
 import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
@@ -11,6 +12,21 @@ import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normal
 import type { Insight } from '../models/monitoring.js';
 
 const log = createChildLogger('llm-client');
+
+/**
+ * Global concurrency limiter for LLM calls.
+ * Prevents overwhelming a single Ollama instance when multiple services
+ * (investigations, remediation, log analysis, incident summaries) all
+ * trigger LLM calls during the same monitoring cycle.
+ * Max 2 concurrent calls — additional callers queue automatically.
+ */
+const LLM_MAX_CONCURRENCY = 2;
+const llmLimit = pLimit(LLM_MAX_CONCURRENCY);
+
+/** Expose current pending/active count for observability and testing. */
+export function getLlmQueueSize(): { pending: number; active: number } {
+  return { pending: llmLimit.pendingCount, active: llmLimit.activeCount };
+}
 
 /** Read custom CA certificate from NODE_EXTRA_CA_CERTS if set */
 function getCustomCaCert(): Buffer | undefined {
@@ -147,8 +163,10 @@ export async function chatStream(
   systemPrompt: string,
   onChunk: (chunk: string) => void,
 ): Promise<string> {
-  return withSpan('LLM chat', 'llm-service', 'client', () =>
-    chatStreamInner(messages, systemPrompt, onChunk),
+  return llmLimit(() =>
+    withSpan('LLM chat', 'llm-service', 'client', () =>
+      chatStreamInner(messages, systemPrompt, onChunk),
+    ),
   );
 }
 

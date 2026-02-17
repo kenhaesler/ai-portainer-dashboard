@@ -47,7 +47,12 @@ export async function analyzeContainerLogs(
     const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
-    const parsed = JSON.parse(jsonMatch[0]) as {
+    // Strip control characters that the LLM may echo from raw log content.
+    // These cause JSON.parse failures. All C0 control chars (0x00-0x1f)
+    // and DEL (0x7f) are removed — they should never appear in valid JSON output.
+    const sanitized = jsonMatch[0].replace(/[\x00-\x1f\x7f]/g, '');
+
+    const parsed = JSON.parse(sanitized) as {
       severity?: string;
       summary?: string;
       errorPatterns?: string[];

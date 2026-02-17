@@ -197,6 +197,34 @@ describe('Dashboard Routes', () => {
 
       await app.close();
     });
+
+    it('returns partial flag when some endpoints fail (#745)', async () => {
+      const endpoints = [
+        makeEndpoint(1, 'ep-healthy'),
+        makeEndpoint(2, 'ep-failing'),
+      ];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+
+      mockGetContainers.mockImplementation((endpointId: number) => {
+        if (endpointId === 2) {
+          return Promise.reject(new Error('HTTP 500: Internal Server Error'));
+        }
+        return Promise.resolve([makeContainer('c-1', Date.now())]);
+      });
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      expect(data.recentContainers).toHaveLength(1);
+      expect(data.partial).toBe(true);
+      expect(data.failedEndpoints).toHaveLength(1);
+      expect(data.failedEndpoints[0]).toContain('ep-failing');
+
+      await app.close();
+    });
   });
 
   describe('GET /api/dashboard/kpi-history', () => {
@@ -641,6 +669,59 @@ describe('Dashboard Routes', () => {
       expect(res.json()).toMatchObject({
         error: 'Unable to connect to Portainer',
       });
+
+      await app.close();
+    });
+
+    it('returns partial flag when some endpoints fail (#745)', async () => {
+      const endpoints = [
+        makeEndpoint(1, 'ep-healthy'),
+        makeEndpoint(2, 'ep-failing'),
+      ];
+
+      mockGetEndpoints.mockResolvedValue(endpoints);
+
+      // ep-1 succeeds, ep-2 fails with 500
+      let callCount = 0;
+      mockGetContainers.mockImplementation((endpointId: number) => {
+        if (endpointId === 2) {
+          return Promise.reject(new Error('HTTP 500: Internal Server Error'));
+        }
+        return Promise.resolve([makeContainer('c-1', Date.now(), 'running', { 'com.docker.compose.project': 'web' })]);
+      });
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      // Should still return data from the healthy endpoint
+      expect(data.summary.recentContainers).toHaveLength(1);
+      // Should include partial flag
+      expect(data.partial).toBe(true);
+      expect(data.failedEndpoints).toBeDefined();
+      expect(data.failedEndpoints).toHaveLength(1);
+      expect(data.failedEndpoints[0]).toContain('ep-failing');
+
+      await app.close();
+    });
+
+    it('does not include partial flag when all endpoints succeed', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      expect(data.partial).toBeUndefined();
+      expect(data.failedEndpoints).toBeUndefined();
 
       await app.close();
     });

@@ -214,9 +214,90 @@ describe('remediation-service', () => {
     expect(mockBroadcastActionUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps fallback rationale when LLM output is unstructured', async () => {
+  it('retries with stricter prompt when first LLM attempt returns unstructured output (#746)', async () => {
     mockIsOllamaAvailable.mockResolvedValue(true);
-    mockChatStream.mockImplementation(async (_messages, _system, onChunk) => {
+    let callCount = 0;
+    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
+      callCount++;
+      if (callCount === 1) {
+        // First attempt: unstructured
+        onChunk('container looks unhealthy, maybe restart');
+      } else {
+        // Retry: structured JSON
+        onChunk(JSON.stringify({
+          root_cause: 'Health check timeout due to slow startup',
+          severity: 'warning',
+          recommended_actions: [
+            { action: 'Increase health check timeout', priority: 'medium', rationale: 'Startup takes 30s' },
+          ],
+          log_analysis: 'Health check probe fails during startup',
+          confidence_score: 0.75,
+        }));
+      }
+      return '';
+    });
+
+    const result = await suggestAction({
+      id: 'insight-retry',
+      title: 'Container unhealthy',
+      description: 'health check failing',
+      suggested_action: '',
+      container_id: 'container-retry',
+      container_name: 'api',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+
+    await flushMicrotasks();
+
+    // chatStream should have been called twice (original + retry)
+    expect(mockChatStream).toHaveBeenCalledTimes(2);
+    // Retry should include the original response as assistant message
+    const retryCall = mockChatStream.mock.calls[1];
+    const retryMessages = retryCall[0] as Array<{ role: string; content: string }>;
+    expect(retryMessages.some((m: any) => m.role === 'assistant')).toBe(true);
+    expect(retryMessages.some((m: any) => m.content.includes('not valid JSON'))).toBe(true);
+
+    // Should have updated rationale with the structured response
+    expect(mockUpdateActionRationale).toHaveBeenCalledTimes(1);
+    const stored = mockUpdateActionRationale.mock.calls[0]?.[1];
+    expect(String(stored)).toContain('Health check timeout');
+    expect(mockBroadcastActionUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up after retry also returns unstructured output (#746)', async () => {
+    mockIsOllamaAvailable.mockResolvedValue(true);
+    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
+      // Both attempts return unstructured output
+      onChunk('I think the container needs attention');
+      return '';
+    });
+
+    const result = await suggestAction({
+      id: 'insight-giveup',
+      title: 'Container unhealthy',
+      description: 'health check failing',
+      suggested_action: '',
+      container_id: 'container-giveup',
+      container_name: 'api',
+      endpoint_id: 1,
+    } as any);
+
+    expect(result).toEqual({ actionId: 'action-123', actionType: 'RESTART_CONTAINER' });
+
+    await flushMicrotasks();
+
+    // chatStream called twice (original + retry)
+    expect(mockChatStream).toHaveBeenCalledTimes(2);
+    // But neither produced parseable JSON, so no rationale update
+    expect(mockUpdateActionRationale).not.toHaveBeenCalled();
+    expect(mockBroadcastActionUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps fallback rationale when LLM output is unstructured (both attempts fail)', async () => {
+    mockIsOllamaAvailable.mockResolvedValue(true);
+    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       onChunk('container looks unhealthy, maybe restart');
       return '';
     });
@@ -237,6 +318,7 @@ describe('remediation-service', () => {
 
     expect(mockGetContainerLogs).toHaveBeenCalledWith(1, 'container-7', { tail: 50, timestamps: true });
     expect(mockGetLatestMetrics).toHaveBeenCalledWith('container-7');
+    // Both attempts return unstructured output, so no rationale update
     expect(mockUpdateActionRationale).not.toHaveBeenCalled();
     expect(mockBroadcastActionUpdate).not.toHaveBeenCalled();
   });

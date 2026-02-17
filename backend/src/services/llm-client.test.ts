@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, type LlmAuthType } from './llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, type LlmAuthType } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 
 // Mock settings-store
@@ -302,6 +302,55 @@ describe('llm-client', () => {
 
       expect(result).toBe('Raw SSE');
       expect(chunks).toEqual(['Raw', ' SSE']);
+    });
+
+    it('limits concurrent LLM calls to 2 (queues the rest)', async () => {
+      // Each call will block until we resolve its deferred promise
+      const resolvers: Array<() => void> = [];
+      mockChat.mockImplementation(() => {
+        return new Promise<AsyncIterable<{ message: { content: string } }>>((resolve) => {
+          resolvers.push(() => {
+            resolve((async function* () {
+              yield { message: { content: 'ok' } };
+            })());
+          });
+        });
+      });
+
+      // Launch 4 calls concurrently
+      const results = [
+        chatStream([{ role: 'user', content: '1' }], 'sys', vi.fn()),
+        chatStream([{ role: 'user', content: '2' }], 'sys', vi.fn()),
+        chatStream([{ role: 'user', content: '3' }], 'sys', vi.fn()),
+        chatStream([{ role: 'user', content: '4' }], 'sys', vi.fn()),
+      ];
+
+      // Wait for microtasks so p-limit schedules the first 2
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Only 2 should have started (2 resolvers created)
+      expect(resolvers.length).toBe(2);
+
+      // Queue should show 2 pending
+      const queue = getLlmQueueSize();
+      expect(queue.active).toBe(2);
+      expect(queue.pending).toBe(2);
+
+      // Resolve first two
+      resolvers[0]();
+      resolvers[1]();
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Now the next 2 should have started
+      expect(resolvers.length).toBe(4);
+
+      // Resolve remaining
+      resolvers[2]();
+      resolvers[3]();
+
+      // All 4 should complete
+      const allResults = await Promise.all(results);
+      expect(allResults).toEqual(['ok', 'ok', 'ok', 'ok']);
     });
 
     it('translates ByteString error to helpful message', async () => {

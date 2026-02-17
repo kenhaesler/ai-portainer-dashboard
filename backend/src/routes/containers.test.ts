@@ -110,7 +110,7 @@ describe('containers routes', () => {
     expect(body.details[1]).toContain('staging');
   });
 
-  it('should return partial results when some endpoints fail', async () => {
+  it('should return partial results with partial flag when some endpoints fail (#745)', async () => {
     mockGetEndpoints.mockResolvedValue([
       fakeEndpoint(1, 'prod'),
       fakeEndpoint(2, 'staging'),
@@ -129,8 +129,38 @@ describe('containers routes', () => {
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body).toHaveLength(1);
-    expect(body[0].name).toBe('web');
+    // When some endpoints fail, response wraps in object with partial flag
+    expect(body.partial).toBe(true);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].name).toBe('web');
+    expect(body.failedEndpoints).toBeDefined();
+    expect(body.failedEndpoints).toHaveLength(1);
+    expect(body.failedEndpoints[0]).toContain('staging');
+  });
+
+  it('should include partial flag in paginated response when some endpoints fail (#745)', async () => {
+    mockGetEndpoints.mockResolvedValue([
+      fakeEndpoint(1, 'prod'),
+      fakeEndpoint(2, 'staging'),
+    ] as any);
+
+    mockGetContainers.mockImplementation(async (endpointId: number) => {
+      if (endpointId === 1) return [fakeContainer('abc123', 'web')] as any;
+      throw new Error('HTTP 500: Internal Server Error');
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/containers?page=1&pageSize=10',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.partial).toBe(true);
+    expect(body.data).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.failedEndpoints).toHaveLength(1);
   });
 
   it('should return 502 when getEndpoints() fails', async () => {

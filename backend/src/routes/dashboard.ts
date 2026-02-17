@@ -110,11 +110,14 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       log.warn({ err }, 'Failed to fetch security audit summary');
     }
 
+    const partial = errors.length > 0;
+
     return {
       kpis: totals,
       security,
       recentContainers: recentContainers.slice(0, recentLimit),
       timestamp: new Date().toISOString(),
+      ...(partial ? { partial, failedEndpoints: errors } : {}),
     };
   });
 
@@ -177,6 +180,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     // Get all containers from all up endpoints
     const allContainers: Array<{ container: any; endpointId: number; endpointName: string }> = [];
+    const resourceErrors: string[] = [];
     const settled = await Promise.allSettled(
       upEndpoints.map((ep) =>
         cachedFetchSWR(
@@ -196,6 +200,11 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           endpointId: ep.id,
           endpointName: ep.name,
         })));
+      } else {
+        const ep = upEndpoints[i];
+        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+        log.warn({ endpointId: ep.id, endpointName: ep.name, err: result.reason }, 'Failed to fetch containers for endpoint');
+        resourceErrors.push(`${ep.name}: ${msg}`);
       }
     }
 
@@ -296,11 +305,13 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     });
 
     const topStacks = stacks.slice(0, topN);
+    const resourcePartial = resourceErrors.length > 0;
 
     return {
       fleetCpuPercent,
       fleetMemoryPercent,
       topStacks,
+      ...(resourcePartial ? { partial: true, failedEndpoints: resourceErrors } : {}),
     };
   });
 
@@ -495,6 +506,8 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       .sort((a, b) => (b.cpuPercent + b.memoryPercent) - (a.cpuPercent + a.memoryPercent))
       .slice(0, topN);
 
+    const partial = errors.length > 0;
+
     return {
       summary: {
         kpis: totals,
@@ -508,6 +521,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
         topStacks: stacks,
       },
       endpoints: normalized,
+      ...(partial ? { partial, failedEndpoints: errors } : {}),
     };
   });
 }

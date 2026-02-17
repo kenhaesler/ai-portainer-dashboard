@@ -132,4 +132,44 @@ describe('log-analyzer', () => {
     const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
     expect(result).toBeNull();
   });
+
+  it('sanitizes control characters in LLM JSON output (#744)', async () => {
+    mockGetContainerLogs.mockResolvedValue('ERROR: Something broke\n'.repeat(5));
+
+    // Simulate LLM echoing raw tabs and carriage returns from log content
+    const jsonWithControlChars =
+      '{"severity":"warning","summary":"Database\tconnection\rfailures","errorPatterns":["timeout\x00error"]}';
+
+    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+      onChunk(jsonWithControlChars);
+      return Promise.resolve('');
+    });
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+
+    expect(result).not.toBeNull();
+    expect(result!.severity).toBe('warning');
+    expect(result!.summary).toContain('Database');
+    expect(result!.summary).toContain('connection');
+    expect(result!.errorPatterns[0]).toContain('timeout');
+  });
+
+  it('handles JSON with embedded newline-heavy control chars (#744)', async () => {
+    mockGetContainerLogs.mockResolvedValue('ERROR: Something broke\n'.repeat(5));
+
+    // Simulate LLM output with null bytes, form feeds, backspace, and vertical tabs
+    const jsonWithBadChars =
+      '{"severity":"critical","summary":"OOM\x0b\x0ckilled\x08","errorPatterns":[]}';
+
+    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+      onChunk(jsonWithBadChars);
+      return Promise.resolve('');
+    });
+
+    const result = await analyzeContainerLogs(1, 'container-1', 'web-app', 100);
+
+    expect(result).not.toBeNull();
+    expect(result!.severity).toBe('critical');
+    expect(result!.summary).toContain('OOM');
+  });
 });

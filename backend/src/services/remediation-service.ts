@@ -291,6 +291,12 @@ function toStoredAnalysis(analysis: RemediationAnalysisResult): string {
   return JSON.stringify(analysis);
 }
 
+/** Stricter retry prompt when the first LLM attempt returns unstructured output. */
+const RETRY_SYSTEM_PROMPT =
+  'You MUST respond with ONLY a valid JSON object. No explanations, no markdown, no code fences. ' +
+  'Output exactly one JSON object matching this schema: ' +
+  '{"root_cause":"string","severity":"critical|warning|info","recommended_actions":[{"action":"string","priority":"high|medium|low","rationale":"string"}],"log_analysis":"string","confidence_score":0.0}';
+
 async function enrichActionWithLlmAnalysis(
   actionId: string,
   insight: Insight,
@@ -301,21 +307,43 @@ async function enrichActionWithLlmAnalysis(
   try {
     const evidence = await gatherRemediationEvidence(insight);
     const prompt = buildRemediationPrompt(insight, evidence);
+    const systemPrompt = await getEffectivePrompt('remediation');
     let rawResponse = '';
 
     await chatStream(
       [{ role: 'user', content: prompt }],
-      await getEffectivePrompt('remediation'),
+      systemPrompt,
       (chunk) => {
         rawResponse += chunk;
       },
     );
 
-    const parsed = tryParseRemediationAnalysis(rawResponse);
+    let parsed = tryParseRemediationAnalysis(rawResponse);
+
+    // Single retry with a stricter prompt when the first attempt returns unstructured output (#746)
     if (!parsed) {
-      log.warn({ actionId, insightId: insight.id }, 'Skipping remediation rationale enrichment due to unstructured LLM output');
-      return;
+      log.warn({ actionId, insightId: insight.id }, 'First LLM attempt returned unstructured output, retrying with stricter prompt');
+      let retryResponse = '';
+      await chatStream(
+        [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: rawResponse },
+          { role: 'user', content: 'Your previous response was not valid JSON. Please respond with ONLY a raw JSON object, no markdown fences, no extra text.' },
+        ],
+        RETRY_SYSTEM_PROMPT,
+        (chunk) => {
+          retryResponse += chunk;
+        },
+      );
+      parsed = tryParseRemediationAnalysis(retryResponse);
+
+      if (!parsed) {
+        log.warn({ actionId, insightId: insight.id }, 'Retry also returned unstructured output, skipping enrichment');
+        return;
+      }
+      log.info({ actionId, insightId: insight.id }, 'Retry succeeded: structured LLM output obtained');
     }
+
     const updated = await updateActionRationale(actionId, toStoredAnalysis(parsed));
     if (!updated) return;
 
