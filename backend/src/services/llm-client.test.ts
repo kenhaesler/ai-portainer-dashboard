@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Agent } from 'undici';
 import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, type LlmAuthType } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 
@@ -529,6 +530,21 @@ describe('llm-client', () => {
       mockEnvConfig.mockReturnValue({ LLM_VERIFY_SSL: true });
       const dispatcher = getLlmDispatcher();
       expect(dispatcher).toBeUndefined();
+    });
+
+    it('creates an Agent with rejectUnauthorized: false when LLM_VERIFY_SSL is false (per-connection bypass, not global)', () => {
+      // This test verifies the security fix for issue #551:
+      // The global process.env.NODE_TLS_REJECT_UNAUTHORIZED override was removed from index.ts.
+      // Instead, TLS bypass is applied per-connection via undici Agent, so only LLM connections
+      // skip cert validation — all other HTTPS (Portainer, PostgreSQL, etc.) remain protected.
+      mockEnvConfig.mockReturnValue({ LLM_VERIFY_SSL: false });
+      // llmDispatcher singleton is undefined at this point (previous test returned early).
+      const dispatcher = getLlmDispatcher();
+      expect(dispatcher).toBeDefined();
+      // Verify the Agent was constructed with the per-connection option, not a global override
+      expect(Agent).toHaveBeenCalledWith({ connect: { rejectUnauthorized: false } });
+      // The global Node.js TLS flag must NOT be set to '0'
+      expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).not.toBe('0');
     });
   });
 });

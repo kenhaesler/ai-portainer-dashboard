@@ -1,9 +1,3 @@
-// Disable TLS certificate verification globally when LLM_VERIFY_SSL=false.
-// Must run before any imports that open connections.
-if (process.env.LLM_VERIFY_SSL === 'false' || process.env.LLM_VERIFY_SSL === '0') {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-}
-
 import { buildApp } from './app.js';
 import { getConfig } from './config/index.js';
 import { getMetricsDb, closeMetricsDb } from './db/timescale.js';
