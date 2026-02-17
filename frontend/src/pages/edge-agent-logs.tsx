@@ -238,7 +238,8 @@ export default function EdgeAgentLogsPage() {
   // Fetch logs
   const {
     data: logsData,
-    isLoading,
+    isLoading: logsLoading,
+    isPending: logsPending,
     isError,
     error,
     refetch,
@@ -258,7 +259,13 @@ export default function EdgeAgentLogsPage() {
       return api.get<LogsResponse>('/api/logs/search', { params });
     },
     retry: false, // Don't retry on 503 (not configured)
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
   });
+
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = logsLoading || (logsPending && !logsData);
 
   // Check if not configured (503 error)
   const isNotConfigured = isError && (error as Error)?.message?.includes('503');

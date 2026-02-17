@@ -424,12 +424,16 @@ export default function RemediationPage() {
   // Fetch actions
   const {
     data: actionsData,
-    isLoading,
+    isLoading: actionsLoading,
+    isPending: actionsPending,
     isError,
     error,
     refetch,
     isFetching,
   } = useRemediationActions(statusFilter === 'all' ? undefined : statusFilter);
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = actionsLoading || (actionsPending && !actionsData);
 
   // Mutations
   const approveAction = useApproveAction();

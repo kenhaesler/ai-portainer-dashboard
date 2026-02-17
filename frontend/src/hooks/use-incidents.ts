@@ -44,6 +44,8 @@ export function useIncidents(status?: 'active' | 'resolved') {
       if (status) params.status = status;
       return api.get<IncidentsResponse>('/api/incidents', { params });
     },
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
     refetchInterval: isPageVisible ? 30_000 : false,
   });
 }

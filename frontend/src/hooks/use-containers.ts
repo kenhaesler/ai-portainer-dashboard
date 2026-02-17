@@ -70,6 +70,7 @@ export function useContainers(params?: UseContainersParams) {
       return normalizeContainersResponse(response);
     },
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 }
@@ -99,6 +100,7 @@ export function usePaginatedContainers(params: {
       return api.get<PaginatedContainers>(`/api/containers?${searchParams.toString()}`);
     },
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 }

@@ -490,10 +490,14 @@ export default function TraceExplorerPage() {
     otelScopeVersionFilter,
   ]);
 
-  const { data: tracesData, isLoading, isError, error, refetch, isFetching } = useTraces(traceQuery);
+  const { data: tracesData, isLoading: tracesLoading, isPending: tracesPending, isError, error, refetch, isFetching } = useTraces(traceQuery);
   const { data: selectedTraceData } = useTrace(selectedTraceId || undefined);
   const { data: serviceMapData } = useServiceMap(traceQuery);
   const { data: summary } = useTraceSummary(traceQuery);
+
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = tracesLoading || (tracesPending && !tracesData);
 
   const traces = useMemo(() => {
     if (!tracesData) return [];

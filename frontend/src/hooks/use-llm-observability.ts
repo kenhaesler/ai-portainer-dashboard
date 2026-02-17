@@ -95,6 +95,8 @@ export function useLlmTraces(limit: number = 50) {
     queryKey: ['llm-traces', limit],
     queryFn: async () => normalizeLlmTraces(await api.get<unknown>(`/api/llm/traces?limit=${limit}`)),
     staleTime: 30 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -103,5 +105,7 @@ export function useLlmStats(hours: number = 24) {
     queryKey: ['llm-stats', hours],
     queryFn: async () => normalizeLlmStats(await api.get<unknown>(`/api/llm/stats?hours=${hours}`)),
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
   });
 }
