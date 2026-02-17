@@ -26,9 +26,15 @@ export default function ImageFootprintPage() {
   const [selectedImage, setSelectedImage] = useState<DockerImage | null>(null);
 
   const { data: endpoints } = useEndpoints();
-  const { data: images, isLoading, isError, error, refetch, isFetching } = useImages(selectedEndpoint);
+  const { interval, setInterval, enabled } = useAutoRefresh(60);
+  const { data: images, isLoading, isPending, isError, error, refetch, isFetching } = useImages(
+    selectedEndpoint,
+    { refetchInterval: enabled && interval > 0 ? interval * 1000 : false },
+  );
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const showSkeleton = isLoading || (isPending && !images);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('images', refetch);
-  const { interval, setInterval } = useAutoRefresh(60);
   const { data: stalenessData } = useImageStaleness();
 
   // Build a lookup map: imageName -> staleness record
@@ -232,7 +238,7 @@ export default function ImageFootprintPage() {
           />
         </div>
 
-        {!isLoading && images && (
+        {!showSkeleton && images && (
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
               <HardDrive className="h-4 w-4 text-blue-500" />
@@ -285,7 +291,7 @@ export default function ImageFootprintPage() {
       )}
 
       {/* Content */}
-      {isLoading ? (
+      {showSkeleton ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <SkeletonCard className="h-[500px]" />
           <SkeletonCard className="h-[500px]" />
@@ -349,7 +355,7 @@ export default function ImageFootprintPage() {
       ) : null}
 
       {/* Image List Table */}
-      {!isLoading && images && images.length > 0 && (
+      {!showSkeleton && images && images.length > 0 && (
         <MotionReveal>
           <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm">
