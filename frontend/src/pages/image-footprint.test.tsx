@@ -41,10 +41,6 @@ vi.mock('@/hooks/use-auto-refresh', () => ({
 
 vi.mock('@/hooks/use-image-staleness', () => ({
   useImageStaleness: () => ({ data: null }),
-  useTriggerStalenessCheck: () => ({
-    mutate: vi.fn(),
-    isPending: false,
-  }),
 }));
 
 vi.mock('@/hooks/use-force-refresh', () => ({

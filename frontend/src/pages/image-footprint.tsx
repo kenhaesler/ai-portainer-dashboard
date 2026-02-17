@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { HardDrive, Layers, Tag, AlertTriangle, X, Server, Clock, CheckCircle2, Loader2 } from 'lucide-react';
+import { HardDrive, Layers, Tag, AlertTriangle, X, Server, CheckCircle2 } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useImages, type DockerImage } from '@/hooks/use-images';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useImageStaleness, useTriggerStalenessCheck } from '@/hooks/use-image-staleness';
+import { useImageStaleness } from '@/hooks/use-image-staleness';
 import { ImageTreemap } from '@/components/charts/image-treemap';
 import { ImageSunburst } from '@/components/charts/image-sunburst';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
@@ -27,7 +27,6 @@ export default function ImageFootprintPage() {
   const { forceRefresh, isForceRefreshing } = useForceRefresh('images', refetch);
   const { interval, setInterval } = useAutoRefresh(60);
   const { data: stalenessData } = useImageStaleness();
-  const triggerCheck = useTriggerStalenessCheck();
 
   // Build a lookup map: imageName -> staleness record
   const stalenessMap = useMemo(() => {
@@ -253,7 +252,7 @@ export default function ImageFootprintPage() {
 
       {/* Staleness Summary */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-4" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-3" stagger={0.05}>
           <MotionReveal>
             <TiltCard>
               <div className="rounded-lg border bg-card p-4 shadow-sm">
@@ -284,24 +283,6 @@ export default function ImageFootprintPage() {
                   <span>Stale</span>
                 </div>
                 <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
-              </div>
-            </TiltCard>
-          </MotionReveal>
-          <MotionReveal>
-            <TiltCard>
-              <div className="flex items-center justify-center rounded-lg border bg-card p-4 shadow-sm">
-                <button
-                  onClick={() => triggerCheck.mutate()}
-                  disabled={triggerCheck.isPending}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {triggerCheck.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Clock className="h-4 w-4" />
-                  )}
-                  {triggerCheck.isPending ? 'Checking...' : 'Check Now'}
-                </button>
               </div>
             </TiltCard>
           </MotionReveal>
