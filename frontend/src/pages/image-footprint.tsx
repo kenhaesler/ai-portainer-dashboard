@@ -11,6 +11,9 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
+import { TiltCard } from '@/components/shared/tilt-card';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { formatBytes } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
@@ -75,7 +78,7 @@ export default function ImageFootprintPage() {
 
   if (isError) {
     return (
-      <div className="space-y-6">
+      <MotionPage>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Image Footprint</h1>
           <p className="text-muted-foreground">
@@ -95,14 +98,14 @@ export default function ImageFootprintPage() {
             Try again
           </button>
         </div>
-      </div>
+      </MotionPage>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <MotionPage>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Image Footprint</h1>
           <p className="text-muted-foreground">
@@ -155,43 +158,59 @@ export default function ImageFootprintPage() {
 
       {/* Staleness Summary */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Layers className="h-4 w-4" />
-              <span>Checked</span>
-            </div>
-            <p className="mt-1 text-2xl font-bold">{stalenessData.summary.total}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-emerald-600">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>Up to Date</span>
-            </div>
-            <p className="mt-1 text-2xl font-bold text-emerald-600">{stalenessData.summary.upToDate}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-sm text-yellow-600">
-              <AlertTriangle className="h-4 w-4" />
-              <span>Stale</span>
-            </div>
-            <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
-          </div>
-          <div className="flex items-center justify-center rounded-lg border bg-card p-4 shadow-sm">
-            <button
-              onClick={() => triggerCheck.mutate()}
-              disabled={triggerCheck.isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {triggerCheck.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Clock className="h-4 w-4" />
-              )}
-              {triggerCheck.isPending ? 'Checking...' : 'Check Now'}
-            </button>
-          </div>
-        </div>
+        <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-4" stagger={0.05}>
+          <MotionReveal>
+            <TiltCard>
+              <div className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Layers className="h-4 w-4" />
+                  <span>Checked</span>
+                </div>
+                <p className="mt-1 text-2xl font-bold">{stalenessData.summary.total}</p>
+              </div>
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <div className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-sm text-emerald-600">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Up to Date</span>
+                </div>
+                <p className="mt-1 text-2xl font-bold text-emerald-600">{stalenessData.summary.upToDate}</p>
+              </div>
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <div className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-sm text-yellow-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Stale</span>
+                </div>
+                <p className="mt-1 text-2xl font-bold text-yellow-600">{stalenessData.summary.stale}</p>
+              </div>
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal>
+            <TiltCard>
+              <div className="flex items-center justify-center rounded-lg border bg-card p-4 shadow-sm">
+                <button
+                  onClick={() => triggerCheck.mutate()}
+                  disabled={triggerCheck.isPending}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {triggerCheck.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Clock className="h-4 w-4" />
+                  )}
+                  {triggerCheck.isPending ? 'Checking...' : 'Check Now'}
+                </button>
+              </div>
+            </TiltCard>
+          </MotionReveal>
+        </MotionStagger>
       )}
 
       {/* Content */}
@@ -201,128 +220,146 @@ export default function ImageFootprintPage() {
           <SkeletonCard className="h-[500px]" />
         </div>
       ) : images && images.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <MotionStagger className="grid grid-cols-1 gap-6 lg:grid-cols-2" stagger={0.05}>
           {/* Treemap */}
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold">Image Size Distribution</h2>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Visualizes relative image sizes. Larger boxes indicate larger images. Click an image to view details.
-            </p>
-            <div onClick={(e) => {
-              const target = e.target as HTMLElement;
-              const text = target.closest('g')?.querySelector('text')?.textContent;
-              if (text) {
-                const name = text.endsWith('...') ? text.slice(0, -3) : text;
-                const matchingImage = images.find((img) => img.name.startsWith(name));
-                if (matchingImage) {
-                  setSelectedImage(matchingImage);
-                }
-              }
-            }}>
-              <ImageTreemap data={treemapData} />
-            </div>
-          </div>
+          <MotionReveal>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Image Size Distribution
+                </h3>
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Visualizes relative image sizes. Larger boxes indicate larger images. Click an image to view details.
+                </p>
+                <div onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  const text = target.closest('g')?.querySelector('text')?.textContent;
+                  if (text) {
+                    const name = text.endsWith('...') ? text.slice(0, -3) : text;
+                    const matchingImage = images.find((img) => img.name.startsWith(name));
+                    if (matchingImage) {
+                      setSelectedImage(matchingImage);
+                    }
+                  }
+                }}>
+                  <ImageTreemap data={treemapData} />
+                </div>
+              </div>
+            </SpotlightCard>
+          </MotionReveal>
 
           {/* Sunburst */}
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold">Registry Distribution</h2>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Inner ring shows registry distribution, outer ring shows individual images.
-            </p>
-            <ImageSunburst data={sunburstData} />
-          </div>
-        </div>
+          <MotionReveal>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                  Registry Distribution
+                </h3>
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Inner ring shows registry distribution, outer ring shows individual images.
+                </p>
+                <ImageSunburst data={sunburstData} />
+              </div>
+            </SpotlightCard>
+          </MotionReveal>
+        </MotionStagger>
       ) : images && images.length === 0 ? (
-        <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
-          <Layers className="mx-auto h-10 w-10 opacity-50" />
-          <p className="mt-4">No images found</p>
-          <p className="mt-1 text-sm">
-            {selectedEndpoint
-              ? 'This endpoint has no Docker images.'
-              : 'No Docker images found across any endpoints.'}
-          </p>
-        </div>
+        <MotionReveal>
+          <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
+            <Layers className="mx-auto h-10 w-10 opacity-50" />
+            <p className="mt-4">No images found</p>
+            <p className="mt-1 text-sm">
+              {selectedEndpoint
+                ? 'This endpoint has no Docker images.'
+                : 'No Docker images found across any endpoints.'}
+            </p>
+          </div>
+        </MotionReveal>
       ) : null}
 
       {/* Image List Table */}
       {!isLoading && images && images.length > 0 && (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">All Images</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b text-left text-sm text-muted-foreground">
-                  <th className="pb-3 pl-2 pr-3 font-medium">Image</th>
-                  <th className="pb-3 font-medium">Tags</th>
-                  <th className="pb-3 font-medium">Size</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Registry</th>
-                  {!selectedEndpoint && <th className="pb-3 font-medium">Endpoint</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {images
-                  .sort((a, b) => b.size - a.size)
-                  .map((image) => (
-                    <tr
-                      key={`${image.id}-${image.endpointId}`}
-                      className={cn(
-                        'cursor-pointer transition-colors hover:bg-accent/50',
-                        selectedImage?.id === image.id && 'bg-accent'
-                      )}
-                      onClick={() => setSelectedImage(image)}
-                    >
-                      <td className="py-3 pl-2 pr-3">
-                        <span className="font-medium">{image.name}</span>
-                      </td>
-                      <td className="py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {image.tags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center rounded bg-secondary px-2 py-0.5 text-xs"
-                            >
-                              {tag.split(':')[1] || tag}
-                            </span>
-                          ))}
-                          {image.tags.length > 3 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{image.tags.length - 3} more
-                            </span>
-                          )}
-                          {image.tags.length === 0 && (
-                            <span className="text-xs text-muted-foreground">No tags</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 font-mono text-sm">{formatBytes(image.size)}</td>
-                      <td className="py-3">
-                        {(() => {
-                          const staleness = stalenessMap.get(image.name);
-                          if (!staleness) return <span className="text-xs text-muted-foreground">Unchecked</span>;
-                          return staleness.isStale ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-                              <AlertTriangle className="h-3 w-3" /> Update Available
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                              <CheckCircle2 className="h-3 w-3" /> Up to Date
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="py-3 text-sm text-muted-foreground">{image.registry}</td>
-                      {!selectedEndpoint && (
-                        <td className="py-3 text-sm text-muted-foreground">
-                          {image.endpointName || `Endpoint ${image.endpointId}`}
-                        </td>
-                      )}
+        <MotionReveal>
+          <SpotlightCard>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">All Images</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left text-sm text-muted-foreground">
+                      <th className="pb-3 pl-2 pr-3 font-medium">Image</th>
+                      <th className="pb-3 font-medium">Tags</th>
+                      <th className="pb-3 font-medium">Size</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Registry</th>
+                      {!selectedEndpoint && <th className="pb-3 font-medium">Endpoint</th>}
                     </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {images
+                      .sort((a, b) => b.size - a.size)
+                      .map((image) => (
+                        <tr
+                          key={`${image.id}-${image.endpointId}`}
+                          className={cn(
+                            'cursor-pointer transition-colors hover:bg-accent/50',
+                            selectedImage?.id === image.id && 'bg-accent'
+                          )}
+                          onClick={() => setSelectedImage(image)}
+                        >
+                          <td className="py-3 pl-2 pr-3">
+                            <span className="font-medium">{image.name}</span>
+                          </td>
+                          <td className="py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {image.tags.slice(0, 3).map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex items-center rounded bg-secondary px-2 py-0.5 text-xs"
+                                >
+                                  {tag.split(':')[1] || tag}
+                                </span>
+                              ))}
+                              {image.tags.length > 3 && (
+                                <span className="text-xs text-muted-foreground">
+                                  +{image.tags.length - 3} more
+                                </span>
+                              )}
+                              {image.tags.length === 0 && (
+                                <span className="text-xs text-muted-foreground">No tags</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 font-mono text-sm">{formatBytes(image.size)}</td>
+                          <td className="py-3">
+                            {(() => {
+                              const staleness = stalenessMap.get(image.name);
+                              if (!staleness) return <span className="text-xs text-muted-foreground">Unchecked</span>;
+                              return staleness.isStale ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                  <AlertTriangle className="h-3 w-3" /> Update Available
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                  <CheckCircle2 className="h-3 w-3" /> Up to Date
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-3 text-sm text-muted-foreground">{image.registry}</td>
+                          {!selectedEndpoint && (
+                            <td className="py-3 text-sm text-muted-foreground">
+                              {image.endpointName || `Endpoint ${image.endpointId}`}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </SpotlightCard>
+        </MotionReveal>
       )}
 
       {/* Backdrop for sidebar */}
@@ -427,6 +464,6 @@ export default function ImageFootprintPage() {
           </div>
         </div>
       )}
-    </div>
+    </MotionPage>
   );
 }

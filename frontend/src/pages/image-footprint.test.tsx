@@ -78,6 +78,20 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: () => <div data-testid="skeleton-card" />,
 }));
 
+vi.mock('@/components/shared/motion-page', () => ({
+  MotionPage: ({ children }: any) => <div data-testid="motion-page">{children}</div>,
+  MotionReveal: ({ children }: any) => <div>{children}</div>,
+  MotionStagger: ({ children, className }: any) => <div className={className}>{children}</div>,
+}));
+
+vi.mock('@/components/shared/tilt-card', () => ({
+  TiltCard: ({ children }: any) => <div>{children}</div>,
+}));
+
+vi.mock('@/components/shared/spotlight-card', () => ({
+  SpotlightCard: ({ children }: any) => <div>{children}</div>,
+}));
+
 import ImageFootprintPage from './image-footprint';
 
 describe('ImageFootprintPage', () => {
