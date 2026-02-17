@@ -3,6 +3,7 @@ import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import type { Container } from '../models/portainer.js';
 import { getSetting, setSetting } from './settings-store.js';
 import { createChildLogger } from '../utils/logger.js';
+import { CircuitBreakerOpenError } from './circuit-breaker.js';
 import {
   scanCapabilityPosture,
   type CapabilityPosture,
@@ -127,11 +128,21 @@ async function computeSecurityAudit(endpointId?: number): Promise<SecurityAuditE
   const entries: SecurityAuditEntry[] = [];
 
   for (const endpoint of scopedEndpoints) {
-    const containers = await cachedFetch(
-      getCacheKey('containers', endpoint.Id),
-      TTL.CONTAINERS,
-      () => getContainers(endpoint.Id, true),
-    );
+    let containers: Awaited<ReturnType<typeof getContainers>>;
+    try {
+      containers = await cachedFetch(
+        getCacheKey('containers', endpoint.Id),
+        TTL.CONTAINERS,
+        () => getContainers(endpoint.Id, true),
+      );
+    } catch (err) {
+      if (err instanceof CircuitBreakerOpenError) {
+        log.debug({ endpointId: endpoint.Id }, 'Skipping security audit for endpoint with open circuit breaker');
+      } else {
+        log.warn({ endpointId: endpoint.Id, err }, 'Failed to fetch containers for security audit — skipping endpoint');
+      }
+      continue;
+    }
 
     // Inspect containers in parallel to get full HostConfig (CapAdd, Privileged, PidMode)
     // — the list endpoint only returns NetworkMode.
