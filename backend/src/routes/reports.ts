@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getMetricsDb } from '../db/timescale.js';
+import { getReportsDb } from '../db/timescale.js';
 import { ReportsQuerySchema } from '../models/api-schemas.js';
 import {
   getInfrastructureServicePatterns,
@@ -9,6 +9,19 @@ import { isUndefinedTableError } from '../services/metrics-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('reports-routes');
+
+/** pg pool exhaustion: connection could not be acquired within connectionTimeoutMillis */
+function isPoolTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('timeout') && (msg.includes('connect') || msg.includes('pool') || msg.includes('acquire'));
+}
+
+/** PostgreSQL statement_timeout (error code 57014 = query_canceled) */
+function isStatementTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (err as { code?: string }).code === '57014';
+}
 
 interface AggRow {
   container_id: string;
@@ -105,7 +118,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     const timeRange = tr || '24h';
     const infrastructurePatterns = await getInfrastructureServicePatterns();
 
-    const db = await getMetricsDb();
+    const db = await getReportsDb();
     const interval = timeRangeToInterval(timeRange);
 
     const conditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
@@ -271,6 +284,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         log.warn('Metrics table not ready for utilization report');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
       }
+      if (isPoolTimeoutError(err) || isStatementTimeoutError(err)) {
+        log.warn({ err }, 'Report query timed out or pool exhausted (utilization)');
+        return reply.code(503).header('Retry-After', '30').send({ error: 'Service temporarily unavailable', details: 'Database pool exhausted or query timed out. Try again shortly.' });
+      }
       throw err;
     }
   });
@@ -301,7 +318,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     const timeRange = tr || '24h';
     const infrastructurePatterns = await getInfrastructureServicePatterns();
 
-    const db = await getMetricsDb();
+    const db = await getReportsDb();
     const interval = timeRangeToInterval(timeRange);
 
     const conditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
@@ -384,6 +401,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         log.warn('Metrics table not ready for trend report');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
       }
+      if (isPoolTimeoutError(err) || isStatementTimeoutError(err)) {
+        log.warn({ err }, 'Report query timed out or pool exhausted (trends)');
+        return reply.code(503).header('Retry-After', '30').send({ error: 'Service temporarily unavailable', details: 'Database pool exhausted or query timed out. Try again shortly.' });
+      }
       throw err;
     }
   });
@@ -418,7 +439,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     const includeInfrastructureResolved = !excludeInfrastructure;
     const timeRange = tr || '7d';
     const interval = timeRangeToInterval(timeRange);
-    const db = await getMetricsDb();
+    const db = await getReportsDb();
     const infrastructurePatterns = await getInfrastructureServicePatterns();
 
     const baseConditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
@@ -577,6 +598,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       if (isUndefinedTableError(err)) {
         log.warn('Metrics table not ready for management report');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      if (isPoolTimeoutError(err) || isStatementTimeoutError(err)) {
+        log.warn({ err }, 'Report query timed out or pool exhausted (management)');
+        return reply.code(503).header('Retry-After', '30').send({ error: 'Service temporarily unavailable', details: 'Database pool exhausted or query timed out. Try again shortly.' });
       }
       throw err;
     }

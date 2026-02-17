@@ -132,6 +132,7 @@ export const envSchema = z.object({
   // TimescaleDB (metrics + KPI storage)
   TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
   TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(50),
+  TIMESCALE_REPORTS_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(5),
   METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   METRICS_ROLLUP_5MIN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
   METRICS_ROLLUP_1HOUR_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),

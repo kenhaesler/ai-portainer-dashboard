@@ -6,7 +6,7 @@ if (process.env.LLM_VERIFY_SSL === 'false' || process.env.LLM_VERIFY_SSL === '0'
 
 import { buildApp } from './app.js';
 import { getConfig } from './config/index.js';
-import { getMetricsDb, closeMetricsDb } from './db/timescale.js';
+import { getMetricsDb, closeMetricsDb, closeReportsDb } from './db/timescale.js';
 import { getAppDb, closeAppDb } from './db/postgres.js';
 import { createChildLogger } from './utils/logger.js';
 import { setupLlmNamespace } from './sockets/llm-chat.js';
@@ -53,6 +53,7 @@ async function main() {
       await disconnectAll();
       await app.close();
       await closeAppDb();
+      await closeReportsDb();
       await closeMetricsDb();
       log.info('Graceful shutdown complete');
       process.exit(0);

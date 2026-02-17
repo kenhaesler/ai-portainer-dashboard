@@ -6,7 +6,7 @@ import { reportsRoutes } from './reports.js';
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
 vi.mock('../db/timescale.js', () => ({
-  getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
+  getReportsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
 vi.mock('../services/metrics-rollup-selector.js', () => ({
@@ -332,6 +332,65 @@ describe('Reports routes', () => {
       expect(body.scope.includeInfrastructure).toBe(true);
       expect(body.topServices).toHaveLength(1);
       expect(body.topServices[0].containerName).toBe('redis');
+    });
+  });
+
+  describe('Pool timeout / statement timeout → 503 with Retry-After', () => {
+    it('returns 503 with Retry-After when pool connection times out on /utilization', async () => {
+      const poolError = new Error('timeout exceeded when trying to connect');
+      mockQuery.mockRejectedValue(poolError);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/utilization?timeRange=24h',
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['retry-after']).toBe('30');
+      const body = JSON.parse(res.payload);
+      expect(body.error).toBe('Service temporarily unavailable');
+    });
+
+    it('returns 503 with Retry-After when statement_timeout fires on /trends', async () => {
+      const stmtError = Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+      mockQuery.mockRejectedValue(stmtError);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/trends?timeRange=24h',
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['retry-after']).toBe('30');
+      const body = JSON.parse(res.payload);
+      expect(body.error).toBe('Service temporarily unavailable');
+    });
+
+    it('returns 503 with Retry-After when pool connection times out on /management', async () => {
+      const poolError = new Error('Connection acquire timeout exceeded');
+      mockQuery.mockRejectedValue(poolError);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/management',
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['retry-after']).toBe('30');
+      const body = JSON.parse(res.payload);
+      expect(body.error).toBe('Service temporarily unavailable');
+    });
+
+    it('re-throws non-timeout errors', async () => {
+      const dbError = new Error('column "nonexistent" does not exist');
+      mockQuery.mockRejectedValue(dbError);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/reports/trends?timeRange=24h',
+      });
+
+      expect(res.statusCode).toBe(500);
     });
   });
 });
