@@ -206,10 +206,10 @@ describe('LoginPage', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // Should not navigate before max timeout
-    await vi.advanceTimersByTimeAsync(3999);
+    await vi.advanceTimersByTimeAsync(4999);
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    // Advance past 4s max cap — navigation should fire
+    // Advance past 5s max cap — navigation should fire
     await vi.advanceTimersByTimeAsync(1);
     await vi.advanceTimersByTimeAsync(0);
 
