@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { usePageVisibility } from '@/hooks/use-page-visibility';
 
 interface CacheEntry {
   key: string;
@@ -18,10 +19,12 @@ interface CacheStats {
 }
 
 export function useCacheStats() {
+  const isPageVisible = usePageVisibility();
+
   return useQuery<CacheStats>({
     queryKey: ['admin', 'cache', 'stats'],
     queryFn: () => api.get<CacheStats>('/api/admin/cache/stats'),
-    refetchInterval: 30_000,
+    refetchInterval: isPageVisible ? 30_000 : false,
   });
 }
 

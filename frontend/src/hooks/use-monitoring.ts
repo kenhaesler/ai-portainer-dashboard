@@ -41,6 +41,7 @@ export function useMonitoring() {
   const historyQuery = useQuery<{ insights: Insight[]; total: number }>({
     queryKey: ['monitoring', 'insights'],
     queryFn: () => api.get<{ insights: Insight[]; total: number }>('/api/monitoring/insights'),
+    staleTime: 60_000,
   });
 
   useEffect(() => {

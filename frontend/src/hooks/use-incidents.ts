@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { usePageVisibility } from '@/hooks/use-page-visibility';
 
 export interface Incident {
   id: string;
@@ -34,6 +35,8 @@ interface IncidentsResponse {
 }
 
 export function useIncidents(status?: 'active' | 'resolved') {
+  const isPageVisible = usePageVisibility();
+
   return useQuery<IncidentsResponse>({
     queryKey: ['incidents', status],
     queryFn: async () => {
@@ -41,7 +44,7 @@ export function useIncidents(status?: 'active' | 'resolved') {
       if (status) params.status = status;
       return api.get<IncidentsResponse>('/api/incidents', { params });
     },
-    refetchInterval: 30000,
+    refetchInterval: isPageVisible ? 30_000 : false,
   });
 }
 
