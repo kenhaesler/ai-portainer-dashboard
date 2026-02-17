@@ -1,20 +1,46 @@
-import { useState } from 'react';
-import { Cpu, HardDrive } from 'lucide-react';
-import { useContainerMetrics } from '@/hooks/use-metrics';
+import { useMemo, useState } from 'react';
+import { Cpu, HardDrive, Network } from 'lucide-react';
+import { useContainerMetrics, useNetworkRates } from '@/hooks/use-metrics';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
+import { NetworkTrafficTooltip } from '@/components/charts/network-traffic-tooltip';
+import {
+  BarChart,
+  Bar,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 
 interface ContainerMetricsViewerProps {
   endpointId: number;
   containerId: string;
+  containerNetworks?: string[];
   showTimeRangeSelector?: boolean;
+  timeRange?: string;
+  onTimeRangeChange?: (timeRange: string) => void;
 }
 
 export function ContainerMetricsViewer({
   endpointId,
   containerId,
+  containerNetworks = [],
   showTimeRangeSelector = true,
+  timeRange: controlledTimeRange,
+  onTimeRangeChange,
 }: ContainerMetricsViewerProps) {
-  const [timeRange, setTimeRange] = useState<string>('1h');
+  const [localTimeRange, setLocalTimeRange] = useState<string>('1h');
+  const timeRange = controlledTimeRange ?? localTimeRange;
+
+  const handleTimeRangeChange = (value: string) => {
+    if (controlledTimeRange === undefined) {
+      setLocalTimeRange(value);
+    }
+    onTimeRangeChange?.(value);
+  };
 
   // Fetch metrics for selected container
   const {
@@ -36,27 +62,46 @@ export function ContainerMetricsViewer({
     'memory',
     timeRange
   );
+  const { data: networkRatesData, isLoading: networkRatesLoading } = useNetworkRates(endpointId);
+
+  const networkTrafficData = useMemo(() => {
+    if (!containerNetworks.length) return [];
+
+    const rate = networkRatesData?.rates?.[containerId];
+    const split = containerNetworks.length;
+    const perNetworkRx = split > 0 ? (rate?.rxBytesPerSec ?? 0) / split : 0;
+    const perNetworkTx = split > 0 ? (rate?.txBytesPerSec ?? 0) / split : 0;
+
+    return containerNetworks
+      .map((networkName) => ({
+        network: networkName,
+        rx: perNetworkRx,
+        tx: perNetworkTx,
+        total: perNetworkRx + perNetworkTx,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [containerId, containerNetworks, networkRatesData]);
 
   return (
     <div className="space-y-6">
       {/* Time Range Selector */}
       {showTimeRangeSelector && (
         <div className="flex items-center gap-2">
-          <label htmlFor="time-range" className="text-sm font-medium">
+          <label className="text-sm font-medium">
             Time Range
           </label>
-          <select
-            id="time-range"
+          <ThemedSelect
             value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="15m">Last 15 minutes</option>
-            <option value="1h">Last 1 hour</option>
-            <option value="6h">Last 6 hours</option>
-            <option value="24h">Last 24 hours</option>
-            <option value="7d">Last 7 days</option>
-          </select>
+            onValueChange={handleTimeRangeChange}
+            options={[
+              { value: '15m', label: 'Last 15 minutes' },
+              { value: '30m', label: 'Last 30 minutes' },
+              { value: '1h', label: 'Last 1 hour' },
+              { value: '6h', label: 'Last 6 hours' },
+              { value: '24h', label: 'Last 24 hours' },
+              { value: '7d', label: 'Last 7 days' },
+            ]}
+          />
         </div>
       )}
 
@@ -101,6 +146,58 @@ export function ContainerMetricsViewer({
             />
           )}
         </div>
+      </div>
+
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <Network className="h-5 w-5 text-cyan-500" />
+          <h3 className="text-lg font-semibold">Network RX/TX by Network</h3>
+        </div>
+        {!containerNetworks.length ? (
+          <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-6 text-center">
+            <div>
+              <p className="font-medium">No connected networks found for this container</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Attach the container to a network to see RX/TX distribution.
+              </p>
+            </div>
+          </div>
+        ) : networkRatesLoading ? (
+          <div className="flex h-[300px] items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={networkTrafficData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                  <XAxis dataKey="network" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `${(Number(value) / (1024 * 1024)).toFixed(2)}`} />
+                  <Tooltip
+                    cursor={{ fill: 'transparent' }}
+                    content={
+                      <NetworkTrafficTooltip
+                        formatValue={(value) => `${(value / (1024 * 1024)).toFixed(2)} MB/s`}
+                      />
+                    }
+                  />
+                  <Legend />
+                  <Bar dataKey="rx" name="RX" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="tx" name="TX" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
+                {networkTrafficData.length} networks
+              </span>
+              <span className="rounded-full border border-border/60 bg-background/50 px-2.5 py-1">
+                Per-network values are estimated (evenly split)
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

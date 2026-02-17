@@ -5,10 +5,17 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
       exclude: ['node_modules/', 'dist/'],
+      thresholds: {
+        lines: 50,
+        functions: 50,
+        branches: 50,
+        statements: 50,
+      },
     },
   },
 });

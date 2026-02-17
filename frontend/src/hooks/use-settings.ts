@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -16,6 +16,8 @@ interface Setting {
 interface UpdateSettingParams {
   key: string;
   value: unknown;
+  category?: string;
+  showToast?: boolean;
 }
 
 interface AuditLogEntry {
@@ -44,26 +46,83 @@ export function useSettings(category?: string) {
       const params: Record<string, string | undefined> = { category };
       return api.get<Setting[]>('/api/settings', { params });
     },
+    staleTime: 5 * 60 * 1000,
   });
 }
 
 export function useUpdateSetting() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, UpdateSettingParams>({
-    mutationFn: async ({ key, value }) => {
-      await api.put(`/api/settings/${key}`, { value });
+  return useMutation<void, Error, UpdateSettingParams, { previousSettings: Array<[readonly unknown[], unknown]> }>({
+    mutationFn: async ({ key, value, category }) => {
+      await api.put(`/api/settings/${key}`, category ? { value, category } : { value });
     },
-    onSuccess: (_data, { key }) => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('Setting updated', {
-        description: `Setting "${key}" has been updated successfully.`,
+    onMutate: async ({ key, value }) => {
+      // Cancel outgoing refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ['settings'] });
+
+      // Snapshot current settings-related queries for rollback
+      const previousSettings = queryClient
+        .getQueriesData({ queryKey: ['settings'] })
+        .filter(([queryKey]) => Array.isArray(queryKey) && queryKey[0] === 'settings');
+
+      // Optimistically update the cache
+      queryClient.setQueriesData<Setting[]>(
+        { queryKey: ['settings'] },
+        (old) => {
+          if (!old) return old;
+          return old.map((s) =>
+            s.key === key ? { ...s, value, updatedAt: new Date().toISOString() } : s,
+          );
+        },
+      );
+
+      return { previousSettings };
+    },
+    onSuccess: (_data, { key, showToast }) => {
+      if (showToast === false) return;
+      toast.success('Setting saved', {
+        description: `"${key}" updated.`,
       });
     },
-    onError: (error, { key }) => {
-      toast.error(`Failed to update setting "${key}"`, {
+    onError: (error, { key, showToast }, context) => {
+      // Rollback to previous value
+      for (const [queryKey, data] of context?.previousSettings ?? []) {
+        queryClient.setQueryData(queryKey, data);
+      }
+      if (showToast === false) return;
+      toast.error(`Failed to save "${key}"`, {
         description: error.message,
       });
+    },
+    onSettled: () => {
+      // Refetch to ensure server state is in sync
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+}
+
+export function useDeleteSetting() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { key: string; showToast?: boolean }>({
+    mutationFn: async ({ key }) => {
+      await api.delete(`/api/settings/${key}`);
+    },
+    onSuccess: (_data, { key, showToast }) => {
+      if (showToast === false) return;
+      toast.success('Setting reset', {
+        description: `"${key}" removed.`,
+      });
+    },
+    onError: (error, { key, showToast }) => {
+      if (showToast === false) return;
+      toast.error(`Failed to reset "${key}"`, {
+        description: error.message,
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
   });
 }
@@ -75,5 +134,29 @@ export function useAuditLog(options?: AuditLogOptions) {
       '/api/settings/audit-log',
       { params: options as Record<string, string | number | boolean | undefined> }
     ),
+  });
+}
+
+interface AuditLogPage {
+  entries: AuditLogEntry[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
+export function useInfiniteAuditLog(options?: Omit<AuditLogOptions, 'page'>) {
+  return useInfiniteQuery<AuditLogPage>({
+    queryKey: ['settings', 'audit-log', 'infinite', options],
+    queryFn: ({ pageParam }) =>
+      api.get<AuditLogPage>('/api/settings/audit-log', {
+        params: {
+          ...options,
+          cursor: pageParam,
+          limit: options?.limit ?? 100,
+        } as Record<string, string | number | boolean | undefined>,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }

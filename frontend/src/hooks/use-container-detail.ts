@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useContainers } from './use-containers';
 
 export function useContainerDetail(endpointId: number, containerId: string) {
-  const { data: containers, isError, isLoading, ...rest } = useContainers(endpointId);
+  const { data: containers, isError, isLoading, ...rest } = useContainers({ endpointId });
 
   const container = useMemo(() =>
     containers?.find(c =>

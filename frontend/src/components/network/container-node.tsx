@@ -12,13 +12,19 @@ export function ContainerNode({ data }: NodeProps) {
   const state = (data as any).state || 'unknown';
   const label = (data as any).label || 'Unknown';
   const image = (data as any).image || '';
+  const selected = Boolean((data as any).selected);
+  const related = Boolean((data as any).related);
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <Handle type="source" position={Position.Top} className="!bg-gray-400" />
+      <Handle id="top" type="source" position={Position.Top} className="!bg-gray-400" />
+      <Handle id="right" type="source" position={Position.Right} className="!bg-gray-400" />
       <div
         className={cn(
-          'h-10 w-10 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold',
+          'h-10 w-10 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold transition-all duration-200',
+          selected && 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-background scale-110',
+          !selected && related && 'ring-1 ring-emerald-300/70 ring-offset-1 ring-offset-background',
+          !selected && !related && 'opacity-80',
           stateColors[state] || stateColors.unknown
         )}
         title={`${label} (${state})`}
@@ -31,7 +37,8 @@ export function ContainerNode({ data }: NodeProps) {
       <div className="text-[10px] text-muted-foreground max-w-[100px] truncate">
         {image}
       </div>
-      <Handle type="target" position={Position.Bottom} className="!bg-gray-400" />
+      <Handle id="bottom" type="source" position={Position.Bottom} className="!bg-gray-400" />
+      <Handle id="left" type="source" position={Position.Left} className="!bg-gray-400" />
     </div>
   );
 }

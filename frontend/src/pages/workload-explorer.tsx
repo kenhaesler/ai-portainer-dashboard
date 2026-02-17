@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
+import { useStacks } from '@/hooks/use-stacks';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -12,6 +14,9 @@ import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { resolveContainerStackName } from '@/lib/container-stack-grouping';
+import { exportToCsv } from '@/lib/csv-export';
+import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate } from '@/lib/utils';
 
 export default function WorkloadExplorerPage() {
@@ -21,10 +26,19 @@ export default function WorkloadExplorerPage() {
   // Read endpoint and stack from URL params
   const endpointParam = searchParams.get('endpoint');
   const stackParam = searchParams.get('stack');
+  const groupParam = searchParams.get('group');
   const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
   const selectedStack = stackParam || undefined;
+  const selectedGroup: ContainerGroup | undefined =
+    groupParam === 'system' || groupParam === 'workload'
+      ? groupParam
+      : undefined;
 
-  const setFilters = (endpointId: number | undefined, stackName: string | undefined) => {
+  const setFilters = (
+    endpointId: number | undefined,
+    stackName: string | undefined,
+    group: ContainerGroup | undefined
+  ) => {
     const params: Record<string, string> = {};
     if (endpointId !== undefined) {
       params.endpoint = String(endpointId);
@@ -32,31 +46,83 @@ export default function WorkloadExplorerPage() {
     if (stackName) {
       params.stack = stackName;
     }
+    if (group) {
+      params.group = group;
+    }
     setSearchParams(params);
   };
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
-    setFilters(endpointId, selectedStack);
+    setFilters(endpointId, undefined, selectedGroup);
   };
 
   const setSelectedStack = (stackName: string | undefined) => {
-    setFilters(selectedEndpoint, stackName);
+    setFilters(selectedEndpoint, stackName, selectedGroup);
   };
 
-  const clearStackFilter = () => {
-    setFilters(selectedEndpoint, undefined);
+  const setSelectedGroup = (group: ContainerGroup | undefined) => {
+    setFilters(selectedEndpoint, selectedStack, group);
   };
 
   const { data: endpoints } = useEndpoints();
-  const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint);
+  const { data: stacks } = useStacks();
+  const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
-  // Filter containers by stack if stack parameter is present
+  const knownStackNames = useMemo(() => {
+    if (!stacks) return [];
+    return stacks
+      .filter((stack) => selectedEndpoint === undefined || stack.endpointId === selectedEndpoint)
+      .map((stack) => stack.name);
+  }, [stacks, selectedEndpoint]);
+
+  const availableStacks = useMemo(() => {
+    if (!containers) return [];
+    const stackNames = new Set<string>(knownStackNames);
+    for (const container of containers) {
+      const resolvedStack = resolveContainerStackName(container, knownStackNames);
+      if (resolvedStack) {
+        stackNames.add(resolvedStack);
+      }
+    }
+    return [...stackNames].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+  }, [containers, knownStackNames]);
+
+  // Filter containers by stack/group URL params when present
   const filteredContainers = useMemo(() => {
-    if (!containers || !selectedStack) return containers;
-    return containers.filter(c => c.labels['com.docker.compose.project'] === selectedStack);
-  }, [containers, selectedStack]);
+    if (!containers) return containers;
+    return containers.filter((container) => {
+      const stackMatches = !selectedStack || resolveContainerStackName(container, knownStackNames) === selectedStack;
+      const groupMatches = !selectedGroup || getContainerGroup(container) === selectedGroup;
+      return stackMatches && groupMatches;
+    });
+  }, [containers, selectedStack, selectedGroup, knownStackNames]);
+
+  const exportRows = useMemo<Record<string, unknown>[]>(() => {
+    if (!filteredContainers) return [];
+    return filteredContainers.map((container) => ({
+      name: container.name,
+      image: container.image,
+      group: getContainerGroupLabel(container),
+      stack: resolveContainerStackName(container, knownStackNames) ?? 'No Stack',
+      state: container.state,
+      status: container.status,
+      endpoint: container.endpointName,
+      created: formatDate(new Date(container.created * 1000)),
+    }));
+  }, [filteredContainers, knownStackNames]);
+
+  const handleExportCsv = () => {
+    if (!exportRows.length) return;
+    const scope = [
+      selectedEndpoint !== undefined ? `endpoint-${selectedEndpoint}` : 'all-endpoints',
+      selectedStack ?? 'all-stacks',
+      selectedGroup ?? 'all-groups',
+    ].join('-');
+    const date = new Date().toISOString().slice(0, 10);
+    exportToCsv(exportRows, `workload-explorer-${scope}-${date}.csv`);
+  };
 
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
@@ -98,6 +164,25 @@ export default function WorkloadExplorerPage() {
       cell: ({ getValue }) => (
         <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
       ),
+    },
+    {
+      id: 'group',
+      header: 'Group',
+      cell: ({ row }) => {
+        const label = getContainerGroupLabel(row.original);
+        const isSystem = label === 'System';
+        return (
+          <span
+            className={
+              isSystem
+                ? 'inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
+            }
+          >
+            {label}
+          </span>
+        );
+      },
     },
     {
       accessorKey: 'endpointName',
@@ -166,40 +251,68 @@ export default function WorkloadExplorerPage() {
           <label htmlFor="endpoint-select" className="text-sm font-medium">
             Endpoint
           </label>
-          <select
+          <ThemedSelect
             id="endpoint-select"
-            value={selectedEndpoint ?? ''}
-            onChange={(e) => setSelectedEndpoint(e.target.value ? Number(e.target.value) : undefined)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="">All endpoints</option>
-            {endpoints?.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.name} (ID: {ep.id})
-              </option>
-            ))}
-          </select>
+            value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+            onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+            options={[
+              { value: '__all__', label: 'All endpoints' },
+              ...(endpoints?.map((ep) => ({
+                value: String(ep.id),
+                label: `${ep.name} (ID: ${ep.id})`,
+              })) ?? []),
+            ]}
+          />
         </div>
 
-        {selectedStack && (
-          <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 dark:border-blue-900/30 dark:bg-blue-900/20">
-            <span className="text-sm font-medium text-blue-900 dark:text-blue-300">
-              Stack: {selectedStack}
-            </span>
-            <button
-              onClick={clearStackFilter}
-              className="inline-flex items-center justify-center rounded-sm p-0.5 text-blue-700 hover:bg-blue-200 dark:text-blue-400 dark:hover:bg-blue-900/40"
-              title="Clear stack filter"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <label htmlFor="stack-select" className="text-sm font-medium">
+            Stack
+          </label>
+          <ThemedSelect
+            id="stack-select"
+            value={selectedStack ?? '__all__'}
+            onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
+            options={[
+              { value: '__all__', label: 'All stacks' },
+              ...availableStacks.map((stackName) => ({
+                value: stackName,
+                label: stackName,
+              })),
+            ]}
+            disabled={!containers || availableStacks.length === 0}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="group-select" className="text-sm font-medium">
+            Group
+          </label>
+          <ThemedSelect
+            id="group-select"
+            value={selectedGroup ?? '__all__'}
+            onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
+            options={[
+              { value: '__all__', label: 'All groups' },
+              { value: 'system', label: 'System' },
+              { value: 'workload', label: 'Workload' },
+            ]}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={!exportRows.length}
+          className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          Export CSV
+        </button>
 
         {filteredContainers && (
           <span className="text-sm text-muted-foreground">
             {filteredContainers.length} container{filteredContainers.length !== 1 ? 's' : ''}
-            {selectedStack && containers && filteredContainers.length !== containers.length && (
+            {(selectedStack || selectedGroup) && containers && filteredContainers.length !== containers.length && (
               <span className="ml-1">
                 (of {containers.length} total)
               </span>

@@ -1,18 +1,28 @@
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
-import { getConfig } from '../config/index.js';
-import { getDb } from '../db/sqlite.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { createBackup, listBackups, restoreBackup, deleteBackup } from '../services/backup-service.js';
 import { createChildLogger } from '../utils/logger.js';
+import { FilenameParamsSchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('backup-route');
 
 function getBackupDir() {
-  const config = getConfig();
-  const dir = path.join(path.dirname(config.SQLITE_PATH), 'backups');
+  const dir = path.join(process.cwd(), 'data', 'backups');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function resolveBackupFilePath(backupDir: string, filename: string): string | null {
+  const resolvedBackupDir = path.resolve(backupDir);
+  const filePath = path.resolve(backupDir, filename);
+
+  if (!filePath.startsWith(`${resolvedBackupDir}${path.sep}`)) {
+    return null;
+  }
+
+  return filePath;
 }
 
 export async function backupRoutes(fastify: FastifyInstance) {
@@ -23,18 +33,12 @@ export async function backupRoutes(fastify: FastifyInstance) {
       summary: 'Create a database backup',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
-    const config = getConfig();
-    const db = getDb();
+    const filename = await createBackup();
     const backupDir = getBackupDir();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `backup-${timestamp}.db`;
     const backupPath = path.join(backupDir, filename);
-
-    // Checkpoint WAL before backup
-    db.pragma('wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(config.SQLITE_PATH, backupPath);
+    const size = fs.statSync(backupPath).size;
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -46,7 +50,7 @@ export async function backupRoutes(fastify: FastifyInstance) {
     });
 
     log.info({ filename }, 'Backup created');
-    return { success: true, filename, size: fs.statSync(backupPath).size };
+    return { success: true, filename, size };
   });
 
   // List backups
@@ -56,18 +60,15 @@ export async function backupRoutes(fastify: FastifyInstance) {
       summary: 'List available backups',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
-    const backupDir = getBackupDir();
-    const files = fs.readdirSync(backupDir)
-      .filter((f) => f.endsWith('.db'))
-      .map((f) => {
-        const stat = fs.statSync(path.join(backupDir, f));
-        return { filename: f, size: stat.size, created: stat.mtime.toISOString() };
-      })
-      .sort((a, b) => b.created.localeCompare(a.created));
+    const backups = listBackups().map((b) => ({
+      filename: b.filename,
+      size: b.size,
+      created: b.createdAt,
+    }));
 
-    return { backups: files };
+    return { backups };
   });
 
   // Download backup
@@ -76,17 +77,17 @@ export async function backupRoutes(fastify: FastifyInstance) {
       tags: ['Backup'],
       summary: 'Download a backup file',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { filename: { type: 'string' } },
-        required: ['filename'],
-      },
+      params: FilenameParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
     const backupDir = getBackupDir();
-    const filePath = path.join(backupDir, filename);
+    const filePath = resolveBackupFilePath(backupDir, filename);
+
+    if (!filePath) {
+      return reply.code(400).send({ error: 'Invalid backup filename' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return reply.code(404).send({ error: 'Backup not found' });
@@ -98,29 +99,66 @@ export async function backupRoutes(fastify: FastifyInstance) {
     return reply.send(stream);
   });
 
+  // Restore backup
+  fastify.post('/api/backup/:filename/restore', {
+    schema: {
+      tags: ['Backup'],
+      summary: 'Restore database from backup file',
+      security: [{ bearerAuth: [] }],
+      params: FilenameParamsSchema,
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const { filename } = request.params as { filename: string };
+    const backupDir = getBackupDir();
+    const filePath = resolveBackupFilePath(backupDir, filename);
+
+    if (!filePath) {
+      return reply.code(400).send({ error: 'Invalid backup filename' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return reply.code(404).send({ error: 'Backup not found' });
+    }
+
+    await restoreBackup(filename);
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'backup.restore',
+      details: { filename },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    log.warn({ filename }, 'Backup restored');
+    return { success: true, message: 'Backup restored successfully.' };
+  });
+
   // Delete backup
   fastify.delete('/api/backup/:filename', {
     schema: {
       tags: ['Backup'],
       summary: 'Delete a backup file',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { filename: { type: 'string' } },
-        required: ['filename'],
-      },
+      params: FilenameParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { filename } = request.params as { filename: string };
     const backupDir = getBackupDir();
-    const filePath = path.join(backupDir, filename);
+    const filePath = resolveBackupFilePath(backupDir, filename);
+
+    if (!filePath) {
+      return reply.code(400).send({ error: 'Invalid backup filename' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return reply.code(404).send({ error: 'Backup not found' });
     }
 
-    fs.unlinkSync(filePath);
+    deleteBackup(filename);
 
     writeAuditLog({
       user_id: request.user?.sub,

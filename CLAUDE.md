@@ -1,211 +1,82 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository. AGENTS.md and GEMINI.md mirror these rules for other AI tools.
 
 ## Project Overview
 
-AI-powered container monitoring dashboard that extends Portainer with real-time insights, anomaly detection, and an LLM chat assistant. This is an **observer-only** dashboard — it does not start, stop, or restart containers. Monorepo with npm workspaces: `backend/` (Fastify 5 + SQLite) and `frontend/` (React 19 + Vite).
+AI-powered container monitoring dashboard extending Portainer with real-time insights, anomaly detection, and an LLM chat assistant. **Observer-first** — visibility comes first; actions require explicit approval via remediation workflow. Monorepo: `backend/` (Fastify 5 + PostgreSQL) and `frontend/` (React 19 + Vite).
 
 ## Mandatory Rules
 
-### Testing Is Required — No Exceptions
+1. **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.
+2. **Observer-first** — Do not add container-mutating actions without explicit request. All actions must be gated, auditable, and opt-in.
+3. **Never push to `main` or `dev`** — Branch from `dev` as `feature/<issue#>-<desc>`. PRs go `feature/* → dev → main`.
+4. **Never commit secrets** — No `.env`, API keys, passwords, or credentials.
+5. **Never work on `NO AI` issues** — Refuse and explain.
+6. **Ask before assuming** — If ambiguous, ask for clarification before proceeding.
 
-**Every code change MUST include tests before it can be merged to `main`.**
-
-- All new features MUST have corresponding unit and/or integration tests
-- All bug fixes MUST have a regression test proving the fix
-- All modified behavior MUST have updated tests reflecting the change
-- PRs without tests WILL be blocked by CI — do not attempt to bypass this
-- Never use `--no-verify`, skip hooks, or circumvent test requirements
-- If you cannot write tests for a change, stop and explain why before proceeding
-- Backend tests: `backend/src/**/*.test.ts` — Frontend tests: `frontend/src/**/*.test.{ts,tsx}`
-- Both workspaces use Vitest. Frontend tests use jsdom environment with `@testing-library/react`
-- **Test before committing. Test before pushing. Test before creating a PR.**
-
-### Observer-Only Constraint
-
-This dashboard MUST NOT generate code that starts, stops, restarts, or otherwise mutates container state. Read-only access to Portainer only.
-
-### Git Workflow
-
-This project uses a **two-tier branching model**: `feature/* → dev → main`.
-
-- **Never push directly to `main` or `dev`.** All changes go through feature branches and pull requests.
-- **`dev`** is the integration branch. All feature work targets `dev`.
-- **`main`** is the stable/release branch. Only `dev` merges into `main`.
-- Create feature branches from `dev`: `feature/<issue#>-<short-description>`
-- When a feature is complete, open a PR from `feature/*` → `dev`. CI must pass (typecheck → lint → test → build).
-- When `dev` is stable and ready for release, open a PR from `dev` → `main`. CI must pass. If all checks are green, the merge is approved.
-- Never commit secrets (`.env`, API keys, passwords, credentials).
-- Commit messages should be concise and describe the "why" not just the "what".
-
-## Build & Development Commands
+## Build Commands
 
 ```bash
-# Install all dependencies (both workspaces)
-npm install
-
-# Development (runs both backend and frontend concurrently)
-npm run dev
-
-# Or via Docker (preferred — includes Ollama for AI features)
-docker compose -f docker-compose.dev.yml up -d
-
-# Build everything
-npm run build
-
-# Lint
-npm run lint
-
-# Type check
-npm run typecheck
-
-# Run all tests
-npm test
-
-# Run tests for a single workspace
-npm run test -w backend
-npm run test -w frontend
-
-# Run a single test file
-npx vitest run src/utils/crypto.test.ts --config backend/vitest.config.ts
-npx vitest run src/lib/utils.test.ts --config frontend/vitest.config.ts
-
-# Watch mode
-npm run test:watch
+npm install                # Install all (both workspaces)
+npm run dev                # Dev server (backend + frontend)
+npm run build              # Build everything
+npm run lint               # Lint
+npm run typecheck          # Type check
+npm test                   # All tests
+npm run test -w backend    # Backend only
+npm run test -w frontend   # Frontend only
+# Single file: cd backend && npx vitest run src/path/file.test.ts
+# Backend tests use real PostgreSQL (POSTGRES_TEST_URL env var, default: localhost:5433)
+# E2E: npx playwright test (requires running backend + frontend)
+# Docker: docker compose -f docker/docker-compose.dev.yml up -d
 ```
-
-## Local Runtime Dependencies
-
-- **Docker runtime** — Required for `docker-compose.dev.yml`. Backend, frontend, and Ollama run as containers.
-- **Ollama** — LLM backend for AI features. Runs in the dev compose stack on port 11434. Pull the model with: `docker compose -f docker-compose.dev.yml exec ollama ollama pull llama3.2`
-- When running outside Docker (`npm run dev`), ensure Ollama is available at `OLLAMA_BASE_URL` (default `http://localhost:11434`) and Portainer at `PORTAINER_API_URL`.
 
 ## Architecture
 
-**Backend** (`backend/src/`): Fastify 5, TypeScript, SQLite (better-sqlite3 with WAL mode), Socket.IO.
-- `routes/` — REST API endpoints organized by feature (auth, containers, metrics, monitoring, etc.)
-- `services/` — Business logic: Portainer API client, anomaly detection (z-score), monitoring scheduler
-- `sockets/` — Socket.IO namespaces: `/llm` (chat), `/monitoring` (real-time insights), `/remediation` (action suggestions)
-- `models/` — Zod schemas for validation + database query functions
-- `db/migrations/` — SQLite migrations (auto-run on startup via `getDb()`)
-- `utils/` — Crypto (JWT/bcrypt), logging (Pino), config, caching
-- `scheduler/` — Background jobs: metrics collection (60s), monitoring cycle (5min), daily cleanup
+See `@docs/ai-instructions/architecture.md` for complete backend/frontend directory structure and key patterns.
 
-**Frontend** (`frontend/src/`): React 19, TypeScript, Vite, Tailwind CSS v4.
-- `pages/` — Lazy-loaded page components (17 pages, all wrapped in Suspense)
-- `components/` — Organized by domain: `layout/`, `charts/`, `shared/`, `container/`, `network/`
-- `hooks/` — Data-fetching hooks wrapping TanStack React Query
-- `stores/` — Zustand stores for UI state (theme, sidebar, notifications, filters)
-- `providers/` — Context providers for auth, theme, Socket.IO, React Query
-- `lib/api.ts` — Singleton API client with auto-refresh on 401
+## Security (Project-Specific)
 
-**Key patterns:**
-- Server state: TanStack React Query. UI state: Zustand.
-- All Portainer API responses validated with Zod schemas.
-- Path alias `@/*` maps to `./src/*` in both workspaces.
-- Custom error class `PortainerError` with retry logic and exponential backoff.
-- Frontend proxy: Vite dev server proxies `/api` → `localhost:3001` and `/socket.io` → WebSocket.
-- Provider hierarchy: ThemeProvider > QueryProvider > AuthProvider > SocketProvider > RouterProvider
+- JWT via `jose` (32+ char secrets). Session store in PostgreSQL — validated server-side per request.
+- OIDC/SSO via `openid-client` v6 with PKCE. Rate limiting on login (`LOGIN_RATE_LIMIT`).
+- Auth decorator: `fastify.authenticate` on all protected routes.
+- **Prompt injection guard** (`services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
+- Security regression tests: `backend/src/routes/security-regression.test.ts` (36 tests — auth sweep, prompt injection, false positives, rate limiting).
+- For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
-## Security Requirements
+## Security First (Mandatory)
 
-All code changes must follow these security rules. Violations block PRs.
+1. **RBAC by Default** — All mutating endpoints (POST/PUT/DELETE) and sensitive read endpoints (Backups, Settings, Cache, User Management) MUST require `fastify.requireRole('admin')`. Never assume `fastify.authenticate` is sufficient for administrative actions.
+2. **Zero Default Secrets** — Production deployments (`NODE_ENV=production`) MUST fail to start if `JWT_SECRET` is the default value or less than 32 characters. Never hardcode credentials.
+3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard. Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
+4. **Infrastructure Isolation** — Internal services (Prometheus, Ollama, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
+5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
+6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression.test.ts`.
+7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
 
-### Authentication & Authorization
-- JWT tokens use `jose` library with strong secrets (32+ characters in production)
-- Session store backed by SQLite — tokens are validated server-side on every request
-- OIDC/SSO integration via `openid-client` v6 — PKCE required for all authorization code flows
-- Rate limiting enforced on login endpoints (configurable via `LOGIN_RATE_LIMIT`)
-- Auth plugin decorates `fastify.authenticate` — all protected routes must use this decorator
+## UI/UX Design
 
-### Input Validation & Injection Prevention
-- All API inputs validated with Zod schemas at the route level — no unvalidated user data reaches services
-- Use parameterized queries only — never concatenate user input into SQL strings
-- Sanitize all user-provided content rendered in the frontend to prevent XSS
-- Content Security Policy headers should be configured for production deployments
-- Never use `dangerouslySetInnerHTML` unless content is sanitized with a trusted library
+Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 9 themes (light/dark, Apple, Catppuccin family). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`.
 
-### Secrets & Credentials
-- Never commit `.env`, credentials, API keys, or passwords
-- Never log secrets, tokens, or passwords — even at debug level
-- All sensitive config must come from environment variables
-- Frontend must never contain or expose backend secrets
+**Status colors:** Green=healthy, Yellow=warning, Orange=critical, Red=error, Blue=info, Gray=inactive, Purple=AI insight.
 
-### Dependency Security
-- Keep dependencies updated — check for known vulnerabilities
-- Never add dependencies with known CVEs
-- Prefer well-maintained, widely-used libraries over obscure alternatives
-- Lock file (`package-lock.json`) must be committed and kept in sync
+For detailed specs (animation durations, easing curves, glass override patterns, layout patterns), see `@docs/ai-instructions/ui-design-system.md`.
 
-### Network Security
-- All external API calls (Portainer, Ollama) should respect `PORTAINER_VERIFY_SSL` setting
-- WebSocket connections authenticated via the same JWT mechanism as REST
-- CORS configured via `@fastify/cors` — do not use wildcard origins in production
+## Code Quality
 
-## UI/UX Design Vision
+- Readability first. Explicit over clever.
+- Every PR must include doc updates: `docs/architecture.md`, `.env.example`, and this file.
+- ESLint in each workspace. TypeScript strict mode. No over-engineering.
 
-This dashboard aims for a **state-of-the-art, premium visual experience** that creates immediate "wow" impact while maintaining exceptional usability. Every UI change should move toward this vision.
+## Git Workflow
 
-### Design Principles
-1. **Visual hierarchy through layout** — Use bento grid layouts with varied card sizes to naturally guide the eye from hero KPIs to supporting data
-2. **Depth and dimension** — Glassmorphic cards with backdrop blur, subtle shadows, and hover lift effects create a layered, tactile interface
-3. **Motion with purpose** — Every animation must serve a function: page transitions orient the user, staggered entrances reveal information hierarchy, micro-interactions confirm actions
-4. **Progressive disclosure** — Show the most important information first, reveal details on interaction. Skeleton loaders should mirror the actual component layout
-5. **Accessible beauty** — All glass effects must maintain WCAG AA contrast ratios. Respect `prefers-reduced-motion` and `prefers-reduced-transparency`. Beauty never comes at the cost of usability
+Branch: `dev` → `feature/<issue#>-<desc>`. PRs: `feature/* → dev` (CI runs). `dev → main` for releases. Always link PRs to issues (`Closes #<issue>`). Commits: concise, describe "why" not "what". Never ignore CI failures.
 
-### Technology Stack for UI
-- **Tailwind CSS v4** — CSS variables for theming, container queries, 3D transforms, OKLCH gradients, `@starting-style` for entry animations
-- **Motion (Framer Motion)** — Page transitions via `AnimatePresence`, staggered list animations, spring-based hover/tap interactions, scroll-triggered reveals. Use `LazyMotion` for bundle optimization
-- **Recharts** — Area charts with gradient fills, glass-styled custom tooltips, CSS variable colors, animated data transitions
-- **Radix UI** — Unstyled accessibility primitives for dialogs, dropdowns, tabs, tooltips
+## Environment
 
-### Theme System
-9 themes defined via CSS custom properties in `index.css`:
-- Default light/dark
-- Apple Light/Dark (glassmorphism with backdrop blur + gradient mesh backgrounds)
-- Catppuccin Latte/Frappe/Macchiato/Mocha (warm pastel palette family)
+Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`), `OLLAMA_MODEL` (default `llama3.2`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. Harbor (optional): `HARBOR_API_URL`, `HARBOR_ROBOT_NAME`, `HARBOR_ROBOT_SECRET`, `HARBOR_VERIFY_SSL` (default `true`), `HARBOR_SYNC_ENABLED` (default `false`), `HARBOR_SYNC_INTERVAL_MINUTES` (default `30`), `HARBOR_CONCURRENCY` (default `5`). Harbor can also be configured via Settings UI (stored in PostgreSQL, takes precedence over env vars). See `.env.example` for full list.
 
-Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radius, and spacing tokens. Theme transitions should be smooth (300ms on color/background properties).
+## Issue Templates
 
-### Layout Patterns
-- **Bento grids** for dashboards — `auto-rows-[minmax(180px,1fr)]` with 1-4 column responsive grid
-- **Hero cards** span 2 columns for primary KPIs with animated counters
-- **Compact sparklines** in KPI cards for trend visualization
-- **Sidebar** — Collapsible (60px collapsed / 16rem expanded), glassmorphic background, 4 logical navigation groups
-- **Header** — Fixed top bar with breadcrumbs, command palette trigger (Ctrl+K), theme toggle, user menu
-
-### Animation Standards
-- **Durations**: 150ms (micro-interactions), 250ms (state changes), 400ms (page transitions)
-- **Easing**: `cubic-bezier(0.32, 0.72, 0, 1)` for entrances, spring physics for interactive elements
-- **Stagger**: 40-80ms between children in lists/grids
-- **GPU-only properties**: Animate only `transform` and `opacity` for 60fps performance
-- **Accessibility**: All animations wrapped in `reducedMotion="user"` via `MotionConfig`
-
-### Status Color System (Industry Standard)
-```
-Green  (emerald-500): Healthy, running, success
-Yellow (yellow-500):  Warning, degraded, high utilization
-Orange (orange-500):  Critical warning, approaching limit
-Red    (red-500):     Error, down, failed, anomaly
-Blue   (blue-500):    Informational, deploying, processing
-Gray   (gray-500):    Unknown, stopped, inactive
-Purple (purple-500):  AI-generated insight, recommendation
-```
-
-## Code Quality Standards
-
-- **Readability first** — Clear naming, logical grouping, consistent formatting. Prefer explicit over clever.
-- **Document all changes** — Update relevant documentation when behavior changes.
-- **Test coverage required** — See "Mandatory Rules" section above. This is non-negotiable.
-- ESLint config is in each workspace's `eslint.config.js`. TypeScript strict mode is on in both.
-- Do not add unnecessary abstractions, over-engineer, or add features beyond what is requested.
-
-## Environment Configuration
-
-Copy `.env.example` to `.env`. Key variables:
-- `PORTAINER_API_URL` / `PORTAINER_API_KEY` — Required for Portainer connection
-- `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` — Login credentials
-- `OLLAMA_BASE_URL` / `OLLAMA_MODEL` — LLM config (defaults: `http://ollama:11434`, `llama3.2`)
-- `JWT_SECRET` — Must be 32+ chars in production
-- See `.env.example` for the full list including OIDC, monitoring, caching, and rate-limit settings.
+When creating GitHub issues, follow the templates in `@docs/ai-instructions/issue-templates.md`.

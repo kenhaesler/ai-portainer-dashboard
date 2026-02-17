@@ -1,4 +1,5 @@
 import { getContainerStats } from './portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metrics-collector');
@@ -7,13 +8,19 @@ export interface CollectedMetrics {
   cpu: number;
   memory: number;
   memoryBytes: number;
+  networkRxBytes: number;
+  networkTxBytes: number;
 }
 
 export async function collectMetrics(
   endpointId: number,
   containerId: string,
 ): Promise<CollectedMetrics> {
-  const stats = await getContainerStats(endpointId, containerId);
+  const stats = await cachedFetch(
+    getCacheKey('stats', endpointId, containerId),
+    TTL.STATS,
+    () => getContainerStats(endpointId, containerId),
+  );
 
   // CPU % calculation: (cpu_delta / system_delta) * num_cpus * 100
   const cpuDelta =
@@ -43,12 +50,22 @@ export async function collectMetrics(
     memoryPercent = (memoryBytes / memoryLimit) * 100;
   }
 
+  // Network I/O: sum all interfaces
+  let networkRxBytes = 0;
+  let networkTxBytes = 0;
+  if (stats.networks) {
+    for (const iface of Object.values(stats.networks)) {
+      networkRxBytes += iface.rx_bytes ?? 0;
+      networkTxBytes += iface.tx_bytes ?? 0;
+    }
+  }
+
   // Clamp values to valid ranges
   cpuPercent = Math.max(0, Math.min(cpuPercent, 100 * numCpus));
   memoryPercent = Math.max(0, Math.min(memoryPercent, 100));
 
   log.debug(
-    { containerId, cpuPercent, memoryPercent, memoryBytes },
+    { containerId, cpuPercent, memoryPercent, memoryBytes, networkRxBytes, networkTxBytes },
     'Metrics collected',
   );
 
@@ -56,5 +73,7 @@ export async function collectMetrics(
     cpu: Math.round(cpuPercent * 100) / 100,
     memory: Math.round(memoryPercent * 100) / 100,
     memoryBytes: Math.max(0, memoryBytes),
+    networkRxBytes,
+    networkTxBytes,
   };
 }

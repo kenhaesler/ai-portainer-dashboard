@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { cache } from '../services/portainer-cache.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { CacheInvalidateQuerySchema } from '../models/api-schemas.js';
 
 const VALID_RESOURCES = ['endpoints', 'containers', 'images', 'networks', 'stacks'] as const;
 type CacheResource = (typeof VALID_RESOURCES)[number];
@@ -13,11 +14,13 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       summary: 'Get cache statistics and active entries',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
+    const stats = await cache.getStats();
+    const entries = await cache.getEntries();
     return {
-      ...cache.getStats(),
-      entries: cache.getEntries(),
+      ...stats,
+      entries,
     };
   });
 
@@ -28,9 +31,9 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       summary: 'Clear all cache entries',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
-    cache.clear();
+    await cache.clear();
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -51,15 +54,9 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       tags: ['Cache Admin'],
       summary: 'Invalidate cache entries matching a resource pattern',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        required: ['resource'],
-        properties: {
-          resource: { type: 'string', enum: [...VALID_RESOURCES] },
-        },
-      },
+      querystring: CacheInvalidateQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { resource } = request.query as { resource?: string };
 
@@ -73,7 +70,7 @@ export async function cacheAdminRoutes(fastify: FastifyInstance) {
       });
     }
 
-    cache.invalidatePattern(resource);
+    await cache.invalidatePattern(resource);
 
     writeAuditLog({
       user_id: request.user?.sub,

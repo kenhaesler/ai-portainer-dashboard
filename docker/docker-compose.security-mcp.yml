@@ -1,0 +1,69 @@
+# Security MCP Servers — NVD, Grype, Snyk
+# Usage: docker compose -f docker/docker-compose.security-mcp.yml up -d --build
+# Requires: dashboard-net network (created by main docker-compose)
+#
+# Register in dashboard Settings > MCP Servers:
+#   NVD:   http  http://nvd-mcp:8000/mcp
+#   Grype: http  http://grype-mcp:8000/mcp
+#   Snyk:  http  http://snyk-mcp:8000/mcp
+
+services:
+  nvd-mcp:
+    build:
+      context: ../tools/nvd-mcp
+      dockerfile: ../docker/nvd-mcp/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "9090:8000"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - NVD_API_KEY=${NVD_API_KEY:-}
+    networks:
+      - dashboard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  grype-mcp:
+    build:
+      context: ../tools/grype-mcp
+      dockerfile: ../docker/grype-mcp/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8788:8000"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+    networks:
+      - dashboard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  snyk-mcp:
+    build:
+      context: ../tools/snyk-mcp
+      dockerfile: ../docker/snyk-mcp/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8789:8000"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - SNYK_TOKEN=${SNYK_TOKEN:-}
+    networks:
+      - dashboard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+networks:
+  dashboard-net:
+    external: true

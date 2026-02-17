@@ -8,7 +8,7 @@ interface RemediationAction {
   status: 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
   containerId: string;
   endpointId: number;
-  description: string;
+  rationale: string;
   suggestedBy: string;
   createdAt: string;
   updatedAt: string;
@@ -23,6 +23,12 @@ export function useRemediationActions(status?: string) {
       const params: Record<string, string | undefined> = { status };
       return api.get<RemediationAction[]>('/api/remediation/actions', { params });
     },
+    // This query is mounted in multiple places (sidebar + remediation page).
+    // Prevent retry/focus bursts that can trigger transient 429 responses.
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 10_000,
   });
 }
 
@@ -31,7 +37,7 @@ export function useApproveAction() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/approve`);
+      await api.post(`/api/remediation/actions/${actionId}/approve`, {});
     },
     onSuccess: (_data, actionId) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
@@ -40,6 +46,13 @@ export function useApproveAction() {
       });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      if (error.message.toLowerCase().includes('already')) {
+        toast.error('Action state changed', {
+          description: `${error.message} The list has been refreshed.`,
+        });
+        return;
+      }
       toast.error('Failed to approve action', {
         description: error.message,
       });
@@ -52,7 +65,7 @@ export function useRejectAction() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/reject`);
+      await api.post(`/api/remediation/actions/${actionId}/reject`, {});
     },
     onSuccess: (_data, actionId) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
@@ -61,6 +74,13 @@ export function useRejectAction() {
       });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      if (error.message.toLowerCase().includes('already')) {
+        toast.error('Action state changed', {
+          description: `${error.message} The list has been refreshed.`,
+        });
+        return;
+      }
       toast.error('Failed to reject action', {
         description: error.message,
       });
@@ -73,7 +93,7 @@ export function useExecuteAction() {
 
   return useMutation<void, Error, string>({
     mutationFn: async (actionId) => {
-      await api.post(`/api/remediation/actions/${actionId}/execute`);
+      await api.post(`/api/remediation/actions/${actionId}/execute`, {});
     },
     onSuccess: (_data, actionId) => {
       queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
@@ -82,6 +102,13 @@ export function useExecuteAction() {
       });
     },
     onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+      if (error.message.toLowerCase().includes('already')) {
+        toast.error('Action state changed', {
+          description: `${error.message} The list has been refreshed.`,
+        });
+        return;
+      }
       toast.error('Failed to execute action', {
         description: error.message,
       });

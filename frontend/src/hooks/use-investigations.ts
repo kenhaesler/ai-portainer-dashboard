@@ -26,6 +26,7 @@ export interface Investigation {
   confidence_score: number | null;
   analysis_duration_ms: number | null;
   llm_model: string | null;
+  ai_summary: string | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
@@ -102,4 +103,20 @@ export function useInvestigations() {
     getInvestigationForInsight,
     refetch: query.refetch,
   };
+}
+
+export function useInvestigationDetail(id: string | undefined) {
+  return useQuery<Investigation>({
+    queryKey: ['investigation', id],
+    queryFn: () => api.get<Investigation>(`/api/investigations/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useInvestigationByInsightId(insightId: string | undefined) {
+  return useQuery<Investigation>({
+    queryKey: ['investigation', 'by-insight', insightId],
+    queryFn: () => api.get<Investigation>(`/api/investigations/by-insight/${insightId}`),
+    enabled: Boolean(insightId),
+  });
 }

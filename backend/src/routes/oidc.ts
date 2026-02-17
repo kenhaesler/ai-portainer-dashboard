@@ -1,40 +1,35 @@
 import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
-import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode } from '../services/oidc.js';
+import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups } from '../services/oidc.js';
 import { createSession, invalidateSession } from '../services/session-store.js';
 import { signJwt } from '../utils/crypto.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { upsertOIDCUser, getUserById } from '../services/user-store.js';
+import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
+import { getConfig } from '../config/index.js';
+import { createChildLogger } from '../utils/logger.js';
 
-const callbackSchema = z.object({
-  callbackUrl: z.string().url(),
-  state: z.string().min(1),
-});
+const log = createChildLogger('oidc-routes');
 
 export async function oidcRoutes(fastify: FastifyInstance) {
+  const config = getConfig();
+
   // Get OIDC status (public — no auth required)
   fastify.get('/api/auth/oidc/status', {
     schema: {
       tags: ['Auth'],
       summary: 'Get OIDC SSO status and authorization URL',
       response: {
-        200: {
-          type: 'object',
-          properties: {
-            enabled: { type: 'boolean' },
-            authUrl: { type: 'string' },
-            state: { type: 'string' },
-          },
-        },
-        500: { type: 'object', properties: { error: { type: 'string' } } },
+        200: OidcStatusResponseSchema,
+        500: ErrorResponseSchema,
       },
     },
   }, async (_request, reply) => {
-    if (!isOIDCEnabled()) {
+    if (!(await isOIDCEnabled())) {
       return { enabled: false };
     }
 
     try {
-      const oidcConfig = getOIDCConfig();
+      const oidcConfig = await getOIDCConfig();
       const redirectUri = oidcConfig.redirect_uri;
       if (!redirectUri) {
         return { enabled: false };
@@ -53,35 +48,21 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Auth'],
       summary: 'Exchange OIDC authorization code for a session token',
-      body: {
-        type: 'object',
-        required: ['callbackUrl', 'state'],
-        properties: {
-          callbackUrl: { type: 'string' },
-          state: { type: 'string' },
-        },
-      },
+      body: OidcCallbackBodySchema,
       response: {
-        200: {
-          type: 'object',
-          properties: {
-            token: { type: 'string' },
-            username: { type: 'string' },
-            expiresAt: { type: 'string' },
-          },
-        },
-        400: { type: 'object', properties: { error: { type: 'string' } } },
-        500: { type: 'object', properties: { error: { type: 'string' } } },
+        200: LoginResponseSchema,
+        400: ErrorResponseSchema,
+        500: ErrorResponseSchema,
       },
     },
     config: {
       rateLimit: {
-        max: 10,
+        max: config.LOGIN_RATE_LIMIT,
         timeWindow: '1 minute',
       },
     },
   }, async (request, reply) => {
-    const parsed = callbackSchema.safeParse(request.body);
+    const parsed = OidcCallbackBodySchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid callback parameters' });
     }
@@ -91,19 +72,60 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     try {
       const claims = await exchangeCode(callbackUrl, state);
       const username = claims.email || claims.name || claims.sub;
+      const oidcConfig = await getOIDCConfig();
 
-      const session = createSession(claims.sub, username);
+      // Resolve role from group mappings (highest-privilege-wins)
+      const resolvedRole = resolveRoleFromGroups(
+        claims.groups || [],
+        oidcConfig.group_role_mappings,
+      );
+
+      // Check if user already exists to get their current role
+      const existingUser = await getUserById(claims.sub);
+      const effectiveRole = resolvedRole || existingUser?.role || 'viewer';
+
+      // Auto-provision or update user if enabled
+      if (oidcConfig.auto_provision) {
+        const { roleChanged, previousRole } = await upsertOIDCUser(claims.sub, username, effectiveRole);
+
+        if (roleChanged) {
+          writeAuditLog({
+            user_id: claims.sub,
+            username,
+            action: 'oidc_role_changed',
+            target_type: 'user',
+            target_id: claims.sub,
+            details: {
+              previous_role: previousRole,
+              new_role: effectiveRole,
+              groups: claims.groups,
+              source: 'group_mapping',
+            },
+            request_id: request.requestId,
+            ip_address: request.ip,
+          });
+          log.info({ sub: claims.sub, previousRole, newRole: effectiveRole }, 'OIDC user role changed via group mapping');
+        }
+      }
+
+      const session = await createSession(claims.sub, username);
       const token = await signJwt({
         sub: claims.sub,
         username,
         sessionId: session.id,
+        role: effectiveRole,
       });
 
       writeAuditLog({
         user_id: claims.sub,
         username,
         action: 'oidc_login',
-        details: { email: claims.email, name: claims.name },
+        details: {
+          email: claims.email,
+          name: claims.name,
+          groups: claims.groups,
+          resolved_role: effectiveRole,
+        },
         request_id: request.requestId,
         ip_address: request.ip,
       });
@@ -125,11 +147,12 @@ export async function oidcRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Auth'],
       summary: 'Logout OIDC session',
+      response: { 200: SuccessResponseSchema },
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
     if (request.user) {
-      invalidateSession(request.user.sessionId);
+      await invalidateSession(request.user.sessionId);
       writeAuditLog({
         user_id: request.user.sub,
         username: request.user.username,

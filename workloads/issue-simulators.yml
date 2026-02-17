@@ -1,0 +1,273 @@
+# Stack: issue-simulators — Issue containers + heavy-load stress containers
+# 16 services: 10 existing issue containers + 6 new heavy-load containers
+# Networks: app-frontend-net (external) for cross-stack traffic
+
+services:
+  # ============================================================
+  # ISSUE CONTAINERS — 10 services (anomaly, security, health)
+  # ============================================================
+
+  # --- Anomaly Detection Triggers ---
+
+  # Memory stress: constant ~100MB allocation against 256MB limit
+  memory-hog:
+    image: alpine:latest
+    container_name: memory-hog
+    command: >
+      sh -c "
+      echo '[memory-hog] Allocating ~100MB...';
+      dd if=/dev/zero bs=1M count=100 of=/dev/shm/memfill 2>/dev/null;
+      echo '[memory-hog] Holding allocation';
+      while true; do sleep 30; done"
+    mem_limit: 256m
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "memory-pressure"
+    restart: unless-stopped
+
+  # Intermittent CPU spikes: 15s high CPU, 45s idle, repeat
+  cpu-burster:
+    image: alpine:latest
+    container_name: cpu-burster
+    command: >
+      sh -c "while true; do
+        echo \"[cpu-burster] Spike start\";
+        timeout 15 dd if=/dev/zero of=/dev/null bs=1M 2>/dev/null || true;
+        echo \"[cpu-burster] Spike end, sleeping\";
+        sleep 45;
+      done"
+    cpus: 1.0
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "cpu-spikes"
+    restart: unless-stopped
+
+  # --- Crash & Restart Triggers ---
+
+  # Crashes every ~10s and restarts forever
+  crash-loop:
+    image: alpine:latest
+    container_name: crash-loop
+    command: sh -c "echo 'Starting...'; sleep 10; exit 1"
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "crash-loop"
+    restart: always
+
+  # --- Health Check Triggers ---
+
+  # Starts healthy, becomes unhealthy after ~2 minutes
+  health-degrader:
+    image: alpine:latest
+    container_name: health-degrader
+    command: >
+      sh -c "echo 'Starting healthy...';
+      sleep 120;
+      touch /tmp/unhealthy;
+      echo 'Now unhealthy!';
+      while true; do sleep 30; done"
+    healthcheck:
+      test: ["CMD-SHELL", "[ ! -f /tmp/unhealthy ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "health-degradation"
+    restart: unless-stopped
+
+  # Health status flips randomly every 15-30s
+  health-flapper:
+    image: alpine:latest
+    container_name: health-flapper
+    command: >
+      sh -c "touch /tmp/healthy;
+      while true; do
+        DELAY=$$(( RANDOM % 16 + 15 ));
+        sleep $$DELAY;
+        if [ -f /tmp/healthy ]; then
+          rm /tmp/healthy;
+          echo '[health-flapper] Now UNHEALTHY';
+        else
+          touch /tmp/healthy;
+          echo '[health-flapper] Now HEALTHY';
+        fi;
+      done"
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /tmp/healthy ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "health-flapping"
+    restart: unless-stopped
+
+  # --- Log Volume Trigger ---
+
+  # Bursts of 500 error-like log lines every 30s
+  log-spammer:
+    image: alpine:latest
+    container_name: log-spammer
+    command: >
+      sh -c "while true; do
+        echo '[log-spammer] Starting log burst...';
+        for i in $$(seq 1 500); do
+          echo \"ERROR $$(date -Iseconds) [svc.handler] Request failed: connection timeout after 30000ms - upstream=10.0.$$((RANDOM % 256)).$$((RANDOM % 256)):8080 trace_id=$$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo $$RANDOM$$RANDOM)\";
+        done;
+        echo '[log-spammer] Burst complete, sleeping 30s';
+        sleep 30;
+      done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "1"
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "log-flooding"
+    restart: unless-stopped
+
+  # --- Security Scanner Triggers ---
+
+  # Privileged + root + SYS_ADMIN = 3 security findings
+  privileged-risk:
+    image: alpine:latest
+    container_name: privileged-risk
+    command: sleep infinity
+    privileged: true
+    user: "0:0"
+    cap_add:
+      - SYS_ADMIN
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "security-privileged"
+    restart: unless-stopped
+
+  # Host network + NET_ADMIN + SYS_PTRACE = 3 security findings
+  network-risk:
+    image: alpine:latest
+    container_name: network-risk
+    command: sleep infinity
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_PTRACE
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "security-network"
+    restart: unless-stopped
+
+  # Running nginx without a healthcheck = 1 security finding
+  no-healthcheck:
+    image: nginx:alpine
+    container_name: no-healthcheck
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "missing-healthcheck"
+    restart: unless-stopped
+
+  # Exits immediately and stays stopped
+  stopped-service:
+    image: alpine:latest
+    container_name: stopped-service
+    command: echo "Exited on purpose"
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "stopped"
+    restart: "no"
+
+  # ============================================================
+  # HEAVY-LOAD CONTAINERS — 6 services (CPU, memory, I/O, network)
+  # ============================================================
+
+  # Sustained CPU load — 2 CPU workers at 80%
+  stress-cpu:
+    image: alexeiled/stress-ng:latest
+    container_name: stress-cpu
+    command: ["--cpu", "2", "--cpu-load", "80", "--timeout", "0"]
+    cpus: 2.0
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "stress-cpu"
+    restart: unless-stopped
+
+  # Sustained memory pressure — 200MB against 512MB limit
+  stress-memory:
+    image: alexeiled/stress-ng:latest
+    container_name: stress-memory
+    command: ["--vm", "1", "--vm-bytes", "200M", "--vm-hang", "0", "--timeout", "0"]
+    mem_limit: 512m
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "stress-memory"
+    restart: unless-stopped
+
+  # Disk I/O — write stress
+  stress-io:
+    image: alexeiled/stress-ng:latest
+    container_name: stress-io
+    command: ["--hdd", "1", "--timeout", "0"]
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "stress-io"
+    restart: unless-stopped
+
+  # Network load — iperf3 server
+  net-server:
+    image: networkstatic/iperf3:latest
+    container_name: net-server
+    command: ["-s"]
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "network-load"
+    restart: unless-stopped
+
+  # Network load — iperf3 client hitting net-server continuously (~100Mbps)
+  net-client:
+    image: networkstatic/iperf3:latest
+    container_name: net-client
+    command: ["-c", "net-server", "-t", "0", "-b", "100M"]
+    depends_on:
+      - net-server
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "network-load"
+    restart: unless-stopped
+
+  # Cross-stack HTTP traffic — wget loop to web-frontend every 2s
+  net-chatter:
+    image: alpine:latest
+    container_name: net-chatter
+    command: sh -c "while true; do wget -q -O /dev/null http://web-frontend/ 2>&1 || true; sleep 2; done"
+    networks:
+      - default
+      - app-frontend-net
+    labels:
+      app.tier: "test"
+      app.env: "test"
+      app.issue: "network-chatter"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: issue-simulators-net
+  app-frontend-net:
+    external: true

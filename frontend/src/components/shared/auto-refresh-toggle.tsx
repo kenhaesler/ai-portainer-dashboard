@@ -18,24 +18,41 @@ interface AutoRefreshToggleProps {
 }
 
 export function AutoRefreshToggle({ interval, onIntervalChange, className }: AutoRefreshToggleProps) {
+  const isActive = interval > 0;
+
   return (
-    <div className={cn('flex items-center gap-2', className)}>
-      {interval > 0 ? (
-        <Timer className="h-4 w-4 text-emerald-500" />
-      ) : (
-        <TimerOff className="h-4 w-4 text-muted-foreground" />
-      )}
-      <select
-        value={interval}
-        onChange={(e) => onIntervalChange(Number(e.target.value) as RefreshInterval)}
-        className="rounded-md border border-input bg-background px-2 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {INTERVALS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+    <div className={cn('inline-flex h-10 items-center gap-1 rounded-full border border-input bg-background p-1', className)}>
+      {INTERVALS.map((opt) => {
+        const isSelected = interval === opt.value;
+        const isOff = opt.value === 0;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onIntervalChange(opt.value)}
+            className={cn(
+              'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors',
+              isSelected
+                ? isOff
+                  ? 'bg-muted text-foreground'
+                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            {isOff && (
+              isSelected
+                ? <TimerOff className="h-3.5 w-3.5" />
+                : <TimerOff className="h-3.5 w-3.5" />
+            )}
+            {!isOff && isSelected && (
+              <Timer className="h-3.5 w-3.5" />
+            )}
             {opt.label}
-          </option>
-        ))}
-      </select>
+          </button>
+        );
+      })}
+      {isActive && (
+        <span className="ml-1 mr-1.5 h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+      )}
     </div>
   );
 }

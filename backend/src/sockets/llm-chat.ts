@@ -1,40 +1,167 @@
 import { Namespace } from 'socket.io';
 import { createChildLogger } from '../utils/logger.js';
-import { getConfig } from '../config/index.js';
-import { Ollama } from 'ollama';
 import * as portainer from '../services/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
-import { getDb } from '../db/sqlite.js';
+import { getEffectiveLlmConfig } from '../services/settings-store.js';
+import { getEffectivePrompt } from '../services/prompt-store.js';
+import { insertLlmTrace } from '../services/llm-trace-store.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { randomUUID } from 'crypto';
+import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
+import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
+import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks } from '../services/prompt-guard.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
+import { getConfig } from '../config/index.js';
 
 const log = createChildLogger('socket:llm');
 
-function getAuthHeaders(): Record<string, string> {
-  const config = getConfig();
-  const token = config.OLLAMA_BEARER_TOKEN;
+/** Configured via Settings → LLM → Max Tool Iterations (env: LLM_MAX_TOOL_ITERATIONS) */
 
-  if (!token) return {};
-
-  // Check if token is in username:password format (Basic auth)
-  if (token.includes(':')) {
-    const base64Credentials = Buffer.from(token).toString('base64');
-    return { 'Authorization': `Basic ${base64Credentials}` };
-  }
-
-  // Otherwise use Bearer token
-  return { 'Authorization': `Bearer ${token}` };
+/** Rough token estimate: ~4 chars per token for English text */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
+// ─── Thinking block filter for streaming ─────────────────────────────
+
+const THINK_TAG_MAX_LEN = 12; // "</thinking>" = 12 chars
+
+/**
+ * Streaming filter that suppresses `<think>...</think>` and
+ * `<thinking>...</thinking>` blocks emitted by reasoning models.
+ *
+ * Feed chunks via `process()` — it returns only the non-thinking text.
+ * Call `flush()` at end-of-stream to get any buffered residual.
+ */
+export class ThinkingBlockFilter {
+  private insideThink = false;
+  private buffer = '';
+
+  /** Process a streaming chunk. Returns text to emit (may be empty). */
+  process(chunk: string): string {
+    this.buffer += chunk;
+    let output = '';
+
+    for (;;) {
+      if (this.insideThink) {
+        const closeMatch = this.buffer.match(/<\/think(?:ing)?>/i);
+        if (closeMatch && closeMatch.index !== undefined) {
+          // Discard everything up to and including the closing tag
+          this.buffer = this.buffer.slice(closeMatch.index + closeMatch[0].length);
+          this.insideThink = false;
+          continue;
+        }
+        // No close tag yet — keep only a tail that could contain a partial tag
+        if (this.buffer.length > THINK_TAG_MAX_LEN) {
+          this.buffer = this.buffer.slice(-THINK_TAG_MAX_LEN);
+        }
+        break;
+      }
+
+      // Outside thinking — look for opening tag
+      const openMatch = this.buffer.match(/<think(?:ing)?>/i);
+      if (openMatch && openMatch.index !== undefined) {
+        output += this.buffer.slice(0, openMatch.index);
+        this.buffer = this.buffer.slice(openMatch.index + openMatch[0].length);
+        this.insideThink = true;
+        continue;
+      }
+
+      // Check for a partial opening tag at the end of the buffer
+      const partialIdx = this.findPartialOpenTag();
+      if (partialIdx >= 0) {
+        output += this.buffer.slice(0, partialIdx);
+        this.buffer = this.buffer.slice(partialIdx);
+        break;
+      }
+
+      // No tags — emit everything
+      output += this.buffer;
+      this.buffer = '';
+      break;
+    }
+
+    return output;
+  }
+
+  /** Flush remaining buffer at end of stream. */
+  flush(): string {
+    if (this.insideThink) {
+      // Unclosed thinking block — discard remaining
+      this.buffer = '';
+      this.insideThink = false;
+      return '';
+    }
+    const remaining = this.buffer;
+    this.buffer = '';
+    return remaining;
+  }
+
+  private findPartialOpenTag(): number {
+    // Check if the buffer ends with a prefix of "<think>" or "<thinking>"
+    const candidates = ['<think>', '<thinking>'];
+    for (let len = Math.min(this.buffer.length, THINK_TAG_MAX_LEN - 1); len >= 1; len--) {
+      const suffix = this.buffer.slice(-len).toLowerCase();
+      for (const tag of candidates) {
+        if (tag.startsWith(suffix) && suffix !== tag) {
+          return this.buffer.length - len;
+        }
+      }
+    }
+    return -1;
+  }
+}
+
+// ─── Chat types ──────────────────────────────────────────────────────
+
 interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+}
+
+export function isRecoverableToolCallParseError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('error parsing tool call') ||
+    (msg.includes('tool call') && msg.includes('unexpected end of json input'))
+  );
+}
+
+/**
+ * Detect when a response is raw tool-call JSON that the model hallucinated
+ * (e.g. with invalid tool names).  Avoids false positives on natural language
+ * that merely *mentions* tool_calls.
+ */
+export function looksLikeToolCallAttempt(text: string): boolean {
+  const trimmed = text.trim();
+  // Raw JSON object containing tool_calls
+  if (trimmed.startsWith('{') && trimmed.includes('"tool_calls"')) return true;
+  // JSON wrapped in a code fence
+  const fenceContent = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  if (fenceContent && fenceContent[1].includes('"tool_calls"')) return true;
+  return false;
 }
 
 // Per-session conversation history
 const sessions = new Map<string, ChatMessage[]>();
 
+// Cached infrastructure context — shared across all chat sessions
+let cachedInfraContext: { text: string; expiresAt: number } | null = null;
+const INFRA_CONTEXT_TTL_MS = 120_000; // 2 minutes — reduces Portainer API pressure
+
 async function buildInfrastructureContext(): Promise<string> {
+  if (cachedInfraContext && Date.now() < cachedInfraContext.expiresAt) {
+    return cachedInfraContext.text;
+  }
+
+  const result = await buildInfrastructureContextUncached();
+  cachedInfraContext = { text: result, expiresAt: Date.now() + INFRA_CONTEXT_TTL_MS };
+  return result;
+}
+
+async function buildInfrastructureContextUncached(): Promise<string> {
   try {
     // Fetch infrastructure data
     const endpoints = await cachedFetch(
@@ -44,127 +171,347 @@ async function buildInfrastructureContext(): Promise<string> {
     );
     const normalizedEndpoints = endpoints.map(normalizeEndpoint);
 
-    // Fetch containers from all active endpoints
-    const allContainers = [];
-    for (const ep of normalizedEndpoints.filter(e => e.status === 'up').slice(0, 10)) {
-      try {
-        const containers = await cachedFetch(
-          getCacheKey('containers', ep.id),
-          TTL.CONTAINERS,
-          () => portainer.getContainers(ep.id),
-        );
-        allContainers.push(...containers.map(c => normalizeContainer(c, ep.id, ep.name)));
-      } catch (err) {
-        log.warn({ endpointId: ep.id }, 'Failed to fetch containers for endpoint');
-      }
+    // Count containers by state across all endpoints (lightweight summary)
+    let totalRunning = 0;
+    let totalStopped = 0;
+    let totalUnhealthy = 0;
+    let totalStacks = 0;
+    for (const ep of normalizedEndpoints) {
+      totalRunning += ep.containersRunning;
+      totalStopped += ep.containersStopped;
+      totalUnhealthy += ep.containersUnhealthy;
+      totalStacks += ep.stackCount;
     }
 
-    // Fetch insights from database
-    const db = getDb();
-    const insights = db.prepare(`
-      SELECT * FROM insights
-      ORDER BY created_at DESC LIMIT 50
-    `).all() as Array<{
-      id: string;
-      endpoint_id: number | null;
-      endpoint_name: string | null;
-      container_id: string | null;
-      container_name: string | null;
-      severity: 'critical' | 'warning' | 'info';
-      category: string;
+    // Fetch only top 5 critical/warning insights (lightweight)
+    const db = getDbForDomain('insights');
+    const topIssues = await db.query<{
+      severity: string;
       title: string;
-      description: string;
-      suggested_action: string | null;
-      is_acknowledged: number;
-      created_at: string;
-    }>;
+      container_name: string | null;
+      endpoint_name: string | null;
+    }>(`
+      SELECT severity, title, container_name, endpoint_name FROM insights
+      WHERE severity IN ('critical', 'warning')
+      ORDER BY created_at DESC LIMIT 5
+    `, []);
 
-    // Build context summary
     const endpointSummary = normalizedEndpoints
-      .map(ep => `- ${ep.name} (${ep.status}): ${ep.containersRunning} running, ${ep.containersStopped} stopped, ${ep.stackCount} stacks`)
+      .map(ep => `- ${ep.name} (${ep.status}): ${ep.containersRunning} running, ${ep.containersStopped} stopped`)
       .join('\n');
 
-    const runningContainers = allContainers.filter(c => c.state === 'running');
-    const stoppedContainers = allContainers.filter(c => c.state === 'stopped');
-    const unhealthyContainers = allContainers.filter(c =>
-      c.state === 'dead' || c.state === 'paused' || c.state === 'unknown'
-    );
+    const issuesSummary = topIssues.length > 0
+      ? topIssues.map(i => `- [${i.severity.toUpperCase()}] ${i.title}${i.container_name ? ` (${i.container_name})` : ''}`).join('\n')
+      : 'No critical or warning issues.';
 
-    const containerSummary = `Total: ${allContainers.length}, Running: ${runningContainers.length}, Stopped: ${stoppedContainers.length}, Unhealthy: ${unhealthyContainers.length}`;
-
-    // Group containers by stack
-    const stacks = new Map<string, typeof allContainers>();
-    for (const container of allContainers) {
-      const stack = container.labels['com.docker.compose.project'];
-      if (stack) {
-        if (!stacks.has(stack)) stacks.set(stack, []);
-        stacks.get(stack)!.push(container);
-      }
-    }
-
-    const stackSummary = Array.from(stacks.entries())
-      .map(([name, containers]) => `- ${name}: ${containers.length} containers (${containers.filter(c => c.state === 'running').length} running)`)
-      .join('\n');
-
-    // Get recent insights (already sorted by database query)
-    const recentInsights = insights
-      .slice(0, 10)
-      .map(i => `- [${i.severity.toUpperCase()}] ${i.title}: ${i.description}${i.container_name ? ` (${i.container_name} on ${i.endpoint_name})` : ''}`)
-      .join('\n');
-
-    // Sample container details (top 20 most important ones)
-    const containerDetails = [
-      ...unhealthyContainers.slice(0, 5),
-      ...runningContainers.filter(c => c.labels['com.docker.compose.project']).slice(0, 10),
-      ...runningContainers.slice(0, 5)
-    ]
-      .slice(0, 20)
-      .map(c => `- ${c.name} (${c.image}): ${c.state} on ${c.endpointName}`)
-      .join('\n');
-
-    return `## Infrastructure Overview
+    return `## Infrastructure Summary
 
 ### Endpoints (${normalizedEndpoints.length})
 ${endpointSummary || 'No endpoints configured.'}
 
-### Containers Summary
-${containerSummary}
+### Containers
+Running: ${totalRunning}, Stopped: ${totalStopped}, Unhealthy: ${totalUnhealthy}, Stacks: ${totalStacks}
 
-### Stacks (${stacks.size})
-${stackSummary || 'No stacks detected.'}
+### Top Issues
+${issuesSummary}
 
-### Key Container Details
-${containerDetails || 'No containers available.'}
-
-### Recent Issues & Insights (${insights.length} total)
-${recentInsights || 'No recent insights.'}
-
-## Your Role
-You are an AI infrastructure assistant with deep integration into this Portainer dashboard. You have real-time access to:
-- All endpoints and their health status
-- Container states, resource usage, and configurations
-- Stack compositions and relationships
-- Historical insights and detected issues (displayed in the **AI Monitor** page)
-- Container logs, metrics, and health checks
-- Remediation actions queue (viewed in the **Remediation** page)
-
-When answering questions:
-1. Reference specific containers, endpoints, or stacks by name
-2. Analyze patterns across the infrastructure based on the insights above
-3. Provide actionable recommendations based on current state
-4. Explain the reasoning behind your suggestions
-5. Warn about potential risks or side effects
-6. When critical issues are detected, inform the user that remediation actions may have been automatically suggested
-7. Guide users to check the **AI Monitor** page for real-time insights and the **Remediation** page for pending actions
-
-**Important:** The system automatically generates remediation action suggestions for critical issues (unhealthy containers, OOM errors, high CPU, restart loops). These appear in the Remediation page for human approval before execution.
-
-Use markdown formatting for clarity. For code blocks, use proper language tags.`;
+*For detailed container info, use tools like get_container_logs or get_container_metrics.*`;
 
   } catch (err) {
     log.error({ err }, 'Failed to build infrastructure context');
     return '## Infrastructure Context Unavailable\n\nUnable to fetch current infrastructure data. Operating with limited context.';
   }
+}
+
+// Stream an LLM call and collect the full response
+async function streamLlmCall(
+  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
+  selectedModel: string,
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  let fullResponse = '';
+
+  if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
+    const response = await llmFetch(llmConfig.customEndpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages,
+        stream: true,
+        max_tokens: llmConfig.maxTokens,
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    while (true) {
+      if (signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+
+      for (const raw of lines) {
+        // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
+        let payload = raw.trim();
+        if (payload.startsWith('data: ')) payload = payload.slice(6);
+        else if (payload.startsWith('data:')) payload = payload.slice(5);
+
+        // Skip SSE end sentinel and comment lines
+        if (payload === '[DONE]' || payload.startsWith(':')) continue;
+
+        try {
+          const json = JSON.parse(payload);
+          const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
+          if (text) {
+            fullResponse += text;
+            onChunk(text);
+          }
+        } catch {
+          // Skip non-JSON lines (e.g. SSE event types)
+        }
+      }
+    }
+  } else {
+    const ollama = await createConfiguredOllamaClient(llmConfig);
+    const response = await ollama.chat({
+      model: selectedModel,
+      messages,
+      stream: true,
+      options: { num_predict: llmConfig.maxTokens },
+    });
+
+    for await (const chunk of response) {
+      if (signal?.aborted) break;
+      const text = chunk.message?.content || '';
+      fullResponse += text;
+      onChunk(text);
+    }
+  }
+
+  return fullResponse;
+}
+
+async function streamOllamaRawCall(
+  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
+  selectedModel: string,
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const baseUrl = llmConfig.ollamaUrl.replace(/\/$/, '');
+  const response = await llmFetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
+    },
+    body: JSON.stringify({
+      model: selectedModel,
+      messages,
+      stream: true,
+      options: { num_predict: llmConfig.maxTokens },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Response body is not readable');
+  }
+
+  const decoder = new TextDecoder();
+  let fullResponse = '';
+  let buffer = '';
+
+  while (true) {
+    if (signal?.aborted) break;
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      try {
+        const json = JSON.parse(line);
+        const text = json?.message?.content || '';
+        if (text) {
+          fullResponse += text;
+          onChunk(text);
+          continue;
+        }
+        const toolCallJson = normalizeToolCallsFromOllama(json);
+        if (toolCallJson) {
+          fullResponse += toolCallJson;
+          // Don't emit tool call JSON as a chat chunk — the main loop
+          // will detect and execute tool calls via parseToolCalls().
+        }
+      } catch {
+        // Skip malformed NDJSON fragments.
+      }
+    }
+  }
+
+  // Flush any final buffered line.
+  const remaining = buffer.trim();
+  if (remaining) {
+    try {
+      const json = JSON.parse(remaining);
+      const text = json?.message?.content || '';
+      if (text) {
+        fullResponse += text;
+        onChunk(text);
+      } else {
+        const toolCallJson = normalizeToolCallsFromOllama(json);
+        if (toolCallJson) {
+          fullResponse += toolCallJson;
+          // Don't emit tool call JSON as a chat chunk.
+        }
+      }
+    } catch {
+      // Ignore trailing partial JSON.
+    }
+  }
+
+  return fullResponse;
+}
+
+function normalizeToolCallsFromOllama(json: any): string | null {
+  const calls = json?.message?.tool_calls;
+  if (!Array.isArray(calls) || calls.length === 0) return null;
+
+  const normalized = calls
+    .map((call: any) => {
+      const tool = call?.function?.name || call?.tool || call?.name;
+      if (!tool || typeof tool !== 'string') return null;
+
+      let args = call?.function?.arguments ?? call?.arguments ?? {};
+      if (typeof args === 'string') {
+        try {
+          args = JSON.parse(args);
+        } catch {
+          args = {};
+        }
+      }
+      if (!args || typeof args !== 'object') {
+        args = {};
+      }
+
+      return { tool, arguments: args };
+    })
+    .filter(Boolean);
+
+  if (normalized.length === 0) return null;
+  return JSON.stringify({ tool_calls: normalized });
+}
+
+/**
+ * Converts raw chat context JSON into clear natural-language instructions
+ * placed at the TOP of the system prompt so smaller LLMs don't lose it.
+ */
+export function formatChatContext(ctx: Record<string, unknown>): string {
+  const page = ctx.page as string | undefined;
+
+  // Metrics dashboard — container-focused context
+  if (page === 'metrics-dashboard' && ctx.containerName) {
+    const metrics = ctx.currentMetrics as { cpuAvg?: number; memoryAvg?: number } | undefined;
+    const lines = [
+      `## ACTIVE FOCUS — READ THIS FIRST`,
+      ``,
+      `The user is currently viewing the **Metrics Dashboard** for a specific container.`,
+      `- **Container name**: ${ctx.containerName}`,
+    ];
+    if (ctx.containerId) lines.push(`- **Container ID**: ${ctx.containerId}`);
+    if (ctx.endpointId) lines.push(`- **Endpoint ID**: ${ctx.endpointId}`);
+    if (ctx.timeRange) lines.push(`- **Selected time range**: ${ctx.timeRange}`);
+    if (metrics?.cpuAvg !== undefined) lines.push(`- **Current avg CPU**: ${Number(metrics.cpuAvg).toFixed(1)}%`);
+    if (metrics?.memoryAvg !== undefined) lines.push(`- **Current avg Memory**: ${Number(metrics.memoryAvg).toFixed(1)}%`);
+    lines.push(``);
+    lines.push(`**IMPORTANT**: All questions from this user are about the container "${ctx.containerName}" unless they explicitly mention a different container. When using tools like get_container_logs or get_container_metrics, use container_name="${ctx.containerName}" automatically — do NOT ask the user which container they mean.`);
+    return lines.join('\n');
+  }
+
+  // Generic fallback — structured but still readable
+  if (Object.keys(ctx).length > 0) {
+    const lines = [`## Additional Context`];
+    for (const [key, value] of Object.entries(ctx)) {
+      if (value !== undefined && value !== null) {
+        lines.push(`- **${key}**: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  return '';
+}
+
+/**
+ * Call Ollama with native tool calling (non-streaming).
+ * Returns the response message which may contain tool_calls.
+ */
+async function callOllamaWithNativeTools(
+  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
+  selectedModel: string,
+  messages: ChatMessage[],
+): Promise<{ content: string; toolCalls: OllamaToolCall[] }> {
+  const tools = collectAllTools();
+  log.debug({ toolCount: tools.length, toolNames: tools.map(t => t.function.name) }, 'Collected tools for native Ollama call');
+
+  if (tools.length === 0) {
+    return { content: '', toolCalls: [] };
+  }
+
+  const ollama = await createConfiguredOllamaClient(llmConfig);
+  const response = await ollama.chat({
+    model: selectedModel,
+    messages,
+    tools: tools.map(t => ({
+      type: 'function' as const,
+      function: t.function,
+    })),
+    stream: false,
+    options: { num_predict: llmConfig.maxTokens },
+  });
+
+  const content = response.message?.content || '';
+  const rawCalls = response.message?.tool_calls;
+
+  if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
+    return { content, toolCalls: [] };
+  }
+
+  const toolCalls: OllamaToolCall[] = rawCalls.map((call: any) => ({
+    function: {
+      name: call.function?.name || '',
+      arguments: call.function?.arguments || {},
+    },
+  }));
+
+  return { content, toolCalls };
 }
 
 export function setupLlmNamespace(ns: Namespace) {
@@ -174,8 +521,23 @@ export function setupLlmNamespace(ns: Namespace) {
 
     let abortController: AbortController | null = null;
 
-    socket.on('chat:message', async (data: { text: string; context?: any }) => {
-      const config = getConfig();
+    socket.on('chat:message', async (data: { text: string; context?: any; model?: string }) => {
+      // ── Input guard: block prompt injection attempts ──
+      const guardResult = isPromptInjection(data.text);
+      if (guardResult.blocked) {
+        log.warn({ userId, reason: guardResult.reason, score: guardResult.score }, 'Chat message blocked by prompt guard');
+        socket.emit('chat:blocked', {
+          reason: 'Your message was flagged as a potential prompt injection attempt.',
+          score: guardResult.score,
+        });
+        return;
+      }
+
+      // Emit status updates so the frontend can show progress during long waits
+      socket.emit('chat:status', { message: 'Preparing request...', phase: 'init' });
+
+      const llmConfig = await getEffectiveLlmConfig();
+      const selectedModel = data.model || llmConfig.model;
 
       // Get or create session history
       if (!sessions.has(socket.id)) {
@@ -184,109 +546,369 @@ export function setupLlmNamespace(ns: Namespace) {
       const history = sessions.get(socket.id)!;
 
       // Build infrastructure context
+      socket.emit('chat:status', { message: 'Building infrastructure context...', phase: 'context' });
       const infrastructureContext = await buildInfrastructureContext();
+      const toolPrompt = getToolSystemPrompt();
+      const mcpToolPrompt = await getMcpToolPrompt();
 
-      // Build system prompt with infrastructure context
-      const systemPrompt = `You are an AI assistant specializing in Docker container infrastructure management, deeply integrated with this Portainer dashboard.
-
-${infrastructureContext}
-
-${data.context ? `\n## Additional Context\n${JSON.stringify(data.context, null, 2)}` : ''}
-
-Provide concise, actionable responses. Use markdown formatting for code blocks and lists. When suggesting actions, explain the reasoning and potential impact.`;
+      const additionalContext = data.context ? formatChatContext(data.context) : '';
+      const basePrompt = await getEffectivePrompt('chat_assistant');
+      // User's custom prompt comes LAST so it has highest priority for smaller LLMs
+      const systemPromptCore = `${infrastructureContext}\n\n${additionalContext}\n\n${basePrompt}`;
+      const systemPromptWithTools = `${systemPromptCore}\n\n${toolPrompt}${mcpToolPrompt}`;
+      const systemPromptWithoutTools = `${systemPromptCore}\n\nTool calling is temporarily unavailable for this response. Do not output tool_calls JSON. Provide the best direct answer you can from available context.`;
 
       history.push({ role: 'user', content: data.text });
 
-      const messages = [
-        { role: 'system' as const, content: systemPrompt },
-        ...history.slice(-20), // Keep last 20 messages
-      ];
+      const startTime = Date.now();
+      const historyLimit = getConfig().MAX_LLM_HISTORY_MESSAGES;
 
       try {
         abortController = new AbortController();
         socket.emit('chat:start');
 
-        let fullResponse = '';
+        let messages: ChatMessage[] = [
+          { role: 'system', content: systemPromptWithTools },
+          ...history.slice(-historyLimit),
+        ];
+        let toolsEnabled = true;
+        let plainRetryAttempted = false;
+        let lastToolResults: ToolCallResult[] = [];
 
-        // Use authenticated fetch if API endpoint and token are configured
-        if (config.OLLAMA_API_ENDPOINT && config.OLLAMA_BEARER_TOKEN) {
-          const response = await fetch(config.OLLAMA_API_ENDPOINT, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...getAuthHeaders(),
-            },
-            body: JSON.stringify({
-              model: config.OLLAMA_MODEL,
-              messages,
-              stream: true,
-            }),
-            signal: abortController.signal,
-          });
+        // Filter that suppresses <think>...</think> blocks during streaming
+        const thinkFilter = new ThinkingBlockFilter();
+        const emitChunk = (text: string) => {
+          const filtered = thinkFilter.process(text);
+          if (filtered) socket.emit('chat:chunk', filtered);
+        };
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
+        let finalResponse = '';
+        let toolIteration = 0;
 
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error('Response body is not readable');
-          }
+        // ── Phase 1: Try native Ollama tool calling (non-streaming) ──
+        // This only works with local Ollama (not custom endpoints).
+        if (!llmConfig.customEnabled && toolsEnabled) {
+          try {
+            socket.emit('chat:status', { message: `Loading model ${selectedModel}...`, phase: 'model' });
+            log.debug({ userId, model: selectedModel }, 'Attempting native Ollama tool calling');
+            const nativeResult = await callOllamaWithNativeTools(llmConfig, selectedModel, messages);
+            log.debug({ userId, toolCallCount: nativeResult.toolCalls.length, hasContent: !!nativeResult.content }, 'Native tool call result');
+            if (nativeResult.toolCalls.length > 0) {
+              // Native tool calls detected — execute them
+              const toolNames = nativeResult.toolCalls.map(tc => tc.function.name);
+              log.debug({ userId, tools: toolNames }, 'Native Ollama tool calls detected');
+              socket.emit('chat:tool_call', { tools: toolNames, status: 'executing' });
 
-          const decoder = new TextDecoder();
-          while (true) {
-            if (abortController?.signal.aborted) break;
+              const results = await routeToolCalls(nativeResult.toolCalls);
+              lastToolResults = results;
 
-            const { done, value } = await reader.read();
-            if (done) break;
+              socket.emit('chat:tool_call', {
+                tools: toolNames,
+                status: 'complete',
+                results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
+              });
 
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+              // Add tool context and get final streamed response.
+              // Use a neutral assistant message — nativeResult.content often
+              // contains "I can't run this" text that poisons the follow-up.
+              // Use role: 'system' for tool results since the follow-up streaming
+              // call doesn't use native tool format and small models may not
+              // understand role: 'tool' outside of a native tool conversation.
+              messages = [
+                ...messages,
+                { role: 'assistant', content: `I executed the following tools: ${toolNames.join(', ')}` },
+                {
+                  role: 'system',
+                  content: `## Tool Execution Results\n\nThe tools have been executed successfully. Present these results to the user in a clear, helpful response.\n\n${formatToolResults(results)}`,
+                },
+              ];
+              toolIteration++;
+              // Fall through to streaming loop for final response
+            } else if (nativeResult.content) {
+              // No native tool calls — check if the model embedded text-based
+              // tool calls in its content (models that follow system prompt
+              // instructions but don't support Ollama's native tool format).
+              const textToolCalls = toolsEnabled ? parseToolCalls(nativeResult.content) : null;
 
-            for (const line of lines) {
-              try {
-                const json = JSON.parse(line);
-                const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
-                if (text) {
-                  fullResponse += text;
-                  socket.emit('chat:chunk', text);
-                }
-              } catch {
-                // Skip invalid JSON lines
+              if (textToolCalls) {
+                log.debug({ userId, tools: textToolCalls.map(t => t.tool) }, 'Text-based tool calls found in Phase 1 content');
+                socket.emit('chat:tool_call', {
+                  tools: textToolCalls.map(t => t.tool),
+                  status: 'executing',
+                });
+
+                const ollamaFormatCalls: OllamaToolCall[] = textToolCalls.map(tc => ({
+                  function: { name: tc.tool, arguments: tc.arguments },
+                }));
+                const results = await routeToolCalls(ollamaFormatCalls);
+                lastToolResults = results;
+
+                socket.emit('chat:tool_call', {
+                  tools: textToolCalls.map(t => t.tool),
+                  status: 'complete',
+                  results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
+                });
+
+                messages = [
+                  ...messages,
+                  { role: 'assistant', content: nativeResult.content },
+                  {
+                    role: 'system',
+                    content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
+                  },
+                ];
+                toolIteration++;
+                // Fall through to streaming loop for final response with tool results
+              } else if (looksLikeToolCallAttempt(nativeResult.content)) {
+                // Hallucinated tool names — fall through to Phase 2 without tools
+                log.debug({ userId }, 'Phase 1 content contains hallucinated tool call JSON, falling through to Phase 2 without tools');
+                toolsEnabled = false;
+                messages = [
+                  { role: 'system', content: systemPromptWithoutTools },
+                  ...history.slice(-historyLimit),
+                ];
+                // Fall through to streaming loop
+              } else {
+                // No tool calls at all — send content as final response
+                finalResponse = sanitizeLlmOutput(nativeResult.content);
+                socket.emit('chat:chunk', finalResponse);
+                history.push({ role: 'assistant', content: finalResponse });
+                socket.emit('chat:end', { id: randomUUID(), content: finalResponse });
+
+                const latencyMs = Date.now() - startTime;
+                const promptTokens = estimateTokens(messages.map(m => m.content).join(''));
+                const completionTokens = estimateTokens(finalResponse);
+                try {
+                  await insertLlmTrace({
+                    trace_id: randomUUID(), session_id: socket.id, model: selectedModel,
+                    prompt_tokens: promptTokens, completion_tokens: completionTokens,
+                    total_tokens: promptTokens + completionTokens, latency_ms: latencyMs,
+                    status: 'success', user_query: data.text.slice(0, 500),
+                    response_preview: finalResponse.slice(0, 500),
+                  });
+                } catch (traceErr) { log.warn({ err: traceErr }, 'Failed to record LLM trace'); }
+                return; // Done — skip streaming loop
               }
             }
-          }
-        } else {
-          // Use Ollama SDK for local/unauthenticated access
-          const ollama = new Ollama({ host: config.OLLAMA_BASE_URL });
-          const response = await ollama.chat({
-            model: config.OLLAMA_MODEL,
-            messages,
-            stream: true,
-          });
-
-          for await (const chunk of response) {
-            if (abortController?.signal.aborted) break;
-            const text = chunk.message?.content || '';
-            fullResponse += text;
-            socket.emit('chat:chunk', text);
+          } catch (nativeErr) {
+            log.warn({ err: nativeErr, userId, message: nativeErr instanceof Error ? nativeErr.message : String(nativeErr) }, 'Native Ollama tool calling failed, falling back to text-based');
+            // Fall through to text-based streaming
           }
         }
 
-        history.push({ role: 'assistant', content: fullResponse });
+        // ── Phase 2: Text-based streaming with tool call parsing (fallback) ──
+        // Tool calling loop: stream response, check for tool calls, execute, repeat.
+        // Every iteration streams chunks to the client. If tool calls are detected,
+        // we emit chat:tool_response_pending to clear the streamed tool-call JSON,
+        // then the next iteration streams the follow-up response progressively.
+        if (toolIteration === 0) {
+          socket.emit('chat:status', { message: `Waiting for ${selectedModel}...`, phase: 'model' });
+        }
+        while (toolIteration < llmConfig.maxToolIterations) {
+          let iterationResponse = '';
 
-        // Emit with correct format: { id, content }
+          try {
+            iterationResponse = await streamLlmCall(
+              llmConfig,
+              selectedModel,
+              messages,
+              emitChunk,
+              abortController.signal,
+            );
+          } catch (streamErr) {
+            if (toolsEnabled && isRecoverableToolCallParseError(streamErr)) {
+              log.warn({ err: streamErr, userId }, 'LLM tool-call parse failed; retrying without tool mode');
+              if (!llmConfig.customEnabled) {
+                iterationResponse = await streamOllamaRawCall(
+                  llmConfig,
+                  selectedModel,
+                  messages,
+                  emitChunk,
+                  abortController.signal,
+                );
+                // Continue regular flow: parse tool calls or finalize natural response.
+              } else {
+                toolsEnabled = false;
+                messages = [
+                  { role: 'system', content: systemPromptWithoutTools },
+                  ...history.slice(-historyLimit),
+                ];
+                continue;
+              }
+            }
+            else {
+              throw streamErr;
+            }
+          }
+
+          if (abortController.signal.aborted) break;
+
+          // Check if the response contains tool calls
+          const toolCalls = toolsEnabled ? parseToolCalls(iterationResponse) : null;
+
+          if (!toolCalls) {
+            const failedToolAttempt = looksLikeToolCallAttempt(iterationResponse);
+            if ((!iterationResponse.trim() || failedToolAttempt) && !plainRetryAttempted) {
+              plainRetryAttempted = true;
+              toolsEnabled = false;
+              if (failedToolAttempt) {
+                // Clear the raw JSON that was already streamed to the frontend
+                socket.emit('chat:tool_response_pending');
+              }
+              messages = [
+                { role: 'system', content: systemPromptWithoutTools },
+                ...history.slice(-historyLimit),
+              ];
+              continue;
+            }
+            // No tool calls — this is the final response (already streamed above)
+            finalResponse = iterationResponse;
+            break;
+          }
+
+          // Tool calls detected — clear the streamed tool-call JSON from the frontend
+          socket.emit('chat:tool_response_pending');
+
+          // Execute tool calls
+          log.debug({ userId, tools: toolCalls.map(t => t.tool), iteration: toolIteration }, 'Executing tool calls');
+          socket.emit('chat:tool_call', {
+            tools: toolCalls.map(t => t.tool),
+            status: 'executing',
+          });
+
+          // Convert to OllamaToolCall format for proper MCP routing
+          const ollamaFormatCalls: OllamaToolCall[] = toolCalls.map(tc => ({
+            function: { name: tc.tool, arguments: tc.arguments },
+          }));
+          const results = await routeToolCalls(ollamaFormatCalls);
+          lastToolResults = results;
+
+          socket.emit('chat:tool_call', {
+            tools: toolCalls.map(t => t.tool),
+            status: 'complete',
+            results: results.map(r => ({
+              tool: r.tool,
+              success: r.success,
+              error: r.error,
+            })),
+          });
+
+          // Add assistant's tool request and tool results to messages for next iteration
+          messages = [
+            ...messages,
+            { role: 'assistant', content: iterationResponse },
+            {
+              role: 'system',
+              content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
+            },
+          ];
+
+          toolIteration++;
+        }
+
+        if (!finalResponse && toolIteration >= llmConfig.maxToolIterations) {
+          // Graceful degradation: ask the LLM to summarize whatever tool
+          // results have been accumulated so far instead of a hard error.
+          log.info({ userId, toolIteration, maxIterations: llmConfig.maxToolIterations }, 'Tool iteration limit reached, generating partial summary');
+          try {
+            const summaryMessages: ChatMessage[] = [
+              ...messages,
+              {
+                role: 'system',
+                content: 'You have run out of tool calls. Summarize the information you have gathered so far into a clear, helpful answer for the user. Do not attempt any more tool calls. Do not output tool_calls JSON.',
+              },
+            ];
+            finalResponse = await streamLlmCall(
+              llmConfig,
+              selectedModel,
+              summaryMessages,
+              emitChunk,
+              abortController.signal,
+            );
+          } catch (summaryErr) {
+            log.warn({ err: summaryErr, userId }, 'Failed to generate partial summary after tool limit');
+            if (lastToolResults.length > 0) {
+              finalResponse = `Here is the raw data I was able to gather:\n\n${formatToolResults(lastToolResults)}`;
+            } else {
+              finalResponse = 'I was unable to complete the request within the allowed number of tool calls. Please try a more specific question.';
+            }
+            socket.emit('chat:chunk', finalResponse);
+          }
+          // Append a visible notice so the user knows the response was truncated
+          const limitNotice = `\n\n---\n*This response was truncated because the tool call limit (${llmConfig.maxToolIterations}) was reached. You can increase \`LLM_MAX_TOOL_ITERATIONS\` in your environment configuration to allow more tool calls per question.*`;
+          finalResponse += limitNotice;
+          socket.emit('chat:chunk', limitNotice);
+        }
+        if (!finalResponse.trim()) {
+          if (lastToolResults.length > 0) {
+            finalResponse = `I could not generate a complete natural-language summary, but I retrieved live results:\n\n${formatToolResults(lastToolResults)}`;
+          } else {
+            finalResponse = 'I could not generate a complete response for that request. Please try again.';
+          }
+        }
+
+        // Flush any buffered content from the thinking filter
+        const flushed = thinkFilter.flush();
+        if (flushed) socket.emit('chat:chunk', flushed);
+
+        // Strip thinking blocks from the full response (covers non-streaming
+        // paths and ensures the final content sent via chat:end is clean)
+        finalResponse = stripThinkingBlocks(finalResponse);
+
+        // Sanitize final output before sending
+        finalResponse = sanitizeLlmOutput(finalResponse);
+
+        history.push({ role: 'assistant', content: finalResponse });
+
         socket.emit('chat:end', {
           id: randomUUID(),
-          content: fullResponse
+          content: finalResponse,
         });
 
-        log.debug({ userId, messageLength: data.text.length, responseLength: fullResponse.length }, 'LLM chat completed');
+        // Record LLM trace
+        const latencyMs = Date.now() - startTime;
+        const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
+        const completionTokens = estimateTokens(finalResponse);
+        try {
+          await insertLlmTrace({
+            trace_id: randomUUID(),
+            session_id: socket.id,
+            model: selectedModel,
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+            latency_ms: latencyMs,
+            status: 'success',
+            user_query: data.text.slice(0, 500),
+            response_preview: finalResponse.slice(0, 500),
+          });
+        } catch (traceErr) {
+          log.warn({ err: traceErr }, 'Failed to record LLM trace');
+        }
+
+        log.debug({ userId, messageLength: data.text.length, responseLength: finalResponse.length, toolIterations: toolIteration }, 'LLM chat completed');
       } catch (err) {
+        const errorMessage = getFetchErrorMessage(err);
         log.error({ err, userId }, 'LLM chat error');
-        socket.emit('chat:error', {
-          error: err instanceof Error ? err.message : 'LLM unavailable',
-        });
+        socket.emit('chat:error', { message: errorMessage });
+
+        // Record error trace
+        try {
+          await insertLlmTrace({
+            trace_id: randomUUID(),
+            session_id: socket.id,
+            model: selectedModel,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            latency_ms: Date.now() - startTime,
+            status: 'error',
+            user_query: data.text.slice(0, 500),
+            response_preview: err instanceof Error ? err.message.slice(0, 500) : 'Unknown error',
+          });
+        } catch (traceErr) {
+          log.warn({ err: traceErr }, 'Failed to record LLM error trace');
+        }
       } finally {
         abortController = null;
       }
@@ -311,4 +933,13 @@ Provide concise, actionable responses. Use markdown formatting for code blocks a
       log.info({ userId }, 'LLM client disconnected');
     });
   });
+}
+
+function formatToolResults(results: ToolCallResult[]): string {
+  return results.map((r) => {
+    if (!r.success) {
+      return `### ${r.tool} (FAILED)\nError: ${r.error}`;
+    }
+    return `### ${r.tool}\n\`\`\`json\n${JSON.stringify(r.data, null, 2)}\n\`\`\``;
+  }).join('\n\n');
 }

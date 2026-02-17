@@ -1,11 +1,16 @@
 import { useEffect } from 'react';
 import { useThemeStore } from '@/stores/theme-store';
+import { useFaviconSync } from '@/components/icons/favicon-manager';
 
 const ALL_THEME_CLASSES = [
   'light',
   'dark',
   'apple-light',
   'apple-dark',
+  'retro-70s',
+  'retro-arcade',
+  'retro-terminal',
+  'retro-vaporwave',
   'catppuccin-latte',
   'catppuccin-frappe',
   'catppuccin-macchiato',
@@ -13,7 +18,8 @@ const ALL_THEME_CLASSES = [
 ];
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { theme, themeClass } = useThemeStore();
+  const { theme, themeClass, iconTheme } = useThemeStore();
+  useFaviconSync();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -28,6 +34,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // For dark themes, also add 'dark' class for Tailwind dark: variants
     if (
       currentClass === 'apple-dark' ||
+      currentClass === 'retro-arcade' ||
+      currentClass === 'retro-terminal' ||
+      currentClass === 'retro-vaporwave' ||
       currentClass === 'catppuccin-frappe' ||
       currentClass === 'catppuccin-macchiato' ||
       currentClass === 'catppuccin-mocha'
@@ -35,6 +44,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.classList.add('dark');
     }
   }, [theme, themeClass]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (iconTheme === 'default') {
+      root.removeAttribute('data-icon-theme');
+    } else {
+      root.setAttribute('data-icon-theme', iconTheme);
+    }
+  }, [iconTheme]);
 
   useEffect(() => {
     if (theme !== 'system') return;

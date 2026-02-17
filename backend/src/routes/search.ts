@@ -2,9 +2,12 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint, normalizeStack } from '../services/portainer-normalizers.js';
+import { supportsLiveFeatures } from '../services/edge-capability-guard.js';
 import { createChildLogger } from '../utils/logger.js';
+import { SearchQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('search-route');
+const TTL_LOG_SEARCH = 30; // 30 seconds — short cache for repeated/refined searches
 
 interface NormalizedImage {
   id: string;
@@ -105,13 +108,28 @@ async function searchContainerLogs(
 
   const queryLower = query.toLowerCase();
 
+  // Pre-check which endpoints support live logs to avoid 404s on Edge Async
+  const liveCapableEndpoints = new Set<number>();
+  const endpointIds = new Set(candidates.map((c) => c.endpointId));
+  for (const epId of endpointIds) {
+    if (await supportsLiveFeatures(epId)) {
+      liveCapableEndpoints.add(epId);
+    }
+  }
+
   for (const container of candidates) {
     if (results.length >= limit) break;
+    if (!liveCapableEndpoints.has(container.endpointId)) continue;
     try {
-      const logs = await portainer.getContainerLogs(container.endpointId, container.id, {
-        tail,
-        timestamps: true,
-      });
+      const logCacheKey = getCacheKey('search-logs', container.endpointId, container.id, query);
+      const logs = await cachedFetch(
+        logCacheKey,
+        TTL_LOG_SEARCH,
+        () => portainer.getContainerLogs(container.endpointId, container.id, {
+          tail,
+          timestamps: true,
+        }),
+      );
       const lines = logs.split('\n').filter((line) => line.trim().length > 0);
       for (const line of lines) {
         if (results.length >= limit) break;
@@ -145,21 +163,15 @@ export async function searchRoutes(fastify: FastifyInstance) {
       tags: ['Search'],
       summary: 'Search containers, images, stacks, and container logs',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          query: { type: 'string' },
-          limit: { type: 'number', default: 8 },
-          logLimit: { type: 'number', default: 8 },
-        },
-      },
+      querystring: SearchQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { query, limit = 8, logLimit = 8 } = request.query as {
+    const { query, limit = 8, logLimit = 8, includeLogs = false } = request.query as {
       query?: string;
       limit?: number;
       logLimit?: number;
+      includeLogs?: boolean;
     };
 
     if (!query || query.trim().length < 2) {
@@ -250,7 +262,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
       matchesValue(stack.status, normalized)
     )).slice(0, limitSafe);
 
-    const logs = await searchContainerLogs(normalized, logLimitSafe, 6, 200);
+    const logs = includeLogs
+      ? await searchContainerLogs(normalized, logLimitSafe, 3, 200)
+      : [];
 
     return {
       query,

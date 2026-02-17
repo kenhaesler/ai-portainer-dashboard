@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { useEffect, useState } from 'react';
 
@@ -15,7 +16,7 @@ const COLORS = {
   paused: { main: '#9ca3af', light: '#d1d5db' },
 };
 
-export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: ContainerStatePieProps) {
+export const ContainerStatePie = memo(function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: ContainerStatePieProps) {
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -34,61 +35,64 @@ export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: C
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[300px] items-center justify-center text-muted-foreground">
+      <div className="flex h-full items-center justify-center text-muted-foreground">
         No container data
       </div>
     );
   }
 
   return (
-    <div className="relative">
-      <ResponsiveContainer width="100%" height={260}>
-        <PieChart>
-          <defs>
-            {Object.entries(COLORS).map(([key, colors]) => (
-              <linearGradient key={key} id={`gradient-${key}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={colors.light} stopOpacity={1} />
-                <stop offset="100%" stopColor={colors.main} stopOpacity={1} />
-              </linearGradient>
-            ))}
-          </defs>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            innerRadius={70}
-            outerRadius={100}
-            paddingAngle={3}
-            dataKey="value"
-            stroke="none"
-            animationBegin={0}
-            animationDuration={800}
-          >
-            {data.map((entry) => (
-              <Cell
-                key={entry.key}
-                fill={`url(#gradient-${entry.key})`}
-                className="drop-shadow-sm"
-              />
-            ))}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="flex h-full flex-col">
+      {/* Chart area — center label is scoped to this wrapper */}
+      <div className="relative flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <defs>
+              {Object.entries(COLORS).map(([key, colors]) => (
+                <linearGradient key={key} id={`gradient-${key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={colors.light} stopOpacity={1} />
+                  <stop offset="100%" stopColor={colors.main} stopOpacity={1} />
+                </linearGradient>
+              ))}
+            </defs>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius="55%"
+              outerRadius="78%"
+              paddingAngle={data.length > 1 ? 3 : 0}
+              dataKey="value"
+              stroke="none"
+              animationBegin={0}
+              animationDuration={800}
+            >
+              {data.map((entry) => (
+                <Cell
+                  key={entry.key}
+                  fill={`url(#gradient-${entry.key})`}
+                  className="drop-shadow-sm"
+                />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
 
-      {/* Center label with subtle pulse */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="text-center">
-          <div
-            className={`text-4xl font-semibold transition-all duration-700 ${pulse ? 'scale-105 opacity-100' : 'scale-100 opacity-90'}`}
-          >
-            {total}
+        {/* Center label — scoped to chart area only */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <div
+              className={`text-4xl font-semibold transition-all duration-700 ${pulse ? 'scale-105 opacity-100' : 'scale-100 opacity-90'}`}
+            >
+              {total}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">Total</div>
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5">Total</div>
         </div>
       </div>
 
       {/* Clean legend */}
-      <div className="flex justify-center gap-5 mt-3">
+      <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 pt-3">
         {data.map((entry, index) => (
           <div key={entry.key} className="flex items-center gap-2">
             <div
@@ -105,4 +109,4 @@ export function ContainerStatePie({ running, stopped, unhealthy, paused = 0 }: C
       </div>
     </div>
   );
-}
+});

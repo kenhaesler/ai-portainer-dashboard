@@ -6,6 +6,8 @@ import {
   ContainerStatsSchema,
   NetworkSchema,
   ImageSchema,
+  EndpointArraySchema,
+  ContainerArraySchema,
 } from './portainer.js';
 
 describe('Portainer Models', () => {
@@ -421,6 +423,30 @@ describe('Portainer Models', () => {
 
       const result = ImageSchema.safeParse(image);
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('Array Schemas', () => {
+    it('EndpointArraySchema parses array of endpoints', () => {
+      const result = EndpointArraySchema.safeParse([
+        { Id: 1, Name: 'e1', Type: 1, URL: 'tcp://1', Status: 1 },
+        { Id: 2, Name: 'e2', Type: 1, URL: 'tcp://2', Status: 1 },
+      ]);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data).toHaveLength(2);
+    });
+
+    it('ContainerArraySchema parses array of containers', () => {
+      const result = ContainerArraySchema.safeParse([
+        { Id: 'c1', Names: ['/web'], Image: 'nginx', Created: 1, State: 'running', Status: 'Up' },
+      ]);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data).toHaveLength(1);
+    });
+
+    it('Array schemas reject non-array input', () => {
+      const result = EndpointArraySchema.safeParse('not an array');
+      expect(result.success).toBe(false);
     });
   });
 });

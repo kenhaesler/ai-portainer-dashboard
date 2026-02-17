@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query';
 import { useState } from 'react';
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
@@ -8,9 +8,12 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 30 * 1000,
-            gcTime: 5 * 60 * 1000,
+            gcTime: 10 * 60 * 1000,
             retry: 2,
-            refetchOnWindowFocus: true,
+            retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+            refetchOnWindowFocus: false,
+            refetchOnReconnect: 'always',
+            placeholderData: keepPreviousData,
           },
           mutations: {
             retry: 0,

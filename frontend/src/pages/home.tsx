@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star } from 'lucide-react';
-import { useDashboard, type NormalizedContainer } from '@/hooks/use-dashboard';
-import { useContainers } from '@/hooks/use-containers';
+import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
+import { type NormalizedContainer } from '@/hooks/use-dashboard';
+import { useDashboardFull } from '@/hooks/use-dashboard-full';
+import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useKpiHistory } from '@/hooks/use-kpi-history';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -13,26 +15,44 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
-import { ContainerStatePie } from '@/components/charts/container-state-pie';
-import { EndpointStatusBar } from '@/components/charts/endpoint-status-bar';
-import { WorkloadDistribution } from '@/components/charts/workload-distribution';
+import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
+import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
+import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
+import { ResourceOverviewCard } from '@/components/charts/resource-overview-card';
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
+import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
+import { TiltCard } from '@/components/shared/tilt-card';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { ContainerSmartSearch } from '@/components/shared/container-smart-search';
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch, isFetching } = useDashboard();
+  // Unified fetch: summary + resources + endpoints in one request
+  const { data: fullData, isLoading, isError, error, refetch, isFetching } = useDashboardFull(8);
+  const data = fullData?.summary;
+  const resourcesData = fullData?.resources;
+  const endpoints = fullData?.endpoints;
+  const isLoadingResources = isLoading;
   const { forceRefresh, isForceRefreshing } = useForceRefresh('endpoints', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
-  const { data: allContainers } = useContainers();
+  const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
+  const { data: kpiHistory } = useKpiHistory(24);
+  const [containerSearch, setContainerSearch] = useState('');
 
-  const favoriteContainers = useMemo(() => {
-    if (!allContainers || favoriteIds.length === 0) return [];
-    return allContainers.filter((c) =>
-      favoriteIds.includes(`${c.endpointId}:${c.id}`),
+  // Filter containers based on search
+  const filteredContainers = useMemo(() => {
+    if (!data || !containerSearch) return data?.recentContainers ?? [];
+    const searchLower = containerSearch.toLowerCase();
+    return data.recentContainers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(searchLower) ||
+        c.image.toLowerCase().includes(searchLower) ||
+        c.state.toLowerCase().includes(searchLower) ||
+        c.status.toLowerCase().includes(searchLower),
     );
-  }, [allContainers, favoriteIds]);
+  }, [data, containerSearch]);
 
   const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
     {
@@ -87,29 +107,68 @@ export default function HomePage() {
     },
   ], [navigate]);
 
-  const endpointBarData = useMemo(() => {
-    if (!data?.endpoints) return [];
-    return data.endpoints.map((ep) => ({
-      name: `${ep.name} (ID: ${ep.id})`,
+  const endpointChartData = useMemo(() => {
+    if (!endpoints) return [];
+    return endpoints.map((ep) => ({
+      id: ep.id,
+      name: ep.name,
       running: ep.containersRunning,
       stopped: ep.containersStopped,
-      unhealthy: ep.containersUnhealthy,
+      total: ep.totalContainers,
     }));
-  }, [data?.endpoints]);
+  }, [endpoints]);
 
-  const workloadData = useMemo(() => {
-    if (!data?.endpoints) return [];
-    return data.endpoints.map((ep) => ({
-      endpoint: `${ep.name} (ID: ${ep.id})`,
-      containers: ep.totalContainers,
-      running: ep.containersRunning,
-      stopped: ep.containersStopped,
+  const stackChartData = useMemo(() => {
+    if (!resourcesData?.topStacks) return [];
+    return resourcesData.topStacks.map((stack) => ({
+      name: stack.name,
+      running: stack.runningCount,
+      stopped: stack.stoppedCount,
+      total: stack.containerCount,
     }));
-  }, [data?.endpoints]);
+  }, [resourcesData]);
+
+  // Derive sparkline arrays from KPI history snapshots
+  const sparklines = useMemo(() => {
+    if (!kpiHistory || kpiHistory.length < 2) {
+      return { endpoints: [], running: [], stopped: [], stacks: [] };
+    }
+    return {
+      endpoints: kpiHistory.map((s) => s.endpoints),
+      running: kpiHistory.map((s) => s.running),
+      stopped: kpiHistory.map((s) => s.stopped),
+      stacks: kpiHistory.map((s) => s.stacks),
+    };
+  }, [kpiHistory]);
+
+  // Compute hover detail strings from history
+  const hoverDetails = useMemo(() => {
+    if (!kpiHistory || kpiHistory.length === 0) {
+      return { endpoints: undefined, running: undefined, stopped: undefined, stacks: undefined };
+    }
+    const latest = kpiHistory[kpiHistory.length - 1];
+    const oneHourAgo = kpiHistory.length > 12 ? kpiHistory[kpiHistory.length - 13] : kpiHistory[0];
+
+    function detail(key: 'endpoints' | 'running' | 'stopped' | 'stacks') {
+      const values = kpiHistory!.map((s) => s[key]);
+      const peak = Math.max(...values);
+      const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+      const delta = latest[key] - oneHourAgo[key];
+      const sign = delta >= 0 ? '+' : '';
+      return `Last hour: ${sign}${delta} | Peak: ${peak} | Avg: ${avg}`;
+    }
+
+    return {
+      endpoints: detail('endpoints'),
+      running: detail('running'),
+      stopped: detail('stopped'),
+      stacks: detail('stacks'),
+    };
+  }, [kpiHistory]);
 
   if (isError) {
     return (
-      <div className="space-y-6">
+      <MotionPage>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
@@ -129,14 +188,14 @@ export default function HomePage() {
             Try again
           </button>
         </div>
-      </div>
+      </MotionPage>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <MotionPage>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
@@ -151,45 +210,91 @@ export default function HomePage() {
 
       {/* KPI Cards */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
       ) : data ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <KpiCard
-            label="Endpoints"
-            value={data.kpis.endpoints}
-            icon={<Server className="h-5 w-5" />}
-            trendValue={`${data.kpis.endpointsUp} up`}
-            trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
-          />
-          <KpiCard
-            label="Running Containers"
-            value={data.kpis.running}
-            icon={<Boxes className="h-5 w-5" />}
-            trendValue={`of ${data.kpis.total} total`}
-            trend="neutral"
-          />
-          <KpiCard
-            label="Stopped Containers"
-            value={data.kpis.stopped}
-            icon={<PackageOpen className="h-5 w-5" />}
-            trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
-            trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
-          />
-          <KpiCard
-            label="Stacks"
-            value={data.kpis.stacks}
-            icon={<Layers className="h-5 w-5" />}
-          />
-        </div>
+        <MotionStagger className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5" stagger={0.05}>
+          <MotionReveal className="h-full">
+            <TiltCard>
+              <KpiCard
+                label="Endpoints"
+                value={data.kpis.endpoints}
+                icon={<Server className="h-5 w-5" />}
+                trendValue={`${data.kpis.endpointsUp} up`}
+                trend={data.kpis.endpointsDown > 0 ? 'down' : 'up'}
+                sparklineData={sparklines.endpoints}
+                sparklineColor="var(--color-chart-1)"
+                hoverDetail={hoverDetails.endpoints}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal className="h-full">
+            <TiltCard>
+              <KpiCard
+                label="Running Containers"
+                value={data.kpis.running}
+                icon={<Boxes className="h-5 w-5" />}
+                trendValue={`of ${data.kpis.total} total`}
+                trend="neutral"
+                sparklineData={sparklines.running}
+                sparklineColor="var(--color-chart-2)"
+                hoverDetail={hoverDetails.running}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal className="h-full">
+            <TiltCard>
+              <KpiCard
+                label="Stopped Containers"
+                value={data.kpis.stopped}
+                icon={<PackageOpen className="h-5 w-5" />}
+                trend={data.kpis.stopped > 0 ? 'down' : 'neutral'}
+                trendValue={data.kpis.stopped > 0 ? `${data.kpis.stopped} stopped` : 'none'}
+                sparklineData={sparklines.stopped}
+                sparklineColor="var(--color-chart-3)"
+                hoverDetail={hoverDetails.stopped}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal className="h-full">
+            <TiltCard>
+              <KpiCard
+                label="Stacks"
+                value={data.kpis.stacks}
+                icon={<Layers className="h-5 w-5" />}
+                sparklineData={sparklines.stacks}
+                sparklineColor="var(--color-chart-4)"
+                hoverDetail={hoverDetails.stacks}
+              />
+            </TiltCard>
+          </MotionReveal>
+          <MotionReveal className="h-full">
+            <TiltCard>
+              <button
+                type="button"
+                onClick={() => navigate('/security/audit')}
+                className="block h-full w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+              >
+                <KpiCard
+                  label="Security Findings"
+                  value={data.security.flagged}
+                  icon={<ShieldAlert className="h-5 w-5" />}
+                  trendValue={`${data.security.ignored} ignored`}
+                  trend={data.security.flagged > 0 ? 'down' : 'up'}
+                  className="cursor-pointer"
+                />
+              </button>
+            </TiltCard>
+          </MotionReveal>
+        </MotionStagger>
       ) : null}
 
       {/* Pinned Favorites */}
       {favoriteContainers.length > 0 && (
-        <div>
+        <MotionReveal>
           <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
             Pinned Favorites
@@ -221,58 +326,118 @@ export default function HomePage() {
               </div>
             ))}
           </div>
-        </div>
+        </MotionReveal>
       )}
 
-      {/* Charts */}
+      {/* Endpoint Health — full width, dynamic height */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <SkeletonCard key={i} className="h-[380px]" />
-          ))}
-        </div>
+        <SkeletonCard className="h-[300px]" />
       ) : data ? (
+        <MotionReveal>
+          <SpotlightCard>
+            <div className="flex flex-col rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Endpoint Health
+              </h3>
+              <EndpointHealthOctagons endpoints={endpointChartData} />
+            </div>
+          </SpotlightCard>
+        </MotionReveal>
+      ) : null}
+
+      {/* Top Workloads + Fleet Summary */}
+      {isLoading || isLoadingResources ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">Container States</h3>
-            <ContainerStatePie
-              running={data.kpis.running}
-              stopped={data.kpis.stopped}
-              unhealthy={data.kpis.unhealthy}
-            />
-          </div>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-              Endpoint Status
-            </h3>
-            <EndpointStatusBar data={endpointBarData} />
-          </div>
-          <div className="rounded-lg border bg-card p-6 shadow-sm">
-            <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-              Workload Distribution
-            </h3>
-            <WorkloadDistribution data={workloadData} />
-          </div>
+          <SkeletonCard className="h-[520px] lg:col-span-2" />
+          <SkeletonCard className="h-[520px]" />
         </div>
+      ) : data && resourcesData ? (
+        <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
+            <MotionReveal className="lg:col-span-2">
+              <SpotlightCard>
+                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                    Top Workloads
+                  </h3>
+                  <div className="mb-4">
+                    <ResourceOverviewCard
+                      cpuPercent={resourcesData.fleetCpuPercent}
+                      memoryPercent={resourcesData.fleetMemoryPercent}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <WorkloadTopBar endpoints={stackChartData} />
+                  </div>
+                </div>
+              </SpotlightCard>
+            </MotionReveal>
+            <MotionReveal>
+              <SpotlightCard>
+                <div className="flex h-[520px] flex-col rounded-lg border bg-card p-6 shadow-sm">
+                  <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                    Fleet Summary
+                  </h3>
+                  <div className="flex-1 min-h-0">
+                    <FleetSummaryCard
+                      endpoints={endpointChartData}
+                      totalContainers={data.kpis.total}
+                    />
+                  </div>
+                </div>
+              </SpotlightCard>
+            </MotionReveal>
+          </MotionStagger>
       ) : null}
 
       {/* Recent Containers Table */}
       {isLoading ? (
         <SkeletonCard className="h-[400px]" />
       ) : data ? (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-            Recent Containers
-          </h3>
-          <DataTable
-            columns={containerColumns}
-            data={data.recentContainers}
-            searchKey="name"
-            searchPlaceholder="Filter containers..."
-            pageSize={10}
-          />
-        </div>
+        <MotionReveal>
+          <SpotlightCard>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
+              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
+                Recent Containers
+              </h3>
+              {/* Smart search with filtering + LLM */}
+              <div className="mb-6">
+                <ContainerSmartSearch
+                  value={containerSearch}
+                  onChange={setContainerSearch}
+                  onClear={() => setContainerSearch('')}
+                />
+              </div>
+              {/* Desktop table */}
+              <div className="hidden sm:block">
+                <DataTable
+                  columns={containerColumns}
+                  data={filteredContainers}
+                  pageSize={10}
+                />
+              </div>
+              {/* Mobile card list */}
+              <div className="block sm:hidden space-y-3">
+                {filteredContainers.slice(0, 10).map((container) => (
+                    <button
+                      key={`${container.endpointId}-${container.id}`}
+                      onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+                      className="flex w-full items-center gap-3 rounded-xl border bg-card/60 p-4 text-left transition-colors hover:bg-accent/50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{container.name}</p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(container.image, 40)}</p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <StatusBadge status={container.state} />
+                          <span className="text-xs text-muted-foreground">{container.endpointName}</span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </SpotlightCard>
+        </MotionReveal>
       ) : null}
-    </div>
+    </MotionPage>
   );
 }

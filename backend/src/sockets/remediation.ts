@@ -1,18 +1,20 @@
 import { Namespace } from 'socket.io';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('socket:remediation');
+let remediationNamespace: Namespace | null = null;
 
 export function setupRemediationNamespace(ns: Namespace) {
+  remediationNamespace = ns;
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
     log.info({ userId }, 'Remediation client connected');
 
     // Send pending actions on connect
-    socket.on('actions:list', (data?: { status?: string }) => {
+    socket.on('actions:list', async (data?: { status?: string }) => {
       try {
-        const db = getDb();
+        const db = getDbForDomain('actions');
         let query = 'SELECT * FROM actions';
         const params: unknown[] = [];
 
@@ -22,7 +24,7 @@ export function setupRemediationNamespace(ns: Namespace) {
         }
 
         query += ' ORDER BY created_at DESC LIMIT 100';
-        const actions = db.prepare(query).all(...params);
+        const actions = await db.query(query, params);
         socket.emit('actions:list', { actions });
       } catch (err) {
         log.error({ err }, 'Failed to fetch actions');
@@ -36,12 +38,12 @@ export function setupRemediationNamespace(ns: Namespace) {
   });
 }
 
-// Call this when action status changes
-export function broadcastActionUpdate(ns: Namespace, action: Record<string, unknown>) {
-  ns.emit('actions:updated', action);
+export function broadcastActionUpdate(action: Record<string, unknown>) {
+  if (!remediationNamespace) return;
+  remediationNamespace.emit('actions:updated', action);
 }
 
-// Call this when new action is suggested
-export function broadcastNewAction(ns: Namespace, action: Record<string, unknown>) {
-  ns.emit('actions:new', action);
+export function broadcastNewAction(action: Record<string, unknown>) {
+  if (!remediationNamespace) return;
+  remediationNamespace.emit('actions:new', action);
 }

@@ -35,10 +35,10 @@
   --color-chart-3: hsl(197 37% 24%);
   --color-chart-4: hsl(43 74% 66%);
   --color-chart-5: hsl(27 87% 67%);
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.5rem;
 }
 
 @layer base {
@@ -222,6 +222,330 @@
     --color-chart-5: #f9e2af; /* Yellow */
   }
 
+  /* Retro 70s (warm earth tones — light) */
+  .retro-70s {
+    --color-background: #f4edd8;
+    --color-foreground: #4a3f35;
+    --color-card: #f0e6cf;
+    --color-card-foreground: #4a3f35;
+    --color-popover: #f0e6cf;
+    --color-popover-foreground: #4a3f35;
+    --color-primary: #8aafa3;
+    --color-primary-foreground: #f4edd8;
+    --color-secondary: #e8ddc5;
+    --color-secondary-foreground: #4a3f35;
+    --color-muted: #e2d5b8;
+    --color-muted-foreground: #7a6e5d;
+    --color-accent: #c8a35c;
+    --color-accent-foreground: #f4edd8;
+    --color-destructive: #c45a4a;
+    --color-destructive-foreground: #f4edd8;
+    --color-border: #ddd0b6;
+    --color-input: #ddd0b6;
+    --color-ring: #8aafa3;
+    --color-sidebar-background: #ede4cc;
+    --color-sidebar-foreground: #4a3f35;
+    --color-sidebar-primary: #8aafa3;
+    --color-sidebar-primary-foreground: #f4edd8;
+    --color-sidebar-accent: #e8ddc5;
+    --color-sidebar-accent-foreground: #4a3f35;
+    --color-sidebar-border: #ddd0b6;
+    --color-sidebar-ring: #c8a35c;
+    --color-chart-1: #c8a35c;
+    --color-chart-2: #8aafa3;
+    --color-chart-3: #cf8a72;
+    --color-chart-4: #d4a0a0;
+    --color-chart-5: #8da5b8;
+  }
+
+  /* Retro Arcade (80s synthwave — dark) */
+  .retro-arcade {
+    --color-background: #0c0c14;
+    --color-foreground: #f0f0f5;
+    --color-card: #16162a;
+    --color-card-foreground: #f0f0f5;
+    --color-popover: #16162a;
+    --color-popover-foreground: #f0f0f5;
+    --color-primary: #ff2d95;
+    --color-primary-foreground: #0c0c14;
+    --color-secondary: #1e1e3a;
+    --color-secondary-foreground: #f0f0f5;
+    --color-muted: #2a2a4a;
+    --color-muted-foreground: #9090b0;
+    --color-accent: #00e5ff;
+    --color-accent-foreground: #0c0c14;
+    --color-destructive: #ff4466;
+    --color-destructive-foreground: #f0f0f5;
+    --color-border: #2e2e52;
+    --color-input: #2e2e52;
+    --color-ring: #ff2d95;
+    --color-sidebar-background: #08080f;
+    --color-sidebar-foreground: #f0f0f5;
+    --color-sidebar-primary: #ff2d95;
+    --color-sidebar-primary-foreground: #0c0c14;
+    --color-sidebar-accent: #1e1e3a;
+    --color-sidebar-accent-foreground: #f0f0f5;
+    --color-sidebar-border: #2e2e52;
+    --color-sidebar-ring: #00e5ff;
+    --color-chart-1: #ff2d95;
+    --color-chart-2: #00e5ff;
+    --color-chart-3: #ffe900;
+    --color-chart-4: #8a2be2;
+    --color-chart-5: #ff6b6b;
+  }
+
+  /* Retro Terminal (green phosphor CRT — dark) */
+  .retro-terminal {
+    --color-background: #0a0a0a;
+    --color-foreground: #33ff33;
+    --color-card: #111611;
+    --color-card-foreground: #33ff33;
+    --color-popover: #111611;
+    --color-popover-foreground: #33ff33;
+    --color-primary: #00dd00;
+    --color-primary-foreground: #0a0a0a;
+    --color-secondary: #0e140e;
+    --color-secondary-foreground: #33ff33;
+    --color-muted: #162016;
+    --color-muted-foreground: #22aa22;
+    --color-accent: #44ff44;
+    --color-accent-foreground: #0a0a0a;
+    --color-destructive: #ff3333;
+    --color-destructive-foreground: #0a0a0a;
+    --color-border: #1a2e1a;
+    --color-input: #1a2e1a;
+    --color-ring: #00dd00;
+    --color-sidebar-background: #060806;
+    --color-sidebar-foreground: #33ff33;
+    --color-sidebar-primary: #00dd00;
+    --color-sidebar-primary-foreground: #0a0a0a;
+    --color-sidebar-accent: #0e140e;
+    --color-sidebar-accent-foreground: #33ff33;
+    --color-sidebar-border: #1a2e1a;
+    --color-sidebar-ring: #44ff44;
+    --color-chart-1: #00ff00;
+    --color-chart-2: #00cc00;
+    --color-chart-3: #00aa00;
+    --color-chart-4: #008800;
+    --color-chart-5: #006600;
+  }
+
+  /* Retro Vaporwave (90s pastel neons — dark) */
+  .retro-vaporwave {
+    --color-background: #1a1030;
+    --color-foreground: #f0daf0;
+    --color-card: #241845;
+    --color-card-foreground: #f0daf0;
+    --color-popover: #241845;
+    --color-popover-foreground: #f0daf0;
+    --color-primary: #ff71ce;
+    --color-primary-foreground: #1a1030;
+    --color-secondary: #2d2055;
+    --color-secondary-foreground: #f0daf0;
+    --color-muted: #362868;
+    --color-muted-foreground: #b090c0;
+    --color-accent: #01cdfe;
+    --color-accent-foreground: #1a1030;
+    --color-destructive: #ff5c8d;
+    --color-destructive-foreground: #1a1030;
+    --color-border: #3a2870;
+    --color-input: #3a2870;
+    --color-ring: #ff71ce;
+    --color-sidebar-background: #140c28;
+    --color-sidebar-foreground: #f0daf0;
+    --color-sidebar-primary: #ff71ce;
+    --color-sidebar-primary-foreground: #1a1030;
+    --color-sidebar-accent: #2d2055;
+    --color-sidebar-accent-foreground: #f0daf0;
+    --color-sidebar-border: #3a2870;
+    --color-sidebar-ring: #01cdfe;
+    --color-chart-1: #ff71ce;
+    --color-chart-2: #01cdfe;
+    --color-chart-3: #05ffa1;
+    --color-chart-4: #b967ff;
+    --color-chart-5: #fffb96;
+  }
+
+  /* Nordic Frost (light, crisp blue-grays) */
+  .nordic-frost {
+    --color-background: #eef3f8;
+    --color-foreground: #1f2a37;
+    --color-card: #f6f9fc;
+    --color-card-foreground: #1f2a37;
+    --color-popover: #f6f9fc;
+    --color-popover-foreground: #1f2a37;
+    --color-primary: #2f6fed;
+    --color-primary-foreground: #f8fbff;
+    --color-secondary: #dde6f1;
+    --color-secondary-foreground: #1f2a37;
+    --color-muted: #d4deea;
+    --color-muted-foreground: #5a6b7d;
+    --color-accent: #10a4d8;
+    --color-accent-foreground: #f8fbff;
+    --color-destructive: #d94f5c;
+    --color-destructive-foreground: #f8fbff;
+    --color-border: #ccd8e6;
+    --color-input: #d7e2ee;
+    --color-ring: #2f6fed;
+    --color-sidebar-background: #e8eff7;
+    --color-sidebar-foreground: #1f2a37;
+    --color-sidebar-primary: #2f6fed;
+    --color-sidebar-primary-foreground: #f8fbff;
+    --color-sidebar-accent: #dce7f4;
+    --color-sidebar-accent-foreground: #1f2a37;
+    --color-sidebar-border: #ccd8e6;
+    --color-sidebar-ring: #10a4d8;
+    --color-chart-1: #2f6fed;
+    --color-chart-2: #10a4d8;
+    --color-chart-3: #26b37e;
+    --color-chart-4: #f29d38;
+    --color-chart-5: #a855f7;
+  }
+
+  /* Sandstone Dusk (light, warm editorial) */
+  .sandstone-dusk {
+    --color-background: #f8f2e8;
+    --color-foreground: #3d3229;
+    --color-card: #fff8ef;
+    --color-card-foreground: #3d3229;
+    --color-popover: #fff8ef;
+    --color-popover-foreground: #3d3229;
+    --color-primary: #b4682d;
+    --color-primary-foreground: #fff8ef;
+    --color-secondary: #eadcc8;
+    --color-secondary-foreground: #3d3229;
+    --color-muted: #e2d2be;
+    --color-muted-foreground: #7a6554;
+    --color-accent: #6b8e7a;
+    --color-accent-foreground: #fff8ef;
+    --color-destructive: #c1504d;
+    --color-destructive-foreground: #fff8ef;
+    --color-border: #dbc9b3;
+    --color-input: #e6d6c2;
+    --color-ring: #b4682d;
+    --color-sidebar-background: #f1e4d2;
+    --color-sidebar-foreground: #3d3229;
+    --color-sidebar-primary: #b4682d;
+    --color-sidebar-primary-foreground: #fff8ef;
+    --color-sidebar-accent: #e5d5bf;
+    --color-sidebar-accent-foreground: #3d3229;
+    --color-sidebar-border: #d7c3aa;
+    --color-sidebar-ring: #6b8e7a;
+    --color-chart-1: #b4682d;
+    --color-chart-2: #6b8e7a;
+    --color-chart-3: #c88f46;
+    --color-chart-4: #d16b5a;
+    --color-chart-5: #7f6bd1;
+  }
+
+  /* Obsidian Ink (dark, deep blue-black) */
+  .obsidian-ink {
+    --color-background: #0c111b;
+    --color-foreground: #dce7ff;
+    --color-card: #131b2b;
+    --color-card-foreground: #dce7ff;
+    --color-popover: #131b2b;
+    --color-popover-foreground: #dce7ff;
+    --color-primary: #6ea8fe;
+    --color-primary-foreground: #0b1220;
+    --color-secondary: #1a253a;
+    --color-secondary-foreground: #dce7ff;
+    --color-muted: #22304a;
+    --color-muted-foreground: #8fa4c9;
+    --color-accent: #5ed0ff;
+    --color-accent-foreground: #0b1220;
+    --color-destructive: #ff6f7a;
+    --color-destructive-foreground: #0b1220;
+    --color-border: #24344f;
+    --color-input: #1f2d46;
+    --color-ring: #6ea8fe;
+    --color-sidebar-background: #0a1019;
+    --color-sidebar-foreground: #dce7ff;
+    --color-sidebar-primary: #6ea8fe;
+    --color-sidebar-primary-foreground: #0b1220;
+    --color-sidebar-accent: #1a253a;
+    --color-sidebar-accent-foreground: #dce7ff;
+    --color-sidebar-border: #23324c;
+    --color-sidebar-ring: #5ed0ff;
+    --color-chart-1: #6ea8fe;
+    --color-chart-2: #5ed0ff;
+    --color-chart-3: #3fd39a;
+    --color-chart-4: #ffb347;
+    --color-chart-5: #c084fc;
+  }
+
+  /* Forest Night (dark, botanical + mint glow) */
+  .forest-night {
+    --color-background: #0e1613;
+    --color-foreground: #d6f5e6;
+    --color-card: #14201b;
+    --color-card-foreground: #d6f5e6;
+    --color-popover: #14201b;
+    --color-popover-foreground: #d6f5e6;
+    --color-primary: #35c98c;
+    --color-primary-foreground: #08130e;
+    --color-secondary: #1c2a24;
+    --color-secondary-foreground: #d6f5e6;
+    --color-muted: #263730;
+    --color-muted-foreground: #8cb9a4;
+    --color-accent: #5be3b2;
+    --color-accent-foreground: #08130e;
+    --color-destructive: #f07474;
+    --color-destructive-foreground: #08130e;
+    --color-border: #294137;
+    --color-input: #20352d;
+    --color-ring: #35c98c;
+    --color-sidebar-background: #0b140f;
+    --color-sidebar-foreground: #d6f5e6;
+    --color-sidebar-primary: #35c98c;
+    --color-sidebar-primary-foreground: #08130e;
+    --color-sidebar-accent: #1a2a23;
+    --color-sidebar-accent-foreground: #d6f5e6;
+    --color-sidebar-border: #264036;
+    --color-sidebar-ring: #5be3b2;
+    --color-chart-1: #35c98c;
+    --color-chart-2: #5be3b2;
+    --color-chart-3: #70d6ff;
+    --color-chart-4: #f4b860;
+    --color-chart-5: #d08cff;
+  }
+
+  /* Hyperpop Chaos (wild neon pair with Mesh Chaos) */
+  .hyperpop-chaos {
+    --color-background: #130620;
+    --color-foreground: #ffeefe;
+    --color-card: #220b38;
+    --color-card-foreground: #ffeefe;
+    --color-popover: #220b38;
+    --color-popover-foreground: #ffeefe;
+    --color-primary: #00f6ff;
+    --color-primary-foreground: #160520;
+    --color-secondary: #32104f;
+    --color-secondary-foreground: #ffeefe;
+    --color-muted: #43166b;
+    --color-muted-foreground: #d8a7f7;
+    --color-accent: #ff3cac;
+    --color-accent-foreground: #160520;
+    --color-destructive: #ff576b;
+    --color-destructive-foreground: #160520;
+    --color-border: #542183;
+    --color-input: #3c155f;
+    --color-ring: #00f6ff;
+    --color-sidebar-background: #0d0418;
+    --color-sidebar-foreground: #ffeefe;
+    --color-sidebar-primary: #00f6ff;
+    --color-sidebar-primary-foreground: #160520;
+    --color-sidebar-accent: #32104f;
+    --color-sidebar-accent-foreground: #ffeefe;
+    --color-sidebar-border: #4c1c79;
+    --color-sidebar-ring: #ff3cac;
+    --color-chart-1: #00f6ff;
+    --color-chart-2: #ff3cac;
+    --color-chart-3: #b5ff00;
+    --color-chart-4: #ff8a00;
+    --color-chart-5: #8a5dff;
+  }
+
   /* ================================================
      APPLE GLASSMORPHISM LIGHT THEME
      Modern frosted glass UI with gradient backgrounds
@@ -260,10 +584,6 @@
     --color-chart-3: #10b981; /* Emerald */
     --color-chart-4: #f59e0b; /* Amber */
     --color-chart-5: #ec4899; /* Pink */
-    --radius-sm: 0.75rem;
-    --radius-md: 1rem;
-    --radius-lg: 1.25rem;
-    --radius-xl: 1.5rem;
   }
 
   /* ================================================
@@ -304,11 +624,38 @@
     --color-chart-3: #34d399; /* Emerald */
     --color-chart-4: #fbbf24; /* Amber */
     --color-chart-5: #f472b6; /* Pink */
-    --radius-sm: 0.75rem;
-    --radius-md: 1rem;
-    --radius-lg: 1.25rem;
-    --radius-xl: 1.5rem;
   }
+}
+
+/* ── Animation Token CSS Custom Properties ── */
+:root {
+  --motion-duration-fast: 0.15s;
+  --motion-duration-base: 0.25s;
+  --motion-duration-slow: 0.4s;
+  --motion-duration-slower: 0.6s;
+  --motion-ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-pop: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Zero-duration overrides for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0s;
+    --motion-duration-base: 0s;
+    --motion-duration-slow: 0s;
+    --motion-duration-slower: 0s;
+  }
+}
+
+/* Zero-duration overrides for potato mode */
+[data-potato-mode] {
+  --motion-duration-fast: 0s;
+  --motion-duration-base: 0s;
+  --motion-duration-slow: 0s;
+  --motion-duration-slower: 0s;
 }
 
 @layer base {
@@ -363,7 +710,6 @@
   & button,
   & a,
   & input,
-  & select,
   & textarea,
   & [role="button"],
   & .bg-card,
@@ -447,11 +793,70 @@
   }
 }
 
+/* ====== ANIMATED BACKGROUND — GLASS OVERRIDE ====== */
+/* When the dashboard gradient background is active, make sidebar and
+   header more translucent so the mesh shows through. Must come AFTER
+   the Apple theme rules to override their !important backgrounds. */
+
+aside[data-animated-bg],
+header[data-animated-bg],
+div[data-animated-bg].fixed.bottom-0 {
+  background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+  border: none !important;
+}
+
+/* Keep breadcrumb/nav inside the top bar from adding a second opaque layer. */
+header[data-animated-bg] nav:not(aside nav) {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+}
+
+/* Sidebar nav: transparent background + hidden scrollbar */
+aside[data-animated-bg] nav {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: none !important;
+}
+
+/* Content elements: more translucent when animated bg is active */
+[data-animated-bg] .bg-card,
+[data-animated-bg] .rounded-lg.border.bg-card {
+  background: color-mix(in srgb, var(--color-card) 45%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-border) 30%, transparent) !important;
+}
+
+[data-animated-bg] input,
+[data-animated-bg] textarea {
+  background: color-mix(in srgb, var(--color-background) 50%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-border) 40%, transparent) !important;
+}
+
+[data-animated-bg] table {
+  background: color-mix(in srgb, var(--color-background) 35%, transparent) !important;
+}
+
+[data-animated-bg] .bg-background {
+  background: color-mix(in srgb, var(--color-background) 40%, transparent) !important;
+}
+
+aside nav {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+aside nav:hover {
+  scrollbar-color: color-mix(in srgb, var(--color-foreground) 20%, transparent) transparent;
+}
+
 /* ====== GLASS BUTTONS ====== */
 
 .apple-light {
-  & button,
-  & [role="button"] {
+  & button:not(aside button),
+  & [role="button"]:not(aside [role="button"]) {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
@@ -471,15 +876,15 @@
   }
 
   & button:not(.bg-primary):not(.bg-destructive):hover,
-  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):not(.octagon-button):hover {
     background: rgba(99, 102, 241, 0.1) !important;
     border-color: rgba(99, 102, 241, 0.3) !important;
   }
 }
 
 .apple-dark {
-  & button,
-  & [role="button"] {
+  & button:not(aside button):not(.octagon-button),
+  & [role="button"]:not(aside [role="button"]):not(.octagon-button) {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
@@ -499,7 +904,7 @@
   }
 
   & button:not(.bg-primary):not(.bg-destructive):hover,
-  & [role="button"]:not(.bg-primary):not(.bg-destructive):hover {
+  & [role="button"]:not(.bg-primary):not(.bg-destructive):not(.octagon-button):hover {
     background: rgba(129, 140, 248, 0.15) !important;
     border-color: rgba(129, 140, 248, 0.3) !important;
   }
@@ -508,19 +913,18 @@
 /* ====== GLASS INPUTS ====== */
 
 .apple-light {
-  & input,
-  & textarea,
-  & select {
+  & input:not([type='checkbox']):not([type='radio']):not([cmdk-input]),
+  & textarea {
     background: rgba(255, 255, 255, 0.7) !important;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(148, 163, 184, 0.3) !important;
+    border-radius: var(--radius-lg) !important;
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
   }
 
-  & input:focus,
-  & textarea:focus,
-  & select:focus {
+  & input:not([type='checkbox']):not([type='radio']):not([cmdk-input]):focus,
+  & textarea:focus {
     background: rgba(255, 255, 255, 0.9) !important;
     border-color: rgba(99, 102, 241, 0.5) !important;
     box-shadow:
@@ -530,19 +934,18 @@
 }
 
 .apple-dark {
-  & input,
-  & textarea,
-  & select {
+  & input:not([type='checkbox']):not([type='radio']):not([cmdk-input]),
+  & textarea {
     background: rgba(30, 32, 48, 0.6) !important;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(148, 163, 184, 0.15) !important;
+    border-radius: var(--radius-lg) !important;
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
-  & input:focus,
-  & textarea:focus,
-  & select:focus {
+  & input:not([type='checkbox']):not([type='radio']):not([cmdk-input]):focus,
+  & textarea:focus {
     background: rgba(40, 42, 60, 0.8) !important;
     border-color: rgba(129, 140, 248, 0.5) !important;
     box-shadow:
@@ -551,12 +954,35 @@
   }
 }
 
+/* Opt-out for fields that must remain opaque even with Apple glass input overrides */
+input.input-solid-bg,
+input.input-solid-bg:focus {
+  background: var(--color-background) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.apple-light input.input-solid-bg:not([type='checkbox']):not([type='radio']),
+.apple-light input.input-solid-bg:not([type='checkbox']):not([type='radio']):focus,
+.apple-dark input.input-solid-bg:not([type='checkbox']):not([type='radio']),
+.apple-dark input.input-solid-bg:not([type='checkbox']):not([type='radio']):focus {
+  background: var(--color-background) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* ====== GLASS POPOVERS & DROPDOWNS ====== */
 
 .apple-light {
   & .bg-popover,
   & [data-radix-popper-content-wrapper] > div {
     background: rgba(255, 255, 255, 0.85) !important;
+    border-radius: var(--radius-lg) !important;
+    overflow: hidden;
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
     border: 1px solid rgba(255, 255, 255, 0.6) !important;
@@ -570,6 +996,8 @@
   & .bg-popover,
   & [data-radix-popper-content-wrapper] > div {
     background: rgba(20, 22, 35, 0.85) !important;
+    border-radius: var(--radius-lg) !important;
+    overflow: hidden;
     backdrop-filter: blur(24px) saturate(200%);
     -webkit-backdrop-filter: blur(24px) saturate(200%);
     border: 1px solid rgba(148, 163, 184, 0.12) !important;
@@ -699,21 +1127,21 @@
 
 .apple-light {
   & header,
-  & nav {
+  & nav:not(aside nav) {
     background: rgba(255, 255, 255, 0.7) !important;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5) !important;
   }
 }
 
 .apple-dark {
   & header,
-  & nav {
+  & nav:not(aside nav) {
     background: rgba(15, 15, 25, 0.75) !important;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(148, 163, 184, 0.08) !important;
   }
 }
 
@@ -757,6 +1185,18 @@
   }
 }
 
+@keyframes ai-insight-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
 /* ====== STATUS PULSE ANIMATION ====== */
 @keyframes status-pulse {
   0%, 100% {
@@ -771,23 +1211,874 @@
   animation: status-pulse 2s ease-in-out infinite;
 }
 
-/* ====== PAGE TRANSITION ANIMATIONS ====== */
-@keyframes page-fade-in {
+
+/* ============================================
+   CINEMATIC LOGIN EXPERIENCE
+   ============================================ */
+
+.login-gradient-mesh {
+  position: absolute;
+  inset: -30%;
+  z-index: 0;
+  will-change: transform, filter;
+  contain: layout style paint;
+  background:
+    conic-gradient(from 90deg at 20% 20%, oklch(70% 0.14 240 / 0.3), transparent 35%),
+    conic-gradient(from 210deg at 80% 15%, oklch(72% 0.12 340 / 0.25), transparent 40%),
+    conic-gradient(from 330deg at 75% 85%, oklch(78% 0.12 165 / 0.25), transparent 35%),
+    radial-gradient(circle at 30% 70%, oklch(60% 0.08 250 / 0.25), transparent 40%),
+    radial-gradient(circle at 70% 30%, oklch(82% 0.08 110 / 0.2), transparent 40%);
+  filter: blur(56px);
+}
+
+.login-gradient-mesh.mesh-classic {
+  background:
+    conic-gradient(from 90deg at 20% 20%, oklch(70% 0.14 240 / 0.3), transparent 35%),
+    conic-gradient(from 210deg at 80% 15%, oklch(72% 0.12 340 / 0.25), transparent 40%),
+    conic-gradient(from 330deg at 75% 85%, oklch(78% 0.12 165 / 0.25), transparent 35%),
+    radial-gradient(circle at 30% 70%, oklch(60% 0.08 250 / 0.25), transparent 40%),
+    radial-gradient(circle at 70% 30%, oklch(82% 0.08 110 / 0.2), transparent 40%);
+}
+
+.login-gradient-mesh.mesh-aurora {
+  background:
+    conic-gradient(from 120deg at 16% 18%, oklch(74% 0.16 205 / 0.34), transparent 35%),
+    conic-gradient(from 240deg at 84% 20%, oklch(70% 0.15 300 / 0.3), transparent 40%),
+    conic-gradient(from 350deg at 72% 82%, oklch(78% 0.13 160 / 0.26), transparent 36%),
+    radial-gradient(circle at 28% 74%, oklch(62% 0.1 220 / 0.25), transparent 42%),
+    radial-gradient(circle at 74% 34%, oklch(84% 0.08 120 / 0.18), transparent 42%);
+}
+
+.login-gradient-mesh.mesh-ocean {
+  background:
+    conic-gradient(from 95deg at 18% 16%, oklch(72% 0.14 240 / 0.34), transparent 36%),
+    conic-gradient(from 205deg at 82% 18%, oklch(69% 0.12 215 / 0.3), transparent 40%),
+    conic-gradient(from 320deg at 76% 82%, oklch(76% 0.11 180 / 0.24), transparent 38%),
+    radial-gradient(circle at 24% 76%, oklch(58% 0.08 255 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 30%, oklch(80% 0.08 195 / 0.2), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-sunset {
+  background:
+    conic-gradient(from 102deg at 18% 18%, oklch(78% 0.16 70 / 0.32), transparent 36%),
+    conic-gradient(from 218deg at 84% 18%, oklch(72% 0.17 20 / 0.3), transparent 40%),
+    conic-gradient(from 338deg at 72% 84%, oklch(74% 0.13 338 / 0.24), transparent 36%),
+    radial-gradient(circle at 28% 74%, oklch(62% 0.1 35 / 0.24), transparent 42%),
+    radial-gradient(circle at 74% 30%, oklch(84% 0.07 95 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-nebula {
+  background:
+    conic-gradient(from 88deg at 20% 18%, oklch(66% 0.17 285 / 0.34), transparent 36%),
+    conic-gradient(from 210deg at 82% 20%, oklch(63% 0.16 250 / 0.3), transparent 40%),
+    conic-gradient(from 332deg at 76% 84%, oklch(71% 0.13 320 / 0.24), transparent 36%),
+    radial-gradient(circle at 26% 76%, oklch(56% 0.1 270 / 0.24), transparent 44%),
+    radial-gradient(circle at 76% 32%, oklch(78% 0.08 300 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-emerald {
+  background:
+    conic-gradient(from 94deg at 20% 16%, oklch(74% 0.14 165 / 0.34), transparent 36%),
+    conic-gradient(from 214deg at 82% 20%, oklch(70% 0.13 190 / 0.3), transparent 40%),
+    conic-gradient(from 334deg at 74% 82%, oklch(77% 0.1 145 / 0.24), transparent 36%),
+    radial-gradient(circle at 28% 74%, oklch(58% 0.08 170 / 0.24), transparent 44%),
+    radial-gradient(circle at 74% 30%, oklch(82% 0.07 125 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-glacier {
+  background:
+    conic-gradient(from 90deg at 18% 16%, oklch(80% 0.1 235 / 0.34), transparent 36%),
+    conic-gradient(from 210deg at 84% 18%, oklch(76% 0.11 210 / 0.3), transparent 40%),
+    conic-gradient(from 332deg at 74% 84%, oklch(84% 0.08 180 / 0.24), transparent 36%),
+    radial-gradient(circle at 24% 74%, oklch(66% 0.07 255 / 0.24), transparent 44%),
+    radial-gradient(circle at 76% 30%, oklch(88% 0.06 150 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-emberstorm {
+  background:
+    conic-gradient(from 102deg at 18% 18%, oklch(74% 0.18 50 / 0.34), transparent 36%),
+    conic-gradient(from 228deg at 84% 18%, oklch(68% 0.2 28 / 0.3), transparent 40%),
+    conic-gradient(from 338deg at 74% 82%, oklch(64% 0.14 12 / 0.24), transparent 36%),
+    radial-gradient(circle at 26% 74%, oklch(58% 0.12 22 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 32%, oklch(82% 0.08 70 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-noctis {
+  background:
+    conic-gradient(from 88deg at 18% 16%, oklch(58% 0.08 260 / 0.34), transparent 36%),
+    conic-gradient(from 212deg at 82% 20%, oklch(54% 0.09 230 / 0.3), transparent 40%),
+    conic-gradient(from 330deg at 76% 84%, oklch(62% 0.08 285 / 0.24), transparent 36%),
+    radial-gradient(circle at 24% 76%, oklch(48% 0.06 248 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 30%, oklch(68% 0.06 210 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-cotton-candy {
+  background:
+    conic-gradient(from 96deg at 18% 16%, oklch(84% 0.14 340 / 0.34), transparent 36%),
+    conic-gradient(from 212deg at 84% 18%, oklch(82% 0.12 210 / 0.3), transparent 40%),
+    conic-gradient(from 334deg at 74% 84%, oklch(86% 0.1 305 / 0.24), transparent 36%),
+    radial-gradient(circle at 24% 74%, oklch(74% 0.1 320 / 0.24), transparent 44%),
+    radial-gradient(circle at 78% 30%, oklch(88% 0.08 180 / 0.18), transparent 44%);
+}
+
+.login-gradient-mesh.mesh-chaos {
+  background:
+    conic-gradient(from 70deg at 14% 18%, oklch(78% 0.28 200 / 0.38), transparent 34%),
+    conic-gradient(from 190deg at 86% 16%, oklch(72% 0.32 345 / 0.36), transparent 38%),
+    conic-gradient(from 310deg at 78% 84%, oklch(80% 0.28 130 / 0.34), transparent 36%),
+    radial-gradient(circle at 24% 78%, oklch(66% 0.24 30 / 0.3), transparent 42%),
+    radial-gradient(circle at 76% 28%, oklch(84% 0.22 280 / 0.26), transparent 42%);
+}
+
+.login-gradient-mesh-animate {
+  animation: login-mesh-shift 16s linear infinite;
+}
+
+.login-card {
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-color: color-mix(in oklab, var(--color-border) 70%, transparent);
+}
+
+.login-stage-in {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  filter: blur(6px);
+  animation: login-stage-in 520ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.login-logo-shell {
+  animation: login-logo-shell-in 380ms cubic-bezier(0.2, 0.75, 0.1, 1) 120ms both;
+}
+
+.login-logo {
+  overflow: visible;
+}
+
+.login-logo-path {
+  stroke-dasharray: 140;
+  stroke-dashoffset: 140;
+  animation: login-logo-draw 520ms ease forwards;
+  animation-delay: var(--path-delay, 0ms);
+}
+
+.login-logo-shell .login-logo {
+  animation: login-logo-pulse 2.8s ease-in-out 720ms infinite;
+}
+
+.login-typewriter {
+  margin-inline: auto;
+  width: 22ch;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid color-mix(in oklab, var(--color-foreground) 60%, transparent);
+  animation:
+    login-typewriter 1s steps(13, end) 260ms both,
+    login-cursor 900ms step-end infinite;
+}
+
+.login-particle {
+  position: absolute;
+  bottom: -1.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, oklch(68% 0.16 248 / 0.8), oklch(76% 0.18 165 / 0.8));
+  box-shadow: 0 0 12px oklch(72% 0.16 248 / 0.35);
+  will-change: transform, opacity;
+  contain: layout style;
+  animation-name: login-float-particle;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.login-input {
+  transition:
+    border-color 250ms ease,
+    box-shadow 250ms ease,
+    transform 200ms ease,
+    background-color 250ms ease;
+}
+
+.login-input:focus-visible {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--color-card), var(--color-card)) padding-box,
+    linear-gradient(115deg, oklch(72% 0.16 248), oklch(75% 0.18 165), oklch(76% 0.14 28)) border-box;
+  border: 1px solid transparent;
+  box-shadow:
+    0 0 0 3px oklch(72% 0.13 248 / 0.2),
+    0 8px 16px oklch(18% 0.03 265 / 0.18);
+  transform: scale(1.01);
+}
+
+.login-submit {
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.login-submit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    95deg,
+    transparent 0%,
+    color-mix(in oklab, #fff 65%, transparent) 45%,
+    transparent 100%
+  );
+  transition: transform 350ms ease;
+}
+
+.login-submit:hover::before {
+  transform: translateX(120%);
+}
+
+.login-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px color-mix(in oklab, var(--color-primary) 45%, transparent);
+}
+
+.login-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid color-mix(in oklab, var(--color-primary-foreground) 35%, transparent);
+  border-top-color: var(--color-primary-foreground);
+  animation: login-spin 600ms linear infinite;
+}
+
+.login-burst {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--color-primary-foreground) 80%, white);
+  opacity: 0;
+  animation: login-burst 420ms ease-out forwards;
+}
+
+.login-burst-1 {
+  left: 30%;
+  top: 50%;
+  animation-delay: 10ms;
+}
+
+.login-burst-2 {
+  left: 45%;
+  top: 25%;
+  animation-delay: 30ms;
+}
+
+.login-burst-3 {
+  left: 60%;
+  top: 60%;
+  animation-delay: 50ms;
+}
+
+.login-burst-4 {
+  left: 72%;
+  top: 35%;
+  animation-delay: 70ms;
+}
+
+.login-error-shake {
+  animation: login-error-shake 260ms ease;
+}
+
+@keyframes login-stage-in {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes login-logo-shell-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: scale(0.95) translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1) translateY(0);
   }
 }
 
-.animate-page-in {
-  animation: page-fade-in 0.3s ease-out;
+@keyframes login-logo-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
-/* Apply to main content area */
-main > div {
-  animation: page-fade-in 0.25s ease-out;
+@keyframes login-logo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 10px oklch(72% 0.14 248 / 0.35));
+  }
+}
+
+@keyframes login-typewriter {
+  from {
+    width: 0;
+  }
+  to {
+    width: 22ch;
+  }
+}
+
+@keyframes login-cursor {
+  50% {
+    border-right-color: transparent;
+  }
+}
+
+@keyframes login-float-particle {
+  from {
+    transform: translateY(0) scale(0.9);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-110vh) scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes login-burst {
+  0% {
+    transform: translate(0, 0) scale(0.7);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(18px, -12px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes login-error-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes login-mesh-shift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(56px) hue-rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-2%, 2%, 0) scale(1.04);
+    filter: blur(62px) hue-rotate(20deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(56px) hue-rotate(0deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .login-card {
+    padding: 1.5rem;
+  }
+
+  .login-gradient-mesh {
+    inset: -45%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-gradient-mesh-animate,
+  .login-stage-in,
+  .login-logo-shell,
+  .login-logo-path,
+  .login-typewriter,
+  .login-particle,
+  .login-submit::before,
+  .login-spinner,
+  .login-burst,
+  .login-error-shake,
+  .status-pulse {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .login-gradient-mesh {
+    will-change: auto;
+  }
+
+  .login-typewriter {
+    border-right: 0;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .login-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  [data-animated-bg] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ============================================
+   RETRO BACKGROUNDS
+   ============================================ */
+
+/* Shared base */
+.retro-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* --- 70s: bold sweeping arcs --- */
+.retro-70s-bg { background: #f4edd8; }
+
+.retro-70s-top {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 180% 140% at -25% 15%,
+      #b8912e 0%, #b8912e 12%,
+      #f0e6cf 12.5%, #f0e6cf 15%,
+      #6d9e8e 15%, #6d9e8e 26%,
+      #f0e6cf 26.5%, #f0e6cf 29%,
+      #c47458 29%, #c47458 39%,
+      transparent 40%
+    );
+  mask-image: linear-gradient(180deg, black 0%, black 30%, transparent 60%);
+  -webkit-mask-image: linear-gradient(180deg, black 0%, black 30%, transparent 60%);
+}
+
+.retro-70s-bottom {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 180% 140% at 125% 85%,
+      #c47458 0%, #c47458 12%,
+      #f0e6cf 12.5%, #f0e6cf 15%,
+      #b8912e 15%, #b8912e 26%,
+      #f0e6cf 26.5%, #f0e6cf 29%,
+      #6d9e8e 29%, #6d9e8e 39%,
+      transparent 40%
+    );
+  mask-image: linear-gradient(0deg, black 0%, black 30%, transparent 60%);
+  -webkit-mask-image: linear-gradient(0deg, black 0%, black 30%, transparent 60%);
+}
+
+/* --- Arcade: neon grid on dark --- */
+.retro-arcade-bg {
+  background: linear-gradient(180deg, #0c0c14 0%, #18103a 50%, #0c0c14 100%);
+}
+
+.retro-arcade-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(255, 45, 149, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.07) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+.retro-arcade-bg::after {
+  content: '';
+  position: absolute;
+  top: 40%;
+  left: -10%;
+  right: -10%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #ff2d95, #00e5ff, #ff2d95, transparent);
+  box-shadow: 0 0 30px rgba(255, 45, 149, 0.4), 0 0 80px rgba(0, 229, 255, 0.2);
+}
+
+.retro-arcade-glow {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 40%;
+  background: radial-gradient(ellipse, rgba(138, 43, 226, 0.12) 0%, transparent 70%);
+  filter: blur(40px);
+}
+
+/* --- Terminal: green phosphor scanlines --- */
+.retro-terminal-bg {
+  background: #0a0a0a;
+}
+
+.retro-terminal-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 221, 0, 0.03) 0px,
+    rgba(0, 221, 0, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.retro-terminal-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 221, 0, 0.06) 0%, transparent 70%);
+}
+
+.retro-terminal-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* --- Vaporwave: pastel neon gradient mesh --- */
+.retro-vaporwave-bg {
+  background: linear-gradient(135deg, #1a1030 0%, #2a1550 50%, #1a1030 100%);
+}
+
+.retro-vaporwave-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 50% 50% at 25% 30%, rgba(255, 113, 206, 0.15) 0%, transparent 100%),
+    radial-gradient(ellipse 50% 50% at 75% 70%, rgba(1, 205, 254, 0.15) 0%, transparent 100%),
+    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(185, 103, 255, 0.1) 0%, transparent 100%);
+}
+
+.retro-vaporwave-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 30px,
+      rgba(255, 113, 206, 0.04) 30px,
+      rgba(255, 113, 206, 0.04) 31px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 30px,
+      rgba(1, 205, 254, 0.04) 30px,
+      rgba(1, 205, 254, 0.04) 31px
+    );
+}
+
+/* Mobile safe area insets for bottom nav */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pb-safe-comfort {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem);
+}
+
+/* Mobile responsive table scrolling */
+@media (max-width: 767px) {
+  .mobile-scroll-table {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+  }
+
+  .mobile-scroll-table table {
+    min-width: 600px;
+  }
+
+  /* Larger touch targets */
+  .mobile-touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Keyboard-first focus ring — gradient border replaces browser default */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-ring);
+  border-radius: inherit;
+}
+
+/* Table row keyboard selection highlight */
+tr.keyboard-selected {
+  background-color: var(--color-accent) !important;
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+
+/* ====== ICON THEMES ====== */
+/* Override lucide-react SVG strokeWidth via CSS.
+   lucide sets strokeWidth as an SVG attribute (low specificity),
+   so CSS stroke-width wins. !important ensures it beats any
+   inline style edge cases. */
+
+[data-icon-theme="light"] .lucide {
+  stroke-width: 1.25 !important;
+}
+
+[data-icon-theme="bold"] .lucide {
+  stroke-width: 2.75 !important;
+}
+
+[data-icon-theme="duotone"] .lucide {
+  stroke-width: 1.75 !important;
+  fill: currentColor;
+  fill-opacity: 0.12;
+}
+
+/* Log Viewer container dropdown should be fully opaque (no glass/transparency). */
+.container-multi-select-solid {
+  background: #0f172a !important;
+  border-color: var(--color-border) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.container-multi-select-solid-input,
+.container-multi-select-solid-input:focus {
+  background: #0f172a !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@keyframes log-toggle-breathe {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.06);
+  }
+}
+
+.log-toggle-on {
+  animation: log-toggle-breathe 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .log-toggle-on {
+    animation: none;
+  }
+}
+
+/* Keep select dropdown item highlight rounded and avoid square global focus outline. */
+.themed-select-item:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+/* Potato Mode: hard-disable UI animation and transitions across the app shell. */
+[data-potato-mode] *,
+[data-potato-mode] *::before,
+[data-potato-mode] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+[data-potato-mode] *:hover,
+[data-potato-mode] *:focus,
+[data-potato-mode] *:active {
+  transform: none !important;
+}
+
+html[data-potato-mode],
+html[data-potato-mode] body {
+  scroll-behavior: auto !important;
+}
+
+/* Safety net: never hide login content when potato mode disables animations. */
+[data-potato-mode] .login-stage-in,
+[data-potato-mode] .login-logo-shell,
+[data-potato-mode] .login-typewriter,
+[data-potato-mode] .login-card {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* ============================================
+   TIER 1 VISUAL UPGRADES
+   ============================================ */
+
+/* ====== SPOTLIGHT CARD (mouse-follow radial glow) ====== */
+.spotlight-card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  clip-path: inset(0 round var(--radius-lg));
+}
+
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    circle 150px at var(--x, 50%) var(--y, 50%),
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    transparent 80%
+  );
+  clip-path: inset(0 round var(--radius-lg));
+}
+
+.spotlight-card:hover::before {
+  opacity: 1;
+}
+
+[data-potato-mode] .spotlight-card::before {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-card::before {
+    transition: none;
+  }
+}
+
+/* ====== NOISE / GRAIN TEXTURE OVERLAY ====== */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+[data-potato-mode] body::after {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    display: none;
+  }
+}
+
+/* ====== SHIMMER TEXT ANIMATION ====== */
+@keyframes shimmer-text {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}
+
+.shimmer-text-animate {
+  animation: shimmer-text 3s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text-animate {
+    animation: none;
+    background: none;
+    color: var(--color-muted-foreground);
+    -webkit-text-fill-color: var(--color-muted-foreground);
+  }
+}
+
+/* ====== ANIMATED GRADIENT BORDERS ====== */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.animate-gradient-border {
+  --angle: 0deg;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--color-card, white), var(--color-card, white)) padding-box,
+    conic-gradient(from var(--angle), transparent 25%, var(--color-primary, #6366f1) 50%, transparent 75%) border-box;
+  animation: rotate-gradient-border 4s linear infinite;
+}
+
+@keyframes rotate-gradient-border {
+  to {
+    --angle: 360deg;
+  }
+}
+
+[data-potato-mode] .animate-gradient-border {
+  animation: none;
+  border-color: var(--color-border);
+  background: var(--color-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-gradient-border {
+    animation: none;
+    border-color: var(--color-border);
+    background: var(--color-card);
+  }
+}
+
+/* ====== OCTAGON BUTTON OVERRIDE ====== */
+/* Force octagon buttons to have no background in all states and themes */
+.octagon-button,
+.octagon-button:hover,
+.octagon-button:focus,
+.octagon-button:active {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+}
+
+.apple-light .octagon-button:hover,
+.apple-dark .octagon-button:hover {
+  background: transparent !important;
+  border-color: transparent !important;
 }

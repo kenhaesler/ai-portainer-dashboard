@@ -9,6 +9,7 @@ vi.mock('../config/index.js', () => ({
     INVESTIGATION_MAX_CONCURRENT: 2,
     INVESTIGATION_LOG_TAIL_LINES: 50,
     INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
+    INVESTIGATION_MIN_SEVERITY: 'warning',
     OLLAMA_MODEL: 'llama3.2',
   }),
 }));
@@ -52,6 +53,18 @@ vi.mock('./investigation-store.js', () => ({
   updateInvestigationStatus: (...args: unknown[]) => mockUpdateInvestigationStatus(...args),
   getInvestigation: (...args: unknown[]) => mockGetInvestigation(...args),
   getRecentInvestigationForContainer: (...args: unknown[]) => mockGetRecentInvestigationForContainer(...args),
+}));
+
+const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
+vi.mock('./portainer-cache.js', () => ({
+  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
+  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+  TTL: { CONTAINERS: 300 },
+}));
+
+const mockGenerateForecast = vi.fn();
+vi.mock('./capacity-forecaster.js', () => ({
+  generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
 }));
 
 // Import after mocks are set up
@@ -222,6 +235,42 @@ Hope this helps!`;
       const result = parseInvestigationResponse(longText);
       expect(result.root_cause.length).toBe(2000);
     });
+
+    it('should extract ai_summary from JSON response', () => {
+      const json = JSON.stringify({
+        root_cause: 'Memory leak in Node.js process',
+        ai_summary: 'Container web-app has a memory leak causing OOM kills.',
+        confidence_score: 0.85,
+      });
+
+      const result = parseInvestigationResponse(json);
+      expect(result.ai_summary).toBe('Container web-app has a memory leak causing OOM kills.');
+    });
+
+    it('should generate fallback ai_summary from root_cause when ai_summary missing', () => {
+      const json = JSON.stringify({
+        root_cause: 'Memory leak in Node.js process due to unclosed database connections',
+      });
+
+      const result = parseInvestigationResponse(json);
+      expect(result.ai_summary).toBe('Memory leak in Node.js process due to unclosed database connections');
+    });
+
+    it('should truncate ai_summary to 200 chars', () => {
+      const json = JSON.stringify({
+        root_cause: 'Test',
+        ai_summary: 'x'.repeat(300),
+      });
+
+      const result = parseInvestigationResponse(json);
+      expect(result.ai_summary.length).toBe(200);
+    });
+
+    it('should generate ai_summary from raw text fallback', () => {
+      const response = 'The container is experiencing high CPU due to a runaway process.';
+      const result = parseInvestigationResponse(response);
+      expect(result.ai_summary).toBe(response);
+    });
   });
 
   describe('buildInvestigationPrompt', () => {
@@ -272,7 +321,7 @@ Hope this helps!`;
       expect(prompt).toContain('postgres (exited)');
     });
 
-    it('should include JSON format instructions', () => {
+    it('should include JSON format instructions with ai_summary', () => {
       const insight = makeInsight();
       const prompt = buildInvestigationPrompt(insight, {});
 
@@ -280,7 +329,56 @@ Hope this helps!`;
       expect(prompt).toContain('contributing_factors');
       expect(prompt).toContain('recommended_actions');
       expect(prompt).toContain('confidence_score');
+      expect(prompt).toContain('ai_summary');
       expect(prompt).toContain('JSON');
+    });
+
+    it('should include capacity forecast section when forecasts provided', () => {
+      const insight = makeInsight();
+      const prompt = buildInvestigationPrompt(insight, {
+        forecasts: [
+          {
+            containerId: 'abc123',
+            containerName: 'web-app',
+            metricType: 'cpu',
+            currentValue: 85.0,
+            trend: 'increasing',
+            slope: 1.5,
+            r_squared: 0.82,
+            forecast: [],
+            timeToThreshold: 3,
+            confidence: 'high',
+          },
+        ],
+      });
+
+      expect(prompt).toContain('Capacity Forecast');
+      expect(prompt).toContain('cpu');
+      expect(prompt).toContain('increasing');
+      expect(prompt).toContain('3h');
+      expect(prompt).toContain('high');
+    });
+
+    it('should show N/A for timeToThreshold when null', () => {
+      const insight = makeInsight();
+      const prompt = buildInvestigationPrompt(insight, {
+        forecasts: [
+          {
+            containerId: 'abc123',
+            containerName: 'web-app',
+            metricType: 'memory',
+            currentValue: 50.0,
+            trend: 'stable',
+            slope: 0.01,
+            r_squared: 0.1,
+            forecast: [],
+            timeToThreshold: null,
+            confidence: 'low',
+          },
+        ],
+      });
+
+      expect(prompt).toContain('time-to-threshold=N/A');
     });
 
     it('should handle null container_id and container_name', () => {
@@ -367,6 +465,33 @@ Hope this helps!`;
       expect(mockInsertInvestigation).not.toHaveBeenCalled();
     });
 
+    it('should use cachedFetchSWR for getContainers during evidence gathering', async () => {
+      mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"info","recommended_actions":[],"confidence_score":0.5}');
+      mockGetContainerLogs.mockResolvedValue('some logs');
+      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 10, sample_count: 30 });
+      mockGetMetrics.mockReturnValue([{ value: 60 }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'cache-test-1', Names: ['/web-app'], State: 'running' },
+        { Id: 'def456', Names: ['/redis'], State: 'running' },
+      ]);
+      mockGetInvestigation.mockReturnValue({ id: 'inv-1', status: 'complete' });
+
+      // Use unique container_id to avoid in-memory cooldown collision with other tests
+      const insight = makeInsight({ container_id: 'cache-test-1' });
+      await triggerInvestigation(insight);
+
+      // Wait for fire-and-forget investigation to complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockCachedFetchSWR).toHaveBeenCalledWith(
+        'containers:1',
+        300,
+        expect.any(Function),
+      );
+    });
+
     it('should create investigation when all guards pass', async () => {
       mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
       mockIsOllamaAvailable.mockResolvedValue(true);
@@ -390,6 +515,30 @@ Hope this helps!`;
           container_name: 'web-app',
         }),
       );
+    });
+
+    it('should skip when insight severity is below INVESTIGATION_MIN_SEVERITY (#697)', async () => {
+      const insight = makeInsight({ severity: 'info' });
+      await triggerInvestigation(insight);
+
+      expect(mockInsertInvestigation).not.toHaveBeenCalled();
+    });
+
+    it('should allow critical severity when min is warning (#697)', async () => {
+      mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
+      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"critical","recommended_actions":[],"confidence_score":0.9}');
+      mockGetContainerLogs.mockResolvedValue('some logs');
+      mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 10, sample_count: 30 });
+      mockGetMetrics.mockReturnValue([{ value: 60 }]);
+      mockGetContainers.mockResolvedValue([]);
+      mockGetInvestigation.mockReturnValue({ id: 'inv-1', status: 'complete' });
+
+      // Use unique container_id to avoid cooldown collision
+      const insight = makeInsight({ severity: 'critical', container_id: 'critical-test-1' });
+      await triggerInvestigation(insight);
+
+      expect(mockInsertInvestigation).toHaveBeenCalled();
     });
   });
 });

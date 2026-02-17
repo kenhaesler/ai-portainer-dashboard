@@ -1,4 +1,4 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Investigation, InvestigationStatus, InvestigationWithInsight } from '../models/investigation.js';
 
@@ -12,25 +12,25 @@ export interface InvestigationInsert {
   container_name: string | null;
 }
 
-export function insertInvestigation(investigation: InvestigationInsert): void {
-  const db = getDb();
-  db.prepare(`
+export async function insertInvestigation(investigation: InvestigationInsert): Promise<void> {
+  const db = getDbForDomain('investigations');
+  await db.execute(`
     INSERT INTO investigations (
       id, insight_id, endpoint_id, container_id, container_name,
       status, created_at
-    ) VALUES (?, ?, ?, ?, ?, 'pending', datetime('now'))
-  `).run(
+    ) VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+  `, [
     investigation.id,
     investigation.insight_id,
     investigation.endpoint_id,
     investigation.container_id,
     investigation.container_name,
-  );
+  ]);
 
   log.debug({ investigationId: investigation.id }, 'Investigation inserted');
 }
 
-export function updateInvestigationStatus(
+export async function updateInvestigationStatus(
   id: string,
   status: InvestigationStatus,
   updates?: {
@@ -42,11 +42,12 @@ export function updateInvestigationStatus(
     confidence_score?: number;
     analysis_duration_ms?: number;
     llm_model?: string;
+    ai_summary?: string;
     error_message?: string;
     completed_at?: string;
   },
-): void {
-  const db = getDb();
+): Promise<void> {
+  const db = getDbForDomain('investigations');
   const sets = ['status = ?'];
   const params: unknown[] = [status];
 
@@ -61,27 +62,26 @@ export function updateInvestigationStatus(
 
   params.push(id);
 
-  db.prepare(`UPDATE investigations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  await db.execute(`UPDATE investigations SET ${sets.join(', ')} WHERE id = ?`, params);
   log.debug({ investigationId: id, status }, 'Investigation status updated');
 }
 
-export function getInvestigation(id: string): InvestigationWithInsight | undefined {
-  const db = getDb();
-  return db
-    .prepare(`
-      SELECT i.*, ins.title as insight_title, ins.severity as insight_severity, ins.category as insight_category
-      FROM investigations i
-      LEFT JOIN insights ins ON i.insight_id = ins.id
-      WHERE i.id = ?
-    `)
-    .get(id) as InvestigationWithInsight | undefined;
+export async function getInvestigation(id: string): Promise<InvestigationWithInsight | undefined> {
+  const db = getDbForDomain('investigations');
+  return await db.queryOne<InvestigationWithInsight>(`
+    SELECT i.*, ins.title as insight_title, ins.severity as insight_severity, ins.category as insight_category
+    FROM investigations i
+    LEFT JOIN insights ins ON i.insight_id = ins.id
+    WHERE i.id = ?
+  `, [id]) ?? undefined;
 }
 
-export function getInvestigationByInsightId(insightId: string): Investigation | undefined {
-  const db = getDb();
-  return db
-    .prepare('SELECT * FROM investigations WHERE insight_id = ? ORDER BY created_at DESC LIMIT 1')
-    .get(insightId) as Investigation | undefined;
+export async function getInvestigationByInsightId(insightId: string): Promise<Investigation | undefined> {
+  const db = getDbForDomain('investigations');
+  return await db.queryOne<Investigation>(
+    'SELECT * FROM investigations WHERE insight_id = ? ORDER BY created_at DESC LIMIT 1',
+    [insightId],
+  ) ?? undefined;
 }
 
 export interface GetInvestigationsOptions {
@@ -91,8 +91,8 @@ export interface GetInvestigationsOptions {
   offset?: number;
 }
 
-export function getInvestigations(options: GetInvestigationsOptions = {}): InvestigationWithInsight[] {
-  const db = getDb();
+export async function getInvestigations(options: GetInvestigationsOptions = {}): Promise<InvestigationWithInsight[]> {
+  const db = getDbForDomain('investigations');
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -110,31 +110,27 @@ export function getInvestigations(options: GetInvestigationsOptions = {}): Inves
   const limit = options.limit ?? 50;
   const offset = options.offset ?? 0;
 
-  return db
-    .prepare(`
-      SELECT i.*, ins.title as insight_title, ins.severity as insight_severity, ins.category as insight_category
-      FROM investigations i
-      LEFT JOIN insights ins ON i.insight_id = ins.id
-      ${where}
-      ORDER BY i.created_at DESC
-      LIMIT ? OFFSET ?
-    `)
-    .all(...params, limit, offset) as InvestigationWithInsight[];
+  return await db.query<InvestigationWithInsight>(`
+    SELECT i.*, ins.title as insight_title, ins.severity as insight_severity, ins.category as insight_category
+    FROM investigations i
+    LEFT JOIN insights ins ON i.insight_id = ins.id
+    ${where}
+    ORDER BY i.created_at DESC
+    LIMIT ? OFFSET ?
+  `, [...params, limit, offset]);
 }
 
-export function getRecentInvestigationForContainer(
+export async function getRecentInvestigationForContainer(
   containerId: string,
   withinMinutes: number,
-): Investigation | undefined {
-  const db = getDb();
-  return db
-    .prepare(`
-      SELECT * FROM investigations
-      WHERE container_id = ?
-        AND created_at >= datetime('now', ? || ' minutes')
-        AND status != 'failed'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `)
-    .get(containerId, `-${withinMinutes}`) as Investigation | undefined;
+): Promise<Investigation | undefined> {
+  const db = getDbForDomain('investigations');
+  return await db.queryOne<Investigation>(`
+    SELECT * FROM investigations
+    WHERE container_id = ?
+      AND created_at >= NOW() + (? || ' minutes')::INTERVAL
+      AND status != 'failed'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [containerId, `-${withinMinutes}`]) ?? undefined;
 }

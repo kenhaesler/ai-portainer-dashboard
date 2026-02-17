@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  Shield,
   CheckCircle2,
   XCircle,
   Play,
@@ -14,6 +15,7 @@ import {
   Server,
   RefreshCw,
   Filter,
+  MessageSquare,
 } from 'lucide-react';
 import {
   useRemediationActions,
@@ -26,6 +28,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useSockets } from '@/providers/socket-provider';
 import { cn, formatDate } from '@/lib/utils';
 
 type ActionStatus = 'all' | 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
@@ -44,8 +47,32 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   RESTART_CONTAINER: 'Restart Container',
   STOP_CONTAINER: 'Stop Container',
   START_CONTAINER: 'Start Container',
+  INVESTIGATE: 'Investigate',
   SCALE_UP: 'Scale Up',
   SCALE_DOWN: 'Scale Down',
+};
+
+type ActionRecord = {
+  id: string;
+  type?: string;
+  action_type?: string;
+  status: string;
+  container_id?: string;
+  containerId?: string;
+  container_name?: string;
+  containerName?: string;
+  endpoint_id?: number;
+  endpointId?: number;
+  rationale?: string;
+  description?: string;
+  suggested_by?: string;
+  suggestedBy?: string;
+  created_at?: string;
+  createdAt?: string;
+  approved_by?: string;
+  approvedBy?: string;
+  execution_result?: string;
+  result?: string;
 };
 
 interface ConfirmDialogProps {
@@ -57,6 +84,57 @@ interface ConfirmDialogProps {
   isLoading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+}
+
+type AnalysisPriority = 'high' | 'medium' | 'low';
+type AnalysisSeverity = 'critical' | 'warning' | 'info';
+
+interface ParsedAnalysis {
+  root_cause: string;
+  severity: AnalysisSeverity;
+  log_analysis: string;
+  confidence_score: number;
+  recommended_actions: Array<{
+    action: string;
+    priority: AnalysisPriority;
+    rationale: string;
+  }>;
+}
+
+function parseActionAnalysis(raw: string | undefined): ParsedAnalysis | null {
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.root_cause !== 'string' || typeof parsed.confidence_score !== 'number') return null;
+    if (!['critical', 'warning', 'info'].includes(String(parsed.severity))) return null;
+    if (!Array.isArray(parsed.recommended_actions)) return null;
+
+    const recommendedActions = parsed.recommended_actions
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const entry = item as Record<string, unknown>;
+        const action = typeof entry.action === 'string' ? entry.action : '';
+        const priority = entry.priority === 'high' || entry.priority === 'medium' || entry.priority === 'low'
+          ? entry.priority
+          : 'medium';
+        const rationale = typeof entry.rationale === 'string' ? entry.rationale : '';
+        if (!action) return null;
+        return { action, priority, rationale };
+      })
+      .filter((item): item is ParsedAnalysis['recommended_actions'][number] => item !== null);
+
+    return {
+      root_cause: parsed.root_cause,
+      severity: parsed.severity as AnalysisSeverity,
+      log_analysis: typeof parsed.log_analysis === 'string' ? parsed.log_analysis : '',
+      confidence_score: Math.max(0, Math.min(1, parsed.confidence_score)),
+      recommended_actions: recommendedActions,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function ConfirmDialog({
@@ -108,28 +186,11 @@ function ConfirmDialog({
 }
 
 interface ActionRowProps {
-  action: {
-    id: string;
-    type?: string;
-    action_type?: string;
-    status: string;
-    container_id?: string;
-    containerId?: string;
-    endpoint_id?: number;
-    endpointId?: number;
-    description: string;
-    suggested_by?: string;
-    suggestedBy?: string;
-    created_at?: string;
-    createdAt?: string;
-    approved_by?: string;
-    approvedBy?: string;
-    execution_result?: string;
-    result?: string;
-  };
+  action: ActionRecord;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onExecute: (id: string) => void;
+  onDiscuss: (action: ActionRecord) => void;
   isApproving: boolean;
   isRejecting: boolean;
   isExecuting: boolean;
@@ -140,23 +201,47 @@ function ActionRow({
   onApprove,
   onReject,
   onExecute,
+  onDiscuss,
   isApproving,
   isRejecting,
   isExecuting,
 }: ActionRowProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const actionType = action.action_type || action.type || 'Unknown';
   const containerId = action.container_id || action.containerId || '';
+  const containerName = action.container_name || action.containerName || 'unknown';
   const createdAt = action.created_at || action.createdAt || '';
   const suggestedBy = action.suggested_by || action.suggestedBy || 'AI Monitor';
+  const rationale = action.rationale || action.description || 'No rationale provided';
+  const parsedAnalysis = parseActionAnalysis(rationale);
+  const severityLabel = parsedAnalysis?.severity
+    ? `${parsedAnalysis.severity.charAt(0).toUpperCase()}${parsedAnalysis.severity.slice(1)}`
+    : null;
+  const severityClasses = parsedAnalysis?.severity === 'critical'
+    ? 'text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-300'
+    : parsedAnalysis?.severity === 'warning'
+      ? 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'text-blue-700 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300';
+  const structuredContentLength = parsedAnalysis
+    ? (
+      parsedAnalysis.root_cause.length
+      + parsedAnalysis.log_analysis.length
+      + parsedAnalysis.recommended_actions.reduce(
+        (total, recommendation) => total + recommendation.action.length + recommendation.rationale.length,
+        0,
+      )
+    )
+    : 0;
+  const shouldCollapse = parsedAnalysis
+    ? (
+      parsedAnalysis.log_analysis.length > 0
+      || parsedAnalysis.recommended_actions.length > 0
+      || structuredContentLength > 220
+    )
+    : rationale.length > 180;
 
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
-      <td className="p-4">
-        <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-primary" />
-          <span className="font-mono text-xs">{action.id.slice(0, 8)}</span>
-        </div>
-      </td>
       <td className="p-4">
         <span className="font-medium">
           {ACTION_TYPE_LABELS[actionType] || actionType}
@@ -165,7 +250,9 @@ function ActionRow({
       <td className="p-4">
         <div className="flex items-center gap-2">
           <Box className="h-4 w-4 text-muted-foreground" />
-          <span className="font-mono text-xs">{containerId.slice(0, 12)}</span>
+          <p className="font-medium" title={containerId ? `Container ID: ${containerId}` : undefined}>
+            {containerName}
+          </p>
         </div>
       </td>
       <td className="p-4">
@@ -182,8 +269,77 @@ function ActionRow({
           {createdAt ? formatDate(createdAt) : '-'}
         </span>
       </td>
+      <td className="p-4 max-w-sm align-top">
+        <div className="space-y-2">
+          {parsedAnalysis ? (
+            <div
+              className={cn(
+                'space-y-2 text-xs',
+                shouldCollapse && !isExpanded && 'max-h-28 overflow-hidden'
+              )}
+            >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
+                {severityLabel}
+              </span>
+              <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
+                Confidence: {(parsedAnalysis.confidence_score * 100).toFixed(0)}%
+              </span>
+            </div>
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">Root Cause:</span> {parsedAnalysis.root_cause}
+            </p>
+            {parsedAnalysis.log_analysis && (
+              <p className="text-muted-foreground">
+                <span className="font-medium text-foreground">Log Analysis:</span> {parsedAnalysis.log_analysis}
+              </p>
+            )}
+            {parsedAnalysis.recommended_actions.length > 0 && (
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Recommended Actions:</p>
+                {parsedAnalysis.recommended_actions.map((recommendation, index) => (
+                  <p key={`${recommendation.action}-${index}`} className="text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {recommendation.priority.toUpperCase()}:
+                    </span>{' '}
+                    {recommendation.action}
+                    {recommendation.rationale ? ` - ${recommendation.rationale}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+            </div>
+          ) : (
+            <p
+              className={cn(
+                'text-xs text-muted-foreground',
+                shouldCollapse && !isExpanded && 'line-clamp-3'
+              )}
+              title={rationale}
+            >
+              {rationale}
+            </p>
+          )}
+          {shouldCollapse && (
+            <button
+              onClick={() => setIsExpanded((prev) => !prev)}
+              className="text-xs font-medium text-primary hover:underline"
+              aria-expanded={isExpanded}
+            >
+              {isExpanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      </td>
       <td className="p-4">
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => onDiscuss(action)}
+            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
+          >
+            <MessageSquare className="h-3 w-3" />
+            Discuss with AI
+          </button>
           {action.status === 'pending' && (
             <>
               <button
@@ -257,6 +413,9 @@ function ActionRow({
 }
 
 export default function RemediationPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { remediationSocket } = useSockets();
   const [statusFilter, setStatusFilter] = useState<ActionStatus>('all');
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
@@ -283,6 +442,19 @@ export default function RemediationPage() {
     // Handle both array and object response formats
     return Array.isArray(actionsData) ? actionsData : (actionsData as any).actions || [];
   }, [actionsData]);
+
+  useEffect(() => {
+    if (!remediationSocket) return;
+    const refreshActions = () => {
+      queryClient.invalidateQueries({ queryKey: ['remediation', 'actions'] });
+    };
+    remediationSocket.on('actions:new', refreshActions);
+    remediationSocket.on('actions:updated', refreshActions);
+    return () => {
+      remediationSocket.off('actions:new', refreshActions);
+      remediationSocket.off('actions:updated', refreshActions);
+    };
+  }, [queryClient, remediationSocket]);
 
   // Stats
   const stats = useMemo(() => {
@@ -320,6 +492,34 @@ export default function RemediationPage() {
         },
       });
     }
+  };
+
+  const handleDiscuss = (action: ActionRecord) => {
+    const actionType = action.action_type || action.type || 'UNKNOWN_ACTION';
+    const containerName = action.container_name || action.containerName || 'unknown';
+    const containerId = action.container_id || action.containerId || 'unknown';
+    const prompt = [
+      'I need guidance on this remediation action before approval.',
+      `Action: ${ACTION_TYPE_LABELS[actionType] || actionType}`,
+      `Container: ${containerName}`,
+      `Container ID: ${containerId}`,
+      `Endpoint ID: ${action.endpoint_id || action.endpointId || 'unknown'}`,
+      `Status: ${action.status}`,
+      `Analysis Summary: ${action.rationale || action.description || 'none provided'}`,
+      '',
+      'Please explain:',
+      '1) Why this action is appropriate',
+      '2) Safer alternatives and tradeoffs',
+      '3) What quick checks I should run first',
+    ].join('\n');
+
+    navigate('/assistant', {
+      state: {
+        prefillPrompt: prompt,
+        source: 'remediation',
+        actionId: action.id,
+      },
+    });
   };
 
   // Error state
@@ -431,7 +631,7 @@ export default function RemediationPage() {
         <SkeletonCard className="h-[400px]" />
       ) : actions.length === 0 ? (
         <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <Shield className="mx-auto h-12 w-12 text-muted-foreground" />
+          <Box className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-semibold">No remediation actions</h3>
           <p className="mt-2 text-sm text-muted-foreground">
             {statusFilter === 'all'
@@ -445,12 +645,12 @@ export default function RemediationPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">ID</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Action Type</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Container</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Suggested By</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Analysis Summary</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -462,6 +662,7 @@ export default function RemediationPage() {
                     onApprove={handleApprove}
                     onReject={handleReject}
                     onExecute={handleExecuteClick}
+                    onDiscuss={handleDiscuss}
                     isApproving={approveAction.isPending && approveAction.variables === action.id}
                     isRejecting={rejectAction.isPending && rejectAction.variables === action.id}
                     isExecuting={executeAction.isPending && executeAction.variables === action.id}

@@ -1,0 +1,73 @@
+# Stack: workers — Application workers and backend API
+# 4 services: worker-1, worker-2, app-api, app-worker-queue
+# Networks: app-backend-net (external)
+
+services:
+  worker-1:
+    image: alpine:latest
+    container_name: worker-1
+    command: sh -c "while true; do echo 'Worker 1 processing...'; sleep 10; done"
+    labels:
+      app.tier: "worker"
+      app.env: "production"
+    restart: unless-stopped
+
+  worker-2:
+    image: alpine:latest
+    container_name: worker-2
+    command: sh -c "while true; do echo 'Worker 2 processing...'; sleep 15; done"
+    labels:
+      app.tier: "worker"
+      app.env: "production"
+    restart: unless-stopped
+
+  # API server that queries Redis and Postgres every 10s
+  app-api:
+    image: redis:7-alpine
+    container_name: app-api
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme-redis}@db-redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme-redis}
+    command: >
+      sh -c "
+      while true; do
+        echo \"[app-api] Pinging db-redis...\";
+        redis-cli -h db-redis -a \"$$REDIS_PASSWORD\" ping 2>/dev/null | grep -q PONG && echo '  redis(auth): OK' || echo '  redis(auth): FAIL';
+        echo \"[app-api] Pinging db-postgres...\";
+        nc -z -w2 db-postgres 5432 && echo '  postgres: OK' || echo '  postgres: FAIL';
+        sleep 10;
+      done"
+    networks:
+      - default
+      - app-backend-net
+    labels:
+      app.tier: "api"
+      app.env: "production"
+      app.role: "backend"
+    restart: unless-stopped
+
+  # Worker that polls RabbitMQ every 15s
+  app-worker-queue:
+    image: alpine:latest
+    container_name: app-worker-queue
+    command: >
+      sh -c "
+      while true; do
+        echo \"[app-worker-queue] Polling mq-rabbitmq...\";
+        nc -z -w2 mq-rabbitmq 5672 && echo '  rabbitmq: OK' || echo '  rabbitmq: FAIL';
+        sleep 15;
+      done"
+    networks:
+      - default
+      - app-backend-net
+    labels:
+      app.tier: "worker"
+      app.env: "production"
+      app.role: "consumer"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: workers-net
+  app-backend-net:
+    external: true

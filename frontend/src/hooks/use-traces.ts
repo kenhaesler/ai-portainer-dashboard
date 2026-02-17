@@ -23,33 +23,70 @@ interface Trace {
   status: 'ok' | 'error' | 'unset';
 }
 
-interface TracesOptions {
-  service?: string;
-  operation?: string;
+export interface TracesOptions {
+  from?: string;
+  to?: string;
+  serviceName?: string;
+  source?: string;
+  status?: 'ok' | 'error' | 'unset';
   minDuration?: number;
-  maxDuration?: number;
   limit?: number;
-  startTime?: string;
-  endTime?: string;
+  httpMethod?: string;
+  httpRoute?: string;
+  httpRouteMatch?: 'exact' | 'contains';
+  httpStatusCode?: number;
+  serviceNamespace?: string;
+  serviceNamespaceMatch?: 'exact' | 'contains';
+  serviceInstanceId?: string;
+  serviceVersion?: string;
+  deploymentEnvironment?: string;
+  containerId?: string;
+  containerName?: string;
+  containerNameMatch?: 'exact' | 'contains';
+  k8sNamespace?: string;
+  k8sNamespaceMatch?: 'exact' | 'contains';
+  k8sPodName?: string;
+  k8sContainerName?: string;
+  serverAddress?: string;
+  serverPort?: number;
+  clientAddress?: string;
+  urlFull?: string;
+  urlFullMatch?: 'exact' | 'contains';
+  urlScheme?: string;
+  networkTransport?: string;
+  networkProtocolName?: string;
+  networkProtocolVersion?: string;
+  netPeerName?: string;
+  netPeerNameMatch?: 'exact' | 'contains';
+  netPeerPort?: number;
+  hostName?: string;
+  hostNameMatch?: 'exact' | 'contains';
+  osType?: string;
+  processPid?: number;
+  processExecutableName?: string;
+  processExecutableNameMatch?: 'exact' | 'contains';
+  processCommand?: string;
+  processCommandMatch?: 'exact' | 'contains';
+  telemetrySdkName?: string;
+  telemetrySdkLanguage?: string;
+  telemetrySdkVersion?: string;
+  otelScopeName?: string;
+  otelScopeVersion?: string;
 }
 
 interface ServiceMapNode {
   id: string;
   name: string;
-  type: string;
-  metrics: {
-    requestRate: number;
-    errorRate: number;
-    avgLatency: number;
-  };
+  callCount?: number;
+  avgDuration?: number;
+  errorRate?: number;
 }
 
 interface ServiceMapEdge {
   source: string;
   target: string;
-  requestRate: number;
-  errorRate: number;
-  avgLatency: number;
+  callCount?: number;
+  avgDuration?: number;
 }
 
 interface ServiceMap {
@@ -62,11 +99,12 @@ interface TraceSummary {
   avgDuration: number;
   errorRate: number;
   services: number;
-  topOperations: Array<{
-    name: string;
-    count: number;
-    avgDuration: number;
-  }>;
+  sourceCounts?: {
+    http: number;
+    ebpf: number;
+    scheduler: number;
+    unknown: number;
+  };
 }
 
 export function useTraces(options?: TracesOptions) {
@@ -87,16 +125,22 @@ export function useTrace(traceId: string | undefined) {
   });
 }
 
-export function useServiceMap() {
+export function useServiceMap(options?: TracesOptions) {
   return useQuery<ServiceMap>({
-    queryKey: ['traces', 'service-map'],
-    queryFn: () => api.get<ServiceMap>('/api/traces/service-map'),
+    queryKey: ['traces', 'service-map', options],
+    queryFn: () => api.get<ServiceMap>(
+      '/api/traces/service-map',
+      { params: options as Record<string, string | number | boolean | undefined> }
+    ),
   });
 }
 
-export function useTraceSummary() {
+export function useTraceSummary(options?: Omit<TracesOptions, 'limit'>) {
   return useQuery<TraceSummary>({
-    queryKey: ['traces', 'summary'],
-    queryFn: () => api.get<TraceSummary>('/api/traces/summary'),
+    queryKey: ['traces', 'summary', options],
+    queryFn: () => api.get<TraceSummary>(
+      '/api/traces/summary',
+      { params: options as Record<string, string | number | boolean | undefined> }
+    ),
   });
 }

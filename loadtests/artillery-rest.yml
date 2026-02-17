@@ -1,0 +1,100 @@
+# Artillery REST API load test
+#
+# Simulates 10 concurrent users navigating the dashboard:
+#   dashboard summary → containers → metrics → stacks → networks → insights
+#
+# Logs in once before the test starts and shares the JWT token
+# across all virtual users to avoid hitting the login rate limit.
+#
+# Usage:
+#   npm run loadtest:rest
+#
+# Env vars (set by docker/docker-compose.loadtest.yml):
+#   BASE_URL          http://backend:3051
+#   DASHBOARD_USER    admin
+#   DASHBOARD_PASS    changeme123
+
+config:
+  target: "{{ $processEnvironment.BASE_URL }}"
+  processor: "./artillery-helpers.cjs"
+  phases:
+    # Ramp from 1 to 5 users over 10 seconds
+    - duration: 10
+      arrivalRate: 1
+      rampTo: 5
+      name: "Warm-up"
+    # Ramp from 5 to 10 users over 10 seconds
+    - duration: 10
+      arrivalRate: 5
+      rampTo: 10
+      name: "Ramp-up"
+    # Sustain 10 users for 60 seconds
+    - duration: 60
+      arrivalRate: 10
+      name: "Sustained load"
+    # Ramp down from 10 to 1 over 10 seconds
+    - duration: 10
+      arrivalRate: 10
+      rampTo: 1
+      name: "Cool-down"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Dashboard navigation flow"
+    beforeScenario: "setToken"
+    flow:
+      # Step 1: Dashboard summary (main page load)
+      - get:
+          url: "/api/dashboard/summary"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+      - think: 1
+
+      # Step 2: KPI history sparklines
+      - get:
+          url: "/api/dashboard/kpi-history?hours=24"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+      - think: 1
+
+      # Step 3: Container list
+      - get:
+          url: "/api/containers"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+      - think: 1
+
+      # Step 4: Anomalies list
+      - get:
+          url: "/api/metrics/anomalies?limit=50"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+      - think: 1
+
+      # Step 5: Stacks
+      - get:
+          url: "/api/stacks"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+      - think: 1
+
+      # Step 6: Networks
+      - get:
+          url: "/api/networks"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+      - think: 1
+
+      # Step 7: Monitoring insights
+      - get:
+          url: "/api/monitoring/insights?limit=50"
+          headers:
+            Authorization: "Bearer {{ token }}"

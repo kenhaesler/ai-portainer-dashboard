@@ -1,7 +1,8 @@
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('audit');
+const db = getDbForDomain('audit');
 
 export interface AuditEntry {
   user_id?: string;
@@ -14,13 +15,12 @@ export interface AuditEntry {
   ip_address?: string;
 }
 
-export function writeAuditLog(entry: AuditEntry): void {
+export async function writeAuditLog(entry: AuditEntry): Promise<void> {
   try {
-    const db = getDb();
-    db.prepare(`
-      INSERT INTO audit_log (user_id, username, action, target_type, target_id, details, request_id, ip_address)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    await db.execute(`
+      INSERT INTO audit_log (user_id, username, action, target_type, target_id, details, request_id, ip_address, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `, [
       entry.user_id || null,
       entry.username || null,
       entry.action,
@@ -29,21 +29,20 @@ export function writeAuditLog(entry: AuditEntry): void {
       JSON.stringify(entry.details || {}),
       entry.request_id || null,
       entry.ip_address || null,
-    );
+    ]);
     log.debug({ action: entry.action, target: entry.target_id }, 'Audit log written');
   } catch (err) {
     log.error({ err, entry }, 'Failed to write audit log');
   }
 }
 
-export function getAuditLogs(options?: {
+export async function getAuditLogs(options?: {
   limit?: number;
   offset?: number;
   action?: string;
   userId?: string;
   targetType?: string;
-}) {
-  const db = getDb();
+}): Promise<Record<string, unknown>[]> {
   const conditions: string[] = [];
   const params: unknown[] = [];
 
@@ -64,9 +63,9 @@ export function getAuditLogs(options?: {
   const limit = options?.limit || 100;
   const offset = options?.offset || 0;
 
-  return db.prepare(`
+  return db.query(`
     SELECT * FROM audit_log ${where}
     ORDER BY created_at DESC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset);
+  `, [...params, limit, offset]);
 }

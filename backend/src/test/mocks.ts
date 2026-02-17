@@ -146,7 +146,7 @@ export function createMockImage(overrides: Partial<DockerImage> = {}): DockerIma
 // Mock configuration for tests
 export function createMockConfig() {
   return {
-    PORT: 3001,
+    PORT: 3051,
     HOST: '0.0.0.0',
     NODE_ENV: 'test' as const,
     PORTAINER_API_URL: 'http://localhost:9000',
@@ -154,7 +154,8 @@ export function createMockConfig() {
     JWT_SECRET: 'test-jwt-secret-at-least-32-chars-long',
     DASHBOARD_USERNAME: 'admin',
     DASHBOARD_PASSWORD: 'testpassword',
-    SQLITE_PATH: ':memory:',
+    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
+    API_RATE_LIMIT: 1000,
     LOGIN_RATE_LIMIT: 10,
     ANOMALY_ZSCORE_THRESHOLD: 2.5,
     ANOMALY_MOVING_AVERAGE_WINDOW: 10,

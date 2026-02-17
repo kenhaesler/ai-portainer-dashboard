@@ -1,9 +1,31 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { KpiCard } from './kpi-card';
 
+// Stub matchMedia so useReducedMotion and useCountUp work in tests.
+// We set prefers-reduced-motion: reduce to true so animations are instant.
+function stubMatchMedia(reduce = true) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)' ? reduce : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 describe('KpiCard', () => {
-  it('should render label and value', () => {
+  beforeEach(() => {
+    stubMatchMedia(true); // Reduced motion = instant values
+  });
+
+  it('should render label and numeric value', () => {
     render(<KpiCard label="Total Containers" value={42} />);
 
     expect(screen.getByText('Total Containers')).toBeInTheDocument();
@@ -27,21 +49,21 @@ describe('KpiCard', () => {
     render(<KpiCard label="Metric" value={100} trend="up" trendValue="+10" />);
 
     const trendElement = screen.getByText('+10');
-    expect(trendElement).toHaveClass('text-emerald-600');
+    expect(trendElement.closest('span')).toHaveClass('text-emerald-600');
   });
 
   it('should apply down trend styling', () => {
     render(<KpiCard label="Metric" value={100} trend="down" trendValue="-10" />);
 
     const trendElement = screen.getByText('-10');
-    expect(trendElement).toHaveClass('text-red-600');
+    expect(trendElement.closest('span')).toHaveClass('text-red-600');
   });
 
   it('should apply neutral trend styling', () => {
     render(<KpiCard label="Metric" value={100} trend="neutral" trendValue="0" />);
 
     const trendElement = screen.getByText('0');
-    expect(trendElement).toHaveClass('text-muted-foreground');
+    expect(trendElement.closest('span')).toHaveClass('text-muted-foreground');
   });
 
   it('should render icon when provided', () => {
@@ -53,18 +75,69 @@ describe('KpiCard', () => {
 
   it('should apply custom className', () => {
     const { container } = render(
-      <KpiCard label="Custom" value={1} className="custom-class" />
+      <KpiCard label="Custom" value={1} className="custom-class" />,
     );
 
-    expect(container.firstChild).toHaveClass('custom-class');
+    // The SpotlightCard wrapper is container.firstChild; the inner card div has the className
+    const innerCard = container.querySelector('.custom-class');
+    expect(innerCard).toBeInTheDocument();
   });
 
   it('should not render trend when not provided', () => {
     render(<KpiCard label="No Trend" value={100} />);
 
-    // The trend container should not be present
     const element = screen.getByText('100');
     expect(element.parentElement?.querySelector('.text-emerald-600')).toBeNull();
     expect(element.parentElement?.querySelector('.text-red-600')).toBeNull();
+  });
+
+  // New tests for sparkline, hover detail, and pulse
+  it('should render sparkline when sparklineData is provided', () => {
+    const { container } = render(
+      <KpiCard
+        label="Running"
+        value={15}
+        sparklineData={[10, 12, 14, 15]}
+      />,
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).toBeInTheDocument();
+  });
+
+  it('should not render sparkline when sparklineData has fewer than 2 points', () => {
+    const { container } = render(
+      <KpiCard label="Running" value={15} sparklineData={[10]} />,
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).toBeNull();
+  });
+
+  it('should show detail information when hoverDetail is provided', () => {
+    render(
+      <KpiCard
+        label="Running"
+        value={15}
+        hoverDetail="Last hour: +3 | Peak: 20 | Avg: 14"
+      />,
+    );
+
+    // Detail text should be visible immediately (no hover required)
+    const detail = screen.getByText('Last hour: +3 | Peak: 20 | Avg: 14');
+    expect(detail).toBeInTheDocument();
+    expect(detail.parentElement).toHaveClass('mt-2');
+  });
+
+  it('should not render hover detail section when hoverDetail is not provided', () => {
+    render(<KpiCard label="Running" value={15} />);
+
+    // There should be no detail expansion element
+    const detailElements = document.querySelectorAll('.text-xs.text-muted-foreground');
+    // Only trend-value text might exist, but not hover detail
+    const hoverDetailTexts = Array.from(detailElements).filter(
+      (el) => el.textContent?.includes('Last hour'),
+    );
+    expect(hoverDetailTexts).toHaveLength(0);
   });
 });

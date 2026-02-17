@@ -1,10 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { getDb } from '../db/sqlite.js';
+import { getDbForDomain } from '../db/app-db-router.js';
 import { writeAuditLog } from '../services/audit-logger.js';
-import * as portainer from '../services/portainer-client.js';
-import { createChildLogger } from '../utils/logger.js';
-
-const log = createChildLogger('remediation-route');
+import { broadcastActionUpdate } from '../sockets/remediation.js';
+import { RemediationQuerySchema, ActionIdParamsSchema, RejectBodySchema } from '../models/api-schemas.js';
+import { restartContainer, startContainer, stopContainer } from '../services/portainer-client.js';
 
 export async function remediationRoutes(fastify: FastifyInstance) {
   // List actions
@@ -13,14 +12,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'List remediation actions',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          status: { type: 'string' },
-          limit: { type: 'number', default: 50 },
-          offset: { type: 'number', default: 0 },
-        },
-      },
+      querystring: RemediationQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -30,7 +22,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       offset?: number;
     };
 
-    const db = getDb();
+    const db = getDbForDomain('actions');
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -40,20 +32,21 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const actions = db.prepare(`
+    const actions = await db.query<any>(`
       SELECT * FROM actions ${where}
       ORDER BY created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, limit, offset);
+    `, [...params, limit, offset]);
 
-    const total = db.prepare(
-      `SELECT COUNT(*) as count FROM actions ${where}`
-    ).get(...params) as { count: number };
+    const total = await db.queryOne<{ count: number }>(
+      `SELECT COUNT(*) as count FROM actions ${where}`,
+      [...params]
+    );
 
-    const pending = db.prepare(
+    const pending = await db.queryOne<{ count: number }>(
       "SELECT COUNT(*) as count FROM actions WHERE status = 'pending'"
-    ).get() as { count: number };
+    );
 
-    return { actions, total: total.count, pendingCount: pending.count, limit, offset };
+    return { actions, total: total?.count ?? 0, pendingCount: pending?.count ?? 0, limit, offset };
   });
 
   // Approve action
@@ -62,27 +55,27 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'Approve a pending action',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = getDb();
+    const db = getDbForDomain('actions');
 
-    const action = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as any;
+    const action = await db.queryOne<any>('SELECT * FROM actions WHERE id = ?', [id]);
     if (!action) return reply.code(404).send({ error: 'Action not found' });
     if (action.status !== 'pending') {
-      return reply.code(400).send({ error: `Cannot approve action in ${action.status} state` });
+      return reply.code(409).send({
+        error: `Action is already ${action.status}. Refresh to see latest status.`,
+        actionId: id,
+        currentStatus: action.status,
+      });
     }
 
-    db.prepare(`
-      UPDATE actions SET status = 'approved', approved_by = ?, approved_at = datetime('now')
+    await db.execute(`
+      UPDATE actions SET status = 'approved', approved_by = ?, approved_at = NOW()
       WHERE id = ?
-    `).run(request.user?.username, id);
+    `, [request.user?.username, id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -94,6 +87,11 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
+    const updated = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
+    if (updated) {
+      broadcastActionUpdate(updated);
+    }
+
     return { success: true, actionId: id, status: 'approved' };
   });
 
@@ -103,28 +101,29 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       tags: ['Remediation'],
       summary: 'Reject a pending action',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
+      body: RejectBodySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { reason } = (request.body as { reason?: string }) || {};
-    const db = getDb();
+    const db = getDbForDomain('actions');
 
-    const action = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as any;
+    const action = await db.queryOne<any>('SELECT * FROM actions WHERE id = ?', [id]);
     if (!action) return reply.code(404).send({ error: 'Action not found' });
     if (action.status !== 'pending') {
-      return reply.code(400).send({ error: `Cannot reject action in ${action.status} state` });
+      return reply.code(409).send({
+        error: `Action is already ${action.status}. Refresh to see latest status.`,
+        actionId: id,
+        currentStatus: action.status,
+      });
     }
 
-    db.prepare(`
-      UPDATE actions SET status = 'rejected', rejected_by = ?, rejected_at = datetime('now'), rejection_reason = ?
+    await db.execute(`
+      UPDATE actions SET status = 'rejected', rejected_by = ?, rejected_at = NOW(), rejection_reason = ?
       WHERE id = ?
-    `).run(request.user?.username, reason || null, id);
+    `, [request.user?.username, reason || null, id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -137,62 +136,75 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
+    const updated = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
+    if (updated) {
+      broadcastActionUpdate(updated);
+    }
+
     return { success: true, actionId: id, status: 'rejected' };
   });
 
-  // Execute action
+  // Execute an approved action
   fastify.post('/api/remediation/actions/:id/execute', {
     schema: {
       tags: ['Remediation'],
       summary: 'Execute an approved action',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        properties: { id: { type: 'string' } },
-        required: ['id'],
-      },
+      params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const db = getDb();
+    const db = getDbForDomain('actions');
 
-    const action = db.prepare('SELECT * FROM actions WHERE id = ?').get(id) as any;
+    const action = await db.queryOne<{
+      id: string;
+      status: string;
+      action_type: string;
+      endpoint_id: number;
+      container_id: string;
+    }>('SELECT * FROM actions WHERE id = ?', [id]);
+
     if (!action) return reply.code(404).send({ error: 'Action not found' });
     if (action.status !== 'approved') {
-      return reply.code(400).send({ error: `Cannot execute action in ${action.status} state` });
+      return reply.code(409).send({
+        error: `Action must be approved before execution. Current status: ${action.status}.`,
+        actionId: id,
+        currentStatus: action.status,
+      });
     }
 
-    // Mark as executing
-    db.prepare(`
-      UPDATE actions SET status = 'executing', executed_at = datetime('now')
+    await db.execute(`
+      UPDATE actions SET status = 'executing', executed_at = NOW()
       WHERE id = ?
-    `).run(id);
+    `, [id]);
 
-    const startTime = Date.now();
+    const executing = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
+    if (executing) {
+      broadcastActionUpdate(executing);
+    }
 
+    const startedAt = Date.now();
     try {
-      // Execute based on action type
-      switch (action.action_type) {
-        case 'RESTART_CONTAINER':
-          await portainer.restartContainer(action.endpoint_id, action.container_id);
-          break;
-        case 'STOP_CONTAINER':
-          await portainer.stopContainer(action.endpoint_id, action.container_id);
-          break;
-        case 'START_CONTAINER':
-          await portainer.startContainer(action.endpoint_id, action.container_id);
-          break;
-        default:
-          throw new Error(`Unknown action type: ${action.action_type}`);
+      if (action.action_type === 'RESTART_CONTAINER') {
+        await restartContainer(action.endpoint_id, action.container_id);
+      } else if (action.action_type === 'STOP_CONTAINER') {
+        await stopContainer(action.endpoint_id, action.container_id);
+      } else if (action.action_type === 'START_CONTAINER') {
+        await startContainer(action.endpoint_id, action.container_id);
+      } else {
+        throw new Error(`Unsupported action type: ${action.action_type}`);
       }
 
-      const duration = Date.now() - startTime;
-      db.prepare(`
-        UPDATE actions SET status = 'completed', completed_at = datetime('now'),
-        execution_result = 'success', execution_duration_ms = ?
+      const duration = Date.now() - startedAt;
+      await db.execute(`
+        UPDATE actions
+        SET status = 'completed',
+            completed_at = NOW(),
+            execution_result = ?,
+            execution_duration_ms = ?
         WHERE id = ?
-      `).run(duration, id);
+      `, [`Executed ${action.action_type} successfully`, duration, id]);
 
       writeAuditLog({
         user_id: request.user?.sub,
@@ -200,24 +212,58 @@ export async function remediationRoutes(fastify: FastifyInstance) {
         action: 'remediation.execute',
         target_type: 'action',
         target_id: id,
-        details: { actionType: action.action_type, containerId: action.container_id, duration },
+        details: {
+          actionType: action.action_type,
+          endpointId: action.endpoint_id,
+          containerId: action.container_id,
+        },
         request_id: request.requestId,
         ip_address: request.ip,
       });
 
-      return { success: true, actionId: id, status: 'completed', duration };
+      const completed = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
+      if (completed) {
+        broadcastActionUpdate(completed);
+      }
+
+      return { success: true, actionId: id, status: 'completed' };
     } catch (err) {
-      const duration = Date.now() - startTime;
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-
-      db.prepare(`
-        UPDATE actions SET status = 'failed', completed_at = datetime('now'),
-        execution_result = ?, execution_duration_ms = ?
+      const message = err instanceof Error ? err.message : 'Unknown execution failure';
+      const duration = Date.now() - startedAt;
+      await db.execute(`
+        UPDATE actions
+        SET status = 'failed',
+            completed_at = NOW(),
+            execution_result = ?,
+            execution_duration_ms = ?
         WHERE id = ?
-      `).run(errorMsg, duration, id);
+      `, [message, duration, id]);
 
-      log.error({ err, actionId: id }, 'Action execution failed');
-      return reply.code(500).send({ error: errorMsg, actionId: id, status: 'failed' });
+      writeAuditLog({
+        user_id: request.user?.sub,
+        username: request.user?.username,
+        action: 'remediation.execute.failed',
+        target_type: 'action',
+        target_id: id,
+        details: {
+          actionType: action.action_type,
+          endpointId: action.endpoint_id,
+          containerId: action.container_id,
+          error: message,
+        },
+        request_id: request.requestId,
+        ip_address: request.ip,
+      });
+
+      const failed = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
+      if (failed) {
+        broadcastActionUpdate(failed);
+      }
+
+      return reply.code(502).send({
+        error: 'Failed to execute remediation action',
+        details: message,
+      });
     }
   });
 }

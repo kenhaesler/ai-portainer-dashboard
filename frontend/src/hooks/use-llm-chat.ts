@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSockets } from '@/providers/socket-provider';
 
 interface ChatMessage {
@@ -7,6 +7,7 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   context?: Record<string, unknown>;
+  toolCalls?: ToolCallEvent[];
 }
 
 interface ChatContext {
@@ -17,39 +18,91 @@ interface ChatContext {
   [key: string]: unknown;
 }
 
+export interface ToolCallEvent {
+  tools: string[];
+  status: 'executing' | 'complete';
+  results?: Array<{
+    tool: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+export interface ChatStatusEvent {
+  message: string;
+  phase: 'init' | 'context' | 'model' | 'generating';
+}
+
 export function useLlmChat() {
   const { llmSocket } = useSockets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentResponse, setCurrentResponse] = useState('');
+  const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEvent[]>([]);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const streamedResponseRef = useRef('');
+
+  // Use a ref to track tool calls so that socket listeners don't need to be
+  // torn down and re-subscribed every time a tool_call event fires.
+  const toolCallsRef = useRef<ToolCallEvent[]>([]);
 
   useEffect(() => {
     if (!llmSocket) return;
 
     const handleChatStart = () => {
       setIsStreaming(true);
+      setStatusMessage(null);
       setCurrentResponse('');
+      setActiveToolCalls([]);
+      toolCallsRef.current = [];
+      streamedResponseRef.current = '';
+    };
+
+    const handleChatStatus = (data: ChatStatusEvent) => {
+      setStatusMessage(data.message);
     };
 
     const handleChatChunk = (chunk: string) => {
+      streamedResponseRef.current += chunk;
       setCurrentResponse((prev) => prev + chunk);
     };
 
     const handleChatEnd = (data: { id: string; content: string }) => {
       setIsStreaming(false);
-      const assistantMessage: ChatMessage = {
-        id: data.id,
-        role: 'assistant',
-        content: data.content,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setStatusMessage(null);
+      const snapshotToolCalls = toolCallsRef.current;
+      const finalizedContent = (data.content || streamedResponseRef.current).trim();
+      if (finalizedContent) {
+        const assistantMessage: ChatMessage = {
+          id: data.id,
+          role: 'assistant',
+          content: finalizedContent,
+          timestamp: new Date().toISOString(),
+          toolCalls: snapshotToolCalls.length > 0 ? [...snapshotToolCalls] : undefined,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else {
+        const fallbackMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: 'Error: Assistant returned an empty response. Please retry.',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, fallbackMessage]);
+      }
       setCurrentResponse('');
+      setActiveToolCalls([]);
+      toolCallsRef.current = [];
+      streamedResponseRef.current = '';
     };
 
     const handleChatError = (error: { message: string }) => {
       setIsStreaming(false);
+      setStatusMessage(null);
       setCurrentResponse('');
+      setActiveToolCalls([]);
+      toolCallsRef.current = [];
+      streamedResponseRef.current = '';
       const errorMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'system',
@@ -59,21 +112,39 @@ export function useLlmChat() {
       setMessages((prev) => [...prev, errorMessage]);
     };
 
+    const handleToolCall = (event: ToolCallEvent) => {
+      toolCallsRef.current = [...toolCallsRef.current, event];
+      setActiveToolCalls((prev) => [...prev, event]);
+    };
+
+    const handleToolResponsePending = () => {
+      // The LLM produced a tool call — clear the streamed tool-call JSON
+      // so the next iteration's natural language response replaces it
+      streamedResponseRef.current = '';
+      setCurrentResponse('');
+    };
+
     llmSocket.on('chat:start', handleChatStart);
     llmSocket.on('chat:chunk', handleChatChunk);
     llmSocket.on('chat:end', handleChatEnd);
     llmSocket.on('chat:error', handleChatError);
+    llmSocket.on('chat:status', handleChatStatus);
+    llmSocket.on('chat:tool_call', handleToolCall);
+    llmSocket.on('chat:tool_response_pending', handleToolResponsePending);
 
     return () => {
       llmSocket.off('chat:start', handleChatStart);
       llmSocket.off('chat:chunk', handleChatChunk);
       llmSocket.off('chat:end', handleChatEnd);
       llmSocket.off('chat:error', handleChatError);
+      llmSocket.off('chat:status', handleChatStatus);
+      llmSocket.off('chat:tool_call', handleToolCall);
+      llmSocket.off('chat:tool_response_pending', handleToolResponsePending);
     };
   }, [llmSocket]);
 
   const sendMessage = useCallback(
-    (text: string, context?: ChatContext) => {
+    (text: string, context?: ChatContext, model?: string) => {
       if (!llmSocket || isStreaming) return;
 
       const userMessage: ChatMessage = {
@@ -85,7 +156,7 @@ export function useLlmChat() {
       };
 
       setMessages((prev) => [...prev, userMessage]);
-      llmSocket.emit('chat:message', { text, context });
+      llmSocket.emit('chat:message', { text, context, model });
     },
     [llmSocket, isStreaming]
   );
@@ -94,20 +165,26 @@ export function useLlmChat() {
     if (!llmSocket || !isStreaming) return;
     llmSocket.emit('chat:cancel');
     setIsStreaming(false);
+    setStatusMessage(null);
     setCurrentResponse('');
+    setActiveToolCalls([]);
   }, [llmSocket, isStreaming]);
 
   const clearHistory = useCallback(() => {
     if (!llmSocket) return;
     llmSocket.emit('chat:clear');
     setMessages([]);
+    setStatusMessage(null);
     setCurrentResponse('');
+    setActiveToolCalls([]);
   }, [llmSocket]);
 
   return {
     messages,
     isStreaming,
     currentResponse,
+    activeToolCalls,
+    statusMessage,
     sendMessage,
     cancelGeneration,
     clearHistory,

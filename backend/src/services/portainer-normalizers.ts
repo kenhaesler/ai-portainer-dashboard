@@ -1,4 +1,14 @@
 import type { Endpoint, Container, Stack, Network } from '../models/portainer.js';
+import { createChildLogger } from '../utils/logger.js';
+
+const log = createChildLogger('normalizers');
+
+export interface EdgeCapabilities {
+  exec: boolean;
+  realtimeLogs: boolean;
+  liveStats: boolean;
+  immediateActions: boolean;
+}
 
 export interface NormalizedEndpoint {
   id: number;
@@ -15,6 +25,10 @@ export interface NormalizedEndpoint {
   totalCpu: number;
   totalMemory: number;
   isEdge: boolean;
+  edgeMode: 'standard' | 'async' | null;
+  snapshotAge: number | null;
+  checkInInterval: number | null;
+  capabilities: EdgeCapabilities;
   agentVersion?: string;
   lastCheckIn?: number;
 }
@@ -30,6 +44,7 @@ export interface NormalizedContainer {
   endpointName: string;
   ports: Array<{ private: number; public?: number; type: string }>;
   networks: string[];
+  networkIPs: Record<string, string>;
   labels: Record<string, string>;
   healthStatus?: string;
 }
@@ -43,6 +58,8 @@ export interface NormalizedStack {
   createdAt?: number;
   updatedAt?: number;
   envCount: number;
+  source: 'portainer' | 'compose-label';
+  containerCount?: number;
 }
 
 export interface NormalizedNetwork {
@@ -57,15 +74,80 @@ export interface NormalizedNetwork {
   containers: string[];
 }
 
+function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilities {
+  if (edgeMode === 'async') {
+    return { exec: false, realtimeLogs: false, liveStats: false, immediateActions: false };
+  }
+  // Edge Standard and non-edge both support all interactive features
+  return { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true };
+}
+
+/**
+ * Determine Edge endpoint status using a cache-aware heartbeat check.
+ *
+ * For Edge Agent Standard, Portainer's API `Status` field represents the
+ * **tunnel state** (usually 2 = closed), NOT the agent's connectivity.
+ * Portainer's own UI uses `LastCheckInDate` to show the green dot.
+ *
+ * We use the heartbeat with a generous threshold: the Portainer heartbeat
+ * window PLUS the cache TTL (15 min). This ensures that an endpoint which
+ * was "up" when cached won't drift to "down" before the cache expires.
+ */
+function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
+  // If Portainer explicitly says up, trust it
+  if (ep.Status === 1) return 'up';
+
+  const lastCheckIn = ep.LastCheckInDate;
+  if (!lastCheckIn || lastCheckIn <= 0) return 'down';
+
+  const interval = ep.EdgeCheckinInterval ?? 5;
+  // Portainer's heartbeat formula: (interval * 2) + 20, minimum 60s
+  const heartbeatThreshold = Math.max((interval * 2) + 20, 60);
+  // Add cache TTL so the status doesn't drift to "down" while cached
+  const CACHE_TTL_SECONDS = 900;
+  const generousThreshold = heartbeatThreshold + CACHE_TTL_SECONDS;
+
+  const elapsed = Math.floor(Date.now() / 1000) - lastCheckIn;
+  return elapsed <= generousThreshold ? 'up' : 'down';
+}
+
 export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
+  const isEdge = !!ep.EdgeID;
+  // Non-Edge: trust Portainer's Status field directly.
+  // Edge: Status=2 means "tunnel closed" (normal for Edge Standard),
+  // so we use a cache-aware heartbeat check instead (see issue #489).
+  const status: 'up' | 'down' = isEdge
+    ? determineEdgeStatus(ep)
+    : (ep.Status === 1 ? 'up' : 'down');
+
+  if (isEdge) {
+    log.debug({
+      endpointId: ep.Id,
+      name: ep.Name,
+      portainerStatus: ep.Status,
+      resolvedStatus: status,
+      lastCheckInDate: ep.LastCheckInDate,
+      edgeCheckinInterval: ep.EdgeCheckinInterval,
+    }, 'Normalizing Edge endpoint');
+  }
   const snapshot = ep.Snapshots?.[0];
   const raw = snapshot?.DockerSnapshotRaw;
+  // Portainer Type 7 = Edge Agent Async (poll-based, no Docker tunnel).
+  // Type 4 = Edge Agent Standard (persistent tunnel, supports live features).
+  // Previously we used QueryDate presence as a heuristic, but that field can
+  // also be set on standard edge agents, causing false negatives.
+  const edgeMode: 'standard' | 'async' | null = isEdge
+    ? (ep.Type === 7 ? 'async' : 'standard')
+    : null;
+  const snapshotTime = snapshot?.Time;
+  const snapshotAge = snapshotTime ? Date.now() - snapshotTime * 1000 : null;
+
   return {
     id: ep.Id,
     name: ep.Name,
     type: ep.Type,
     url: ep.URL,
-    status: ep.Status === 1 ? 'up' : 'down',
+    status,
     containersRunning: snapshot?.RunningContainerCount ?? raw?.ContainersRunning ?? 0,
     containersStopped: snapshot?.StoppedContainerCount ?? raw?.ContainersStopped ?? 0,
     containersHealthy: snapshot?.HealthyContainerCount ?? 0,
@@ -76,7 +158,11 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     stackCount: snapshot?.StackCount ?? 0,
     totalCpu: snapshot?.TotalCPU ?? 0,
     totalMemory: snapshot?.TotalMemory ?? 0,
-    isEdge: !!ep.EdgeID,
+    isEdge,
+    edgeMode,
+    snapshotAge,
+    checkInInterval: ep.EdgeCheckinInterval ?? null,
+    capabilities: buildCapabilities(edgeMode),
     agentVersion: ep.Agent?.Version,
     lastCheckIn: ep.LastCheckInDate,
   };
@@ -112,6 +198,11 @@ export function normalizeContainer(
       type: p.Type || 'tcp',
     })),
     networks: Object.keys(c.NetworkSettings?.Networks || {}),
+    networkIPs: Object.fromEntries(
+      Object.entries(c.NetworkSettings?.Networks || {})
+        .filter(([, v]: [string, any]) => v?.IPAddress)
+        .map(([k, v]: [string, any]) => [k, v.IPAddress as string]),
+    ),
     labels: c.Labels || {},
     healthStatus: c.Labels?.['com.docker.compose.service'],
   };
@@ -127,7 +218,25 @@ export function normalizeStack(s: Stack): NormalizedStack {
     createdAt: s.CreationDate,
     updatedAt: s.UpdateDate,
     envCount: s.Env?.length || 0,
+    source: 'portainer',
   };
+}
+
+/** Label keys used to detect compose project membership on containers. */
+export const COMPOSE_PROJECT_LABELS = [
+  'com.docker.compose.project',
+  'com.docker.stack.namespace',
+  'io.portainer.stack.name',
+] as const;
+
+/** Simple string hash → negative number to avoid collision with Portainer IDs. */
+export function syntheticStackId(endpointId: number, projectName: string): number {
+  let hash = 0;
+  const key = `${endpointId}:${projectName}`;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  }
+  return -Math.abs(hash || 1);
 }
 
 export function normalizeNetwork(

@@ -17,10 +17,21 @@ const MetricsDashboard = lazy(() => import('@/pages/metrics-dashboard'));
 const Remediation = lazy(() => import('@/pages/remediation'));
 const TraceExplorer = lazy(() => import('@/pages/trace-explorer'));
 const LlmAssistant = lazy(() => import('@/pages/llm-assistant'));
+const LlmObservability = lazy(() => import('@/pages/llm-observability'));
 const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
 const Settings = lazy(() => import('@/pages/settings'));
+const Backups = lazy(() => import('@/pages/backups'));
 const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
+const PacketCapture = lazy(() => import('@/pages/packet-capture'));
+const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
+const StatusPage = lazy(() => import('@/pages/status-page'));
+const Reports = lazy(() => import('@/pages/reports'));
+const LogViewer = lazy(() => import('@/pages/log-viewer'));
+const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
+const SecurityAudit = lazy(() => import('@/pages/security-audit'));
+const EbpfCoverage = lazy(() => import('@/pages/ebpf-coverage'));
+const HarborVulnerabilities = lazy(() => import('@/pages/harbor-vulnerabilities'));
 
 function PageLoader() {
   return (
@@ -46,6 +57,11 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorBoundary />,
   },
   {
+    path: '/status',
+    element: <LazyPage><StatusPage /></LazyPage>,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
     path: '/',
     element: <AppLayout />,
     errorElement: <RouteErrorBoundary />,
@@ -56,14 +72,27 @@ export const router = createBrowserRouter([
       { path: 'stacks', element: <LazyPage><StackOverview /></LazyPage> },
       { path: 'containers/:endpointId/:containerId', element: <LazyPage><ContainerDetail /></LazyPage> },
       { path: 'health', element: <LazyPage><ContainerHealth /></LazyPage> },
+      { path: 'comparison', element: <LazyPage><ContainerComparison /></LazyPage> },
       { path: 'images', element: <LazyPage><ImageFootprint /></LazyPage> },
       { path: 'topology', element: <LazyPage><NetworkTopology /></LazyPage> },
       { path: 'ai-monitor', element: <LazyPage><AiMonitor /></LazyPage> },
       { path: 'metrics', element: <LazyPage><MetricsDashboard /></LazyPage> },
       { path: 'remediation', element: <LazyPage><Remediation /></LazyPage> },
       { path: 'traces', element: <LazyPage><TraceExplorer /></LazyPage> },
+      { path: 'ebpf-coverage', element: <LazyPage><EbpfCoverage /></LazyPage> },
       { path: 'assistant', element: <LazyPage><LlmAssistant /></LazyPage> },
+      { path: 'llm-observability', element: <LazyPage><LlmObservability /></LazyPage> },
       { path: 'edge-logs', element: <LazyPage><EdgeAgentLogs /></LazyPage> },
+      { path: 'logs', element: <LazyPage><LogViewer /></LazyPage> },
+      { path: 'security/audit', element: <LazyPage><SecurityAudit /></LazyPage> },
+      { path: 'security/vulnerabilities', element: <LazyPage><HarborVulnerabilities /></LazyPage> },
+      { path: 'packet-capture', element: <LazyPage><PacketCapture /></LazyPage> },
+      { path: 'reports', element: <LazyPage><Reports /></LazyPage> },
+      { path: 'webhooks', element: <Navigate to="/settings?tab=webhooks" replace /> },
+      { path: 'users', element: <Navigate to="/settings?tab=users" replace /> },
+      { path: 'investigations/:id', element: <LazyPage><InvestigationDetail /></LazyPage> },
+      { path: 'investigations/insight/:insightId', element: <LazyPage><InvestigationDetail /></LazyPage> },
+      { path: 'backups', element: <LazyPage><Backups /></LazyPage> },
       { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
     ],
   },

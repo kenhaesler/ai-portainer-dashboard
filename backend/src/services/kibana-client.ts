@@ -1,5 +1,6 @@
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
+import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('kibana-client');
 
@@ -21,6 +22,12 @@ export interface FetchLogsOptions {
 }
 
 export async function fetchLogs(options: FetchLogsOptions): Promise<LogEntry[]> {
+  return withSpan('es.search', 'elasticsearch', 'client', () =>
+    fetchLogsInner(options),
+  );
+}
+
+async function fetchLogsInner(options: FetchLogsOptions): Promise<LogEntry[]> {
   const config = getConfig();
 
   if (!config.KIBANA_ENDPOINT) {

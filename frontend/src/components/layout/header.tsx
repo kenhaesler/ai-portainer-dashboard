@@ -5,6 +5,7 @@ import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { useState, useRef, useEffect } from 'react';
+import { ConnectionOrb } from '@/components/shared/connection-orb';
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',
@@ -19,6 +20,7 @@ const routeLabels: Record<string, string> = {
   '/remediation': 'Remediation',
   '/traces': 'Trace Explorer',
   '/assistant': 'LLM Assistant',
+  '/security/audit': 'Security Audit',
   '/edge-logs': 'Edge Agent Logs',
   '/settings': 'Settings',
 };
@@ -27,8 +29,26 @@ const routeLabels: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const { username, logout } = useAuth();
-  const { theme, setTheme } = useThemeStore();
+  const { theme, toggleTheme, dashboardBackground } = useThemeStore();
   const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const potatoMode = useUiStore((s) => s.potatoMode);
+  const setPotatoMode = useUiStore((s) => s.setPotatoMode);
+  const hasAnimatedBg = dashboardBackground !== 'none';
+  const [appBuildRef, setAppBuildRef] = useState(
+    import.meta.env.DEV
+      ? (
+        import.meta.env.VITE_GIT_COMMIT
+        || import.meta.env.VITE_APP_COMMIT
+        || import.meta.env.VITE_BUILD_NUMBER
+        || 'dev'
+      )
+      : (
+        import.meta.env.VITE_BUILD_NUMBER
+        || import.meta.env.VITE_GIT_COMMIT
+        || import.meta.env.VITE_APP_COMMIT
+        || ''
+      )
+  );
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -66,8 +86,36 @@ export function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let isMounted = true;
+    fetch('/__commit')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { commit?: string } | null) => {
+        if (!isMounted) return;
+        if (data?.commit) setAppBuildRef(data.commit);
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const buildChannel = import.meta.env.DEV ? 'DEV' : 'BUILD';
+  const normalizedBuildRef = appBuildRef.trim();
+  const buildToken = normalizedBuildRef
+    && normalizedBuildRef.toLowerCase() !== 'dev'
+    && normalizedBuildRef.toLowerCase() !== 'build'
+    ? normalizedBuildRef.slice(0, 16).toLowerCase()
+    : '';
+  const buildBadge = buildToken ? `${buildChannel} ${buildToken}` : buildChannel;
+
   return (
-    <header className="mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-4">
+    <header
+      data-testid="header"
+      data-animated-bg={hasAnimatedBg || undefined}
+      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
+    >
       {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
         {breadcrumbs.map((crumb, index) => (
@@ -89,6 +137,15 @@ export function Header() {
             )}
           </span>
         ))}
+        {(appBuildRef || buildChannel) && (
+          <span
+            className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            aria-label={`Build ${buildBadge}`}
+            title={`Build ${buildBadge}`}
+          >
+            {buildBadge}
+          </span>
+        )}
       </nav>
 
       {/* Right-side actions */}
@@ -108,14 +165,32 @@ export function Header() {
           </kbd>
         </button>
 
-        {/* Theme toggle - pill style (Glass Light / Glass Dark) */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={Boolean(potatoMode)}
+          aria-label={`Potato mode ${potatoMode ? 'on' : 'off'}`}
+          title="Toggle Potato Mode"
+          onClick={() => setPotatoMode(Boolean(!potatoMode))}
+          className={cn(
+            'inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
+            potatoMode
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-border bg-muted text-muted-foreground'
+          )}
+        >
+          <span aria-hidden="true">🥔</span>
+        </button>
+
+        {/* Theme toggle — pill switch between two configured themes */}
         {(() => {
-          const isDark = theme === 'dark' || theme === 'apple-dark' || theme.includes('mocha') || theme.includes('macchiato') || theme.includes('frappe');
+          const isDark = useThemeStore.getState().resolvedTheme() === 'dark';
           return (
             <button
-              onClick={() => setTheme(isDark ? 'apple-light' : 'apple-dark')}
+              data-testid="theme-toggle"
+              onClick={toggleTheme}
               className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
-              aria-label={`Switch to ${isDark ? 'Glass Light' : 'Glass Dark'} theme`}
+              aria-label={`Switch to ${isDark ? 'light' : 'dark'} theme`}
             >
               <span
                 className={cn(
@@ -135,9 +210,13 @@ export function Header() {
           );
         })()}
 
+        {/* Connection status orb */}
+        <ConnectionOrb />
+
         {/* User menu */}
         <div ref={userMenuRef} className="relative">
           <button
+            data-testid="user-menu-trigger"
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition-colors hover:bg-muted/50"
           >
@@ -156,11 +235,12 @@ export function Header() {
               </div>
               <div className="my-1 h-px bg-border" />
               <button
+                data-testid="logout-button"
                 onClick={() => {
                   setUserMenuOpen(false);
                   logout();
                 }}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-accent"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-accent"
               >
                 <LogOut className="h-4 w-4" />
                 Log out

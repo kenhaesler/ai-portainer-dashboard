@@ -1,16 +1,19 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
+import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useNetworks, type Network } from '@/hooks/use-networks';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useNetworkRates } from '@/hooks/use-metrics';
 import { TopologyGraph } from '@/components/network/topology-graph';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { formatDate } from '@/lib/utils';
+import { useUiStore } from '@/stores/ui-store';
 
 type SelectedNode =
   | { type: 'container'; data: Container }
@@ -18,6 +21,7 @@ type SelectedNode =
   | null;
 
 export default function NetworkTopologyPage() {
+  const potatoMode = useUiStore((state) => state.potatoMode);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedNode, setSelectedNode] = useState<SelectedNode>(null);
 
@@ -33,8 +37,9 @@ export default function NetworkTopologyPage() {
   };
 
   const { data: endpoints } = useEndpoints();
-  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint);
+  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
   const { data: networks, isLoading: networksLoading, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
+  const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
   const { interval, setInterval } = useAutoRefresh(30);
 
   // Transform data for TopologyGraph
@@ -49,6 +54,7 @@ export default function NetworkTopologyPage() {
       state: c.state as 'running' | 'stopped' | 'paused' | 'unknown',
       image: c.image,
       networks: c.networks,
+      labels: c.labels,
     }));
 
     const transformedNetworks = networks.map(n => ({
@@ -92,9 +98,9 @@ export default function NetworkTopologyPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-[calc(100vh-8rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Network Topology</h1>
           <p className="text-muted-foreground">
@@ -108,24 +114,23 @@ export default function NetworkTopologyPage() {
       </div>
 
       {/* Endpoint Filter */}
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap shrink-0 mt-4">
         <div className="flex items-center gap-2">
           <label htmlFor="endpoint-select" className="text-sm font-medium">
             Endpoint
           </label>
-          <select
+          <ThemedSelect
             id="endpoint-select"
-            value={selectedEndpoint ?? ''}
-            onChange={(e) => setSelectedEndpoint(e.target.value ? Number(e.target.value) : undefined)}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="">All endpoints</option>
-            {endpoints?.map((ep) => (
-              <option key={ep.id} value={ep.id}>
-                {ep.name} (ID: {ep.id})
-              </option>
-            ))}
-          </select>
+            value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+            onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+            options={[
+              { value: '__all__', label: 'All endpoints' },
+              ...(endpoints?.map((ep) => ({
+                value: String(ep.id),
+                label: `${ep.name} (ID: ${ep.id})`,
+              })) ?? []),
+            ]}
+          />
         </div>
 
         {containers && networks && (
@@ -135,12 +140,12 @@ export default function NetworkTopologyPage() {
         )}
       </div>
 
-      {/* Graph Container */}
-      <div className="relative">
+      {/* Graph Container — fills remaining height */}
+      <div className="relative flex-1 min-h-0 mt-4">
         {isLoading ? (
-          <SkeletonCard className="h-[600px]" />
+          <SkeletonCard className="h-full" />
         ) : isError ? (
-          <div className="flex h-[600px] items-center justify-center rounded-lg border bg-card p-8">
+          <div className="flex h-full items-center justify-center rounded-lg border bg-card p-8">
             <div className="text-center">
               <p className="text-lg font-semibold text-destructive">Error loading topology</p>
               <p className="text-sm text-muted-foreground mt-2">
@@ -155,18 +160,19 @@ export default function NetworkTopologyPage() {
             </div>
           </div>
         ) : (
-          <div className="flex gap-4">
-            <div className={`transition-all ${selectedNode ? 'w-2/3' : 'w-full'}`}>
+          <div className="flex gap-4 h-full">
+            <div className={`${potatoMode ? '' : 'transition-all'} h-full ${selectedNode ? 'w-2/3' : 'w-full'}`}>
               <TopologyGraph
                 containers={graphData.containers}
                 networks={graphData.networks}
                 onNodeClick={handleNodeClick}
+                networkRates={networkRatesData?.rates}
               />
             </div>
 
             {/* Side Panel */}
             {selectedNode && (
-              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 h-[600px] overflow-y-auto">
+              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">
                     {selectedNode.type === 'container' ? 'Container Details' : 'Network Details'}
@@ -225,6 +231,11 @@ function ContainerDetails({ container }: { container: Container }) {
             container.networks.map((net) => (
               <div key={net} className="text-sm px-2 py-1 rounded bg-muted">
                 {net}
+                {container.networkIPs?.[net] && (
+                  <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+                    ({container.networkIPs[net]})
+                  </span>
+                )}
               </div>
             ))
           ) : (
