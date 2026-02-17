@@ -11,10 +11,11 @@ interface ImageTreemapProps {
   data: ImageData[];
 }
 
+// Cohesive blue/purple/teal palette with tonal variations
 const COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-  '#14b8a6', '#a855f7', '#f43f5e', '#22c55e', '#eab308',
+  '#3b82f6', '#6366f1', '#8b5cf6', '#06b6d4', '#0ea5e9',
+  '#2563eb', '#7c3aed', '#0891b2', '#4f46e5', '#14b8a6',
+  '#1d4ed8', '#a78bfa', '#22d3ee', '#818cf8', '#5eead4',
 ];
 
 interface LabelStyle {
@@ -64,7 +65,7 @@ function CustomContent(props: any) {
         height={height}
         fill={fill}
         fillOpacity={opacity}
-        stroke="#fff"
+        stroke="rgba(255,255,255,0.3)"
         strokeWidth={1}
       />
       {/* Show name label when cell is large enough */}

@@ -325,14 +325,22 @@ export default function ImageFootprintPage() {
         </div>
       )}
 
-      {/* Detail Sidebar */}
+      {/* Backdrop for sidebar */}
       {selectedImage && (
-        <div className="fixed inset-y-0 right-0 z-50 w-96 overflow-y-auto border-l bg-background p-6 shadow-lg">
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          onClick={() => setSelectedImage(null)}
+        />
+      )}
+
+      {/* Detail Sidebar — scoped to content area, not overlapping nav */}
+      {selectedImage && (
+        <div className="fixed top-4 right-4 bottom-4 z-50 w-96 overflow-y-auto rounded-2xl border border-border/50 bg-card/80 p-6 shadow-xl backdrop-blur-xl ring-1 ring-white/10 dark:ring-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Image Details</h2>
             <button
               onClick={() => setSelectedImage(null)}
-              className="rounded-md p-1 hover:bg-accent"
+              className="rounded-lg p-1.5 transition-colors hover:bg-accent/80"
             >
               <X className="h-5 w-5" />
             </button>
@@ -352,7 +360,7 @@ export default function ImageFootprintPage() {
               <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Image ID
               </label>
-              <p className="mt-1 break-all font-mono text-sm">{selectedImage.id}</p>
+              <p className="mt-1 break-all font-mono text-sm text-muted-foreground">{selectedImage.id}</p>
             </div>
 
             {/* Size */}
@@ -405,7 +413,7 @@ export default function ImageFootprintPage() {
                   selectedImage.tags.map((tag) => (
                     <div
                       key={tag}
-                      className="flex items-center gap-2 rounded-md border bg-secondary/50 px-3 py-2"
+                      className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 backdrop-blur-sm"
                     >
                       <Tag className="h-4 w-4 text-muted-foreground" />
                       <span className="break-all text-sm">{tag}</span>
@@ -418,14 +426,6 @@ export default function ImageFootprintPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Backdrop for sidebar */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50"
-          onClick={() => setSelectedImage(null)}
-        />
       )}
     </div>
   );
