@@ -11,11 +11,10 @@ interface ImageSunburstProps {
   data: ImageData[];
 }
 
+// Soft pastel palette
 const COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-  '#14b8a6', '#a855f7', '#f43f5e', '#22c55e', '#eab308',
-  '#0ea5e9', '#d946ef', '#64748b', '#fb923c', '#4ade80',
+  '#93c5fd', '#a5b4fc', '#c4b5fd', '#f9a8d4', '#fda4af',
+  '#fcd34d', '#86efac', '#6ee7b7', '#67e8f9', '#7dd3fc',
 ];
 
 function CustomTooltip({ active, payload }: any) {
@@ -45,20 +44,7 @@ export function ImageSunburst({ data }: ImageSunburstProps) {
     registryMap.set(registry, (registryMap.get(registry) || 0) + img.size);
   }
 
-  // Sort outer data by size descending, take top 15, group rest as "Other"
-  const sorted = [...data].sort((a, b) => b.size - a.size);
-  const topImages = sorted.slice(0, 15);
-  const restSize = sorted.slice(15).reduce((sum, img) => sum + img.size, 0);
-
-  const outerData = topImages.map((img) => ({
-    name: img.name,
-    value: img.size,
-  }));
-  if (restSize > 0) {
-    outerData.push({ name: `Other (${sorted.length - 15})`, value: restSize });
-  }
-
-  const innerData = Array.from(registryMap.entries())
+  const registryData = Array.from(registryMap.entries())
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
@@ -66,42 +52,29 @@ export function ImageSunburst({ data }: ImageSunburstProps) {
     <ResponsiveContainer width="100%" height={400}>
       <PieChart>
         <Pie
-          data={innerData}
+          data={registryData}
           cx="50%"
           cy="50%"
-          innerRadius={30}
-          outerRadius={70}
-          dataKey="value"
-          label={false}
-        >
-          {innerData.map((_, index) => (
-            <Cell key={index} fill={COLORS[index % COLORS.length]} opacity={0.7} />
-          ))}
-        </Pie>
-        <Pie
-          data={outerData}
-          cx="50%"
-          cy="50%"
-          innerRadius={80}
+          innerRadius={60}
           outerRadius={140}
           dataKey="value"
-          label={false}
+          label={({ name, percent }) =>
+            `${name} (${(percent * 100).toFixed(0)}%)`
+          }
+          labelLine={{ strokeWidth: 1, stroke: 'var(--color-muted-foreground)' }}
         >
-          {outerData.map((_, index) => (
+          {registryData.map((_, index) => (
             <Cell key={index} fill={COLORS[index % COLORS.length]} />
           ))}
         </Pie>
         <Tooltip content={<CustomTooltip />} />
         <Legend
-          layout="vertical"
-          align="right"
-          verticalAlign="middle"
+          layout="horizontal"
+          align="center"
+          verticalAlign="bottom"
           iconType="circle"
           iconSize={8}
-          formatter={(value: string) =>
-            value.length > 25 ? value.slice(0, 25) + '...' : value
-          }
-          wrapperStyle={{ fontSize: '11px', maxHeight: 350, overflowY: 'auto' }}
+          wrapperStyle={{ fontSize: '12px', paddingTop: 16 }}
         />
       </PieChart>
     </ResponsiveContainer>
