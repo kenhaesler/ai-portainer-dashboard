@@ -1,12 +1,21 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { reportsRoutes } from './reports.js';
+import { reportsRoutes, clearReportCache } from './reports.js';
 
-const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
+const { mockQuery, mockRelease } = vi.hoisted(() => ({
+  mockQuery: vi.fn().mockResolvedValue({ rows: [] }),
+  mockRelease: vi.fn(),
+}));
 
 vi.mock('../db/timescale.js', () => ({
-  getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
+  getMetricsDb: vi.fn().mockResolvedValue({
+    query: (...args: unknown[]) => mockQuery(...args),
+    connect: vi.fn().mockResolvedValue({
+      query: (...args: unknown[]) => mockQuery(...args),
+      release: mockRelease,
+    }),
+  }),
 }));
 
 vi.mock('../services/metrics-rollup-selector.js', () => ({
@@ -63,12 +72,14 @@ describe('Reports routes', () => {
 
   beforeEach(() => {
     mockQuery.mockReset();
+    mockRelease.mockReset();
+    clearReportCache();
+    // Default: first call is SET statement_timeout (returns empty), subsequent calls return empty rows
+    mockQuery.mockResolvedValue({ rows: [] });
   });
 
   describe('GET /api/reports/utilization', () => {
     it('returns empty report when no metrics exist', async () => {
-      mockQuery.mockResolvedValue({ rows: [] });
-
       const res = await app.inject({
         method: 'GET',
         url: '/api/reports/utilization?timeRange=24h',
@@ -84,6 +95,7 @@ describe('Reports routes', () => {
 
     it('returns aggregated data for containers', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
           rows: [
             {
@@ -109,12 +121,8 @@ describe('Reports routes', () => {
           ],
         })
         // Percentile queries
-        .mockResolvedValueOnce({
-          rows: [{ p50: 50, p95: 95, p99: 99 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ p50: 55, p95: 85, p99: 90 }],
-        });
+        .mockResolvedValueOnce({ rows: [{ p50: 50, p95: 95, p99: 99 }] })
+        .mockResolvedValueOnce({ rows: [{ p50: 55, p95: 85, p99: 90 }] });
 
       const res = await app.inject({
         method: 'GET',
@@ -132,8 +140,6 @@ describe('Reports routes', () => {
     });
 
     it('accepts optional endpointId filter', async () => {
-      mockQuery.mockResolvedValue({ rows: [] });
-
       const res = await app.inject({
         method: 'GET',
         url: '/api/reports/utilization?timeRange=24h&endpointId=1',
@@ -144,6 +150,7 @@ describe('Reports routes', () => {
 
     it('excludes infrastructure containers by default', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
           rows: [
             {
@@ -186,6 +193,7 @@ describe('Reports routes', () => {
 
     it('supports excludeInfrastructure=false query parameter', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
           rows: [
             {
@@ -214,17 +222,32 @@ describe('Reports routes', () => {
       expect(body.containers).toHaveLength(1);
       expect(body.containers[0].service_type).toBe('infrastructure');
     });
+
+    it('returns cached result on second identical request without hitting DB', async () => {
+      const res1 = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const queryCountAfterFirst = mockQuery.mock.calls.length;
+
+      const res2 = await app.inject({ method: 'GET', url: '/api/reports/utilization?timeRange=24h' });
+      const queryCountAfterSecond = mockQuery.mock.calls.length;
+
+      expect(res1.statusCode).toBe(200);
+      expect(res2.statusCode).toBe(200);
+      // Second request served from cache — no additional DB calls
+      expect(queryCountAfterSecond).toBe(queryCountAfterFirst);
+    });
   });
 
   describe('GET /api/reports/trends', () => {
     it('returns hourly trend data', async () => {
-      mockQuery.mockResolvedValue({
-        rows: [
-          { hour: '2025-01-01T10:00:00', metric_type: 'cpu', avg_value: 40, max_value: 80, min_value: 5, sample_count: 60 },
-          { hour: '2025-01-01T11:00:00', metric_type: 'cpu', avg_value: 45, max_value: 85, min_value: 8, sample_count: 60 },
-          { hour: '2025-01-01T10:00:00', metric_type: 'memory', avg_value: 55, max_value: 70, min_value: 40, sample_count: 60 },
-        ],
-      });
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
+        .mockResolvedValueOnce({
+          rows: [
+            { hour: '2025-01-01T10:00:00', metric_type: 'cpu', avg_value: 40, max_value: 80, min_value: 5, sample_count: 60 },
+            { hour: '2025-01-01T11:00:00', metric_type: 'cpu', avg_value: 45, max_value: 85, min_value: 8, sample_count: 60 },
+            { hour: '2025-01-01T10:00:00', metric_type: 'memory', avg_value: 55, max_value: 70, min_value: 40, sample_count: 60 },
+          ],
+        });
 
       const res = await app.inject({
         method: 'GET',
@@ -239,8 +262,6 @@ describe('Reports routes', () => {
     });
 
     it('returns empty trends when no data', async () => {
-      mockQuery.mockResolvedValue({ rows: [] });
-
       const res = await app.inject({
         method: 'GET',
         url: '/api/reports/trends?timeRange=30d',
@@ -251,11 +272,24 @@ describe('Reports routes', () => {
       expect(body.trends.cpu).toEqual([]);
       expect(body.trends.memory).toEqual([]);
     });
+
+    it('returns cached result on second identical request without hitting DB', async () => {
+      const res1 = await app.inject({ method: 'GET', url: '/api/reports/trends?timeRange=24h' });
+      const queryCountAfterFirst = mockQuery.mock.calls.length;
+
+      const res2 = await app.inject({ method: 'GET', url: '/api/reports/trends?timeRange=24h' });
+      const queryCountAfterSecond = mockQuery.mock.calls.length;
+
+      expect(res1.statusCode).toBe(200);
+      expect(res2.statusCode).toBe(200);
+      expect(queryCountAfterSecond).toBe(queryCountAfterFirst);
+    });
   });
 
   describe('GET /api/reports/management', () => {
     it('returns management report payload contract with default settings', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
           rows: [
             {
@@ -307,6 +341,7 @@ describe('Reports routes', () => {
 
     it('supports includeInfrastructure query parameter', async () => {
       mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SET statement_timeout
         .mockResolvedValueOnce({
           rows: [
             {
@@ -332,6 +367,18 @@ describe('Reports routes', () => {
       expect(body.scope.includeInfrastructure).toBe(true);
       expect(body.topServices).toHaveLength(1);
       expect(body.topServices[0].containerName).toBe('redis');
+    });
+
+    it('returns cached result on second identical request without hitting DB', async () => {
+      const res1 = await app.inject({ method: 'GET', url: '/api/reports/management' });
+      const queryCountAfterFirst = mockQuery.mock.calls.length;
+
+      const res2 = await app.inject({ method: 'GET', url: '/api/reports/management' });
+      const queryCountAfterSecond = mockQuery.mock.calls.length;
+
+      expect(res1.statusCode).toBe(200);
+      expect(res2.statusCode).toBe(200);
+      expect(queryCountAfterSecond).toBe(queryCountAfterFirst);
     });
   });
 });
