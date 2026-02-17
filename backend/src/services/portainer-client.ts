@@ -271,8 +271,7 @@ export async function checkPortainerReachable(timeoutMs = 5000): Promise<{ reach
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- undici/undici-types version mismatch
-    const res = await fetch(url, { headers, signal: controller.signal, ...(dispatcher && { dispatcher: dispatcher as any }) });
+    const res = await undiciFetch(url, { headers, signal: controller.signal, ...(dispatcher && { dispatcher }) });
     return { reachable: true, ok: res.ok };
   } catch {
     return { reachable: false, ok: false };
