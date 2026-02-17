@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -26,9 +26,12 @@ export function UsersPanel() {
 
   const [form, setForm] = useState<UserForm>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editHighlight, setEditHighlight] = useState(false);
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
   const [search, setSearch] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const formSectionRef = useRef<HTMLElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
 
   const filteredUsers = useMemo(() => {
     const all = usersQuery.data ?? [];
@@ -42,6 +45,7 @@ export function UsersPanel() {
   const resetForm = () => {
     setForm(initialForm);
     setEditingId(null);
+    setEditHighlight(false);
     setErrorMessage(null);
   };
 
@@ -77,6 +81,14 @@ export function UsersPanel() {
     setEditingId(user.id);
     setForm({ username: user.username, password: '', role: user.role });
     setErrorMessage(null);
+    // Scroll form into view and focus first input for immediate keyboard access
+    requestAnimationFrame(() => {
+      formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      firstInputRef.current?.focus();
+      // Trigger highlight pulse animation
+      setEditHighlight(true);
+      setTimeout(() => setEditHighlight(false), 1200);
+    });
   };
 
   const deactivateUser = async (userId: string) => {
@@ -189,7 +201,13 @@ export function UsersPanel() {
           )}
         </section>
 
-        <section className="rounded-lg border bg-card p-4 lg:col-span-2">
+        <section
+          ref={formSectionRef}
+          className={[
+            'rounded-lg border bg-card p-4 lg:col-span-2 transition-all duration-300',
+            editHighlight ? 'ring-2 ring-primary/60 shadow-md shadow-primary/10' : '',
+          ].join(' ')}
+        >
           <h2 className="inline-flex items-center gap-2 text-base font-semibold">
             {editingId ? <UserCog className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
             {editingId ? 'Edit User' : 'Create User'}
@@ -199,6 +217,7 @@ export function UsersPanel() {
             <label className="block">
               <span className="mb-1 block text-muted-foreground">Username</span>
               <input
+                ref={firstInputRef}
                 value={form.username}
                 onChange={(e) => setForm((prev) => ({ ...prev, username: e.target.value }))}
                 className="h-9 w-full rounded-md border border-input bg-background px-2"

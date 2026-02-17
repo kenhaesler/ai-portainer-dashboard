@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const mockCreateUser = vi.fn();
 const mockUpdateUser = vi.fn();
@@ -76,6 +76,70 @@ describe('UsersPanel', () => {
         password: 'password123',
         role: 'operator',
       });
+    });
+  });
+
+  it('scrolls and focuses first input when Edit is clicked', async () => {
+    const scrollIntoViewMock = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+
+    // requestAnimationFrame fires callback synchronously in tests
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+
+    render(<UsersPanel />);
+
+    const adminRow = screen.getAllByRole('row').find((row) => within(row).queryAllByText('admin').length > 0);
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Edit' }));
+
+    // Form should switch to edit mode with username pre-filled
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Edit User' })).toBeInTheDocument();
+    });
+
+    // scrollIntoView must be called on the form section
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' });
+
+    // Username input should be focused
+    const usernameInput = screen.getByPlaceholderText('ops-bot');
+    expect(document.activeElement).toBe(usernameInput);
+  });
+
+  it('shows highlight ring on form section when Edit is clicked and clears on Reset', async () => {
+    const scrollIntoViewMock = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+
+    render(<UsersPanel />);
+
+    const adminRow = screen.getAllByRole('row').find((row) => within(row).queryAllByText('admin').length > 0);
+    if (!adminRow) return;
+
+    act(() => {
+      fireEvent.click(within(adminRow).getByRole('button', { name: 'Edit' }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Edit User' })).toBeInTheDocument();
+    });
+
+    // Form section should have the ring highlight class during edit mode
+    const formSection = screen.getByRole('heading', { name: 'Edit User' }).closest('section');
+    expect(formSection?.className).toContain('ring-2');
+
+    // Reset form returns to create mode — heading changes back
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Create User' })).toBeInTheDocument();
     });
   });
 
