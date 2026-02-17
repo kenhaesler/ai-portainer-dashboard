@@ -83,6 +83,22 @@ describe('useContainers', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockApi.get).toHaveBeenCalledWith('/api/containers');
   });
+
+  it('normalizes partial wrapped response into container array', async () => {
+    const containers = [{ id: 'c1', name: 'partial' }];
+    mockApi.get.mockResolvedValueOnce({
+      data: containers,
+      partial: true,
+      failedEndpoints: ['edge-1: timeout'],
+    });
+
+    const { result } = renderHook(() => useContainers(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(containers);
+  });
 });
 
 describe('usePaginatedContainers', () => {
