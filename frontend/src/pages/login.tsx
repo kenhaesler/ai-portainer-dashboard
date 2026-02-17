@@ -90,9 +90,9 @@ export default function LoginPage() {
         const minTimer = new Promise<void>((resolve) =>
           window.setTimeout(resolve, 1000),
         );
-        // Cap total wait at 4 s so slow networks don't trap users on the screen.
+        // Cap total wait at 5 s so slow networks don't trap users on the screen.
         const maxTimer = new Promise<void>((resolve) =>
-          window.setTimeout(resolve, 4000),
+          window.setTimeout(resolve, 5000),
         );
 
         // Navigate when the minimum animation has played AND either the data is
