@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { HardDrive, Layers, Tag, AlertTriangle, X, Server, CheckCircle2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { HardDrive, Layers, Tag, AlertTriangle, X, Server, CheckCircle2, Copy, Check } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useImages, type DockerImage } from '@/hooks/use-images';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -15,8 +17,8 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { DataTable } from '@/components/shared/data-table';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
-import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { spring } from '@/lib/motion-tokens';
 import { formatBytes, truncate } from '@/lib/utils';
 
 export default function ImageFootprintPage() {
@@ -251,39 +253,33 @@ export default function ImageFootprintPage() {
         )}
       </div>
 
-      {/* Staleness Summary — same grid pattern as Home KPI row */}
+      {/* Staleness Summary */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <MotionStagger className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Checked"
-                value={stalenessData.summary.total}
-                icon={<Layers className="h-5 w-5" />}
-              />
-            </TiltCard>
+            <KpiCard
+              label="Checked"
+              value={stalenessData.summary.total}
+              icon={<Layers className="h-5 w-5" />}
+            />
           </MotionReveal>
           <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Up to Date"
-                value={stalenessData.summary.upToDate}
-                icon={<CheckCircle2 className="h-5 w-5" />}
-                trend="up"
-                trendValue={`of ${stalenessData.summary.total} checked`}
-              />
-            </TiltCard>
+            <KpiCard
+              label="Up to Date"
+              value={stalenessData.summary.upToDate}
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              trend="up"
+              trendValue={`of ${stalenessData.summary.total} checked`}
+            />
           </MotionReveal>
           <MotionReveal className="h-full">
-            <TiltCard>
-              <KpiCard
-                label="Stale"
-                value={stalenessData.summary.stale}
-                icon={<AlertTriangle className="h-5 w-5" />}
-                trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
-                trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
-              />
-            </TiltCard>
+            <KpiCard
+              label="Stale"
+              value={stalenessData.summary.stale}
+              icon={<AlertTriangle className="h-5 w-5" />}
+              trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
+              trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
+            />
           </MotionReveal>
         </MotionStagger>
       )}
@@ -369,108 +365,256 @@ export default function ImageFootprintPage() {
         </MotionReveal>
       )}
 
-      {/* Backdrop for sidebar */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-          onClick={() => setSelectedImage(null)}
-        />
-      )}
+      {/* Image Detail Slide Panel */}
+      <ImageDetailPanel
+        image={selectedImage}
+        stalenessMap={stalenessMap}
+        onClose={() => setSelectedImage(null)}
+      />
+    </MotionPage>
+  );
+}
 
-      {/* Detail Sidebar — scoped to content area, not overlapping nav */}
-      {selectedImage && (
-        <div className="fixed top-4 right-4 bottom-4 z-50 w-96 overflow-y-auto rounded-2xl border border-border/50 bg-card/80 p-6 shadow-xl backdrop-blur-xl ring-1 ring-white/10 dark:ring-white/5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Image Details</h2>
-            <button
-              onClick={() => setSelectedImage(null)}
-              className="rounded-lg p-1.5 transition-colors hover:bg-accent/80"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+/* ------------------------------------------------------------------ */
+/*  Image Detail Slide Panel                                          */
+/* ------------------------------------------------------------------ */
 
-          <div className="mt-6 space-y-6">
-            {/* Image Name */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Image Name
-              </label>
-              <p className="mt-1 break-all font-medium">{selectedImage.name}</p>
+const panelVariants = {
+  hidden: { x: '100%', opacity: 0.8 },
+  visible: { x: 0, opacity: 1 },
+  exit: { x: '100%', opacity: 0.6 },
+};
+
+const backdropVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+  exit: { opacity: 0 },
+};
+
+function ImageDetailPanel({
+  image,
+  stalenessMap,
+  onClose,
+}: {
+  image: DockerImage | null;
+  stalenessMap: Map<string, { isStale: boolean; lastChecked: string }>;
+  onClose: () => void;
+}) {
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopy = useCallback((text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 1500);
+  }, []);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!image) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [image, onClose]);
+
+  const staleness = image ? stalenessMap.get(image.name) : undefined;
+
+  return createPortal(
+    <AnimatePresence>
+      {image && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            key="image-detail-backdrop"
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            variants={backdropVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
+
+          {/* Slide-in panel */}
+          <motion.div
+            key="image-detail-panel"
+            role="dialog"
+            aria-label={`Details for ${image.name}`}
+            className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border/50 bg-card/90 shadow-2xl backdrop-blur-[45px]"
+            variants={panelVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            transition={spring.snappy}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border/50 px-6 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Image Details
+                </p>
+                <h2 className="mt-0.5 truncate text-lg font-semibold">{image.name}</h2>
+              </div>
+              <button
+                onClick={onClose}
+                className="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            {/* ID */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Image ID
-              </label>
-              <p className="mt-1 break-all font-mono text-sm text-muted-foreground">{selectedImage.id}</p>
-            </div>
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-y-auto">
+              {/* Size hero */}
+              <div className="border-b border-border/50 px-6 py-5">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Disk Usage
+                </p>
+                <p className="mt-1 text-3xl font-bold tracking-tight text-primary">
+                  {formatBytes(image.size)}
+                </p>
+              </div>
 
-            {/* Size */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Size
-              </label>
-              <p className="mt-1 text-2xl font-bold text-blue-500">
-                {formatBytes(selectedImage.size)}
-              </p>
-            </div>
+              {/* Status + Registry row */}
+              <div className="grid grid-cols-2 border-b border-border/50">
+                <div className="border-r border-border/50 px-6 py-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Status
+                  </p>
+                  <div className="mt-1.5">
+                    {staleness ? (
+                      staleness.isStale ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-yellow-100 px-2.5 py-1 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                          <AlertTriangle className="h-3 w-3" />
+                          Update Available
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Up to Date
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Unchecked</span>
+                    )}
+                  </div>
+                </div>
+                <div className="px-6 py-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Registry
+                  </p>
+                  <p className="mt-1.5 text-sm font-medium">{image.registry}</p>
+                </div>
+              </div>
 
-            {/* Registry */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Registry
-              </label>
-              <p className="mt-1">{selectedImage.registry}</p>
-            </div>
-
-            {/* Endpoint */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Endpoint
-              </label>
-              <p className="mt-1">
-                {selectedImage.endpointName || `Endpoint ${selectedImage.endpointId}`}
-              </p>
-            </div>
-
-            {/* Created */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Created
-              </label>
-              <p className="mt-1">
-                {selectedImage.created
-                  ? new Date(selectedImage.created * 1000).toLocaleString()
-                  : 'Unknown'}
-              </p>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Tags ({selectedImage.tags.length})
-              </label>
-              <div className="mt-2 space-y-2">
-                {selectedImage.tags.length > 0 ? (
-                  selectedImage.tags.map((tag) => (
-                    <div
-                      key={tag}
-                      className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 backdrop-blur-sm"
+              {/* Metadata fields */}
+              <div className="space-y-0 divide-y divide-border/50">
+                {/* Image ID */}
+                <div className="group px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Image ID
+                    </p>
+                    <button
+                      onClick={() => handleCopy(image.id, 'id')}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      title="Copy ID"
                     >
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      <span className="break-all text-sm">{tag}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">No tags available</p>
+                      {copiedField === 'id' ? (
+                        <Check className="h-3 w-3 text-emerald-500" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                    {image.id}
+                  </p>
+                </div>
+
+                {/* Endpoint */}
+                <div className="px-6 py-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Endpoint
+                  </p>
+                  <p className="mt-1 text-sm">
+                    {image.endpointName || `Endpoint ${image.endpointId}`}
+                  </p>
+                </div>
+
+                {/* Created */}
+                <div className="px-6 py-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Created
+                  </p>
+                  <p className="mt-1 text-sm">
+                    {image.created
+                      ? new Date(image.created * 1000).toLocaleString()
+                      : 'Unknown'}
+                  </p>
+                </div>
+
+                {/* Last checked */}
+                {staleness && (
+                  <div className="px-6 py-4">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Last Checked
+                    </p>
+                    <p className="mt-1 text-sm">
+                      {new Date(staleness.lastChecked).toLocaleString()}
+                    </p>
+                  </div>
                 )}
               </div>
+
+              {/* Tags section */}
+              <div className="border-t border-border/50 px-6 py-4">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Tags ({image.tags.length})
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  {image.tags.length > 0 ? (
+                    image.tags.map((tag) => (
+                      <div
+                        key={tag}
+                        className="group flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="break-all font-mono text-xs">{tag}</span>
+                        </div>
+                        <button
+                          onClick={() => handleCopy(tag, tag)}
+                          className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                          title="Copy tag"
+                        >
+                          {copiedField === tag ? (
+                            <Check className="h-3 w-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No tags available</p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+
+            {/* Footer */}
+            <div className="border-t border-border/50 px-6 py-3">
+              <p className="text-center text-xs text-muted-foreground">
+                Press <kbd className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd> to close
+              </p>
+            </div>
+          </motion.div>
+        </>
       )}
-    </MotionPage>
+    </AnimatePresence>,
+    document.body,
   );
 }

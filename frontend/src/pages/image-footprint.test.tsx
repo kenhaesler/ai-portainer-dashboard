@@ -1,5 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
+
+vi.mock('react-dom', async () => {
+  const actual = await vi.importActual('react-dom');
+  return { ...actual, createPortal: (node: any) => node };
+});
+
+vi.mock('framer-motion', () => ({
+  AnimatePresence: ({ children }: any) => <>{children}</>,
+  motion: {
+    div: ({ children, ...props }: any) => <div {...Object.fromEntries(Object.entries(props).filter(([k]) => !['variants', 'initial', 'animate', 'exit', 'transition'].includes(k)))}>{children}</div>,
+  },
+  useReducedMotion: () => false,
+  useMotionValue: () => ({ set: vi.fn() }),
+  useSpring: (v: any) => v,
+}));
 
 const mockSetInterval = vi.fn();
 const mockRefetch = vi.fn();
@@ -74,14 +89,18 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: () => <div data-testid="skeleton-card" />,
 }));
 
+vi.mock('@/lib/motion-tokens', () => ({
+  spring: { snappy: { type: 'spring', stiffness: 400, damping: 25 } },
+  duration: { fast: 0.15, base: 0.25, slow: 0.4, slower: 0.6 },
+  easing: { default: [0.4, 0, 0.2, 1], pop: [0.32, 0.72, 0, 1] },
+  transition: { page: { duration: 0.4 } },
+  pageVariants: {},
+}));
+
 vi.mock('@/components/shared/motion-page', () => ({
   MotionPage: ({ children }: any) => <div data-testid="motion-page">{children}</div>,
   MotionReveal: ({ children }: any) => <div>{children}</div>,
   MotionStagger: ({ children, className }: any) => <div className={className}>{children}</div>,
-}));
-
-vi.mock('@/components/shared/tilt-card', () => ({
-  TiltCard: ({ children }: any) => <div>{children}</div>,
 }));
 
 vi.mock('@/components/shared/spotlight-card', () => ({
@@ -112,7 +131,13 @@ vi.mock('@/components/shared/data-table', () => ({
         <tbody>
           {data.map((row: any, i: number) => (
             <tr key={i}>
-              <td>{row.name}</td>
+              {columns.map((col: any) => (
+                <td key={col.header}>
+                  {col.cell
+                    ? col.cell({ row: { original: row }, getValue: () => row[col.accessorKey] })
+                    : row[col.accessorKey]}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -148,5 +173,29 @@ describe('ImageFootprintPage', () => {
     render(<ImageFootprintPage />);
 
     expect(screen.getByTestId('motion-page')).toBeInTheDocument();
+  });
+
+  it('opens detail panel when clicking an image name', () => {
+    render(<ImageFootprintPage />);
+
+    // Panel should not be visible initially
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Click the image name button in the DataTable
+    fireEvent.click(screen.getByText('nginx'));
+
+    // Panel should appear with image details
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Disk Usage')).toBeInTheDocument();
+  });
+
+  it('closes detail panel on Escape key', () => {
+    render(<ImageFootprintPage />);
+
+    fireEvent.click(screen.getByText('nginx'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
