@@ -259,6 +259,28 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Lightweight reachability check for health probes.
+ * Uses the pooled connection and standard headers but skips circuit breaker
+ * and retries — health checks should reflect current state, not retry stale failures.
+ */
+export async function checkPortainerReachable(timeoutMs = 5000): Promise<{ reachable: boolean; ok: boolean }> {
+  const url = buildApiUrl('/api/status');
+  const headers = buildApiHeaders(false);
+  const dispatcher = getDispatcher();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- undici/undici-types version mismatch
+    const res = await fetch(url, { headers, signal: controller.signal, ...(dispatcher && { dispatcher: dispatcher as any }) });
+    return { reachable: true, ok: res.ok };
+  } catch {
+    return { reachable: false, ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Build a full Portainer API URL from a path, consistently stripping trailing slashes. */
 export function buildApiUrl(path: string): string {
   const config = getConfig();

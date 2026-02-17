@@ -11,11 +11,18 @@ vi.mock('../services/portainer-cache.js', () => ({
     getBackoffState: vi.fn(),
     ping: vi.fn(),
   },
+  cachedFetch: vi.fn((_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher()),
+}));
+vi.mock('../services/portainer-client.js', () => ({
+  checkPortainerReachable: vi.fn(),
 }));
 
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
-import { cache } from '../services/portainer-cache.js';
+import { cache, cachedFetch } from '../services/portainer-cache.js';
+import { checkPortainerReachable } from '../services/portainer-client.js';
+const mockCachedFetch = vi.mocked(cachedFetch);
+const mockCheckPortainer = vi.mocked(checkPortainerReachable);
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);
 const mockIsMetricsDbReady = vi.mocked(isMetricsDbReady);
 const mockIsAppDbHealthy = vi.mocked(isAppDbHealthy);
@@ -43,6 +50,8 @@ describe('Health Routes', () => {
     mockIsMetricsDbReady.mockReturnValue(true);
     mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
     mockCache.ping.mockResolvedValue(false);
+    // Default: Portainer reachable and ok
+    mockCheckPortainer.mockResolvedValue({ reachable: true, ok: true });
   });
 
   describe('GET /health', () => {
@@ -84,6 +93,7 @@ describe('Health Routes', () => {
     it('should NOT include error details in redacted response', async () => {
       mockIsAppDbHealthy.mockResolvedValue(false);
       mockIsMetricsDbHealthy.mockResolvedValue(false);
+      mockCheckPortainer.mockResolvedValue({ reachable: false, ok: false });
       mockFetch.mockRejectedValue(new Error('Connection refused'));
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
@@ -103,7 +113,8 @@ describe('Health Routes', () => {
     });
     it('should return degraded when Portainer returns non-ok', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
-      mockFetch.mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true });
+      mockCheckPortainer.mockResolvedValue({ reachable: true, ok: false });
+      mockFetch.mockResolvedValue({ ok: true });
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('degraded');
@@ -111,7 +122,8 @@ describe('Health Routes', () => {
     });
     it('should return unhealthy when Portainer connection fails', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
-      mockFetch.mockRejectedValueOnce(new Error('Connection refused')).mockResolvedValueOnce({ ok: true });
+      mockCheckPortainer.mockResolvedValue({ reachable: false, ok: false });
+      mockFetch.mockResolvedValue({ ok: true });
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('unhealthy');
@@ -119,7 +131,7 @@ describe('Health Routes', () => {
     });
     it('should return unhealthy when Ollama connection fails', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
-      mockFetch.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('Ollama not running'));
+      mockFetch.mockRejectedValue(new Error('Ollama not running'));
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('unhealthy');
@@ -145,6 +157,7 @@ describe('Health Routes', () => {
     it('should handle all services unhealthy', async () => {
       mockIsAppDbHealthy.mockResolvedValue(false);
       mockIsMetricsDbHealthy.mockResolvedValue(false);
+      mockCheckPortainer.mockResolvedValue({ reachable: false, ok: false });
       mockFetch.mockRejectedValue(new Error('Network error'));
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
@@ -192,6 +205,19 @@ describe('Health Routes', () => {
       const b = JSON.parse(r.body);
       expect(b.checks.redis).toBeUndefined();
     });
+    it('should use cachedFetch for Portainer and Ollama checks with 30s TTL', async () => {
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
+      mockFetch.mockResolvedValue({ ok: true });
+      await app.inject({ method: 'GET', url: '/health/ready' });
+      expect(mockCachedFetch).toHaveBeenCalledWith('health:portainer', 30, expect.any(Function));
+      expect(mockCachedFetch).toHaveBeenCalledWith('health:ollama', 30, expect.any(Function));
+    });
+    it('should use checkPortainerReachable instead of raw fetch for Portainer', async () => {
+      mockIsMetricsDbHealthy.mockResolvedValue(true);
+      mockFetch.mockResolvedValue({ ok: true });
+      await app.inject({ method: 'GET', url: '/health/ready' });
+      expect(mockCheckPortainer).toHaveBeenCalledOnce();
+    });
   });
 
   describe('GET /health/ready/detail (authenticated)', () => {
@@ -208,13 +234,14 @@ describe('Health Routes', () => {
     it('should return error details when services fail', async () => {
       mockIsAppDbHealthy.mockResolvedValue(false);
       mockIsMetricsDbHealthy.mockResolvedValue(false);
+      mockCheckPortainer.mockResolvedValue({ reachable: false, ok: false });
       mockFetch.mockRejectedValue(new Error('Connection refused'));
       const r = await app.inject({ method: 'GET', url: '/health/ready/detail' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('unhealthy');
       expect(b.checks.appDb.error).toBe('App PostgreSQL query failed');
       expect(b.checks.metricsDb.error).toBe('TimescaleDB query failed');
-      expect(b.checks.portainer.error).toBe('Connection refused');
+      expect(b.checks.portainer.error).toBe('Connection failed');
       expect(b.checks.portainer.url).toBe('http://localhost:9000');
       expect(b.checks.ollama.error).toBe('Connection refused');
       expect(b.checks.ollama.url).toBe('http://localhost:11434');
@@ -231,9 +258,10 @@ describe('Health Routes', () => {
       expect(b.checks).not.toHaveProperty('database');
       expect(b.timestamp).toBeDefined();
     });
-    it('should return degraded status when a service is degraded', async () => {
+    it('should return degraded status when Portainer is reachable but non-ok', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
-      mockFetch.mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true });
+      mockCheckPortainer.mockResolvedValue({ reachable: true, ok: false });
+      mockFetch.mockResolvedValue({ ok: true });
       const r = await app.inject({ method: 'GET', url: '/health/ready/detail' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('degraded');
