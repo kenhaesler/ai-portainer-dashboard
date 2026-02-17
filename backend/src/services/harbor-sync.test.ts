@@ -169,4 +169,122 @@ describe('harbor-sync', () => {
     expect(result.inUseMatched).toBe(0);
     expect(store.completeSyncStatus).toHaveBeenCalled();
   });
+
+  describe('pagination termination (#741)', () => {
+    it('terminates when items.length < pageSize (primary signal)', async () => {
+      // Return 50 items (< pageSize 100) — should stop after 1 page
+      const items = Array.from({ length: 50 }, (_, i) => ({
+        project_id: 1,
+        repository_name: 'myproject/app',
+        digest: `sha256:${i}`,
+        tags: ['latest'],
+        cve_id: `CVE-2024-${1000 + i}`,
+        severity: 'Medium',
+        status: '',
+        cvss_v3_score: 5.0,
+        package: `pkg-${i}`,
+        version: '1.0.0',
+        fixed_version: '',
+        desc: 'test vuln',
+        links: [],
+      }));
+
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValueOnce({
+        items,
+        total: 0, // total unknown (header missing)
+      });
+
+      const result = await runFullSync();
+      expect(result.vulnerabilitiesSynced).toBe(50);
+      // Should only call listVulnerabilities once since items < pageSize
+      expect(harborClient.listVulnerabilities).toHaveBeenCalledTimes(1);
+    });
+
+    it('paginates through multiple pages when items.length === pageSize', async () => {
+      const makeItems = (count: number, offset: number) =>
+        Array.from({ length: count }, (_, i) => ({
+          project_id: 1,
+          repository_name: 'myproject/app',
+          digest: `sha256:${offset + i}`,
+          tags: ['latest'],
+          cve_id: `CVE-2024-${offset + i}`,
+          severity: 'Low',
+          status: '',
+          cvss_v3_score: 3.0,
+          package: `pkg-${offset + i}`,
+          version: '1.0.0',
+          fixed_version: '',
+          desc: 'test',
+          links: [],
+        }));
+
+      // Page 1: 100 items (full page), Page 2: 30 items (partial — done)
+      vi.mocked(harborClient.listVulnerabilities)
+        .mockResolvedValueOnce({ items: makeItems(100, 0), total: 0 })
+        .mockResolvedValueOnce({ items: makeItems(30, 100), total: 0 });
+
+      const result = await runFullSync();
+      expect(result.vulnerabilitiesSynced).toBe(130);
+      expect(harborClient.listVulnerabilities).toHaveBeenCalledTimes(2);
+    });
+
+    it('terminates when total count is reached (secondary signal)', async () => {
+      const makeItems = (count: number, offset: number) =>
+        Array.from({ length: count }, (_, i) => ({
+          project_id: 1,
+          repository_name: 'myproject/app',
+          digest: `sha256:${offset + i}`,
+          tags: [],
+          cve_id: `CVE-2024-${offset + i}`,
+          severity: 'High',
+          status: '',
+          cvss_v3_score: 7.0,
+          package: `pkg-${offset + i}`,
+          version: '2.0.0',
+          fixed_version: '2.0.1',
+          desc: 'test',
+          links: [],
+        }));
+
+      // total=150, page 1: 100 items (full), page 2: 100 items (full, but total reached)
+      vi.mocked(harborClient.listVulnerabilities)
+        .mockResolvedValueOnce({ items: makeItems(100, 0), total: 150 })
+        .mockResolvedValueOnce({ items: makeItems(100, 100), total: 150 });
+
+      const result = await runFullSync();
+      // Should have all 200 fetched items but terminate because total (150) reached
+      expect(result.vulnerabilitiesSynced).toBe(200);
+      expect(harborClient.listVulnerabilities).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles total: 0 (missing header) without premature termination', async () => {
+      const makeItems = (count: number, offset: number) =>
+        Array.from({ length: count }, (_, i) => ({
+          project_id: 1,
+          repository_name: 'myproject/app',
+          digest: `sha256:${offset + i}`,
+          tags: [],
+          cve_id: `CVE-2024-${offset + i}`,
+          severity: 'Low',
+          status: '',
+          cvss_v3_score: 2.0,
+          package: `pkg-${offset + i}`,
+          version: '1.0.0',
+          fixed_version: '',
+          desc: 'test',
+          links: [],
+        }));
+
+      // total: 0 (header missing), 3 full pages then a partial page
+      vi.mocked(harborClient.listVulnerabilities)
+        .mockResolvedValueOnce({ items: makeItems(100, 0), total: 0 })
+        .mockResolvedValueOnce({ items: makeItems(100, 100), total: 0 })
+        .mockResolvedValueOnce({ items: makeItems(100, 200), total: 0 })
+        .mockResolvedValueOnce({ items: makeItems(42, 300), total: 0 });
+
+      const result = await runFullSync();
+      expect(result.vulnerabilitiesSynced).toBe(342);
+      expect(harborClient.listVulnerabilities).toHaveBeenCalledTimes(4);
+    });
+  });
 });

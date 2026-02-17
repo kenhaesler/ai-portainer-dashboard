@@ -430,7 +430,7 @@ export async function listVulnerabilities(options: {
       }
       const totalHeader = res.headers.get('x-total-count');
       const items = (await res.json()) as HarborVulnerabilityItem[];
-      return { items, total: totalHeader ? parseInt(totalHeader, 10) : -1 };
+      return { items, total: totalHeader ? parseInt(totalHeader, 10) : 0 };
     }),
   );
 
