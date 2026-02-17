@@ -184,6 +184,31 @@ describe('looksLikeToolCallAttempt', () => {
     const json = '{"containers":[{"name":"nginx","state":"running"}]}';
     expect(looksLikeToolCallAttempt(json)).toBe(false);
   });
+
+  it('returns true for inline tool_calls embedded in a sentence', () => {
+    const inline = 'I will now call: {"tool_calls":[{"tool":"get_containers","arguments":{}}]}';
+    expect(looksLikeToolCallAttempt(inline)).toBe(true);
+  });
+
+  it('returns true for OpenAI streaming delta format with "tool_call"', () => {
+    const delta = '{"tool_call":{"id":"call_1","function":{"name":"get_containers","arguments":"{}"}}}';
+    expect(looksLikeToolCallAttempt(delta)).toBe(true);
+  });
+
+  it('returns true for JSON array of function-call objects at root', () => {
+    const arr = '[{"function":{"name":"get_logs","arguments":{"container":"nginx"}}}]';
+    expect(looksLikeToolCallAttempt(arr)).toBe(true);
+  });
+
+  it('returns true for code fence with function-call array', () => {
+    const fenced = '```json\n[{"function":{"name":"list_containers","arguments":{}}}]\n```';
+    expect(looksLikeToolCallAttempt(fenced)).toBe(true);
+  });
+
+  it('returns false for a JSON array of container objects (not tool calls)', () => {
+    const arr = '[{"name":"nginx","state":"running"},{"name":"redis","state":"stopped"}]';
+    expect(looksLikeToolCallAttempt(arr)).toBe(false);
+  });
 });
 
 describe('formatChatContext', () => {
