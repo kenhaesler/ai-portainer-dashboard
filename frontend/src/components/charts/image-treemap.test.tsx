@@ -24,7 +24,7 @@ describe('ImageTreemap', () => {
   });
 
   it('uses white text for dark treemap cell colors', () => {
-    const style = getLabelStyleForFill('#475569');
+    const style = getLabelStyleForFill('#1e293b');
     expect(style.fill).toBe('#ffffff');
   });
 });

@@ -11,11 +11,11 @@ interface ImageTreemapProps {
   data: ImageData[];
 }
 
-// Professional muted palette — slate, indigo, stone tones
+// Soft pastel palette
 const COLORS = [
-  '#475569', '#6366f1', '#64748b', '#4f46e5', '#78716c',
-  '#334155', '#818cf8', '#57534e', '#4338ca', '#94a3b8',
-  '#1e293b', '#a5b4fc', '#44403c', '#312e81', '#a8a29e',
+  '#93c5fd', '#a5b4fc', '#c4b5fd', '#f9a8d4', '#fda4af',
+  '#fcd34d', '#86efac', '#6ee7b7', '#67e8f9', '#7dd3fc',
+  '#d8b4fe', '#fbcfe8', '#fde68a', '#a7f3d0', '#bae6fd',
 ];
 
 interface LabelStyle {
