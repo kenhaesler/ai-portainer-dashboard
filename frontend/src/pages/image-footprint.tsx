@@ -250,9 +250,9 @@ export default function ImageFootprintPage() {
         )}
       </div>
 
-      {/* Staleness Summary */}
+      {/* Staleness Summary — constrained to half-width to align with chart cards */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <MotionStagger className="grid grid-cols-1 gap-6 md:grid-cols-3" stagger={0.05}>
+        <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:w-[calc(50%-0.75rem)]" stagger={0.05}>
           <MotionReveal>
             <TiltCard>
               <div className="rounded-lg border bg-card p-4 shadow-sm">
