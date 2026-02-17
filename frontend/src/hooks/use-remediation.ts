@@ -26,6 +26,7 @@ export function useRemediationActions(status?: string) {
     // This query is mounted in multiple places (sidebar + remediation page).
     // Prevent retry/focus bursts that can trigger transient 429 responses.
     retry: false,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: 10_000,

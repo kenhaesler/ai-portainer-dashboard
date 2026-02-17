@@ -364,7 +364,10 @@ function CoverageRow({
 }
 
 export default function EbpfCoveragePage() {
-  const { data, isLoading } = useEbpfCoverage();
+  const { data, isLoading: coverageLoading, isPending: coveragePending } = useEbpfCoverage();
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = coverageLoading || (coveragePending && !data);
   const syncMutation = useSyncCoverage();
 
   return (

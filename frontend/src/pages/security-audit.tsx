@@ -59,9 +59,12 @@ export default function SecurityAuditPage() {
   const [selectedStack, setSelectedStack] = useState<string>('all');
 
   const { data: endpoints = [] } = useEndpoints();
-  const { data, isLoading, isError, error, refetch } = useSecurityAudit(
+  const { data, isLoading: auditLoading, isPending: auditPending, isError, error, refetch } = useSecurityAudit(
     selectedEndpoint === 'all' ? undefined : Number(selectedEndpoint),
   );
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = auditLoading || (auditPending && !data);
 
   const entries = data?.entries ?? [];
 

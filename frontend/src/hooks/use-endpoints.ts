@@ -36,6 +36,8 @@ export function useEndpoints() {
     queryKey: ['endpoints'],
     queryFn: () => api.get<Endpoint[]>('/api/endpoints'),
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -115,8 +115,12 @@ export default function LlmObservabilityPage() {
   const [privacyMode, setPrivacyMode] = useState(true);
   const { interval, setInterval } = useAutoRefresh(30);
 
-  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useLlmStats(timeRange);
-  const { data: traces, isLoading: tracesLoading, refetch: refetchTraces } = useLlmTraces(50);
+  const { data: stats, isLoading: statsLoading, isPending: statsPending, refetch: refetchStats } = useLlmStats(timeRange);
+  const { data: traces, isLoading: tracesLoading, isPending: tracesPending, refetch: refetchTraces } = useLlmTraces(50);
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const showStatsSkeleton = statsLoading || (statsPending && !stats);
+  const showTracesSkeleton = tracesLoading || (tracesPending && !traces);
   const modelBreakdown = stats?.modelBreakdown ?? [];
   const totalModelQueries = modelBreakdown.reduce((sum, model) => sum + model.count, 0);
   const maxModelQueries = modelBreakdown.reduce((max, model) => Math.max(max, model.count), 0);
@@ -175,7 +179,7 @@ export default function LlmObservabilityPage() {
       </div>
 
       {/* KPI Cards */}
-      {statsLoading ? (
+      {showStatsSkeleton ? (
         <div className="grid gap-4 md:grid-cols-4">
           <SkeletonCard />
           <SkeletonCard />
@@ -266,7 +270,7 @@ export default function LlmObservabilityPage() {
           <Activity className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold">Recent Traces</h2>
         </div>
-        <TracesTable traces={traces ?? []} isLoading={tracesLoading} privacyMode={privacyMode} />
+        <TracesTable traces={traces ?? []} isLoading={showTracesSkeleton} privacyMode={privacyMode} />
       </div>
     </div>
   );

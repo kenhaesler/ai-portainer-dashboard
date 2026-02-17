@@ -37,8 +37,8 @@ export default function NetworkTopologyPage() {
   };
 
   const { data: endpoints } = useEndpoints();
-  const { data: containers, isLoading: containersLoading, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
-  const { data: networks, isLoading: networksLoading, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
+  const { data: containers, isLoading: containersLoading, isPending: containersPending, isError: containersError, refetch: refetchContainers, isFetching: containersFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
+  const { data: networks, isLoading: networksLoading, isPending: networksPending, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
   const { interval, setInterval } = useAutoRefresh(30);
 
@@ -76,7 +76,9 @@ export default function NetworkTopologyPage() {
     refetchNetworks();
   };
 
-  const isLoading = containersLoading || networksLoading;
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = containersLoading || networksLoading || (containersPending && !containers) || (networksPending && !networks);
   const isError = containersError || networksError;
   const isFetching = containersFetching || networksFetching;
 
