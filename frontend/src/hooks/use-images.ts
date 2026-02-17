@@ -12,7 +12,12 @@ export interface DockerImage {
   registry: string;
 }
 
-export function useImages(endpointId?: number) {
+interface UseImagesOptions {
+  /** Auto-refresh interval in milliseconds, or false to disable */
+  refetchInterval?: number | false;
+}
+
+export function useImages(endpointId?: number, options?: UseImagesOptions) {
   return useQuery<DockerImage[]>({
     queryKey: ['images', endpointId],
     queryFn: async () => {
@@ -22,5 +27,8 @@ export function useImages(endpointId?: number) {
       return api.get<DockerImage[]>(path);
     },
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }

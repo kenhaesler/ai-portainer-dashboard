@@ -26,31 +26,37 @@ vi.mock('@/hooks/use-endpoints', () => ({
   }),
 }));
 
+const defaultImageData = [
+  {
+    id: 'img-1',
+    name: 'nginx',
+    tags: ['nginx:latest'],
+    size: 100_000_000,
+    registry: 'docker.io',
+    endpointId: 1,
+    endpointName: 'local',
+  },
+];
+
+const mockUseImages = vi.fn().mockReturnValue({
+  data: defaultImageData,
+  isLoading: false,
+  isPending: false,
+  isError: false,
+  error: null,
+  refetch: mockRefetch,
+  isFetching: false,
+});
+
 vi.mock('@/hooks/use-images', () => ({
-  useImages: () => ({
-    data: [
-      {
-        id: 'img-1',
-        name: 'nginx',
-        tags: ['nginx:latest'],
-        size: 100_000_000,
-        registry: 'docker.io',
-        endpointId: 1,
-        endpointName: 'local',
-      },
-    ],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: mockRefetch,
-    isFetching: false,
-  }),
+  useImages: (...args: unknown[]) => mockUseImages(...args),
 }));
 
 vi.mock('@/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({
     interval: 60,
     setInterval: mockSetInterval,
+    enabled: true,
   }),
 }));
 
@@ -197,5 +203,49 @@ describe('ImageFootprintPage', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows skeleton cards when isPending and no data', () => {
+    mockUseImages.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isPending: true,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+      isFetching: false,
+    });
+
+    render(<ImageFootprintPage />);
+
+    const skeletons = screen.getAllByTestId('skeleton-card');
+    expect(skeletons.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByTestId('data-table')).not.toBeInTheDocument();
+  });
+
+  it('shows skeleton cards when isLoading is true', () => {
+    mockUseImages.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isPending: true,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+      isFetching: true,
+    });
+
+    render(<ImageFootprintPage />);
+
+    const skeletons = screen.getAllByTestId('skeleton-card');
+    expect(skeletons.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('passes refetchInterval to useImages based on auto-refresh settings', () => {
+    render(<ImageFootprintPage />);
+
+    expect(mockUseImages).toHaveBeenCalledWith(
+      undefined,
+      { refetchInterval: 60_000 },
+    );
   });
 });

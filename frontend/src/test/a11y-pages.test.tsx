@@ -363,11 +363,7 @@ describe('Accessibility: Login Page', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
     const LoginPage = (await import('@/pages/login')).default;
 
-    const { container } = render(
-      <MemoryRouter>
-        <LoginPage />
-      </MemoryRouter>,
-    );
+    const { container } = renderWithProviders(<LoginPage />, { route: '/login' });
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
