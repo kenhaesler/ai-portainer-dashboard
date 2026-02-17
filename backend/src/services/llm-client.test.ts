@@ -305,6 +305,18 @@ describe('llm-client', () => {
     });
 
     it('limits concurrent LLM calls to 2 (queues the rest)', async () => {
+      // Reset to default config (Ollama path, not custom endpoint)
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: false,
+        customEndpointUrl: '',
+        customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
       // Each call will block until we resolve its deferred promise
       const resolvers: Array<() => void> = [];
       mockChat.mockImplementation(() => {

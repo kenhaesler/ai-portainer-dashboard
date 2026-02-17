@@ -112,7 +112,7 @@ vi.mock('@/hooks/use-nl-query', () => ({
 import { useDashboardFull } from '@/hooks/use-dashboard-full';
 import type { NormalizedContainer, DashboardSummary } from '@/hooks/use-dashboard';
 
-const mockUseDashboardFullFull = vi.mocked(useDashboardFull);
+const mockUseDashboardFull = vi.mocked(useDashboardFull);
 
 function makeContainer(i: number): NormalizedContainer {
   return {
