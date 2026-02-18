@@ -174,7 +174,6 @@ async function searchContainerLogs(
     } else {
       log.warn({ err: r.reason }, 'Failed to fetch container logs for search');
     }
-    if (results.length >= limit) break;
   }
 
   return results.slice(0, limit);
@@ -236,15 +235,26 @@ export async function searchRoutes(fastify: FastifyInstance) {
             ),
           ]);
 
+          let epContainers: ReturnType<typeof normalizeContainer>[] = [];
+          let epImages: NormalizedImage[] = [];
+
+          if (rawContainers.status === 'fulfilled') {
+            epContainers = rawContainers.value.map((c) => normalizeContainer(c, ep.id, ep.name));
+          } else {
+            log.warn({ endpointId: ep.id, err: rawContainers.reason }, 'Failed to fetch containers for search');
+          }
+
+          if (rawImages.status === 'fulfilled') {
+            epImages = rawImages.value.map((img) => normalizeImage(img, ep.id, ep.name));
+          } else {
+            log.warn({ endpointId: ep.id, err: rawImages.reason }, 'Failed to fetch images for search');
+          }
+
           return {
             epId: ep.id,
             epName: ep.name,
-            containers: rawContainers.status === 'fulfilled'
-              ? rawContainers.value.map((c) => normalizeContainer(c, ep.id, ep.name))
-              : (log.warn({ endpointId: ep.id, err: (rawContainers as PromiseRejectedResult).reason }, 'Failed to fetch containers for search'), []),
-            images: rawImages.status === 'fulfilled'
-              ? rawImages.value.map((img) => normalizeImage(img, ep.id, ep.name))
-              : (log.warn({ endpointId: ep.id, err: (rawImages as PromiseRejectedResult).reason }, 'Failed to fetch images for search'), []),
+            containers: epContainers,
+            images: epImages,
           };
         }),
       ),
