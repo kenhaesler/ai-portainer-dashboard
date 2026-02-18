@@ -146,4 +146,80 @@ describe('Search Routes', () => {
     expect(body.stacks).toHaveLength(0);
     expect(body.logs).toHaveLength(0);
   });
+
+  it('fetches containers and images in parallel across multiple endpoints', async () => {
+    // Two endpoints — verify containers and images are fetched for both
+    mockPortainer.getEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod', Status: 1 },
+      { Id: 2, Name: 'staging', Status: 1 },
+    ] as any);
+
+    mockPortainer.getContainers.mockResolvedValue([
+      {
+        Id: 'abc123',
+        Names: ['/web-app'],
+        Image: 'nginx:alpine',
+        State: 'running',
+        Status: 'Up 2 hours',
+        Created: 1700000000,
+        Ports: [],
+        NetworkSettings: { Networks: {} },
+        Labels: {},
+      },
+    ] as any);
+
+    mockPortainer.getImages.mockResolvedValue([]) as any;
+    mockPortainer.getStacks.mockResolvedValue([]) as any;
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/search?query=web-app',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // getContainers and getImages should have been called once per endpoint
+    expect(mockPortainer.getContainers).toHaveBeenCalledTimes(2);
+    expect(mockPortainer.getImages).toHaveBeenCalledTimes(2);
+    // Results from both endpoints
+    const body = JSON.parse(response.body);
+    expect(body.containers).toHaveLength(2);
+  });
+
+  it('returns partial results when one endpoint fails', async () => {
+    mockPortainer.getEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod', Status: 1 },
+      { Id: 2, Name: 'broken', Status: 1 },
+    ] as any);
+
+    mockPortainer.getContainers
+      .mockResolvedValueOnce([
+        {
+          Id: 'abc123',
+          Names: ['/web-app'],
+          Image: 'nginx:alpine',
+          State: 'running',
+          Status: 'Up 2 hours',
+          Created: 1700000000,
+          Ports: [],
+          NetworkSettings: { Networks: {} },
+          Labels: {},
+        },
+      ] as any)
+      .mockRejectedValueOnce(new Error('endpoint unreachable'));
+
+    mockPortainer.getImages.mockResolvedValue([]) as any;
+    mockPortainer.getStacks.mockResolvedValue([]) as any;
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/search?query=web-app',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    // Should still succeed with results from the working endpoint
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.containers).toHaveLength(1);
+  });
 });
