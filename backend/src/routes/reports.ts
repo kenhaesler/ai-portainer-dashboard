@@ -14,7 +14,9 @@ const log = createChildLogger('reports-routes');
 function isPoolTimeoutError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message.toLowerCase();
-  return msg.includes('timeout') && (msg.includes('connect') || msg.includes('pool') || msg.includes('acquire'));
+  // Match specific pg pool timeout patterns — avoid false-positives from
+  // unrelated DNS or network timeout errors.
+  return /\btimeout\b/.test(msg) && (/connection\s+acquire/.test(msg) || /pool\s+.*timeout/.test(msg) || msg.includes('trying to connect'));
 }
 
 /** PostgreSQL statement_timeout (error code 57014 = query_canceled) */

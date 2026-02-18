@@ -165,8 +165,9 @@ export async function getReportsDb(): Promise<pg.Pool> {
         connectionString: config.TIMESCALE_URL,
         max: config.TIMESCALE_REPORTS_MAX_CONNECTIONS,
         idleTimeoutMillis: 60_000,
-        // Fail fast when the pool is exhausted — callers convert this to a 503
-        connectionTimeoutMillis: 3_000,
+        // Fail fast when the pool is exhausted — callers convert this to a 503.
+        // 5 s gives breathing room under load while still failing promptly.
+        connectionTimeoutMillis: 5_000,
       });
 
       newPool.on('error', (err) => {
@@ -174,10 +175,13 @@ export async function getReportsDb(): Promise<pg.Pool> {
       });
 
       // Apply statement_timeout to every new connection so a runaway report query
-      // cannot hold a connection indefinitely.
+      // cannot hold a connection indefinitely. The `connect` event fires after the
+      // TCP connection is established but before the client is returned from
+      // pool.connect() / pool.query(), so the timeout is guaranteed to be set
+      // before the first user query runs.
       newPool.on('connect', (client) => {
         client.query(`SET statement_timeout = ${REPORTS_STATEMENT_TIMEOUT_MS}`).catch((err) => {
-          log.warn({ err }, 'Failed to set statement_timeout on reports connection');
+          log.error({ err }, 'Failed to set statement_timeout on reports connection — queries may run unbounded');
         });
       });
 
