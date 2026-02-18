@@ -16,6 +16,7 @@ vi.mock('./llm-tools.js', () => ({
     {
       name: 'query_containers',
       description: 'Search containers',
+      requiresApproval: false,
       parameters: {
         type: 'object',
         properties: {
@@ -26,6 +27,7 @@ vi.mock('./llm-tools.js', () => ({
     {
       name: 'navigate_to',
       description: 'Navigate to a page',
+      requiresApproval: false,
       parameters: {
         type: 'object',
         properties: {

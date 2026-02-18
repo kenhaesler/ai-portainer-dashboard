@@ -713,16 +713,28 @@ export async function executeToolCalls(
   return withSpan('llm-tools.execute', 'llm-tool-executor', 'internal', async () => {
     const results: ToolCallResult[] = [];
     for (const call of calls) {
+      // MCP tools must be routed through routeToolCalls in mcp-tool-bridge,
+      // not executed directly. Reject them here as a defense-in-depth measure.
+      if (isMcpToolName(call.tool)) {
+        log.warn({ tool: call.tool }, 'MCP tool routed to executeToolCalls instead of routeToolCalls');
+        results.push({
+          tool: call.tool,
+          success: false,
+          error: `MCP tool "${call.tool}" must be executed through the MCP bridge.`,
+        });
+        continue;
+      }
+
       const toolDef = TOOL_DEFINITIONS.find((t) => t.name === call.tool);
-      
+
       // If tool requires approval, it cannot be executed via this direct path
       // (This should be handled by the Socket.IO layer which asks the user)
       if (toolDef?.requiresApproval) {
         log.warn({ tool: call.tool }, 'Attempted to execute a tool that requires approval without an approval token');
-        results.push({ 
-          tool: call.tool, 
-          success: false, 
-          error: `Tool "${call.tool}" requires explicit user approval. Please ask the user to approve this action.` 
+        results.push({
+          tool: call.tool,
+          success: false,
+          error: `Tool "${call.tool}" requires explicit user approval. Please ask the user to approve this action.`
         });
         continue;
       }

@@ -4,29 +4,27 @@ const log = createChildLogger('utils:pii-scrubber');
 
 /**
  * Patterns for common PII and sensitive data.
+ *
+ * Intentionally excludes patterns that cause false positives in infrastructure
+ * contexts (Docker container IDs, trace IDs, network IPs, timestamps):
+ *   - UUID: Container IDs, trace IDs, and other infrastructure identifiers are
+ *     required by LLM tool calls (get_trace_details, query_containers, etc.)
+ *   - IPv4/IPv6: Docker network IPs (172.17.0.2, 10.0.0.1) are essential
+ *     infrastructure context the LLM needs for troubleshooting
+ *   - Credit card: The naive digit-sequence pattern matches timestamps, PIDs,
+ *     port numbers, and metric values — causing widespread false positives
  */
 const PII_PATTERNS = {
   // RFC 5322 compliant email regex
   email: /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*/g,
-  
-  // IPv4 Addresses (excluding common internal ones like 127.0.0.1 if needed, but safer to mask all)
-  ipv4: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
-  
-  // IPv6 Addresses
-  ipv6: /\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\b/g,
-  
-  // Credit Cards (Luhn check not performed, just pattern matching)
-  creditCard: /\b(?:\d[ -]*?){13,16}\b/g,
-  
-  // UUIDs / GUIDs
-  uuid: /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g,
-  
-  // Bearer Tokens / API Keys (common patterns)
+
+  // Bearer Tokens / API Keys (well-known prefixes only)
   apiToken: /\b(?:ghp_|glpat-|sqp_|sk-)[a-zA-Z0-9]{20,}\b/g,
   jwt: /\beyJ[A-Za-z0-9-_=]+\.eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]+\b/g,
 
-  // Potential Secrets in key=value pairs or JSON
-  secretAssignment: /(?:password|passwd|secret|key|token|auth|authorization|credential|passphrase|private_key)\s*[:=]\s*["']?([a-zA-Z0-9!@#$%^&*()_+={}[\]|\:;"'<>,.?/~`-]{8,})["']?/gi,
+  // Potential Secrets in key=value pairs or JSON — requires longer key names
+  // to avoid false positives on infrastructure terms like "key" and "token"
+  secretAssignment: /(?:password|passwd|secret|authorization|credential|passphrase|private_key|api_key|api_secret)["']?\s*[:=]\s*["']?([a-zA-Z0-9!@#$%^&*()_+={}[\]|:;"'<>,.?/~`-]{8,})["']?/gi,
 };
 
 /**
@@ -54,7 +52,7 @@ export function scrubPii(text: string, options: ScrubberOptions = {}): string {
   // 1. Regular patterns
   for (const [name, pattern] of Object.entries(PII_PATTERNS)) {
     if (name === 'secretAssignment') continue; // Handled separately due to capturing groups
-    
+
     scrubbed = scrubbed.replace(pattern, (match) => {
       matchCount++;
       if (options.verbose) {
@@ -65,12 +63,12 @@ export function scrubPii(text: string, options: ScrubberOptions = {}): string {
   }
 
   // 2. Secret assignments (handling capturing groups to keep the key)
-  scrubbed = scrubbed.replace(PII_PATTERNS.secretAssignment, (match, p1, offset, string) => {
+  scrubbed = scrubbed.replace(PII_PATTERNS.secretAssignment, (match, p1) => {
     matchCount++;
     // We want to keep the "key=" part and only mask the value
     const keyPart = match.substring(0, match.indexOf(p1));
     const suffix = match.substring(match.indexOf(p1) + p1.length);
-    
+
     if (options.verbose) {
       log.debug({ type: 'secretAssignment' }, 'Secret assignment detected and masked');
     }
@@ -96,6 +94,7 @@ export function scrubPii(text: string, options: ScrubberOptions = {}): string {
 
 /**
  * Scrub PII from an object or array recursively.
+ * Only scrubs values — keys are preserved to avoid corrupting data structures.
  */
 export function scrubPiiDeep<T>(obj: T, options: ScrubberOptions = {}): T {
   if (typeof obj === 'string') {
@@ -109,9 +108,7 @@ export function scrubPiiDeep<T>(obj: T, options: ScrubberOptions = {}): T {
   if (typeof obj === 'object' && obj !== null) {
     const result: any = {};
     for (const [key, value] of Object.entries(obj)) {
-      // Also check the key itself for sensitivity
-      const scrubbedKey = scrubPii(key, options);
-      result[scrubbedKey] = scrubPiiDeep(value, options);
+      result[key] = scrubPiiDeep(value, options);
     }
     return result as T;
   }
