@@ -1,5 +1,7 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { getDbForDomain } from '../db/app-db-router.js';
+import { createChildLogger } from '../utils/logger.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 import {
   SettingsQuerySchema,
@@ -92,6 +94,8 @@ function validateSecurityCriticalUrl(key: string, value: string): string | null 
 
   return null;
 }
+
+const log = createChildLogger('settings-route');
 
 export async function settingsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/settings/preferences', {
@@ -196,8 +200,8 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     if (promptMatch) {
       const feature = promptMatch[1];
       if (PROMPT_FEATURES.some((f) => f.key === feature)) {
-        createPromptVersion(feature, value, request.user?.username ?? 'admin').catch(() => {
-          // Non-critical: version creation failure should not break the save
+        createPromptVersion(feature, value, request.user?.username ?? 'admin').catch((err) => {
+          log.warn({ err, feature }, 'Failed to auto-create prompt version on save');
         });
       }
     }
@@ -298,15 +302,18 @@ export async function settingsRoutes(fastify: FastifyInstance) {
   });
 
   // Get version history for a prompt feature
+  const PromptFeatureParamsSchema = z.object({ feature: z.string().min(1) });
+
   fastify.get('/api/settings/prompts/:feature/history', {
     schema: {
       tags: ['Settings'],
       summary: 'Get prompt version history for a feature',
       security: [{ bearerAuth: [] }],
+      params: PromptFeatureParamsSchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
-    const { feature } = request.params as { feature: string };
+    const { feature } = request.params as z.infer<typeof PromptFeatureParamsSchema>;
     if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
       return (reply as any).code(404).send({ error: `Unknown feature: ${feature}` });
     }
@@ -315,22 +322,23 @@ export async function settingsRoutes(fastify: FastifyInstance) {
   });
 
   // Rollback a prompt feature to a previous version
+  const RollbackBodySchema = z.object({ versionId: z.number().int().positive() });
+
   fastify.post('/api/settings/prompts/:feature/rollback', {
     schema: {
       tags: ['Settings'],
       summary: 'Rollback a prompt to a previous version',
       security: [{ bearerAuth: [] }],
+      params: PromptFeatureParamsSchema,
+      body: RollbackBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
-    const { feature } = request.params as { feature: string };
-    const { versionId } = request.body as { versionId: number };
+    const { feature } = request.params as z.infer<typeof PromptFeatureParamsSchema>;
+    const { versionId } = request.body as z.infer<typeof RollbackBodySchema>;
 
     if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
       return (reply as any).code(404).send({ error: `Unknown feature: ${feature}` });
-    }
-    if (!versionId || typeof versionId !== 'number') {
-      return (reply as any).code(400).send({ error: 'versionId must be a number' });
     }
 
     const targetVersion = await getPromptVersionById(versionId, feature);

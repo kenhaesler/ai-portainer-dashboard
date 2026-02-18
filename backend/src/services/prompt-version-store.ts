@@ -76,18 +76,13 @@ export async function createPromptVersion(
   const model = modelSetting?.value?.trim() || null;
   const temperature = tempSetting?.value?.trim() ? parseFloat(tempSetting.value) : null;
 
-  // Determine next version number
-  const lastRow = await db().queryOne<{ maxver: string }>(
-    'SELECT COALESCE(MAX(version), 0)::integer AS maxver FROM prompt_versions WHERE feature = ?',
-    [feature],
-  );
-  const nextVersion = (Number(lastRow?.maxver ?? 0)) + 1;
-
+  // Atomic version number calculation — SELECT and INSERT in one statement
+  // to prevent race conditions when concurrent saves collide on the UNIQUE constraint.
   const rows = await db().query<PromptVersionRow>(
     `INSERT INTO prompt_versions (feature, version, system_prompt, model, temperature, changed_by, changed_at, change_note)
-     VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+     VALUES (?, (SELECT COALESCE(MAX(version), 0) + 1 FROM prompt_versions WHERE feature = ?), ?, ?, ?, ?, NOW(), ?)
      RETURNING id, feature, version, system_prompt, model, temperature, changed_by, changed_at, change_note`,
-    [feature, nextVersion, systemPrompt, model, temperature ?? null, changedBy, options?.changeNote ?? null],
+    [feature, feature, systemPrompt, model, temperature ?? null, changedBy, options?.changeNote ?? null],
   );
 
   const created = rowToVersion(rows[0]);

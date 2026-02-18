@@ -67,13 +67,12 @@ function makeRow(overrides: Partial<{
 
 describe('prompt-version-store', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     // Default: no existing model/temperature overrides
     mockGetSetting.mockResolvedValue(null);
-    // Default: 0 existing versions → next version = 1
-    mockDbQueryOne.mockResolvedValue({ maxver: '0' });
     // Default: insert returns one row
     mockDbQuery.mockResolvedValue([makeRow()]);
+    mockDbExecute.mockResolvedValue(undefined);
   });
 
   // ── createPromptVersion ─────────────────────────────────────────────
@@ -92,16 +91,18 @@ describe('prompt-version-store', () => {
       expect(result.temperature).toBeNull();
     });
 
-    it('increments version based on existing max', async () => {
-      mockDbQueryOne.mockResolvedValueOnce({ maxver: '3' });
+    it('computes version atomically via SQL subquery', async () => {
       mockDbQuery.mockResolvedValueOnce([makeRow({ version: 4 })]);
 
       const result = await createPromptVersion('chat_assistant', 'Prompt v4', 'admin');
 
       expect(result.version).toBe(4);
-      // Verify the INSERT was called with version=4
+      // Verify the INSERT SQL uses an atomic subquery for the version number
       const insertCall = mockDbQuery.mock.calls[0];
-      expect(insertCall[1]).toContain(4); // [feature, 4, ...]
+      expect(insertCall[0]).toContain('SELECT COALESCE(MAX(version), 0) + 1');
+      // Feature appears twice in params: once for INSERT value, once for subquery WHERE
+      expect(insertCall[1][0]).toBe('chat_assistant');
+      expect(insertCall[1][1]).toBe('chat_assistant');
     });
 
     it('reads model/temperature from settings at creation time', async () => {
