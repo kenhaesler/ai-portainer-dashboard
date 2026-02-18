@@ -7,10 +7,22 @@ import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.j
 import { getDbForDomain } from '../db/app-db-router.js';
 import { getMetricsDb } from '../db/timescale.js';
 import { getTraces, getTrace, getTraceSummary } from './trace-store.js';
+import { scrubPii } from '../utils/pii-scrubber.js';
+import { z } from 'zod';
 import { createChildLogger } from '../utils/logger.js';
 import { withSpan } from './trace-context.js';
 
 const log = createChildLogger('llm-tools');
+
+/** Schema for tool call structure (supports both Ollama and OpenAI-like formats) */
+const ToolCallSchema = z.object({
+  tool: z.string().optional(),
+  arguments: z.record(z.unknown()).optional(),
+  function: z.object({
+    name: z.string(),
+    arguments: z.union([z.string(), z.record(z.unknown())]).optional(),
+  }).optional(),
+});
 
 /** Check if a tool name is an MCP-prefixed name (e.g. mcp__kali-mcp__run_allowed). */
 function isMcpToolName(name: string): boolean {
@@ -34,6 +46,8 @@ export interface ToolDefinition {
     properties: Record<string, ToolParameter>;
     required?: string[];
   };
+  /** Whether the tool requires explicit user approval before execution (e.g. mutating actions). */
+  requiresApproval: boolean;
 }
 
 export interface ToolCallRequest {
@@ -51,6 +65,7 @@ export interface ToolCallResult {
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'query_containers',
+    requiresApproval: false,
     description:
       'Search and filter containers by name, image, state, or endpoint. Returns a list of matching containers with their status, image, endpoint, and ports.',
     parameters: {
@@ -66,6 +81,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'get_container_metrics',
+    requiresApproval: false,
     description:
       'Fetch CPU, memory, or network metrics for a specific container over a time range. Returns time-series data points.',
     parameters: {
@@ -80,6 +96,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'list_insights',
+    requiresApproval: false,
     description:
       'Query AI-generated monitoring insights filtered by severity or category. Returns recent anomaly detections and their descriptions.',
     parameters: {
@@ -93,6 +110,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'get_container_logs',
+    requiresApproval: false,
     description:
       'Fetch recent log lines for a container. Useful for debugging issues or checking recent activity.',
     parameters: {
@@ -107,6 +125,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'list_anomalies',
+    requiresApproval: false,
     description:
       'Get recent anomaly detections from metrics monitoring. Shows containers with unusual resource usage patterns.',
     parameters: {
@@ -118,6 +137,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'query_traces',
+    requiresApproval: false,
     description:
       'Search API request traces by service, status, time range, or minimum duration. Returns trace summaries grouped by trace ID.',
     parameters: {
@@ -133,6 +153,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'get_trace_details',
+    requiresApproval: false,
     description:
       'Get the full span tree for a specific trace ID. Returns all spans ordered by start time.',
     parameters: {
@@ -145,6 +166,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'get_trace_stats',
+    requiresApproval: false,
     description:
       'Get trace summary statistics including total traces, average duration, error rate, and top slowest endpoints.',
     parameters: {
@@ -156,6 +178,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'navigate_to',
+    requiresApproval: false,
     description:
       'Generate a deep link URL to a specific dashboard page. Use this when the user wants to go to a particular view.',
     parameters: {
@@ -473,13 +496,16 @@ async function executeGetContainerLogs(
       lines = lines.filter((line) => line.toLowerCase().includes(searchLower));
     }
 
+    // Scrub logs for PII before sending to LLM
+    const scrubbedLogs = scrubPii(lines.slice(-100).join('\n'));
+
     return {
       tool: 'get_container_logs',
       success: true,
       data: {
         containerName: match.name,
         lineCount: lines.length,
-        logs: lines.slice(-100).join('\n') + disclaimer,
+        logs: scrubbedLogs + disclaimer,
       },
     };
   } catch (err) {
@@ -687,6 +713,20 @@ export async function executeToolCalls(
   return withSpan('llm-tools.execute', 'llm-tool-executor', 'internal', async () => {
     const results: ToolCallResult[] = [];
     for (const call of calls) {
+      const toolDef = TOOL_DEFINITIONS.find((t) => t.name === call.tool);
+      
+      // If tool requires approval, it cannot be executed via this direct path
+      // (This should be handled by the Socket.IO layer which asks the user)
+      if (toolDef?.requiresApproval) {
+        log.warn({ tool: call.tool }, 'Attempted to execute a tool that requires approval without an approval token');
+        results.push({ 
+          tool: call.tool, 
+          success: false, 
+          error: `Tool "${call.tool}" requires explicit user approval. Please ask the user to approve this action.` 
+        });
+        continue;
+      }
+
       const executor = executors[call.tool];
       if (!executor) {
         results.push({ tool: call.tool, success: false, error: `Unknown tool: ${call.tool}` });
@@ -808,54 +848,49 @@ function repairTruncatedToolCallJson(raw: string): string | null {
 function validateToolCalls(calls: unknown[]): ToolCallRequest[] | null {
   const valid: ToolCallRequest[] = [];
   for (const call of calls) {
-    if (typeof call !== 'object' || call === null) continue;
-    const candidate = call as Record<string, unknown>;
-
-    // Some models return a wrapper call:
-    // {"tool":"tool_calls","arguments":{"tool_calls":[...]}}
-    if (
-      candidate.tool === 'tool_calls' &&
-      typeof candidate.arguments === 'object' &&
-      candidate.arguments !== null &&
-      'tool_calls' in (candidate.arguments as Record<string, unknown>)
-    ) {
-      const nested = (candidate.arguments as Record<string, unknown>).tool_calls;
-      if (Array.isArray(nested)) {
-        const nestedValid = validateToolCalls(nested);
-        if (nestedValid) valid.push(...nestedValid);
-      }
+    const result = ToolCallSchema.safeParse(call);
+    if (!result.success) {
+      log.debug({ err: result.error, call }, 'Invalid tool call format received from LLM');
       continue;
     }
 
-    let toolName: string | null = null;
-    let rawArgs: unknown = {};
+    const candidate = result.data;
 
-    if (typeof candidate.tool === 'string') {
-      toolName = candidate.tool;
-      rawArgs = candidate.arguments ?? {};
-    } else if (
-      typeof candidate.function === 'object' &&
-      candidate.function !== null
+    // Handle nested tool calls wrapper common in some models
+    if (
+      candidate.tool === 'tool_calls' &&
+      candidate.arguments &&
+      Array.isArray(candidate.arguments.tool_calls)
     ) {
-      const fn = candidate.function as Record<string, unknown>;
-      if (typeof fn.name === 'string') {
-        toolName = fn.name;
-        rawArgs = fn.arguments ?? {};
-      }
+      const nestedValid = validateToolCalls(candidate.arguments.tool_calls);
+      if (nestedValid) valid.push(...nestedValid);
+      continue;
     }
 
-    if (!toolName || (!executors[toolName] && !isMcpToolName(toolName))) continue;
+    let toolName: string | undefined;
+    let rawArgs: any = {};
 
+    if (candidate.tool) {
+      toolName = candidate.tool;
+      rawArgs = candidate.arguments ?? {};
+    } else if (candidate.function) {
+      toolName = candidate.function.name;
+      rawArgs = candidate.function.arguments ?? {};
+    }
+
+    if (!toolName || (!executors[toolName] && !isMcpToolName(toolName))) {
+      log.debug({ toolName }, 'LLM suggested unknown tool');
+      continue;
+    }
+
+    // Handle stringified arguments (common in OpenAI-style responses)
     if (typeof rawArgs === 'string') {
       try {
         rawArgs = JSON.parse(rawArgs);
       } catch {
+        log.warn({ toolName, rawArgs }, 'Failed to parse stringified tool arguments');
         rawArgs = {};
       }
-    }
-
-    if (!rawArgs || typeof rawArgs !== 'object') {
-      rawArgs = {};
     }
 
     valid.push({
