@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('undici', () => ({
-  Agent: vi.fn(),
+  Agent: vi.fn().mockImplementation(() => ({ close: vi.fn().mockResolvedValue(undefined) })),
   fetch: vi.fn(),
 }));
 
@@ -39,10 +39,11 @@ vi.mock('./settings-store.js', () => ({
   })),
 }));
 
-import { fetch as undiciFetch } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { getEffectiveHarborConfig } from './settings-store.js';
 import { isHarborConfigured, isHarborConfiguredAsync, testConnection, _resetHarborClientState } from './harbor-client.js';
 
+const MockAgent = vi.mocked(Agent);
 const mockFetch = vi.mocked(undiciFetch);
 const mockGetEffectiveHarborConfig = vi.mocked(getEffectiveHarborConfig);
 
@@ -207,6 +208,169 @@ describe('harbor-client', () => {
 
       // Each testConnection call goes through harborFetch which calls resolveConfig
       expect(mockGetEffectiveHarborConfig).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('harborFetchPaginated auth with DB-resolved credentials (#726)', () => {
+    it('sends Basic auth header with DB credentials in paginated requests (getProjects)', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValue({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$paginated-user',
+        robotSecret: 'paginated-secret',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+        headers: new Headers({ 'x-total-count': '0' }),
+      } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
+
+      const { getProjects } = await import('./harbor-client.js');
+      await getProjects();
+
+      const headers = mockFetch.mock.calls[0][1]?.headers as Record<string, string>;
+      const decoded = Buffer.from(headers['Authorization'].replace('Basic ', ''), 'base64').toString();
+      expect(decoded).toBe('robot$paginated-user:paginated-secret');
+    });
+
+    it('sends Basic auth header with DB credentials in listVulnerabilities', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValue({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$vuln-user',
+        robotSecret: 'vuln-secret',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+        headers: new Headers(),
+      } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
+
+      const { listVulnerabilities } = await import('./harbor-client.js');
+      await listVulnerabilities({ page: 1, pageSize: 10 });
+
+      const headers = mockFetch.mock.calls[0][1]?.headers as Record<string, string>;
+      const decoded = Buffer.from(headers['Authorization'].replace('Basic ', ''), 'base64').toString();
+      expect(decoded).toBe('robot$vuln-user:vuln-secret');
+    });
+
+    it('builds correct paginated URL with page and page_size params', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValue({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$test',
+        robotSecret: 'test-secret',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [],
+        headers: new Headers({ 'x-total-count': '0' }),
+      } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
+
+      const { getProjects } = await import('./harbor-client.js');
+      await getProjects();
+
+      const url = mockFetch.mock.calls[0][0] as string;
+      expect(url).toContain('/api/v2.0/projects');
+      expect(url).toContain('page=1');
+      expect(url).toContain('page_size=100');
+    });
+  });
+
+  describe('SSL dispatcher recreation when verifySsl toggles (#726)', () => {
+    it('creates Agent with rejectUnauthorized=false when verifySsl is disabled', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValue({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$test',
+        robotSecret: 'test-secret',
+        verifySsl: false,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce(mockOkResponse());
+
+      await testConnection();
+
+      expect(MockAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ connect: { rejectUnauthorized: false } }),
+      );
+    });
+
+    it('creates Agent without connect options when verifySsl is enabled', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValue({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$test',
+        robotSecret: 'test-secret',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce(mockOkResponse());
+
+      await testConnection();
+
+      const callArgs = MockAgent.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).not.toHaveProperty('connect');
+    });
+
+    it('recreates Agent when verifySsl toggles from true to false', async () => {
+      // First call with verifySsl=true
+      mockGetEffectiveHarborConfig.mockResolvedValueOnce({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$test',
+        robotSecret: 'test-secret',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce(mockOkResponse());
+      await testConnection();
+      const firstAgentCallCount = MockAgent.mock.calls.length;
+
+      // Second call with verifySsl=false — should recreate Agent
+      mockGetEffectiveHarborConfig.mockResolvedValueOnce({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$test',
+        robotSecret: 'test-secret',
+        verifySsl: false,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce(mockOkResponse());
+      await testConnection();
+
+      // Agent should have been constructed a second time for the new SSL setting
+      expect(MockAgent.mock.calls.length).toBeGreaterThan(firstAgentCallCount);
+      // The second Agent should have rejectUnauthorized=false
+      const lastCallArgs = MockAgent.mock.calls[MockAgent.mock.calls.length - 1]?.[0] as Record<string, unknown>;
+      expect(lastCallArgs).toHaveProperty('connect', { rejectUnauthorized: false });
+    });
+
+    it('reuses the same Agent when verifySsl stays the same', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValue({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: 'robot$test',
+        robotSecret: 'test-secret',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValue(mockOkResponse());
+
+      await testConnection();
+      await testConnection();
+
+      // Agent should only be constructed once (reused for same verifySsl value)
+      expect(MockAgent).toHaveBeenCalledTimes(1);
     });
   });
 });
