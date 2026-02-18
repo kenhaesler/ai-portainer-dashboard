@@ -5,7 +5,6 @@ const log = createChildLogger('metric-correlator');
 
 /** Minimal query interface satisfied by both pg.Pool and pg.PoolClient. */
 export interface Queryable {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   query: <T = any>(...args: any[]) => Promise<{ rows: T[] }>;
 }
 
