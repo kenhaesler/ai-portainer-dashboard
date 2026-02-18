@@ -123,6 +123,7 @@ describe('MCP Tool Bridge', () => {
       const result = convertBuiltinToolToOllama({
         name: 'query_containers',
         description: 'Search containers',
+        requiresApproval: false,
         parameters: {
           type: 'object',
           properties: { name: { type: 'string', description: 'Filter by name' } },
