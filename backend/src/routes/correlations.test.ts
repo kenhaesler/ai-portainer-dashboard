@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { correlationRoutes, clearInsightsCache, buildCorrelationPrompt, parseInsightsResponse } from './correlations.js';
+import { correlationRoutes, clearInsightsCache, clearCorrelationsCache, buildCorrelationPrompt, parseInsightsResponse } from './correlations.js';
 import type { CorrelationPair } from '../services/metric-correlator.js';
 
 const mockDetectCorrelated = vi.fn();
@@ -19,6 +19,23 @@ vi.mock('../services/llm-client.js', () => ({
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
+}));
+
+// withStatementTimeout in correlations.ts calls getMetricsDb() → pool.connect()
+const mockClientRelease = vi.fn();
+const mockClientQuery = vi.fn().mockResolvedValue({ rows: [] });
+const mockConnect = vi.fn().mockResolvedValue({
+  query: (...args: unknown[]) => mockClientQuery(...args),
+  release: mockClientRelease,
+});
+
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
+}));
+
+const mockIsUndefinedTableError = vi.fn().mockReturnValue(false);
+vi.mock('../services/metrics-store.js', () => ({
+  isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -57,6 +74,13 @@ describe('Correlation Routes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     clearInsightsCache();
+    clearCorrelationsCache();
+    mockConnect.mockResolvedValue({
+      query: (...args: unknown[]) => mockClientQuery(...args),
+      release: mockClientRelease,
+    });
+    mockClientQuery.mockResolvedValue({ rows: [] });
+    mockIsUndefinedTableError.mockReturnValue(false);
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
@@ -105,6 +129,41 @@ describe('Correlation Routes', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual([]);
     });
+
+    it('serves cached result on repeat request (5-min TTL)', async () => {
+      mockDetectCorrelated.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      expect(mockDetectCorrelated).toHaveBeenCalledTimes(1);
+
+      // Second call — should hit cache, service not called again
+      await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      expect(mockDetectCorrelated).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies statement_timeout via pool client', async () => {
+      mockDetectCorrelated.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+
+      // The SET statement_timeout query should have been executed
+      expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
+      expect(mockClientRelease).toHaveBeenCalled();
+    });
+
+    it('returns 503 when metrics table is not ready', async () => {
+      mockDetectCorrelated.mockRejectedValue(new Error('relation "metrics" does not exist'));
+      mockIsUndefinedTableError.mockReturnValue(true);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/anomalies/correlated',
+      });
+
+      expect(res.statusCode).toBe(503);
+      const body = res.json();
+      expect(body.error).toBe('Metrics database not ready');
+    });
   });
 
   describe('GET /api/metrics/correlations', () => {
@@ -143,6 +202,38 @@ describe('Correlation Routes', () => {
       });
 
       expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(168, 0.7);
+    });
+
+    it('serves cached pairs on repeat request', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue(samplePairs);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledTimes(1);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies statement_timeout via pool client', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
+
+      expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
+      expect(mockClientRelease).toHaveBeenCalled();
+    });
+
+    it('returns 503 when metrics table is not ready', async () => {
+      mockFindCorrelatedContainers.mockRejectedValue(new Error('relation "metrics" does not exist'));
+      mockIsUndefinedTableError.mockReturnValue(true);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/correlations',
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toBe('Metrics database not ready');
     });
   });
 
@@ -211,6 +302,15 @@ describe('Correlation Routes', () => {
       const res = await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
       expect(res.statusCode).toBe(200);
       expect(mockChatStream).toHaveBeenCalledTimes(1); // not called again
+    });
+
+    it('applies statement_timeout for the correlation query', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
+
+      expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
+      expect(mockClientRelease).toHaveBeenCalled();
     });
   });
 });

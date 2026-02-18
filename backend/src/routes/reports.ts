@@ -162,8 +162,16 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
     const interval = timeRangeToInterval(timeRange);
 
+    // Auto-select rollup table for the main aggregation query. Percentile
+    // queries (percentile_cont) require individual values and must stay on
+    // the raw metrics table regardless of time range.
+    const now = new Date();
+    const from = new Date(now.getTime() - parseDurationMs(interval));
+    const rollup = selectRollupTable(from, now);
+    const tsCol = rollup.timestampCol;
+
     const result = await withStatementTimeout(async (client) => {
-      const conditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
+      const conditions = [`${tsCol} >= NOW() - INTERVAL '${interval}'`];
       const params: unknown[] = [];
       let paramIdx = 1;
 
@@ -187,22 +195,37 @@ export async function reportsRoutes(fastify: FastifyInstance) {
 
       const where = conditions.join(' AND ');
 
-      const { rows } = await client.query(
-        `SELECT
-          container_id,
-          container_name,
-          endpoint_id,
-          metric_type,
-          AVG(value) as avg_value,
-          MIN(value) as min_value,
-          MAX(value) as max_value,
-          COUNT(*)::int as sample_count
-        FROM metrics
-        WHERE ${where}
-        GROUP BY container_id, container_name, endpoint_id, metric_type
-        ORDER BY container_name, metric_type`,
-        params,
-      );
+      // Main aggregation: use rollup table when available for faster scans.
+      // Rollup tables expose avg_value/min_value/max_value/sample_count directly.
+      const aggSql = rollup.isRollup
+        ? `SELECT
+            container_id,
+            container_name,
+            endpoint_id,
+            metric_type,
+            AVG(${rollup.valueCol}) as avg_value,
+            MIN(min_value) as min_value,
+            MAX(max_value) as max_value,
+            SUM(sample_count)::int as sample_count
+          FROM ${rollup.table}
+          WHERE ${where}
+          GROUP BY container_id, container_name, endpoint_id, metric_type
+          ORDER BY container_name, metric_type`
+        : `SELECT
+            container_id,
+            container_name,
+            endpoint_id,
+            metric_type,
+            AVG(value) as avg_value,
+            MIN(value) as min_value,
+            MAX(value) as max_value,
+            COUNT(*)::int as sample_count
+          FROM ${rollup.table}
+          WHERE ${where}
+          GROUP BY container_id, container_name, endpoint_id, metric_type
+          ORDER BY container_name, metric_type`;
+
+      const { rows } = await client.query(aggSql, params);
 
       const containersMap = new Map<string, {
         container_id: string;
@@ -231,6 +254,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
           });
         }
 
+        // Percentile queries always run against raw metrics (percentile_cont
+        // requires individual values that rollup tables do not carry).
         const pConditions = [`container_id = $1`, `metric_type = $2`, `timestamp >= NOW() - INTERVAL '${interval}'`];
         const pParams: unknown[] = [row.container_id, row.metric_type];
         let pIdx = 3;
@@ -462,8 +487,16 @@ export async function reportsRoutes(fastify: FastifyInstance) {
     const cached = getCachedReport<unknown>(cacheKey);
     if (cached) return cached;
 
+    // Auto-select rollup table for the management report (top services + daily trends).
+    // Both queries aggregate over multi-day windows — rollup tables give a
+    // significant scan reduction with no accuracy loss at day granularity.
+    const now = new Date();
+    const from = new Date(now.getTime() - parseDurationMs(interval));
+    const rollup = selectRollupTable(from, now);
+    const tsCol = rollup.timestampCol;
+
     const result = await withStatementTimeout(async (client) => {
-      const baseConditions = [`timestamp >= NOW() - INTERVAL '${interval}'`];
+      const baseConditions = [`${tsCol} >= NOW() - INTERVAL '${interval}'`];
       const baseParams: unknown[] = [];
       let paramIdx = 1;
 
@@ -480,20 +513,32 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       addInfrastructureSqlFilter(baseConditions, baseParams, paramIdx, excludeInfrastructure, infrastructurePatterns);
       const where = baseConditions.join(' AND ');
 
-      const { rows: topRows } = await client.query(
-        `SELECT
-          container_id,
-          container_name,
-          endpoint_id,
-          AVG(CASE WHEN metric_type = 'cpu' THEN value END) as cpu_avg,
-          MAX(CASE WHEN metric_type = 'cpu' THEN value END) as cpu_max,
-          AVG(CASE WHEN metric_type = 'memory' THEN value END) as memory_avg,
-          MAX(CASE WHEN metric_type = 'memory' THEN value END) as memory_max
-        FROM metrics
-        WHERE ${where}
-        GROUP BY container_id, container_name, endpoint_id`,
-        baseParams,
-      );
+      // Top-services query: use rollup avg_value/max_value when available.
+      const topServicesSql = rollup.isRollup
+        ? `SELECT
+            container_id,
+            container_name,
+            endpoint_id,
+            AVG(CASE WHEN metric_type = 'cpu' THEN ${rollup.valueCol} END) as cpu_avg,
+            MAX(CASE WHEN metric_type = 'cpu' THEN max_value END) as cpu_max,
+            AVG(CASE WHEN metric_type = 'memory' THEN ${rollup.valueCol} END) as memory_avg,
+            MAX(CASE WHEN metric_type = 'memory' THEN max_value END) as memory_max
+          FROM ${rollup.table}
+          WHERE ${where}
+          GROUP BY container_id, container_name, endpoint_id`
+        : `SELECT
+            container_id,
+            container_name,
+            endpoint_id,
+            AVG(CASE WHEN metric_type = 'cpu' THEN value END) as cpu_avg,
+            MAX(CASE WHEN metric_type = 'cpu' THEN value END) as cpu_max,
+            AVG(CASE WHEN metric_type = 'memory' THEN value END) as memory_avg,
+            MAX(CASE WHEN metric_type = 'memory' THEN value END) as memory_max
+          FROM ${rollup.table}
+          WHERE ${where}
+          GROUP BY container_id, container_name, endpoint_id`;
+
+      const { rows: topRows } = await client.query(topServicesSql, baseParams);
 
       const topServices = (topRows as Array<{
         container_id: string;
@@ -521,20 +566,32 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       const memoryAvgValues = topServices.map((s) => s.memoryAvg);
       const memoryMaxValues = topServices.map((s) => s.memoryMax);
 
-      const { rows: trendRows } = await client.query(
-        `SELECT
-          date_trunc('day', timestamp) as day,
-          metric_type,
-          AVG(value) as avg_value,
-          MIN(value) as min_value,
-          MAX(value) as max_value,
-          COUNT(*)::int as sample_count
-        FROM metrics
-        WHERE ${where}
-        GROUP BY day, metric_type
-        ORDER BY day ASC`,
-        baseParams,
-      );
+      // Daily trend query: rollup tables can be grouped by day directly.
+      const trendSql = rollup.isRollup
+        ? `SELECT
+            time_bucket('1 day', ${tsCol}) as day,
+            metric_type,
+            AVG(${rollup.valueCol}) as avg_value,
+            MIN(min_value) as min_value,
+            MAX(max_value) as max_value,
+            SUM(sample_count)::int as sample_count
+          FROM ${rollup.table}
+          WHERE ${where}
+          GROUP BY day, metric_type
+          ORDER BY day ASC`
+        : `SELECT
+            date_trunc('day', ${tsCol}) as day,
+            metric_type,
+            AVG(value) as avg_value,
+            MIN(value) as min_value,
+            MAX(value) as max_value,
+            COUNT(*)::int as sample_count
+          FROM ${rollup.table}
+          WHERE ${where}
+          GROUP BY day, metric_type
+          ORDER BY day ASC`;
+
+      const { rows: trendRows } = await client.query(trendSql, baseParams);
 
       const weeklyTrends: Record<string, Array<{ day: string; avg: number; min: number; max: number; samples: number }>> = {
         cpu: [],
