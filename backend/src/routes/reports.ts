@@ -23,7 +23,11 @@ const reportCache = new Map<string, CacheEntry>();
 
 function getCachedReport<T>(key: string): T | null {
   const entry = reportCache.get(key);
-  if (!entry || entry.expiresAt <= Date.now()) return null;
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    reportCache.delete(key);
+    return null;
+  }
   return entry.payload as T;
 }
 

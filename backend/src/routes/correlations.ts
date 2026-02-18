@@ -53,7 +53,11 @@ const correlationsCache = new Map<string, CorrelationsCacheEntry>();
 
 function getCachedCorrelations<T>(key: string): T | null {
   const entry = correlationsCache.get(key);
-  if (!entry || entry.expiresAt <= Date.now()) return null;
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    correlationsCache.delete(key);
+    return null;
+  }
   return entry.payload as T;
 }
 
