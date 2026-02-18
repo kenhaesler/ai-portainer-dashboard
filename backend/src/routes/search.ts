@@ -8,7 +8,7 @@ import { createChildLogger } from '../utils/logger.js';
 import { SearchQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('search-route');
-const TTL_LOG_SEARCH = 60; // 60 seconds — short cache for repeated/refined searches
+const TTL_LOG_SEARCH = 120; // 120 seconds — cache for repeated/refined searches
 
 /** Max concurrent log fetches per search — avoids saturating Portainer. */
 const LOG_FETCH_CONCURRENCY = 3;
