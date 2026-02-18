@@ -32,7 +32,7 @@ export function UsersPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const formSectionRef = useRef<HTMLElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
-  const highlightTimer = useRef<ReturnType<typeof setTimeout>>();
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => clearTimeout(highlightTimer.current), []);
 
