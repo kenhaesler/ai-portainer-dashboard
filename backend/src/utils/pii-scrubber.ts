@@ -65,9 +65,18 @@ export function scrubPii(text: string, options: ScrubberOptions = {}): string {
   // 2. Secret assignments (handling capturing groups to keep the key)
   scrubbed = scrubbed.replace(PII_PATTERNS.secretAssignment, (match, p1) => {
     matchCount++;
-    // We want to keep the "key=" part and only mask the value
-    const keyPart = match.substring(0, match.indexOf(p1));
-    const suffix = match.substring(match.indexOf(p1) + p1.length);
+    // We want to keep the "key=" part and only mask the value.
+    // Defensive: if the captured value is not found (e.g. earlier patterns already
+    // scrubbed part of the match), fall back to replacing the entire match.
+    const idx = match.indexOf(p1);
+    if (idx === -1) {
+      if (options.verbose) {
+        log.debug({ type: 'secretAssignment' }, 'Secret assignment detected and masked (full match)');
+      }
+      return replacement;
+    }
+    const keyPart = match.substring(0, idx);
+    const suffix = match.substring(idx + p1.length);
 
     if (options.verbose) {
       log.debug({ type: 'secretAssignment' }, 'Secret assignment detected and masked');

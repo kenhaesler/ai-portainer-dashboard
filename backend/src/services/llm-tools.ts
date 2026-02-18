@@ -22,7 +22,10 @@ const ToolCallSchema = z.object({
     name: z.string(),
     arguments: z.union([z.string(), z.record(z.unknown())]).optional(),
   }).optional(),
-});
+}).refine(
+  (data) => data.tool !== undefined || data.function !== undefined,
+  { message: 'Tool call must have either "tool" or "function" field' },
+);
 
 /** Check if a tool name is an MCP-prefixed name (e.g. mcp__kali-mcp__run_allowed). */
 function isMcpToolName(name: string): boolean {
