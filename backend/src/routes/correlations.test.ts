@@ -141,7 +141,7 @@ describe('Correlation Routes', () => {
       expect(mockDetectCorrelated).toHaveBeenCalledTimes(1);
     });
 
-    it('applies statement_timeout via pool client', async () => {
+    it('applies statement_timeout and passes client to service', async () => {
       mockDetectCorrelated.mockResolvedValue([]);
 
       await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
@@ -149,6 +149,11 @@ describe('Correlation Routes', () => {
       // The SET statement_timeout query should have been executed
       expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
       expect(mockClientRelease).toHaveBeenCalled();
+      // Client is passed as 3rd argument so queries use the timeout-protected connection
+      expect(mockDetectCorrelated).toHaveBeenCalledWith(
+        30, 2,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
 
     it('returns 503 when metrics table is not ready', async () => {
@@ -190,7 +195,10 @@ describe('Correlation Routes', () => {
         url: '/api/metrics/correlations?hours=6&minCorrelation=0.8',
       });
 
-      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(6, 0.8);
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        6, 0.8,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
 
     it('clamps hours to safe range', async () => {
@@ -201,7 +209,10 @@ describe('Correlation Routes', () => {
         url: '/api/metrics/correlations?hours=9999',
       });
 
-      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(168, 0.7);
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        168, 0.7,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
 
     it('serves cached pairs on repeat request', async () => {
@@ -214,13 +225,18 @@ describe('Correlation Routes', () => {
       expect(mockFindCorrelatedContainers).toHaveBeenCalledTimes(1);
     });
 
-    it('applies statement_timeout via pool client', async () => {
+    it('applies statement_timeout and passes client to service', async () => {
       mockFindCorrelatedContainers.mockResolvedValue([]);
 
       await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
 
       expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
       expect(mockClientRelease).toHaveBeenCalled();
+      // Client is passed as 3rd argument so queries use the timeout-protected connection
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        24, 0.7,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
 
     it('returns 503 when metrics table is not ready', async () => {
@@ -304,13 +320,17 @@ describe('Correlation Routes', () => {
       expect(mockChatStream).toHaveBeenCalledTimes(1); // not called again
     });
 
-    it('applies statement_timeout for the correlation query', async () => {
+    it('applies statement_timeout and passes client for the correlation query', async () => {
       mockFindCorrelatedContainers.mockResolvedValue([]);
 
       await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
 
       expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
       expect(mockClientRelease).toHaveBeenCalled();
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        24, 0.7,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
   });
 });
