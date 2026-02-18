@@ -76,7 +76,7 @@ describe('Reports routes', () => {
   });
 
   beforeEach(() => {
-    mockClientQuery.mockReset();
+    mockClientQuery.mockReset().mockResolvedValue({ rows: [] });
     mockRelease.mockReset();
     mockConnect.mockReset().mockResolvedValue(mockClient);
     mockSelectRollupTable.mockReturnValue({

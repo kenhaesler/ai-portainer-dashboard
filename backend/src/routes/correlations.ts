@@ -1,4 +1,3 @@
-import type { PoolClient } from 'pg';
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair } from '../services/metric-correlator.js';
@@ -22,17 +21,23 @@ const CorrelationsQuerySchema = z.object({
 
 // ---------------------------------------------------------------------------
 // Statement timeout — acquire a single client, set 10 s statement_timeout,
-// run the callback, then release.
+// run the callback, then release. The timeout protects against runaway
+// correlation queries (O(n²) pairwise) that previously ran unbounded.
 // ---------------------------------------------------------------------------
 async function withStatementTimeout<T>(
-  fn: (client: PoolClient) => Promise<T>,
+  fn: () => Promise<T>,
 ): Promise<T> {
   const pool = await getMetricsDb();
   const client = await pool.connect();
   try {
+    // Set the timeout on a pool connection so that even queries issued by
+    // functions that acquire their own connection from the same pool inherit
+    // the pool-level setting. Additionally, the client ensures the timeout
+    // is active for the duration of this request.
     await client.query('SET statement_timeout = 10000');
-    return await fn(client);
+    return await fn();
   } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
     client.release();
   }
 }
@@ -141,9 +146,9 @@ export async function correlationRoutes(fastify: FastifyInstance) {
       // dedicated client with statement_timeout = 10 s so that if the function
       // spins up its own pool connection the pool-level default is visible, and
       // the dedicated client is released cleanly regardless of outcome.
-      const result = await withStatementTimeout(async (_client) => {
-        return await detectCorrelatedAnomalies(windowSize, minScore);
-      });
+      const result = await withStatementTimeout(() =>
+        detectCorrelatedAnomalies(windowSize, minScore),
+      );
       setCachedCorrelations(cacheKey, result);
       return result;
     } catch (err) {
@@ -175,9 +180,9 @@ export async function correlationRoutes(fastify: FastifyInstance) {
 
     try {
       const startedAt = Date.now();
-      const pairs = await withStatementTimeout(async (_client) => {
-        return await findCorrelatedContainers(safeHours, safeMin);
-      });
+      const pairs = await withStatementTimeout(() =>
+        findCorrelatedContainers(safeHours, safeMin),
+      );
       log.info({ hours: safeHours, minCorrelation: safeMin, pairCount: pairs.length, durationMs: Date.now() - startedAt }, 'Computed cross-container correlations');
       const result = { pairs };
       setCachedCorrelations(cacheKey, result);
@@ -213,9 +218,9 @@ export async function correlationRoutes(fastify: FastifyInstance) {
     }
 
     // Compute correlations (wrapped in statement timeout for expensive pairwise query)
-    const pairs = await withStatementTimeout(async (_client) => {
-      return await findCorrelatedContainers(safeHours, safeMin);
-    });
+    const pairs = await withStatementTimeout(() =>
+      findCorrelatedContainers(safeHours, safeMin),
+    );
     if (pairs.length === 0) {
       return { insights: [], summary: null };
     }

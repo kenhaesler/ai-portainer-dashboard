@@ -49,6 +49,7 @@ async function withStatementTimeout<T>(
     await client.query('SET statement_timeout = 10000');
     return await fn(client);
   } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
     client.release();
   }
 }
