@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/app-layout';
 import { RouteErrorBoundary } from '@/components/shared/route-error-boundary';
+import { ChunkLoadErrorBoundary } from '@/components/shared/chunk-load-error-boundary';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('@/pages/login'));
@@ -42,7 +43,11 @@ function PageLoader() {
 }
 
 function LazyPage({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+  return (
+    <ChunkLoadErrorBoundary>
+      <Suspense fallback={<PageLoader />}>{children}</Suspense>
+    </ChunkLoadErrorBoundary>
+  );
 }
 
 export const router = createBrowserRouter([
