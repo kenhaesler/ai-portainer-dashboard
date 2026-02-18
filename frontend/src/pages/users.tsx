@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRole } from '@/hooks/use-users';
-import { formatDate } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 
 interface UserForm {
   username: string;
@@ -32,6 +32,9 @@ export function UsersPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const formSectionRef = useRef<HTMLElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => clearTimeout(highlightTimer.current), []);
 
   const filteredUsers = useMemo(() => {
     const all = usersQuery.data ?? [];
@@ -85,9 +88,10 @@ export function UsersPanel() {
     requestAnimationFrame(() => {
       formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       firstInputRef.current?.focus();
-      // Trigger highlight pulse animation
+      // Trigger highlight pulse animation — clear previous timer to prevent stacking
+      clearTimeout(highlightTimer.current);
       setEditHighlight(true);
-      setTimeout(() => setEditHighlight(false), 1200);
+      highlightTimer.current = setTimeout(() => setEditHighlight(false), 1200);
     });
   };
 
@@ -203,10 +207,10 @@ export function UsersPanel() {
 
         <section
           ref={formSectionRef}
-          className={[
+          className={cn(
             'rounded-lg border bg-card p-4 lg:col-span-2 transition-all duration-300',
-            editHighlight ? 'ring-2 ring-primary/60 shadow-md shadow-primary/10' : '',
-          ].join(' ')}
+            editHighlight && 'ring-2 ring-primary/60 shadow-md shadow-primary/10',
+          )}
         >
           <h2 className="inline-flex items-center gap-2 text-base font-semibold">
             {editingId ? <UserCog className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 const mockCreateUser = vi.fn();
@@ -41,10 +41,17 @@ vi.mock('@/hooks/use-users', () => ({
 import { UsersPanel } from './users';
 
 describe('UsersPanel', () => {
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
     mockUseAuth.mockReturnValue({ role: 'admin' });
+  });
+
+  afterEach(() => {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    vi.unstubAllGlobals();
   });
 
   it('shows admin-only warning for non-admin users', () => {
