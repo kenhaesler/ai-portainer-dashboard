@@ -209,4 +209,26 @@ describe('harbor-client', () => {
       expect(mockGetEffectiveHarborConfig).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('buildHeaders', () => {
+    it('omits Authorization header when credentials are empty strings', async () => {
+      mockGetEffectiveHarborConfig.mockResolvedValueOnce({
+        enabled: true,
+        apiUrl: 'https://harbor.example.com',
+        robotName: '',
+        robotSecret: '',
+        verifySsl: true,
+        syncIntervalMinutes: 30,
+      });
+      mockFetch.mockResolvedValueOnce(mockOkResponse());
+
+      await testConnection();
+
+      const callArgs = mockFetch.mock.calls[0];
+      const headers = callArgs[1]?.headers as Record<string, string>;
+      expect(headers['Authorization']).toBeUndefined();
+      expect(headers['Content-Type']).toBe('application/json');
+      expect(headers['Accept']).toBe('application/json');
+    });
+  });
 });
