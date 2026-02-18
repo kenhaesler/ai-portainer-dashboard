@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  History,
   Info,
   Layers,
   Loader2,
@@ -61,6 +62,7 @@ import {
   type ImportPreviewResponse,
 } from '@/hooks/use-prompt-profiles';
 import { useUpdateSetting, useDeleteSetting } from '@/hooks/use-settings';
+import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/hooks/use-prompt-versions';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { cn, formatBytes } from '@/lib/utils';
 import { api } from '@/lib/api';
@@ -1508,6 +1510,225 @@ function ImportPreviewPanel({
   );
 }
 
+// ─── Prompt History Panel ────────────────────────────────────────────
+
+/**
+ * Computes a simple line-by-line diff between two prompt strings.
+ * Returns arrays of added and removed lines relative to the previous version.
+ */
+function computeDiff(oldText: string, newText: string) {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const oldSet = new Set(oldLines);
+  const newSet = new Set(newLines);
+  return {
+    added: newLines.filter((l) => !oldSet.has(l) && l.trim() !== ''),
+    removed: oldLines.filter((l) => !newSet.has(l) && l.trim() !== ''),
+  };
+}
+
+function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 2) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(isoString).toLocaleDateString();
+}
+
+interface PromptHistoryPanelProps {
+  feature: string;
+  featureLabel: string;
+  onClose: () => void;
+  onRollback: (prompt: string) => void;
+}
+
+function PromptHistoryPanel({ feature, featureLabel, onClose, onRollback }: PromptHistoryPanelProps) {
+  const { data, isLoading, isError } = usePromptHistory(feature, true);
+  const rollbackMutation = useRollbackPrompt(feature);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const versions = data?.versions ?? [];
+
+  const handleRollback = (version: PromptVersion) => {
+    rollbackMutation.mutate(version.id, {
+      onSuccess: () => {
+        // Also update the local draft in the parent via onRollback callback
+        onRollback(version.systemPrompt);
+        onClose();
+      },
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <History className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{featureLabel} — Version History</span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Close history panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center justify-center py-6 text-muted-foreground gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="text-sm">Loading history...</span>
+        </div>
+      )}
+
+      {isError && (
+        <div className="rounded-md bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-600 dark:text-red-400">
+          Failed to load version history.
+        </div>
+      )}
+
+      {!isLoading && !isError && versions.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-4">
+          No version history yet. Save a prompt to start tracking changes.
+        </p>
+      )}
+
+      {!isLoading && versions.length > 0 && (
+        <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+          {versions.map((version, index) => {
+            const prevVersion = versions[index + 1];
+            const diff = prevVersion
+              ? computeDiff(prevVersion.systemPrompt, version.systemPrompt)
+              : { added: version.systemPrompt.split('\n').filter((l) => l.trim()), removed: [] };
+            const isExpanded = expandedId === version.id;
+            const isCurrent = index === 0;
+
+            return (
+              <div
+                key={version.id}
+                className={cn(
+                  'rounded-lg border bg-card',
+                  isCurrent && 'border-primary/30 bg-primary/5',
+                )}
+              >
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className={cn(
+                      'text-xs font-mono font-semibold shrink-0',
+                      isCurrent ? 'text-primary' : 'text-muted-foreground',
+                    )}>
+                      v{version.version}
+                    </span>
+                    {isCurrent && (
+                      <span className="text-[10px] bg-primary/15 text-primary px-1.5 py-0.5 rounded font-medium shrink-0">
+                        current
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0 truncate">
+                      <span className="truncate">{version.changedBy}</span>
+                      <span>·</span>
+                      <span className="shrink-0" title={new Date(version.changedAt).toLocaleString()}>
+                        {formatRelativeTime(version.changedAt)}
+                      </span>
+                    </div>
+                    {version.changeNote && (
+                      <span className="text-xs text-muted-foreground italic truncate hidden sm:block">
+                        {version.changeNote}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Diff summary badges */}
+                    {diff.added.length > 0 && (
+                      <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 rounded">
+                        +{diff.added.length}
+                      </span>
+                    )}
+                    {diff.removed.length > 0 && (
+                      <span className="text-[10px] font-mono bg-red-500/10 text-red-600 dark:text-red-400 px-1 rounded">
+                        -{diff.removed.length}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isExpanded ? null : version.id)}
+                      className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-accent transition-colors"
+                    >
+                      {isExpanded ? 'Hide' : 'Diff'}
+                    </button>
+                    {!isCurrent && (
+                      <button
+                        type="button"
+                        onClick={() => handleRollback(version)}
+                        disabled={rollbackMutation.isPending}
+                        className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 rounded transition-colors disabled:opacity-50"
+                      >
+                        {rollbackMutation.isPending ? 'Rolling back...' : 'Rollback'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="border-t border-border px-3 py-2.5 space-y-2">
+                    {/* Show diff lines */}
+                    {diff.added.length > 0 && (
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Added</p>
+                        {diff.added.map((line, i) => (
+                          <div key={i} className="flex gap-1.5 text-xs font-mono bg-emerald-500/5 rounded px-2 py-0.5">
+                            <span className="text-emerald-600 dark:text-emerald-400 shrink-0">+</span>
+                            <span className="text-foreground break-words min-w-0">{line}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {diff.removed.length > 0 && (
+                      <div className="space-y-0.5">
+                        <p className="text-[10px] font-medium text-red-600 dark:text-red-400 uppercase tracking-wide">Removed</p>
+                        {diff.removed.map((line, i) => (
+                          <div key={i} className="flex gap-1.5 text-xs font-mono bg-red-500/5 rounded px-2 py-0.5">
+                            <span className="text-red-600 dark:text-red-400 shrink-0">-</span>
+                            <span className="text-foreground/60 break-words min-w-0">{line}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {diff.added.length === 0 && diff.removed.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No line-level changes detected.</p>
+                    )}
+                    {/* Full prompt text */}
+                    <details className="mt-1">
+                      <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                        View full prompt
+                      </summary>
+                      <pre className="mt-1.5 text-xs font-mono bg-background rounded border border-border p-2 overflow-x-auto max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
+                        {version.systemPrompt}
+                      </pre>
+                    </details>
+                    {(version.model || version.temperature !== null) && (
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground pt-1 border-t border-border/50">
+                        {version.model && <span>Model: <span className="font-mono">{version.model}</span></span>}
+                        {version.temperature !== null && <span>Temp: {version.temperature}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AiPromptsTab({
   values,
   onChange,
@@ -1527,6 +1748,7 @@ export function AiPromptsTab({
   const [keysToDelete, setKeysToDelete] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showHistoryFor, setShowHistoryFor] = useState<string | null>(null);
   const [importPreviewData, setImportPreviewData] = useState<{ data: PromptExportData; preview: ImportPreviewResponse } | null>(null);
   const importApply = useImportApply();
 
@@ -1840,6 +2062,19 @@ export function AiPromptsTab({
                         <RotateCcw className="h-3 w-3" />
                         Reset to Default
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowHistoryFor(showHistoryFor === feature.key ? null : feature.key)}
+                        className={cn(
+                          'flex items-center gap-1.5 text-xs transition-colors',
+                          showHistoryFor === feature.key
+                            ? 'text-primary'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <History className="h-3 w-3" />
+                        History
+                      </button>
                       <TokenBadge count={tokenCount} />
                     </div>
                   </div>
@@ -1857,6 +2092,15 @@ export function AiPromptsTab({
                   model={modelValue}
                   temperature={tempValue}
                 />
+
+                {showHistoryFor === feature.key && (
+                  <PromptHistoryPanel
+                    feature={feature.key}
+                    featureLabel={feature.label}
+                    onClose={() => setShowHistoryFor(null)}
+                    onRollback={(prompt) => handleDraftChange(promptKey, prompt)}
+                  />
+                )}
               </div>
             )}
           </div>

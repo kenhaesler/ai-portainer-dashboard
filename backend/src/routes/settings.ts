@@ -10,6 +10,11 @@ import {
 } from '../models/api-schemas.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../services/user-store.js';
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../services/prompt-store.js';
+import {
+  createPromptVersion,
+  getPromptHistory,
+  getPromptVersionById,
+} from '../services/prompt-version-store.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',
@@ -186,6 +191,17 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       ip_address: request.ip,
     });
 
+    // Auto-version prompt system_prompt saves
+    const promptMatch = key.match(/^prompts\.(.+)\.system_prompt$/);
+    if (promptMatch) {
+      const feature = promptMatch[1];
+      if (PROMPT_FEATURES.some((f) => f.key === feature)) {
+        createPromptVersion(feature, value, request.user?.username ?? 'admin').catch(() => {
+          // Non-critical: version creation failure should not break the save
+        });
+      }
+    }
+
     const responseValue = isSensitiveSettingKey(key) ? REDACTED : value;
     return { success: true, key, value: responseValue };
   });
@@ -279,5 +295,78 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       })),
     );
     return { features };
+  });
+
+  // Get version history for a prompt feature
+  fastify.get('/api/settings/prompts/:feature/history', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Get prompt version history for a feature',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const { feature } = request.params as { feature: string };
+    if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
+      return (reply as any).code(404).send({ error: `Unknown feature: ${feature}` });
+    }
+    const versions = await getPromptHistory(feature);
+    return { versions };
+  });
+
+  // Rollback a prompt feature to a previous version
+  fastify.post('/api/settings/prompts/:feature/rollback', {
+    schema: {
+      tags: ['Settings'],
+      summary: 'Rollback a prompt to a previous version',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const { feature } = request.params as { feature: string };
+    const { versionId } = request.body as { versionId: number };
+
+    if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
+      return (reply as any).code(404).send({ error: `Unknown feature: ${feature}` });
+    }
+    if (!versionId || typeof versionId !== 'number') {
+      return (reply as any).code(400).send({ error: 'versionId must be a number' });
+    }
+
+    const targetVersion = await getPromptVersionById(versionId, feature);
+    if (!targetVersion) {
+      return (reply as any).code(404).send({ error: 'Version not found' });
+    }
+
+    // Write the rolled-back prompt to settings
+    const db = getDbForDomain('settings');
+    const settingKey = `prompts.${feature}.system_prompt`;
+    await db.execute(
+      `INSERT INTO settings (key, value, category, updated_at)
+       VALUES (?, ?, 'prompts', NOW())
+       ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = NOW()`,
+      [settingKey, targetVersion.systemPrompt, targetVersion.systemPrompt],
+    );
+
+    // Record the rollback as a new version
+    const newVersion = await createPromptVersion(
+      feature,
+      targetVersion.systemPrompt,
+      request.user?.username ?? 'admin',
+      { changeNote: `Rolled back to v${targetVersion.version}` },
+    );
+
+    writeAuditLog({
+      user_id: request.user?.sub,
+      username: request.user?.username,
+      action: 'prompts.rollback',
+      target_type: 'prompt',
+      target_id: feature,
+      details: { rolledBackToVersion: targetVersion.version, newVersion: newVersion.version },
+      request_id: request.requestId,
+      ip_address: request.ip,
+    });
+
+    return { success: true, newVersion };
   });
 }

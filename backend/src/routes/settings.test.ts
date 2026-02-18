@@ -47,6 +47,16 @@ vi.mock('../services/prompt-store.js', () => {
   };
 });
 
+const mockCreatePromptVersion = vi.fn().mockResolvedValue({ id: 1, version: 1 });
+const mockGetPromptHistory = vi.fn().mockResolvedValue([]);
+const mockGetPromptVersionById = vi.fn().mockResolvedValue(null);
+
+vi.mock('../services/prompt-version-store.js', () => ({
+  createPromptVersion: (...args: unknown[]) => mockCreatePromptVersion(...args),
+  getPromptHistory: (...args: unknown[]) => mockGetPromptHistory(...args),
+  getPromptVersionById: (...args: unknown[]) => mockGetPromptVersionById(...args),
+}));
+
 describe('settings preference routes', () => {
   let app: FastifyInstance;
 
@@ -453,5 +463,184 @@ describe('prompt-features endpoint', () => {
 
     expect(response.statusCode).toBe(403);
     await restrictedApp.close();
+  });
+});
+
+describe('prompt version history routes (#415)', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    });
+    await app.register(settingsRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreatePromptVersion.mockResolvedValue({ id: 1, version: 1 });
+    mockGetPromptHistory.mockResolvedValue([]);
+    mockGetPromptVersionById.mockResolvedValue(null);
+  });
+
+  // ── GET history ─────────────────────────────────────────────────────
+
+  it('GET /api/settings/prompts/:feature/history returns version list', async () => {
+    const versions = [
+      { id: 2, feature: 'chat_assistant', version: 2, systemPrompt: 'New prompt', model: null, temperature: null, changedBy: 'admin', changedAt: '2026-01-02T00:00:00Z', changeNote: null },
+      { id: 1, feature: 'chat_assistant', version: 1, systemPrompt: 'Old prompt', model: null, temperature: null, changedBy: 'system', changedAt: '2026-01-01T00:00:00Z', changeNote: null },
+    ];
+    mockGetPromptHistory.mockResolvedValueOnce(versions);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/settings/prompts/chat_assistant/history',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().versions).toHaveLength(2);
+    expect(response.json().versions[0].version).toBe(2);
+    expect(response.json().versions[1].version).toBe(1);
+  });
+
+  it('returns 404 for unknown feature', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/settings/prompts/not_a_feature/history',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toMatch(/unknown feature/i);
+  });
+
+  it('returns empty versions list when no history exists', async () => {
+    mockGetPromptHistory.mockResolvedValueOnce([]);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/settings/prompts/anomaly_explainer/history',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().versions).toEqual([]);
+  });
+
+  // ── POST rollback ────────────────────────────────────────────────────
+
+  it('POST rollback restores prompt and creates new version', async () => {
+    const targetVersion = {
+      id: 1,
+      feature: 'chat_assistant',
+      version: 1,
+      systemPrompt: 'Old reliable prompt.',
+      model: null,
+      temperature: null,
+      changedBy: 'system',
+      changedAt: '2026-01-01T00:00:00Z',
+      changeNote: null,
+    };
+    mockGetPromptVersionById.mockResolvedValueOnce(targetVersion);
+    mockCreatePromptVersion.mockResolvedValueOnce({ id: 3, version: 3 });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/prompts/chat_assistant/rollback',
+      headers: { authorization: 'Bearer test' },
+      payload: { versionId: 1 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().success).toBe(true);
+    expect(response.json().newVersion.version).toBe(3);
+
+    // Verify the settings table was updated with the rolled-back prompt
+    expect(mockExecute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO settings'),
+      expect.arrayContaining(['prompts.chat_assistant.system_prompt', 'Old reliable prompt.']),
+    );
+
+    // Verify a new version was recorded for the rollback
+    expect(mockCreatePromptVersion).toHaveBeenCalledWith(
+      'chat_assistant',
+      'Old reliable prompt.',
+      'admin',
+      expect.objectContaining({ changeNote: expect.stringContaining('v1') }),
+    );
+  });
+
+  it('POST rollback returns 404 for unknown feature', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/prompts/unknown_feature/rollback',
+      headers: { authorization: 'Bearer test' },
+      payload: { versionId: 1 },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('POST rollback returns 404 when target version not found', async () => {
+    mockGetPromptVersionById.mockResolvedValueOnce(null);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/settings/prompts/chat_assistant/rollback',
+      headers: { authorization: 'Bearer test' },
+      payload: { versionId: 9999 },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe('Version not found');
+  });
+
+  // ── Auto-version on PUT /api/settings/:key ──────────────────────────
+
+  it('auto-creates a version when a system_prompt setting is saved', async () => {
+    mockQueryOne.mockResolvedValueOnce(null); // no existing setting
+    mockExecute.mockResolvedValue({ changes: 1 });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/prompts.chat_assistant.system_prompt',
+      headers: { authorization: 'Bearer test' },
+      payload: { value: 'New improved prompt.', category: 'prompts' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // Wait for the fire-and-forget version creation
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockCreatePromptVersion).toHaveBeenCalledWith(
+      'chat_assistant',
+      'New improved prompt.',
+      'admin',
+    );
+  });
+
+  it('does NOT auto-create a version for non-prompt settings', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockExecute.mockResolvedValue({ changes: 1 });
+
+    await app.inject({
+      method: 'PUT',
+      url: '/api/settings/llm.model',
+      headers: { authorization: 'Bearer test' },
+      payload: { value: 'llama3.2', category: 'llm' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockCreatePromptVersion).not.toHaveBeenCalled();
   });
 });
