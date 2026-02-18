@@ -20,6 +20,7 @@ let migrationsReady = false;
 // Dedicated pool for report queries — isolated from the metrics write pool so
 // long-running aggregation queries cannot starve container metrics ingestion.
 let reportsPool: pg.Pool | null = null;
+let reportsPoolPromise: Promise<pg.Pool> | null = null;
 
 // Statement timeout for all report connections (10 s). Long enough for 30-day
 // aggregations over modest data volumes, short enough to fail fast under load.
@@ -150,47 +151,54 @@ async function applyRetentionPolicies(
  * Requires the main pool to be initialised first (migrations must be complete).
  */
 export async function getReportsDb(): Promise<pg.Pool> {
-  // Ensure migrations have been applied before accepting report queries
-  await getMetricsDb();
+  if (reportsPool) return reportsPool;
 
-  if (!reportsPool) {
-    const config = getConfig();
+  // Deduplicate concurrent init calls — all callers await the same promise
+  if (!reportsPoolPromise) {
+    reportsPoolPromise = (async () => {
+      // Ensure migrations have been applied before accepting report queries
+      await getMetricsDb();
 
-    const newPool = new pg.Pool({
-      connectionString: config.TIMESCALE_URL,
-      max: config.TIMESCALE_REPORTS_MAX_CONNECTIONS,
-      idleTimeoutMillis: 60_000,
-      // Fail fast when the pool is exhausted — callers convert this to a 503
-      connectionTimeoutMillis: 3_000,
-    });
+      const config = getConfig();
 
-    newPool.on('error', (err) => {
-      log.error({ err }, 'Unexpected TimescaleDB reports pool error');
-    });
-
-    // Apply statement_timeout to every new connection so a runaway report query
-    // cannot hold a connection indefinitely.
-    newPool.on('connect', (client) => {
-      client.query(`SET statement_timeout = ${REPORTS_STATEMENT_TIMEOUT_MS}`).catch((err) => {
-        log.warn({ err }, 'Failed to set statement_timeout on reports connection');
+      const newPool = new pg.Pool({
+        connectionString: config.TIMESCALE_URL,
+        max: config.TIMESCALE_REPORTS_MAX_CONNECTIONS,
+        idleTimeoutMillis: 60_000,
+        // Fail fast when the pool is exhausted — callers convert this to a 503
+        connectionTimeoutMillis: 3_000,
       });
-    });
 
-    log.info(
-      { max: config.TIMESCALE_REPORTS_MAX_CONNECTIONS, statementTimeoutMs: REPORTS_STATEMENT_TIMEOUT_MS },
-      'TimescaleDB reports pool created',
-    );
+      newPool.on('error', (err) => {
+        log.error({ err }, 'Unexpected TimescaleDB reports pool error');
+      });
 
-    reportsPool = newPool;
+      // Apply statement_timeout to every new connection so a runaway report query
+      // cannot hold a connection indefinitely.
+      newPool.on('connect', (client) => {
+        client.query(`SET statement_timeout = ${REPORTS_STATEMENT_TIMEOUT_MS}`).catch((err) => {
+          log.warn({ err }, 'Failed to set statement_timeout on reports connection');
+        });
+      });
+
+      log.info(
+        { max: config.TIMESCALE_REPORTS_MAX_CONNECTIONS, statementTimeoutMs: REPORTS_STATEMENT_TIMEOUT_MS },
+        'TimescaleDB reports pool created',
+      );
+
+      reportsPool = newPool;
+      return newPool;
+    })();
   }
 
-  return reportsPool;
+  return reportsPoolPromise;
 }
 
 export async function closeReportsDb(): Promise<void> {
   if (reportsPool) {
     await reportsPool.end();
     reportsPool = null;
+    reportsPoolPromise = null;
     log.info('TimescaleDB reports pool closed');
   }
 }
