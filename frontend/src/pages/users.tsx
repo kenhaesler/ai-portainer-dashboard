@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/components/shared/themed-select';
@@ -32,6 +32,9 @@ export function UsersPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const formSectionRef = useRef<HTMLElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => clearTimeout(highlightTimer.current), []);
 
   const filteredUsers = useMemo(() => {
     const all = usersQuery.data ?? [];
@@ -85,9 +88,10 @@ export function UsersPanel() {
     requestAnimationFrame(() => {
       formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       firstInputRef.current?.focus();
-      // Trigger highlight pulse animation
+      // Trigger highlight pulse animation — clear previous timer to prevent stacking
+      clearTimeout(highlightTimer.current);
       setEditHighlight(true);
-      setTimeout(() => setEditHighlight(false), 1200);
+      highlightTimer.current = setTimeout(() => setEditHighlight(false), 1200);
     });
   };
 
