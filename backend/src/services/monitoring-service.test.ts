@@ -20,7 +20,7 @@ const defaultConfig = {
   NLP_LOG_ANALYSIS_TAIL_LINES: 100,
   MAX_INSIGHTS_PER_CYCLE: 500,
   AI_ANALYSIS_ENABLED: false, // disabled by default in tests to avoid async side-effects
-};
+} as const;
 
 // Mock all dependencies
 

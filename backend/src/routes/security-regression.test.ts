@@ -563,7 +563,7 @@ beforeAll(() => {
     REDIS_KEY_PREFIX: 'aidash:cache:',
     TIMESCALE_URL: 'postgresql://localhost/test',
     PORT: 3051,
-    LOG_LEVEL: 'silent',
+    LOG_LEVEL: 'fatal',
     POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
     TEAMS_WEBHOOK_URL: undefined,
     TEAMS_NOTIFICATIONS_ENABLED: false,
