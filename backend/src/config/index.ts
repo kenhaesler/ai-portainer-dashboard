@@ -165,4 +165,20 @@ export function getConfig(): EnvConfig {
   return config;
 }
 
+/** Reset the cached config — use in afterEach when tests override config. */
+export function resetConfig(): void {
+  config = null;
+}
+
+/**
+ * Override specific config values for a test. Call resetConfig() in afterEach.
+ * Throws if called outside the test environment.
+ */
+export function setConfigForTest(partial: Partial<EnvConfig>): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('setConfigForTest can only be called in the test environment');
+  }
+  config = { ...getConfig(), ...partial };
+}
+
 export type { EnvConfig };

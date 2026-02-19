@@ -87,11 +87,6 @@ vi.mock('../services/llm-client.js', () => ({
 }));
 
 // Mock config
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    AI_SEARCH_MODEL: 'llama3.2:latest',
-  }),
-}));
 
 // Mock logger
 

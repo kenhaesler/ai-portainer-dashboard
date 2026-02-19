@@ -1,18 +1,14 @@
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import rateLimitPlugin from '../plugins/rate-limit.js';
 import { authRoutes } from './auth.js';
 
-const mockGetConfig = vi.fn();
 const mockSignJwt = vi.fn();
 const mockCreateSession = vi.fn();
 const mockAuthenticateUser = vi.fn();
 const mockEnsureDefaultAdmin = vi.fn();
-
-vi.mock('../config/index.js', () => ({
-  getConfig: () => mockGetConfig(),
-}));
 
 vi.mock('../utils/crypto.js', () => ({
   signJwt: (...args: unknown[]) => mockSignJwt(...args),
@@ -38,11 +34,7 @@ vi.mock('../services/user-store.js', () => ({
 describe('auth login rate limit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetConfig.mockReturnValue({
-      API_RATE_LIMIT: 1000,
-      LOGIN_RATE_LIMIT: 2,
-    });
+    setConfigForTest({ API_RATE_LIMIT: 1000, LOGIN_RATE_LIMIT: 2 });
     mockEnsureDefaultAdmin.mockResolvedValue(undefined);
     mockAuthenticateUser.mockResolvedValue({
       id: 'user-1',
@@ -77,5 +69,9 @@ describe('auth login rate limit', () => {
     expect(responses[2]?.statusCode).toBe(429);
 
     await app.close();
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 });

@@ -1,20 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import { detectAnomaly } from './anomaly-detector.js';
 
 // Mock dependencies
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({
-    ANOMALY_ZSCORE_THRESHOLD: 2.5,
-    ANOMALY_MOVING_AVERAGE_WINDOW: 10,
-    ANOMALY_MIN_SAMPLES: 5,
-  }),
-}));
 
 // Mock metrics-store module
 const mockGetMovingAverage = vi.fn();
 vi.mock('./metrics-store.js', () => ({
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
 }));
+
+
+beforeAll(() => {
+    setConfigForTest({
+      ANOMALY_ZSCORE_THRESHOLD: 2.5,
+      ANOMALY_MOVING_AVERAGE_WINDOW: 10,
+      ANOMALY_MIN_SAMPLES: 5,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('anomaly-detector', () => {
   beforeEach(() => {

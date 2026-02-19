@@ -12,6 +12,7 @@
  * @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/430
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { readFileSync } from 'node:fs';
@@ -85,73 +86,6 @@ vi.mock('../db/timescale.js', () => ({
     query: vi.fn().mockResolvedValue({ rows: [] }),
   })),
   isMetricsDbHealthy: vi.fn().mockResolvedValue(true),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    PORTAINER_API_URL: 'http://localhost:9000',
-    PORTAINER_API_KEY: 'test-key',
-    PORTAINER_VERIFY_SSL: true,
-    PORTAINER_CONCURRENCY: 10,
-    PORTAINER_MAX_CONNECTIONS: 20,
-    OLLAMA_BASE_URL: 'http://localhost:11434',
-    OLLAMA_MODEL: 'llama3.2',
-    LLM_OPENAI_ENDPOINT: undefined,
-    LLM_BEARER_TOKEN: undefined,
-    JWT_SECRET: 'a'.repeat(32),
-    JWT_ALGORITHM: 'HS256',
-    DASHBOARD_USERNAME: 'admin',
-    DASHBOARD_PASSWORD: 'test-password-12345',
-    MONITORING_ENABLED: false,
-    MONITORING_INTERVAL_MINUTES: 5,
-    METRICS_COLLECTION_ENABLED: false,
-    PROMETHEUS_METRICS_ENABLED: false,
-    PROMETHEUS_BEARER_TOKEN: '',
-    ANOMALY_ZSCORE_THRESHOLD: 3.0,
-    ANOMALY_MOVING_AVERAGE_WINDOW: 30,
-    ANOMALY_MIN_SAMPLES: 30,
-    ANOMALY_DETECTION_METHOD: 'adaptive',
-    ANOMALY_COOLDOWN_MINUTES: 15,
-    ANOMALY_THRESHOLD_PCT: 80,
-    PREDICTIVE_ALERTING_ENABLED: false,
-    ANOMALY_EXPLANATION_ENABLED: false,
-    ANOMALY_EXPLANATION_MAX_PER_CYCLE: 20,
-    ISOLATION_FOREST_ENABLED: false,
-    NLP_LOG_ANALYSIS_ENABLED: false,
-    SMART_GROUPING_ENABLED: false,
-    INCIDENT_SUMMARY_ENABLED: false,
-    INVESTIGATION_ENABLED: false,
-    INVESTIGATION_COOLDOWN_MINUTES: 30,
-    INVESTIGATION_MAX_CONCURRENT: 2,
-    PCAP_ENABLED: false,
-    PCAP_MAX_CONCURRENT: 2,
-    PCAP_MAX_DURATION_SECONDS: 300,
-    PCAP_MAX_FILE_SIZE_MB: 50,
-    PCAP_RETENTION_DAYS: 7,
-    PCAP_STORAGE_DIR: './data/pcap',
-    CACHE_ENABLED: false,
-    CACHE_TTL_SECONDS: 900,
-    REDIS_URL: undefined,
-    REDIS_KEY_PREFIX: 'aidash:cache:',
-    TIMESCALE_URL: 'postgresql://localhost/test',
-    PORT: 3051,
-    LOG_LEVEL: 'silent',
-    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
-    TEAMS_WEBHOOK_URL: undefined,
-    TEAMS_NOTIFICATIONS_ENABLED: false,
-    EMAIL_NOTIFICATIONS_ENABLED: false,
-    WEBHOOKS_ENABLED: false,
-    WEBHOOKS_MAX_RETRIES: 5,
-    WEBHOOKS_RETRY_INTERVAL_SECONDS: 60,
-    IMAGE_STALENESS_CHECK_ENABLED: false,
-    MCP_TOOL_TIMEOUT: 60,
-    LLM_MAX_TOOL_ITERATIONS: 10,
-    TRACES_INGESTION_ENABLED: false,
-    TRACES_INGESTION_API_KEY: '',
-    API_RATE_LIMIT: 1200,
-    LOGIN_RATE_LIMIT: 5,
-    HTTP2_ENABLED: false,
-  })),
 }));
 
 vi.mock('../utils/crypto.js', () => ({
@@ -585,6 +519,73 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
 // =====================================================================
 //  1. AUTH ENFORCEMENT SWEEP
 // =====================================================================
+beforeAll(() => {
+  setConfigForTest({
+    PORTAINER_API_URL: 'http://localhost:9000',
+    PORTAINER_VERIFY_SSL: true,
+    PORTAINER_CONCURRENCY: 10,
+    PORTAINER_MAX_CONNECTIONS: 20,
+    OLLAMA_BASE_URL: 'http://localhost:11434',
+    OLLAMA_MODEL: 'llama3.2',
+    LLM_OPENAI_ENDPOINT: undefined,
+    LLM_BEARER_TOKEN: undefined,
+    JWT_ALGORITHM: 'HS256',
+    MONITORING_ENABLED: false,
+    MONITORING_INTERVAL_MINUTES: 5,
+    METRICS_COLLECTION_ENABLED: false,
+    PROMETHEUS_METRICS_ENABLED: false,
+    PROMETHEUS_BEARER_TOKEN: '',
+    ANOMALY_ZSCORE_THRESHOLD: 3.0,
+    ANOMALY_MOVING_AVERAGE_WINDOW: 30,
+    ANOMALY_MIN_SAMPLES: 30,
+    ANOMALY_DETECTION_METHOD: 'adaptive',
+    ANOMALY_COOLDOWN_MINUTES: 15,
+    ANOMALY_THRESHOLD_PCT: 80,
+    PREDICTIVE_ALERTING_ENABLED: false,
+    ANOMALY_EXPLANATION_ENABLED: false,
+    ANOMALY_EXPLANATION_MAX_PER_CYCLE: 20,
+    ISOLATION_FOREST_ENABLED: false,
+    NLP_LOG_ANALYSIS_ENABLED: false,
+    SMART_GROUPING_ENABLED: false,
+    INCIDENT_SUMMARY_ENABLED: false,
+    INVESTIGATION_ENABLED: false,
+    INVESTIGATION_COOLDOWN_MINUTES: 30,
+    INVESTIGATION_MAX_CONCURRENT: 2,
+    PCAP_ENABLED: false,
+    PCAP_MAX_CONCURRENT: 2,
+    PCAP_MAX_DURATION_SECONDS: 300,
+    PCAP_MAX_FILE_SIZE_MB: 50,
+    PCAP_RETENTION_DAYS: 7,
+    PCAP_STORAGE_DIR: './data/pcap',
+    CACHE_ENABLED: false,
+    CACHE_TTL_SECONDS: 900,
+    REDIS_URL: undefined,
+    REDIS_KEY_PREFIX: 'aidash:cache:',
+    TIMESCALE_URL: 'postgresql://localhost/test',
+    PORT: 3051,
+    LOG_LEVEL: 'silent',
+    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
+    TEAMS_WEBHOOK_URL: undefined,
+    TEAMS_NOTIFICATIONS_ENABLED: false,
+    EMAIL_NOTIFICATIONS_ENABLED: false,
+    WEBHOOKS_ENABLED: false,
+    WEBHOOKS_MAX_RETRIES: 5,
+    WEBHOOKS_RETRY_INTERVAL_SECONDS: 60,
+    IMAGE_STALENESS_CHECK_ENABLED: false,
+    MCP_TOOL_TIMEOUT: 60,
+    LLM_MAX_TOOL_ITERATIONS: 10,
+    TRACES_INGESTION_ENABLED: false,
+    TRACES_INGESTION_API_KEY: '',
+    API_RATE_LIMIT: 1200,
+    LOGIN_RATE_LIMIT: 5,
+    HTTP2_ENABLED: false,
+  });
+});
+
+afterAll(() => {
+  resetConfig();
+});
+
 describe('Auth Enforcement Sweep', () => {
   let app: FastifyInstance;
   let registeredRoutes: string[];

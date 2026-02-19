@@ -50,10 +50,6 @@ vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({}),
-}));
-
 import {
   suggestAction,
   parseRemediationAnalysis,

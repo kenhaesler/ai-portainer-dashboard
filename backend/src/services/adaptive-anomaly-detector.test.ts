@@ -1,14 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    ANOMALY_ZSCORE_THRESHOLD: 2.5,
-    ANOMALY_MOVING_AVERAGE_WINDOW: 30,
-    ANOMALY_MIN_SAMPLES: 10,
-    ANOMALY_DETECTION_METHOD: 'adaptive',
-    BOLLINGER_BANDS_ENABLED: true,
-  }),
-}));
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 const mockGetMovingAverage = vi.fn();
 vi.mock('./metrics-store.js', () => ({
@@ -16,18 +7,21 @@ vi.mock('./metrics-store.js', () => ({
 }));
 
 import { calculateBollingerBands, detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
-const { getConfig } = await import('../config/index.js');
 
 describe('adaptive-anomaly-detector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+    setConfigForTest({
       ANOMALY_ZSCORE_THRESHOLD: 2.5,
       ANOMALY_MOVING_AVERAGE_WINDOW: 30,
       ANOMALY_MIN_SAMPLES: 10,
       ANOMALY_DETECTION_METHOD: 'adaptive',
       BOLLINGER_BANDS_ENABLED: true,
     });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('calculateBollingerBands', () => {
@@ -121,7 +115,7 @@ describe('adaptive-anomaly-detector', () => {
     });
 
     it('falls back from bollinger to zscore when bollinger is disabled', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+      setConfigForTest({
         ANOMALY_ZSCORE_THRESHOLD: 2.5,
         ANOMALY_MOVING_AVERAGE_WINDOW: 30,
         ANOMALY_MIN_SAMPLES: 10,

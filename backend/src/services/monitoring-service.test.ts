@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Default config values used in tests
 const defaultConfig = {
@@ -22,9 +23,6 @@ const defaultConfig = {
 };
 
 // Mock all dependencies
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue(defaultConfig),
-}));
 
 const mockGetEndpoints = vi.fn().mockResolvedValue([]);
 const mockGetContainers = vi.fn().mockResolvedValue([]);
@@ -153,7 +151,6 @@ vi.mock('./incident-correlator.js', () => ({
   correlateInsights: (...args: unknown[]) => mockCorrelateInsights(...args),
 }));
 
-const { getConfig } = await import('../config/index.js');
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('./monitoring-service.js');
 
 /** Helper: extract insights from the batch insertInsights call */
@@ -203,8 +200,12 @@ describe('monitoring-service', () => {
     mockCachedFetchSWR.mockImplementation(
       (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
     );
-    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({ ...defaultConfig });
+    setConfigForTest(defaultConfig);
     resetPreviousCycleStats();
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('batch insight processing', () => {
@@ -244,8 +245,7 @@ describe('monitoring-service', () => {
     });
 
     it('caps insights at MAX_INSIGHTS_PER_CYCLE', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         MAX_INSIGHTS_PER_CYCLE: 2,
         ANOMALY_COOLDOWN_MINUTES: 0,
       });
@@ -354,8 +354,7 @@ describe('monitoring-service', () => {
     });
 
     it('respects PREDICTIVE_ALERTING_ENABLED flag', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,
       });
@@ -434,8 +433,7 @@ describe('monitoring-service', () => {
     });
 
     it('respects ANOMALY_EXPLANATION_ENABLED flag', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         ANOMALY_EXPLANATION_ENABLED: false,
       });
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
@@ -459,8 +457,7 @@ describe('monitoring-service', () => {
 
   describe('AI analysis gate', () => {
     it('skips AI analysis when AI_ANALYSIS_ENABLED is false', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         AI_ANALYSIS_ENABLED: false,
       });
       mockIsOllamaAvailable.mockResolvedValue(true);
@@ -474,8 +471,7 @@ describe('monitoring-service', () => {
 
   describe('hard-threshold toggle', () => {
     it('does not create threshold anomalies when ANOMALY_HARD_THRESHOLD_ENABLED is false', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         ANOMALY_HARD_THRESHOLD_ENABLED: false,
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,

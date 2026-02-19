@@ -1,18 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 vi.mock('undici', () => ({
   Agent: vi.fn().mockImplementation(() => ({ close: vi.fn().mockResolvedValue(undefined) })),
   fetch: vi.fn(),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    HARBOR_API_URL: 'https://harbor.example.com',
-    HARBOR_ROBOT_NAME: 'robot$test',
-    HARBOR_ROBOT_SECRET: 'test-secret',
-    HARBOR_VERIFY_SSL: true,
-    HARBOR_CONCURRENCY: 5,
-  })),
 }));
 
 vi.mock('./trace-context.js', () => ({
@@ -46,6 +37,21 @@ function mockOkResponse(data: unknown = { critical_cnt: 0, total_vuls: 0 }) {
     headers: new Headers(),
   } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never;
 }
+
+
+beforeAll(() => {
+    setConfigForTest({
+      HARBOR_API_URL: 'https://harbor.example.com',
+      HARBOR_ROBOT_NAME: 'robot$test',
+      HARBOR_ROBOT_SECRET: 'test-secret',
+      HARBOR_VERIFY_SSL: true,
+      HARBOR_CONCURRENCY: 5,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('harbor-client', () => {
   beforeEach(() => {
