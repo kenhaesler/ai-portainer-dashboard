@@ -252,7 +252,7 @@ export default function LogViewerPage() {
       queryFn: () => api.get<LogsResponse>(`/api/containers/${container.endpointId}/${container.id}/logs`, {
         params: { tail: bufferSize, timestamps: true },
       }),
-      refetchInterval: usePollingForLiveTail ? 2000 : false,
+      refetchInterval: usePollingForLiveTail ? 5000 : false,
       enabled: true,
     })),
   });

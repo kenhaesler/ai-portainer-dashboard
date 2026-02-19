@@ -28,13 +28,15 @@ vi.mock('@/hooks/use-page-visibility', () => ({
   usePageVisibility: () => mockUsePageVisibility(),
 }));
 
+const mockUseLogStream = vi.fn(() => ({
+  streamedEntries: [],
+  isStreaming: false,
+  isFallback: false,
+  reset: vi.fn(),
+}));
+
 vi.mock('@/hooks/use-log-stream', () => ({
-  useLogStream: () => ({
-    streamedEntries: [],
-    isStreaming: false,
-    isFallback: false,
-    reset: vi.fn(),
-  }),
+  useLogStream: (...args: unknown[]) => mockUseLogStream(...args),
 }));
 
 vi.mock('@/hooks/use-endpoints', () => ({
@@ -94,6 +96,46 @@ describe('LogViewerPage', () => {
     render(<LogViewerPage />);
 
     expect(screen.getByText('Live Tail OFF')).toBeInTheDocument();
+  });
+
+  it('uses 5s fallback polling interval when SSE is unavailable (#519)', async () => {
+    mockUseLogStream.mockReturnValue({
+      streamedEntries: [],
+      isStreaming: false,
+      isFallback: true,
+      reset: vi.fn(),
+    });
+
+    render(<LogViewerPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Container' }));
+
+    await waitFor(() => {
+      const calls = mockUseQueries.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls[calls.length - 1][0] as { queries: Array<{ refetchInterval: number | false }> };
+      expect(lastCall.queries).toHaveLength(1);
+      expect(lastCall.queries[0]?.refetchInterval).toBe(5000);
+    });
+  });
+
+  it('disables polling when SSE is streaming successfully', async () => {
+    mockUseLogStream.mockReturnValue({
+      streamedEntries: [],
+      isStreaming: true,
+      isFallback: false,
+      reset: vi.fn(),
+    });
+
+    render(<LogViewerPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Container' }));
+
+    await waitFor(() => {
+      const calls = mockUseQueries.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls[calls.length - 1][0] as { queries: Array<{ refetchInterval: number | false }> };
+      expect(lastCall.queries).toHaveLength(1);
+      expect(lastCall.queries[0]?.refetchInterval).toBe(false);
+    });
   });
 
   it('pauses live-tail polling when tab is hidden', async () => {
