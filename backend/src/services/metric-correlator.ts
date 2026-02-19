@@ -3,6 +3,11 @@ import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('metric-correlator');
 
+/** Minimal query interface satisfied by both pg.Pool and pg.PoolClient. */
+export interface Queryable {
+  query: <T = any>(...args: any[]) => Promise<{ rows: T[] }>;
+}
+
 export interface CorrelatedAnomaly {
   containerId: string;
   containerName: string;
@@ -110,8 +115,8 @@ export function scoreSeverity(compositeScore: number): 'low' | 'medium' | 'high'
 /**
  * Get recent metric snapshots for a container with z-scores.
  */
-async function getMetricSnapshots(containerId: string, windowSize: number): Promise<MetricSnapshot[]> {
-  const db = await getMetricsDb();
+async function getMetricSnapshots(containerId: string, windowSize: number, db?: Queryable): Promise<MetricSnapshot[]> {
+  if (!db) db = await getMetricsDb();
 
   const { rows: metricTypes } = await db.query(
     `SELECT DISTINCT metric_type FROM metrics
@@ -206,8 +211,9 @@ export function correlationStrength(absR: number): 'very_strong' | 'strong' | 'm
 export async function findCorrelatedContainers(
   hours: number = 24,
   minCorrelation: number = 0.7,
+  db?: Queryable,
 ): Promise<CorrelationPair[]> {
-  const db = await getMetricsDb();
+  if (!db) db = await getMetricsDb();
 
   const metricTypes = ['cpu', 'memory'];
   const results: CorrelationPair[] = [];
@@ -303,8 +309,9 @@ export async function findCorrelatedContainers(
 export async function detectCorrelatedAnomalies(
   windowSize: number = 30,
   minCompositeScore: number = 2,
+  db?: Queryable,
 ): Promise<CorrelatedAnomaly[]> {
-  const db = await getMetricsDb();
+  if (!db) db = await getMetricsDb();
 
   // Get containers with recent metrics
   const { rows: containers } = await db.query(
@@ -318,7 +325,7 @@ export async function detectCorrelatedAnomalies(
   const results: CorrelatedAnomaly[] = [];
 
   for (const container of containers as Array<{ container_id: string; container_name: string }>) {
-    const snapshots = await getMetricSnapshots(container.container_id, windowSize);
+    const snapshots = await getMetricSnapshots(container.container_id, windowSize, db);
 
     if (snapshots.length < 2) continue;
 

@@ -1,8 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair } from '../services/metric-correlator.js';
+import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair, type Queryable } from '../services/metric-correlator.js';
+import { getMetricsDb } from '../db/timescale.js';
 import { chatStream } from '../services/llm-client.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
+import { isUndefinedTableError } from '../services/metrics-store.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('routes:correlations');
@@ -16,6 +18,53 @@ const CorrelationsQuerySchema = z.object({
   hours: z.coerce.number().optional().default(24),
   minCorrelation: z.coerce.number().optional().default(0.7),
 });
+
+// ---------------------------------------------------------------------------
+// Statement timeout — acquire a single client, set 10 s statement_timeout,
+// run the callback, then release. The timeout protects against runaway
+// correlation queries (O(n²) pairwise) that previously ran unbounded.
+// ---------------------------------------------------------------------------
+async function withStatementTimeout<T>(
+  fn: (client: Queryable) => Promise<T>,
+): Promise<T> {
+  const pool = await getMetricsDb();
+  const client = await pool.connect();
+  try {
+    await client.query('SET statement_timeout = 10000');
+    return await fn(client);
+  } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
+    client.release();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Result cache — correlation queries are expensive (O(n²) pairwise) and
+// don't require real-time accuracy. 5-minute TTL matches reports cache.
+// ---------------------------------------------------------------------------
+const CORRELATIONS_CACHE_TTL_MS = 5 * 60 * 1_000;
+
+interface CorrelationsCacheEntry { payload: unknown; expiresAt: number }
+const correlationsCache = new Map<string, CorrelationsCacheEntry>();
+
+function getCachedCorrelations<T>(key: string): T | null {
+  const entry = correlationsCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    correlationsCache.delete(key);
+    return null;
+  }
+  return entry.payload as T;
+}
+
+function setCachedCorrelations(key: string, payload: unknown): void {
+  correlationsCache.set(key, { payload, expiresAt: Date.now() + CORRELATIONS_CACHE_TTL_MS });
+}
+
+/** Clear the correlations cache (for testing) */
+export function clearCorrelationsCache(): void {
+  correlationsCache.clear();
+}
 
 // Simple in-memory cache for LLM insights (15 min TTL)
 const INSIGHTS_TTL = 15 * 60 * 1000;
@@ -85,9 +134,30 @@ export async function correlationRoutes(fastify: FastifyInstance) {
       querystring: AnomalyCorrelationQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { windowSize, minScore } = request.query as z.infer<typeof AnomalyCorrelationQuerySchema>;
-    return await detectCorrelatedAnomalies(windowSize, minScore);
+
+    const cacheKey = `anomalies:${windowSize}:${minScore}`;
+    const cached = getCachedCorrelations<unknown>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      // detectCorrelatedAnomalies uses getMetricsDb() internally. We acquire a
+      // dedicated client with statement_timeout = 10 s so that if the function
+      // spins up its own pool connection the pool-level default is visible, and
+      // the dedicated client is released cleanly regardless of outcome.
+      const result = await withStatementTimeout((client) =>
+        detectCorrelatedAnomalies(windowSize, minScore, client),
+      );
+      setCachedCorrelations(cacheKey, result);
+      return result;
+    } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn('Metrics table not ready for correlated anomalies');
+        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      throw err;
+    }
   });
 
   // Cross-container correlation pairs
@@ -99,15 +169,31 @@ export async function correlationRoutes(fastify: FastifyInstance) {
       querystring: CorrelationsQuerySchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { hours, minCorrelation } = request.query as z.infer<typeof CorrelationsQuerySchema>;
     const safeHours = Math.max(1, Math.min(168, Math.floor(hours)));
     const safeMin = Math.max(0.5, Math.min(1, minCorrelation));
 
-    const startedAt = Date.now();
-    const pairs = await findCorrelatedContainers(safeHours, safeMin);
-    log.info({ hours: safeHours, minCorrelation: safeMin, pairCount: pairs.length, durationMs: Date.now() - startedAt }, 'Computed cross-container correlations');
-    return { pairs };
+    const cacheKey = `pairs:${safeHours}:${safeMin}`;
+    const cached = getCachedCorrelations<unknown>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const startedAt = Date.now();
+      const pairs = await withStatementTimeout((client) =>
+        findCorrelatedContainers(safeHours, safeMin, client),
+      );
+      log.info({ hours: safeHours, minCorrelation: safeMin, pairCount: pairs.length, durationMs: Date.now() - startedAt }, 'Computed cross-container correlations');
+      const result = { pairs };
+      setCachedCorrelations(cacheKey, result);
+      return result;
+    } catch (err) {
+      if (isUndefinedTableError(err)) {
+        log.warn('Metrics table not ready for correlation pairs');
+        return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      throw err;
+    }
   });
 
   // LLM-generated insights for correlation pairs
@@ -131,8 +217,10 @@ export async function correlationRoutes(fastify: FastifyInstance) {
       return { insights: cached.insights, summary: cached.summary };
     }
 
-    // Compute correlations
-    const pairs = await findCorrelatedContainers(safeHours, safeMin);
+    // Compute correlations (wrapped in statement timeout for expensive pairwise query)
+    const pairs = await withStatementTimeout((client) =>
+      findCorrelatedContainers(safeHours, safeMin, client),
+    );
     if (pairs.length === 0) {
       return { insights: [], summary: null };
     }
