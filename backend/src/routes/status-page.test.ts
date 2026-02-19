@@ -35,14 +35,6 @@ vi.mock('../services/status-page-store.js', () => ({
   getRecentIncidentsPublic: vi.fn(async () => []),
 }));
 
-vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: vi.fn(() => ({
-    query: vi.fn(async () => []),
-    queryOne: vi.fn(async () => null),
-    execute: vi.fn(async () => ({ changes: 0 })),
-  })),
-}));
-
 const mockedGetStatusPageConfig = vi.mocked(getStatusPageConfig);
 const mockedGetOverallUptime = vi.mocked(getOverallUptime);
 const mockedGetEndpointUptime = vi.mocked(getEndpointUptime);
