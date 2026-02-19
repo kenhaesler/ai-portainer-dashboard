@@ -140,7 +140,7 @@ export async function listFeedback(options: {
   const limit = options.limit ?? 50;
   const offset = options.offset ?? 0;
 
-  const countRow = await db().queryOne<{ count: number }>(`SELECT COUNT(*) as count FROM llm_feedback f ${where}`, params);
+  const countRow = await db().queryOne<{ count: number }>(`SELECT COUNT(*)::integer as count FROM llm_feedback f ${where}`, params);
   const total = countRow?.count ?? 0;
   const items = await db().query<LlmFeedback>(`SELECT f.*, u.username FROM llm_feedback f LEFT JOIN users u ON f.user_id = u.id ${where} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
 
@@ -196,10 +196,10 @@ export async function getFeedbackStats(): Promise<FeedbackStats[]> {
   }>(`
     SELECT
       feature,
-      COUNT(*) as total,
-      SUM(CASE WHEN effective_rating = 'positive' THEN 1 ELSE 0 END) as positive,
-      SUM(CASE WHEN effective_rating = 'negative' THEN 1 ELSE 0 END) as negative,
-      SUM(CASE WHEN admin_status = 'pending' THEN 1 ELSE 0 END) as pending_count
+      COUNT(*)::integer as total,
+      SUM(CASE WHEN effective_rating = 'positive' THEN 1 ELSE 0 END)::integer as positive,
+      SUM(CASE WHEN effective_rating = 'negative' THEN 1 ELSE 0 END)::integer as negative,
+      SUM(CASE WHEN admin_status = 'pending' THEN 1 ELSE 0 END)::integer as pending_count
     FROM llm_feedback
     GROUP BY feature
     ORDER BY total DESC
@@ -227,7 +227,7 @@ export async function getRecentNegativeFeedback(limit: number = 20): Promise<Llm
 
 export async function getNegativeFeedbackCount(feature: string): Promise<number> {
   const row = await db().queryOne<{ count: number }>(`
-    SELECT COUNT(*) as count FROM llm_feedback
+    SELECT COUNT(*)::integer as count FROM llm_feedback
     WHERE feature = ? AND effective_rating = 'negative'
   `, [feature]);
   return row?.count ?? 0;

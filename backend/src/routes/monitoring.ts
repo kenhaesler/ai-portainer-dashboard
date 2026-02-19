@@ -73,7 +73,7 @@ export async function monitoringRoutes(fastify: FastifyInstance) {
           `, [...params, fetchLimit, offset]);
 
       const total = await db.queryOne<{ count: number }>(`
-        SELECT COUNT(*) as count FROM insights ${filterWhere}
+        SELECT COUNT(*)::integer as count FROM insights ${filterWhere}
       `, [...filterParams]);
 
       const hasMore = insights.length > limit;

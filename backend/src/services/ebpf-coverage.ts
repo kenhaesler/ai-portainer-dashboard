@@ -633,7 +633,7 @@ export async function verifyCoverage(endpointId: number): Promise<{ verified: bo
  */
 export async function getCoverageSummary(): Promise<CoverageSummary> {
   const rows = await db().query<{ status: CoverageStatus; count: number }>(`
-    SELECT status, COUNT(*) as count
+    SELECT status, COUNT(*)::integer as count
     FROM ebpf_coverage
     GROUP BY status
   `);

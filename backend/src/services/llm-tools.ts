@@ -645,7 +645,7 @@ async function executeGetTraceStats(
     // Get top slowest endpoints
     const tracesDb = getDbForDomain('traces');
     const slowest = await tracesDb.query<Record<string, unknown>>(`
-      SELECT name, AVG(duration_ms) as avg_duration_ms, COUNT(*) as call_count,
+      SELECT name, AVG(duration_ms) as avg_duration_ms, COUNT(*)::integer as call_count,
              CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as error_rate
       FROM spans
       WHERE start_time >= ?

@@ -250,7 +250,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
         AVG(value) as avg_value,
         MIN(value) as min_value,
         MAX(value) as max_value,
-        COUNT(*) as sample_count
+        COUNT(*)::integer as sample_count
       FROM metrics
       WHERE container_id = $1 AND timestamp >= $2
       GROUP BY metric_type

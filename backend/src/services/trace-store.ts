@@ -219,7 +219,7 @@ export async function getTraces(options: GetTracesOptions = {}): Promise<Array<{
        MIN(s.name) as root_name,
        MIN(s.start_time) as start_time,
        SUM(s.duration_ms) as duration_ms,
-       COUNT(*) as span_count,
+       COUNT(*)::integer as span_count,
        CASE WHEN SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) > 0
             THEN 'error' ELSE 'ok' END as status
      FROM spans s
@@ -242,7 +242,7 @@ export async function getServiceMap(): Promise<{
     `SELECT
        service_name as id,
        service_name as name,
-       COUNT(*) as "callCount",
+       COUNT(*)::integer as "callCount",
        AVG(duration_ms) as "avgDuration",
        CAST(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as "errorRate"
      FROM spans
@@ -254,7 +254,7 @@ export async function getServiceMap(): Promise<{
     `SELECT
        parent.service_name as source,
        child.service_name as target,
-       COUNT(*) as "callCount",
+       COUNT(*)::integer as "callCount",
        AVG(child.duration_ms) as "avgDuration"
      FROM spans child
      INNER JOIN spans parent ON child.parent_span_id = parent.id
