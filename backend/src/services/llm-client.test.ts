@@ -47,8 +47,6 @@ vi.mock('ollama', () => ({
   })),
 }));
 
-// Mock logger
-
 describe('llm-client', () => {
   beforeEach(() => {
     vi.clearAllMocks();

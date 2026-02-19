@@ -93,8 +93,6 @@ vi.mock('../config/index.js', () => ({
   }),
 }));
 
-// Mock logger
-
 describe('LLM Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
