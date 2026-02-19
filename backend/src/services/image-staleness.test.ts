@@ -9,15 +9,6 @@ vi.mock('../db/app-db-router.js', () => {
   return { getDbForDomain: vi.fn(() => mockDb) };
 });
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { parseImageRef, getStalenessSummary } from './image-staleness.js';
 
 describe('image-staleness', () => {

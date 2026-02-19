@@ -35,15 +35,6 @@ vi.mock('./settings-store.js', () => ({
   deleteSetting: (...args: unknown[]) => mockDeleteSetting(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 // Mock crypto.randomUUID
 vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid-1234' });
 

@@ -20,15 +20,6 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from '../services/portainer-client.js';
 import { writeAuditLog } from '../services/audit-logger.js';
 

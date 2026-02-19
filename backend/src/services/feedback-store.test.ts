@@ -12,15 +12,6 @@ vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 describe('feedback-store utilities', () => {
   describe('checkFeedbackRateLimit', () => {
     beforeEach(() => {

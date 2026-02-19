@@ -37,15 +37,6 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { getNetworkRates } from '../services/metrics-store.js';
 import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);

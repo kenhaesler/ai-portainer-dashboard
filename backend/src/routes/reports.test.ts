@@ -28,15 +28,6 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   selectRollupTable: (...args: unknown[]) => mockSelectRollupTable(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 vi.mock('../services/infrastructure-service-classifier.js', () => ({
   getInfrastructureServicePatterns: vi.fn().mockReturnValue(['traefik', 'portainer_agent', 'beyla', 'redis']),
   matchesInfrastructurePattern: vi.fn((name: string, patterns: string[]) => {

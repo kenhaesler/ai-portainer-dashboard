@@ -19,15 +19,6 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 // Mock the portainer-backup service
 const mockCreatePortainerBackup = vi.fn();
 const mockListPortainerBackups = vi.fn();

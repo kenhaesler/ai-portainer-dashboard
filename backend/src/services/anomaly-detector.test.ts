@@ -10,15 +10,6 @@ vi.mock('../config/index.js', () => ({
   }),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    warn: vi.fn(),
-    info: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 // Mock metrics-store module
 const mockGetMovingAverage = vi.fn();
 vi.mock('./metrics-store.js', () => ({

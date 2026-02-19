@@ -16,15 +16,6 @@ vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => mockDb,
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 import {
   insertInsight,
   insertInsights,

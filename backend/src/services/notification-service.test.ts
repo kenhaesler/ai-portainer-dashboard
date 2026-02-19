@@ -17,14 +17,6 @@ import type { Insight } from '../models/monitoring.js';
 const COOLDOWN_MS = 15 * 60 * 1000;
 
 // Mock dependencies
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
 
 const mockGetConfig = vi.fn().mockReturnValue({
   TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',

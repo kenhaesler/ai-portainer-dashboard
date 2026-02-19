@@ -10,15 +10,6 @@ vi.mock('../config/index.js', () => ({
   }),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 // Generate mock metric data
 function generateMetrics(count: number, baseValue: number) {
   return Array.from({ length: count }, (_, i) => ({

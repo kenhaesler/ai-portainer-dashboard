@@ -14,15 +14,6 @@ vi.mock('../services/portainer-cache.js', () => ({
   TTL: { ENDPOINTS: 30, NETWORKS: 60 },
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from '../services/portainer-client.js';
 
 const mockGetEndpoints = vi.mocked(portainer.getEndpoints);

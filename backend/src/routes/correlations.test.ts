@@ -38,15 +38,6 @@ vi.mock('../services/metrics-store.js', () => ({
   isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 const samplePairs: CorrelationPair[] = [
   {
     containerA: { id: 'a1', name: 'nginx-proxy' },

@@ -25,15 +25,6 @@ vi.mock('ollama', () => ({
   })),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 vi.mock('../services/portainer-client.js', () => ({
   getEndpoints: vi.fn().mockResolvedValue([]),
   getContainers: vi.fn().mockResolvedValue([]),

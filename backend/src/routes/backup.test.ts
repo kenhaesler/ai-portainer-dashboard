@@ -24,15 +24,6 @@ vi.mock('../services/backup-service.js', () => ({
   deleteBackup: (...args: unknown[]) => mockDeleteBackup(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { backupRoutes } from './backup.js';
 
 describe('backup routes', () => {

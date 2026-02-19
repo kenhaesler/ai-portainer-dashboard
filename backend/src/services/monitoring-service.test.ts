@@ -26,15 +26,6 @@ vi.mock('../config/index.js', () => ({
   getConfig: vi.fn().mockReturnValue(defaultConfig),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 const mockGetEndpoints = vi.fn().mockResolvedValue([]);
 const mockGetContainers = vi.fn().mockResolvedValue([]);
 const mockIsEndpointDegraded = vi.fn().mockReturnValue(false);

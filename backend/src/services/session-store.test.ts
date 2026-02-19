@@ -67,15 +67,6 @@ vi.mock('../db/app-db-router.js', () => {
   return { getDbForDomain: vi.fn(() => mockDb) };
 });
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { createSession, getSession, invalidateSession, refreshSession, cleanExpiredSessions } from './session-store.js';
 
 describe('session-store performance benchmarks', () => {

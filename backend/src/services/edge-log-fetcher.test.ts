@@ -6,15 +6,6 @@ vi.mock('./portainer-client.js', () => ({
   getContainerLogs: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from './portainer-client.js';
 
 const mockGetContainers = vi.mocked(portainer.getContainers);

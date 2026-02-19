@@ -8,15 +8,6 @@ vi.mock('./portainer-client.js', () => ({
   deleteEdgeJob: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from './portainer-client.js';
 import {
   initiateEdgeAsyncLogCollection,
