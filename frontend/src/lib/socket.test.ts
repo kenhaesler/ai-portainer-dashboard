@@ -44,6 +44,13 @@ describe('socket singleton', () => {
       expect(mockIo).toHaveBeenCalledTimes(1);
       expect(socket).toBeDefined();
     });
+
+    it('reuses existing main socket on subsequent calls', () => {
+      const socket1 = getSocket('token-1');
+      const socket2 = getSocket('token-1');
+      expect(socket1).toBe(socket2);
+      expect(mockIo).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getNamespaceSocket', () => {
@@ -55,13 +62,22 @@ describe('socket singleton', () => {
 
     it('reuses connected socket for same namespace+token', () => {
       const socket1 = getNamespaceSocket('monitoring', 'token-1');
-      // Simulate connected state
       (socket1 as any).connected = true;
 
       const socket2 = getNamespaceSocket('monitoring', 'token-1');
-      // Should return same socket, not create new one
       expect(socket2).toBe(socket1);
-      // io should only have been called once
+      expect(mockIo).toHaveBeenCalledTimes(1);
+    });
+
+    it('reuses disconnected socket for same namespace+token (avoids thrashing)', () => {
+      // Socket.io reconnects automatically — we must not replace it with a new
+      // instance just because it is temporarily disconnected, otherwise we race
+      // with its built-in reconnection timer.
+      const socket1 = getNamespaceSocket('monitoring', 'token-1');
+      (socket1 as any).connected = false;
+
+      const socket2 = getNamespaceSocket('monitoring', 'token-1');
+      expect(socket2).toBe(socket1);
       expect(mockIo).toHaveBeenCalledTimes(1);
     });
 
@@ -77,13 +93,32 @@ describe('socket singleton', () => {
       expect(mockIo).toHaveBeenCalledTimes(2);
     });
 
-    it('creates new socket when existing is disconnected', () => {
+    it('creates new socket after explicit client disconnect removes from cache', () => {
       const socket1 = getNamespaceSocket('monitoring', 'token-1');
-      // Socket stays disconnected (default)
-      (socket1 as any).connected = false;
 
+      // Trigger the 'io client disconnect' handler to evict from cache
+      const disconnectHandler = (socket1.on as any).mock.calls.find(
+        (call: any[]) => call[0] === 'disconnect'
+      )[1];
+      disconnectHandler('io client disconnect');
+
+      // Now a new socket should be created
       getNamespaceSocket('monitoring', 'token-1');
       expect(mockIo).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not remove from cache on network-error disconnect', () => {
+      const socket1 = getNamespaceSocket('monitoring', 'token-1');
+      const cache = _getNamespaceCache();
+      expect(cache.size).toBe(1);
+
+      // Simulate a transport error (not client-initiated)
+      const disconnectHandler = (socket1.on as any).mock.calls.find(
+        (call: any[]) => call[0] === 'disconnect'
+      )[1];
+      disconnectHandler('transport close');
+
+      expect(cache.size).toBe(1);
     });
 
     it('registers disconnect cleanup handler', () => {
@@ -91,16 +126,16 @@ describe('socket singleton', () => {
       expect(socket.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
     });
 
-    it('removes from cache on disconnect', () => {
+    it('removes from cache on explicit client disconnect', () => {
       const socket = getNamespaceSocket('monitoring', 'token-1');
       const cache = _getNamespaceCache();
       expect(cache.size).toBe(1);
 
-      // Trigger disconnect handler
+      // Trigger disconnect handler with client-initiated reason
       const disconnectHandler = (socket.on as any).mock.calls.find(
         (call: any[]) => call[0] === 'disconnect'
       )[1];
-      disconnectHandler();
+      disconnectHandler('io client disconnect');
 
       expect(cache.size).toBe(0);
     });
