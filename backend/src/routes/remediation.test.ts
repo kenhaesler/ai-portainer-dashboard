@@ -26,6 +26,7 @@ const mockRestartContainer = vi.mocked(restartContainer);
 const mockStopContainer = vi.mocked(stopContainer);
 const mockStartContainer = vi.mocked(startContainer);
 
+// Kept: stateful SQL mock simulates approve/reject/execute state transitions
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {

@@ -272,6 +272,7 @@ describe('traces routes', () => {
   });
 });
 
+// Kept: route imports getDbForDomain directly for trace queries
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
 }));

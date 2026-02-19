@@ -12,6 +12,7 @@ const mockDb = {
   healthCheck: vi.fn(),
 };
 
+// Kept: complex external deps (portainer-client, portainer-cache); SQL assertion patterns
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => mockDb,
 }));

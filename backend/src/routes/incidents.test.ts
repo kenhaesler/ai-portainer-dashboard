@@ -11,6 +11,7 @@ vi.mock('../services/incident-store.js', () => ({
   getIncidentCount: vi.fn(() => Promise.resolve({ active: 0, resolved: 0, total: 0 })),
 }));
 
+// Kept: route imports getDbForDomain directly for insights queries
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     query: vi.fn(() => Promise.resolve([])),

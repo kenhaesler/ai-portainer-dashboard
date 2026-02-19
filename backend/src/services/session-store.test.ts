@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // In-memory store for mock DB
 const sessionStore: Map<string, Record<string, unknown>> = new Map();
 
+// Kept: in-memory mock for perf benchmarks; real PG tests in session-store.integration.test.ts
 vi.mock('../db/app-db-router.js', () => {
   const mockDb = {
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {

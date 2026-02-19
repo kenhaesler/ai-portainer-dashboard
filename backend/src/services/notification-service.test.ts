@@ -22,6 +22,7 @@ const COOLDOWN_MS = 15 * 60 * 1000;
 const mockQueryOne = vi.fn();
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 const mockQuery = vi.fn().mockResolvedValue([]);
+// Kept: complex external deps (fetch, nodemailer); DB mock for notification_log INSERT
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),

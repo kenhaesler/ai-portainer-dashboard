@@ -23,6 +23,7 @@ import path from 'node:path';
 // so that route registration succeeds without real DB/network connections.
 let mockRemediationAction: Record<string, unknown> | undefined;
 
+// Kept: full-app auth sweep test; DB mock is scaffolding for route registration
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     queryOne: vi.fn(async (sql: string) => {

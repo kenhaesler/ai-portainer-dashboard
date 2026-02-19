@@ -15,6 +15,7 @@ vi.mock('../services/security-audit.js', () => ({
   setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
 }));
 
+// Kept: monitoring route imports getDbForDomain directly
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: async () => [],

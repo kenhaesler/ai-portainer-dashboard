@@ -38,6 +38,7 @@ vi.mock('../services/portainer-cache.js', async () =>
   (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
 );
 
+// Kept: llm-chat imports getDbForDomain for insights queries
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     query: vi.fn(async () => []),

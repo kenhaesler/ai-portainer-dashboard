@@ -21,6 +21,7 @@ vi.mock('../services/incident-store.js', () => ({
   addInsightToIncident: vi.fn(() => Promise.resolve()),
 }));
 
+// Kept: route imports getDbForDomain directly for insights queries
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     query: vi.fn(() => Promise.resolve([])),

@@ -14,6 +14,7 @@ vi.mock('../services/user-store.js', () => ({
   setUserDefaultLandingPage: (...args: unknown[]) => mockSetUserDefaultLandingPage(...args),
 }));
 
+// Kept: complex multi-service mock interaction (user-store, prompt-store, audit-logger)
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),

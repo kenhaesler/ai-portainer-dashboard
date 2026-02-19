@@ -8,6 +8,7 @@ const mockDbQuery = vi.fn();
 const mockDbQueryOne = vi.fn();
 const mockDbExecute = vi.fn().mockResolvedValue(undefined);
 
+// Kept: tests verify SQL patterns via mock assertions
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockDbQuery(...args),

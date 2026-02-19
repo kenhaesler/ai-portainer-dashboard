@@ -7,6 +7,7 @@ const mockQuery = vi.fn().mockResolvedValue([]);
 const mockQueryOne = vi.fn().mockResolvedValue({ count: 0 });
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 
+// Kept: tests verify cursor pagination and SQL parameter assertions
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),

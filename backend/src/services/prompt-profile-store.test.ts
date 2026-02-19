@@ -18,6 +18,7 @@ const mockAll = vi.fn();
 const mockGet = vi.fn();
 const mockRun = vi.fn();
 
+// Kept: tests verify JSONB parsing edge cases via SQL mock assertions
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => Promise.resolve(mockAll(...args)),
