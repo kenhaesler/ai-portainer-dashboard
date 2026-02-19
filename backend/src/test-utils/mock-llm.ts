@@ -43,6 +43,14 @@ export function createOllamaMock() {
 export function createLlmTraceStoreMock() {
   return {
     insertLlmTrace: vi.fn(),
+    getRecentTraces: vi.fn().mockResolvedValue([]),
+    getLlmStats: vi.fn().mockResolvedValue({
+      totalQueries: 0,
+      totalTokens: 0,
+      avgLatencyMs: 0,
+      errorRate: 0,
+      modelBreakdown: [],
+    }),
     getLlmTraceSummary: vi.fn().mockResolvedValue({
       totalQueries: 0,
       totalTokens: 0,

@@ -48,7 +48,7 @@ describe('Dashboard Summary Route', () => {
     await app.register(dashboardRoutes);
     await app.ready();
 
-    mockGetEndpoints.mockResolvedValue([{ id: 1, name: 'ep-1' }]);
+    mockGetEndpoints.mockResolvedValue([{ id: 1, name: 'ep-1' }] as any);
     mockNormalizeEndpoint.mockReturnValue({
       id: 1,
       name: 'ep-1',

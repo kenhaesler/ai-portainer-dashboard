@@ -120,7 +120,7 @@ services:
     image: dhi.io/redis:8.0-debian13
     restart: unless-stopped
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"                  # Exposed for host-side tests
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"         # Exposed for host-side tests (localhost only)
     command: >
       redis-server
       --maxmemory ${REDIS_MAXMEMORY:-512mb}

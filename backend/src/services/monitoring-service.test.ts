@@ -3,7 +3,7 @@ import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Default config values used in tests
 const defaultConfig = {
-  ANOMALY_DETECTION_METHOD: 'adaptive',
+  ANOMALY_DETECTION_METHOD: 'adaptive' as const,
   ANOMALY_COOLDOWN_MINUTES: 0,
   ANOMALY_THRESHOLD_PCT: 80,
   ANOMALY_HARD_THRESHOLD_ENABLED: true,

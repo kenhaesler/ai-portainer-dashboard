@@ -127,9 +127,9 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Restore defaults cleared by vi.clearAllMocks()
-    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'local' }]);
-    getContainersMock.mockResolvedValue([]);
-    getImagesMock.mockResolvedValue([{ Id: 'sha256:abc123', RepoTags: ['nginx:latest'] }]);
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'local' }] as any);
+    getContainersMock.mockResolvedValue([] as any);
+    getImagesMock.mockResolvedValue([{ Id: 'sha256:abc123', RepoTags: ['nginx:latest'] }] as any);
   });
 
   it('uses cachedFetchSWR for getEndpoints with TTL.ENDPOINTS', async () => {
@@ -169,7 +169,7 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
     getEndpointsMock.mockResolvedValueOnce([
       { Id: 1, Name: 'local' },
       { Id: 2, Name: 'remote' },
-    ]);
+    ] as any);
 
     await runImageStalenessCheck();
 
@@ -190,7 +190,7 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
       { Id: 1, Name: 'ep1' },
       { Id: 2, Name: 'ep2' },
       { Id: 3, Name: 'ep3' },
-    ]);
+    ] as any);
     getImagesMock.mockImplementation((epId: number) => {
       callOrder.push(`start-${epId}`);
       return new Promise((resolve) => {
@@ -226,12 +226,12 @@ describe('scheduler/setup – runMetricsCollection', () => {
     getEndpointsMock.mockResolvedValueOnce([
       { Id: 1, Name: 'ep1' },
       { Id: 2, Name: 'ep2' },
-    ]);
+    ] as any);
     getContainersMock.mockImplementation((epId: number) =>
       Promise.resolve([
         { Id: `container-${epId}-a`, Names: ['/app-a'], State: 'running' },
         { Id: `container-${epId}-b`, Names: ['/app-b'], State: 'running' },
-      ]),
+      ] as any),
     );
 
     await runMetricsCollection();
@@ -249,7 +249,7 @@ describe('scheduler/setup – runMetricsCollection', () => {
       { Id: 1, Name: 'ep1' },
       { Id: 2, Name: 'ep2' },
       { Id: 3, Name: 'ep3' },
-    ]);
+    ] as any);
     getContainersMock.mockImplementation((epId: number) => {
       callOrder.push(`start-ep-${epId}`);
       return new Promise((resolve) => {
@@ -257,7 +257,7 @@ describe('scheduler/setup – runMetricsCollection', () => {
           callOrder.push(`end-ep-${epId}`);
           resolve([
             { Id: `c-${epId}`, Names: [`/app-${epId}`], State: 'running' },
-          ]);
+          ] as any);
         }, 10);
       });
     });
@@ -272,11 +272,11 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('skips stopped containers', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'running-1', Names: ['/app'], State: 'running' },
       { Id: 'stopped-1', Names: ['/db'], State: 'exited' },
-    ]);
+    ] as any);
 
     await runMetricsCollection();
 
@@ -285,12 +285,12 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('handles individual container failures gracefully', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'ok-1', Names: ['/app-a'], State: 'running' },
       { Id: 'fail-1', Names: ['/app-b'], State: 'running' },
       { Id: 'ok-2', Names: ['/app-c'], State: 'running' },
-    ]);
+    ] as any);
     collectMetricsMock
       .mockResolvedValueOnce({ cpu: 10, memory: 20, memoryBytes: 100, networkRxBytes: 0, networkTxBytes: 0 })
       .mockRejectedValueOnce(new Error('container gone'))
@@ -307,12 +307,12 @@ describe('scheduler/setup – runMetricsCollection', () => {
     getEndpointsMock.mockResolvedValueOnce([
       { Id: 1, Name: 'ep1' },
       { Id: 2, Name: 'ep2' },
-    ]);
+    ] as any);
     getContainersMock
       .mockRejectedValueOnce(new Error('endpoint unreachable'))
       .mockResolvedValueOnce([
         { Id: 'c-2', Names: ['/app'], State: 'running' },
-      ]);
+      ] as any);
 
     await runMetricsCollection();
 
@@ -323,8 +323,8 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('does not insert metrics when no containers are found', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
-    getContainersMock.mockResolvedValueOnce([]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
+    getContainersMock.mockResolvedValueOnce([] as any);
 
     await runMetricsCollection();
 
@@ -395,10 +395,10 @@ describe('scheduler/setup – mutex guard (cycle overlap prevention)', () => {
   });
 
   it('allows a new cycle after the previous one completes', async () => {
-    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'ep1' }] as any);
     getContainersMock.mockResolvedValue([
       { Id: 'c-1', Names: ['/app'], State: 'running' },
-    ]);
+    ] as any);
 
     // First cycle
     await runMetricsCollection();
@@ -427,10 +427,10 @@ describe('scheduler/setup – no double-collection (monitoring reuses scheduler 
     // runMetricsCollection calls collectMetrics while the monitoring
     // service (which we mock) does NOT.
 
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'c-1', Names: ['/app'], State: 'running' },
-    ]);
+    ] as any);
 
     await runMetricsCollection();
 

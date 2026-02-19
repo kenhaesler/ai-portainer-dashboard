@@ -53,7 +53,7 @@ vi.mock('../services/metrics-store.js', () => ({
   getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
-function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up') {
+function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): any {
   return {
     id,
     name,
@@ -67,7 +67,7 @@ function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up') {
   };
 }
 
-function makeContainer(id: string, created: number, state = 'running', labels: Record<string, string> = {}) {
+function makeContainer(id: string, created: number, state = 'running', labels: Record<string, string> = {}): any {
   return {
     Id: id,
     Names: [`/${id}`],
