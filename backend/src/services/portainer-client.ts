@@ -134,6 +134,14 @@ export function isEndpointDegraded(endpointId: number): boolean {
   return entry.breaker.isDegraded();
 }
 
+/** Check whether the circuit breaker for a given endpoint is OPEN (actively rejecting requests). */
+export function isCircuitOpen(endpointId: number): boolean {
+  const key = `endpoint-${endpointId}`;
+  const entry = breakers.get(key);
+  if (!entry) return false;
+  return entry.breaker.getState() === 'OPEN';
+}
+
 /** Remove breakers for endpoints not seen in the last hour */
 export function pruneStaleBreakers(): number {
   const cutoff = Date.now() - BREAKER_MAX_IDLE_MS;

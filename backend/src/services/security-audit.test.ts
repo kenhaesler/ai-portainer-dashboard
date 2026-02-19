@@ -7,6 +7,7 @@ import {
   resolveAuditSeverity,
   setSecurityAuditIgnoreList,
 } from './security-audit.js';
+import { CircuitBreakerOpenError } from './circuit-breaker.js';
 
 const mockGetEndpoints = vi.fn();
 const mockGetContainers = vi.fn();
@@ -26,6 +27,11 @@ vi.mock('./portainer-client.js', () => ({
   getContainers: (...args: unknown[]) => mockGetContainers(...args),
   getContainerHostConfig: (...args: unknown[]) => mockGetContainerHostConfig(...args),
 }));
+
+vi.mock('./circuit-breaker.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./circuit-breaker.js')>();
+  return { ...original };
+});
 
 vi.mock('./portainer-cache.js', () => ({
   cachedFetch: (...args: unknown[]) => mockCachedFetch(...args),
@@ -171,6 +177,74 @@ describe('security-audit service', () => {
     // Outer audit cache should include the endpointId in the key
     expect(calls[0][0]).toBe('security-audit:42');
     expect(calls[0][1]).toBe(300);
+  });
+
+  it('skips endpoint and continues when circuit breaker is open', async () => {
+    // Two endpoints: endpoint 1 has open circuit breaker, endpoint 2 works fine
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod' },
+      { Id: 2, Name: 'staging' },
+    ]);
+
+    // mockCachedFetch: endpoint 1 containers fetch throws CircuitBreakerOpenError,
+    // endpoint 2 returns containers normally
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key === 'containers:1') {
+        return Promise.reject(new CircuitBreakerOpenError('endpoint-1', 5000));
+      }
+      return fetcher();
+    });
+
+    mockGetContainers.mockResolvedValue([
+      {
+        Id: 'c2',
+        Names: ['/web'],
+        Image: 'nginx:latest',
+        Created: 1,
+        State: 'running',
+        Status: 'Up',
+        Labels: {},
+        HostConfig: { NetworkMode: 'bridge' },
+      },
+    ]);
+
+    const entries = await getSecurityAudit();
+
+    // Only containers from endpoint 2 should appear — endpoint 1 was skipped
+    expect(entries.every((e) => e.endpointId === 2)).toBe(true);
+    expect(entries.some((e) => e.endpointId === 1)).toBe(false);
+  });
+
+  it('skips endpoint and continues when containers fetch fails with non-CB error', async () => {
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod' },
+      { Id: 2, Name: 'staging' },
+    ]);
+
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key === 'containers:1') {
+        return Promise.reject(new Error('network timeout'));
+      }
+      return fetcher();
+    });
+
+    mockGetContainers.mockResolvedValue([
+      {
+        Id: 'c2',
+        Names: ['/web'],
+        Image: 'nginx:latest',
+        Created: 1,
+        State: 'running',
+        Status: 'Up',
+        Labels: {},
+        HostConfig: { NetworkMode: 'bridge' },
+      },
+    ]);
+
+    const entries = await getSecurityAudit();
+
+    // endpoint 1 skipped due to network error; endpoint 2 succeeds
+    expect(entries.every((e) => e.endpointId === 2)).toBe(true);
   });
 
   it('computes audit summary counts', () => {

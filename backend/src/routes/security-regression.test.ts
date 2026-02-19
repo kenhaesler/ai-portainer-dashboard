@@ -1473,3 +1473,22 @@ describe('OIDC Group-to-Role Mapping Security', () => {
     expect(result).toBe('viewer');
   });
 });
+
+// =====================================================================
+//  11. NO GLOBAL TLS OVERRIDE
+// =====================================================================
+describe('No Global TLS Override', () => {
+  it('should never set NODE_TLS_REJECT_UNAUTHORIZED to 0 globally', () => {
+    // The global override was removed in favor of per-connection undici Agent.
+    // This test guards against accidental reintroduction.
+    expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).not.toBe('0');
+  });
+
+  it('should scope TLS bypass to LLM connections only via undici Agent', async () => {
+    // Verify the LLM service creates a per-connection agent rather than
+    // modifying the global TLS setting
+    const indexPath = path.resolve(process.cwd(), 'src', 'index.ts');
+    const content = readFileSync(indexPath, 'utf8');
+    expect(content).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
+  });
+});

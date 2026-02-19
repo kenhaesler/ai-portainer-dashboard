@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
+import { ContextBanner, type ContextBannerData } from '@/components/shared/context-banner';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import remarkGfm from 'remark-gfm';
@@ -55,12 +56,22 @@ function useSuggestions(mcpServers?: import('@/hooks/use-mcp').McpServer[]): Sug
   return [...INFRA_SUGGESTIONS, ...mcpPart];
 }
 
+/** State passed via React Router location.state when navigating to this page */
+interface LlmAssistantLocationState {
+  prefillPrompt?: string;
+  source?: string;
+  actionId?: string;
+  containerName?: string;
+  containerSummary?: string;
+}
+
 export default function LlmAssistantPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [contextBanner, setContextBanner] = useState<ContextBannerData | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isStreaming, currentResponse, activeToolCalls, statusMessage, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
@@ -86,9 +97,24 @@ export default function LlmAssistantPage() {
   const suggestions = useSuggestions(mcpServers);
 
   useEffect(() => {
-    const state = location.state as { prefillPrompt?: string } | null;
-    if (!state?.prefillPrompt) return;
-    setInput(state.prefillPrompt);
+    const state = location.state as LlmAssistantLocationState | null;
+    if (!state) return;
+
+    // Show context banner when arriving from another page with context data
+    if (state.source) {
+      setContextBanner({
+        source: state.source,
+        containerName: state.containerName,
+        containerSummary: state.containerSummary,
+      });
+    }
+
+    // Pre-fill the input with the prompt if provided
+    if (state.prefillPrompt) {
+      setInput(state.prefillPrompt);
+    }
+
+    // Clear navigation state so the banner/input don't re-appear on refresh
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate]);
 
@@ -215,6 +241,14 @@ export default function LlmAssistantPage() {
           })()}
         </div>
       </div>
+
+      {/* Context banner — shown when arriving via "Discuss with AI" from another page */}
+      {contextBanner && (
+        <ContextBanner
+          data={contextBanner}
+          onDismiss={() => setContextBanner(null)}
+        />
+      )}
 
       {/* Chat Container */}
       <div className="flex-1 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/50 shadow-xl backdrop-blur-sm">
