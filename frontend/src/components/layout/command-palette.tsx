@@ -38,7 +38,6 @@ import { cn } from '@/lib/utils';
 import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useStacks } from '@/hooks/use-stacks';
-import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSearch } from '@/providers/search-provider';
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
 import { Search } from 'lucide-react';
@@ -111,8 +110,8 @@ export function CommandPalette() {
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const [activeCategory, setActiveCategory] = useState<SearchCategory>('all');
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
-  const debouncedQuery = useDebouncedValue(query, 250);
-  const { data, isLoading } = useGlobalSearch(debouncedQuery, open, includeLogs);
+  // Debouncing is now handled inside useGlobalSearch — no local debounce needed.
+  const { data, isLoading } = useGlobalSearch(query, open, includeLogs);
   const { data: endpoints } = useEndpoints();
   const { data: allStacksData } = useStacks();
   const { recent, addRecent } = useSearch();
