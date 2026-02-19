@@ -24,6 +24,10 @@ function readLogShippingConfig(): ElasticsearchTransportOptions | null {
 }
 
 function createLogger(): pino.Logger {
+  if (process.env.NODE_ENV === 'test') {
+    return pino({ level: 'silent' });
+  }
+
   const level = process.env.LOG_LEVEL || 'info';
   const logShippingConfig = readLogShippingConfig();
 

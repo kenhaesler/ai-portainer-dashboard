@@ -21,15 +21,6 @@ vi.mock('../db/app-db-router.js', () => ({
   }),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 describe('monitoring insights cursor pagination', () => {
   let app: FastifyInstance;
 

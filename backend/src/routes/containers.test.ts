@@ -15,15 +15,6 @@ vi.mock('../services/portainer-cache.js', () => ({
   TTL: { ENDPOINTS: 30, CONTAINERS: 15, STATS: 60 },
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetchSWR, getCacheKey } from '../services/portainer-cache.js';
 

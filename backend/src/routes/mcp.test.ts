@@ -34,15 +34,6 @@ vi.mock('../services/mcp-manager.js', () => ({
   isConnected: (...args: unknown[]) => mockIsConnected(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 describe('MCP Routes', () => {
   let app: ReturnType<typeof Fastify>;
 

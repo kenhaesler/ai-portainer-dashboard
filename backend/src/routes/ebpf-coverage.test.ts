@@ -67,10 +67,6 @@ vi.mock('../config/index.js', () => ({
   })),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
-
 const mockedGetEndpointCoverage = vi.mocked(getEndpointCoverage);
 const mockedUpdateCoverageStatus = vi.mocked(updateCoverageStatus);
 const mockedDeleteCoverageRecord = vi.mocked(deleteCoverageRecord);

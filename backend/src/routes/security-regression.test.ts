@@ -436,20 +436,6 @@ vi.mock('../services/backup-service.js', () => ({
   getBackupPath: vi.fn(() => null),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: vi.fn(() => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    trace: vi.fn(),
-    fatal: vi.fn(),
-    child: vi.fn(() => ({
-      info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
-    })),
-  })),
-}));
-
 vi.mock('../utils/network-security.js', () => ({
   validateOutboundWebhookUrl: vi.fn(),
 }));

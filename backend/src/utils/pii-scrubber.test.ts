@@ -1,14 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { scrubPii, scrubPiiDeep } from './pii-scrubber.js';
 
 describe('pii-scrubber', () => {

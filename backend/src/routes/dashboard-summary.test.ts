@@ -35,15 +35,6 @@ vi.mock('../services/security-audit.js', () => ({
   buildSecurityAuditSummary: (...args: unknown[]) => mockBuildSecurityAuditSummary(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 describe('Dashboard Summary Route', () => {
   beforeEach(() => {
     vi.clearAllMocks();

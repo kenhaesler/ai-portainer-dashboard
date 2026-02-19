@@ -38,15 +38,6 @@ vi.mock('../plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from '../services/portainer-client.js';
 import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
 import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';

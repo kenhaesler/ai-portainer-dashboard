@@ -54,15 +54,6 @@ vi.mock('../services/metrics-store.js', () => ({
   getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up') {
   return {
     id,

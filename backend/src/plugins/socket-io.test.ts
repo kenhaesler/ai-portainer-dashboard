@@ -20,15 +20,6 @@ vi.mock('../services/session-store.js', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import socketIoPlugin from './socket-io.js';
 import { authenticateSocketToken, verifyTransportRequest } from './socket-io.js';
 import { IncomingMessage } from 'http';

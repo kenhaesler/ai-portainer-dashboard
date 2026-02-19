@@ -15,15 +15,6 @@ vi.mock('./metrics-store.js', () => ({
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { calculateBollingerBands, detectAnomalyAdaptive } from './adaptive-anomaly-detector.js';
 const { getConfig } = await import('../config/index.js');
 

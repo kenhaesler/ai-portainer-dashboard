@@ -9,9 +9,6 @@ vi.mock('../utils/crypto.js', () => ({
 vi.mock('../config/index.js', () => ({
   getConfig: vi.fn(() => ({ DASHBOARD_USERNAME: 'admin', DASHBOARD_PASSWORD: 'changeme123' })),
 }));
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
 
 describe('user-store', () => {
   describe('roleLevel', () => {

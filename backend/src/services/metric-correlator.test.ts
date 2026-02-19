@@ -4,15 +4,6 @@ vi.mock('../db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import {
   pearsonCorrelation,
   calculateCompositeScore,

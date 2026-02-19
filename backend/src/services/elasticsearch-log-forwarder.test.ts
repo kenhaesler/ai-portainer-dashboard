@@ -24,15 +24,6 @@ vi.mock('./portainer-cache.js', () => ({
   TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 const {
   resetElasticsearchLogForwarderState,
   runElasticsearchLogForwardingCycle,

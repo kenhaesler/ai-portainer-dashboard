@@ -40,15 +40,6 @@ vi.mock('./llm-tools.js', () => ({
   executeToolCalls: (...args: unknown[]) => mockExecuteToolCalls(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import {
   buildMcpToolName,
   parseMcpToolName,

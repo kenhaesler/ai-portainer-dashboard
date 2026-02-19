@@ -16,12 +16,6 @@ const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
 const mockCachedFetch = vi.fn();
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
-  }),
-}));
-
 vi.mock('./portainer-client.js', () => ({
   getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
   getContainers: (...args: unknown[]) => mockGetContainers(...args),

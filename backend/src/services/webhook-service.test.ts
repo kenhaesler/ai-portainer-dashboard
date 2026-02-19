@@ -64,15 +64,6 @@ vi.mock('../db/app-db-router.js', () => {
   return { getDbForDomain: vi.fn(() => mockDb) };
 });
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 vi.mock('./event-bus.js', () => ({
   onEvent: vi.fn(() => vi.fn()),
   emitEvent: vi.fn(),

@@ -11,15 +11,6 @@ vi.mock('../config/index.js', () => ({
   }),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 const mockCreateExec = vi.fn();
 const mockStartExec = vi.fn();
 const mockInspectExec = vi.fn();

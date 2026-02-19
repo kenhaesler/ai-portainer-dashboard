@@ -18,15 +18,6 @@ vi.mock('./settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetGlobalLlmConfig(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 const mockGetProfilePromptConfig = vi.fn();
 const mockGetActiveProfileId = vi.fn();
 
