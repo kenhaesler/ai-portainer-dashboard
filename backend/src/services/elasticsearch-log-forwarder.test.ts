@@ -1,28 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetElasticsearchConfig = vi.fn();
-const mockGetEndpoints = vi.fn();
-const mockGetContainers = vi.fn();
-const mockGetContainerLogs = vi.fn();
-const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-const mockCachedFetch = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
 
 vi.mock('./elasticsearch-config.js', () => ({
   getElasticsearchConfig: (...args: unknown[]) => mockGetElasticsearchConfig(...args),
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args as [string, number, () => Promise<unknown>]),
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 const {
   resetElasticsearchLogForwarderState,
@@ -30,6 +19,13 @@ const {
   startElasticsearchLogForwarder,
   stopElasticsearchLogForwarder,
 } = await import('./elasticsearch-log-forwarder.js');
+import { getEndpoints, getContainers, getContainerLogs } from './portainer-client.js';
+import { cachedFetchSWR, cachedFetch } from './portainer-cache.js';
+const mockGetEndpoints = vi.mocked(getEndpoints);
+const mockGetContainers = vi.mocked(getContainers);
+const mockGetContainerLogs = vi.mocked(getContainerLogs);
+const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
+const mockCachedFetch = vi.mocked(cachedFetch);
 
 describe('elasticsearch-log-forwarder', () => {
   const mockFetch = vi.fn();

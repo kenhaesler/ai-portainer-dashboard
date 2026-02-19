@@ -5,11 +5,15 @@
  * the pg driver automatically deserializes JSONB into native JS arrays.
  * These tests verify the code no longer calls JSON.parse() on those fields.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 import { incidentsRoutes } from './incidents.js';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount, addInsightToIncident } from '../services/incident-store.js';
 import type { Incident } from '../services/incident-store.js';
+
+let testDb: AppDb;
 
 // Mock the service layer — same pattern as incidents.test.ts
 vi.mock('../services/incident-store.js', () => ({
@@ -21,13 +25,8 @@ vi.mock('../services/incident-store.js', () => ({
   addInsightToIncident: vi.fn(() => Promise.resolve()),
 }));
 
-// Kept: route imports getDbForDomain directly for insights queries
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: vi.fn(() => ({
-    query: vi.fn(() => Promise.resolve([])),
-    queryOne: vi.fn(() => Promise.resolve(null)),
-    execute: vi.fn(() => Promise.resolve({ changes: 0 })),
-  })),
+  getDbForDomain: () => testDb,
 }));
 
 const mockedGetIncident = vi.mocked(getIncident);
@@ -60,6 +59,9 @@ function mockIncidentRow(overrides: Partial<Incident> = {}): Incident {
     ...overrides,
   };
 }
+
+beforeAll(async () => { testDb = await getTestDb(); });
+afterAll(async () => { await closeTestDb(); });
 
 describe('Incidents JSONB Type Regression Tests', () => {
   let app: ReturnType<typeof Fastify>;

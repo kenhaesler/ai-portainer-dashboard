@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
+
+let testDb: AppDb;
 
 // ── Hoisted mock references (available inside vi.mock factories) ──
 
@@ -38,13 +42,8 @@ vi.mock('../services/portainer-cache.js', async () =>
   (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
 );
 
-// Kept: llm-chat imports getDbForDomain for insights queries
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: vi.fn(() => ({
-    query: vi.fn(async () => []),
-    queryOne: vi.fn(async () => null),
-    execute: vi.fn(async () => ({ changes: 0 })),
-  })),
+  getDbForDomain: () => testDb,
 }));
 
 vi.mock('../services/llm-trace-store.js', async () =>
@@ -70,6 +69,9 @@ vi.mock('../services/settings-store.js', () => ({
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
 }));
+
+beforeAll(async () => { testDb = await getTestDb(); });
+afterAll(async () => { await closeTestDb(); });
 
 // ── Import the module under test AFTER mocks are registered ──
 import {

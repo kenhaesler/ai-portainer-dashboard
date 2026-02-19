@@ -4,12 +4,13 @@ vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+vi.mock('./llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 import { generateLlmIncidentSummary } from './incident-summarizer.js';
+import { chatStream } from './llm-client.js';
+const mockChatStream = vi.mocked(chatStream);
 import type { Insight } from '../models/monitoring.js';
 
 function makeInsight(overrides: Partial<Insight> = {}): Insight {

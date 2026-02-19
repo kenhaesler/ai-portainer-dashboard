@@ -5,10 +5,9 @@ import {
   waitForTunnel,
 } from './edge-log-fetcher.js';
 
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: vi.fn(),
-  getContainers: vi.fn(),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 import * as portainer from './portainer-client.js';
 

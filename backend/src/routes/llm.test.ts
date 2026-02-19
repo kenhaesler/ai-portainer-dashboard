@@ -69,7 +69,7 @@ vi.mock('../services/prompt-test-fixtures.js', () => ({
   },
 }));
 
-// Mock llm-client (llmFetch, getAuthHeaders, etc.)
+// Kept: inline mock — createOllamaClient/createConfiguredOllamaClient share mockChat/mockList with 'ollama' mock
 const mockLlmFetch = vi.fn();
 vi.mock('../services/llm-client.js', () => ({
   getAuthHeaders: vi.fn().mockReturnValue({}),

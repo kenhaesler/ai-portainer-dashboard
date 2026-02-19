@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isDockerProxyUnavailable, waitForTunnel, getContainerLogsWithRetry } from './edge-log-fetcher.js';
 
-vi.mock('./portainer-client.js', () => ({
-  getContainers: vi.fn(),
-  getContainerLogs: vi.fn(),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 import * as portainer from './portainer-client.js';
 

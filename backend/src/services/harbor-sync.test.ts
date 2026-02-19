@@ -16,28 +16,12 @@ vi.mock('./harbor-vulnerability-store.js', () => ({
   replaceAllVulnerabilities: vi.fn((vulns: unknown[]) => Promise.resolve(vulns.length)),
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: vi.fn(() => Promise.resolve([
-    { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost:2375', Status: 1, Snapshots: [] },
-  ])),
-  getContainers: vi.fn(() => Promise.resolve([
-    {
-      Id: 'abc123def456',
-      Names: ['/my-nginx'],
-      Image: 'harbor.example.com/myproject/nginx:latest',
-      State: 'running',
-      Status: 'Up 2 hours',
-      Created: 0,
-      Labels: {},
-    },
-  ])),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
-  getCacheKey: (...args: string[]) => args.join(':'),
-  TTL: { ENDPOINTS: 60, CONTAINERS: 30 },
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('./image-staleness.js', () => ({
   parseImageRef: vi.fn((ref: string) => {
@@ -67,10 +51,25 @@ vi.mock('./image-staleness.js', () => ({
 import { runFullSync } from './harbor-sync.js';
 import * as harborClient from './harbor-client.js';
 import * as store from './harbor-vulnerability-store.js';
+import { getEndpoints, getContainers } from './portainer-client.js';
 
 describe('harbor-sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getEndpoints).mockResolvedValue([
+      { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost:2375', Status: 1, Snapshots: [] },
+    ] as any);
+    vi.mocked(getContainers).mockResolvedValue([
+      {
+        Id: 'abc123def456',
+        Names: ['/my-nginx'],
+        Image: 'harbor.example.com/myproject/nginx:latest',
+        State: 'running',
+        Status: 'Up 2 hours',
+        Created: 0,
+        Labels: {},
+      },
+    ] as any);
   });
 
   it('syncs vulnerabilities and marks in-use correctly', async () => {

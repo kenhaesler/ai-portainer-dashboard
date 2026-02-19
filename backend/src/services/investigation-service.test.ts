@@ -4,12 +4,9 @@ import type { Insight } from '../models/monitoring.js';
 
 // Mock dependencies before importing the module under test
 
-const mockGetContainerLogs = vi.fn();
-const mockGetContainers = vi.fn();
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 const mockGetMetrics = vi.fn();
 const mockGetMovingAverage = vi.fn();
@@ -18,12 +15,9 @@ vi.mock('./metrics-store.js', () => ({
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
 }));
 
-const mockIsOllamaAvailable = vi.fn();
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: () => mockIsOllamaAvailable(),
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+vi.mock('./llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 const mockInsertInvestigation = vi.fn();
 const mockUpdateInvestigationStatus = vi.fn();
@@ -36,12 +30,9 @@ vi.mock('./investigation-store.js', () => ({
   getRecentInvestigationForContainer: (...args: unknown[]) => mockGetRecentInvestigationForContainer(...args),
 }));
 
-const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { CONTAINERS: 300 },
-}));
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 const mockGenerateForecast = vi.fn();
 vi.mock('./capacity-forecaster.js', () => ({
@@ -51,6 +42,14 @@ vi.mock('./capacity-forecaster.js', () => ({
 // Import after mocks are set up
 const { parseInvestigationResponse, buildInvestigationPrompt, triggerInvestigation } =
   await import('./investigation-service.js');
+import { getContainerLogs, getContainers } from './portainer-client.js';
+import { cachedFetchSWR } from './portainer-cache.js';
+import { isOllamaAvailable, chatStream } from './llm-client.js';
+const mockGetContainerLogs = vi.mocked(getContainerLogs);
+const mockGetContainers = vi.mocked(getContainers);
+const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
+const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
+const mockChatStream = vi.mocked(chatStream);
 
 function makeInsight(overrides?: Partial<Insight>): Insight {
   return {
@@ -89,6 +88,9 @@ afterAll(() => {
 describe('investigation-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset factory defaults — old forwarding mocks had no defaults (returned undefined)
+    mockIsOllamaAvailable.mockReset();
+    mockChatStream.mockReset();
   });
 
   describe('parseInvestigationResponse', () => {

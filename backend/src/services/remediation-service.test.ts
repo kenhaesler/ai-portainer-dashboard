@@ -7,9 +7,6 @@ const mockUpdateActionRationale = vi.fn();
 const mockHasPendingAction = vi.fn().mockReturnValue(false);
 const mockBroadcastNewAction = vi.fn();
 const mockBroadcastActionUpdate = vi.fn();
-const mockIsOllamaAvailable = vi.fn();
-const mockChatStream = vi.fn();
-const mockGetContainerLogs = vi.fn();
 const mockGetLatestMetrics = vi.fn();
 
 vi.mock('uuid', () => ({
@@ -28,18 +25,17 @@ vi.mock('./event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 vi.mock('./metrics-store.js', () => ({
   getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
 }));
 
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: (...args: unknown[]) => mockIsOllamaAvailable(...args),
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+vi.mock('./llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 vi.mock('../sockets/remediation.js', () => ({
   broadcastNewAction: (...args: unknown[]) => mockBroadcastNewAction(...args),
@@ -56,6 +52,11 @@ import {
   buildRemediationPrompt,
   isProtectedContainer,
 } from './remediation-service.js';
+import { getContainerLogs } from './portainer-client.js';
+import { isOllamaAvailable, chatStream } from './llm-client.js';
+const mockGetContainerLogs = vi.mocked(getContainerLogs);
+const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
+const mockChatStream = vi.mocked(chatStream);
 
 async function flushMicrotasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));

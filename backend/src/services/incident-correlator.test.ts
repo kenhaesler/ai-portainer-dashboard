@@ -11,9 +11,9 @@ vi.mock('./incident-store.js', () => ({
   getActiveIncidentForContainer: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: vi.fn(() => Promise.resolve(false)),
-}));
+vi.mock('./llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 vi.mock('./alert-similarity.js', () => ({
   findSimilarInsights: vi.fn(() => []),

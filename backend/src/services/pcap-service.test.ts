@@ -1,16 +1,9 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
-const mockCreateExec = vi.fn();
-const mockStartExec = vi.fn();
-const mockInspectExec = vi.fn();
-const mockGetArchive = vi.fn();
-vi.mock('./portainer-client.js', () => ({
-  createExec: (...args: unknown[]) => mockCreateExec(...args),
-  startExec: (...args: unknown[]) => mockStartExec(...args),
-  inspectExec: (...args: unknown[]) => mockInspectExec(...args),
-  getArchive: (...args: unknown[]) => mockGetArchive(...args),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 const mockInsertCapture = vi.fn().mockResolvedValue(undefined);
 const mockUpdateCaptureStatus = vi.fn().mockResolvedValue(undefined);
@@ -40,6 +33,11 @@ vi.mock('fs', () => ({
 
 const { buildTcpdumpCommand, extractFromTar, startCapture, stopCapture, getCaptureById, deleteCaptureById } =
   await import('./pcap-service.js');
+import { createExec, startExec, inspectExec, getArchive } from './portainer-client.js';
+const mockCreateExec = vi.mocked(createExec);
+const mockStartExec = vi.mocked(startExec);
+const mockInspectExec = vi.mocked(inspectExec);
+const mockGetArchive = vi.mocked(getArchive);
 
 
 beforeAll(() => {

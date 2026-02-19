@@ -1,19 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockGetContainerStats = vi.fn();
-const mockCachedFetch = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-
-vi.mock('./portainer-client.js', () => ({
-  getContainerStats: (...args: unknown[]) => mockGetContainerStats(...args),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 const { collectMetrics } = await import('./metrics-collector.js');
+import { getContainerStats } from './portainer-client.js';
+import { cachedFetch } from './portainer-cache.js';
+const mockGetContainerStats = vi.mocked(getContainerStats);
+const mockCachedFetch = vi.mocked(cachedFetch);
 
 describe('metrics-collector', () => {
   beforeEach(() => {

@@ -1,12 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('./portainer-client.js', () => ({
-  createEdgeJob: vi.fn(),
-  getEdgeJobTasks: vi.fn(),
-  collectEdgeJobTaskLogs: vi.fn(),
-  getEdgeJobTaskLogs: vi.fn(),
-  deleteEdgeJob: vi.fn(),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 import * as portainer from './portainer-client.js';
 import {

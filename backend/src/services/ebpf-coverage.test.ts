@@ -17,25 +17,12 @@ vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => mockDb,
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: vi.fn(async () => [
-    { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
-    { Id: 2, Name: 'remote', Type: 1, URL: 'tcp://remote', Status: 1, Snapshots: [] },
-  ]),
-  getEndpoint: vi.fn(async (id: number) => ({ Id: id, Name: `endpoint-${id}`, Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] })),
-  getContainers: vi.fn(async () => []),
-  pullImage: vi.fn(async () => {}),
-  createContainer: vi.fn(async () => ({ Id: 'new-beyla-id' })),
-  startContainer: vi.fn(async () => {}),
-  stopContainer: vi.fn(async () => {}),
-  removeContainer: vi.fn(async () => {}),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (_key: string, _ttl: number, fn: () => unknown) => fn(),
-  getCacheKey: (...parts: (string | number)[]) => parts.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 import {
   getEndpointCoverage,
@@ -75,6 +62,12 @@ describe('ebpf-coverage service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExecute.mockResolvedValue({ changes: 1 });
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
+      { Id: 2, Name: 'remote', Type: 1, URL: 'tcp://remote', Status: 1, Snapshots: [] },
+    ]);
+    mockGetEndpoint.mockImplementation(async (id: number) => ({ Id: id, Name: `endpoint-${id}`, Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] }) as any);
+    mockCreateContainer.mockResolvedValue({ Id: 'new-beyla-id' } as any);
   });
 
   describe('BEYLA_COMPATIBLE_TYPES', () => {

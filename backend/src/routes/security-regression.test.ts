@@ -221,10 +221,9 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   lookupContainerName: vi.fn(() => 'test-container'),
 }));
 
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: vi.fn(async function* () { yield 'test'; }),
-  isOllamaAvailable: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../services/llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 vi.mock('../services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),

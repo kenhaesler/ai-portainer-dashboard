@@ -9,34 +9,33 @@ import {
 } from './security-audit.js';
 import { CircuitBreakerOpenError } from './circuit-breaker.js';
 
-const mockGetEndpoints = vi.fn();
-const mockGetContainers = vi.fn();
-const mockGetContainerHostConfig = vi.fn();
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
-const mockCachedFetch = vi.fn();
 
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-  getContainerHostConfig: (...args: unknown[]) => mockGetContainerHostConfig(...args),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 vi.mock('./circuit-breaker.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./circuit-breaker.js')>();
   return { ...original };
 });
 
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, CONTAINER_INSPECT: 300 },
-}));
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
 }));
+
+import { getEndpoints, getContainers, getContainerHostConfig } from './portainer-client.js';
+import { cachedFetch } from './portainer-cache.js';
+const mockGetEndpoints = vi.mocked(getEndpoints);
+const mockGetContainers = vi.mocked(getContainers);
+const mockGetContainerHostConfig = vi.mocked(getContainerHostConfig);
+const mockCachedFetch = vi.mocked(cachedFetch);
 
 describe('security-audit service', () => {
   beforeEach(() => {

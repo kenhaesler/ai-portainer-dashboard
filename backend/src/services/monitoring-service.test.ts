@@ -24,23 +24,12 @@ const defaultConfig = {
 
 // Mock all dependencies
 
-const mockGetEndpoints = vi.fn().mockResolvedValue([]);
-const mockGetContainers = vi.fn().mockResolvedValue([]);
-const mockIsEndpointDegraded = vi.fn().mockReturnValue(false);
-const mockIsCircuitOpen = vi.fn().mockReturnValue(false);
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: () => mockGetEndpoints(),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-  isEndpointDegraded: (...args: unknown[]) => mockIsEndpointDegraded(...args),
-  isCircuitOpen: (...args: unknown[]) => mockIsCircuitOpen(...args),
-}));
-
-const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('./portainer-normalizers.js', () => ({
   normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0, capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true } }),
@@ -106,13 +95,9 @@ vi.mock('./insights-store.js', () => ({
   getRecentInsights: (...args: unknown[]) => mockGetRecentInsights(...args),
 }));
 
-const mockIsOllamaAvailable = vi.fn().mockResolvedValue(false);
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: () => mockIsOllamaAvailable(),
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-  buildInfrastructureContext: () => 'context',
-}));
+vi.mock('./llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 vi.mock('./remediation-service.js', () => ({
   suggestAction: () => null,
@@ -152,6 +137,16 @@ vi.mock('./incident-correlator.js', () => ({
 }));
 
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('./monitoring-service.js');
+import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from './portainer-client.js';
+import { cachedFetchSWR } from './portainer-cache.js';
+import { isOllamaAvailable, chatStream } from './llm-client.js';
+const mockGetEndpoints = vi.mocked(getEndpoints);
+const mockGetContainers = vi.mocked(getContainers);
+const mockIsEndpointDegraded = vi.mocked(isEndpointDegraded);
+const mockIsCircuitOpen = vi.mocked(isCircuitOpen);
+const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
+const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
+const mockChatStream = vi.mocked(chatStream);
 
 /** Helper: extract insights from the batch insertInsights call */
 function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {

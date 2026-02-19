@@ -4,23 +4,22 @@ vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+vi.mock('./llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
-const mockGetContainerLogs = vi.fn();
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-}));
-
-// cachedFetch passthrough — invokes the fetcher function directly
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-}));
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 import { analyzeContainerLogs, analyzeLogsForContainers } from './log-analyzer.js';
+import { getContainerLogs } from './portainer-client.js';
+import { chatStream } from './llm-client.js';
+const mockGetContainerLogs = vi.mocked(getContainerLogs);
+const mockChatStream = vi.mocked(chatStream);
 
 describe('log-analyzer', () => {
   beforeEach(() => {

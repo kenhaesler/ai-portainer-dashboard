@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock dependencies before importing
-vi.mock('./portainer-client.js', () => ({
-  getEndpoint: vi.fn(),
-}));
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => unknown) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 60 },
-}));
+// Kept: portainer mocks use shared factories (phase 5)
+vi.mock('./portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+vi.mock('./portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 import { getEndpointCapabilities, assertCapability, supportsLiveFeatures } from './edge-capability-guard.js';
 import { getEndpoint } from './portainer-client.js';
