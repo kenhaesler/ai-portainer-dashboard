@@ -1,23 +1,15 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import protobuf from 'protobufjs';
 import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
 import type { AppDb } from '../db/app-db.js';
 import { tracesIngestRoutes } from './traces-ingest.js';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 let appDb: AppDb;
 
-const mockConfig = {
-  TRACES_INGESTION_ENABLED: true,
-  TRACES_INGESTION_API_KEY: 'test-api-key-12345',
-};
-
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: () => mockConfig,
 }));
 
 function makeOtlpPayload() {
@@ -80,8 +72,14 @@ describe('Traces Ingest Routes', () => {
 
   beforeEach(async () => {
     await truncateTestTables('spans');
-    mockConfig.TRACES_INGESTION_ENABLED = true;
-    mockConfig.TRACES_INGESTION_API_KEY = 'test-api-key-12345';
+    setConfigForTest({
+      TRACES_INGESTION_ENABLED: true,
+      TRACES_INGESTION_API_KEY: 'test-api-key-12345',
+    });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   it('accepts valid OTLP payload and returns accepted count', async () => {
@@ -164,7 +162,7 @@ describe('Traces Ingest Routes', () => {
   });
 
   it('returns 501 when TRACES_INGESTION_ENABLED is false', async () => {
-    mockConfig.TRACES_INGESTION_ENABLED = false;
+    setConfigForTest({ TRACES_INGESTION_ENABLED: false });
 
     const response = await app.inject({
       method: 'POST',

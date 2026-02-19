@@ -1,19 +1,15 @@
 import Fastify from 'fastify';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import rateLimitPlugin, { shouldBypassGlobalRateLimit } from './rate-limit.js';
-
-const mockGetConfig = vi.fn();
-
-vi.mock('../config/index.js', () => ({
-  getConfig: () => mockGetConfig(),
-}));
 
 describe('rate-limit plugin', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetConfig.mockReturnValue({
-      API_RATE_LIMIT: 3,
-    });
+    setConfigForTest({ API_RATE_LIMIT: 3 });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   it('bypasses global limits for observer read routes', async () => {

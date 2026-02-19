@@ -5,14 +5,6 @@ import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({
-    PORTAINER_API_URL: 'http://portainer:9000',
-    PORTAINER_API_KEY: 'test-api-key',
-    PORTAINER_VERIFY_SSL: true,
-  }),
-}));
-
 const mockWriteAuditLog = vi.fn();
 
 vi.mock('../services/audit-logger.js', () => ({

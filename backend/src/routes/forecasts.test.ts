@@ -3,10 +3,6 @@ import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { forecastRoutes, buildForecastPrompt, clearNarrativeCache } from './forecasts.js';
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({}),
-}));
-
 const mockGetCapacityForecasts = vi.fn();
 const mockGenerateForecast = vi.fn();
 const mockLookupContainerName = vi.fn();

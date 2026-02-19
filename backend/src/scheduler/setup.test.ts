@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // ---------------------------------------------------------------------------
 // Mocks — hoisted so every import sees them
@@ -51,20 +52,6 @@ const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
 vi.mock('../services/metrics-store.js', () => ({
   insertMetrics: (...args: unknown[]) => insertMetricsMock(...args),
   cleanOldMetrics: vi.fn().mockResolvedValue(0),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    CACHE_ENABLED: true,
-    METRICS_COLLECTION_ENABLED: false,
-    MONITORING_ENABLED: false,
-    WEBHOOKS_ENABLED: false,
-    IMAGE_STALENESS_CHECK_ENABLED: false,
-    METRICS_RETENTION_DAYS: 30,
-    METRICS_ENDPOINT_CONCURRENCY: 10,
-    METRICS_CONTAINER_CONCURRENCY: 20,
-    METRICS_COLLECTION_INTERVAL_SECONDS: 60,
-  }),
 }));
 
 vi.mock('../services/monitoring-service.js', () => ({
@@ -127,6 +114,25 @@ import {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+
+beforeAll(() => {
+    setConfigForTest({
+      CACHE_ENABLED: true,
+      METRICS_COLLECTION_ENABLED: false,
+      MONITORING_ENABLED: false,
+      WEBHOOKS_ENABLED: false,
+      IMAGE_STALENESS_CHECK_ENABLED: false,
+      METRICS_RETENTION_DAYS: 30,
+      METRICS_ENDPOINT_CONCURRENCY: 10,
+      METRICS_CONTAINER_CONCURRENCY: 20,
+      METRICS_COLLECTION_INTERVAL_SECONDS: 60,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('scheduler/setup – runImageStalenessCheck', () => {
   beforeEach(() => {
@@ -493,8 +499,7 @@ describe('scheduler/setup – runCleanup includes insights cleanup', () => {
   });
 
   it('passes INSIGHTS_RETENTION_DAYS from config', async () => {
-    const { getConfig } = await import('../config/index.js');
-    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+    setConfigForTest({
       METRICS_RETENTION_DAYS: 30,
       INSIGHTS_RETENTION_DAYS: 14,
     });

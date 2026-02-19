@@ -14,12 +14,6 @@ vi.mock('./portainer-client.js', () => ({
   getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
 }));
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    LOG_ANALYSIS_CONCURRENCY: 3,
-  })),
-}));
-
 // cachedFetch passthrough — invokes the fetcher function directly
 vi.mock('./portainer-cache.js', () => ({
   cachedFetch: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),

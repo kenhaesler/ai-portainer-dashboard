@@ -1,12 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock getConfig to return strict mode + near-miss enabled
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    LLM_PROMPT_GUARD_STRICT: true,
-    PROMPT_GUARD_NEAR_MISS_ENABLED: true,
-  }),
-}));
 
 import { isPromptInjection, sanitizeLlmOutput, normalizeUnicode, stripThinkingBlocks, stripToolCallsJson, getPromptGuardNearMissTotal, resetPromptGuardNearMissCounter } from './prompt-guard.js';
 

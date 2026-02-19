@@ -1,18 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import type { Insight } from '../models/monitoring.js';
 
 // Mock dependencies before importing the module under test
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({
-    INVESTIGATION_ENABLED: true,
-    INVESTIGATION_COOLDOWN_MINUTES: 30,
-    INVESTIGATION_MAX_CONCURRENT: 2,
-    INVESTIGATION_LOG_TAIL_LINES: 50,
-    INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
-    INVESTIGATION_MIN_SEVERITY: 'warning',
-    OLLAMA_MODEL: 'llama3.2',
-  }),
-}));
 
 const mockGetContainerLogs = vi.fn();
 const mockGetContainers = vi.fn();
@@ -79,6 +69,22 @@ function makeInsight(overrides?: Partial<Insight>): Insight {
     ...overrides,
   };
 }
+
+
+beforeAll(() => {
+    setConfigForTest({
+      INVESTIGATION_ENABLED: true,
+      INVESTIGATION_COOLDOWN_MINUTES: 30,
+      INVESTIGATION_MAX_CONCURRENT: 2,
+      INVESTIGATION_LOG_TAIL_LINES: 50,
+      INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
+      INVESTIGATION_MIN_SEVERITY: 'warning',
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('investigation-service', () => {
   beforeEach(() => {

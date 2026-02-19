@@ -3,20 +3,12 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
 import type { AppDb } from '../db/app-db.js';
 import { prometheusRoutes, resetPrometheusMetricsCacheForTests } from './prometheus.js';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 let appDb: AppDb;
 
-const mockConfig = {
-  PROMETHEUS_METRICS_ENABLED: false,
-  PROMETHEUS_BEARER_TOKEN: undefined as string | undefined,
-};
-
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: () => mockConfig,
 }));
 
 vi.mock('../services/prompt-guard.js', () => ({
@@ -43,10 +35,13 @@ describe('Prometheus Routes', () => {
 
   beforeEach(async () => {
     await truncateTestTables('insights', 'actions', 'monitoring_snapshots', 'monitoring_cycles');
-    mockConfig.PROMETHEUS_METRICS_ENABLED = false;
-    mockConfig.PROMETHEUS_BEARER_TOKEN = undefined;
+    setConfigForTest({ PROMETHEUS_METRICS_ENABLED: false, PROMETHEUS_BEARER_TOKEN: undefined });
     resetPrometheusMetricsCacheForTests();
     vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   it('returns 404 when metrics endpoint is disabled', async () => {
@@ -55,7 +50,7 @@ describe('Prometheus Routes', () => {
   });
 
   it('returns prometheus exposition text with dashboard metrics', async () => {
-    mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+    setConfigForTest({ PROMETHEUS_METRICS_ENABLED: true });
 
     await pool.query(`
       INSERT INTO insights (id, severity, category, title, description, container_name, is_acknowledged)
@@ -102,8 +97,10 @@ describe('Prometheus Routes', () => {
   });
 
   it('enforces bearer token only when configured', async () => {
-    mockConfig.PROMETHEUS_METRICS_ENABLED = true;
-    mockConfig.PROMETHEUS_BEARER_TOKEN = 'metrics-token';
+    setConfigForTest({
+      PROMETHEUS_METRICS_ENABLED: true,
+      PROMETHEUS_BEARER_TOKEN: 'metrics-token',
+    });
 
     let response = await app.inject({ method: 'GET', url: '/metrics' });
     expect(response.statusCode).toBe(401);
@@ -132,8 +129,10 @@ describe('Prometheus Routes', () => {
 
     it('returns 500 config error in production when no token is set', async () => {
       process.env.NODE_ENV = 'production';
-      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
-      mockConfig.PROMETHEUS_BEARER_TOKEN = undefined;
+      setConfigForTest({
+        PROMETHEUS_METRICS_ENABLED: true,
+        PROMETHEUS_BEARER_TOKEN: undefined,
+      });
 
       const response = await app.inject({ method: 'GET', url: '/metrics' });
       expect(response.statusCode).toBe(500);
@@ -142,8 +141,10 @@ describe('Prometheus Routes', () => {
 
     it('returns 500 config error in production when token is too short', async () => {
       process.env.NODE_ENV = 'production';
-      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
-      mockConfig.PROMETHEUS_BEARER_TOKEN = 'short';
+      setConfigForTest({
+        PROMETHEUS_METRICS_ENABLED: true,
+        PROMETHEUS_BEARER_TOKEN: 'short',
+      });
 
       const response = await app.inject({ method: 'GET', url: '/metrics' });
       expect(response.statusCode).toBe(500);
@@ -152,8 +153,10 @@ describe('Prometheus Routes', () => {
 
     it('serves metrics in production when valid token is provided', async () => {
       process.env.NODE_ENV = 'production';
-      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
-      mockConfig.PROMETHEUS_BEARER_TOKEN = 'a-valid-token-that-is-long-enough';
+      setConfigForTest({
+        PROMETHEUS_METRICS_ENABLED: true,
+        PROMETHEUS_BEARER_TOKEN: 'a-valid-token-that-is-long-enough',
+      });
 
       const response = await app.inject({
         method: 'GET',
@@ -166,8 +169,10 @@ describe('Prometheus Routes', () => {
 
     it('serves metrics in development without a token', async () => {
       process.env.NODE_ENV = 'development';
-      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
-      mockConfig.PROMETHEUS_BEARER_TOKEN = undefined;
+      setConfigForTest({
+        PROMETHEUS_METRICS_ENABLED: true,
+        PROMETHEUS_BEARER_TOKEN: undefined,
+      });
 
       const response = await app.inject({ method: 'GET', url: '/metrics' });
       expect(response.statusCode).toBe(200);
@@ -176,8 +181,10 @@ describe('Prometheus Routes', () => {
 
     it('serves metrics in development with a valid token', async () => {
       process.env.NODE_ENV = 'development';
-      mockConfig.PROMETHEUS_METRICS_ENABLED = true;
-      mockConfig.PROMETHEUS_BEARER_TOKEN = 'dev-token-1234567890';
+      setConfigForTest({
+        PROMETHEUS_METRICS_ENABLED: true,
+        PROMETHEUS_BEARER_TOKEN: 'dev-token-1234567890',
+      });
 
       const response = await app.inject({
         method: 'GET',
@@ -190,7 +197,7 @@ describe('Prometheus Routes', () => {
   });
 
   it('caches DB aggregations for 15 seconds', async () => {
-    mockConfig.PROMETHEUS_METRICS_ENABLED = true;
+    setConfigForTest({ PROMETHEUS_METRICS_ENABLED: true });
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-01T00:00:00.000Z'));
 

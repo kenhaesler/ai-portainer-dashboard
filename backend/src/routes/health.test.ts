@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { healthRoutes } from './health.js';
 
 vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
-vi.mock('../config/index.js', () => ({ getConfig: () => ({ PORTAINER_API_URL: 'http://localhost:9000', PORTAINER_API_KEY: 'test-api-key', OLLAMA_BASE_URL: 'http://localhost:11434' }) }));
 vi.mock('../services/portainer-cache.js', () => ({
   cache: {
     getBackoffState: vi.fn(),
@@ -44,6 +44,7 @@ describe('Health Routes', () => {
   afterAll(async () => { await app.close(); });
   beforeEach(() => {
     vi.clearAllMocks();
+    setConfigForTest({ OLLAMA_BASE_URL: 'http://localhost:11434' });
     // Default: migrations applied, Redis not configured
     mockIsAppDbHealthy.mockResolvedValue(true);
     mockIsAppDbReady.mockReturnValue(true);
@@ -52,6 +53,10 @@ describe('Health Routes', () => {
     mockCache.ping.mockResolvedValue(false);
     // Default: Portainer reachable and ok
     mockCheckPortainer.mockResolvedValue({ reachable: true, ok: true });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('GET /health', () => {

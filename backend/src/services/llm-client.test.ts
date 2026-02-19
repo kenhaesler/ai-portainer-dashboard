@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import { Agent } from 'undici';
 import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, type LlmAuthType } from './llm-client.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
@@ -16,12 +17,6 @@ const mockGetConfig = vi.fn().mockReturnValue({
 });
 vi.mock('./settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
-}));
-
-// Mock config (for getLlmDispatcher)
-const mockEnvConfig = vi.fn().mockReturnValue({ LLM_VERIFY_SSL: true, LLM_REQUEST_TIMEOUT: 120000 });
-vi.mock('../config/index.js', () => ({
-  getConfig: (...args: unknown[]) => mockEnvConfig(...args),
 }));
 
 // Mock undici — llmFetch uses undici's fetch (not global fetch) so
@@ -52,6 +47,11 @@ vi.mock('ollama', () => ({
 describe('llm-client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setConfigForTest({ LLM_VERIFY_SSL: true, LLM_REQUEST_TIMEOUT: 120000 });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('chatStream', () => {
@@ -519,7 +519,7 @@ describe('llm-client', () => {
 
   describe('getLlmDispatcher', () => {
     it('returns undefined when LLM_VERIFY_SSL is true', () => {
-      mockEnvConfig.mockReturnValue({ LLM_VERIFY_SSL: true });
+      setConfigForTest({ LLM_VERIFY_SSL: true });
       const dispatcher = getLlmDispatcher();
       expect(dispatcher).toBeUndefined();
     });
@@ -529,7 +529,7 @@ describe('llm-client', () => {
       // The global process.env.NODE_TLS_REJECT_UNAUTHORIZED override was removed from index.ts.
       // Instead, TLS bypass is applied per-connection via undici Agent, so only LLM connections
       // skip cert validation — all other HTTPS (Portainer, PostgreSQL, etc.) remain protected.
-      mockEnvConfig.mockReturnValue({ LLM_VERIFY_SSL: false });
+      setConfigForTest({ LLM_VERIFY_SSL: false });
       // llmDispatcher singleton is undefined at this point (previous test returned early).
       const dispatcher = getLlmDispatcher();
       expect(dispatcher).toBeDefined();

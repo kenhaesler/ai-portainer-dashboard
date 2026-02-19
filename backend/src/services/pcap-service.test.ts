@@ -1,15 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    PCAP_ENABLED: true,
-    PCAP_MAX_DURATION_SECONDS: 300,
-    PCAP_MAX_FILE_SIZE_MB: 50,
-    PCAP_MAX_CONCURRENT: 2,
-    PCAP_RETENTION_DAYS: 7,
-    PCAP_STORAGE_DIR: '/tmp/test-pcap',
-  }),
-}));
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 const mockCreateExec = vi.fn();
 const mockStartExec = vi.fn();
@@ -50,6 +40,22 @@ vi.mock('fs', () => ({
 
 const { buildTcpdumpCommand, extractFromTar, startCapture, stopCapture, getCaptureById, deleteCaptureById } =
   await import('./pcap-service.js');
+
+
+beforeAll(() => {
+    setConfigForTest({
+      PCAP_ENABLED: true,
+      PCAP_MAX_DURATION_SECONDS: 300,
+      PCAP_MAX_FILE_SIZE_MB: 50,
+      PCAP_MAX_CONCURRENT: 2,
+      PCAP_RETENTION_DAYS: 7,
+      PCAP_STORAGE_DIR: '/tmp/test-pcap',
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('pcap-service', () => {
   beforeEach(() => {
@@ -131,10 +137,7 @@ describe('pcap-service', () => {
 
   describe('startCapture', () => {
     it('should throw when PCAP is disabled', async () => {
-      const { getConfig } = await import('../config/index.js');
-      vi.mocked(getConfig).mockReturnValue({
-        PCAP_ENABLED: false,
-      } as ReturnType<typeof getConfig>);
+      setConfigForTest({ PCAP_ENABLED: false });
 
       await expect(startCapture({
         endpointId: 1,
@@ -142,15 +145,15 @@ describe('pcap-service', () => {
         containerName: 'test',
       })).rejects.toThrow('Packet capture is not enabled');
 
-      // Restore
-      vi.mocked(getConfig).mockReturnValue({
+      // Restore defaults for remaining tests
+      setConfigForTest({
         PCAP_ENABLED: true,
         PCAP_MAX_DURATION_SECONDS: 300,
         PCAP_MAX_FILE_SIZE_MB: 50,
         PCAP_MAX_CONCURRENT: 2,
         PCAP_RETENTION_DAYS: 7,
         PCAP_STORAGE_DIR: '/tmp/test-pcap',
-      } as ReturnType<typeof getConfig>);
+      });
     });
 
     it('should throw when concurrency limit is reached', async () => {

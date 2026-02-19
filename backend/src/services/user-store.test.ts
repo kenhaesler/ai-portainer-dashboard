@@ -6,9 +6,6 @@ vi.mock('../utils/crypto.js', () => ({
   hashPassword: vi.fn(async (p: string) => `hashed:${p}`),
   comparePassword: vi.fn(async (p: string, h: string) => h === `hashed:${p}`),
 }));
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({ DASHBOARD_USERNAME: 'admin', DASHBOARD_PASSWORD: 'changeme123' })),
-}));
 
 describe('user-store', () => {
   describe('roleLevel', () => {

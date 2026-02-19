@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import { correlateInsights } from './incident-correlator.js';
 import type { Insight } from '../models/monitoring.js';
 import { insertIncident, addInsightToIncident, getActiveIncidentForContainer } from './incident-store.js';
@@ -8,14 +9,6 @@ vi.mock('./incident-store.js', () => ({
   insertIncident: vi.fn(() => Promise.resolve()),
   addInsightToIncident: vi.fn(() => Promise.resolve()),
   getActiveIncidentForContainer: vi.fn(() => Promise.resolve(undefined)),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    SMART_GROUPING_ENABLED: false,
-    SMART_GROUPING_SIMILARITY_THRESHOLD: 0.3,
-    INCIDENT_SUMMARY_ENABLED: false,
-  })),
 }));
 
 vi.mock('./llm-client.js', () => ({
@@ -51,6 +44,19 @@ function makeInsight(overrides: Partial<Insight> = {}): Insight {
     ...overrides,
   };
 }
+
+
+beforeAll(() => {
+    setConfigForTest({
+      SMART_GROUPING_ENABLED: false,
+      SMART_GROUPING_SIMILARITY_THRESHOLD: 0.3,
+      INCIDENT_SUMMARY_ENABLED: false,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('incident-correlator', () => {
   beforeEach(() => {
