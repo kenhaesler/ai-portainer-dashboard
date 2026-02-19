@@ -8,6 +8,7 @@ import { getConfig } from '../config/index.js';
 import { getEffectiveLlmConfig } from './settings-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
 import { withSpan } from './trace-context.js';
+import { scrubPii, scrubPiiDeep } from '../utils/pii-scrubber.js';
 import type { NormalizedEndpoint, NormalizedContainer } from './portainer-normalizers.js';
 import type { Insight } from '../models/monitoring.js';
 
@@ -180,13 +181,17 @@ async function chatStreamInner(
   const startTime = Date.now();
   const requestTimeoutMs = config.LLM_REQUEST_TIMEOUT;
 
+  // Layer 1: PII Scrubbing (Privacy-first)
+  const scrubbedMessages = scrubPiiDeep(messages);
+  const scrubbedSystemPrompt = scrubPii(systemPrompt);
+
   const fullMessages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...messages,
+    { role: 'system', content: scrubbedSystemPrompt },
+    ...scrubbedMessages,
   ];
 
   // Extract user query from the last user message (for trace recording)
-  const userQuery = [...messages].reverse().find((m) => m.role === 'user')?.content;
+  const userQuery = [...scrubbedMessages].reverse().find((m) => m.role === 'user')?.content;
 
   let fullResponse = '';
 
@@ -350,7 +355,7 @@ export function buildInfrastructureContext(
     .map((i) => `- [${i.severity.toUpperCase()}] ${i.title}: ${i.description}`)
     .join('\n');
 
-  return `You are an AI assistant specializing in Docker container infrastructure management. You have access to the following infrastructure data:
+  const context = `You are an AI assistant specializing in Docker container infrastructure management. You have access to the following infrastructure data:
 
 ## Endpoints
 ${endpointSummary || 'No endpoints available.'}
@@ -365,6 +370,9 @@ ${containerDetails || 'No containers available.'}
 ${recentInsights || 'No recent insights.'}
 
 Provide concise, actionable recommendations. When suggesting changes, always explain the potential impact and risks. Never perform destructive actions without explicit user confirmation.`;
+
+  // Scrub any accidental PII in endpoint/container names before sending to LLM
+  return scrubPii(context);
 }
 
 export async function isOllamaAvailable(): Promise<boolean> {
