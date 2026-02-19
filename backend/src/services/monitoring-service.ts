@@ -7,7 +7,7 @@ import { CircuitBreakerOpenError } from './circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.js';
 import { scanContainer } from './security-scanner.js';
-import { getLatestMetrics } from './metrics-store.js';
+import { getLatestMetricsBatch } from './metrics-store.js';
 import type { MetricInsert } from './metrics-store.js';
 import { detectAnomalyAdaptive, detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
 import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
@@ -201,49 +201,51 @@ export async function runMonitoringCycle(): Promise<void> {
       (c) => c.raw.State === 'running' && !edgeAsyncEndpointIds.has(c.endpointId),
     );
 
-    let metricsReadFailures = 0;
-    for (const container of runningContainers) {
-      try {
-        const latest = await getLatestMetrics(container.raw.Id);
-        const containerName =
-          container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
-
-        if (latest.cpu !== undefined) {
-          metricsFromDb.push({
-            endpoint_id: container.endpointId,
-            container_id: container.raw.Id,
-            container_name: containerName,
-            metric_type: 'cpu',
-            value: latest.cpu,
-          });
-        }
-        if (latest.memory !== undefined) {
-          metricsFromDb.push({
-            endpoint_id: container.endpointId,
-            container_id: container.raw.Id,
-            container_name: containerName,
-            metric_type: 'memory',
-            value: latest.memory,
-          });
-        }
-        if (latest.memory_bytes !== undefined) {
-          metricsFromDb.push({
-            endpoint_id: container.endpointId,
-            container_id: container.raw.Id,
-            container_name: containerName,
-            metric_type: 'memory_bytes',
-            value: latest.memory_bytes,
-          });
-        }
-      } catch {
-        metricsReadFailures++;
-      }
-    }
-    if (metricsReadFailures > 0) {
+    // Single batch query instead of N per-container calls
+    const containerIds = runningContainers.map((c) => c.raw.Id);
+    let batchMetrics: Map<string, Record<string, number>>;
+    try {
+      batchMetrics = await getLatestMetricsBatch(containerIds);
+    } catch {
       log.warn(
-        { failedContainers: metricsReadFailures, totalContainers: runningContainers.length },
-        'Failed to read latest metrics for some containers',
+        { containerCount: containerIds.length },
+        'Failed to read latest metrics batch — skipping DB metrics for this cycle',
       );
+      batchMetrics = new Map();
+    }
+
+    for (const container of runningContainers) {
+      const latest = batchMetrics.get(container.raw.Id) ?? {};
+      const containerName =
+        container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
+
+      if (latest.cpu !== undefined) {
+        metricsFromDb.push({
+          endpoint_id: container.endpointId,
+          container_id: container.raw.Id,
+          container_name: containerName,
+          metric_type: 'cpu',
+          value: latest.cpu,
+        });
+      }
+      if (latest.memory !== undefined) {
+        metricsFromDb.push({
+          endpoint_id: container.endpointId,
+          container_id: container.raw.Id,
+          container_name: containerName,
+          metric_type: 'memory',
+          value: latest.memory,
+        });
+      }
+      if (latest.memory_bytes !== undefined) {
+        metricsFromDb.push({
+          endpoint_id: container.endpointId,
+          container_id: container.raw.Id,
+          container_name: containerName,
+          metric_type: 'memory_bytes',
+          value: latest.memory_bytes,
+        });
+      }
     }
 
     // 3. Run security scan on all containers
