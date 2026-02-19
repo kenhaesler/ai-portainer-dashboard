@@ -1,23 +1,14 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 import { notificationRoutes } from './notifications.js';
 
-const mockQuery = vi.fn().mockResolvedValue([]);
-const mockQueryOne = vi.fn().mockResolvedValue({ count: 0 });
+let testDb: AppDb;
 
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: () => ({
-    query: (...args: unknown[]) => mockQuery(...args),
-    queryOne: (...args: unknown[]) => mockQueryOne(...args),
-    execute: vi.fn(async () => ({ changes: 1 })),
-    transaction: vi.fn(async (fn: (db: Record<string, unknown>) => Promise<unknown>) => fn({
-      query: (...a: unknown[]) => mockQuery(...a),
-      queryOne: (...a: unknown[]) => mockQueryOne(...a),
-      execute: vi.fn(async () => ({ changes: 1 })),
-    })),
-    healthCheck: vi.fn(async () => true),
-  }),
+  getDbForDomain: () => testDb,
 }));
 
 const mockSendTest = vi.fn();
@@ -30,6 +21,7 @@ describe('Notification Routes', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
+    testDb = await getTestDb();
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
@@ -40,21 +32,21 @@ describe('Notification Routes', () => {
 
   afterAll(async () => {
     await app.close();
+    await closeTestDb();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    mockQuery.mockResolvedValue([]);
-    mockQueryOne.mockResolvedValue({ count: 0 });
+    await truncateTestTables('notification_log');
   });
 
   describe('GET /api/notifications/history', () => {
     it('returns paginated notification history', async () => {
-      const entries = [
-        { id: 1, channel: 'teams', event_type: 'anomaly', title: 'CPU Spike', status: 'sent', created_at: '2024-01-01' },
-      ];
-      mockQuery.mockResolvedValue(entries);
-      mockQueryOne.mockResolvedValue({ count: 1 });
+      await testDb.execute(
+        `INSERT INTO notification_log (channel, event_type, title, body, status)
+         VALUES ('teams', 'anomaly', 'CPU Spike', 'High CPU on api', 'sent')`,
+        [],
+      );
 
       const response = await app.inject({
         method: 'GET',
@@ -64,7 +56,9 @@ describe('Notification Routes', () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.entries).toEqual(entries);
+      expect(body.entries).toHaveLength(1);
+      expect(body.entries[0].channel).toBe('teams');
+      expect(body.entries[0].title).toBe('CPU Spike');
       expect(body.total).toBe(1);
       expect(body.limit).toBe(50);
       expect(body.offset).toBe(0);
@@ -83,7 +77,14 @@ describe('Notification Routes', () => {
       expect(body.offset).toBe(5);
     });
 
-    it('accepts channel filter', async () => {
+    it('filters by channel', async () => {
+      await testDb.execute(
+        `INSERT INTO notification_log (channel, event_type, title, body, status)
+         VALUES ('email', 'alert', 'Email Alert', 'Email body', 'sent'),
+                ('teams', 'alert', 'Teams Alert', 'Teams body', 'sent')`,
+        [],
+      );
+
       const response = await app.inject({
         method: 'GET',
         url: '/api/notifications/history?channel=email',
@@ -91,6 +92,9 @@ describe('Notification Routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.entries).toHaveLength(1);
+      expect(body.entries[0].channel).toBe('email');
     });
 
     it('returns empty results when no history exists', async () => {

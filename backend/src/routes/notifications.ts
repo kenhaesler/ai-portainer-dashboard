@@ -37,7 +37,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
     `, [...params, limit, offset]);
 
     const total = await db.queryOne<{ count: number }>(`
-      SELECT COUNT(*) as count FROM notification_log ${where}
+      SELECT COUNT(*)::integer as count FROM notification_log ${where}
     `, [...params]);
 
     return {
