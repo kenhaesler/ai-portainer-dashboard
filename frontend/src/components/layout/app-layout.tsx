@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Navigate, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
 import { useAuth } from '@/providers/auth-provider';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
@@ -16,6 +16,18 @@ import { useEntrancePlayed } from '@/hooks/use-entrance-played';
 import { useKeyChord } from '@/hooks/use-key-chord';
 import type { ChordBinding } from '@/hooks/use-key-chord';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+
+/**
+ * Freezes the Outlet content at mount-time so that during AnimatePresence exit
+ * the old route's component stays rendered instead of being replaced by the
+ * incoming route. This prevents double-mounting of heavy pages (like Image
+ * Footprint) which causes conflicting animations and stalls mode="wait".
+ */
+function FrozenOutlet() {
+  const currentOutlet = useOutlet();
+  const [outlet] = useState(currentOutlet);
+  return outlet;
+}
 
 function getRouteDepth(pathname: string): number {
   return pathname.split('/').filter(Boolean).length;
@@ -259,7 +271,7 @@ export function AppLayout() {
                   }),
                 }}
               >
-                <Outlet />
+                <FrozenOutlet />
               </motion.div>
             </AnimatePresence>
           )}

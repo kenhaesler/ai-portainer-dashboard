@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { HardDrive, Layers, Tag, AlertTriangle, X, Server, CheckCircle2, Copy, Check } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useImages, type DockerImage } from '@/hooks/use-images';
@@ -385,17 +384,6 @@ export default function ImageFootprintPage() {
 /*  Image Detail Slide Panel                                          */
 /* ------------------------------------------------------------------ */
 
-const panelVariants = {
-  hidden: { x: '100%', opacity: 0.8 },
-  visible: { x: 0, opacity: 1 },
-  exit: { x: '100%', opacity: 0.6 },
-};
-
-const backdropVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
-  exit: { opacity: 0 },
-};
 
 function ImageDetailPanel({
   image,
@@ -426,34 +414,30 @@ function ImageDetailPanel({
 
   const staleness = image ? stalenessMap.get(image.name) : undefined;
 
-  return createPortal(
-    <AnimatePresence>
-      {image && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="image-detail-backdrop"
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-            variants={backdropVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-            aria-hidden="true"
-          />
+  if (!image) return null;
 
-          {/* Slide-in panel */}
-          <motion.div
-            key="image-detail-panel"
-            role="dialog"
-            aria-label={`Details for ${image.name}`}
-            className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border/50 bg-card/90 shadow-2xl backdrop-blur-[45px]"
-            variants={panelVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            transition={spring.snappy}
+  return (
+    <>
+      {/* Backdrop */}
+      <motion.div
+        key="image-detail-backdrop"
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Slide-in panel */}
+      <motion.div
+        key="image-detail-panel"
+        role="dialog"
+        aria-label={`Details for ${image.name}`}
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border/50 bg-card/90 shadow-2xl backdrop-blur-[45px]"
+        initial={{ x: '100%', opacity: 0.8 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={spring.snappy}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border/50 px-6 py-4">
@@ -617,10 +601,7 @@ function ImageDetailPanel({
                 Press <kbd className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd> to close
               </p>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>,
-    document.body,
+      </motion.div>
+    </>
   );
 }
