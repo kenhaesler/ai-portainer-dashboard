@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../db/app-db-router.js', () => ({ getDbForDomain: vi.fn() }));
 vi.mock('openid-client', () => ({}));
 
 import { resolveRoleFromGroups, extractGroups } from './oidc.js';
