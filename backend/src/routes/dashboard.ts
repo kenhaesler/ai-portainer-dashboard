@@ -333,6 +333,13 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     const { recentLimit, topN } = request.query as { recentLimit: number; topN: number };
 
     // --- Shared data: fetch endpoints + containers once ---
+    // Start security audit immediately in parallel — it fetches from the same
+    // shared cache but doesn't depend on container data from this handler.
+    const securityAuditPromise = getSecurityAudit().catch((err) => {
+      log.warn({ err }, 'Failed to fetch security audit summary');
+      return null;
+    });
+
     let rawEndpoints;
     try {
       rawEndpoints = await cachedFetchSWR(
@@ -413,24 +420,22 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       .sort((a: any, b: any) => b.created - a.created)
       .slice(0, recentLimit);
 
-    let security = { totalAudited: 0, flagged: 0, ignored: 0 };
-    try {
-      const auditEntries = await getSecurityAudit();
-      security = buildSecurityAuditSummary(auditEntries);
-    } catch (err) {
-      log.warn({ err }, 'Failed to fetch security audit summary');
-    }
-
     // --- Build resources ---
     const runningContainers = allNormalizedContainers.filter((c) => c.container.state === 'running');
     const runningContainerIds = runningContainers.map((c) => c.container.id);
 
-    let storedMetrics = new Map<string, Record<string, number>>();
-    try {
-      storedMetrics = await getLatestMetricsBatch(runningContainerIds);
-    } catch (err) {
-      log.warn({ err }, 'Failed to read stored metrics from TimescaleDB, resource data will be empty');
-    }
+    // Run security audit (already in flight) and metrics batch in parallel
+    const [auditEntries, storedMetrics] = await Promise.all([
+      securityAuditPromise,
+      getLatestMetricsBatch(runningContainerIds).catch((err) => {
+        log.warn({ err }, 'Failed to read stored metrics from TimescaleDB, resource data will be empty');
+        return new Map<string, Record<string, number>>();
+      }),
+    ]);
+
+    const security = auditEntries
+      ? buildSecurityAuditSummary(auditEntries)
+      : { totalAudited: 0, flagged: 0, ignored: 0 };
 
     let totalCpuPercent = 0;
     let totalMemoryPercent = 0;

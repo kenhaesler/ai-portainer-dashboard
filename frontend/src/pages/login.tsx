@@ -79,13 +79,20 @@ export default function LoginPage() {
         // Show the high-quality loading screen immediately
         setShowPostLoginLoading(true);
 
-        // Start prefetching dashboard data in the background while the loading
-        // screen is visible, so the home page can render instantly on arrival.
-        const prefetchPromise = queryClient.prefetchQuery({
-          queryKey: ['dashboard', 'full', 8],
-          queryFn: () => api.get('/api/dashboard/full?topN=8'),
-          staleTime: 60 * 1000,
-        });
+        // Prefetch dashboard data in parallel while the loading screen is visible,
+        // so the home page renders instantly on arrival with no loading states.
+        const prefetchPromise = Promise.all([
+          queryClient.prefetchQuery({
+            queryKey: ['dashboard', 'full', 8],
+            queryFn: () => api.get('/api/dashboard/full?topN=8'),
+            staleTime: 60 * 1000,
+          }),
+          queryClient.prefetchQuery({
+            queryKey: ['dashboard', 'kpi-history', 24],
+            queryFn: () => api.get<{ snapshots: unknown[] }>('/api/dashboard/kpi-history?hours=24').then(res => res.snapshots),
+            staleTime: 5 * 60 * 1000,
+          }),
+        ]);
 
         const minTimer = new Promise<void>((resolve) =>
           window.setTimeout(resolve, 1000),

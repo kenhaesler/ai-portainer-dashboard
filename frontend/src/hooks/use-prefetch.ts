@@ -27,9 +27,9 @@ export function usePrefetch() {
 
   const prefetchDashboard = useCallback(() => {
     queryClient.prefetchQuery({
-      queryKey: ['dashboard', 'summary'],
-      queryFn: () => api.get('/api/dashboard/summary'),
-      staleTime: 30 * 1000,
+      queryKey: ['dashboard', 'full', 8],
+      queryFn: () => api.get('/api/dashboard/full?topN=8'),
+      staleTime: 60 * 1000,
     });
   }, [queryClient]);
 
