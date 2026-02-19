@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { FastifyInstance } from 'fastify';
-import { getMetricsDb } from '../db/timescale.js';
+import { getReportsDb } from '../db/timescale.js';
 import { ReportsQuerySchema } from '../models/api-schemas.js';
 import {
   getInfrastructureServicePatterns,
@@ -11,6 +11,19 @@ import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('reports-routes');
+
+/** pg pool exhaustion: connection could not be acquired within connectionTimeoutMillis */
+function isPoolTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return /\btimeout\b/.test(msg) && (/connection\s+acquire/.test(msg) || /pool\s+.*timeout/.test(msg) || msg.includes('trying to connect'));
+}
+
+/** PostgreSQL statement_timeout (error code 57014 = query_canceled) */
+function isStatementTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (err as { code?: string }).code === '57014';
+}
 
 // ---------------------------------------------------------------------------
 // Result cache — reports aggregate over long windows and don't need real-time
@@ -41,13 +54,13 @@ export function clearReportCache(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Statement timeout — acquire a single client, set 10 s statement_timeout,
-// run the callback, then release. Isolates long report queries from writes.
+// Statement timeout — acquire a single client from the dedicated reports pool,
+// set 10 s statement_timeout, run the callback, then release.
 // ---------------------------------------------------------------------------
 async function withStatementTimeout<T>(
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
-  const pool = await getMetricsDb();
+  const pool = await getReportsDb();
   const client = await pool.connect();
   try {
     await client.query('SET statement_timeout = 10000');
@@ -338,6 +351,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         log.warn('Metrics table not ready for utilization report');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
       }
+      if (isPoolTimeoutError(err) || isStatementTimeoutError(err)) {
+        log.warn({ err }, 'Report query timed out or pool exhausted (utilization)');
+        return reply.code(503).header('Retry-After', '30').send({ error: 'Service temporarily unavailable', details: 'Database pool exhausted or query timed out. Try again shortly.' });
+      }
       throw err;
     }
   });
@@ -451,6 +468,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       if (isUndefinedTableError(err)) {
         log.warn('Metrics table not ready for trend report');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      if (isPoolTimeoutError(err) || isStatementTimeoutError(err)) {
+        log.warn({ err }, 'Report query timed out or pool exhausted (trends)');
+        return reply.code(503).header('Retry-After', '30').send({ error: 'Service temporarily unavailable', details: 'Database pool exhausted or query timed out. Try again shortly.' });
       }
       throw err;
     }
@@ -669,6 +690,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
       if (isUndefinedTableError(err)) {
         log.warn('Metrics table not ready for management report');
         return reply.code(503).send({ error: 'Metrics database not ready', details: 'The metrics table has not been created yet.' });
+      }
+      if (isPoolTimeoutError(err) || isStatementTimeoutError(err)) {
+        log.warn({ err }, 'Report query timed out or pool exhausted (management)');
+        return reply.code(503).header('Retry-After', '30').send({ error: 'Service temporarily unavailable', details: 'Database pool exhausted or query timed out. Try again shortly.' });
       }
       throw err;
     }

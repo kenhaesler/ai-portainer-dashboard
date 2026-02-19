@@ -640,4 +640,45 @@ describe('Connection status indicator', () => {
     // Restore for other tests
     mockLlmSocket.connected = true;
   });
+
+  describe('ContextBanner (Discuss with AI navigation)', () => {
+    it('shows context banner when arriving with source in location state', () => {
+      renderPage('/assistant', { source: 'remediation', containerName: 'web-api' });
+      expect(screen.getByRole('status')).toBeInTheDocument();
+      expect(screen.getByText('From Remediation')).toBeInTheDocument();
+      expect(screen.getByText('web-api')).toBeInTheDocument();
+    });
+
+    it('shows containerSummary in context banner', () => {
+      renderPage('/assistant', {
+        source: 'remediation',
+        containerName: 'backend',
+        containerSummary: 'CPU usage is critically high',
+      });
+      expect(screen.getByText('CPU usage is critically high')).toBeInTheDocument();
+    });
+
+    it('does not show context banner when no source in location state', () => {
+      renderPage('/assistant', { prefillPrompt: 'Hello' });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('does not show context banner when no location state', () => {
+      renderPage('/assistant');
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('prefills input from location state prefillPrompt', () => {
+      renderPage('/assistant', { prefillPrompt: 'Why is nginx crashing?' });
+      const input = screen.getByPlaceholderText('Ask about your infrastructure...') as HTMLInputElement;
+      expect(input.value).toBe('Why is nginx crashing?');
+    });
+
+    it('dismisses context banner when X button is clicked', () => {
+      renderPage('/assistant', { source: 'remediation', containerName: 'redis' });
+      expect(screen.getByRole('status')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss context banner' }));
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -522,6 +522,8 @@ export default function RemediationPage() {
         prefillPrompt: prompt,
         source: 'remediation',
         actionId: action.id,
+        containerName,
+        containerSummary: action.rationale || action.description || undefined,
       },
     });
   };

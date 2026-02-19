@@ -75,6 +75,31 @@ describe('userRoutes', () => {
       expect(res.statusCode).toBe(201);
       expect(res.json().username).toBe('newuser');
     });
+
+    it('should return 409 when username already exists (PostgreSQL error code 23505)', async () => {
+      const pgUniqueError = Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' });
+      mockCreateUser.mockRejectedValue(pgUniqueError);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        payload: { username: 'existing', password: 'password123', role: 'viewer' },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Username already exists');
+    });
+
+    it('should return 409 when username already exists (legacy SQLite UNIQUE constraint message)', async () => {
+      mockCreateUser.mockRejectedValue(new Error('UNIQUE constraint failed: users.username'));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        payload: { username: 'existing', password: 'password123', role: 'viewer' },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Username already exists');
+    });
   });
 
   describe('PATCH /api/users/:id', () => {
@@ -101,6 +126,31 @@ describe('userRoutes', () => {
         payload: { role: 'viewer' },
       });
       expect(res.statusCode).toBe(404);
+    });
+
+    it('should return 409 when new username already exists (PostgreSQL error code 23505)', async () => {
+      const pgUniqueError = Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' });
+      mockUpdateUser.mockRejectedValue(pgUniqueError);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/users/u1',
+        payload: { username: 'existing-user' },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Username already exists');
+    });
+
+    it('should return 409 when new username already exists (legacy SQLite UNIQUE constraint message)', async () => {
+      mockUpdateUser.mockRejectedValue(new Error('UNIQUE constraint failed: users.username'));
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/users/u1',
+        payload: { username: 'existing-user' },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Username already exists');
     });
   });
 

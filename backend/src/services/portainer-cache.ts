@@ -736,8 +736,10 @@ export function cachedFetchSWR<T>(
           }
         })();
         inFlight.set(key, revalidate);
-        // Attach .catch() to prevent unhandled rejection if something unexpected happens
-        revalidate.catch(() => {});
+        // Safety net: catch any error that escapes the inner try/catch (e.g. from finally)
+        revalidate.catch((err) => {
+          log.warn({ key, err }, 'SWR background revalidation unhandled error');
+        });
       }
     }
     return Promise.resolve(staleInfo.data);
@@ -759,8 +761,10 @@ export function cachedFetchSWR<T>(
           }
         })();
         inFlight.set(key, revalidate);
-        // Prevent unhandled rejection warning if something unexpected escapes the try/catch
-        revalidate.catch(() => {});
+        // Safety net: catch any error that escapes the inner try/catch
+        revalidate.catch((err) => {
+          log.warn({ key, err }, 'SWR L2 background revalidation unhandled error');
+        });
       }
       return l2Data;
     }

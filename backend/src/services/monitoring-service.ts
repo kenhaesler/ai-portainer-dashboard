@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { getEndpoints, getContainers, isEndpointDegraded } from './portainer-client.js';
+import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from './portainer-client.js';
 import { CircuitBreakerOpenError } from './circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from './portainer-normalizers.js';
@@ -128,19 +128,19 @@ export async function runMonitoringCycle(): Promise<void> {
     }> = [];
 
     // Fetch containers for all endpoints in parallel (they are cached by the scheduler)
-    // Skip endpoints whose circuit breaker is degraded (persistently failing) — #694/#695
-    let skippedDegraded = 0;
+    // Skip endpoints with open or degraded circuit breakers — #694/#695/#759
+    let skippedCb = 0;
     const activeEndpoints = rawEndpoints.filter((ep) => {
-      if (isEndpointDegraded(ep.Id)) {
-        skippedDegraded++;
+      if (isCircuitOpen(ep.Id) || isEndpointDegraded(ep.Id)) {
+        skippedCb++;
         return false;
       }
       return true;
     });
-    if (skippedDegraded > 0) {
+    if (skippedCb > 0) {
       log.debug(
-        { skippedDegraded, totalEndpoints: rawEndpoints.length },
-        'Skipping degraded endpoints in monitoring cycle',
+        { skippedCb, totalEndpoints: rawEndpoints.length },
+        'Skipping endpoints with open circuit breakers in monitoring cycle',
       );
     }
 

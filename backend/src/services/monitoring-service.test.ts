@@ -37,10 +37,13 @@ vi.mock('../utils/logger.js', () => ({
 
 const mockGetEndpoints = vi.fn().mockResolvedValue([]);
 const mockGetContainers = vi.fn().mockResolvedValue([]);
+const mockIsEndpointDegraded = vi.fn().mockReturnValue(false);
+const mockIsCircuitOpen = vi.fn().mockReturnValue(false);
 vi.mock('./portainer-client.js', () => ({
   getEndpoints: () => mockGetEndpoints(),
   getContainers: (...args: unknown[]) => mockGetContainers(...args),
-  isEndpointDegraded: () => false,
+  isEndpointDegraded: (...args: unknown[]) => mockIsEndpointDegraded(...args),
+  isCircuitOpen: (...args: unknown[]) => mockIsCircuitOpen(...args),
 }));
 
 const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
@@ -754,6 +757,29 @@ describe('monitoring-service', () => {
     it('startCooldownSweep and stopCooldownSweep do not throw', () => {
       expect(() => startCooldownSweep()).not.toThrow();
       expect(() => stopCooldownSweep()).not.toThrow();
+    });
+  });
+
+  describe('circuit breaker pre-check (#759)', () => {
+    it('skips endpoints with open circuit breakers and does not fetch their containers', async () => {
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'healthy' },
+        { Id: 2, Name: 'failing' },
+      ]);
+
+      // Endpoint 2 has an open circuit breaker
+      mockIsCircuitOpen.mockImplementation((id: number) => id === 2);
+      mockIsEndpointDegraded.mockReturnValue(false);
+
+      mockGetContainers.mockResolvedValue([]);
+
+      await runMonitoringCycle();
+
+      // cachedFetchSWR should only be called for endpoint 1's containers, not endpoint 2
+      const swrKeys = mockCachedFetchSWR.mock.calls.map(([key]) => key);
+      const containerKeys = swrKeys.filter((k) => k.startsWith('containers:'));
+      expect(containerKeys).toContain('containers:1');
+      expect(containerKeys).not.toContain('containers:2');
     });
   });
 });
