@@ -521,17 +521,18 @@ export async function startScheduler(): Promise<void> {
     setTimeout(() => { runWithTraceContext({ source: 'scheduler' }, runImageStalenessCheck).catch(() => {}); }, 30_000);
   }
 
-  // Harbor vulnerability sync (reads from DB settings with env var fallback)
-  const harborConfig = await getEffectiveHarborConfig();
-  if (harborConfig.enabled && await isHarborConfiguredAsync()) {
-    const harborIntervalMs = harborConfig.syncIntervalMinutes * 60 * 1000;
-    log.info(
-      { intervalMinutes: harborConfig.syncIntervalMinutes },
-      'Starting Harbor vulnerability sync scheduler',
-    );
+  // Harbor vulnerability sync — re-reads config on each 1-minute tick so changes
+  // to enabled/syncIntervalMinutes in the Settings UI take effect without a restart.
+  {
+    let lastHarborSyncAt = 0;
     const harborInterval = setInterval(
       () => runWithTraceContext({ source: 'scheduler' }, async () => {
         try {
+          const cfg = await getEffectiveHarborConfig();
+          if (!cfg.enabled || !(await isHarborConfiguredAsync())) return;
+          const syncIntervalMs = cfg.syncIntervalMinutes * 60 * 1000;
+          if (Date.now() - lastHarborSyncAt < syncIntervalMs) return;
+          lastHarborSyncAt = Date.now();
           const result = await runHarborSync();
           if (result.error) {
             log.warn({ error: result.error }, 'Harbor sync completed with errors');
@@ -540,13 +541,19 @@ export async function startScheduler(): Promise<void> {
           log.error({ err }, 'Harbor vulnerability sync failed');
         }
       }),
-      harborIntervalMs,
+      60_000, // poll every minute; actual sync cadence is controlled by syncIntervalMinutes
     );
     intervals.push(harborInterval);
-    // Run once after warm-up delay
+    // Run once after warm-up delay if Harbor is already configured at startup
     setTimeout(() => {
       runWithTraceContext({ source: 'scheduler' }, async () => {
-        try { await runHarborSync(); } catch { /* logged inside */ }
+        try {
+          const cfg = await getEffectiveHarborConfig();
+          if (!cfg.enabled || !(await isHarborConfiguredAsync())) return;
+          log.info({ intervalMinutes: cfg.syncIntervalMinutes }, 'Starting Harbor vulnerability sync scheduler');
+          lastHarborSyncAt = Date.now();
+          await runHarborSync();
+        } catch { /* logged inside */ }
       }).catch(() => {});
     }, 60_000);
   }

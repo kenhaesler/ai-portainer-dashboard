@@ -157,6 +157,7 @@ function getDispatcher(verifySsl: boolean): Agent | undefined {
   const connectOptions: Record<string, unknown> = {};
   if (!verifySsl) {
     connectOptions.rejectUnauthorized = false;
+    log.warn('Harbor SSL verification is disabled (verifySsl=false). Connections are not verified. Only use this in trusted environments.');
   }
   pooledDispatcher = new Agent({
     connections: 10,
