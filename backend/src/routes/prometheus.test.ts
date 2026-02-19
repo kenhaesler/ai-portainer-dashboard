@@ -128,11 +128,11 @@ describe('Prometheus Routes', () => {
     });
 
     it('returns 500 config error in production when no token is set', async () => {
-      process.env.NODE_ENV = 'production';
       setConfigForTest({
         PROMETHEUS_METRICS_ENABLED: true,
         PROMETHEUS_BEARER_TOKEN: undefined,
       });
+      process.env.NODE_ENV = 'production';
 
       const response = await app.inject({ method: 'GET', url: '/metrics' });
       expect(response.statusCode).toBe(500);
@@ -140,11 +140,11 @@ describe('Prometheus Routes', () => {
     });
 
     it('returns 500 config error in production when token is too short', async () => {
-      process.env.NODE_ENV = 'production';
       setConfigForTest({
         PROMETHEUS_METRICS_ENABLED: true,
         PROMETHEUS_BEARER_TOKEN: 'short',
       });
+      process.env.NODE_ENV = 'production';
 
       const response = await app.inject({ method: 'GET', url: '/metrics' });
       expect(response.statusCode).toBe(500);
@@ -152,11 +152,11 @@ describe('Prometheus Routes', () => {
     });
 
     it('serves metrics in production when valid token is provided', async () => {
-      process.env.NODE_ENV = 'production';
       setConfigForTest({
         PROMETHEUS_METRICS_ENABLED: true,
         PROMETHEUS_BEARER_TOKEN: 'a-valid-token-that-is-long-enough',
       });
+      process.env.NODE_ENV = 'production';
 
       const response = await app.inject({
         method: 'GET',
@@ -168,11 +168,11 @@ describe('Prometheus Routes', () => {
     });
 
     it('serves metrics in development without a token', async () => {
-      process.env.NODE_ENV = 'development';
       setConfigForTest({
         PROMETHEUS_METRICS_ENABLED: true,
         PROMETHEUS_BEARER_TOKEN: undefined,
       });
+      process.env.NODE_ENV = 'development';
 
       const response = await app.inject({ method: 'GET', url: '/metrics' });
       expect(response.statusCode).toBe(200);
@@ -180,11 +180,11 @@ describe('Prometheus Routes', () => {
     });
 
     it('serves metrics in development with a valid token', async () => {
-      process.env.NODE_ENV = 'development';
       setConfigForTest({
         PROMETHEUS_METRICS_ENABLED: true,
         PROMETHEUS_BEARER_TOKEN: 'dev-token-1234567890',
       });
+      process.env.NODE_ENV = 'development';
 
       const response = await app.inject({
         method: 'GET',

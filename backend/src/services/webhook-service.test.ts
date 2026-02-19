@@ -1,68 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { signPayload } from './webhook-service.js';
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 
-// In-memory store for the mock DB
-const webhookStore: Map<string, Record<string, unknown>> = new Map();
-const deliveryStore: Map<string, Record<string, unknown>> = new Map();
+let testDb: AppDb;
 
-vi.mock('../db/app-db-router.js', () => {
-  const mockDb = {
-    execute: vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('INSERT INTO webhooks')) {
-        const row = {
-          id: params[0],
-          name: params[1],
-          url: params[2],
-          secret: params[3],
-          events: params[4],
-          enabled: params[5],
-          description: params[6],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        webhookStore.set(row.id as string, row);
-        return { changes: 1 };
-      }
-      if (sql.includes('INSERT INTO webhook_deliveries')) {
-        const row = {
-          id: params[0],
-          webhook_id: params[1],
-          event_type: params[2],
-          payload: params[3],
-          status: 'pending',
-          attempt: 0,
-          max_attempts: 5,
-          created_at: new Date().toISOString(),
-        };
-        deliveryStore.set(row.id as string, row);
-        return { changes: 1 };
-      }
-      if (sql.includes('DELETE FROM webhooks')) {
-        const deleted = webhookStore.delete(params[0] as string);
-        return { changes: deleted ? 1 : 0 };
-      }
-      if (sql.includes('UPDATE webhooks')) {
-        return { changes: 1 };
-      }
-      return { changes: 0 };
-    }),
-    queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('FROM webhooks WHERE id')) {
-        return webhookStore.get(params[0] as string) ?? null;
-      }
-      if (sql.includes('COUNT(*)')) {
-        return { count: deliveryStore.size };
-      }
-      return null;
-    }),
-    query: vi.fn(async (sql: string) => {
-      if (sql.includes('FROM webhooks')) return [...webhookStore.values()];
-      if (sql.includes('FROM webhook_deliveries')) return [...deliveryStore.values()];
-      return [];
-    }),
-  };
-  return { getDbForDomain: vi.fn(() => mockDb) };
-});
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => testDb,
+}));
 
 vi.mock('./event-bus.js', () => ({
   onEvent: vi.fn(() => vi.fn()),
@@ -70,6 +14,7 @@ vi.mock('./event-bus.js', () => ({
 }));
 
 import {
+  signPayload,
   createWebhook,
   listWebhooks,
   deleteWebhook,
@@ -78,13 +23,11 @@ import {
   stopWebhookListener,
 } from './webhook-service.js';
 
-describe('webhook-service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    webhookStore.clear();
-    deliveryStore.clear();
-  });
+beforeAll(async () => { testDb = await getTestDb(); });
+afterAll(async () => { await closeTestDb(); });
+beforeEach(async () => { await truncateTestTables('webhook_deliveries', 'webhooks'); });
 
+describe('webhook-service', () => {
   describe('signPayload', () => {
     it('should produce a deterministic HMAC-SHA256 signature', () => {
       const payload = '{"type":"test"}';

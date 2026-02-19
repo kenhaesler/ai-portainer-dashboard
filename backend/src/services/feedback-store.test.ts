@@ -8,10 +8,6 @@ import {
 // We only test pure utility functions here; DB-dependent functions
 // are tested via the route-level integration tests.
 
-vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: vi.fn(),
-}));
-
 describe('feedback-store utilities', () => {
   describe('checkFeedbackRateLimit', () => {
     beforeEach(() => {
