@@ -20,7 +20,7 @@ vi.mock('../utils/logger.js', () => ({
   }),
 }));
 
-import { isPromptInjection, sanitizeLlmOutput, normalizeUnicode, stripThinkingBlocks, getPromptGuardNearMissTotal, resetPromptGuardNearMissCounter } from './prompt-guard.js';
+import { isPromptInjection, sanitizeLlmOutput, normalizeUnicode, stripThinkingBlocks, stripToolCallsJson, getPromptGuardNearMissTotal, resetPromptGuardNearMissCounter } from './prompt-guard.js';
 
 beforeEach(() => {
   mockWarn.mockClear();
@@ -470,5 +470,74 @@ describe('stripThinkingBlocks', () => {
   it('handles deeply nested-looking content inside think block', () => {
     const input = '<think>Step 1\n- substep a\n- substep b\nStep 2\n</think>\n\n## Summary\nEverything is fine.';
     expect(stripThinkingBlocks(input)).toBe('## Summary\nEverything is fine.');
+  });
+});
+
+describe('stripToolCallsJson', () => {
+  it('removes a bare JSON object with tool_calls key', () => {
+    const input = '{"tool_calls":[{"tool":"get_containers","arguments":{}}]}';
+    expect(stripToolCallsJson(input)).toBe('');
+  });
+
+  it('removes tool_calls JSON embedded in a sentence', () => {
+    const input = 'Sure! {"tool_calls":[{"tool":"get_containers","arguments":{}}]} Done.';
+    const result = stripToolCallsJson(input);
+    expect(result).not.toContain('"tool_calls"');
+    expect(result).toContain('Sure!');
+    expect(result).toContain('Done.');
+  });
+
+  it('removes a code fence containing tool_calls JSON', () => {
+    const input = '```json\n{"tool_calls":[{"tool":"get_logs","arguments":{"container":"nginx"}}]}\n```';
+    expect(stripToolCallsJson(input)).toBe('');
+  });
+
+  it('removes a bare code fence containing tool_calls JSON', () => {
+    const input = '```\n{"tool_calls":[{"tool":"foo","arguments":{}}]}\n```';
+    expect(stripToolCallsJson(input)).toBe('');
+  });
+
+  it('removes a code fence containing a function-call array', () => {
+    const input = '```json\n[{"function":{"name":"list_containers","arguments":{}}}]\n```';
+    expect(stripToolCallsJson(input)).toBe('');
+  });
+
+  it('removes OpenAI streaming delta tool_call format', () => {
+    const input = '{"tool_call":{"id":"call_1","function":{"name":"get_containers","arguments":"{}"}}}';
+    expect(stripToolCallsJson(input)).toBe('');
+  });
+
+  it('preserves normal text with no tool call JSON', () => {
+    const text = 'Here are the running containers:\n- nginx (running)\n- redis (stopped)';
+    expect(stripToolCallsJson(text)).toBe(text);
+  });
+
+  it('preserves normal JSON that is not a tool call', () => {
+    const text = '{"containers":[{"name":"nginx","state":"running"}]}';
+    expect(stripToolCallsJson(text)).toBe(text);
+  });
+
+  it('preserves text surrounding a stripped code fence block', () => {
+    const input = 'Let me check.\n```json\n{"tool_calls":[]}\n```\nHere are the results.';
+    const result = stripToolCallsJson(input);
+    expect(result).not.toContain('"tool_calls"');
+    expect(result).toContain('Let me check.');
+    expect(result).toContain('Here are the results.');
+  });
+});
+
+describe('sanitizeLlmOutput strips tool_calls JSON', () => {
+  it('removes raw tool_calls JSON from output', () => {
+    const output = '{"tool_calls":[{"tool":"get_containers","arguments":{}}]}';
+    const result = sanitizeLlmOutput(output);
+    expect(result).not.toContain('"tool_calls"');
+  });
+
+  it('removes tool_calls code fence from output and keeps surrounding text', () => {
+    const output = 'Checking containers...\n```json\n{"tool_calls":[{"tool":"list","arguments":{}}]}\n```\nDone.';
+    const result = sanitizeLlmOutput(output);
+    expect(result).not.toContain('"tool_calls"');
+    expect(result).toContain('Checking containers');
+    expect(result).toContain('Done.');
   });
 });

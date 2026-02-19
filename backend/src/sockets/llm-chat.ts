@@ -133,14 +133,42 @@ export function isRecoverableToolCallParseError(err: unknown): boolean {
  * Detect when a response is raw tool-call JSON that the model hallucinated
  * (e.g. with invalid tool names).  Avoids false positives on natural language
  * that merely *mentions* tool_calls.
+ *
+ * Catches patterns:
+ * - Raw JSON object: `{"tool_calls": [...]}`
+ * - OpenAI/Ollama native format: `[{"function": {"name": "..."}}]` at root
+ * - JSON inside a code fence (json or bare)
+ * - Inline JSON block embedded mid-response: `text {"tool_calls": [...]} text`
+ * - OpenAI tool_call object with "function" key: `{"tool_call": {"function": {}}}`
  */
 export function looksLikeToolCallAttempt(text: string): boolean {
   const trimmed = text.trim();
-  // Raw JSON object containing tool_calls
-  if (trimmed.startsWith('{') && trimmed.includes('"tool_calls"')) return true;
-  // JSON wrapped in a code fence
-  const fenceContent = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
-  if (fenceContent && fenceContent[1].includes('"tool_calls"')) return true;
+
+  // Raw JSON object containing tool_calls (at root)
+  if (trimmed.startsWith('{') && /"tool_calls"\s*:/i.test(trimmed)) return true;
+
+  // Raw JSON object with "tool_call" (singular, OpenAI streaming format)
+  if (trimmed.startsWith('{') && /"tool_call"\s*:/i.test(trimmed) && /"function"\s*:/i.test(trimmed)) return true;
+
+  // Root-level JSON array of tool calls: [{function: {name: ...}}]
+  if (trimmed.startsWith('[') && trimmed.endsWith(']') &&
+      /"function"\s*:/i.test(trimmed) && /"name"\s*:\s*"/i.test(trimmed)) return true;
+
+  // JSON wrapped in a code fence (```json or ```)
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  if (fenceMatch) {
+    const inner = fenceMatch[1].trim();
+    if (
+      /"tool_calls"\s*:/i.test(inner) ||
+      /"tool_call"\s*:/i.test(inner) ||
+      (inner.startsWith('[') && /"function"\s*:/i.test(inner) && /"name"\s*:\s*"/i.test(inner))
+    ) return true;
+  }
+
+  // Inline JSON block embedded in a longer response (common with smaller models
+  // that wrap the JSON in natural language like "I'll call: {tool_calls: [...]}")
+  if (/"tool_calls"\s*:\s*\[/i.test(trimmed)) return true;
+
   return false;
 }
 

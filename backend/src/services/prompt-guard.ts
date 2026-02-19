@@ -325,6 +325,54 @@ export function stripThinkingBlocks(text: string): string {
   return result.trim();
 }
 
+// ─── Tool call JSON stripping ────────────────────────────────────────
+
+/**
+ * Remove raw tool_call / tool_calls JSON blocks from LLM output.
+ *
+ * Models sometimes emit these when they hallucinate or when the tool
+ * calling loop fails to intercept them in time.  Stripped patterns:
+ *
+ * 1. Markdown code fences containing tool_calls or function-call JSON
+ * 2. Bare JSON objects with "tool_calls" key embedded anywhere
+ * 3. OpenAI streaming delta format: {"tool_call":{...,"function":{...}}}
+ * 4. Root-level JSON arrays that look like function-call lists
+ */
+export function stripToolCallsJson(output: string): string {
+  let result = output;
+
+  // 1. Code fences containing tool_call JSON (```json or ```)
+  result = result.replace(
+    /```(?:json)?\s*\n?\s*\{[\s\S]*?"tool_calls"\s*:[\s\S]*?\}\s*\n?```/gi,
+    '',
+  );
+  result = result.replace(
+    /```(?:json)?\s*\n?\s*\[[\s\S]*?"function"\s*:[\s\S]*?\]\s*\n?```/gi,
+    '',
+  );
+
+  // 2. Bare JSON objects containing "tool_calls" key
+  result = result.replace(
+    /\{[^{}]*?"tool_calls"\s*:\s*\[[\s\S]*?\]\s*\}/g,
+    '',
+  );
+
+  // 3. OpenAI streaming delta format: {"tool_call":{"id":...,"function":{...}}}
+  //    Supports 3 levels of brace nesting (outer, tool_call value, function value).
+  result = result.replace(
+    /\{[^{}]*?"tool_call"\s*:\s*\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}\s*[^{}]*?\}/g,
+    '',
+  );
+
+  // 4. Root-level JSON array of tool calls: [{...function...}]
+  result = result.replace(
+    /^\s*\[[\s\S]*?"function"\s*:\s*\{[\s\S]*?\}\s*\]\s*$/,
+    '',
+  );
+
+  return result.trim();
+}
+
 // ─── Layer 3: Output sanitization ───────────────────────────────────
 
 const SYSTEM_PROMPT_LEAK_PATTERNS = [
@@ -351,12 +399,15 @@ const SENTINEL_PHRASES = [
 
 /**
  * Remove or replace text segments that look like leaked system prompts,
- * tool definitions, or sentinel phrases from LLM output.
+ * tool definitions, sentinel phrases, or raw tool_call JSON from LLM output.
  */
 export function sanitizeLlmOutput(output: string): string {
   // Strip thinking blocks first (before other checks, since think blocks
   // may contain system prompt fragments that would trigger false positives)
-  const cleaned = stripThinkingBlocks(output);
+  let cleaned = stripThinkingBlocks(output);
+
+  // Strip raw tool_call / tool_calls JSON that leaked into the output
+  cleaned = stripToolCallsJson(cleaned);
 
   // Check for system prompt leaks
   for (const pattern of SYSTEM_PROMPT_LEAK_PATTERNS) {
