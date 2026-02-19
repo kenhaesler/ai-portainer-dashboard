@@ -372,11 +372,15 @@ export default function ImageFootprintPage() {
       )}
 
       {/* Image Detail Slide Panel */}
-      <ImageDetailPanel
-        image={selectedImage}
-        stalenessMap={stalenessMap}
-        onClose={() => setSelectedImage(null)}
-      />
+      <AnimatePresence>
+        {selectedImage && (
+          <ImageDetailPanel
+            image={selectedImage}
+            stalenessMap={stalenessMap}
+            onClose={() => setSelectedImage(null)}
+          />
+        )}
+      </AnimatePresence>
     </MotionPage>
   );
 }
@@ -385,24 +389,13 @@ export default function ImageFootprintPage() {
 /*  Image Detail Slide Panel                                          */
 /* ------------------------------------------------------------------ */
 
-const panelVariants = {
-  hidden: { x: '100%', opacity: 0.8 },
-  visible: { x: 0, opacity: 1 },
-  exit: { x: '100%', opacity: 0.6 },
-};
-
-const backdropVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
-  exit: { opacity: 0 },
-};
 
 function ImageDetailPanel({
   image,
   stalenessMap,
   onClose,
 }: {
-  image: DockerImage | null;
+  image: DockerImage;
   stalenessMap: Map<string, { isStale: boolean; lastChecked: string }>;
   onClose: () => void;
 }) {
@@ -416,211 +409,204 @@ function ImageDetailPanel({
 
   // Close on Escape key
   useEffect(() => {
-    if (!image) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [image, onClose]);
+  }, [onClose]);
 
-  const staleness = image ? stalenessMap.get(image.name) : undefined;
+  const staleness = stalenessMap.get(image.name);
 
   return createPortal(
-    <AnimatePresence>
-      {image && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="image-detail-backdrop"
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-            variants={backdropVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-            aria-hidden="true"
-          />
+    <>
+      {/* Backdrop */}
+      <motion.div
+        key="image-detail-backdrop"
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
-          {/* Slide-in panel */}
-          <motion.div
-            key="image-detail-panel"
-            role="dialog"
-            aria-label={`Details for ${image.name}`}
-            className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border/50 bg-card/90 shadow-2xl backdrop-blur-[45px]"
-            variants={panelVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            transition={spring.snappy}
+      {/* Slide-in panel */}
+      <motion.div
+        key="image-detail-panel"
+        role="dialog"
+        aria-label={`Details for ${image.name}`}
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border/50 bg-card/90 shadow-2xl backdrop-blur-[45px]"
+        initial={{ x: '100%', opacity: 0.8 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: '100%', opacity: 0.6 }}
+        transition={spring.snappy}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border/50 px-6 py-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Image Details
+            </p>
+            <h2 className="mt-0.5 truncate text-lg font-semibold">{image.name}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-border/50 px-6 py-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Image Details
-                </p>
-                <h2 className="mt-0.5 truncate text-lg font-semibold">{image.name}</h2>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Size hero */}
+          <div className="border-b border-border/50 px-6 py-5">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Disk Usage
+            </p>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-primary">
+              {formatBytes(image.size)}
+            </p>
+          </div>
+
+          {/* Status + Registry row */}
+          <div className="grid grid-cols-2 border-b border-border/50">
+            <div className="border-r border-border/50 px-6 py-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Status
+              </p>
+              <div className="mt-1.5">
+                {staleness ? (
+                  staleness.isStale ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-yellow-100 px-2.5 py-1 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                      <AlertTriangle className="h-3 w-3" />
+                      Update Available
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Up to Date
+                    </span>
+                  )
+                ) : (
+                  <span className="text-sm text-muted-foreground">Unchecked</span>
+                )}
               </div>
-              <button
-                onClick={onClose}
-                className="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent/80"
-              >
-                <X className="h-4 w-4" />
-              </button>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Registry
+              </p>
+              <p className="mt-1.5 text-sm font-medium">{image.registry}</p>
+            </div>
+          </div>
+
+          {/* Metadata fields */}
+          <div className="space-y-0 divide-y divide-border/50">
+            {/* Image ID */}
+            <div className="group px-6 py-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Image ID
+                </p>
+                <button
+                  onClick={() => handleCopy(image.id, 'id')}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                  title="Copy ID"
+                >
+                  {copiedField === 'id' ? (
+                    <Check className="h-3 w-3 text-emerald-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </button>
+              </div>
+              <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                {image.id}
+              </p>
             </div>
 
-            {/* Scrollable content */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Size hero */}
-              <div className="border-b border-border/50 px-6 py-5">
+            {/* Endpoint */}
+            <div className="px-6 py-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Endpoint
+              </p>
+              <p className="mt-1 text-sm">
+                {image.endpointName || `Endpoint ${image.endpointId}`}
+              </p>
+            </div>
+
+            {/* Created */}
+            <div className="px-6 py-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Created
+              </p>
+              <p className="mt-1 text-sm">
+                {image.created
+                  ? new Date(image.created * 1000).toLocaleString()
+                  : 'Unknown'}
+              </p>
+            </div>
+
+            {/* Last checked */}
+            {staleness && (
+              <div className="px-6 py-4">
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Disk Usage
+                  Last Checked
                 </p>
-                <p className="mt-1 text-3xl font-bold tracking-tight text-primary">
-                  {formatBytes(image.size)}
+                <p className="mt-1 text-sm">
+                  {new Date(staleness.lastChecked).toLocaleString()}
                 </p>
               </div>
+            )}
+          </div>
 
-              {/* Status + Registry row */}
-              <div className="grid grid-cols-2 border-b border-border/50">
-                <div className="border-r border-border/50 px-6 py-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Status
-                  </p>
-                  <div className="mt-1.5">
-                    {staleness ? (
-                      staleness.isStale ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-yellow-100 px-2.5 py-1 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
-                          <AlertTriangle className="h-3 w-3" />
-                          Update Available
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Up to Date
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-sm text-muted-foreground">Unchecked</span>
-                    )}
-                  </div>
-                </div>
-                <div className="px-6 py-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Registry
-                  </p>
-                  <p className="mt-1.5 text-sm font-medium">{image.registry}</p>
-                </div>
-              </div>
-
-              {/* Metadata fields */}
-              <div className="space-y-0 divide-y divide-border/50">
-                {/* Image ID */}
-                <div className="group px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Image ID
-                    </p>
+          {/* Tags section */}
+          <div className="border-t border-border/50 px-6 py-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Tags ({image.tags.length})
+            </p>
+            <div className="mt-3 space-y-1.5">
+              {image.tags.length > 0 ? (
+                image.tags.map((tag) => (
+                  <div
+                    key={tag}
+                    className="group flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="break-all font-mono text-xs">{tag}</span>
+                    </div>
                     <button
-                      onClick={() => handleCopy(image.id, 'id')}
-                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                      title="Copy ID"
+                      onClick={() => handleCopy(tag, tag)}
+                      className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                      title="Copy tag"
                     >
-                      {copiedField === 'id' ? (
+                      {copiedField === tag ? (
                         <Check className="h-3 w-3 text-emerald-500" />
                       ) : (
                         <Copy className="h-3 w-3" />
                       )}
                     </button>
                   </div>
-                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                    {image.id}
-                  </p>
-                </div>
-
-                {/* Endpoint */}
-                <div className="px-6 py-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Endpoint
-                  </p>
-                  <p className="mt-1 text-sm">
-                    {image.endpointName || `Endpoint ${image.endpointId}`}
-                  </p>
-                </div>
-
-                {/* Created */}
-                <div className="px-6 py-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    Created
-                  </p>
-                  <p className="mt-1 text-sm">
-                    {image.created
-                      ? new Date(image.created * 1000).toLocaleString()
-                      : 'Unknown'}
-                  </p>
-                </div>
-
-                {/* Last checked */}
-                {staleness && (
-                  <div className="px-6 py-4">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Last Checked
-                    </p>
-                    <p className="mt-1 text-sm">
-                      {new Date(staleness.lastChecked).toLocaleString()}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Tags section */}
-              <div className="border-t border-border/50 px-6 py-4">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Tags ({image.tags.length})
-                </p>
-                <div className="mt-3 space-y-1.5">
-                  {image.tags.length > 0 ? (
-                    image.tags.map((tag) => (
-                      <div
-                        key={tag}
-                        className="group flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="break-all font-mono text-xs">{tag}</span>
-                        </div>
-                        <button
-                          onClick={() => handleCopy(tag, tag)}
-                          className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                          title="Copy tag"
-                        >
-                          {copiedField === tag ? (
-                            <Check className="h-3 w-3 text-emerald-500" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No tags available</p>
-                  )}
-                </div>
-              </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No tags available</p>
+              )}
             </div>
+          </div>
+        </div>
 
-            {/* Footer */}
-            <div className="border-t border-border/50 px-6 py-3">
-              <p className="text-center text-xs text-muted-foreground">
-                Press <kbd className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd> to close
-              </p>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>,
+        {/* Footer */}
+        <div className="border-t border-border/50 px-6 py-3">
+          <p className="text-center text-xs text-muted-foreground">
+            Press <kbd className="rounded border border-border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd> to close
+          </p>
+        </div>
+      </motion.div>
+    </>,
     document.body,
   );
 }
