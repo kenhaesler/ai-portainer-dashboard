@@ -28,10 +28,9 @@ vi.mock('../services/lttb-decimator.js', () => ({
   decimateLTTB: vi.fn((data: unknown[]) => data),
 }));
 
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: vi.fn(),
-  isOllamaAvailable: vi.fn(),
-}));
+vi.mock('../services/llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),

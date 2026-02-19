@@ -16,10 +16,11 @@ vi.mock('../services/settings-store.js', () => ({
 }));
 
 // Mock llm-trace-store
-const mockInsertLlmTrace = vi.fn();
-vi.mock('../services/llm-trace-store.js', () => ({
-  insertLlmTrace: (...args: unknown[]) => mockInsertLlmTrace(...args),
-}));
+vi.mock('../services/llm-trace-store.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
+);
+import { insertLlmTrace } from '../services/llm-trace-store.js';
+const mockInsertLlmTrace = vi.mocked(insertLlmTrace);
 
 // Mock Ollama
 const mockChat = vi.fn();
@@ -32,20 +33,18 @@ vi.mock('ollama', () => ({
 }));
 
 // Mock portainer
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn().mockResolvedValue([]),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: vi.fn((ep: any) => ep),
   normalizeContainer: vi.fn((c: any) => c),
 }));
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn().mockResolvedValue([]),
-  getCacheKey: vi.fn((...args: any[]) => args.join(':')),
-  TTL: { ENDPOINTS: 60, CONTAINERS: 30 },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 // Mock prompt-store
 vi.mock('../services/prompt-store.js', () => ({

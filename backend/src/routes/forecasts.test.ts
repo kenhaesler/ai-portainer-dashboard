@@ -13,10 +13,12 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
 }));
 
-const mockChatStream = vi.fn();
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+vi.mock('../services/llm-client.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
+);
+
+import { chatStream } from '../services/llm-client.js';
+const mockChatStream = vi.mocked(chatStream);
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a concise infrastructure analyst.'),

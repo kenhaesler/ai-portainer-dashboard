@@ -3,18 +3,13 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { edgeJobsRoutes } from './edge-jobs.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEdgeJobs: vi.fn(),
-  getEdgeJob: vi.fn(),
-  createEdgeJob: vi.fn(),
-  deleteEdgeJob: vi.fn(),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 900 },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),

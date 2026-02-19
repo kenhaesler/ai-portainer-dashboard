@@ -129,30 +129,9 @@ vi.mock('../services/oidc.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn().mockResolvedValue([]),
-  getEndpoint: vi.fn().mockResolvedValue({}),
-  getContainers: vi.fn().mockResolvedValue([]),
-  getContainer: vi.fn().mockResolvedValue({}),
-  getContainerHostConfig: vi.fn().mockResolvedValue({}),
-  startContainer: vi.fn().mockResolvedValue(undefined),
-  stopContainer: vi.fn().mockResolvedValue(undefined),
-  restartContainer: vi.fn().mockResolvedValue(undefined),
-  getContainerLogs: vi.fn().mockResolvedValue(''),
-  getContainerStats: vi.fn().mockResolvedValue({}),
-  getStacks: vi.fn().mockResolvedValue([]),
-  getStack: vi.fn().mockResolvedValue({}),
-  getNetworks: vi.fn().mockResolvedValue([]),
-  getImages: vi.fn().mockResolvedValue([]),
-  getEdgeJobs: vi.fn().mockResolvedValue([]),
-  getEdgeJob: vi.fn().mockResolvedValue({ Id: 1 }),
-  createEdgeJob: vi.fn().mockResolvedValue({ Id: 1 }),
-  deleteEdgeJob: vi.fn().mockResolvedValue(undefined),
-  createExec: vi.fn().mockResolvedValue({ Id: 'exec-1' }),
-  startExec: vi.fn().mockResolvedValue(undefined),
-  inspectExec: vi.fn().mockResolvedValue({ Running: false, ExitCode: 0, Pid: 0 }),
-  getArchive: vi.fn().mockResolvedValue(Buffer.from('')),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: vi.fn((e: unknown) => e),
@@ -161,20 +140,9 @@ vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeNetwork: vi.fn((n: unknown) => n),
 }));
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => unknown) => fn()),
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => unknown) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 300, CONTAINERS: 60, STACKS: 300, NETWORKS: 300, IMAGES: 600 },
-  cache: {
-    get: vi.fn(),
-    set: vi.fn(),
-    del: vi.fn(),
-    clear: vi.fn(),
-    getStats: vi.fn(() => ({ hits: 0, misses: 0, size: 0 })),
-    invalidateTag: vi.fn(),
-  },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('../services/settings-store.js', () => ({
   getEffectiveLlmConfig: vi.fn(() => ({
@@ -193,11 +161,9 @@ vi.mock('../services/prompt-store.js', () => ({
   estimateTokens: vi.fn(() => 100),
 }));
 
-vi.mock('../services/llm-trace-store.js', () => ({
-  insertLlmTrace: vi.fn(),
-  getRecentTraces: vi.fn(() => []),
-  getLlmStats: vi.fn(() => ({ total: 0, success: 0, error: 0, avgLatency: 0 })),
-}));
+vi.mock('../services/llm-trace-store.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
+);
 
 vi.mock('../services/prompt-test-fixtures.js', () => ({
   PROMPT_TEST_FIXTURES: [],
@@ -378,12 +344,9 @@ vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: vi.fn(),
 }));
 
-vi.mock('ollama', () => ({
-  Ollama: vi.fn(() => ({
-    chat: vi.fn().mockResolvedValue({ message: { content: '{}' } }),
-    list: vi.fn().mockResolvedValue({ models: [] }),
-  })),
-}));
+vi.mock('ollama', async () =>
+  (await import('../test-utils/mock-llm.js')).createOllamaMock()
+);
 
 // ─── Route Imports ──────────────────────────────────────────────────────
 import authPlugin from '../plugins/auth.js';

@@ -3,11 +3,9 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containerLogsRoutes } from './container-logs.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getContainerLogs: vi.fn(),
-  streamContainerLogs: vi.fn(),
-  getContainers: vi.fn(),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 vi.mock('../services/edge-log-fetcher.js', () => ({
   getContainerLogsWithRetry: vi.fn(),

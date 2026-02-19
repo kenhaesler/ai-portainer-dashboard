@@ -3,17 +3,13 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containersRoutes } from './containers.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn(),
-  getContainers: vi.fn(),
-  getContainer: vi.fn(),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 30, CONTAINERS: 15, STATS: 60 },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetchSWR, getCacheKey } from '../services/portainer-cache.js';

@@ -3,27 +3,24 @@ import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
 
-const mockGetEndpoints = vi.fn();
-const mockGetContainers = vi.fn();
 const mockNormalizeEndpoint = vi.fn();
 const mockNormalizeContainer = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockBuildSecurityAuditSummary = vi.fn();
-const mockCachedFetchSWR = vi.fn();
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args),
-  getCacheKey: (...parts: unknown[]) => parts.join(':'),
-  TTL: {
-    ENDPOINTS: 30_000,
-    CONTAINERS: 30_000,
-  },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
+
+import { getEndpoints, getContainers } from '../services/portainer-client.js';
+import { cachedFetchSWR } from '../services/portainer-cache.js';
+const mockGetEndpoints = vi.mocked(getEndpoints);
+const mockGetContainers = vi.mocked(getContainers);
+const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
 
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: (...args: unknown[]) => mockNormalizeEndpoint(...args),

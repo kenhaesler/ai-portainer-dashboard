@@ -6,16 +6,12 @@ import { healthRoutes } from './health.js';
 
 vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
-vi.mock('../services/portainer-cache.js', () => ({
-  cache: {
-    getBackoffState: vi.fn(),
-    ping: vi.fn(),
-  },
-  cachedFetch: vi.fn((_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher()),
-}));
-vi.mock('../services/portainer-client.js', () => ({
-  checkPortainerReachable: vi.fn(),
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';

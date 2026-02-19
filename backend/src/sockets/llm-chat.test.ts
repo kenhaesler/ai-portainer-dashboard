@@ -25,21 +25,18 @@ vi.mock('ollama', () => ({
   })),
 }));
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn().mockResolvedValue([]),
-  getContainers: vi.fn().mockResolvedValue([]),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: vi.fn((e: any) => e),
   normalizeContainer: vi.fn((c: any) => c),
 }));
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 60, CONTAINERS: 60 },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
@@ -49,9 +46,9 @@ vi.mock('../db/app-db-router.js', () => ({
   })),
 }));
 
-vi.mock('../services/llm-trace-store.js', () => ({
-  insertLlmTrace: vi.fn(),
-}));
+vi.mock('../services/llm-trace-store.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
+);
 
 vi.mock('../services/llm-tools.js', () => ({
   getToolSystemPrompt: vi.fn(() => ''),

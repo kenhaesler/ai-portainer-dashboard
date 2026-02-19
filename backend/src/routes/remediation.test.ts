@@ -4,9 +4,6 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { remediationRoutes } from './remediation.js';
 
 const mockBroadcastActionUpdate = vi.fn();
-const mockRestartContainer = vi.fn();
-const mockStopContainer = vi.fn();
-const mockStartContainer = vi.fn();
 
 let state: { action: any } = {
   action: null,
@@ -20,11 +17,14 @@ vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
 }));
 
-vi.mock('../services/portainer-client.js', () => ({
-  restartContainer: (...args: unknown[]) => mockRestartContainer(...args),
-  stopContainer: (...args: unknown[]) => mockStopContainer(...args),
-  startContainer: (...args: unknown[]) => mockStartContainer(...args),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
+
+import { restartContainer, stopContainer, startContainer } from '../services/portainer-client.js';
+const mockRestartContainer = vi.mocked(restartContainer);
+const mockStopContainer = vi.mocked(stopContainer);
+const mockStartContainer = vi.mocked(startContainer);
 
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({

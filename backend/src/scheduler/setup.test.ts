@@ -5,31 +5,20 @@ import { setConfigForTest, resetConfig } from '../config/index.js';
 // Mocks — hoisted so every import sees them
 // ---------------------------------------------------------------------------
 
-const cachedFetchSWRSpy = vi.fn((_key: string, _ttl: number, fetcher: () => Promise<unknown>) =>
-  fetcher(),
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
 );
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) =>
-    cachedFetchSWRSpy(args[0] as string, args[1] as number, args[2] as () => Promise<unknown>),
-  cachedFetch: (...args: unknown[]) =>
-    (args[2] as () => Promise<unknown>)(),
-  getCacheKey: (...args: unknown[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, IMAGES: 600, STATS: 30 },
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
-const getEndpointsMock = vi.fn().mockResolvedValue([{ Id: 1, Name: 'local' }]);
-const getContainersMock = vi.fn().mockResolvedValue([]);
-const getImagesMock = vi.fn().mockResolvedValue([
-  { Id: 'sha256:abc123', RepoTags: ['nginx:latest'] },
-]);
-
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => getEndpointsMock(...args),
-  getContainers: (...args: unknown[]) => getContainersMock(...args),
-  getImages: (...args: unknown[]) => getImagesMock(...args),
-  isEndpointDegraded: () => false,
-}));
+import { getEndpoints, getContainers, getImages } from '../services/portainer-client.js';
+import { cachedFetchSWR } from '../services/portainer-cache.js';
+const getEndpointsMock = vi.mocked(getEndpoints);
+const getContainersMock = vi.mocked(getContainers);
+const getImagesMock = vi.mocked(getImages);
+const cachedFetchSWRSpy = vi.mocked(cachedFetchSWR);
 
 vi.mock('../services/image-staleness.js', () => ({
   runStalenessChecks: vi.fn().mockResolvedValue({ checked: 1, stale: 0 }),
@@ -137,6 +126,10 @@ afterAll(() => {
 describe('scheduler/setup – runImageStalenessCheck', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Restore defaults cleared by vi.clearAllMocks()
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+    getContainersMock.mockResolvedValue([]);
+    getImagesMock.mockResolvedValue([{ Id: 'sha256:abc123', RepoTags: ['nginx:latest'] }]);
   });
 
   it('uses cachedFetchSWR for getEndpoints with TTL.ENDPOINTS', async () => {

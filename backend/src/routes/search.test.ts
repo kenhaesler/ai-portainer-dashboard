@@ -3,24 +3,13 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { searchRoutes } from './search.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn(),
-  getContainers: vi.fn(),
-  getImages: vi.fn(),
-  getStacks: vi.fn(),
-  getContainerLogs: vi.fn(),
-}));
+vi.mock('../services/portainer-client.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
+);
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn(async (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher()),
-  getCacheKey: (...args: Array<string | number>) => args.join(':'),
-  TTL: {
-    ENDPOINTS: 0,
-    CONTAINERS: 0,
-    IMAGES: 0,
-    STACKS: 0,
-  },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('../services/edge-capability-guard.js', () => ({
   supportsLiveFeatures: vi.fn(async () => true),

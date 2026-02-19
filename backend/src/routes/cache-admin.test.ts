@@ -3,14 +3,9 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { cacheAdminRoutes } from './cache-admin.js';
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cache: {
-    getStats: vi.fn(),
-    getEntries: vi.fn(),
-    clear: vi.fn(),
-    invalidatePattern: vi.fn(),
-  },
-}));
+vi.mock('../services/portainer-cache.js', async () =>
+  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
+);
 
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
