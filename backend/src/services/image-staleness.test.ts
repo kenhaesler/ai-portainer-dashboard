@@ -1,21 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 
-vi.mock('../db/app-db-router.js', () => {
-  const mockDb = {
-    execute: vi.fn().mockResolvedValue({ changes: 1 }),
-    queryOne: vi.fn().mockResolvedValue({ total: 3, stale: 1, up_to_date: 1, unchecked: 1 }),
-    query: vi.fn().mockResolvedValue([]),
-  };
-  return { getDbForDomain: vi.fn(() => mockDb) };
+let testDb: AppDb;
+
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => testDb,
+}));
+
+import { parseImageRef, getStalenessSummary, upsertStalenessRecord } from './image-staleness.js';
+
+beforeAll(async () => { testDb = await getTestDb(); });
+afterAll(async () => { await closeTestDb(); });
+beforeEach(async () => {
+  await truncateTestTables('image_staleness');
 });
 
-import { parseImageRef, getStalenessSummary } from './image-staleness.js';
-
 describe('image-staleness', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   describe('parseImageRef', () => {
     it('parses simple image name', () => {
       const result = parseImageRef('nginx:latest');
@@ -44,14 +45,33 @@ describe('image-staleness', () => {
   });
 
   describe('getStalenessSummary', () => {
-    it('returns summary from database', async () => {
+    it('returns zero counts when no data exists', async () => {
       const summary = await getStalenessSummary();
-      expect(summary).toEqual({
-        total: 3,
-        stale: 1,
-        upToDate: 1,
-        unchecked: 1,
+      expect(summary).toEqual({ total: 0, stale: 0, upToDate: 0, unchecked: 0 });
+    });
+
+    it('returns correct counts from database', async () => {
+      await upsertStalenessRecord({
+        imageName: 'nginx', tag: 'latest', registry: 'docker.io',
+        isStale: true, daysSinceUpdate: 30,
+        localDigest: 'sha256:old', remoteDigest: 'sha256:new',
       });
+      await upsertStalenessRecord({
+        imageName: 'redis', tag: 'latest', registry: 'docker.io',
+        isStale: false, daysSinceUpdate: 5,
+        localDigest: 'sha256:same', remoteDigest: 'sha256:same',
+      });
+      await upsertStalenessRecord({
+        imageName: 'postgres', tag: '16', registry: 'docker.io',
+        isStale: false, daysSinceUpdate: null,
+        localDigest: 'sha256:local', remoteDigest: null,
+      });
+
+      const summary = await getStalenessSummary();
+      expect(summary.total).toBe(3);
+      expect(summary.stale).toBe(1);
+      expect(summary.upToDate).toBe(1);
+      expect(summary.unchecked).toBe(1);
     });
   });
 });
