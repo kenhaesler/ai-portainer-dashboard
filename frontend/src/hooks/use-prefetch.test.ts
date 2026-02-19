@@ -81,8 +81,8 @@ describe('usePrefetch', () => {
 
     expect(mockPrefetchQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        queryKey: ['dashboard', 'summary'],
-        staleTime: 30_000,
+        queryKey: ['dashboard', 'full', 8],
+        staleTime: 60_000,
       }),
     );
   });
