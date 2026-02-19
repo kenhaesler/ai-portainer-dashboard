@@ -425,7 +425,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     const runningContainerIds = runningContainers.map((c) => c.container.id);
 
     // Run security audit (already in flight) and metrics batch in parallel
-    const [auditEntries, storedMetricsResult] = await Promise.all([
+    const [auditEntries, storedMetrics] = await Promise.all([
       securityAuditPromise,
       getLatestMetricsBatch(runningContainerIds).catch((err) => {
         log.warn({ err }, 'Failed to read stored metrics from TimescaleDB, resource data will be empty');
@@ -436,8 +436,6 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     const security = auditEntries
       ? buildSecurityAuditSummary(auditEntries)
       : { totalAudited: 0, flagged: 0, ignored: 0 };
-
-    const storedMetrics = storedMetricsResult;
 
     let totalCpuPercent = 0;
     let totalMemoryPercent = 0;

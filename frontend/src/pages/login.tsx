@@ -89,7 +89,7 @@ export default function LoginPage() {
           }),
           queryClient.prefetchQuery({
             queryKey: ['dashboard', 'kpi-history', 24],
-            queryFn: () => api.get('/api/dashboard/kpi-history?hours=24'),
+            queryFn: () => api.get<{ snapshots: unknown[] }>('/api/dashboard/kpi-history?hours=24').then(res => res.snapshots),
             staleTime: 5 * 60 * 1000,
           }),
         ]);

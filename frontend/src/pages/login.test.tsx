@@ -148,6 +148,13 @@ describe('LoginPage', () => {
         staleTime: 60_000,
       }),
     );
+
+    expect(mockPrefetchQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: ['dashboard', 'kpi-history', 24],
+        staleTime: 5 * 60_000,
+      }),
+    );
   });
 
   it('navigates after minimum animation time AND prefetch both complete', async () => {
