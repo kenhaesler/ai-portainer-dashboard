@@ -120,7 +120,7 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
   `;
 
   const dedupeSQL = `
-    SELECT COUNT(*) as cnt FROM insights
+    SELECT COUNT(*)::integer as cnt FROM insights
     WHERE container_id = ? AND category = ? AND title = ?
       AND created_at >= NOW() - INTERVAL '60 minutes'
   `;

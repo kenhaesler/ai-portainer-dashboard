@@ -177,8 +177,8 @@ export async function resolveIncident(id: string): Promise<void> {
 
 export async function getIncidentCount(): Promise<{ active: number; resolved: number; total: number }> {
   const db = getDbForDomain('incidents');
-  const activeRow = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM incidents WHERE status = 'active'");
-  const resolvedRow = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM incidents WHERE status = 'resolved'");
+  const activeRow = await db.queryOne<{ count: number }>("SELECT COUNT(*)::integer as count FROM incidents WHERE status = 'active'");
+  const resolvedRow = await db.queryOne<{ count: number }>("SELECT COUNT(*)::integer as count FROM incidents WHERE status = 'resolved'");
   const active = activeRow?.count ?? 0;
   const resolved = resolvedRow?.count ?? 0;
   return { active, resolved, total: active + resolved };
