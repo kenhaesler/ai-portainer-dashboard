@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { remediationRoutes } from './remediation.js';
@@ -140,43 +141,11 @@ describe('remediation routes', () => {
     expect(mockBroadcastActionUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
   });
 
-  it('rejects approve for non-admin users', async () => {
-    currentRole = 'viewer';
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/remediation/actions/a1/approve',
-    });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects reject for non-admin users', async () => {
-    currentRole = 'operator';
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/remediation/actions/a1/reject',
-      payload: { reason: 'not now' },
-    });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects execute for non-admin users', async () => {
-    currentRole = 'operator';
-    state.action.status = 'approved';
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/remediation/actions/a1/execute',
-    });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-    expect(mockRestartContainer).not.toHaveBeenCalled();
+  describe('RBAC', () => {
+    const setRole = (r: 'viewer' | 'operator' | 'admin') => { currentRole = r; };
+    testAdminOnly(() => app, setRole, 'POST', '/api/remediation/actions/a1/approve');
+    testAdminOnly(() => app, setRole, 'POST', '/api/remediation/actions/a1/reject', { reason: 'not now' });
+    testAdminOnly(() => app, setRole, 'POST', '/api/remediation/actions/a1/execute');
   });
 
   it('rejects execute when action is not approved', async () => {

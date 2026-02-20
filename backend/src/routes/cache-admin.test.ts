@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { cacheAdminRoutes } from './cache-admin.js';
@@ -89,17 +90,7 @@ describe('Cache Admin Routes', () => {
       expect(body.entries[0].key).toBe('endpoints');
     });
 
-    it('rejects non-admin users', async () => {
-      currentRole = 'viewer';
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/admin/cache/stats',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/admin/cache/stats');
   });
 
   describe('POST /api/admin/cache/clear', () => {
@@ -125,17 +116,7 @@ describe('Cache Admin Routes', () => {
       );
     });
 
-    it('rejects non-admin users', async () => {
-      currentRole = 'viewer';
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/admin/cache/clear',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/admin/cache/clear');
   });
 
   describe('POST /api/admin/cache/invalidate', () => {
@@ -182,16 +163,6 @@ describe('Cache Admin Routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('rejects non-admin users', async () => {
-      currentRole = 'viewer';
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/admin/cache/invalidate?resource=containers',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/admin/cache/invalidate?resource=containers');
   });
 });

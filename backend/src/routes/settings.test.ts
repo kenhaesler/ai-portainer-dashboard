@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import { settingsRoutes } from './settings.js';
 
 const mockQueryOneUserDefaultLandingPage = vi.fn();
@@ -223,39 +224,39 @@ describe('audit-log cursor pagination', () => {
 });
 
 describe('settings security', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  let secApp: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
-  it('blocks non-admin users from GET /api/settings', async () => {
-    const app = Fastify({ logger: false });
-    app.setValidatorCompiler(validatorCompiler);
-    app.decorate('authenticate', async () => undefined);
-    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+  beforeAll(async () => {
+    currentRole = 'admin';
+    secApp = Fastify({ logger: false });
+    secApp.setValidatorCompiler(validatorCompiler);
+    secApp.decorate('authenticate', async () => undefined);
+    secApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
       const userRole = request.user?.role ?? 'viewer';
       if (rank[userRole as keyof typeof rank] < rank[minRole]) {
         reply.code(403).send({ error: 'Insufficient permissions' });
       }
     });
-    app.decorateRequest('user', undefined);
-    app.addHook('preHandler', async (request) => {
-      request.user = { sub: 'u2', username: 'viewer', sessionId: 's2', role: 'viewer' as const };
+    secApp.decorateRequest('user', undefined);
+    secApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: currentRole };
     });
-    await app.register(settingsRoutes);
-    await app.ready();
-
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/settings',
-      headers: { authorization: 'Bearer test' },
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json().error).toBe('Insufficient permissions');
-
-    await app.close();
+    await secApp.register(settingsRoutes);
+    await secApp.ready();
   });
+
+  afterAll(async () => {
+    await secApp.close();
+  });
+
+  beforeEach(() => {
+    currentRole = 'admin';
+    vi.clearAllMocks();
+  });
+
+  testAdminOnly(() => secApp, (r) => { currentRole = r; }, 'GET', '/api/settings');
 
   it('redacts sensitive values for admin on GET /api/settings', async () => {
     mockQuery.mockResolvedValueOnce([
@@ -267,24 +268,7 @@ describe('settings security', () => {
       { key: 'general.theme', value: 'apple-dark', category: 'general' },
     ]);
 
-    const app = Fastify({ logger: false });
-    app.setValidatorCompiler(validatorCompiler);
-    app.decorate('authenticate', async () => undefined);
-    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
-      const rank = { viewer: 0, operator: 1, admin: 2 };
-      const userRole = request.user?.role ?? 'viewer';
-      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
-        reply.code(403).send({ error: 'Insufficient permissions' });
-      }
-    });
-    app.decorateRequest('user', undefined);
-    app.addHook('preHandler', async (request) => {
-      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
-    });
-    await app.register(settingsRoutes);
-    await app.ready();
-
-    const response = await app.inject({
+    const response = await secApp.inject({
       method: 'GET',
       url: '/api/settings',
       headers: { authorization: 'Bearer test' },
@@ -299,8 +283,6 @@ describe('settings security', () => {
       { key: 'llm.custom_endpoint_token', value: '••••••••', category: 'llm' },
       { key: 'general.theme', value: 'apple-dark', category: 'general' },
     ]);
-
-    await app.close();
   });
 
   it('rejects invalid schemes for security-critical URL settings', async () => {
@@ -393,27 +375,39 @@ describe('settings security', () => {
 });
 
 describe('prompt-features endpoint', () => {
-  let app: FastifyInstance;
+  let pfApp: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
 
   beforeAll(async () => {
-    app = Fastify({ logger: false });
-    app.setValidatorCompiler(validatorCompiler);
-    app.decorate('authenticate', async () => undefined);
-    app.decorate('requireRole', () => async () => undefined);
-    app.decorateRequest('user', undefined);
-    app.addHook('preHandler', async (request) => {
-      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
+    currentRole = 'admin';
+    pfApp = Fastify({ logger: false });
+    pfApp.setValidatorCompiler(validatorCompiler);
+    pfApp.decorate('authenticate', async () => undefined);
+    pfApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
     });
-    await app.register(settingsRoutes);
-    await app.ready();
+    pfApp.decorateRequest('user', undefined);
+    pfApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: currentRole };
+    });
+    await pfApp.register(settingsRoutes);
+    await pfApp.ready();
   });
 
   afterAll(async () => {
-    await app.close();
+    await pfApp.close();
+  });
+
+  beforeEach(() => {
+    currentRole = 'admin';
   });
 
   it('returns feature definitions with default prompts', async () => {
-    const response = await app.inject({
+    const response = await pfApp.inject({
       method: 'GET',
       url: '/api/settings/prompt-features',
       headers: { authorization: 'Bearer test' },
@@ -438,33 +432,7 @@ describe('prompt-features endpoint', () => {
     });
   });
 
-  it('blocks non-admin users', async () => {
-    const restrictedApp = Fastify({ logger: false });
-    restrictedApp.setValidatorCompiler(validatorCompiler);
-    restrictedApp.decorate('authenticate', async () => undefined);
-    restrictedApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
-      const rank = { viewer: 0, operator: 1, admin: 2 };
-      const userRole = request.user?.role ?? 'viewer';
-      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
-        reply.code(403).send({ error: 'Insufficient permissions' });
-      }
-    });
-    restrictedApp.decorateRequest('user', undefined);
-    restrictedApp.addHook('preHandler', async (request) => {
-      request.user = { sub: 'u2', username: 'viewer', sessionId: 's2', role: 'viewer' as const };
-    });
-    await restrictedApp.register(settingsRoutes);
-    await restrictedApp.ready();
-
-    const response = await restrictedApp.inject({
-      method: 'GET',
-      url: '/api/settings/prompt-features',
-      headers: { authorization: 'Bearer test' },
-    });
-
-    expect(response.statusCode).toBe(403);
-    await restrictedApp.close();
-  });
+  testAdminOnly(() => pfApp, (r) => { currentRole = r; }, 'GET', '/api/settings/prompt-features');
 });
 
 describe('prompt version history routes (#415)', () => {

@@ -240,11 +240,13 @@ describe('LLM Feedback Routes', () => {
     it('filters by feature', async () => {
       mockListFeedback.mockReturnValue({ items: [], total: 0 });
 
-      await app.inject({
+      const res = await app.inject({
         method: 'GET',
         url: '/api/llm/feedback?feature=chat_assistant',
       });
 
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toEqual([]);
       expect(mockListFeedback).toHaveBeenCalledWith(
         expect.objectContaining({ feature: 'chat_assistant' }),
       );
@@ -253,11 +255,13 @@ describe('LLM Feedback Routes', () => {
     it('filters by rating', async () => {
       mockListFeedback.mockReturnValue({ items: [], total: 0 });
 
-      await app.inject({
+      const res = await app.inject({
         method: 'GET',
         url: '/api/llm/feedback?rating=negative',
       });
 
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toEqual([]);
       expect(mockListFeedback).toHaveBeenCalledWith(
         expect.objectContaining({ rating: 'negative' }),
       );

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { webhookRoutes } from './webhooks.js';
@@ -147,22 +148,11 @@ describe('webhookRoutes', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    it('should reject non-admin users', async () => {
-      setRole('viewer');
-
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/webhooks',
-        payload: {
-          name: 'New Hook',
-          url: 'https://example.com/hook',
-          events: ['*'],
-        },
-      });
-
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(
+      () => app, (r) => setRole(r),
+      'POST', '/api/webhooks',
+      { name: 'New Hook', url: 'https://example.com/hook', events: ['*'] },
+    );
 
     it('should reject private network webhook URLs', async () => {
       const res = await app.inject({
@@ -244,16 +234,7 @@ describe('webhookRoutes', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    it('should reject non-admin users', async () => {
-      setRole('viewer');
-      const res = await app.inject({
-        method: 'PATCH',
-        url: '/api/webhooks/wh-1',
-        payload: { name: 'Updated' },
-      });
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => setRole(r), 'PATCH', '/api/webhooks/wh-1', { name: 'Updated' });
 
     it('should reject invalid URL updates', async () => {
       const res = await app.inject({
@@ -284,21 +265,11 @@ describe('webhookRoutes', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    it('should reject non-admin users', async () => {
-      setRole('viewer');
-      const res = await app.inject({ method: 'DELETE', url: '/api/webhooks/wh-1' });
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => setRole(r), 'DELETE', '/api/webhooks/wh-1');
   });
 
   describe('POST /api/webhooks/:id/test', () => {
-    it('should reject non-admin users', async () => {
-      setRole('viewer');
-      const res = await app.inject({ method: 'POST', url: '/api/webhooks/wh-1/test' });
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => setRole(r), 'POST', '/api/webhooks/wh-1/test');
   });
 
   describe('GET /api/webhooks/:id/deliveries', () => {

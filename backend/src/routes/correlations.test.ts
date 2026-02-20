@@ -137,7 +137,8 @@ describe('Correlation Routes', () => {
     it('applies statement_timeout and passes client to service', async () => {
       mockDetectCorrelated.mockResolvedValue([]);
 
-      await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      const res = await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      expect(res.statusCode).toBe(200);
 
       // The SET statement_timeout query should have been executed
       expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');

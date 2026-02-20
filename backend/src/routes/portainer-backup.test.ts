@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -130,18 +131,7 @@ describe('portainer-backup routes', () => {
       });
     });
 
-    it('rejects create for non-admin users', async () => {
-      currentRole = 'viewer';
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/portainer-backup',
-        payload: {},
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/portainer-backup', {});
   });
 
   describe('GET /api/portainer-backup', () => {
@@ -177,17 +167,7 @@ describe('portainer-backup routes', () => {
       expect(response.json()).toEqual({ backups: [] });
     });
 
-    it('rejects list for non-admin users', async () => {
-      currentRole = 'viewer';
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/portainer-backup',
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/portainer-backup');
   });
 
   describe('GET /api/portainer-backup/:filename', () => {
@@ -233,17 +213,7 @@ describe('portainer-backup routes', () => {
       });
     });
 
-    it('rejects download for non-admin users', async () => {
-      currentRole = 'viewer';
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/portainer-backup/test-backup.tar.gz',
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/portainer-backup/test-backup.tar.gz');
   });
 
   describe('DELETE /api/portainer-backup/:filename', () => {
@@ -280,16 +250,6 @@ describe('portainer-backup routes', () => {
       expect(response.json()).toEqual({ error: 'Portainer backup not found' });
     });
 
-    it('rejects delete for non-admin users', async () => {
-      currentRole = 'viewer';
-
-      const response = await app.inject({
-        method: 'DELETE',
-        url: '/api/portainer-backup/test-backup.tar.gz',
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'DELETE', '/api/portainer-backup/test-backup.tar.gz');
   });
 });
