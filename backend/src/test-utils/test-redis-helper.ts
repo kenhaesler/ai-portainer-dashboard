@@ -27,7 +27,10 @@ async function ensureClient(): Promise<RedisClient | null> {
   try {
     client = createClient({
       url: process.env.REDIS_URL ?? DEFAULT_REDIS_URL,
-      socket: { connectTimeout: CONNECT_TIMEOUT_MS },
+      socket: {
+        connectTimeout: CONNECT_TIMEOUT_MS,
+        reconnectStrategy: false,
+      },
     });
     // Suppress unhandled error events (connection failures are caught below)
     client.on('error', () => {});

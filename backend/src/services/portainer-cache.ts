@@ -210,7 +210,10 @@ class HybridCache {
     const redisUrl = this.buildRedisUrl(config.REDIS_URL!, config.REDIS_PASSWORD);
     const client = createClient({
       url: redisUrl,
-      socket: { connectTimeout: 3_000 },
+      socket: {
+        connectTimeout: 3_000,
+        reconnectStrategy: false,
+      },
     });
     client.on('error', (err) => {
       this.disableRedisTemporarily('redis-client-error', err);
