@@ -143,8 +143,9 @@ services:
 
   kali-mcp:
     build:
-      context: kali-mcp
+      context: ../tools/kali-mcp
       dockerfile: Dockerfile
+    profiles: [pentest]
     restart: unless-stopped
     # No host port — only accessible from dashboard backend via kali-mcp:8000
     cap_add:
