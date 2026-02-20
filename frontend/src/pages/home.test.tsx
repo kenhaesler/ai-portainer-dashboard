@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import HomePage from './home';
@@ -96,9 +96,6 @@ vi.mock('@/components/shared/auto-refresh-toggle', () => ({
 vi.mock('@/components/shared/refresh-button', () => ({
   RefreshButton: () => <button data-testid="mock-refresh" />,
 }));
-vi.mock('@/components/shared/smart-refresh-controls', () => ({
-  SmartRefreshControls: () => <div data-testid="mock-smart-refresh" />,
-}));
 vi.mock('@/components/shared/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
 }));
@@ -110,38 +107,22 @@ vi.mock('@/hooks/use-nl-query', () => ({
 }));
 
 import { useDashboardFull } from '@/hooks/use-dashboard-full';
-import type { NormalizedContainer, DashboardSummary } from '@/hooks/use-dashboard';
+import type { DashboardSummary } from '@/hooks/use-dashboard';
 
 const mockUseDashboardFull = vi.mocked(useDashboardFull);
 
-function makeContainer(i: number): NormalizedContainer {
-  return {
-    id: `c-${i}`,
-    name: `container-${i}`,
-    image: `nginx:${i}`,
-    state: i % 2 === 0 ? 'running' : 'stopped',
-    status: i % 2 === 0 ? 'Up 2 hours' : 'Exited (0)',
-    created: Math.floor(Date.now() / 1000) - i * 60,
-    endpointId: 1,
-    endpointName: 'local',
-    ports: [],
-    networks: [],
-    labels: {},
-  };
-}
-
-function makeDashboardData(containerCount: number) {
+function makeDashboardData() {
   return {
     summary: {
       kpis: {
         endpoints: 2,
         endpointsUp: 2,
         endpointsDown: 0,
-        running: containerCount,
+        running: 5,
         stopped: 0,
-        healthy: containerCount,
+        healthy: 5,
         unhealthy: 0,
-        total: containerCount,
+        total: 5,
         stacks: 1,
       },
       security: {
@@ -149,7 +130,6 @@ function makeDashboardData(containerCount: number) {
         flagged: 0,
         ignored: 0,
       },
-      recentContainers: Array.from({ length: containerCount }, (_, i) => makeContainer(i)),
       timestamp: new Date().toISOString(),
     } as DashboardSummary,
     resources: {
@@ -174,14 +154,14 @@ function renderPage() {
   );
 }
 
-describe('HomePage - Recent Containers', () => {
+describe('HomePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders the Recent Containers section with title and inline search', () => {
+  it('renders KPI cards when data is loaded', () => {
     mockUseDashboardFull.mockReturnValue({
-      data: makeDashboardData(5),
+      data: makeDashboardData(),
       isLoading: false,
       isError: false,
       error: null,
@@ -191,13 +171,16 @@ describe('HomePage - Recent Containers', () => {
 
     renderPage();
 
-    expect(screen.getByText('Recent Containers')).toBeInTheDocument();
-    expect(screen.getByLabelText('Smart container search')).toBeInTheDocument();
+    expect(screen.getByText('Endpoints')).toBeInTheDocument();
+    expect(screen.getByText('Running Containers')).toBeInTheDocument();
+    expect(screen.getByText('Stopped Containers')).toBeInTheDocument();
+    expect(screen.getByText('Stacks')).toBeInTheDocument();
+    expect(screen.getByText('Security Findings')).toBeInTheDocument();
   });
 
-  it('renders smart search instead of DataTable built-in search', () => {
+  it('does not render Recent Containers section (#801)', () => {
     mockUseDashboardFull.mockReturnValue({
-      data: makeDashboardData(5),
+      data: makeDashboardData(),
       isLoading: false,
       isError: false,
       error: null,
@@ -207,73 +190,26 @@ describe('HomePage - Recent Containers', () => {
 
     renderPage();
 
-    // The smart search should be present
-    expect(screen.getByLabelText('Smart container search')).toBeInTheDocument();
+    expect(screen.queryByText('Recent Containers')).not.toBeInTheDocument();
   });
 
-  it('renders container rows up to page size', () => {
-    const containerCount = 15;
+  it('shows error state when data fetch fails', () => {
     mockUseDashboardFull.mockReturnValue({
-      data: makeDashboardData(containerCount),
+      data: undefined,
       isLoading: false,
-      isError: false,
-      error: null,
+      isError: true,
+      error: new Error('Connection refused'),
       refetch: vi.fn(),
       isFetching: false,
     } as any);
 
     renderPage();
 
-    // With pageSize=10, the first 10 containers should be visible
-    for (let i = 0; i < 10; i++) {
-      expect(screen.getAllByText(`container-${i}`).length).toBeGreaterThan(0);
-    }
+    expect(screen.getByText('Failed to load dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Connection refused')).toBeInTheDocument();
   });
 
-  it('filters containers when typing in the inline search', async () => {
-    mockUseDashboardFull.mockReturnValue({
-      data: makeDashboardData(10),
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-      isFetching: false,
-    } as any);
-
-    renderPage();
-
-    const searchInput = screen.getByLabelText('Smart container search');
-    fireEvent.change(searchInput, { target: { value: 'container-3' } });
-
-    // container-3 should be visible (may appear in both desktop table + mobile card list)
-    await waitFor(() => {
-      expect(screen.getAllByText('container-3').length).toBeGreaterThan(0);
-      // container-0 should be filtered out
-      expect(screen.queryByText('container-0')).not.toBeInTheDocument();
-    });
-  });
-
-  it('renders all expected columns', () => {
-    mockUseDashboardFull.mockReturnValue({
-      data: makeDashboardData(3),
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-      isFetching: false,
-    } as any);
-
-    renderPage();
-
-    expect(screen.getByText('Name')).toBeInTheDocument();
-    expect(screen.getByText('Image')).toBeInTheDocument();
-    expect(screen.getByText('State')).toBeInTheDocument();
-    expect(screen.getByText('Status')).toBeInTheDocument();
-    expect(screen.getByText('Endpoint')).toBeInTheDocument();
-    expect(screen.getByText('Created')).toBeInTheDocument();
-  });
-
-  it('shows skeleton when loading', () => {
+  it('shows skeleton cards when loading', () => {
     mockUseDashboardFull.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -285,8 +221,22 @@ describe('HomePage - Recent Containers', () => {
 
     renderPage();
 
-    // Should not show the search or table when loading
-    expect(screen.queryByLabelText('Smart container search')).not.toBeInTheDocument();
-    expect(screen.queryByText('Recent Containers')).not.toBeInTheDocument();
+    // KPI cards should not be visible while loading
+    expect(screen.queryByText('Endpoints')).not.toBeInTheDocument();
+  });
+
+  it('renders the page subtitle without mentioning recent containers', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByText('Dashboard overview with KPIs and charts')).toBeInTheDocument();
   });
 });
