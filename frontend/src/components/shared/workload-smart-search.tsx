@@ -59,7 +59,6 @@ export function WorkloadSmartSearch({
     }
     // Intentionally omit query/mode/applyFilter — we only want to re-run when the
     // upstream containers list changes (endpoint/stack dropdown changed).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containers]);
 
   const handleChange = useCallback(
