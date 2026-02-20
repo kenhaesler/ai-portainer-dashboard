@@ -18,17 +18,19 @@ describe('useThemeStore', () => {
     expect(state.iconTheme).toBe('default');
   });
 
-  it('sets theme and resolves light vs dark correctly', () => {
-    const { setTheme } = useThemeStore.getState();
-
-    // Light theme
-    setTheme('retro-70s');
-    expect(useThemeStore.getState().theme).toBe('retro-70s');
+  it.each([
+    'apple-light', 'nordic-frost', 'sandstone-dusk', 'retro-70s', 'catppuccin-latte',
+  ] as const)('resolves "%s" as light theme', (theme) => {
+    useThemeStore.getState().setTheme(theme);
     expect(useThemeStore.getState().resolvedTheme()).toBe('light');
+  });
 
-    // Dark theme
-    setTheme('retro-arcade');
-    expect(useThemeStore.getState().theme).toBe('retro-arcade');
+  it.each([
+    'apple-dark', 'obsidian-ink', 'forest-night', 'hyperpop-chaos',
+    'retro-arcade', 'retro-terminal', 'retro-vaporwave',
+    'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha',
+  ] as const)('resolves "%s" as dark theme', (theme) => {
+    useThemeStore.getState().setTheme(theme);
     expect(useThemeStore.getState().resolvedTheme()).toBe('dark');
   });
 

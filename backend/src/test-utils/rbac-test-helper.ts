@@ -35,6 +35,10 @@ export function testAdminOnly(
  *
  * - minRole 'admin'    → tests viewer, operator
  * - minRole 'operator' → tests viewer
+ *
+ * WARNING: Passing a weaker minRole than the route actually enforces will
+ * silently under-test. Always match the minRole to the route's actual
+ * `requireRole()` call (e.g., use 'admin' for admin-only routes).
  */
 export function testMinRole(
   getApp: () => FastifyInstance,
