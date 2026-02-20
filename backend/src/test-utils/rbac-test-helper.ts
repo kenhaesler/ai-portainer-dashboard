@@ -10,7 +10,7 @@
  *   });
  */
 import { it, expect } from 'vitest';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, InjectOptions } from 'fastify';
 
 export type Role = 'viewer' | 'operator' | 'admin';
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -24,7 +24,7 @@ export function testAdminOnly(
   setRole: (role: Role) => void,
   method: HttpMethod,
   url: string,
-  body?: unknown,
+  body?: InjectOptions['payload'],
 ): void {
   testMinRole(getApp, setRole, 'admin', method, url, body);
 }
@@ -42,7 +42,7 @@ export function testMinRole(
   minRole: 'operator' | 'admin',
   method: HttpMethod,
   url: string,
-  body?: unknown,
+  body?: InjectOptions['payload'],
 ): void {
   const deniedRoles: Role[] = minRole === 'admin'
     ? ['viewer', 'operator']
@@ -51,11 +51,9 @@ export function testMinRole(
   for (const role of deniedRoles) {
     it(`rejects ${role} with 403 on ${method} ${url}`, async () => {
       setRole(role);
-      const response = await getApp().inject({
-        method,
-        url,
-        ...(body !== undefined ? { payload: body } : {}),
-      });
+      const opts: InjectOptions = { method, url };
+      if (body !== undefined) opts.payload = body;
+      const response = await getApp().inject(opts);
       expect(response.statusCode).toBe(403);
       expect(response.json()).toEqual({ error: 'Insufficient permissions' });
     });

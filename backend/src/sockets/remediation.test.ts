@@ -63,7 +63,7 @@ function createMockNamespace() {
     const [event, ...rest] = args;
     // Let EventEmitter handle 'connection' events normally
     if (event === 'connection') {
-      return EventEmitter.prototype.emit.apply(ns, args);
+      return EventEmitter.prototype.emit.apply(ns, args as [string, ...unknown[]]);
     }
     emittedEvents.push({ event, args: rest });
     return true;
