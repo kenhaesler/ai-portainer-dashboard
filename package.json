@@ -22,7 +22,7 @@
     "loadtest:all": "docker compose -f docker/docker-compose.loadtest.yml run --rm all",
     "test:e2e": "npx playwright test",
     "test:integration": "npm run test -w backend && npm run test -w frontend && npm run test:e2e",
-    "prepare": "node -e \"try{require.resolve('husky')}catch(e){process.exit(0)}\" && husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
