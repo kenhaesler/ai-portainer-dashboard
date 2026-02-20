@@ -13,3 +13,13 @@ This file provides guidance to AI coding assistants (GitHub Copilot, Cursor, Win
 5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
 6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression.test.ts`.
 7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
+
+## Testing & Mocks
+
+**Mocks are for CI only.** External services (Portainer API, Ollama, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
+
+- **Backend DB tests**: Use real PostgreSQL via `test-db-helper.ts` (port 5433). Never mock the database.
+- **Backend route tests**: Mock only external API calls (Portainer, Ollama) and auth (`app.decorate('authenticate', ...)`). Use `vi.spyOn()` with passthrough mocks (`vi.mock('module', async (importOriginal) => await importOriginal())`) so real logic runs but individual functions can be stubbed.
+- **Frontend tests**: Mock API responses (`vi.spyOn(globalThis, 'fetch')` or MSW), not internal components.
+- **Never mock pure utility functions** — test them directly with real inputs.
+- **Keep mocks close to the boundary** — mock the HTTP call, not the service function that wraps it.

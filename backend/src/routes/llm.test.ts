@@ -35,7 +35,7 @@ vi.mock('ollama', () => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-
+import * as portainerClient from '../services/portainer-client.js';
 import { cache, waitForInFlight } from '../services/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
@@ -88,6 +88,9 @@ describe('LLM Routes', () => {
     await cache.clear();
     await flushTestCache();
     vi.clearAllMocks();
+    // Mock portainer-client so getInfrastructureSummary() doesn't hit real Portainer
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([]);
+    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
     mockLlmFetch = vi.spyOn(llmClient, 'llmFetch');
     mockCreateOllamaClient = vi.spyOn(llmClient, 'createOllamaClient').mockReturnValue({
       chat: mockChat,

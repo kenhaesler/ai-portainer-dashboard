@@ -694,13 +694,12 @@ export function cachedFetch<T>(
   // attached in the same microtask tick as the rejection.
   promise.catch(() => {});
   inFlight.set(key, promise);
-  promise.finally(() => {
-    inFlight.delete(key);
-  });
 
   // Run the fetch in a self-contained async block.
   // All errors are caught and forwarded explicitly via reject(),
   // preventing unhandled promise rejections from crashing the process.
+  // inFlight cleanup is in `finally` to avoid a dangling promise chain
+  // (.finally() on the promise would create a second unhandled rejection).
   (async () => {
     try {
       const cached = await cache.get<T>(key);
@@ -713,6 +712,8 @@ export function cachedFetch<T>(
       resolve(data);
     } catch (err) {
       reject(err);
+    } finally {
+      inFlight.delete(key);
     }
   })();
 

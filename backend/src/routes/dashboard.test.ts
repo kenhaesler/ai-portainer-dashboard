@@ -738,5 +738,106 @@ describe('Dashboard Routes', () => {
 
       await app.close();
     });
+
+    it('includes kpiHistory when kpiHistoryHours > 0', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const mockSnapshots = [
+        { endpoints: 1, endpoints_up: 1, endpoints_down: 0, running: 2, stopped: 0, healthy: 2, unhealthy: 0, total: 2, stacks: 1, timestamp: '2026-02-20 12:00:00' },
+      ];
+      mockGetKpiHistory.mockResolvedValue(mockSnapshots);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?kpiHistoryHours=24' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      expect(data.kpiHistory).toBeDefined();
+      expect(data.kpiHistory).toHaveLength(1);
+      expect(data.kpiHistory[0].running).toBe(2);
+      expect(mockGetKpiHistory).toHaveBeenCalledWith(24);
+
+      await app.close();
+    });
+
+    it('does not include kpiHistory when kpiHistoryHours is 0 (default)', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      expect(data.kpiHistory).toBeUndefined();
+      expect(mockGetKpiHistory).not.toHaveBeenCalled();
+
+      await app.close();
+    });
+
+    it('includes Server-Timing header', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const serverTiming = res.headers['server-timing'];
+      expect(serverTiming).toBeDefined();
+      expect(serverTiming).toContain('endpoints;dur=');
+      expect(serverTiming).toContain('resources;dur=');
+      expect(serverTiming).toContain('total;dur=');
+
+      await app.close();
+    });
+
+    it('includes kpi timing in Server-Timing when kpiHistoryHours > 0', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+      mockGetKpiHistory.mockResolvedValue([]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?kpiHistoryHours=24' });
+
+      expect(res.statusCode).toBe(200);
+      const serverTiming = res.headers['server-timing'] as string;
+      expect(serverTiming).toContain('kpi;dur=');
+
+      await app.close();
+    });
+
+    it('returns empty kpiHistory on KPI store error', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+      mockGetKpiHistory.mockRejectedValue(new Error('DB unavailable'));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?kpiHistoryHours=24' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.kpiHistory).toEqual([]);
+
+      await app.close();
+    });
   });
 });
