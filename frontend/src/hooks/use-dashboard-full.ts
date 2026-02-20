@@ -5,11 +5,13 @@ import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import type { DashboardSummary } from '@/hooks/use-dashboard';
 import type { DashboardResources } from '@/hooks/use-dashboard-resources';
 import type { Endpoint } from '@/hooks/use-endpoints';
+import type { KpiSnapshot } from '@/hooks/use-kpi-history';
 
 export interface DashboardFull {
   summary: DashboardSummary;
   resources: DashboardResources;
   endpoints: Endpoint[];
+  kpiHistory?: KpiSnapshot[];
 }
 
 function hasAuthToken(): boolean {
@@ -36,7 +38,7 @@ export function useDashboardFull(topN: number = 10) {
 
   const query = useQuery<DashboardFull>({
     queryKey: ['dashboard', 'full', topN],
-    queryFn: () => api.get<DashboardFull>(`/api/dashboard/full?topN=${topN}`),
+    queryFn: () => api.get<DashboardFull>(`/api/dashboard/full?topN=${topN}&kpiHistoryHours=24`),
     enabled: hasToken,
     staleTime: 60 * 1000,
     refetchOnMount: 'always',
@@ -50,6 +52,9 @@ export function useDashboardFull(topN: number = 10) {
       queryClient.setQueryData(['dashboard', 'summary'], query.data.summary);
       queryClient.setQueryData(['dashboard', 'resources', topN], query.data.resources);
       queryClient.setQueryData(['endpoints'], query.data.endpoints);
+      if (query.data.kpiHistory) {
+        queryClient.setQueryData(['dashboard', 'kpi-history', 24], query.data.kpiHistory);
+      }
     }
   }, [query.data, queryClient, topN]);
 

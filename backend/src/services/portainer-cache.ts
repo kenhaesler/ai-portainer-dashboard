@@ -208,7 +208,13 @@ class HybridCache {
 
     const config = getConfig();
     const redisUrl = this.buildRedisUrl(config.REDIS_URL!, config.REDIS_PASSWORD);
-    const client = createClient({ url: redisUrl });
+    const client = createClient({
+      url: redisUrl,
+      socket: {
+        connectTimeout: 3_000,
+        reconnectStrategy: false,
+      },
+    });
     client.on('error', (err) => {
       this.disableRedisTemporarily('redis-client-error', err);
     });
@@ -216,7 +222,17 @@ class HybridCache {
       this.disableRedisTemporarily('redis-client-closed');
     });
     this.redisClient = client;
-    this.redisConnectPromise = client.connect()
+
+    // Race the connect() against a short deadline so tests and environments
+    // without Redis fail fast instead of hanging until vitest's hook timeout.
+    const connectWithTimeout = Promise.race([
+      client.connect(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Redis connect timeout (5s)')), 5_000),
+      ),
+    ]);
+
+    this.redisConnectPromise = connectWithTimeout
       .then(() => {
         const safeUrl = new URL(redisUrl);
         if (safeUrl.password) safeUrl.password = '***';
@@ -678,13 +694,12 @@ export function cachedFetch<T>(
   // attached in the same microtask tick as the rejection.
   promise.catch(() => {});
   inFlight.set(key, promise);
-  promise.finally(() => {
-    inFlight.delete(key);
-  });
 
   // Run the fetch in a self-contained async block.
   // All errors are caught and forwarded explicitly via reject(),
   // preventing unhandled promise rejections from crashing the process.
+  // inFlight cleanup is in `finally` to avoid a dangling promise chain
+  // (.finally() on the promise would create a second unhandled rejection).
   (async () => {
     try {
       const cached = await cache.get<T>(key);
@@ -697,6 +712,8 @@ export function cachedFetch<T>(
       resolve(data);
     } catch (err) {
       reject(err);
+    } finally {
+      inFlight.delete(key);
     }
   })();
 

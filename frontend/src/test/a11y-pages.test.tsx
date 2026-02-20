@@ -436,7 +436,7 @@ describe('Accessibility: Status Page', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
     const StatusPage = (await import('@/pages/status-page')).default;
 
-    const { container } = render(<StatusPage />);
+    const { container } = render(<MemoryRouter><StatusPage /></MemoryRouter>);
 
     // Wait for the async fetch to complete and component to render data
     await waitFor(() => {

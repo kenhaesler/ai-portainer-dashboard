@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 // Mock framer-motion before importing component
@@ -77,7 +78,7 @@ async function renderPage(data?: unknown) {
 
   let result: ReturnType<typeof render>;
   await act(async () => {
-    result = render(<StatusPage />);
+    result = render(<MemoryRouter><StatusPage /></MemoryRouter>);
   });
 
   await waitFor(() => {
@@ -225,7 +226,7 @@ describe('StatusPage', () => {
     const StatusPage = mod.default;
 
     await act(async () => {
-      render(<StatusPage />);
+      render(<MemoryRouter><StatusPage /></MemoryRouter>);
     });
 
     await waitFor(() => {

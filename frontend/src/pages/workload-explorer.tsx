@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { AlertTriangle } from 'lucide-react';
@@ -18,6 +18,7 @@ import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate } from '@/lib/utils';
+import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
@@ -98,6 +99,13 @@ export default function WorkloadExplorerPage() {
       return stackMatches && groupMatches;
     });
   }, [containers, selectedStack, selectedGroup, knownStackNames]);
+
+  const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
+
+  // Reset search-filtered results when the upstream (dropdown) filters change
+  useEffect(() => {
+    setSearchFilteredContainers(undefined);
+  }, [selectedEndpoint, selectedStack, selectedGroup]);
 
   const exportRows = useMemo<Record<string, unknown>[]>(() => {
     if (!filteredContainers) return [];
@@ -309,17 +317,17 @@ export default function WorkloadExplorerPage() {
           Export CSV
         </button>
 
-        {filteredContainers && (
-          <span className="text-sm text-muted-foreground">
-            {filteredContainers.length} container{filteredContainers.length !== 1 ? 's' : ''}
-            {(selectedStack || selectedGroup) && containers && filteredContainers.length !== containers.length && (
-              <span className="ml-1">
-                (of {containers.length} total)
-              </span>
-            )}
-          </span>
-        )}
       </div>
+
+      {/* Smart search */}
+      {filteredContainers && (
+        <WorkloadSmartSearch
+          containers={filteredContainers}
+          knownStackNames={knownStackNames}
+          onFiltered={setSearchFilteredContainers}
+          totalCount={filteredContainers.length}
+        />
+      )}
 
       {/* Container Table */}
       {isLoading ? (
@@ -328,9 +336,8 @@ export default function WorkloadExplorerPage() {
         <div className="rounded-lg border bg-card p-6 shadow-sm">
           <DataTable
             columns={columns}
-            data={filteredContainers}
-            searchKey="name"
-            searchPlaceholder="Search containers by name..."
+            data={searchFilteredContainers ?? filteredContainers}
+            hideSearch
             pageSize={15}
           />
         </div>

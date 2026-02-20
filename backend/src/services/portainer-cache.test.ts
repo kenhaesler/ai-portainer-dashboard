@@ -122,7 +122,10 @@ describe('portainer-cache hybrid backend', () => {
     await cachedFetch('containers:test', 30, fetcher);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(createClient).toHaveBeenCalledWith({ url: 'redis://redis:6379' });
+    expect(createClient).toHaveBeenCalledWith({
+      url: 'redis://redis:6379',
+      socket: { connectTimeout: 3_000, reconnectStrategy: false },
+    });
     expect(redisClient.connect).toHaveBeenCalledTimes(1);
     expect(redisClient.set).toHaveBeenCalledTimes(1);
     // 2 Redis gets on first call (check :gz key + plain key), second call hits L1
@@ -745,6 +748,7 @@ describe('Redis authentication (requirepass)', () => {
 
     expect(createClient).toHaveBeenCalledWith({
       url: 'redis://:s3cret@redis:6379',
+      socket: { connectTimeout: 3_000, reconnectStrategy: false },
     });
   });
 
@@ -765,6 +769,7 @@ describe('Redis authentication (requirepass)', () => {
 
     expect(createClient).toHaveBeenCalledWith({
       url: 'redis://redis:6379',
+      socket: { connectTimeout: 3_000, reconnectStrategy: false },
     });
   });
 });
