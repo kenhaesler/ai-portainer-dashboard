@@ -1127,6 +1127,9 @@ describe('Edge Jobs Admin RBAC Enforcement', () => {
     });
     await app.register(edgeJobsRoutes);
     await app.ready();
+    // Prevent real Portainer calls when RBAC passes for admin role
+    vi.spyOn(portainerClient, 'createEdgeJob').mockResolvedValue({} as any);
+    vi.spyOn(portainerClient, 'deleteEdgeJob').mockResolvedValue(undefined);
   });
 
   afterAll(async () => {
