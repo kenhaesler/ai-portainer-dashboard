@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
@@ -15,16 +15,22 @@ import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
-import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
-import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
-import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
-import { ResourceOverviewCard } from '@/components/charts/resource-overview-card';
 import { useFavoritesStore } from '@/stores/favorites-store';
 import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
 import { ContainerSmartSearch } from '@/components/shared/container-smart-search';
+
+// Lazy-loaded chart components — lets KPI cards render first
+const EndpointHealthOctagons = lazy(() => import('@/components/charts/endpoint-health-octagons').then(m => ({ default: m.EndpointHealthOctagons })));
+const WorkloadTopBar = lazy(() => import('@/components/charts/workload-top-bar').then(m => ({ default: m.WorkloadTopBar })));
+const FleetSummaryCard = lazy(() => import('@/components/charts/fleet-summary-card').then(m => ({ default: m.FleetSummaryCard })));
+const ResourceOverviewCard = lazy(() => import('@/components/charts/resource-overview-card').then(m => ({ default: m.ResourceOverviewCard })));
+
+function ChartSkeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg bg-muted/50 ${className ?? 'h-[200px]'}`} />;
+}
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -339,7 +345,9 @@ export default function HomePage() {
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Endpoint Health
               </h3>
-              <EndpointHealthOctagons endpoints={endpointChartData} />
+              <Suspense fallback={<ChartSkeleton className="h-[200px]" />}>
+                <EndpointHealthOctagons endpoints={endpointChartData} />
+              </Suspense>
             </div>
           </SpotlightCard>
         </MotionReveal>
@@ -359,15 +367,19 @@ export default function HomePage() {
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                     Top Workloads
                   </h3>
-                  <div className="mb-4">
-                    <ResourceOverviewCard
-                      cpuPercent={resourcesData.fleetCpuPercent}
-                      memoryPercent={resourcesData.fleetMemoryPercent}
-                    />
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <WorkloadTopBar endpoints={stackChartData} />
-                  </div>
+                  <Suspense fallback={<ChartSkeleton className="h-[60px] mb-4" />}>
+                    <div className="mb-4">
+                      <ResourceOverviewCard
+                        cpuPercent={resourcesData.fleetCpuPercent}
+                        memoryPercent={resourcesData.fleetMemoryPercent}
+                      />
+                    </div>
+                  </Suspense>
+                  <Suspense fallback={<ChartSkeleton className="flex-1" />}>
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      <WorkloadTopBar endpoints={stackChartData} />
+                    </div>
+                  </Suspense>
                 </div>
               </SpotlightCard>
             </MotionReveal>
@@ -377,12 +389,14 @@ export default function HomePage() {
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                     Fleet Summary
                   </h3>
-                  <div className="flex-1 min-h-0">
-                    <FleetSummaryCard
-                      endpoints={endpointChartData}
-                      totalContainers={data.kpis.total}
-                    />
-                  </div>
+                  <Suspense fallback={<ChartSkeleton className="flex-1" />}>
+                    <div className="flex-1 min-h-0">
+                      <FleetSummaryCard
+                        endpoints={endpointChartData}
+                        totalContainers={data.kpis.total}
+                      />
+                    </div>
+                  </Suspense>
                 </div>
               </SpotlightCard>
             </MotionReveal>

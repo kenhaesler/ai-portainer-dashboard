@@ -183,14 +183,26 @@ export function Sidebar() {
   const hasAnimatedBg = dashboardBackground !== 'none';
   const { prefetchContainers, prefetchEndpoints, prefetchDashboard, prefetchImages, prefetchStacks } = usePrefetch();
 
+  // Wrap prefetch in requestIdleCallback to avoid blocking hover interactions
+  const idlePrefetch = (fn: (() => void) | undefined) => {
+    if (!fn) return undefined;
+    return () => {
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => fn());
+      } else {
+        setTimeout(fn, 0);
+      }
+    };
+  };
+
   const prefetchMap: Record<string, (() => void) | undefined> = {
-    '/': prefetchDashboard,
-    '/workloads': prefetchContainers,
-    '/fleet': prefetchEndpoints,
-    '/stacks': prefetchStacks,
-    '/health': prefetchContainers,
-    '/comparison': prefetchContainers,
-    '/images': prefetchImages,
+    '/': idlePrefetch(prefetchDashboard),
+    '/workloads': idlePrefetch(prefetchContainers),
+    '/fleet': idlePrefetch(prefetchEndpoints),
+    '/stacks': idlePrefetch(prefetchStacks),
+    '/health': idlePrefetch(prefetchContainers),
+    '/comparison': idlePrefetch(prefetchContainers),
+    '/images': idlePrefetch(prefetchImages),
   };
 
   // Compute effective nav — hide items that are feature-gated
