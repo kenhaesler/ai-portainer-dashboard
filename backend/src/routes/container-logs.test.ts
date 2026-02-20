@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containerLogsRoutes } from './container-logs.js';
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
+// Kept: edge service mocks — avoids real edge device interactions
 vi.mock('../services/edge-log-fetcher.js', () => ({
   getContainerLogsWithRetry: vi.fn(),
   waitForTunnel: vi.fn(),
@@ -36,7 +36,7 @@ vi.mock('../plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),
 }));
 
-import * as portainer from '../services/portainer-client.js';
+import * as portainerClient from '../services/portainer-client.js';
 import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
 import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
@@ -45,9 +45,19 @@ import {
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
 } from '../services/edge-async-log-fetcher.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-const mockGetContainerLogs = vi.mocked(portainer.getContainerLogs);
-const mockStreamContainerLogs = vi.mocked(portainer.streamContainerLogs);
+let mockGetContainerLogs: any;
+let mockStreamContainerLogs: any;
+
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 const mockGetContainerLogsWithRetry = vi.mocked(getContainerLogsWithRetry);
 const mockWaitForTunnel = vi.mocked(waitForTunnel);
 const mockAssertCapability = vi.mocked(assertCapability);
@@ -67,8 +77,12 @@ function buildApp() {
 }
 
 describe('container-logs routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs');
+    mockStreamContainerLogs = vi.spyOn(portainerClient, 'streamContainerLogs');
   });
 
   // ─── Existing GET /logs tests ────────────────────────────────────

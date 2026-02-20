@@ -23,25 +23,20 @@ const {
 
 // ── Module mocks ──
 
+// Kept: ollama mock — tests control LLM chat responses
 vi.mock('ollama', () => ({
   Ollama: vi.fn().mockImplementation(() => ({
     chat: mockOllamaChat,
   })),
 }));
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
-
+// Kept: portainer-normalizers mock — tests control normalization
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: vi.fn((e: any) => e),
   normalizeContainer: vi.fn((c: any) => c),
 }));
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-
+// Kept: app-db-router mock — routes to test DB
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
@@ -70,8 +65,29 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
 }));
 
-beforeAll(async () => { testDb = await getTestDb(); });
-afterAll(async () => { await closeTestDb(); });
+import * as portainerClient from '../services/portainer-client.js';
+import * as portainerCache from '../services/portainer-cache.js';
+import { cache } from '../services/portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+// ── Spy on real portainer modules (prevent real API calls) ──
+vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+  async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+);
+vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+  async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+);
+vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
+vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as any);
+
+beforeAll(async () => {
+  testDb = await getTestDb();
+  await cache.clear();
+});
+afterAll(async () => {
+  await closeTestDb();
+  await closeTestRedis();
+});
 
 // ── Import the module under test AFTER mocks are registered ──
 import {

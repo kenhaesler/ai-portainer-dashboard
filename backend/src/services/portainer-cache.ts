@@ -236,12 +236,7 @@ class HybridCache {
   private async redisKeys(client: RedisClient): Promise<string[]> {
     const config = getConfig();
     const prefix = config.REDIS_KEY_PREFIX || 'aidash:cache:';
-    const keys: string[] = [];
-    for await (const key of client.scanIterator({ MATCH: `${prefix}*`, COUNT: 250 })) {
-      const normalized = Array.isArray(key) ? key[0] : key;
-      keys.push(String(normalized));
-    }
-    return keys;
+    return client.keys(`${prefix}*`);
   }
 
   async get<T>(key: string): Promise<T | undefined> {
@@ -678,6 +673,10 @@ export function cachedFetch<T>(
     reject = rej;
   });
 
+  // Prevent Node.js unhandled rejection warning: the caller will handle
+  // the rejection via .then()/.catch()/await, but the handler may not be
+  // attached in the same microtask tick as the rejection.
+  promise.catch(() => {});
   inFlight.set(key, promise);
   promise.finally(() => {
     inFlight.delete(key);
@@ -791,4 +790,11 @@ export async function cachedFetchMany<T>(
 /** Expose inFlight map size for testing/monitoring */
 export function getInFlightCount(): number {
   return inFlight.size;
+}
+
+/** Wait for all in-flight cache promises to settle (for test isolation) */
+export async function waitForInFlight(): Promise<void> {
+  const pending = [...inFlight.values()];
+  if (pending.length === 0) return;
+  await Promise.allSettled(pending);
 }

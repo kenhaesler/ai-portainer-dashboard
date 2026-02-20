@@ -1,17 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 
 const mockGetElasticsearchConfig = vi.fn();
 
+// Kept: elasticsearch-config mock — tests control config responses
 vi.mock('./elasticsearch-config.js', () => ({
   getElasticsearchConfig: (...args: unknown[]) => mockGetElasticsearchConfig(...args),
 }));
 
-vi.mock('./portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
-vi.mock('./portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 const {
   resetElasticsearchLogForwarderState,
@@ -19,21 +18,56 @@ const {
   startElasticsearchLogForwarder,
   stopElasticsearchLogForwarder,
 } = await import('./elasticsearch-log-forwarder.js');
-import { getEndpoints, getContainers, getContainerLogs } from './portainer-client.js';
-import { cachedFetchSWR, cachedFetch } from './portainer-cache.js';
-const mockGetEndpoints = vi.mocked(getEndpoints);
-const mockGetContainers = vi.mocked(getContainers);
-const mockGetContainerLogs = vi.mocked(getContainerLogs);
-const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
-const mockCachedFetch = vi.mocked(cachedFetch);
+
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+let mockGetContainerLogs: any;
+let mockCachedFetchSWR: any;
+let mockCachedFetch: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('elasticsearch-log-forwarder', () => {
   const mockFetch = vi.fn();
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
     resetElasticsearchLogForwarderState();
     global.fetch = mockFetch;
+
+    // Bypass cache — calls fetcher directly
+    mockCachedFetchSWR = vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    mockCachedFetch = vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+
+    // Default portainer spies
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+      { Id: 1, Name: 'prod-endpoint' },
+    ] as any);
+
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
+      {
+        Id: 'container-1',
+        Names: ['/api'],
+        State: 'running',
+        Status: 'Up 10 minutes',
+        Image: 'api:latest',
+      },
+    ] as any);
+
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue(
+      '2026-02-07T12:00:00.000Z INFO Service started\n2026-02-07T12:00:01.000Z ERROR Connection timeout\n'
+    );
 
     mockGetElasticsearchConfig.mockResolvedValue({
       enabled: true,
@@ -42,24 +76,6 @@ describe('elasticsearch-log-forwarder', () => {
       indexPattern: 'logs-*',
       verifySsl: true,
     });
-
-    mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod-endpoint' },
-    ]);
-
-    mockGetContainers.mockResolvedValue([
-      {
-        Id: 'container-1',
-        Names: ['/api'],
-        State: 'running',
-        Status: 'Up 10 minutes',
-        Image: 'api:latest',
-      },
-    ]);
-
-    mockGetContainerLogs.mockResolvedValue(
-      '2026-02-07T12:00:00.000Z INFO Service started\n2026-02-07T12:00:01.000Z ERROR Connection timeout\n'
-    );
 
     mockFetch.mockResolvedValue({
       ok: true,

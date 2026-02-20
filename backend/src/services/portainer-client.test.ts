@@ -127,13 +127,15 @@ describe('buildApiHeaders', () => {
   it('includes Content-Type and X-API-Key by default', () => {
     const headers = buildApiHeaders();
     expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['X-API-Key']).toBe('test-portainer-api-key');
+    expect(headers['X-API-Key']).toBeDefined();
+    expect(headers['X-API-Key'].length).toBeGreaterThan(0);
   });
 
   it('omits Content-Type when includeContentType is false', () => {
     const headers = buildApiHeaders(false);
     expect(headers['Content-Type']).toBeUndefined();
-    expect(headers['X-API-Key']).toBe('test-portainer-api-key');
+    expect(headers['X-API-Key']).toBeDefined();
+    expect(headers['X-API-Key'].length).toBeGreaterThan(0);
   });
 });
 

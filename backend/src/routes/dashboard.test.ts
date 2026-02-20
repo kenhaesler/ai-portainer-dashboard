@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
@@ -7,21 +7,28 @@ const mockGetKpiHistory = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockGetLatestMetricsBatch = vi.fn();
 
+// Kept: kpi-store mock — avoids real DB lookup
 vi.mock('../services/kpi-store.js', () => ({
   getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
 }));
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-import { getEndpoints, getContainers } from '../services/portainer-client.js';
-const mockGetEndpoints = vi.mocked(getEndpoints);
-const mockGetContainers = vi.mocked(getContainers);
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 vi.mock('../services/portainer-normalizers.js', async () => {
   return {
@@ -90,8 +97,12 @@ async function buildApp() {
 }
 
 describe('Dashboard Routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
     mockGetSecurityAudit.mockResolvedValue([]);
   });
 

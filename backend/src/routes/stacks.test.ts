@@ -1,22 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { stacksRoutes } from './stacks.js';
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-import * as portainer from '../services/portainer-client.js';
+let mockGetEndpoints: any;
+let mockGetStack: any;
+let mockGetStacksByEndpoint: any;
+let mockGetContainers: any;
 
-const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
-const mockGetStack = vi.mocked(portainer.getStack);
-const mockGetStacksByEndpoint = vi.mocked(portainer.getStacksByEndpoint);
-const mockGetContainers = vi.mocked(portainer.getContainers);
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 function buildApp() {
   const app = Fastify();
@@ -71,8 +76,14 @@ const fakeContainer = (id: string, labels: Record<string, string> = {}) => ({
 });
 
 describe('stacks routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetStack = vi.spyOn(portainerClient, 'getStack');
+    mockGetStacksByEndpoint = vi.spyOn(portainerClient, 'getStacksByEndpoint');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
   });
 
   it('returns stacks from all up endpoints', async () => {

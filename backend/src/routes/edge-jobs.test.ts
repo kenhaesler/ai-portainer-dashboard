@@ -1,28 +1,34 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { edgeJobsRoutes } from './edge-jobs.js';
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-
+// Kept: audit-logger mock — avoids side effects from real audit log writes
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import * as portainer from '../services/portainer-client.js';
+import * as portainerClient from '../services/portainer-client.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-const mockGetEdgeJobs = vi.mocked(portainer.getEdgeJobs);
-const mockGetEdgeJob = vi.mocked(portainer.getEdgeJob);
-const mockCreateEdgeJob = vi.mocked(portainer.createEdgeJob);
-const mockDeleteEdgeJob = vi.mocked(portainer.deleteEdgeJob);
+let mockGetEdgeJobs: any;
+let mockGetEdgeJob: any;
+let mockCreateEdgeJob: any;
+let mockDeleteEdgeJob: any;
 const mockWriteAuditLog = vi.mocked(writeAuditLog);
+
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 function buildApp(currentRole: 'viewer' | 'operator' | 'admin' = 'admin') {
   const app = Fastify();
@@ -53,8 +59,14 @@ const fakeEdgeJob = (id: number, name: string) => ({
 });
 
 describe('edge-jobs routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEdgeJobs = vi.spyOn(portainerClient, 'getEdgeJobs');
+    mockGetEdgeJob = vi.spyOn(portainerClient, 'getEdgeJob');
+    mockCreateEdgeJob = vi.spyOn(portainerClient, 'createEdgeJob');
+    mockDeleteEdgeJob = vi.spyOn(portainerClient, 'deleteEdgeJob');
   });
 
   describe('GET /api/edge-jobs', () => {

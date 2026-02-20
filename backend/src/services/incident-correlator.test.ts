@@ -4,21 +4,19 @@ import { correlateInsights } from './incident-correlator.js';
 import type { Insight } from '../models/monitoring.js';
 import { insertIncident, addInsightToIncident, getActiveIncidentForContainer } from './incident-store.js';
 
-// Mock the stores
+// Kept: DB-backed store mock — incident-store writes to PostgreSQL
 vi.mock('./incident-store.js', () => ({
   insertIncident: vi.fn(() => Promise.resolve()),
   addInsightToIncident: vi.fn(() => Promise.resolve()),
   getActiveIncidentForContainer: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('./llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
-
+// Kept: internal service mock — alert similarity computation
 vi.mock('./alert-similarity.js', () => ({
   findSimilarInsights: vi.fn(() => []),
 }));
 
+// Kept: internal service mock — incident summarizer (tests correlation, not summarization)
 vi.mock('./incident-summarizer.js', () => ({
   generateLlmIncidentSummary: vi.fn(() => Promise.resolve(null)),
 }));
@@ -130,7 +128,6 @@ describe('incident-correlator', () => {
       ];
 
       const result = await correlateInsights(insights);
-      // No cascade created — same metric type on all containers
       expect(result.incidentsCreated).toBe(0);
       expect(result.insightsUngrouped).toBe(3);
     });
@@ -176,7 +173,6 @@ describe('incident-correlator', () => {
       ];
 
       const result = await correlateInsights(insights);
-      // Two singles on different endpoints — no cascade possible
       expect(result.incidentsCreated).toBe(0);
       expect(result.insightsUngrouped).toBe(2);
     });

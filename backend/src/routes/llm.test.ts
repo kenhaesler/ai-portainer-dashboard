@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmRoutes } from './llm.js';
@@ -32,19 +32,17 @@ vi.mock('ollama', () => ({
   })),
 }));
 
-// Mock portainer
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
+// Kept: normalizers mock — provides deterministic normalization for test assertions
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: vi.fn((ep: any) => ep),
   normalizeContainer: vi.fn((c: any) => c),
 }));
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 // Mock prompt-store
 vi.mock('../services/prompt-store.js', () => ({
@@ -89,10 +87,20 @@ vi.mock('../services/llm-client.js', () => ({
 
 // Mock logger
 
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
 describe('LLM Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
     vi.clearAllMocks();
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);

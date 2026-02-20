@@ -6,24 +6,24 @@ import { healthRoutes } from './health.js';
 
 vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
 
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
-import { cache, cachedFetch } from '../services/portainer-cache.js';
-import { checkPortainerReachable } from '../services/portainer-client.js';
-const mockCachedFetch = vi.mocked(cachedFetch);
-const mockCheckPortainer = vi.mocked(checkPortainerReachable);
+import * as portainerCache from '../services/portainer-cache.js';
+import * as portainerClient from '../services/portainer-client.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
+const { cache, waitForInFlight } = portainerCache;
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);
 const mockIsMetricsDbReady = vi.mocked(isMetricsDbReady);
 const mockIsAppDbHealthy = vi.mocked(isAppDbHealthy);
 const mockIsAppDbReady = vi.mocked(isAppDbReady);
-const mockCache = vi.mocked(cache);
+let mockCachedFetch: any;
+let mockCheckPortainer: any;
+let mockCacheGetBackoffState: any;
+let mockCachePing: any;
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
@@ -37,22 +37,31 @@ describe('Health Routes', () => {
     await app.register(healthRoutes);
     await app.ready();
   });
-  afterAll(async () => { await app.close(); });
-  beforeEach(() => {
+  afterAll(async () => {
+    await app.close();
+    await closeTestRedis();
+  });
+  afterEach(async () => {
+    resetConfig();
+    await waitForInFlight();
+  });
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
     vi.clearAllMocks();
+    mockCachedFetch = vi.spyOn(portainerCache, 'cachedFetch');
+    mockCheckPortainer = vi.spyOn(portainerClient, 'checkPortainerReachable');
+    mockCacheGetBackoffState = vi.spyOn(cache, 'getBackoffState');
+    mockCachePing = vi.spyOn(cache, 'ping');
     setConfigForTest({ OLLAMA_BASE_URL: 'http://localhost:11434' });
     // Default: migrations applied, Redis not configured
     mockIsAppDbHealthy.mockResolvedValue(true);
     mockIsAppDbReady.mockReturnValue(true);
     mockIsMetricsDbReady.mockReturnValue(true);
-    mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
-    mockCache.ping.mockResolvedValue(false);
+    mockCacheGetBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
+    mockCachePing.mockResolvedValue(false);
     // Default: Portainer reachable and ok
     mockCheckPortainer.mockResolvedValue({ reachable: true, ok: true });
-  });
-
-  afterEach(() => {
-    resetConfig();
   });
 
   describe('GET /health', () => {
@@ -180,8 +189,8 @@ describe('Health Routes', () => {
     it('should include Redis as healthy when configured and ping succeeds', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
-      mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: true });
-      mockCache.ping.mockResolvedValue(true);
+      mockCacheGetBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: true });
+      mockCachePing.mockResolvedValue(true);
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('healthy');
@@ -191,8 +200,8 @@ describe('Health Routes', () => {
     it('should include Redis as degraded when configured and ping fails', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
-      mockCache.getBackoffState.mockReturnValue({ failureCount: 3, disabledUntil: Date.now() + 10000, configured: true });
-      mockCache.ping.mockResolvedValue(false);
+      mockCacheGetBackoffState.mockReturnValue({ failureCount: 3, disabledUntil: Date.now() + 10000, configured: true });
+      mockCachePing.mockResolvedValue(false);
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.status).toBe('degraded');
@@ -201,7 +210,7 @@ describe('Health Routes', () => {
     it('should not include Redis when not configured', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
-      mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
+      mockCacheGetBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: false });
       const r = await app.inject({ method: 'GET', url: '/health/ready' });
       const b = JSON.parse(r.body);
       expect(b.checks.redis).toBeUndefined();
@@ -271,8 +280,8 @@ describe('Health Routes', () => {
     it('should include Redis detail when configured and healthy', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
-      mockCache.getBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: true });
-      mockCache.ping.mockResolvedValue(true);
+      mockCacheGetBackoffState.mockReturnValue({ failureCount: 0, disabledUntil: 0, configured: true });
+      mockCachePing.mockResolvedValue(true);
       const r = await app.inject({ method: 'GET', url: '/health/ready/detail' });
       const b = JSON.parse(r.body);
       expect(b.checks.redis).toBeDefined();
@@ -281,8 +290,8 @@ describe('Health Routes', () => {
     it('should include Redis error detail when ping fails', async () => {
       mockIsMetricsDbHealthy.mockResolvedValue(true);
       mockFetch.mockResolvedValue({ ok: true });
-      mockCache.getBackoffState.mockReturnValue({ failureCount: 2, disabledUntil: Date.now() + 5000, configured: true });
-      mockCache.ping.mockResolvedValue(false);
+      mockCacheGetBackoffState.mockReturnValue({ failureCount: 2, disabledUntil: Date.now() + 5000, configured: true });
+      mockCachePing.mockResolvedValue(false);
       const r = await app.inject({ method: 'GET', url: '/health/ready/detail' });
       const b = JSON.parse(r.body);
       expect(b.checks.redis.status).toBe('degraded');

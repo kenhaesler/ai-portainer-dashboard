@@ -69,13 +69,9 @@ function createMockRedisClient() {
       '# Stats',
       'evicted_keys:0',
     ].join('\r\n')),
-    scanIterator: vi.fn(async function* scanIterator({ MATCH }: { MATCH: string }) {
-      const prefix = MATCH.replace('*', '');
-      for (const key of store.keys()) {
-        if (key.startsWith(prefix)) {
-          yield key;
-        }
-      }
+    keys: vi.fn(async (pattern: string) => {
+      const prefix = pattern.replace('*', '');
+      return [...store.keys()].filter((k) => k.startsWith(prefix));
     }),
   };
 }

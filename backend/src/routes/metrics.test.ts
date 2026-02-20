@@ -28,19 +28,18 @@ vi.mock('../services/lttb-decimator.js', () => ({
   decimateLTTB: vi.fn((data: unknown[]) => data),
 }));
 
-vi.mock('../services/llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
 import { getNetworkRates } from '../services/metrics-store.js';
-import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
+import * as llmClient from '../services/llm-client.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);
-const mockChatStream = vi.mocked(chatStream);
-const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
+let mockChatStream: any;
+let mockIsOllamaAvailable: any;
 
 function buildApp() {
   const app = Fastify();
@@ -65,6 +64,8 @@ describe('metrics routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable');
     mockQuery.mockResolvedValue({ rows: [] });
   });
 

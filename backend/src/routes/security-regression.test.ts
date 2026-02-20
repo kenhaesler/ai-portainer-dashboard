@@ -11,7 +11,7 @@
  *
  * @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/430
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
@@ -130,9 +130,8 @@ vi.mock('../services/oidc.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: vi.fn((e: unknown) => e),
@@ -141,9 +140,8 @@ vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeNetwork: vi.fn((n: unknown) => n),
 }));
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../services/settings-store.js', () => ({
   getEffectiveLlmConfig: vi.fn(() => ({
@@ -221,9 +219,8 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   lookupContainerName: vi.fn(() => 'test-container'),
 }));
 
-vi.mock('../services/llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
@@ -390,6 +387,10 @@ import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
 import { edgeJobsRoutes } from './edge-jobs.js';
 
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../services/portainer-client.js';
+
 // ─── Known Public Routes ────────────────────────────────────────────────
 // Routes that are intentionally accessible without a Bearer token.
 // Fastify auto-adds HEAD for every GET, so include HEAD variants too.
@@ -482,7 +483,18 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
 // =====================================================================
 //  1. AUTH ENFORCEMENT SWEEP
 // =====================================================================
-beforeAll(() => {
+beforeAll(async () => {
+  // Default spies on portainer-client to prevent real HTTP calls in RBAC tests
+  vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'getImages').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'restartContainer').mockResolvedValue(undefined);
+  vi.spyOn(portainerClient, 'stopContainer').mockResolvedValue(undefined);
+  vi.spyOn(portainerClient, 'startContainer').mockResolvedValue(undefined);
+  vi.spyOn(portainerClient, 'checkPortainerReachable').mockResolvedValue({ reachable: true, ok: true });
+  await cache.clear();
+  await flushTestCache();
   setConfigForTest({
     PORTAINER_API_URL: 'http://localhost:9000',
     PORTAINER_VERIFY_SSL: true,
@@ -545,8 +557,13 @@ beforeAll(() => {
   });
 });
 
-afterAll(() => {
+afterAll(async () => {
   resetConfig();
+  await closeTestRedis();
+});
+
+afterEach(async () => {
+  await waitForInFlight();
 });
 
 describe('Auth Enforcement Sweep', () => {

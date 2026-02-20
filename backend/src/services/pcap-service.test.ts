@@ -1,10 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
-vi.mock('./portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
-
 const mockInsertCapture = vi.fn().mockResolvedValue(undefined);
 const mockUpdateCaptureStatus = vi.fn().mockResolvedValue(undefined);
 const mockGetCapture = vi.fn().mockResolvedValue(undefined);
@@ -12,6 +8,7 @@ const mockGetCaptures = vi.fn().mockResolvedValue([]);
 const mockGetCapturesCount = vi.fn().mockResolvedValue(0);
 const mockDeleteCapture = vi.fn().mockResolvedValue(true);
 const mockCleanOldCaptures = vi.fn().mockResolvedValue(0);
+// Kept: DB-backed store mock — pcap-store writes to PostgreSQL
 vi.mock('./pcap-store.js', () => ({
   insertCapture: (...args: unknown[]) => mockInsertCapture(...args),
   updateCaptureStatus: (...args: unknown[]) => mockUpdateCaptureStatus(...args),
@@ -22,6 +19,7 @@ vi.mock('./pcap-store.js', () => ({
   cleanOldCaptures: (...args: unknown[]) => mockCleanOldCaptures(...args),
 }));
 
+// Kept: filesystem mock — prevents real disk writes during tests
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn().mockReturnValue(true),
@@ -33,11 +31,7 @@ vi.mock('fs', () => ({
 
 const { buildTcpdumpCommand, extractFromTar, startCapture, stopCapture, getCaptureById, deleteCaptureById } =
   await import('./pcap-service.js');
-import { createExec, startExec, inspectExec, getArchive } from './portainer-client.js';
-const mockCreateExec = vi.mocked(createExec);
-const mockStartExec = vi.mocked(startExec);
-const mockInspectExec = vi.mocked(inspectExec);
-const mockGetArchive = vi.mocked(getArchive);
+import * as portainer from './portainer-client.js';
 
 
 beforeAll(() => {
@@ -57,7 +51,7 @@ afterAll(() => {
 
 describe('pcap-service', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     mockGetCapturesCount.mockResolvedValue(0);
   });
 
@@ -166,8 +160,8 @@ describe('pcap-service', () => {
 
     it('should create exec and start polling on success', async () => {
       mockGetCapturesCount.mockResolvedValue(0);
-      mockCreateExec.mockResolvedValue({ Id: 'exec-123' });
-      mockStartExec.mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'createExec').mockResolvedValue({ Id: 'exec-123' });
+      vi.spyOn(portainer, 'startExec').mockResolvedValue(undefined);
       mockGetCapture.mockResolvedValue({
         id: 'capture-id',
         status: 'capturing',
@@ -193,8 +187,8 @@ describe('pcap-service', () => {
           duration_seconds: 60,
         }),
       );
-      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc123', expect.arrayContaining(['sh', '-c']), { user: 'root' });
-      expect(mockStartExec).toHaveBeenCalledWith(1, 'exec-123');
+      expect(portainer.createExec).toHaveBeenCalledWith(1, 'abc123', expect.arrayContaining(['sh', '-c']), { user: 'root' });
+      expect(portainer.startExec).toHaveBeenCalledWith(1, 'exec-123');
       expect(mockUpdateCaptureStatus).toHaveBeenCalledWith(
         expect.any(String),
         'capturing',
@@ -205,8 +199,8 @@ describe('pcap-service', () => {
 
     it('should enforce max duration from config', async () => {
       mockGetCapturesCount.mockResolvedValue(0);
-      mockCreateExec.mockResolvedValue({ Id: 'exec-123' });
-      mockStartExec.mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'createExec').mockResolvedValue({ Id: 'exec-123' });
+      vi.spyOn(portainer, 'startExec').mockResolvedValue(undefined);
       mockGetCapture.mockResolvedValue({ id: 'x', status: 'capturing' });
 
       await startCapture({
@@ -223,7 +217,7 @@ describe('pcap-service', () => {
 
     it('should mark as failed when exec creation fails', async () => {
       mockGetCapturesCount.mockResolvedValue(0);
-      mockCreateExec.mockRejectedValue(new Error('Container not found'));
+      vi.spyOn(portainer, 'createExec').mockRejectedValue(new Error('Container not found'));
 
       await expect(startCapture({
         endpointId: 1,
@@ -252,19 +246,19 @@ describe('pcap-service', () => {
 
     it('should send pkill and update status', async () => {
       // First call: stopCapture checks status
-      // Second call: stopCaptureInternal → downloadAndProcessCapture → getCapture for status check after processing
+      // Second call: stopCaptureInternal -> downloadAndProcessCapture -> getCapture for status check after processing
       // Third call: final getCapture at end of stopCapture
       mockGetCapture
         .mockResolvedValueOnce({ id: 'x', status: 'capturing', endpoint_id: 1, container_id: 'abc' })
         .mockResolvedValueOnce({ id: 'x', status: 'complete', endpoint_id: 1, container_id: 'abc' })
         .mockResolvedValueOnce({ id: 'x', status: 'succeeded', endpoint_id: 1, container_id: 'abc' });
-      mockCreateExec.mockResolvedValue({ Id: 'kill-exec' });
-      mockStartExec.mockResolvedValue(undefined);
-      mockGetArchive.mockRejectedValue(new Error('no file'));
+      vi.spyOn(portainer, 'createExec').mockResolvedValue({ Id: 'kill-exec' });
+      vi.spyOn(portainer, 'startExec').mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'getArchive').mockRejectedValue(new Error('no file'));
 
       const result = await stopCapture('x');
 
-      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc', ['pkill', '-f', 'capture_x'], { user: 'root' });
+      expect(portainer.createExec).toHaveBeenCalledWith(1, 'abc', ['pkill', '-f', 'capture_x'], { user: 'root' });
       expect(result.status).toBe('succeeded');
     });
   });

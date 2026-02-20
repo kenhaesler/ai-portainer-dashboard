@@ -1,30 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Kept: prompt-store mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('./llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
-
-vi.mock('./portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
-vi.mock('./portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-
 import { analyzeContainerLogs, analyzeLogsForContainers } from './log-analyzer.js';
-import { getContainerLogs } from './portainer-client.js';
-import { chatStream } from './llm-client.js';
-const mockGetContainerLogs = vi.mocked(getContainerLogs);
-const mockChatStream = vi.mocked(chatStream);
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import * as llmClient from './llm-client.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockGetContainerLogs: any;
+let mockChatStream: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('log-analyzer', () => {
-  beforeEach(() => {
-    mockChatStream.mockReset();
-    mockGetContainerLogs.mockReset();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    // Re-set prompt-store default cleared by restoreAllMocks
+    const { getEffectivePrompt } = await import('./prompt-store.js');
+    vi.mocked(getEffectivePrompt).mockReturnValue('You are a test assistant.');
+    // Bypass cache — delegates to fetcher
+    vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs');
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
   });
 
   it('returns analysis when logs contain errors', async () => {

@@ -1,17 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { InsightInsert } from './insights-store.js';
 
+// Kept: prompt template mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('./llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
+import * as llmClient from './llm-client.js';
 
 const { explainAnomaly, explainAnomalies } = await import('./anomaly-explainer.js');
-import { chatStream } from './llm-client.js';
-const mockChatStream = vi.mocked(chatStream);
 
 function makeInsight(overrides?: Partial<InsightInsert>): InsightInsert {
   return {
@@ -36,7 +33,7 @@ describe('anomaly-explainer', () => {
 
   describe('explainAnomaly', () => {
     it('returns explanation on success', async () => {
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('The CPU usage is significantly above normal. ');
           onChunk('This likely indicates a runaway process.');
@@ -50,8 +47,8 @@ describe('anomaly-explainer', () => {
       expect(result).toBe(
         'The CPU usage is significantly above normal. This likely indicates a runaway process.',
       );
-      expect(mockChatStream).toHaveBeenCalledOnce();
-      expect(mockChatStream).toHaveBeenCalledWith(
+      expect(llmClient.chatStream).toHaveBeenCalledOnce();
+      expect(llmClient.chatStream).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ role: 'user' }),
         ]),
@@ -61,7 +58,7 @@ describe('anomaly-explainer', () => {
     });
 
     it('returns null on LLM failure', async () => {
-      mockChatStream.mockRejectedValue(new Error('Ollama connection refused'));
+      vi.spyOn(llmClient, 'chatStream').mockRejectedValue(new Error('Ollama connection refused'));
 
       const insight = makeInsight();
       const result = await explainAnomaly(insight, 'Current cpu: 95.0%');
@@ -70,7 +67,7 @@ describe('anomaly-explainer', () => {
     });
 
     it('returns null on empty response', async () => {
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, _onChunk: unknown) => '',
       );
 
@@ -82,7 +79,7 @@ describe('anomaly-explainer', () => {
 
     it('truncates explanation to 500 chars', async () => {
       const longText = 'x'.repeat(600);
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk(longText);
           return '';
@@ -98,7 +95,7 @@ describe('anomaly-explainer', () => {
 
   describe('explainAnomalies', () => {
     it('uses single call for 1 anomaly', async () => {
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('Single explanation');
           return '';
@@ -113,11 +110,11 @@ describe('anomaly-explainer', () => {
 
       expect(result.size).toBe(1);
       expect(result.get('a1')).toBe('Single explanation');
-      expect(mockChatStream).toHaveBeenCalledOnce();
+      expect(llmClient.chatStream).toHaveBeenCalledOnce();
     });
 
     it('batches multiple anomalies into one LLM call', async () => {
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('[1] CPU spike from a runaway process.\n[2] Memory leak detected.\n[3] Disk IO contention.');
           return '';
@@ -132,8 +129,7 @@ describe('anomaly-explainer', () => {
 
       const result = await explainAnomalies(anomalies, 5);
 
-      // One batch call, all 3 explained
-      expect(mockChatStream).toHaveBeenCalledOnce();
+      expect(llmClient.chatStream).toHaveBeenCalledOnce();
       expect(result.size).toBe(3);
       expect(result.get('a1')).toBe('CPU spike from a runaway process.');
       expect(result.get('a2')).toBe('Memory leak detected.');
@@ -141,7 +137,7 @@ describe('anomaly-explainer', () => {
     });
 
     it('respects maxExplanations limit', async () => {
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           onChunk('[1] Explanation one.\n[2] Explanation two.');
           return '';
@@ -156,16 +152,14 @@ describe('anomaly-explainer', () => {
 
       const result = await explainAnomalies(anomalies, 2);
 
-      // Only 2 anomalies sent to LLM, 1 batch call
-      expect(mockChatStream).toHaveBeenCalledOnce();
+      expect(llmClient.chatStream).toHaveBeenCalledOnce();
       expect(result.size).toBe(2);
     });
 
     it('prioritizes critical over warning in batch', async () => {
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (msgs: Array<{ content: string }>, _sys: unknown, onChunk: (c: string) => void) => {
           const content = msgs[0]?.content ?? '';
-          // Verify critical container appears before warning in the batch prompt
           const criticalIdx = content.indexOf('critical-container');
           const warningIdx = content.indexOf('warning-container');
           expect(criticalIdx).toBeLessThan(warningIdx);
@@ -192,15 +186,13 @@ describe('anomaly-explainer', () => {
 
     it('falls back to individual calls when batch parsing fails partially', async () => {
       let callCount = 0;
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           callCount++;
           if (callCount === 1) {
-            // Batch response only has [1], missing [2]
             onChunk('[1] First explanation.');
             return '';
           }
-          // Fallback individual call for the second anomaly
           onChunk('Fallback explanation for second.');
           return '';
         },
@@ -213,8 +205,7 @@ describe('anomaly-explainer', () => {
 
       const result = await explainAnomalies(anomalies, 5);
 
-      // 1 batch call + 1 fallback individual call
-      expect(mockChatStream).toHaveBeenCalledTimes(2);
+      expect(llmClient.chatStream).toHaveBeenCalledTimes(2);
       expect(result.size).toBe(2);
       expect(result.get('a1')).toBe('First explanation.');
       expect(result.get('a2')).toBe('Fallback explanation for second.');
@@ -222,7 +213,7 @@ describe('anomaly-explainer', () => {
 
     it('falls back entirely to individual calls when batch fails', async () => {
       let callCount = 0;
-      mockChatStream.mockImplementation(
+      vi.spyOn(llmClient, 'chatStream').mockImplementation(
         async (_msgs: unknown, _sys: unknown, onChunk: (c: string) => void) => {
           callCount++;
           if (callCount === 1) throw new Error('Batch LLM error');
@@ -238,15 +229,15 @@ describe('anomaly-explainer', () => {
 
       const result = await explainAnomalies(anomalies, 5);
 
-      // 1 failed batch + 2 individual calls
-      expect(mockChatStream).toHaveBeenCalledTimes(3);
+      expect(llmClient.chatStream).toHaveBeenCalledTimes(3);
       expect(result.size).toBe(2);
     });
 
     it('returns empty map for empty input', async () => {
+      const chatSpy = vi.spyOn(llmClient, 'chatStream');
       const result = await explainAnomalies([], 5);
       expect(result.size).toBe(0);
-      expect(mockChatStream).not.toHaveBeenCalled();
+      expect(chatSpy).not.toHaveBeenCalled();
     });
   });
 });

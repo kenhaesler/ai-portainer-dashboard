@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 import { Agent } from 'undici';
 import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, type LlmAuthType } from './llm-client.js';
-import { getEffectiveLlmConfig } from './settings-store.js';
+import { Ollama } from 'ollama';
 
-// Mock settings-store
+// Kept: settings-store mock — tests control LLM config
 const mockGetConfig = vi.fn().mockReturnValue({
   ollamaUrl: 'http://localhost:11434',
   model: 'llama3.2',
@@ -19,34 +19,39 @@ vi.mock('./settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 
-// Mock undici — llmFetch uses undici's fetch (not global fetch) so
-// the `dispatcher` option is honored for SSL bypass.
+// Kept: undici mock — tests control fetch for SSL bypass and custom endpoint tests
 const mockUndiciFetch = vi.fn();
 vi.mock('undici', () => ({
   Agent: vi.fn(),
   fetch: (...args: unknown[]) => mockUndiciFetch(...args),
 }));
 
-// Mock llm-trace-store
+// Kept: llm-trace-store mock — tests control trace recording
 const mockInsertLlmTrace = vi.fn();
 vi.mock('./llm-trace-store.js', () => ({
   insertLlmTrace: (...args: unknown[]) => mockInsertLlmTrace(...args),
 }));
 
-// Mock Ollama
-const mockChat = vi.fn();
-vi.mock('ollama', () => ({
-  Ollama: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: vi.fn(),
-  })),
-}));
-
-// Mock logger
+let mockChat: any;
 
 describe('llm-client', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    // Re-set forwarding-target defaults cleared by restoreAllMocks
+    mockGetConfig.mockReturnValue({
+      ollamaUrl: 'http://localhost:11434',
+      model: 'llama3.2',
+      customEnabled: false,
+      customEndpointUrl: undefined,
+      customEndpointToken: undefined,
+      authType: 'bearer' as LlmAuthType,
+      maxTokens: 2048,
+      maxToolIterations: 5,
+    });
+    // Spy on real Ollama prototype methods
+    mockChat = vi.spyOn(Ollama.prototype, 'chat');
+    vi.spyOn(Ollama.prototype, 'list').mockResolvedValue({ models: [] } as any);
+    vi.spyOn(Ollama.prototype, 'pull').mockResolvedValue({} as any);
     setConfigForTest({ LLM_VERIFY_SSL: true, LLM_REQUEST_TIMEOUT: 120000 });
   });
 

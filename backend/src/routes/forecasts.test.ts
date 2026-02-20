@@ -13,12 +13,11 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
 }));
 
-vi.mock('../services/llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
-import { chatStream } from '../services/llm-client.js';
-const mockChatStream = vi.mocked(chatStream);
+import * as llmClient from '../services/llm-client.js';
+let mockChatStream: any;
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a concise infrastructure analyst.'),
@@ -28,7 +27,8 @@ describe('Forecast Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
     clearNarrativeCache();
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);

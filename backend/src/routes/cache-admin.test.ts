@@ -3,18 +3,15 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { cacheAdminRoutes } from './cache-admin.js';
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-
+// Kept: audit-logger mock — avoids side effects from real audit log writes
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
 import { cache } from '../services/portainer-cache.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-const mockCache = vi.mocked(cache);
 const mockWriteAuditLog = vi.mocked(writeAuditLog);
 
 describe('Cache Admin Routes', () => {
@@ -48,16 +45,18 @@ describe('Cache Admin Routes', () => {
 
   afterAll(async () => {
     await app.close();
+    await closeTestRedis();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     currentRole = 'admin';
-    vi.clearAllMocks();
+    await cache.clear();
+    vi.restoreAllMocks();
   });
 
   describe('GET /api/admin/cache/stats', () => {
     it('returns cache statistics and entries', async () => {
-      mockCache.getStats.mockResolvedValue({
+      vi.spyOn(cache, 'getStats').mockResolvedValue({
         size: 5,
         l1Size: 5,
         l2Size: 0,
@@ -67,11 +66,11 @@ describe('Cache Admin Routes', () => {
         backend: 'memory-only',
         compression: { compressedCount: 0, bytesSaved: 0, threshold: 10000 },
         redis: null,
-      });
-      mockCache.getEntries.mockResolvedValue([
+      } as any);
+      vi.spyOn(cache, 'getEntries').mockResolvedValue([
         { key: 'endpoints', expiresIn: 120 },
         { key: 'containers:1', expiresIn: 45 },
-      ]);
+      ] as any);
 
       const response = await app.inject({
         method: 'GET',
@@ -105,6 +104,8 @@ describe('Cache Admin Routes', () => {
 
   describe('POST /api/admin/cache/clear', () => {
     it('clears cache and writes audit log', async () => {
+      const clearSpy = vi.spyOn(cache, 'clear');
+
       const response = await app.inject({
         method: 'POST',
         url: '/api/admin/cache/clear',
@@ -114,7 +115,7 @@ describe('Cache Admin Routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
-      expect(mockCache.clear).toHaveBeenCalledTimes(1);
+      expect(clearSpy).toHaveBeenCalledTimes(1);
       expect(mockWriteAuditLog).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'cache.clear',
@@ -139,6 +140,8 @@ describe('Cache Admin Routes', () => {
 
   describe('POST /api/admin/cache/invalidate', () => {
     it('invalidates cache pattern and writes audit log', async () => {
+      const invalidateSpy = vi.spyOn(cache, 'invalidatePattern');
+
       const response = await app.inject({
         method: 'POST',
         url: '/api/admin/cache/invalidate?resource=containers',
@@ -149,7 +152,7 @@ describe('Cache Admin Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
       expect(body.resource).toBe('containers');
-      expect(mockCache.invalidatePattern).toHaveBeenCalledWith('containers');
+      expect(invalidateSpy).toHaveBeenCalledWith('containers');
       expect(mockWriteAuditLog).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'cache.invalidate',

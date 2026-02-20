@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Default config values used in tests
@@ -22,15 +22,9 @@ const defaultConfig = {
   AI_ANALYSIS_ENABLED: false, // disabled by default in tests to avoid async side-effects
 };
 
-// Mock all dependencies
+// Kept mocks — internal services the monitoring cycle depends on
 
-vi.mock('./portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
-vi.mock('./portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-
+// Kept: portainer-normalizers mock — tests control normalization
 vi.mock('./portainer-normalizers.js', () => ({
   normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0, capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true } }),
   normalizeContainer: (c: unknown, endpointId: number, endpointName: string) => ({
@@ -95,10 +89,7 @@ vi.mock('./insights-store.js', () => ({
   getRecentInsights: (...args: unknown[]) => mockGetRecentInsights(...args),
 }));
 
-vi.mock('./llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
-
+// Kept: remediation-service mock — tests don't exercise remediation
 vi.mock('./remediation-service.js', () => ({
   suggestAction: () => null,
 }));
@@ -137,16 +128,20 @@ vi.mock('./incident-correlator.js', () => ({
 }));
 
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('./monitoring-service.js');
-import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from './portainer-client.js';
-import { cachedFetchSWR } from './portainer-cache.js';
-import { isOllamaAvailable, chatStream } from './llm-client.js';
-const mockGetEndpoints = vi.mocked(getEndpoints);
-const mockGetContainers = vi.mocked(getContainers);
-const mockIsEndpointDegraded = vi.mocked(isEndpointDegraded);
-const mockIsCircuitOpen = vi.mocked(isCircuitOpen);
-const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
-const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
-const mockChatStream = vi.mocked(chatStream);
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import * as llmClient from './llm-client.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+// Spy references — assigned in beforeEach
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+let mockIsEndpointDegraded: any;
+let mockIsCircuitOpen: any;
+let mockCachedFetchSWR: any;
+let mockIsOllamaAvailable: any;
+let mockChatStream: any;
 
 /** Helper: extract insights from the batch insertInsights call */
 function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {
@@ -154,11 +149,20 @@ function getInsertedInsights(): Array<{ category: string; severity: string; desc
   return mockInsertInsights.mock.calls[0][0] as any[];
 }
 
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
 describe('monitoring-service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetEndpoints.mockResolvedValue([]);
-    mockGetContainers.mockResolvedValue([]);
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+
+    // Re-set forwarding-target mock defaults cleared by restoreAllMocks
     mockGetLatestMetricsBatch.mockImplementation(
       async (containerIds: string[]) => {
         const map = new Map<string, Record<string, number>>();
@@ -169,7 +173,6 @@ describe('monitoring-service', () => {
       },
     );
     mockDetectAnomalyAdaptive.mockReturnValue(null);
-    // Re-apply the delegating implementation (clearAllMocks removes it)
     mockDetectAnomaliesBatch.mockImplementation(
       async (items: Array<{ containerId: string; containerName: string; metricType: string; currentValue: number }>) => {
         const results = new Map();
@@ -182,21 +185,46 @@ describe('monitoring-service', () => {
         return results;
       },
     );
-    mockIsOllamaAvailable.mockResolvedValue(false);
-    mockGetCapacityForecasts.mockReturnValue([]);
-    mockExplainAnomalies.mockResolvedValue(new Map());
-    // Re-apply the default insertInsights implementation (returns all IDs as inserted)
     mockInsertInsights.mockImplementation(
       async (insights: Array<{ id: string }>) => new Set(insights.map((i) => i.id)),
     );
+    mockGetRecentInsights.mockReturnValue([]);
     mockTriggerInvestigation.mockResolvedValue(undefined);
     mockCorrelateInsights.mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });
-    // Re-apply the default cachedFetchSWR implementation (tests may override it)
-    mockCachedFetchSWR.mockImplementation(
-      (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    mockGetCapacityForecasts.mockReturnValue([]);
+    mockExplainAnomalies.mockResolvedValue(new Map());
+
+    // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
+    const isoForest = await import('./isolation-forest-detector.js');
+    vi.mocked(isoForest.detectAnomalyIsolationForest).mockReturnValue(null as any);
+    const logAnalyzer = await import('./log-analyzer.js');
+    vi.mocked(logAnalyzer.analyzeLogsForContainers).mockResolvedValue([] as any);
+    const notifService = await import('./notification-service.js');
+    vi.mocked(notifService.notifyInsight).mockResolvedValue(undefined as any);
+    const telemetryStore = await import('./monitoring-telemetry-store.js');
+    vi.mocked(telemetryStore.insertMonitoringCycle).mockResolvedValue(undefined as any);
+    vi.mocked(telemetryStore.insertMonitoringSnapshot).mockResolvedValue(undefined as any);
+
+    // Create portainer spies
+    mockCachedFetchSWR = vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
     );
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as any);
+    mockIsEndpointDegraded = vi.spyOn(portainerClient, 'isEndpointDegraded').mockReturnValue(false);
+    mockIsCircuitOpen = vi.spyOn(portainerClient, 'isCircuitOpen').mockReturnValue(false);
+
+    // Create LLM spies
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
+
     setConfigForTest(defaultConfig);
     resetPreviousCycleStats();
+    // Reset namespace so stale mock objects don't leak between tests
+    setMonitoringNamespace(null as any);
   });
 
   afterEach(() => {

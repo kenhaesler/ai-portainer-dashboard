@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
@@ -8,20 +8,25 @@ const mockNormalizeContainer = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockBuildSecurityAuditSummary = vi.fn();
 
-vi.mock('../services/portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-import { getEndpoints, getContainers } from '../services/portainer-client.js';
-import { cachedFetchSWR } from '../services/portainer-cache.js';
-const mockGetEndpoints = vi.mocked(getEndpoints);
-const mockGetContainers = vi.mocked(getContainers);
-const mockCachedFetchSWR = vi.mocked(cachedFetchSWR);
+let mockGetEndpoints: any;
+let mockGetContainers: any;
 
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
+// Kept: normalizers mock — provides deterministic normalization for test assertions
 vi.mock('../services/portainer-normalizers.js', () => ({
   normalizeEndpoint: (...args: unknown[]) => mockNormalizeEndpoint(...args),
   normalizeContainer: (...args: unknown[]) => mockNormalizeContainer(...args),
@@ -33,9 +38,12 @@ vi.mock('../services/security-audit.js', () => ({
 }));
 
 describe('Dashboard Summary Route', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCachedFetchSWR.mockImplementation(async (_key, _ttl, fetcher: () => Promise<unknown>) => fetcher());
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
     mockBuildSecurityAuditSummary.mockReturnValue({ totalAudited: 0, flagged: 0, ignored: 0 });
     mockGetSecurityAudit.mockResolvedValue([]);
   });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import {
   buildSecurityAuditSummary,
   getSecurityAudit,
@@ -12,42 +12,44 @@ import { CircuitBreakerOpenError } from './circuit-breaker.js';
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
 
-vi.mock('./portainer-client.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerClientMock()
-);
-
-vi.mock('./circuit-breaker.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('./circuit-breaker.js')>();
-  return { ...original };
-});
-
-vi.mock('./portainer-cache.js', async () =>
-  (await import('../test-utils/mock-portainer.js')).createPortainerCacheMock()
-);
-
+// Kept: settings-store mock — tests control settings responses
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
 }));
 
-import { getEndpoints, getContainers, getContainerHostConfig } from './portainer-client.js';
-import { cachedFetch } from './portainer-cache.js';
-const mockGetEndpoints = vi.mocked(getEndpoints);
-const mockGetContainers = vi.mocked(getContainers);
-const mockGetContainerHostConfig = vi.mocked(getContainerHostConfig);
-const mockCachedFetch = vi.mocked(cachedFetch);
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+let mockGetContainerHostConfig: any;
+let mockCachedFetch: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('security-audit service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
     mockGetSetting.mockResolvedValue(undefined);
     mockSetSetting.mockResolvedValue(undefined);
-    // cachedFetch delegates to the fetcher function (3rd arg)
-    mockCachedFetch.mockImplementation((_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
+    // Spy on cachedFetch — delegates to fetcher function (3rd arg)
+    mockCachedFetch = vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+    );
 
-    mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([{ Id: 1, Name: 'prod' }] as any);
     // List endpoint returns sparse HostConfig (only NetworkMode in practice)
-    mockGetContainers.mockResolvedValue([
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
       {
         Id: 'c1',
         Names: ['/api'],
@@ -68,9 +70,9 @@ describe('security-audit service', () => {
         Labels: {},
         HostConfig: { NetworkMode: 'bridge' },
       },
-    ]);
+    ] as any);
     // Inspect endpoint returns full HostConfig
-    mockGetContainerHostConfig.mockImplementation((endpointId: number, containerId: string) => {
+    mockGetContainerHostConfig = vi.spyOn(portainerClient, 'getContainerHostConfig').mockImplementation((endpointId: number, containerId: string) => {
       if (containerId === 'c1') {
         return Promise.resolve({ Privileged: false, CapAdd: ['NET_ADMIN'], NetworkMode: 'bridge', PidMode: 'private' });
       }

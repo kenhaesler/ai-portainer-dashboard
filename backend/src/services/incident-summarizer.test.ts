@@ -1,16 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Kept: prompt template mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('./llm-client.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmClientMock()
-);
-
+import * as llmClient from './llm-client.js';
 import { generateLlmIncidentSummary } from './incident-summarizer.js';
-import { chatStream } from './llm-client.js';
-const mockChatStream = vi.mocked(chatStream);
 import type { Insight } from '../models/monitoring.js';
 
 function makeInsight(overrides: Partial<Insight> = {}): Insight {
@@ -33,11 +29,11 @@ function makeInsight(overrides: Partial<Insight> = {}): Insight {
 
 describe('incident-summarizer', () => {
   beforeEach(() => {
-    mockChatStream.mockReset();
+    vi.clearAllMocks();
   });
 
   it('returns summary when LLM available', async () => {
-    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+    vi.spyOn(llmClient, 'chatStream').mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk('Multiple containers are experiencing high CPU usage, suggesting a shared infrastructure bottleneck affecting the web tier.');
       return Promise.resolve('');
     });
@@ -54,7 +50,7 @@ describe('incident-summarizer', () => {
   });
 
   it('returns null on LLM failure', async () => {
-    mockChatStream.mockRejectedValue(new Error('LLM unavailable'));
+    vi.spyOn(llmClient, 'chatStream').mockRejectedValue(new Error('LLM unavailable'));
 
     const insights = [
       makeInsight({ id: '1' }),
@@ -66,13 +62,14 @@ describe('incident-summarizer', () => {
   });
 
   it('returns null for fewer than 2 insights', async () => {
+    const chatSpy = vi.spyOn(llmClient, 'chatStream');
     const result = await generateLlmIncidentSummary([makeInsight()], 'cascade');
     expect(result).toBeNull();
-    expect(mockChatStream).not.toHaveBeenCalled();
+    expect(chatSpy).not.toHaveBeenCalled();
   });
 
   it('respects character limit', async () => {
-    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
+    vi.spyOn(llmClient, 'chatStream').mockImplementation((_msgs: unknown, _sys: unknown, onChunk: (s: string) => void) => {
       onChunk('A'.repeat(1000));
       return Promise.resolve('');
     });
@@ -88,7 +85,7 @@ describe('incident-summarizer', () => {
   });
 
   it('returns null when LLM returns empty response', async () => {
-    mockChatStream.mockImplementation((_msgs: unknown, _sys: unknown, _onChunk: (s: string) => void) => {
+    vi.spyOn(llmClient, 'chatStream').mockImplementation((_msgs: unknown, _sys: unknown, _onChunk: (s: string) => void) => {
       return Promise.resolve('');
     });
 
