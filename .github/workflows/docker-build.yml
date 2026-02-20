@@ -9,6 +9,7 @@ on:
 jobs:
   docker-backend:
     name: Backend Image
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -71,6 +72,7 @@ jobs:
 
   docker-frontend:
     name: Frontend Image
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
