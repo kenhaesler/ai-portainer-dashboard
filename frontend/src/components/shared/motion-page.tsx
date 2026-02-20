@@ -8,18 +8,9 @@ import { pageVariants, transition, easing, duration } from '@/lib/motion-tokens'
 // after a hard refresh).
 const visitedPaths = new Set<string>();
 
-/** Returns true if this path has been visited before in this session.
- *  Safe to call outside a Router context (e.g. status page, storybook) —
- *  useLocation() always calls useContext internally (maintaining hooks order)
- *  before throwing, so the try-catch is React-safe. */
+/** Returns true if this path has been visited before in this session. */
 function useIsReturnVisit(): boolean {
-  let pathname: string;
-  try {
-    pathname = useLocation().pathname;
-  } catch {
-    // No Router context — skip the optimisation
-    return false;
-  }
+  const { pathname } = useLocation();
   if (visitedPaths.has(pathname)) return true;
   visitedPaths.add(pathname);
   return false;
