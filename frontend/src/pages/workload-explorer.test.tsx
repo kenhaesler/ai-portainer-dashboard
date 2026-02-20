@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 const mockSetSearchParams = vi.fn();
@@ -132,12 +132,22 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
+let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
+
+vi.mock('@/components/shared/workload-smart-search', () => ({
+  WorkloadSmartSearch: ({ onFiltered, totalCount }: { onFiltered: (c: unknown[]) => void; totalCount: number }) => {
+    mockOnFiltered = onFiltered;
+    return <div data-testid="workload-smart-search" data-total={totalCount} />;
+  },
+}));
+
 import WorkloadExplorerPage from './workload-explorer';
 
 describe('WorkloadExplorerPage', () => {
   beforeEach(() => {
     mockQueryString = 'endpoint=1&stack=workers';
     mockExportToCsv.mockReset();
+    mockOnFiltered = undefined;
   });
 
   it('renders stack and group dropdowns with options', () => {
@@ -164,6 +174,34 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
     expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
     expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('beyla');
+  });
+
+  it('renders WorkloadSmartSearch with totalCount', () => {
+    mockQueryString = 'endpoint=1&stack=workers';
+    render(<WorkloadExplorerPage />);
+
+    const search = screen.getByTestId('workload-smart-search');
+    expect(search).toBeInTheDocument();
+    // workers stack filters to 1 container
+    expect(search).toHaveAttribute('data-total', '1');
+  });
+
+  it('filters table rows via WorkloadSmartSearch onFiltered', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    // Initially all 3 containers shown
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('billing-api-1');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('beyla');
+
+    // Simulate WorkloadSmartSearch calling onFiltered with a subset
+    act(() => {
+      mockOnFiltered?.([{ id: 'c-workers', name: 'workers-api-1' }]);
+    });
+
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
   });
 
   it('exports visible rows to CSV', () => {

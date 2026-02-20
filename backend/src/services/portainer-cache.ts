@@ -208,7 +208,13 @@ class HybridCache {
 
     const config = getConfig();
     const redisUrl = this.buildRedisUrl(config.REDIS_URL!, config.REDIS_PASSWORD);
-    const client = createClient({ url: redisUrl });
+    const client = createClient({
+      url: redisUrl,
+      socket: {
+        connectTimeout: 3_000,
+        reconnectStrategy: false,
+      },
+    });
     client.on('error', (err) => {
       this.disableRedisTemporarily('redis-client-error', err);
     });
@@ -216,7 +222,17 @@ class HybridCache {
       this.disableRedisTemporarily('redis-client-closed');
     });
     this.redisClient = client;
-    this.redisConnectPromise = client.connect()
+
+    // Race the connect() against a short deadline so tests and environments
+    // without Redis fail fast instead of hanging until vitest's hook timeout.
+    const connectWithTimeout = Promise.race([
+      client.connect(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Redis connect timeout (5s)')), 5_000),
+      ),
+    ]);
+
+    this.redisConnectPromise = connectWithTimeout
       .then(() => {
         const safeUrl = new URL(redisUrl);
         if (safeUrl.password) safeUrl.password = '***';
