@@ -24,13 +24,7 @@ const defaultConfig = {
 
 // Kept mocks — internal services the monitoring cycle depends on
 
-// Kept: portainer-normalizers mock — tests control normalization
-vi.mock('./portainer-normalizers.js', () => ({
-  normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0, capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true } }),
-  normalizeContainer: (c: unknown, endpointId: number, endpointName: string) => ({
-    ...(c as Record<string, unknown>), endpointId, endpointName, state: 'running',
-  }),
-}));
+// Real portainer-normalizers used (pure function, no external deps)
 
 vi.mock('./security-scanner.js', () => ({
   scanContainer: () => [],
@@ -233,7 +227,7 @@ describe('monitoring-service', () => {
 
   describe('batch insight processing', () => {
     it('calls detectAnomaliesBatch instead of per-container detectAnomalyAdaptive (#546)', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
@@ -252,7 +246,7 @@ describe('monitoring-service', () => {
     });
 
     it('uses insertInsights (batch) instead of per-insight insertInsight', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -273,7 +267,7 @@ describe('monitoring-service', () => {
         ANOMALY_COOLDOWN_MINUTES: 0,
       });
 
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
@@ -399,7 +393,7 @@ describe('monitoring-service', () => {
 
   describe('anomaly explanations', () => {
     it('enriches anomaly description when LLM available', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -434,7 +428,7 @@ describe('monitoring-service', () => {
     });
 
     it('leaves description unchanged when LLM unavailable', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -459,7 +453,7 @@ describe('monitoring-service', () => {
       setConfigForTest({
         ANOMALY_EXPLANATION_ENABLED: false,
       });
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -499,7 +493,7 @@ describe('monitoring-service', () => {
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,
       });
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -516,7 +510,7 @@ describe('monitoring-service', () => {
 
   describe('caching', () => {
     it('uses cachedFetchSWR for endpoints and containers', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
@@ -531,8 +525,8 @@ describe('monitoring-service', () => {
 
     it('uses cachedFetchSWR for each endpoint containers', async () => {
       mockGetEndpoints.mockResolvedValue([
-        { Id: 1, Name: 'prod' },
-        { Id: 2, Name: 'staging' },
+        { Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 2, Name: 'staging', Status: 1, Type: 1, URL: 'tcp://localhost' },
       ]);
       mockGetContainers.mockResolvedValue([]);
 
@@ -545,7 +539,7 @@ describe('monitoring-service', () => {
     });
 
     it('reads metrics from DB using a single batch call instead of per-container calls', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
@@ -559,7 +553,7 @@ describe('monitoring-service', () => {
     });
 
     it('issues one batch metrics query for all running containers', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/api'], State: 'running', Image: 'node:18' },
@@ -580,7 +574,7 @@ describe('monitoring-service', () => {
       const mockTo = vi.fn().mockReturnValue({ emit: vi.fn() });
       setMonitoringNamespace({ emit: mockEmit, to: mockTo } as unknown as import('socket.io').Namespace);
 
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
@@ -604,7 +598,7 @@ describe('monitoring-service', () => {
 
   describe('deduplication filters downstream FK references (#693)', () => {
     it('does not trigger investigation for deduplicated (skipped) insights', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/api-svc'], State: 'running', Image: 'node:18' },
@@ -638,7 +632,7 @@ describe('monitoring-service', () => {
     });
 
     it('does not pass deduplicated insights to correlateInsights', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/api-svc'], State: 'running', Image: 'node:18' },
@@ -667,7 +661,7 @@ describe('monitoring-service', () => {
     });
 
     it('skips investigation and correlation entirely when all insights are deduplicated', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -691,9 +685,9 @@ describe('monitoring-service', () => {
     it('aggregates container fetch failures into a single warning', async () => {
       // Set up 3 endpoints, where 2 of them fail to fetch containers
       mockGetEndpoints.mockResolvedValue([
-        { Id: 1, Name: 'ok' },
-        { Id: 2, Name: 'fail-1' },
-        { Id: 3, Name: 'fail-2' },
+        { Id: 1, Name: 'ok', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 2, Name: 'fail-1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 3, Name: 'fail-2', Status: 1, Type: 1, URL: 'tcp://localhost' },
       ]);
 
       // cachedFetchSWR succeeds for endpoints, but fails for endpoints 2 and 3
@@ -715,7 +709,7 @@ describe('monitoring-service', () => {
     });
 
     it('aggregates metrics read failures into a single warning', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
@@ -732,7 +726,7 @@ describe('monitoring-service', () => {
     });
 
     it('completes cycle without errors even when all data fetches fail', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'fail' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'fail', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
 
       // cachedFetchSWR fails for everything except endpoints
       mockCachedFetchSWR.mockImplementation(async (key: string, _ttl: number, fn: () => Promise<unknown>) => {
@@ -753,7 +747,7 @@ describe('monitoring-service', () => {
 
     it('sweepExpiredCooldowns removes entries older than cooldown period', async () => {
       // Set up: run a cycle that creates cooldown entries
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -773,7 +767,7 @@ describe('monitoring-service', () => {
     });
 
     it('sweepExpiredCooldowns keeps recent entries', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -805,8 +799,8 @@ describe('monitoring-service', () => {
   describe('circuit breaker pre-check (#759)', () => {
     it('skips endpoints with open circuit breakers and does not fetch their containers', async () => {
       mockGetEndpoints.mockResolvedValue([
-        { Id: 1, Name: 'healthy' },
-        { Id: 2, Name: 'failing' },
+        { Id: 1, Name: 'healthy', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 2, Name: 'failing', Status: 1, Type: 1, URL: 'tcp://localhost' },
       ]);
 
       // Endpoint 2 has an open circuit breaker

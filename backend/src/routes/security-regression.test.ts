@@ -133,12 +133,6 @@ vi.mock('../services/oidc.js', async (importOriginal) => {
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: vi.fn((e: unknown) => e),
-  normalizeContainer: vi.fn((c: unknown) => c),
-  normalizeStack: vi.fn((s: unknown) => s),
-  normalizeNetwork: vi.fn((n: unknown) => n),
-}));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
@@ -177,9 +171,6 @@ vi.mock('../services/security-audit.js', () => ({
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore',
 }));
 
-vi.mock('../services/otlp-transformer.js', () => ({
-  transformOtlpToSpans: vi.fn(() => []),
-}));
 
 vi.mock('../services/otlp-protobuf.js', () => ({
   decodeOtlpProtobuf: vi.fn(() => ({ resourceSpans: [] })),
@@ -322,9 +313,6 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   selectRollupTable: vi.fn(() => 'metrics_raw'),
 }));
 
-vi.mock('../services/lttb-decimator.js', () => ({
-  decimateLTTB: vi.fn((rows: unknown[]) => rows),
-}));
 
 vi.mock('../services/backup-service.js', () => ({
   createBackup: vi.fn().mockResolvedValue('backup.db'),
@@ -333,9 +321,6 @@ vi.mock('../services/backup-service.js', () => ({
   getBackupPath: vi.fn(() => null),
 }));
 
-vi.mock('../utils/network-security.js', () => ({
-  validateOutboundWebhookUrl: vi.fn(),
-}));
 
 vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: vi.fn(),

@@ -25,12 +25,6 @@ vi.mock('../services/edge-async-log-fetcher.js', () => ({
   cleanupEdgeJob: vi.fn(),
 }));
 
-vi.mock('../services/docker-frame-decoder.js', () => ({
-  IncrementalDockerFrameDecoder: vi.fn().mockImplementation(() => ({
-    push: vi.fn().mockReturnValue([]),
-    drain: vi.fn().mockReturnValue([]),
-  })),
-}));
 
 vi.mock('../plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),

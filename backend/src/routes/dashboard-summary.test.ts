@@ -3,8 +3,6 @@ import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
 
-const mockNormalizeEndpoint = vi.fn();
-const mockNormalizeContainer = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockBuildSecurityAuditSummary = vi.fn();
 
@@ -25,12 +23,6 @@ afterEach(async () => {
 afterAll(async () => {
   await closeTestRedis();
 });
-
-// Kept: normalizers mock — provides deterministic normalization for test assertions
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: (...args: unknown[]) => mockNormalizeEndpoint(...args),
-  normalizeContainer: (...args: unknown[]) => mockNormalizeContainer(...args),
-}));
 
 vi.mock('../services/security-audit.js', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
@@ -56,23 +48,10 @@ describe('Dashboard Summary Route', () => {
     await app.register(dashboardRoutes);
     await app.ready();
 
-    mockGetEndpoints.mockResolvedValue([{ id: 1, name: 'ep-1' }] as any);
-    mockNormalizeEndpoint.mockReturnValue({
-      id: 1,
-      name: 'ep-1',
-      type: 1,
-      url: 'http://ep-1',
-      status: 'up',
-      containersRunning: 2,
-      containersStopped: 1,
-      containersHealthy: 2,
-      containersUnhealthy: 1,
-      totalContainers: 3,
-      stackCount: 1,
-      totalCpu: 0,
-      totalMemory: 0,
-      isEdge: false,
-    });
+    mockGetEndpoints.mockResolvedValue([{
+      Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
+      Snapshots: [{ RunningContainerCount: 2, StoppedContainerCount: 1, HealthyContainerCount: 2, UnhealthyContainerCount: 1, StackCount: 1, TotalCPU: 0, TotalMemory: 0 }],
+    }] as any);
     mockGetContainers.mockRejectedValue(new Error('portainer timeout'));
 
     const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });

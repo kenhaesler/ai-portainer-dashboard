@@ -30,11 +30,6 @@ vi.mock('ollama', () => ({
   })),
 }));
 
-// Kept: portainer-normalizers mock — tests control normalization
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: vi.fn((e: any) => e),
-  normalizeContainer: vi.fn((c: any) => c),
-}));
 
 // Kept: app-db-router mock — routes to test DB
 vi.mock('../db/app-db-router.js', () => ({

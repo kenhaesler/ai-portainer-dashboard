@@ -5,16 +5,19 @@ import { metricsRoutes } from './metrics.js';
 
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
+// Kept: timescale mock — no TimescaleDB in CI
 vi.mock('../db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('../services/metrics-store.js', () => ({
   getNetworkRates: vi.fn(),
   isUndefinedTableError: (err: unknown) =>
     err instanceof Error && 'code' in err && (err as { code: string }).code === '42P01',
 }));
 
+// Kept: metrics-rollup-selector mock — no TimescaleDB in CI
 vi.mock('../services/metrics-rollup-selector.js', () => ({
   selectRollupTable: vi.fn().mockReturnValue({
     table: 'metrics',
@@ -24,13 +27,11 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   }),
 }));
 
-vi.mock('../services/lttb-decimator.js', () => ({
-  decimateLTTB: vi.fn((data: unknown[]) => data),
-}));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));

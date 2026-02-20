@@ -30,26 +30,6 @@ afterAll(async () => {
   await closeTestRedis();
 });
 
-vi.mock('../services/portainer-normalizers.js', async () => {
-  return {
-    normalizeEndpoint: (ep: Record<string, unknown>) => ep,
-    normalizeContainer: (c: any, endpointId: number, endpointName: string) => ({
-      id: c.Id,
-      name: c.Names?.[0]?.replace('/', '') || c.Id,
-      image: c.Image || 'unknown',
-      state: c.State.toLowerCase(),
-      status: c.Status || '',
-      created: c.created || 0,
-      endpointId,
-      endpointName,
-      ports: [],
-      networks: [],
-      networkIPs: {},
-      labels: c.labels || {},
-      healthStatus: undefined,
-    }),
-  };
-});
 
 vi.mock('../services/security-audit.js', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
@@ -62,15 +42,20 @@ vi.mock('../services/metrics-store.js', () => ({
 
 function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): any {
   return {
-    id,
-    name,
-    status,
-    containersRunning: 1,
-    containersStopped: 0,
-    containersHealthy: 1,
-    containersUnhealthy: 0,
-    totalContainers: 1,
-    stackCount: 0,
+    Id: id,
+    Name: name,
+    Type: 1,
+    URL: 'tcp://localhost',
+    Status: status === 'up' ? 1 : 2,
+    Snapshots: [{
+      RunningContainerCount: 1,
+      StoppedContainerCount: 0,
+      HealthyContainerCount: 1,
+      UnhealthyContainerCount: 0,
+      StackCount: 0,
+      TotalCPU: 0,
+      TotalMemory: 0,
+    }],
   };
 }
 
@@ -81,8 +66,10 @@ function makeContainer(id: string, created: number, state = 'running', labels: R
     State: state,
     Status: state === 'running' ? 'Up' : 'Exited',
     Image: 'nginx',
-    created,
-    labels,
+    Created: created,
+    Ports: [],
+    NetworkSettings: { Networks: {} },
+    Labels: labels,
   };
 }
 

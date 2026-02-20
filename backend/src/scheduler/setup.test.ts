@@ -57,20 +57,7 @@ vi.mock('../services/kpi-store.js', () => ({
   insertKpiSnapshot: vi.fn(),
   cleanOldKpiSnapshots: vi.fn(),
 }));
-// Kept: portainer-normalizers mock — tests control normalization
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: (ep: { Id: number }) => ({
-    id: ep.Id,
-    capabilities: { liveStats: true },
-    status: 'up',
-    containersRunning: 1,
-    containersStopped: 0,
-    containersHealthy: 1,
-    containersUnhealthy: 0,
-    totalContainers: 1,
-    stackCount: 0,
-  }),
-}));
+// Real portainer-normalizers used (pure function, no external deps)
 // Kept: trace-context mock
 vi.mock('../services/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
 // Kept: elasticsearch-log-forwarder mock
@@ -182,7 +169,7 @@ beforeEach(async () => {
 describe('scheduler/setup – runImageStalenessCheck', () => {
   beforeEach(() => {
     // Override defaults for image staleness tests
-    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'local' }] as any);
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValue([] as any);
     getImagesMock.mockResolvedValue([{ Id: 'sha256:abc123', RepoTags: ['nginx:latest'] }] as any);
   });
@@ -222,8 +209,8 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
 
   it('calls cachedFetchSWR for images per endpoint', async () => {
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'local' },
-      { Id: 2, Name: 'remote' },
+      { Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'remote', Status: 1, Type: 1, URL: 'tcp://localhost' },
     ] as any);
 
     await runImageStalenessCheck();
@@ -242,9 +229,9 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
   it('processes image endpoints in parallel (not sequentially)', async () => {
     const callOrder: string[] = [];
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
-      { Id: 3, Name: 'ep3' },
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 3, Name: 'ep3', Status: 1, Type: 1, URL: 'tcp://localhost' },
     ] as any);
     getImagesMock.mockImplementation((epId: number) => {
       callOrder.push(`start-${epId}`);
@@ -278,8 +265,8 @@ describe('scheduler/setup – runMetricsCollection', () => {
 
   it('collects metrics for running containers across endpoints', async () => {
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
     ] as any);
     getContainersMock.mockImplementation((epId: number) =>
       Promise.resolve([
@@ -300,9 +287,9 @@ describe('scheduler/setup – runMetricsCollection', () => {
   it('processes endpoints in parallel (not sequentially)', async () => {
     const callOrder: string[] = [];
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
-      { Id: 3, Name: 'ep3' },
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 3, Name: 'ep3', Status: 1, Type: 1, URL: 'tcp://localhost' },
     ] as any);
     getContainersMock.mockImplementation((epId: number) => {
       callOrder.push(`start-ep-${epId}`);
@@ -326,7 +313,7 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('skips stopped containers', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'running-1', Names: ['/app'], State: 'running' },
       { Id: 'stopped-1', Names: ['/db'], State: 'exited' },
@@ -339,7 +326,7 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('handles individual container failures gracefully', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'ok-1', Names: ['/app-a'], State: 'running' },
       { Id: 'fail-1', Names: ['/app-b'], State: 'running' },
@@ -359,8 +346,8 @@ describe('scheduler/setup – runMetricsCollection', () => {
 
   it('handles entire endpoint failure gracefully', async () => {
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
     ] as any);
     getContainersMock
       .mockRejectedValueOnce(new Error('endpoint unreachable'))
@@ -377,7 +364,7 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('does not insert metrics when no containers are found', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([] as any);
 
     await runMetricsCollection();
@@ -448,7 +435,7 @@ describe('scheduler/setup – mutex guard (cycle overlap prevention)', () => {
   });
 
   it('allows a new cycle after the previous one completes', async () => {
-    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'ep1' }] as any);
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValue([
       { Id: 'c-1', Names: ['/app'], State: 'running' },
     ] as any);
@@ -479,7 +466,7 @@ describe('scheduler/setup – no double-collection (monitoring reuses scheduler 
     // runMetricsCollection calls collectMetrics while the monitoring
     // service (which we mock) does NOT.
 
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }] as any);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'c-1', Names: ['/app'], State: 'running' },
     ] as any);

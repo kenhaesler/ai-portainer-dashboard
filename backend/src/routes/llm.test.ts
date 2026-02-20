@@ -35,11 +35,6 @@ vi.mock('ollama', () => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-// Kept: normalizers mock — provides deterministic normalization for test assertions
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: vi.fn((ep: any) => ep),
-  normalizeContainer: vi.fn((c: any) => c),
-}));
 
 import { cache, waitForInFlight } from '../services/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
