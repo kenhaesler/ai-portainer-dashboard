@@ -67,21 +67,12 @@ vi.mock('../services/prompt-test-fixtures.js', () => ({
   },
 }));
 
-// Kept: inline mock — createOllamaClient/createConfiguredOllamaClient share mockChat/mockList with 'ollama' mock
-const mockLlmFetch = vi.fn();
-vi.mock('../services/llm-client.js', () => ({
-  getAuthHeaders: vi.fn().mockReturnValue({}),
-  getFetchErrorMessage: vi.fn((err: unknown) => err instanceof Error ? err.message : 'Unknown error'),
-  llmFetch: (...args: unknown[]) => mockLlmFetch(...args),
-  createOllamaClient: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: mockList,
-  })),
-  createConfiguredOllamaClient: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: mockList,
-  })),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
+import * as llmClient from '../services/llm-client.js';
+let mockLlmFetch: ReturnType<typeof vi.spyOn>;
+let mockCreateOllamaClient: ReturnType<typeof vi.spyOn>;
+let mockCreateConfiguredOllamaClient: ReturnType<typeof vi.spyOn>;
 
 // Mock config
 
@@ -102,6 +93,16 @@ describe('LLM Routes', () => {
     await cache.clear();
     await flushTestCache();
     vi.clearAllMocks();
+    mockLlmFetch = vi.spyOn(llmClient, 'llmFetch');
+    mockCreateOllamaClient = vi.spyOn(llmClient, 'createOllamaClient').mockReturnValue({
+      chat: mockChat,
+      list: mockList,
+    } as unknown as ReturnType<typeof llmClient.createOllamaClient>);
+    mockCreateConfiguredOllamaClient = vi.spyOn(llmClient, 'createConfiguredOllamaClient').mockResolvedValue({
+      chat: mockChat,
+      list: mockList,
+    } as unknown as Awaited<ReturnType<typeof llmClient.createConfiguredOllamaClient>>);
+    vi.spyOn(llmClient, 'getAuthHeaders').mockReturnValue({});
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
@@ -217,7 +218,6 @@ describe('LLM Routes', () => {
     });
 
     it('uses ollamaUrl when provided', async () => {
-      const { createConfiguredOllamaClient } = await import('../services/llm-client.js');
       mockList.mockResolvedValue({
         models: [{ name: 'gemma2', size: 5_000_000_000, modified_at: '2024-04-01T00:00:00Z' }],
       });
@@ -233,7 +233,7 @@ describe('LLM Routes', () => {
       expect(body.ok).toBe(true);
       expect(body.models).toContain('gemma2');
       // Verify createConfiguredOllamaClient was called with the custom host
-      expect(createConfiguredOllamaClient).toHaveBeenCalledWith(
+      expect(mockCreateConfiguredOllamaClient).toHaveBeenCalledWith(
         expect.objectContaining({ ollamaUrl: 'http://custom-ollama:11434' }),
       );
     });

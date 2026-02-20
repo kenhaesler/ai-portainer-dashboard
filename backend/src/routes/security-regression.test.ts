@@ -341,6 +341,7 @@ vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: vi.fn(),
 }));
 
+// Kept: external boundary mock — ollama npm SDK has no local test equivalent
 vi.mock('ollama', async () =>
   (await import('../test-utils/mock-llm.js')).createOllamaMock()
 );
