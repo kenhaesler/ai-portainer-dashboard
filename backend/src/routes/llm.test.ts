@@ -70,9 +70,9 @@ vi.mock('../services/prompt-test-fixtures.js', () => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 import * as llmClient from '../services/llm-client.js';
-let mockLlmFetch: ReturnType<typeof vi.spyOn>;
-let mockCreateOllamaClient: ReturnType<typeof vi.spyOn>;
-let mockCreateConfiguredOllamaClient: ReturnType<typeof vi.spyOn>;
+let mockLlmFetch: any;
+let mockCreateOllamaClient: any;
+let mockCreateConfiguredOllamaClient: any;
 
 // Mock config
 

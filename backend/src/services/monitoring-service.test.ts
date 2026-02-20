@@ -818,8 +818,8 @@ describe('monitoring-service', () => {
       await runMonitoringCycle();
 
       // cachedFetchSWR should only be called for endpoint 1's containers, not endpoint 2
-      const swrKeys = mockCachedFetchSWR.mock.calls.map(([key]) => key);
-      const containerKeys = swrKeys.filter((k) => k.startsWith('containers:'));
+      const swrKeys = mockCachedFetchSWR.mock.calls.map(([key]: [string]) => key);
+      const containerKeys = swrKeys.filter((k: string) => k.startsWith('containers:'));
       expect(containerKeys).toContain('containers:1');
       expect(containerKeys).not.toContain('containers:2');
     });

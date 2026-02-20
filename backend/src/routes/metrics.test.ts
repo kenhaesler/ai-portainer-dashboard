@@ -331,7 +331,7 @@ describe('metrics routes', () => {
 
     it('should stream SSE response when LLM is available', async () => {
       mockIsOllamaAvailable.mockResolvedValue(true);
-      mockChatStream.mockImplementation(async (_msgs, _sys, onChunk) => {
+      mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
         onChunk('CPU is stable.');
         return 'CPU is stable.';
       });
@@ -350,7 +350,7 @@ describe('metrics routes', () => {
 
     it('should pass correct time range to metrics query', async () => {
       mockIsOllamaAvailable.mockResolvedValue(true);
-      mockChatStream.mockImplementation(async (_msgs, _sys, onChunk) => {
+      mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
         onChunk('All good.');
         return 'All good.';
       });

@@ -2,7 +2,7 @@ import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vites
 
 // Kept: prompt-store mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
+  getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
 import { analyzeContainerLogs, analyzeLogsForContainers } from './log-analyzer.js';
@@ -29,7 +29,7 @@ describe('log-analyzer', () => {
     vi.restoreAllMocks();
     // Re-set prompt-store default cleared by restoreAllMocks
     const { getEffectivePrompt } = await import('./prompt-store.js');
-    vi.mocked(getEffectivePrompt).mockReturnValue('You are a test assistant.');
+    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Bypass cache — delegates to fetcher
     vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
       async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),

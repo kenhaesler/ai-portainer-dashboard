@@ -40,7 +40,7 @@ vi.mock('../sockets/remediation.js', () => ({
 
 // Kept: prompt-store mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
+  getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
 import {
@@ -86,7 +86,7 @@ describe('remediation-service', () => {
     mockGetLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
     // Re-set prompt-store default
     const { getEffectivePrompt } = await import('./prompt-store.js');
-    vi.mocked(getEffectivePrompt).mockReturnValue('You are a test assistant.');
+    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Portainer + LLM spies
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
     mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
@@ -377,7 +377,7 @@ describe('protected container safety', () => {
     mockHasPendingAction.mockReturnValue(false);
     // Re-set prompt-store default
     const { getEffectivePrompt } = await import('./prompt-store.js');
-    vi.mocked(getEffectivePrompt).mockReturnValue('You are a test assistant.');
+    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Portainer + LLM spies
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
     mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
