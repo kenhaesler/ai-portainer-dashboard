@@ -7,10 +7,12 @@ import { setConfigForTest, resetConfig } from '../config/index.js';
 
 let appDb: AppDb;
 
+// Kept: app-db-router mock — tests control database routing
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
 }));
 
+// Kept: prompt-guard mock — side-effect isolation
 vi.mock('../services/prompt-guard.js', () => ({
   getPromptGuardNearMissTotal: () => 0,
 }));

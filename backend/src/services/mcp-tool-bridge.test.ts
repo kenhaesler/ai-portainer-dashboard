@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockGetAllMcpTools = vi.fn();
 const mockExecuteMcpToolCall = vi.fn();
 
+// Kept: mcp-manager mock — external service boundary
 vi.mock('./mcp-manager.js', () => ({
   getAllMcpTools: () => mockGetAllMcpTools(),
   executeMcpToolCall: (...args: unknown[]) => mockExecuteMcpToolCall(...args),
@@ -11,6 +12,7 @@ vi.mock('./mcp-manager.js', () => ({
 
 // Mock llm-tools
 const mockExecuteToolCalls = vi.fn();
+// Kept: llm-tools mock — tests control tool definitions
 vi.mock('./llm-tools.js', () => ({
   TOOL_DEFINITIONS: [
     {

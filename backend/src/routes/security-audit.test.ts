@@ -11,6 +11,7 @@ const mockGetSecurityAudit = vi.fn();
 const mockGetSecurityAuditIgnoreList = vi.fn();
 const mockSetSecurityAuditIgnoreList = vi.fn();
 
+// Kept: security-audit mock — no Portainer API in CI
 vi.mock('../services/security-audit.js', () => ({
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore_list',
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS: ['portainer', 'traefik'],
@@ -19,6 +20,7 @@ vi.mock('../services/security-audit.js', () => ({
   setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
 }));
 
+// Kept: app-db-router mock — tests control database routing
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));

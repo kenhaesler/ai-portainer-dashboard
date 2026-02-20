@@ -19,6 +19,7 @@ const mockInsertPromptSuggestion = vi.fn();
 const mockListPromptSuggestions = vi.fn();
 const mockUpdatePromptSuggestionStatus = vi.fn();
 
+// Kept: feedback-store mock — no PostgreSQL in CI
 vi.mock('../services/feedback-store.js', () => ({
   insertFeedback: (...args: unknown[]) => mockInsertFeedback(...args),
   listFeedback: (...args: unknown[]) => mockListFeedback(...args),
@@ -35,6 +36,7 @@ vi.mock('../services/feedback-store.js', () => ({
   updatePromptSuggestionStatus: (...args: unknown[]) => mockUpdatePromptSuggestionStatus(...args),
 }));
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: () => 'You are a helpful assistant.',
   PROMPT_FEATURES: [
@@ -42,6 +44,7 @@ vi.mock('../services/prompt-store.js', () => ({
   ],
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));

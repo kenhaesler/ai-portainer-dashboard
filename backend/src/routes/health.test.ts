@@ -4,7 +4,9 @@ import { setConfigForTest, resetConfig } from '../config/index.js';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { healthRoutes } from './health.js';
 
+// Kept: timescale mock — no TimescaleDB in CI
 vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
+// Kept: postgres mock — no PostgreSQL in CI
 vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());

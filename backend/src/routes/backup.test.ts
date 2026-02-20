@@ -14,10 +14,12 @@ const mockDeleteBackup = vi.fn();
 
 let cwdValue = '';
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
 
+// Kept: backup-service mock — external service boundary
 vi.mock('../services/backup-service.js', () => ({
   createBackup: (...args: unknown[]) => mockCreateBackup(...args),
   listBackups: (...args: unknown[]) => mockListBackups(...args),

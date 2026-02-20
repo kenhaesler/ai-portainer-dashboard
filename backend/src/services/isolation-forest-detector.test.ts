@@ -15,6 +15,7 @@ function generateMetrics(count: number, baseValue: number) {
 }
 
 const mockGetMetrics = vi.fn();
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('./metrics-store.js', () => ({
   getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
 }));

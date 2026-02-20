@@ -7,10 +7,12 @@ const { mockQuery } = vi.hoisted(() => ({
 }));
 
 // ── Module mocks ──
+// Kept: app-db-router mock — no PostgreSQL in CI
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({ query: mockQuery }),
 }));
 
+// Kept: logger mock — suppresses log output in tests
 vi.mock('../utils/logger.js', () => ({
   createChildLogger: () => ({
     info: vi.fn(),

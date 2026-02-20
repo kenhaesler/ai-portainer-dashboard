@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
 const mockGetMovingAverage = vi.fn();
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('./metrics-store.js', () => ({
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
 }));

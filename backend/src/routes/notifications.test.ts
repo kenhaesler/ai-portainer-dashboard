@@ -7,12 +7,14 @@ import { notificationRoutes } from './notifications.js';
 
 let testDb: AppDb;
 
+// Kept: app-db-router mock — tests control database routing
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 
 const mockSendTest = vi.fn();
 
+// Kept: notification-service mock — side-effect isolation
 vi.mock('../services/notification-service.js', () => ({
   sendTestNotification: (...args: unknown[]) => mockSendTest(...args),
 }));

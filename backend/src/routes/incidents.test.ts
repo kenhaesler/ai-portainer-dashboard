@@ -8,6 +8,7 @@ import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '..
 let testDb: AppDb;
 
 // Mock the stores — all functions are now async
+// Kept: incident-store mock — no PostgreSQL in CI
 vi.mock('../services/incident-store.js', () => ({
   getIncidents: vi.fn(() => Promise.resolve([])),
   getIncident: vi.fn(() => Promise.resolve(null)),
@@ -15,6 +16,7 @@ vi.mock('../services/incident-store.js', () => ({
   getIncidentCount: vi.fn(() => Promise.resolve({ active: 0, resolved: 0, total: 0 })),
 }));
 
+// Kept: app-db-router mock — tests control database routing
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));

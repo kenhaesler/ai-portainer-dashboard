@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { roleLevel, hasMinRole } from './user-store.js';
 
+// Kept: crypto mock — file I/O and bcrypt dependency
 vi.mock('../utils/crypto.js', () => ({
   hashPassword: vi.fn(async (p: string) => `hashed:${p}`),
   comparePassword: vi.fn(async (p: string, h: string) => h === `hashed:${p}`),

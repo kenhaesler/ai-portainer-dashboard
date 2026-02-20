@@ -7,6 +7,7 @@ import {
 
 const mockInsertSpan = vi.fn();
 
+// Kept: trace-store mock — no PostgreSQL in CI
 vi.mock('./trace-store.js', () => ({
   insertSpan: (...args: unknown[]) => mockInsertSpan(...args),
 }));

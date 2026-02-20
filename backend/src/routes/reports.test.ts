@@ -13,6 +13,7 @@ const mockClient = {
 };
 const mockConnect = vi.fn().mockResolvedValue(mockClient);
 
+// Kept: timescale mock — no TimescaleDB in CI
 vi.mock('../db/timescale.js', () => ({
   getReportsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
 }));
@@ -24,10 +25,12 @@ const mockSelectRollupTable = vi.fn().mockReturnValue({
   isRollup: false,
 });
 
+// Kept: metrics-rollup-selector mock — no TimescaleDB in CI
 vi.mock('../services/metrics-rollup-selector.js', () => ({
   selectRollupTable: (...args: unknown[]) => mockSelectRollupTable(...args),
 }));
 
+// Kept: infrastructure-service-classifier mock — tests control classification logic
 vi.mock('../services/infrastructure-service-classifier.js', () => ({
   getInfrastructureServicePatterns: vi.fn().mockReturnValue(['traefik', 'portainer_agent', 'beyla', 'redis']),
   matchesInfrastructurePattern: vi.fn((name: string, patterns: string[]) => {
@@ -48,6 +51,7 @@ vi.mock('../services/infrastructure-service-classifier.js', () => ({
   }),
 }));
 
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('../services/metrics-store.js', () => ({
   isUndefinedTableError: vi.fn().mockReturnValue(false),
 }));

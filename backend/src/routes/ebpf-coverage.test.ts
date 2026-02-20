@@ -26,10 +26,12 @@ const { mockedNetworkInterfaces } = vi.hoisted(() => ({
   })),
 }));
 
+// Kept: node:os mock — external dependency
 vi.mock('node:os', () => ({
   networkInterfaces: mockedNetworkInterfaces,
 }));
 
+// Kept: ebpf-coverage mock — no Portainer API in CI
 vi.mock('../services/ebpf-coverage.js', () => ({
   getEndpointCoverage: vi.fn(async () => []),
   updateCoverageStatus: vi.fn(async () => {}),
@@ -55,6 +57,7 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   setEndpointOtlpOverride: vi.fn(async () => {}),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));

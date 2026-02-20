@@ -13,6 +13,7 @@ import {
 const mockGetSetting = vi.fn();
 const mockGetGlobalLlmConfig = vi.fn();
 
+// Kept: settings-store mock — no PostgreSQL in CI
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetGlobalLlmConfig(...args),
@@ -21,6 +22,7 @@ vi.mock('./settings-store.js', () => ({
 const mockGetProfilePromptConfig = vi.fn();
 const mockGetActiveProfileId = vi.fn();
 
+// Kept: prompt-profile-store mock — no PostgreSQL in CI
 vi.mock('./prompt-profile-store.js', () => ({
   getProfilePromptConfig: (...args: unknown[]) => mockGetProfilePromptConfig(...args),
   getActiveProfileId: (...args: unknown[]) => mockGetActiveProfileId(...args),

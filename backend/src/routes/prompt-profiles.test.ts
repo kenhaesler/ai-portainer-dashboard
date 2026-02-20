@@ -15,6 +15,7 @@ const mockDuplicateProfile = vi.fn();
 const mockGetActiveProfileId = vi.fn();
 const mockSwitchProfile = vi.fn();
 
+// Kept: prompt-profile-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-profile-store.js', () => ({
   getAllProfiles: (...args: unknown[]) => mockGetAllProfiles(...args),
   getProfileById: (...args: unknown[]) => mockGetProfileById(...args),
@@ -26,6 +27,7 @@ vi.mock('../services/prompt-profile-store.js', () => ({
   switchProfile: (...args: unknown[]) => mockSwitchProfile(...args),
 }));
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   PROMPT_FEATURES: [
     { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
@@ -35,6 +37,7 @@ vi.mock('../services/prompt-store.js', () => ({
   estimateTokens: (text: string) => Math.ceil(text.length / 4),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));

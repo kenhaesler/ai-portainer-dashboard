@@ -10,6 +10,7 @@ import {
   getRecentIncidentsPublic,
 } from '../services/status-page-store.js';
 
+// Kept: status-page-store mock — no PostgreSQL in CI
 vi.mock('../services/status-page-store.js', () => ({
   getStatusPageConfig: vi.fn(async () => ({
     enabled: true,

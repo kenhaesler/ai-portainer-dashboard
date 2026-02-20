@@ -10,10 +10,12 @@ const mockCreateSession = vi.fn();
 const mockAuthenticateUser = vi.fn();
 const mockEnsureDefaultAdmin = vi.fn();
 
+// Kept: crypto mock — file I/O and bcrypt dependency
 vi.mock('../utils/crypto.js', () => ({
   signJwt: (...args: unknown[]) => mockSignJwt(...args),
 }));
 
+// Kept: session-store mock — no PostgreSQL in CI
 vi.mock('../services/session-store.js', () => ({
   createSession: (...args: unknown[]) => mockCreateSession(...args),
   getSession: vi.fn(),
@@ -21,10 +23,12 @@ vi.mock('../services/session-store.js', () => ({
   refreshSession: vi.fn(),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
+// Kept: user-store mock — no PostgreSQL in CI
 vi.mock('../services/user-store.js', () => ({
   authenticateUser: (...args: unknown[]) => mockAuthenticateUser(...args),
   ensureDefaultAdmin: (...args: unknown[]) => mockEnsureDefaultAdmin(...args),

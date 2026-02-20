@@ -7,6 +7,7 @@ import type { CorrelationPair } from '../services/metric-correlator.js';
 const mockDetectCorrelated = vi.fn();
 const mockFindCorrelatedContainers = vi.fn();
 
+// Kept: metric-correlator mock — no TimescaleDB in CI
 vi.mock('../services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: (...args: unknown[]) => mockDetectCorrelated(...args),
   findCorrelatedContainers: (...args: unknown[]) => mockFindCorrelatedContainers(...args),
@@ -18,6 +19,7 @@ vi.mock('../services/llm-client.js', async (importOriginal) => await importOrigi
 import * as llmClient from '../services/llm-client.js';
 let mockChatStream: any;
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
@@ -30,11 +32,13 @@ const mockConnect = vi.fn().mockResolvedValue({
   release: mockClientRelease,
 });
 
+// Kept: timescale mock — no TimescaleDB in CI
 vi.mock('../db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
 }));
 
 const mockIsUndefinedTableError = vi.fn().mockReturnValue(false);
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('../services/metrics-store.js', () => ({
   isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
 }));

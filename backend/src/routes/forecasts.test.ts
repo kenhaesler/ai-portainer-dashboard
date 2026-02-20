@@ -7,6 +7,7 @@ const mockGetCapacityForecasts = vi.fn();
 const mockGenerateForecast = vi.fn();
 const mockLookupContainerName = vi.fn();
 
+// Kept: capacity-forecaster mock — no TimescaleDB in CI
 vi.mock('../services/capacity-forecaster.js', () => ({
   getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
@@ -19,6 +20,7 @@ vi.mock('../services/llm-client.js', async (importOriginal) => await importOrigi
 import * as llmClient from '../services/llm-client.js';
 let mockChatStream: any;
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a concise infrastructure analyst.'),
 }));

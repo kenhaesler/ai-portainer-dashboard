@@ -38,15 +38,19 @@ const {
   };
 });
 
+// Kept: MCP SDK mock — external dependency
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: MockClient,
 }));
+// Kept: MCP SDK mock — external dependency
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   StdioClientTransport: MockStdioTransport,
 }));
+// Kept: MCP SDK mock — external dependency
 vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: MockSSETransport,
 }));
+// Kept: MCP SDK mock — external dependency
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: MockHTTPTransport,
 }));

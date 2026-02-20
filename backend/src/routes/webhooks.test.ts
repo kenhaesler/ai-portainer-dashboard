@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { webhookRoutes } from './webhooks.js';
 
+// Kept: webhook-service mock — no PostgreSQL in CI
 vi.mock('../services/webhook-service.js', () => ({
   createWebhook: vi.fn(),
   listWebhooks: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../services/webhook-service.js', () => ({
   signPayload: vi.fn(() => 'mockedsignature'),
 }));
 
+// Kept: event-bus mock — side-effect isolation
 vi.mock('../services/event-bus.js', () => ({
   onEvent: vi.fn(() => vi.fn()),
   emitEvent: vi.fn(),

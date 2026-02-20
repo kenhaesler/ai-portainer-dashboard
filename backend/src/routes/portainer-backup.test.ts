@@ -8,6 +8,7 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 
 const mockWriteAuditLog = vi.fn();
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
@@ -18,6 +19,7 @@ const mockListPortainerBackups = vi.fn();
 const mockGetPortainerBackupPath = vi.fn();
 const mockDeletePortainerBackup = vi.fn();
 
+// Kept: portainer-backup mock — no Portainer API in CI
 vi.mock('../services/portainer-backup.js', () => ({
   createPortainerBackup: (...args: unknown[]) => mockCreatePortainerBackup(...args),
   listPortainerBackups: (...args: unknown[]) => mockListPortainerBackups(...args),

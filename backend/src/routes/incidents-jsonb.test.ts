@@ -16,6 +16,7 @@ import type { Incident } from '../services/incident-store.js';
 let testDb: AppDb;
 
 // Mock the service layer — same pattern as incidents.test.ts
+// Kept: incident-store mock — no PostgreSQL in CI
 vi.mock('../services/incident-store.js', () => ({
   getIncidents: vi.fn(() => Promise.resolve([])),
   getIncident: vi.fn(() => Promise.resolve(null)),
@@ -25,6 +26,7 @@ vi.mock('../services/incident-store.js', () => ({
   addInsightToIncident: vi.fn(() => Promise.resolve()),
 }));
 
+// Kept: app-db-router mock — tests control database routing
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));

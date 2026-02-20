@@ -210,6 +210,7 @@ describe('PostgreSQL App Database', () => {
 });
 
 // Mock app-db-router to use test pool
+// Kept: app-db-router mock — redirects to test PostgreSQL instance
 vi.mock('./app-db-router.js', async () => {
   const { getTestDb } = await import('./test-db-helper.js');
   return {

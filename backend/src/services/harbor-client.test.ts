@@ -1,15 +1,18 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
+// Kept: undici mock — external dependency
 vi.mock('undici', () => ({
   Agent: vi.fn().mockImplementation(() => ({ close: vi.fn().mockResolvedValue(undefined) })),
   fetch: vi.fn(),
 }));
 
+// Kept: trace-context mock — side-effect isolation
 vi.mock('./trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
+// Kept: settings-store mock — no PostgreSQL in CI
 vi.mock('./settings-store.js', () => ({
   getEffectiveHarborConfig: vi.fn(() => Promise.resolve({
     enabled: true,

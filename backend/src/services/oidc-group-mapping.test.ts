@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+// Kept: openid-client mock — external dependency
 vi.mock('openid-client', () => ({}));
 
 import { resolveRoleFromGroups, extractGroups } from './oidc.js';

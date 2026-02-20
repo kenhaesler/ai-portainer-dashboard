@@ -13,6 +13,7 @@ const mockGetCaptureFilePath = vi.fn();
 const mockAnalyzeCapture = vi.fn();
 const mockAssertCapability = vi.fn();
 
+// Kept: pcap-service mock — no Portainer API in CI
 vi.mock('../services/pcap-service.js', () => ({
   startCapture: (...args: unknown[]) => mockStartCapture(...args),
   stopCapture: (...args: unknown[]) => mockStopCapture(...args),
@@ -22,18 +23,22 @@ vi.mock('../services/pcap-service.js', () => ({
   getCaptureFilePath: (...args: unknown[]) => mockGetCaptureFilePath(...args),
 }));
 
+// Kept: pcap-analysis-service mock — no Ollama in CI
 vi.mock('../services/pcap-analysis-service.js', () => ({
   analyzeCapture: (...args: unknown[]) => mockAnalyzeCapture(...args),
 }));
 
+// Kept: edge-capability-guard mock — no Portainer API in CI
 vi.mock('../services/edge-capability-guard.js', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
+// Kept: fs mock — external dependency
 vi.mock('fs', () => ({
   default: {
     createReadStream: vi.fn().mockReturnValue('mock-stream'),
