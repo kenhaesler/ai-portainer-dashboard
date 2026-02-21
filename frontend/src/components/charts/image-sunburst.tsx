@@ -59,7 +59,7 @@ export function ImageSunburst({ data }: ImageSunburstProps) {
           outerRadius={140}
           dataKey="value"
           label={({ name, percent }) =>
-            `${name} (${(percent * 100).toFixed(0)}%)`
+            `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`
           }
           labelLine={{ strokeWidth: 1, stroke: 'var(--color-muted-foreground)' }}
         >

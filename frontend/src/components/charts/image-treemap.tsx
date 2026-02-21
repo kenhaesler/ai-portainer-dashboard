@@ -2,6 +2,7 @@ import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatBytes } from '@/lib/utils';
 
 interface ImageData {
+  [key: string]: unknown;
   name: string;
   size: number;
   children?: ImageData[];
