@@ -194,7 +194,20 @@ jobs:
 
       - name: Start application
         run: |
+          # Phase 1: Start database services only
+          docker compose -f docker/docker-compose.dev.yml up -d redis postgres-app timescaledb
+
+          # Phase 2: Wait for databases to accept connections
+          echo "Waiting for PostgreSQL..."
+          timeout 60 bash -c 'until docker compose -f docker/docker-compose.dev.yml exec -T postgres-app pg_isready -U app_user -d portainer_dashboard > /dev/null 2>&1; do sleep 3; done'
+          echo "Waiting for TimescaleDB..."
+          timeout 90 bash -c 'until docker compose -f docker/docker-compose.dev.yml exec -T timescaledb pg_isready -U metrics_user -d metrics > /dev/null 2>&1; do sleep 3; done'
+          echo "Databases ready"
+
+          # Phase 3: Start application services now that databases are ready
           docker compose -f docker/docker-compose.dev.yml up -d
+
+          # Phase 4: Wait for application endpoints
           echo "Waiting for backend health endpoint..."
           timeout 120 bash -c 'until curl -sf http://localhost:3051/health > /dev/null 2>&1; do sleep 3; done'
           echo "Waiting for frontend..."
@@ -203,6 +216,16 @@ jobs:
         env:
           DASHBOARD_USERNAME: admin
           DASHBOARD_PASSWORD: changeme123
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "=== Backend logs ==="
+          docker compose -f docker/docker-compose.dev.yml logs backend --tail 100
+          echo "=== Frontend logs ==="
+          docker compose -f docker/docker-compose.dev.yml logs frontend --tail 50
+          echo "=== TimescaleDB logs ==="
+          docker compose -f docker/docker-compose.dev.yml logs timescaledb --tail 50
 
       - name: Run E2E tests
         run: npm run test:e2e
