@@ -9,7 +9,7 @@ const Login = lazy(() => import('@/pages/login'));
 const AuthCallback = lazy(() => import('@/pages/auth-callback'));
 const Home = lazy(() => import('@/pages/home'));
 const WorkloadExplorer = lazy(() => import('@/pages/workload-explorer'));
-const FleetOverview = lazy(() => import('@/pages/fleet-overview'));
+const Infrastructure = lazy(() => import('@/pages/infrastructure'));
 const ContainerHealth = lazy(() => import('@/pages/container-health'));
 const ImageFootprint = lazy(() => import('@/pages/image-footprint'));
 const NetworkTopology = lazy(() => import('@/pages/network-topology'));
@@ -22,7 +22,6 @@ const LlmObservability = lazy(() => import('@/pages/llm-observability'));
 const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
 const Settings = lazy(() => import('@/pages/settings'));
 const Backups = lazy(() => import('@/pages/backups'));
-const StackOverview = lazy(() => import('@/pages/stack-overview'));
 const ContainerDetail = lazy(() => import('@/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/pages/packet-capture'));
 const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
@@ -73,8 +72,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <LazyPage><Home /></LazyPage> },
       { path: 'workloads', element: <LazyPage><WorkloadExplorer /></LazyPage> },
-      { path: 'fleet', element: <LazyPage><FleetOverview /></LazyPage> },
-      { path: 'stacks', element: <LazyPage><StackOverview /></LazyPage> },
+      { path: 'infrastructure', element: <LazyPage><Infrastructure /></LazyPage> },
+      { path: 'fleet', element: <Navigate to="/infrastructure" replace /> },
+      { path: 'stacks', element: <Navigate to="/infrastructure" replace /> },
       { path: 'containers/:endpointId/:containerId', element: <LazyPage><ContainerDetail /></LazyPage> },
       { path: 'health', element: <LazyPage><ContainerHealth /></LazyPage> },
       { path: 'comparison', element: <LazyPage><ContainerComparison /></LazyPage> },

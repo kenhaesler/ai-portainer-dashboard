@@ -7,8 +7,7 @@ import {
   Brain,
   MoreHorizontal,
   X,
-  Ship,
-  Layers,
+  Server,
   GitCompareArrows,
   PackageOpen,
   Network,
@@ -36,8 +35,7 @@ const primaryNav: MobileNavItem[] = [
 ];
 
 const secondaryNav: MobileNavItem[] = [
-  { label: 'Fleet', to: '/fleet', icon: Ship },
-  { label: 'Stacks', to: '/stacks', icon: Layers },
+  { label: 'Infrastructure', to: '/infrastructure', icon: Server },
   { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
   { label: 'Images', to: '/images', icon: PackageOpen },
   { label: 'Topology', to: '/topology', icon: Network },

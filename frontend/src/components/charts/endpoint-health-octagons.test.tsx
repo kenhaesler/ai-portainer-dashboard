@@ -75,10 +75,10 @@ describe('EndpointHealthOctagons', () => {
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
-  it('navigates to /fleet on click', () => {
+  it('navigates to /infrastructure on click', () => {
     renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     fireEvent.click(screen.getByTestId('octagon-Production'));
-    expect(mockNavigate).toHaveBeenCalledWith('/fleet');
+    expect(mockNavigate).toHaveBeenCalledWith('/infrastructure');
   });
 
   it('renders the legend', () => {

@@ -78,7 +78,7 @@ export function AppLayout() {
     () => [
       { keys: 'gh', action: () => navigate('/'), label: 'Go to Home' },
       { keys: 'gw', action: () => navigate('/workloads'), label: 'Go to Workloads' },
-      { keys: 'gf', action: () => navigate('/fleet'), label: 'Go to Fleet' },
+      { keys: 'gf', action: () => navigate('/infrastructure'), label: 'Go to Infrastructure' },
       { keys: 'gl', action: () => navigate('/health'), label: 'Go to Health' },
       { keys: 'gi', action: () => navigate('/images'), label: 'Go to Images' },
       { keys: 'gn', action: () => navigate('/topology'), label: 'Go to Network Topology' },

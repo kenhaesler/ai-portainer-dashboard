@@ -4,7 +4,6 @@ import { Command } from 'cmdk';
 import {
   LayoutDashboard,
   Boxes,
-  Ship,
   HeartPulse,
   PackageOpen,
   Network,
@@ -51,7 +50,7 @@ interface PageEntry {
 const pages: PageEntry[] = [
   { label: 'Home', to: '/', icon: LayoutDashboard },
   { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
-  { label: 'Fleet Overview', to: '/fleet', icon: Ship },
+  { label: 'Infrastructure', to: '/infrastructure', icon: Server },
   { label: 'Container Health', to: '/health', icon: HeartPulse },
   { label: 'Image Footprint', to: '/images', icon: PackageOpen },
   { label: 'Network Topology', to: '/topology', icon: Network },
@@ -202,7 +201,7 @@ export function CommandPalette() {
   const filteredPages = activeCategory === 'all'
     ? pages
     : activeCategory === 'containers'
-      ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/fleet' || p.to === '/images')
+      ? pages.filter((p) => p.to === '/workloads' || p.to === '/health' || p.to === '/infrastructure' || p.to === '/images')
       : activeCategory === 'settings'
         ? pages.filter((p) => p.to === '/settings' || p.to === '/users' || p.to === '/webhooks')
         : pages;
@@ -428,7 +427,7 @@ export function CommandPalette() {
                           <Command.Item
                             key={`endpoint-${ep.id}`}
                             value={`node-${ep.name}`}
-                            onSelect={() => navigateTo(`/fleet?endpoint=${ep.id}`)}
+                            onSelect={() => navigateTo(`/infrastructure?endpoint=${ep.id}`)}
                             className={cn(
                               'flex cursor-pointer items-center gap-6 rounded-[18px] px-6 py-4.5 text-[17px] transition-all mb-2',
                               'text-foreground/70 aria-selected:bg-muted/60 aria-selected:text-foreground'

@@ -170,7 +170,7 @@ export const EndpointHealthTreemap = memo(function EndpointHealthTreemap({
   const handleClick = useCallback(
     (entry: any) => {
       if (entry?.id) {
-        navigate(`/fleet`);
+        navigate(`/infrastructure`);
       }
     },
     [navigate],

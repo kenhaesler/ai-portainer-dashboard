@@ -129,8 +129,8 @@ graph LR
 
         subgraph Pages["&nbsp; Pages &nbsp;"]
             direction LR
-            P1["Home<br/>Fleet Overview"]
-            P2["Workload Explorer<br/>Stack Overview"]
+            P1["Home<br/>Infrastructure"]
+            P2["Workload Explorer<br/>Container Detail"]
             P3["Container Detail<br/>Container Health"]
             P4["Container Comparison<br/>Image Footprint"]
             P5["Network Topology<br/>AI Monitor"]
