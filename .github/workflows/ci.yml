@@ -193,7 +193,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Start application
-        run: docker compose -f docker/docker-compose.dev.yml up -d --wait
+        run: docker compose -f docker/docker-compose.dev.yml up -d --wait --wait-timeout 120
         env:
           DASHBOARD_USERNAME: admin
           DASHBOARD_PASSWORD: changeme123
