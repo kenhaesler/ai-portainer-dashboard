@@ -185,6 +185,7 @@ jobs:
     name: E2E Smoke Tests
     runs-on: ubuntu-latest
     if: >-
+      !startsWith(github.head_ref || '', 'dependabot/') &&
       github.actor != 'dependabot[bot]' && (
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
