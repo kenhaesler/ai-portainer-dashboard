@@ -225,14 +225,14 @@ jobs:
           echo "All services ready"
         env:
           DASHBOARD_USERNAME: admin
-          DASHBOARD_PASSWORD: changeme123
+          DASHBOARD_PASSWORD: changeme12345
 
       - name: Run E2E tests
         run: npm run test:e2e
         env:
           E2E_BASE_URL: http://localhost:5273
           E2E_USERNAME: admin
-          E2E_PASSWORD: changeme123
+          E2E_PASSWORD: changeme12345
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
