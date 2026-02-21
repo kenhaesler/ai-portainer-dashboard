@@ -204,6 +204,19 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
   });
 
+  it('includes stack field in CSV export rows', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    const [rows] = mockExportToCsv.mock.calls[0] as [Array<Record<string, unknown>>];
+    const workersRow = rows.find((r) => r.name === 'workers-api-1');
+    const beylaRow = rows.find((r) => r.name === 'beyla');
+    expect(workersRow?.stack).toBe('workers');
+    expect(beylaRow?.stack).toBe('No Stack');
+  });
+
   it('exports visible rows to CSV', () => {
     mockQueryString = 'endpoint=1';
     render(<WorkloadExplorerPage />);

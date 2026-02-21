@@ -193,6 +193,29 @@ export default function WorkloadExplorerPage() {
       },
     },
     {
+      id: 'stack',
+      header: 'Stack',
+      size: 160,
+      cell: ({ row }) => {
+        const stackName = resolveContainerStackName(row.original, knownStackNames);
+        if (!stackName) {
+          return <span className="text-muted-foreground/50 text-xs">—</span>;
+        }
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedStack(stackName);
+            }}
+            className="inline-flex items-center rounded-md bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 transition-colors hover:bg-purple-200 hover:ring-1 hover:ring-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+            title={`Filter by stack: ${stackName}`}
+          >
+            {truncate(stackName, 25)}
+          </button>
+        );
+      },
+    },
+    {
       accessorKey: 'endpointName',
       header: 'Endpoint',
       cell: ({ row }) => {
@@ -209,7 +232,7 @@ export default function WorkloadExplorerPage() {
       header: 'Created',
       cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
     },
-  ], [navigate]);
+  ], [navigate, knownStackNames]);
 
   if (isError) {
     return (
