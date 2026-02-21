@@ -24,7 +24,7 @@ export const envSchema = z.object({
 
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
-  PORTAINER_API_KEY: z.string().min(1).default(''),
+  PORTAINER_API_KEY: z.string().default(''),
   PORTAINER_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(30),
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),

@@ -14,7 +14,7 @@ async function globalSetup(config: FullConfig) {
     'http://localhost:5273';
 
   const username = process.env.E2E_USERNAME ?? 'admin';
-  const password = process.env.E2E_PASSWORD ?? 'changeme123';
+  const password = process.env.E2E_PASSWORD ?? 'changeme12345';
 
   const browser = await chromium.launch();
   const page = await browser.newPage({ baseURL });
