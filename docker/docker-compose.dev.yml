@@ -228,7 +228,7 @@ services:
       - timescale-backups:/backups
     depends_on:
       timescaledb:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
 
