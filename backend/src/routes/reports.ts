@@ -203,7 +203,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         params.push(containerId);
         paramIdx++;
       }
-      paramIdx = addInfrastructureSqlFilter(
+      addInfrastructureSqlFilter(
         conditions,
         params,
         paramIdx,
@@ -278,9 +278,8 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         const pParams: unknown[] = [row.container_id, row.metric_type];
         let pIdx = 3;
         if (endpointId) {
-          pConditions.push(`endpoint_id = $${pIdx}`);
+          pConditions.push(`endpoint_id = $${pIdx++}`);
           pParams.push(endpointId);
-          pIdx++;
         }
 
         const pWhere = pConditions.join(' AND ');
