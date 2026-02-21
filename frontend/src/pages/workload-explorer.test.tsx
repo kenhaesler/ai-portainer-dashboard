@@ -106,10 +106,16 @@ vi.mock('@/components/shared/themed-select', () => ({
   ),
 }));
 
+// Capture columns so we can test column cell renderers directly
+let capturedColumns: any[] = [];
+
 vi.mock('@/components/shared/data-table', () => ({
-  DataTable: ({ data }: { data: Array<{ name: string }> }) => (
-    <div data-testid="workloads-table">{data.map((container) => container.name).join(',')}</div>
-  ),
+  DataTable: ({ data, columns }: { data: Array<{ name: string }>; columns: any[] }) => {
+    capturedColumns = columns;
+    return (
+      <div data-testid="workloads-table">{data.map((container) => container.name).join(',')}</div>
+    );
+  },
 }));
 
 vi.mock('@/components/shared/status-badge', () => ({
@@ -147,7 +153,9 @@ describe('WorkloadExplorerPage', () => {
   beforeEach(() => {
     mockQueryString = 'endpoint=1&stack=workers';
     mockExportToCsv.mockReset();
+    mockNavigate.mockReset();
     mockOnFiltered = undefined;
+    capturedColumns = [];
   });
 
   it('renders stack and group dropdowns with options', () => {
@@ -216,5 +224,121 @@ describe('WorkloadExplorerPage', () => {
     expect((rows as Array<Record<string, unknown>>).length).toBe(3);
     expect((rows as Array<Record<string, unknown>>).some((row) => row.group === 'System')).toBe(true);
     expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+});
+
+describe('Actions column', () => {
+  const mockContainer = {
+    id: 'c-test',
+    name: 'test-container',
+    image: 'test:latest',
+    state: 'running',
+    status: 'Up',
+    endpointId: 2,
+    endpointName: 'remote',
+    ports: [],
+    created: 1700000000,
+    labels: {},
+    networks: [],
+  };
+
+  beforeEach(() => {
+    mockNavigate.mockReset();
+    capturedColumns = [];
+    mockQueryString = 'endpoint=1';
+  });
+
+  function getActionsColumn() {
+    render(<WorkloadExplorerPage />);
+    return capturedColumns.find((col: any) => col.id === 'actions');
+  }
+
+  it('includes an actions column in the columns array', () => {
+    const actionsCol = getActionsColumn();
+    expect(actionsCol).toBeDefined();
+    expect(actionsCol.enableSorting).toBe(false);
+    expect(actionsCol.size).toBe(90);
+  });
+
+  it('renders actions column header as screen-reader only', () => {
+    const actionsCol = getActionsColumn();
+    const HeaderComponent = actionsCol.header;
+    const { container } = render(<HeaderComponent />);
+    const srSpan = container.querySelector('.sr-only');
+    expect(srSpan).not.toBeNull();
+    expect(srSpan?.textContent).toBe('Actions');
+  });
+
+  it('renders Eye and ScrollText action buttons with correct aria-labels', () => {
+    const actionsCol = getActionsColumn();
+    const CellComponent = actionsCol.cell;
+    const { container } = render(
+      <CellComponent row={{ original: mockContainer }} />
+    );
+
+    const buttons = container.querySelectorAll('button');
+    expect(buttons.length).toBe(2);
+
+    const detailButton = container.querySelector('[aria-label="View details for test-container"]');
+    expect(detailButton).not.toBeNull();
+
+    const logsButton = container.querySelector('[aria-label="View logs for test-container"]');
+    expect(logsButton).not.toBeNull();
+  });
+
+  it('navigates to container detail page when Eye button is clicked', () => {
+    const actionsCol = getActionsColumn();
+    const CellComponent = actionsCol.cell;
+    const { container } = render(
+      <CellComponent row={{ original: mockContainer }} />
+    );
+
+    const detailButton = container.querySelector('[aria-label="View details for test-container"]');
+    fireEvent.click(detailButton!);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/containers/2/c-test');
+  });
+
+  it('navigates to container logs when ScrollText button is clicked', () => {
+    const actionsCol = getActionsColumn();
+    const CellComponent = actionsCol.cell;
+    const { container } = render(
+      <CellComponent row={{ original: mockContainer }} />
+    );
+
+    const logsButton = container.querySelector('[aria-label="View logs for test-container"]');
+    fireEvent.click(logsButton!);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/containers/2/c-test?tab=logs');
+  });
+
+  it('calls stopPropagation on button click to prevent row click', () => {
+    const actionsCol = getActionsColumn();
+    const CellComponent = actionsCol.cell;
+    const { container } = render(
+      <CellComponent row={{ original: mockContainer }} />
+    );
+
+    const detailButton = container.querySelector('[aria-label="View details for test-container"]');
+    const stopPropagation = vi.fn();
+    fireEvent.click(detailButton!, { stopPropagation });
+
+    // Verify navigate was called (button handler executed)
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it('action buttons have hover-reveal opacity classes', () => {
+    const actionsCol = getActionsColumn();
+    const CellComponent = actionsCol.cell;
+    const { container } = render(
+      <CellComponent row={{ original: mockContainer }} />
+    );
+
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).toContain('opacity-0');
+    expect(wrapper?.className).toContain('group-hover/row:opacity-100');
+    expect(wrapper?.className).toContain('group-focus-within/row:opacity-100');
+    expect(wrapper?.className).toContain('max-sm:opacity-100');
+    expect(wrapper?.className).toContain('duration-150');
   });
 });

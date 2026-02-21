@@ -17,7 +17,7 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
-import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
+import { formatDate, truncate } from '@/lib/utils';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 
 export default function WorkloadExplorerPage() {
@@ -117,7 +117,6 @@ export default function WorkloadExplorerPage() {
       state: container.state,
       status: container.status,
       endpoint: container.endpointName,
-      age: formatRelativeAge(container.created),
       created: formatDate(new Date(container.created * 1000)),
     }));
   }, [filteredContainers, knownStackNames]);
@@ -168,6 +167,13 @@ export default function WorkloadExplorerPage() {
       cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
     },
     {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ getValue }) => (
+        <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
+      ),
+    },
+    {
       id: 'group',
       header: 'Group',
       cell: ({ row }) => {
@@ -199,39 +205,9 @@ export default function WorkloadExplorerPage() {
       },
     },
     {
-      id: 'age',
-      header: 'Age',
       accessorKey: 'created',
-      cell: ({ row }) => {
-        const container = row.original;
-        const age = formatRelativeAge(container.created);
-        const absoluteDate = formatDate(new Date(container.created * 1000));
-        const state = container.state;
-
-        let prefix = '';
-        let colorClass = 'text-muted-foreground';
-
-        if (state === 'running') {
-          colorClass = 'text-emerald-600 dark:text-emerald-400';
-        } else if (state === 'exited' || state === 'stopped') {
-          prefix = state === 'exited' ? 'Exited ' : 'Stopped ';
-          colorClass = 'text-muted-foreground';
-        } else if (state === 'paused') {
-          prefix = 'Paused ';
-          colorClass = 'text-amber-600 dark:text-amber-400';
-        } else if (state === 'dead') {
-          prefix = 'Dead ';
-          colorClass = 'text-red-600 dark:text-red-400';
-        }
-
-        const display = state === 'running' ? age : `${prefix}${age} ago`;
-
-        return (
-          <span className={`text-xs ${colorClass}`} title={absoluteDate}>
-            {display}
-          </span>
-        );
-      },
+      header: 'Created',
+      cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
     },
     {
       id: 'actions',
