@@ -64,7 +64,7 @@ function colorizeLogMessage(message: string): ReactNode[] {
     if (start > cursor) parts.push(message.slice(cursor, start));
 
     const lowered = token.toLowerCase();
-    let className = 'text-slate-100';
+    let className: string;
     if (/(error|fatal|panic)/.test(lowered)) className = 'text-rose-300';
     else if (/warn/.test(lowered)) className = 'text-amber-300';
     else if (/info/.test(lowered)) className = 'text-emerald-300';

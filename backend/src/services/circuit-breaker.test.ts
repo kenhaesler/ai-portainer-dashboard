@@ -328,11 +328,10 @@ describe('CircuitBreaker', () => {
 
   describe('probe failure log suppression (#698)', () => {
     /** Advance through N probe failures, accounting for exponential backoff. */
-    async function failProbeNTimes(cb: CircuitBreaker, n: number, baseResetTimeoutMs = 3000) {
-      let currentTimeout = baseResetTimeoutMs;
+    async function failProbeNTimes(cb: CircuitBreaker, n: number, _baseResetTimeoutMs = 3000) {
       for (let i = 0; i < n; i++) {
         // Use the actual currentResetTimeoutMs from stats for accurate timing
-        currentTimeout = cb.getStats().currentResetTimeoutMs;
+        const currentTimeout = cb.getStats().currentResetTimeoutMs;
         vi.advanceTimersByTime(currentTimeout);
         // getState() triggers HALF_OPEN transition, then execute fails the probe
         expect(cb.getState()).toBe('HALF_OPEN');

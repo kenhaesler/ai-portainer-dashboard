@@ -234,7 +234,7 @@ export async function executeMcpToolCall(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'MCP tool call failed';
     log.error({ err, server: serverName, tool: toolName }, 'MCP tool execution failed');
-    throw new Error(message);
+    throw new Error(message, { cause: err });
   }
 }
 
