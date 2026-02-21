@@ -192,10 +192,10 @@ services:
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-changeme-postgres-app}  # DEV ONLY default
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     volumes:
       - timescale-data:/var/lib/postgresql/data
       - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
