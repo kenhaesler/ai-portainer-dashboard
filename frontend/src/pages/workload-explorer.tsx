@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, Eye, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
@@ -18,6 +19,7 @@ import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
+import { transition } from '@/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 
 export default function WorkloadExplorerPage() {
@@ -435,23 +437,30 @@ export default function WorkloadExplorerPage() {
 
       {/* Active filter chips */}
       {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {activeFilters.map((filter) => (
-            <span
-              key={filter.key}
-              className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
-            >
-              <span className="font-medium text-muted-foreground">{filter.label}:</span>
-              <span>{filter.value}</span>
-              <button
-                onClick={filter.onRemove}
-                className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
-                aria-label={`Remove ${filter.label} filter`}
+        <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
+          <AnimatePresence mode="popLayout">
+            {activeFilters.map((filter) => (
+              <motion.span
+                key={filter.key}
+                layout
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.85 }}
+                transition={transition.fast}
+                className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
+                <span className="font-medium text-muted-foreground">{filter.label}:</span>
+                <span>{filter.value}</span>
+                <button
+                  onClick={filter.onRemove}
+                  className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`Remove ${filter.label} filter`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </motion.span>
+            ))}
+          </AnimatePresence>
           {activeFilters.length >= 2 && (
             <button
               onClick={() => setFilters(undefined, undefined, undefined)}

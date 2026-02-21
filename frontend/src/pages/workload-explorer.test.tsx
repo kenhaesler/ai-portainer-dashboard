@@ -132,6 +132,17 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('@/lib/motion-tokens', () => ({
+  transition: { fast: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
+}));
+
+vi.mock('framer-motion', () => ({
+  AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  motion: {
+    span: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => <span {...Object.fromEntries(Object.entries(props).filter(([k]) => !['initial', 'animate', 'exit', 'transition', 'layout'].includes(k)))}>{children}</span>,
+  },
+}));
+
 let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
 
 vi.mock('@/components/shared/workload-smart-search', () => ({
@@ -146,6 +157,7 @@ import WorkloadExplorerPage from './workload-explorer';
 describe('WorkloadExplorerPage', () => {
   beforeEach(() => {
     mockQueryString = 'endpoint=1&stack=workers';
+    mockSetSearchParams.mockReset();
     mockExportToCsv.mockReset();
     mockOnFiltered = undefined;
   });
@@ -241,6 +253,30 @@ describe('WorkloadExplorerPage', () => {
 
     expect(screen.getByText('Endpoint:')).toBeInTheDocument();
     expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('removes specific filter when chip dismiss button is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    // Click the dismiss button for the Stack chip
+    const dismissStackButton = screen.getByRole('button', { name: 'Remove Stack filter' });
+    fireEvent.click(dismissStackButton);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({ endpoint: '1', group: 'workload' });
+  });
+
+  it('clears all filters when Clear all is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByText('Clear all'));
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({});
   });
 
   it('exports visible rows to CSV', () => {
