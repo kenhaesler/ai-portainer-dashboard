@@ -75,7 +75,7 @@ services:
       postgres-app:
         condition: service_healthy
       timescaledb:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
     # Resource limits commented out for dev — uncomment to test constrained environments
