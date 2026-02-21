@@ -25,9 +25,9 @@ const {
 
 // Kept: ollama mock — tests control LLM chat responses
 vi.mock('ollama', () => ({
-  Ollama: vi.fn().mockImplementation(() => ({
-    chat: mockOllamaChat,
-  })),
+  Ollama: vi.fn(function () {
+    return { chat: mockOllamaChat };
+  }),
 }));
 
 

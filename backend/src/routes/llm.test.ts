@@ -26,10 +26,9 @@ const mockInsertLlmTrace = vi.mocked(insertLlmTrace);
 const mockChat = vi.fn();
 const mockList = vi.fn();
 vi.mock('ollama', () => ({
-  Ollama: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: mockList,
-  })),
+  Ollama: vi.fn(function () {
+    return { chat: mockChat, list: mockList };
+  }),
 }));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
