@@ -208,9 +208,9 @@ function ComparisonChart({
         />
         <Tooltip
           labelFormatter={(v) => formatDate(v as string)}
-          formatter={(value: number, name: string) => {
+          formatter={(value: number | undefined, name: string) => {
             const target = targets.find((t) => t.containerId === name);
-            return [`${value.toFixed(1)}${unit}`, target?.name || name];
+            return [`${(value ?? 0).toFixed(1)}${unit}`, target?.name || name];
           }}
         />
         <Legend

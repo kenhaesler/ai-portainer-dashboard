@@ -1055,8 +1055,8 @@ function ForecastCard({
             />
             <Tooltip
               labelFormatter={(v) => formatDate(v as string)}
-              formatter={(value: number, name: string) => [
-                `${value}${unit}`,
+              formatter={(value: number | undefined, name: string) => [
+                `${value ?? 0}${unit}`,
                 name === 'projected' ? `${label} (projected)` : label,
               ]}
             />
