@@ -161,11 +161,11 @@ describe('WorkloadExplorerPage', () => {
     expect(groupSelect).toBeInTheDocument();
     expect(groupSelect).toHaveAttribute('data-value', '__all__');
     expect(screen.getByText('All stacks')).toBeInTheDocument();
-    expect(screen.getByText('workers')).toBeInTheDocument();
+    expect(screen.getAllByText('workers').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('billing')).toBeInTheDocument();
     expect(screen.getByText('All groups')).toBeInTheDocument();
-    expect(screen.getByText('System')).toBeInTheDocument();
-    expect(screen.getByText('Workload')).toBeInTheDocument();
+    expect(screen.getAllByText('System').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Workload').length).toBeGreaterThanOrEqual(1);
   });
 
   it('filters table rows using selected stack from URL', () => {
@@ -215,6 +215,32 @@ describe('WorkloadExplorerPage', () => {
     const beylaRow = rows.find((r) => r.name === 'beyla');
     expect(workersRow?.stack).toBe('workers');
     expect(beylaRow?.stack).toBe('No Stack');
+  });
+
+  it('renders active filter chips when filters are active', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.getByText('Stack:')).toBeInTheDocument();
+    expect(screen.getByText('Group:')).toBeInTheDocument();
+    expect(screen.getByText('Clear all')).toBeInTheDocument();
+  });
+
+  it('does not render filter chips when no filters are active', () => {
+    mockQueryString = '';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.queryByText('Endpoint:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('does not show Clear all with only one active filter', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
   });
 
   it('exports visible rows to CSV', () => {

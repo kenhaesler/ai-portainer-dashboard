@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle, Eye, ScrollText } from 'lucide-react';
+import { AlertTriangle, Eye, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -99,6 +99,36 @@ export default function WorkloadExplorerPage() {
       return stackMatches && groupMatches;
     });
   }, [containers, selectedStack, selectedGroup, knownStackNames]);
+
+  const activeFilters = useMemo(() => {
+    const filters: { key: string; label: string; value: string; onRemove: () => void }[] = [];
+    if (selectedEndpoint !== undefined) {
+      const ep = endpoints?.find(e => e.id === selectedEndpoint);
+      filters.push({
+        key: 'endpoint',
+        label: 'Endpoint',
+        value: ep ? `${ep.name} (ID: ${ep.id})` : `ID: ${selectedEndpoint}`,
+        onRemove: () => setFilters(undefined, selectedStack, selectedGroup),
+      });
+    }
+    if (selectedStack) {
+      filters.push({
+        key: 'stack',
+        label: 'Stack',
+        value: selectedStack,
+        onRemove: () => setFilters(selectedEndpoint, undefined, selectedGroup),
+      });
+    }
+    if (selectedGroup) {
+      filters.push({
+        key: 'group',
+        label: 'Group',
+        value: selectedGroup === 'system' ? 'System' : 'Workload',
+        onRemove: () => setFilters(selectedEndpoint, selectedStack, undefined),
+      });
+    }
+    return filters;
+  }, [selectedEndpoint, selectedStack, selectedGroup, endpoints]);
 
   const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
 
@@ -402,6 +432,36 @@ export default function WorkloadExplorerPage() {
         </button>
 
       </div>
+
+      {/* Active filter chips */}
+      {activeFilters.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {activeFilters.map((filter) => (
+            <span
+              key={filter.key}
+              className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
+            >
+              <span className="font-medium text-muted-foreground">{filter.label}:</span>
+              <span>{filter.value}</span>
+              <button
+                onClick={filter.onRemove}
+                className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+                aria-label={`Remove ${filter.label} filter`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          {activeFilters.length >= 2 && (
+            <button
+              onClick={() => setFilters(undefined, undefined, undefined)}
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Smart search */}
       {filteredContainers && (
