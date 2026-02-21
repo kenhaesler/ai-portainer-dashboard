@@ -110,7 +110,7 @@ export function useFavoriteContainers(ids: string[]) {
     queryKey: ['containers', 'favorites', ids],
     queryFn: async () => {
       if (ids.length === 0) return [];
-      const qs = ids.map((id) => `ids=${encodeURIComponent(id)}`).join('&');
+      const qs = `ids=${ids.map(encodeURIComponent).join(',')}`;
       return api.get<Container[]>(`/api/containers/favorites?${qs}`);
     },
     staleTime: 60 * 1000,
