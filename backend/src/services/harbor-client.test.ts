@@ -3,7 +3,7 @@ import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Kept: undici mock — external dependency
 vi.mock('undici', () => ({
-  Agent: vi.fn().mockImplementation(() => ({ close: vi.fn().mockResolvedValue(undefined) })),
+  Agent: vi.fn(function () { return { close: vi.fn().mockResolvedValue(undefined) }; }),
   fetch: vi.fn(),
 }));
 

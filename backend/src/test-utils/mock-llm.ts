@@ -9,7 +9,7 @@
 import { vi } from 'vitest';
 
 /** Returns a fresh mock covering every export from llm-client.ts */
-export function createLlmClientMock() {
+export function createLlmClientMock(): Record<string, unknown> {
   return {
     getLlmQueueSize: vi.fn().mockReturnValue({ pending: 0, active: 0 }),
     getLlmDispatcher: vi.fn().mockReturnValue(undefined),
@@ -26,7 +26,7 @@ export function createLlmClientMock() {
 }
 
 /** Returns a fresh mock covering the ollama SDK module */
-export function createOllamaMock() {
+export function createOllamaMock(): Record<string, unknown> {
   const mockChat = vi.fn();
   return {
     Ollama: vi.fn().mockImplementation(() => ({
@@ -40,7 +40,7 @@ export function createOllamaMock() {
 }
 
 /** Returns a fresh mock for llm-trace-store.ts */
-export function createLlmTraceStoreMock() {
+export function createLlmTraceStoreMock(): Record<string, unknown> {
   return {
     insertLlmTrace: vi.fn(),
     getRecentTraces: vi.fn().mockResolvedValue([]),

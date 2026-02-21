@@ -73,6 +73,7 @@ async function flushMicrotasks() {
 describe('remediation-service', () => {
   beforeEach(async () => {
     await cache.clear();
+    vi.clearAllMocks();
     vi.restoreAllMocks();
     // Re-set forwarding mock defaults
     mockInsertAction.mockReturnValue(true);
@@ -371,6 +372,7 @@ describe('isProtectedContainer', () => {
 describe('protected container safety', () => {
   beforeEach(async () => {
     await cache.clear();
+    vi.clearAllMocks();
     vi.restoreAllMocks();
     // Re-set forwarding mock defaults
     mockInsertAction.mockReturnValue(true);
