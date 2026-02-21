@@ -127,7 +127,7 @@ export async function extractPcapSummary(filePath: string): Promise<PcapSummary>
         return parseTcpdumpOutput(stdout);
       }
     }
-    throw new Error(`Failed to parse PCAP file: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Failed to parse PCAP file: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
   }
 }
 
