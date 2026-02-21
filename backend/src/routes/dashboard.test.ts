@@ -94,122 +94,34 @@ describe('Dashboard Routes', () => {
   });
 
   describe('GET /api/dashboard/summary', () => {
-    it('fetches containers from ALL up endpoints (no 5-endpoint cap)', async () => {
-      // Create 8 endpoints — all should be queried
-      const endpoints = Array.from({ length: 8 }, (_, i) =>
+    it('returns KPIs computed from endpoint snapshots without fetching containers (#801)', async () => {
+      const endpoints = Array.from({ length: 3 }, (_, i) =>
         makeEndpoint(i + 1, `ep-${i + 1}`),
       );
       mockGetEndpoints.mockResolvedValue(endpoints);
-      mockGetContainers.mockResolvedValue([makeContainer(`c-1`, Date.now())]);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
-
-      expect(res.statusCode).toBe(200);
-      // getContainers should have been called once per endpoint (8 times, not 5)
-      expect(mockGetContainers).toHaveBeenCalledTimes(8);
-      for (let i = 1; i <= 8; i++) {
-        expect(mockGetContainers).toHaveBeenCalledWith(i);
-      }
-
-      await app.close();
-    });
-
-    it('defaults recentLimit to 20', async () => {
-      const endpoints = [makeEndpoint(1, 'ep-1')];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      // Return 30 containers
-      const containers = Array.from({ length: 30 }, (_, i) =>
-        makeContainer(`c-${i}`, 1000 + i),
-      );
-      mockGetContainers.mockResolvedValue(containers);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json().recentContainers).toHaveLength(20);
-
-      await app.close();
-    });
-
-    it('respects recentLimit query parameter', async () => {
-      const endpoints = [makeEndpoint(1, 'ep-1')];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      const containers = Array.from({ length: 30 }, (_, i) =>
-        makeContainer(`c-${i}`, 1000 + i),
-      );
-      mockGetContainers.mockResolvedValue(containers);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary?recentLimit=5' });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json().recentContainers).toHaveLength(5);
-
-      await app.close();
-    });
-
-    it('caps recentLimit at 50', async () => {
-      const endpoints = [makeEndpoint(1, 'ep-1')];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      const containers = Array.from({ length: 60 }, (_, i) =>
-        makeContainer(`c-${i}`, 1000 + i),
-      );
-      mockGetContainers.mockResolvedValue(containers);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary?recentLimit=100' });
-
-      // Zod max(50) should reject values > 50 with a 400
-      expect(res.statusCode).toBe(400);
-
-      await app.close();
-    });
-
-    it('skips down endpoints when fetching containers', async () => {
-      const endpoints = [
-        makeEndpoint(1, 'ep-up', 'up'),
-        makeEndpoint(2, 'ep-down', 'down'),
-      ];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      mockGetContainers.mockResolvedValue([makeContainer('c-1', Date.now())]);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
-
-      expect(res.statusCode).toBe(200);
-      // Only the 'up' endpoint should have been queried
-      expect(mockGetContainers).toHaveBeenCalledTimes(1);
-      expect(mockGetContainers).toHaveBeenCalledWith(1);
-
-      await app.close();
-    });
-
-    it('returns partial flag when some endpoints fail (#745)', async () => {
-      const endpoints = [
-        makeEndpoint(1, 'ep-healthy'),
-        makeEndpoint(2, 'ep-failing'),
-      ];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-
-      mockGetContainers.mockImplementation((endpointId: number) => {
-        if (endpointId === 2) {
-          return Promise.reject(new Error('HTTP 500: Internal Server Error'));
-        }
-        return Promise.resolve([makeContainer('c-1', Date.now())]);
-      });
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
 
       expect(res.statusCode).toBe(200);
       const data = res.json();
+      expect(data.kpis.endpoints).toBe(3);
+      // No container fetching in summary route
+      expect(mockGetContainers).not.toHaveBeenCalled();
+      // recentContainers removed from summary (#801)
+      expect(data.recentContainers).toBeUndefined();
 
-      expect(data.recentContainers).toHaveLength(1);
-      expect(data.partial).toBe(true);
-      expect(data.failedEndpoints).toHaveLength(1);
-      expect(data.failedEndpoints[0]).toContain('ep-failing');
+      await app.close();
+    });
+
+    it('returns 502 when Portainer is unreachable', async () => {
+      mockGetEndpoints.mockRejectedValue(new Error('Connection refused'));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toBe('Unable to connect to Portainer');
 
       await app.close();
     });
@@ -615,7 +527,7 @@ describe('Dashboard Routes', () => {
       expect(data.summary.kpis).toBeDefined();
       expect(data.summary.kpis.running).toBe(1);
       expect(data.summary.security).toBeDefined();
-      expect(data.summary.recentContainers).toHaveLength(1);
+      expect(data.summary.recentContainers).toBeUndefined();
       expect(data.summary.timestamp).toBeDefined();
 
       // Resources section
@@ -684,8 +596,6 @@ describe('Dashboard Routes', () => {
       expect(res.statusCode).toBe(200);
       const data = res.json();
 
-      // Should still return data from the healthy endpoint
-      expect(data.summary.recentContainers).toHaveLength(1);
       // Should include partial flag
       expect(data.partial).toBe(true);
       expect(data.failedEndpoints).toBeDefined();
@@ -714,7 +624,7 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
-    it('respects recentLimit and topN query parameters', async () => {
+    it('respects topN query parameter', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = Array.from({ length: 15 }, (_, i) =>
         makeContainer(`c-${i}`, 1000 + i, 'running', { 'com.docker.compose.project': `stack-${i}` }),
@@ -729,11 +639,11 @@ describe('Dashboard Routes', () => {
       mockGetLatestMetricsBatch.mockResolvedValue(batchMap);
 
       const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?recentLimit=5&topN=3' });
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?topN=3' });
 
       expect(res.statusCode).toBe(200);
       const data = res.json();
-      expect(data.summary.recentContainers).toHaveLength(5);
+      expect(data.summary.recentContainers).toBeUndefined();
       expect(data.resources.topStacks).toHaveLength(3);
 
       await app.close();
