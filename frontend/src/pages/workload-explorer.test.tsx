@@ -114,11 +114,13 @@ vi.mock('@/components/shared/data-table', () => ({
     enableRowSelection,
     maxSelection,
     onSelectionChange,
+    selectedRowIds,
   }: {
     data: Array<{ name: string }>;
     enableRowSelection?: boolean;
     maxSelection?: number;
     onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
+    selectedRowIds?: Record<string, boolean>;
   }) => {
     mockOnSelectionChange = onSelectionChange;
     return (
@@ -126,6 +128,7 @@ vi.mock('@/components/shared/data-table', () => ({
         data-testid="workloads-table"
         data-enable-row-selection={enableRowSelection ? 'true' : undefined}
         data-max-selection={maxSelection}
+        data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
       >
         {data.map((container) => container.name).join(',')}
       </div>
@@ -332,5 +335,8 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(screen.getByTestId('clear-selection'));
 
     expect(screen.queryByTestId('selection-action-bar')).not.toBeInTheDocument();
+    // Verify DataTable receives empty selectedRowIds to clear internal checkboxes
+    const table = screen.getByTestId('workloads-table');
+    expect(table).toHaveAttribute('data-selected-row-ids', '{}');
   });
 });

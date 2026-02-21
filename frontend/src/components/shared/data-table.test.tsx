@@ -451,5 +451,33 @@ describe('DataTable', () => {
       expect(screen.getByTestId('row-checkbox-custom-1')).toBeInTheDocument();
       expect(screen.getByTestId('row-checkbox-custom-2')).toBeInTheDocument();
     });
+
+    it('clears internal selection when selectedRowIds is set to empty', () => {
+      const data = makeRows(3);
+      const { rerender } = render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+        />
+      );
+
+      // Select a row
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+      expect(screen.getByTestId('table-row-0').className).toContain('bg-primary/5');
+
+      // Parent clears selection via selectedRowIds
+      rerender(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          selectedRowIds={{}}
+        />
+      );
+
+      // Row should no longer be highlighted
+      expect(screen.getByTestId('table-row-0').className).not.toContain('bg-primary/5');
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { type ColumnDef } from '@tanstack/react-table';
+import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
 import { AlertTriangle, Eye, GitCompareArrows, ScrollText } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
@@ -104,6 +104,7 @@ export default function WorkloadExplorerPage() {
   }, [containers, selectedStack, selectedGroup, knownStackNames]);
 
   const [selectedContainers, setSelectedContainers] = useState<Container[]>([]);
+  const [controlledRowIds, setControlledRowIds] = useState<RowSelectionState | undefined>(undefined);
   const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
 
   // Reset search-filtered results when the upstream (dropdown) filters change
@@ -139,10 +140,13 @@ export default function WorkloadExplorerPage() {
 
   const handleSelectionChange = useCallback((rows: Container[]) => {
     setSelectedContainers(rows);
+    // Clear the controlled override so internal state takes over again
+    setControlledRowIds(undefined);
   }, []);
 
   const handleClearSelection = useCallback(() => {
     setSelectedContainers([]);
+    setControlledRowIds({});
   }, []);
 
   const handleCompare = useCallback(() => {
@@ -447,6 +451,7 @@ export default function WorkloadExplorerPage() {
             maxSelection={MAX_COMPARE}
             onSelectionChange={handleSelectionChange}
             getRowId={(row) => `${row.endpointId}:${row.id}`}
+            selectedRowIds={controlledRowIds}
           />
         </div>
       ) : null}

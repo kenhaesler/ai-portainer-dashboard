@@ -44,6 +44,8 @@ interface DataTableProps<T> {
   maxSelection?: number;
   onSelectionChange?: (selectedRows: T[]) => void;
   getRowId?: (row: T) => string;
+  /** Controlled selection state — pass an empty object to clear all checkboxes */
+  selectedRowIds?: RowSelectionState;
 }
 
 export function DataTable<T>({
@@ -61,10 +63,19 @@ export function DataTable<T>({
   maxSelection,
   onSelectionChange,
   getRowId: getRowIdProp,
+  selectedRowIds,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // Sync controlled selection from parent (e.g. clear all checkboxes)
+  useEffect(() => {
+    if (selectedRowIds !== undefined) {
+      setRowSelection(selectedRowIds);
+    }
+  }, [selectedRowIds]);
+
   const [showScrollTop, setShowScrollTop] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -115,12 +126,12 @@ export function DataTable<T>({
     };
   }, [enableRowSelection, maxSelection, rowSelection]);
 
-  const allColumns = useMemo(() => {
+  const allColumns = useMemo<ColumnDef<T, any>[]>(() => {
     if (!selectionColumn) return columns;
     return [selectionColumn, ...columns];
   }, [selectionColumn, columns]);
 
-  const table = useReactTable({
+  const table = useReactTable<T>({
     data,
     columns: allColumns,
     getCoreRowModel: getCoreRowModel(),
@@ -145,7 +156,7 @@ export function DataTable<T>({
       ...(enableRowSelection ? { rowSelection } : {}),
     },
     ...(useVirtual || isServerPaginated ? {} : { initialState: { pagination: { pageSize } } }),
-    ...(getRowIdProp ? { getRowId: (row) => getRowIdProp(row) } : {}),
+    ...(getRowIdProp ? { getRowId: (row: T) => getRowIdProp(row) } : {}),
   });
 
   // Notify parent when selection changes
