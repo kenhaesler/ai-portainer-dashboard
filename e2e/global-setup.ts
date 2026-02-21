@@ -1,23 +1,22 @@
-import { chromium, type FullConfig } from '@playwright/test';
+import { test as setup } from '@playwright/test';
+import path from 'path';
+import fs from 'fs';
+
+const authFile = path.join(__dirname, '.auth/user.json');
 
 /**
- * Playwright global setup: logs in once and saves the authenticated
+ * Playwright setup project: logs in once and saves the authenticated
  * browser storage state to `e2e/.auth/user.json`.
  *
  * Every test project that depends on the `setup` project inherits
  * the auth cookie/localStorage so individual tests skip the login flow.
  */
-async function globalSetup(config: FullConfig) {
-  const baseURL =
-    config.projects[0]?.use?.baseURL ??
-    process.env.E2E_BASE_URL ??
-    'http://localhost:5273';
-
+setup('authenticate', async ({ page }) => {
   const username = process.env.E2E_USERNAME ?? 'admin';
   const password = process.env.E2E_PASSWORD ?? 'changeme12345';
 
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ baseURL });
+  // Ensure the output directory exists
+  fs.mkdirSync(path.dirname(authFile), { recursive: true });
 
   await page.goto('/login');
 
@@ -35,9 +34,5 @@ async function globalSetup(config: FullConfig) {
   await page.waitForURL(/\/(home)?$/, { timeout: 15_000 });
 
   // Persist storage state (cookies + localStorage with auth token)
-  await page.context().storageState({ path: 'e2e/.auth/user.json' });
-
-  await browser.close();
-}
-
-export default globalSetup;
+  await page.context().storageState({ path: authFile });
+});

@@ -48,7 +48,7 @@ export default defineConfig({
     /* All other specs reuse the cached auth state */
     {
       name: 'chromium',
-      testIgnore: /auth\.spec\.ts/,
+      testIgnore: [/auth\.spec\.ts/, /global-setup\.ts/],
       dependencies: ['setup'],
       use: {
         ...devices['Desktop Chrome'],
