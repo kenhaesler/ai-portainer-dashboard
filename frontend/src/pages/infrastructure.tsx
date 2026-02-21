@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
   Server, Layers, LayoutGrid, List, AlertTriangle, Boxes, Activity, Clock,
-  ChevronLeft, ChevronRight, Search,
+  ChevronLeft, ChevronRight, Search, ArrowRight, X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useEndpoints, type Endpoint } from '@/hooks/use-endpoints';
 import { useStacks, type Stack } from '@/hooks/use-stacks';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
@@ -38,6 +39,20 @@ function getSnapshotAgeColor(snapshotAge: number | null, thresholdMs = 5 * 60 * 
   return 'text-red-600 dark:text-red-400';
 }
 
+function getStackType(type: number): string {
+  switch (type) {
+    case 1: return 'Swarm';
+    case 2: return 'Compose';
+    case 3: return 'Kubernetes';
+    default: return `Type ${type}`;
+  }
+}
+
+function formatDate(timestamp?: number): string {
+  if (!timestamp) return 'N/A';
+  return new Date(timestamp * 1000).toLocaleDateString();
+}
+
 function DiscoveredBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
@@ -47,7 +62,7 @@ function DiscoveredBadge() {
   );
 }
 
-function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () => void }) {
+function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint; onClick: () => void; onViewStacks?: () => void }) {
   const memoryGB = (endpoint.totalMemory / (1024 * 1024 * 1024)).toFixed(1);
 
   return (
@@ -125,6 +140,17 @@ function EndpointCard({ endpoint, onClick }: { endpoint: Endpoint; onClick: () =
       )}
 
       <p className="mt-4 truncate text-xs text-muted-foreground">{endpoint.url}</p>
+
+      {onViewStacks && endpoint.stackCount > 0 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onViewStacks(); }}
+          className="mt-3 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          data-testid="view-stacks-link"
+        >
+          View {endpoint.stackCount} stack{endpoint.stackCount !== 1 ? 's' : ''}
+          <ArrowRight className="h-3 w-3" />
+        </button>
+      )}
     </button>
   );
 }
@@ -135,20 +161,6 @@ interface StackWithEndpoint extends Stack {
 
 function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () => void }) {
   const isInferred = stack.source === 'compose-label';
-
-  const formatDate = (timestamp?: number) => {
-    if (!timestamp) return 'N/A';
-    return new Date(timestamp * 1000).toLocaleDateString();
-  };
-
-  const getStackType = (type: number) => {
-    switch (type) {
-      case 1: return 'Swarm';
-      case 2: return 'Compose';
-      case 3: return 'Kubernetes';
-      default: return `Type ${type}`;
-    }
-  };
 
   return (
     <button
@@ -247,16 +259,34 @@ export default function InfrastructurePage() {
   // Shared auto-refresh preference
   const { interval, setInterval } = useAutoRefresh(30);
 
-  // Combined force refresh — invalidates both caches then refetches
+  // Cross-section filter: endpoint ID selected from fleet → filters stacks section
+  const [stackEndpointFilter, setStackEndpointFilter] = useState<number | null>(null);
+  const stacksSectionRef = useRef<HTMLElement>(null);
+
+  const handleViewStacks = useCallback((endpointId: number) => {
+    setStackEndpointFilter(endpointId);
+    setTimeout(() => {
+      stacksSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }, []);
+
+  // Combined force refresh — invalidates both caches then refetches, surfaces partial failures
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   const forceRefresh = useCallback(async () => {
     setIsForceRefreshing(true);
     try {
+      // Cache invalidation failures are non-fatal — swallow them silently
       await Promise.allSettled([
         api.request('/api/admin/cache/invalidate', { method: 'POST', params: { resource: 'endpoints' } }),
         api.request('/api/admin/cache/invalidate', { method: 'POST', params: { resource: 'stacks' } }),
       ]);
-      await Promise.allSettled([refetchEndpoints(), refetchStacks()]);
+      const [epResult, stackResult] = await Promise.allSettled([refetchEndpoints(), refetchStacks()]);
+      const failed: string[] = [];
+      if (epResult.status === 'rejected') failed.push('endpoints');
+      if (stackResult.status === 'rejected') failed.push('stacks');
+      if (failed.length > 0) {
+        toast.error(`Failed to refresh ${failed.join(' and ')}`);
+      }
     } finally {
       setIsForceRefreshing(false);
     }
@@ -288,6 +318,14 @@ export default function InfrastructurePage() {
     }));
   }, [stacks, endpoints]);
 
+  // Stacks filtered by the cross-section endpoint selection (null = show all)
+  const displayedStacks = useMemo(
+    () => stackEndpointFilter !== null
+      ? stacksWithEndpoints.filter(s => s.endpointId === stackEndpointFilter)
+      : stacksWithEndpoints,
+    [stacksWithEndpoints, stackEndpointFilter],
+  );
+
   // Summary bar counts
   const endpointUpCount = endpoints?.filter(ep => ep.status === 'up').length ?? 0;
   const endpointDownCount = endpoints?.filter(ep => ep.status === 'down').length ?? 0;
@@ -308,20 +346,6 @@ export default function InfrastructurePage() {
 
   const handleStackClick = (stack: StackWithEndpoint) => {
     navigate(`/workloads?endpoint=${stack.endpointId}&stack=${encodeURIComponent(stack.name)}`);
-  };
-
-  const getStackType = (type: number) => {
-    switch (type) {
-      case 1: return 'Swarm';
-      case 2: return 'Compose';
-      case 3: return 'Kubernetes';
-      default: return `Type ${type}`;
-    }
-  };
-
-  const formatDate = (timestamp?: number) => {
-    if (!timestamp) return 'N/A';
-    return new Date(timestamp * 1000).toLocaleDateString();
   };
 
   const endpointColumns: ColumnDef<Endpoint, unknown>[] = useMemo(() => [
@@ -603,6 +627,7 @@ export default function InfrastructurePage() {
                   key={endpoint.id}
                   endpoint={endpoint}
                   onClick={() => handleEndpointClick(endpoint.id)}
+                  onViewStacks={() => handleViewStacks(endpoint.id)}
                 />
               ))}
             </div>
@@ -647,16 +672,29 @@ export default function InfrastructurePage() {
       </section>
 
       {/* Stack Overview section */}
-      <section aria-labelledby="stacks-heading" className="space-y-4">
+      <section ref={stacksSectionRef} aria-labelledby="stacks-heading" className="space-y-4">
         <div className="flex items-center justify-between border-b pb-2">
           <div className="flex items-center gap-2">
             <Layers className="h-5 w-5 text-muted-foreground" />
             <h2 id="stacks-heading" className="text-xl font-semibold">Stack Overview</h2>
+            {stackEndpointFilter !== null && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                {endpoints?.find(ep => ep.id === stackEndpointFilter)?.name ?? `Endpoint ${stackEndpointFilter}`}
+                <button
+                  onClick={() => setStackEndpointFilter(null)}
+                  className="ml-0.5 rounded-full hover:bg-primary/20"
+                  aria-label="Clear endpoint filter"
+                  data-testid="clear-stack-filter"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
           </div>
           {!isLoading && stacksWithEndpoints.length > 0 && (
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {stacksWithEndpoints.length} stack{stacksWithEndpoints.length !== 1 ? 's' : ''}
+                {displayedStacks.length}{stackEndpointFilter !== null ? ` of ${stacksWithEndpoints.length}` : ''} stack{displayedStacks.length !== 1 ? 's' : ''}
               </span>
               <div className="flex items-center rounded-lg border p-1">
                 <button
@@ -694,17 +732,34 @@ export default function InfrastructurePage() {
               <SkeletonCard key={i} className="h-[240px]" />
             ))}
           </div>
-        ) : stacksWithEndpoints.length === 0 ? (
+        ) : displayedStacks.length === 0 ? (
           <div className="rounded-lg border bg-card p-8 text-center">
             <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
-            <p className="mt-4 font-medium">No stacks or compose projects detected</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              There are no Docker Stacks or Compose projects deployed across your endpoints
-            </p>
+            {stackEndpointFilter !== null ? (
+              <>
+                <p className="mt-4 font-medium">No stacks for this endpoint</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The selected endpoint has no Docker Stacks or Compose projects
+                </p>
+                <button
+                  onClick={() => setStackEndpointFilter(null)}
+                  className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+                >
+                  Show all stacks
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="mt-4 font-medium">No stacks or compose projects detected</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  There are no Docker Stacks or Compose projects deployed across your endpoints
+                </p>
+              </>
+            )}
           </div>
         ) : stacksViewMode === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {stacksWithEndpoints.map((stack) => (
+            {displayedStacks.map((stack) => (
               <StackCard
                 key={stack.id}
                 stack={stack}
@@ -716,7 +771,7 @@ export default function InfrastructurePage() {
           <div className="rounded-lg border bg-card p-6 shadow-sm">
             <DataTable
               columns={stackColumns}
-              data={stacksWithEndpoints}
+              data={displayedStacks}
               searchKey="name"
               searchPlaceholder="Search stacks..."
               pageSize={15}

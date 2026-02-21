@@ -276,7 +276,7 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
   );
 
   const handleClick = useCallback(() => {
-    navigate('/fleet');
+    navigate('/infrastructure');
   }, [navigate]);
 
   if (isLoading) {

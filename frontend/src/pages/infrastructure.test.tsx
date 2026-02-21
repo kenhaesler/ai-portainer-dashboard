@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import InfrastructurePage from './infrastructure';
@@ -29,6 +29,11 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn() },
+}));
+
+import { toast } from 'sonner';
 import { useEndpoints } from '@/hooks/use-endpoints';
 import { useStacks } from '@/hooks/use-stacks';
 import type { Endpoint } from '@/hooks/use-endpoints';
@@ -407,5 +412,177 @@ describe('InfrastructurePage — shared data hooks', () => {
     // useEndpoints and useStacks each called exactly once (no duplicate requests)
     expect(mockUseEndpoints).toHaveBeenCalledTimes(1);
     expect(mockUseStacks).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('InfrastructurePage — cross-section filter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockNavigate.mockClear();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('renders "View stacks" button when endpoint has stacks', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep-with-stacks', stackCount: 2 })]);
+    mockStacks([makeStack({ id: 1, endpointId: 1 }), makeStack({ id: 2, endpointId: 1 })]);
+
+    renderPage();
+
+    expect(screen.getByTestId('view-stacks-link')).toBeInTheDocument();
+  });
+
+  it('does not render "View stacks" button when endpoint has no stacks', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep-no-stacks', stackCount: 0 })]);
+    mockStacks([]);
+
+    renderPage();
+
+    expect(screen.queryByTestId('view-stacks-link')).not.toBeInTheDocument();
+  });
+
+  it('clicking "View stacks" filters the stacks section to that endpoint', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', stackCount: 1 }),
+      makeEndpoint({ id: 2, name: 'ep2', stackCount: 1 }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'stack-for-ep1', endpointId: 1 }),
+      makeStack({ id: 2, name: 'stack-for-ep2', endpointId: 2 }),
+    ]);
+
+    renderPage();
+
+    // Both stacks visible initially
+    expect(screen.getByText('stack-for-ep1')).toBeInTheDocument();
+    expect(screen.getByText('stack-for-ep2')).toBeInTheDocument();
+
+    // Click "View stacks" on the first endpoint (ep1)
+    const viewButtons = screen.getAllByTestId('view-stacks-link');
+    fireEvent.click(viewButtons[0]);
+
+    // Only ep1's stack is shown
+    expect(screen.getByText('stack-for-ep1')).toBeInTheDocument();
+    expect(screen.queryByText('stack-for-ep2')).not.toBeInTheDocument();
+
+    // Filter chip appears
+    expect(screen.getByTestId('clear-stack-filter')).toBeInTheDocument();
+  });
+
+  it('clicking the clear filter chip restores all stacks', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', stackCount: 1 }),
+      makeEndpoint({ id: 2, name: 'ep2', stackCount: 1 }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'stack-for-ep1', endpointId: 1 }),
+      makeStack({ id: 2, name: 'stack-for-ep2', endpointId: 2 }),
+    ]);
+
+    renderPage();
+
+    // Apply filter
+    const viewButtons = screen.getAllByTestId('view-stacks-link');
+    fireEvent.click(viewButtons[0]);
+    expect(screen.queryByText('stack-for-ep2')).not.toBeInTheDocument();
+
+    // Clear filter
+    fireEvent.click(screen.getByTestId('clear-stack-filter'));
+
+    // Both stacks visible again
+    expect(screen.getByText('stack-for-ep1')).toBeInTheDocument();
+    expect(screen.getByText('stack-for-ep2')).toBeInTheDocument();
+    expect(screen.queryByTestId('clear-stack-filter')).not.toBeInTheDocument();
+  });
+
+  it('shows filtered empty state when selected endpoint has no matching stacks', () => {
+    // Endpoint reports stackCount > 0 but stacks hook has none for it
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1', stackCount: 1 })]);
+    mockStacks([]);
+
+    renderPage();
+
+    fireEvent.click(screen.getByTestId('view-stacks-link'));
+
+    expect(screen.getByText('No stacks for this endpoint')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show all stacks' })).toBeInTheDocument();
+  });
+
+  it('"Show all stacks" in the filtered empty state clears the filter', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1', stackCount: 1 })]);
+    mockStacks([]);
+
+    renderPage();
+
+    fireEvent.click(screen.getByTestId('view-stacks-link'));
+    expect(screen.getByText('No stacks for this endpoint')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all stacks' }));
+
+    // Back to normal empty state
+    expect(screen.getByText('No stacks or compose projects detected')).toBeInTheDocument();
+    expect(screen.queryByTestId('clear-stack-filter')).not.toBeInTheDocument();
+  });
+});
+
+describe('InfrastructurePage — forceRefresh error toast', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('shows error toast when endpoint refetch fails during force refresh', async () => {
+    const rejectedRefetch = vi.fn().mockRejectedValue(new Error('Network error'));
+    mockUseEndpoints.mockReturnValue({
+      data: [makeEndpoint()],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: rejectedRefetch,
+      isFetching: false,
+    } as any);
+    mockStacks([makeStack()]);
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Bypass cache/i }));
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to refresh endpoints');
+    });
+  });
+
+  it('shows error toast when stacks refetch fails during force refresh', async () => {
+    const rejectedRefetch = vi.fn().mockRejectedValue(new Error('Network error'));
+    mockEndpoints([makeEndpoint()]);
+    mockUseStacks.mockReturnValue({
+      data: [makeStack()],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: rejectedRefetch,
+      isFetching: false,
+    } as any);
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Bypass cache/i }));
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to refresh stacks');
+    });
+  });
+
+  it('does not show error toast when both refetches succeed', async () => {
+    mockEndpoints([makeEndpoint()]);
+    mockStacks([makeStack()]);
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Bypass cache/i }));
+
+    // Wait a tick for async resolution
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    });
   });
 });
