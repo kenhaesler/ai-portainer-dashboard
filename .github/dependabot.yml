@@ -1,0 +1,103 @@
+version: 2
+
+updates:
+  # npm monorepo (root handles all workspaces)
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 15
+    target-branch: dev
+    labels:
+      - dependencies
+      - javascript
+    groups:
+      fastify:
+        patterns:
+          - "@fastify/*"
+          - "fastify"
+          - "fastify-*"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@testing-library/*"
+          - "@playwright/test"
+          - "jsdom"
+          - "vitest-axe"
+          - "axe-core"
+      typescript-eslint:
+        patterns:
+          - "typescript"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+          - "eslint"
+          - "@eslint/*"
+          - "eslint-plugin-*"
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vite-plugin-*"
+      types:
+        patterns:
+          - "@types/*"
+        exclude-patterns:
+          - "@types/react"
+          - "@types/react-dom"
+      socket-io:
+        patterns:
+          - "socket.io"
+          - "socket.io-client"
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    target-branch: dev
+    labels:
+      - dependencies
+
+  # Docker — backend
+  - package-ecosystem: docker
+    directory: "/backend"
+    schedule:
+      interval: monthly
+    target-branch: dev
+    labels:
+      - dependencies
+      - docker
+
+  # Docker — frontend
+  - package-ecosystem: docker
+    directory: "/frontend"
+    schedule:
+      interval: monthly
+    target-branch: dev
+    labels:
+      - dependencies
+      - docker
+
+  # Docker — compose
+  - package-ecosystem: docker
+    directory: "/docker"
+    schedule:
+      interval: monthly
+    target-branch: dev
+    labels:
+      - dependencies
+      - docker

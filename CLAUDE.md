@@ -73,6 +73,15 @@ For detailed specs (animation durations, easing curves, glass override patterns,
 - **Never mock pure utility functions** — test them directly with real inputs.
 - **Keep mocks close to the boundary** — mock the HTTP call, not the service function that wraps it.
 
+## Dependency Management
+
+- **Always run `npm install` from the repo root** — never from `backend/` or `frontend/` directories. npm workspaces requires a single root lock file.
+- **Dependabot** creates weekly PRs for npm, monthly for Docker and GitHub Actions. Triage these PRs weekly.
+- **React is pinned to exact version** (no caret) since React 19 is a new major version. Update deliberately.
+- `pino-pretty` is a devDependency (not shipped to production Docker images).
+- Run `npm run audit:prod` to check production dependency vulnerabilities locally.
+- Run `npm outdated` monthly to review stale packages.
+
 ## Code Quality
 
 - Readability first. Explicit over clever.

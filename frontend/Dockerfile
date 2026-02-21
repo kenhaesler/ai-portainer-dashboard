@@ -9,7 +9,7 @@ ARG VITE_BUILD_NUMBER=""
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/
-RUN npm ci -w frontend
+RUN --mount=type=cache,target=/root/.npm npm ci -w frontend
 COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json frontend/tsconfig.node.json frontend/components.json ./frontend/
 COPY frontend/public/ frontend/public/
 COPY frontend/src/ frontend/src/

@@ -1,6 +1,8 @@
 GEMINI.md
 # Dependencies
 node_modules/
+backend/package-lock.json
+frontend/package-lock.json
 .pnp
 .pnp.js
 
