@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -9,6 +9,7 @@ import {
   type ColumnDef,
   type SortingState,
   type ColumnFiltersState,
+  type RowSelectionState,
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -39,6 +40,10 @@ interface DataTableProps<T> {
   serverPagination?: ServerPaginationProps;
   hideSearch?: boolean;
   externalSearchValue?: string;
+  enableRowSelection?: boolean;
+  maxSelection?: number;
+  onSelectionChange?: (selectedRows: T[]) => void;
+  getRowId?: (row: T) => string;
 }
 
 export function DataTable<T>({
@@ -52,27 +57,103 @@ export function DataTable<T>({
   serverPagination,
   hideSearch,
   externalSearchValue,
+  enableRowSelection,
+  maxSelection,
+  onSelectionChange,
+  getRowId: getRowIdProp,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [showScrollTop, setShowScrollTop] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isServerPaginated = !!serverPagination;
   const useVirtual = !isServerPaginated && (virtualScrolling ?? data.length > VIRTUAL_THRESHOLD);
 
+  // Build the checkbox column when row selection is enabled
+  const selectionColumn = useMemo<ColumnDef<T, any> | null>(() => {
+    if (!enableRowSelection) return null;
+    return {
+      id: '_selection',
+      size: 40,
+      enableSorting: false,
+      header: ({ table: tbl }) => {
+        const allPageSelected = tbl.getIsAllPageRowsSelected();
+        const somePageSelected = tbl.getIsSomePageRowsSelected();
+        return (
+          <input
+            type="checkbox"
+            data-testid="select-all-checkbox"
+            aria-label="Select all on page"
+            checked={allPageSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = somePageSelected && !allPageSelected;
+            }}
+            onChange={tbl.getToggleAllPageRowsSelectedHandler()}
+            className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
+          />
+        );
+      },
+      cell: ({ row }) => {
+        const selectedCount = Object.keys(rowSelection).filter((k) => rowSelection[k]).length;
+        const isSelected = row.getIsSelected();
+        const isDisabled = !isSelected && maxSelection !== undefined && selectedCount >= maxSelection;
+        return (
+          <input
+            type="checkbox"
+            data-testid={`row-checkbox-${row.id}`}
+            aria-label={`Select row ${row.id}`}
+            checked={isSelected}
+            disabled={isDisabled}
+            onChange={row.getToggleSelectedHandler()}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+        );
+      },
+    };
+  }, [enableRowSelection, maxSelection, rowSelection]);
+
+  const allColumns = useMemo(() => {
+    if (!selectionColumn) return columns;
+    return [selectionColumn, ...columns];
+  }, [selectionColumn, columns]);
+
   const table = useReactTable({
     data,
-    columns,
+    columns: allColumns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     ...(useVirtual || isServerPaginated ? {} : { getPaginationRowModel: getPaginationRowModel() }),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    state: { sorting, columnFilters },
+    ...(enableRowSelection
+      ? {
+          enableRowSelection: (row) => {
+            if (maxSelection === undefined) return true;
+            const selectedCount = Object.keys(rowSelection).filter((k) => rowSelection[k]).length;
+            return row.getIsSelected() || selectedCount < maxSelection;
+          },
+          onRowSelectionChange: setRowSelection,
+        }
+      : {}),
+    state: {
+      sorting,
+      columnFilters,
+      ...(enableRowSelection ? { rowSelection } : {}),
+    },
     ...(useVirtual || isServerPaginated ? {} : { initialState: { pagination: { pageSize } } }),
+    ...(getRowIdProp ? { getRowId: (row) => getRowIdProp(row) } : {}),
   });
+
+  // Notify parent when selection changes
+  useEffect(() => {
+    if (!enableRowSelection || !onSelectionChange) return;
+    const selectedRows = table.getSelectedRowModel().rows.map((r) => r.original);
+    onSelectionChange(selectedRows);
+  }, [rowSelection, enableRowSelection, onSelectionChange, table]);
 
   // Sync external search value into column filter
   useEffect(() => {
@@ -137,9 +218,11 @@ export function DataTable<T>({
   const renderRow = (row: Row<T>) => (
     <tr
       key={row.id}
+      data-testid={`table-row-${row.id}`}
       className={cn(
         'group/row border-b transition-colors duration-200 hover:bg-muted/30',
-        onRowClick && 'cursor-pointer'
+        onRowClick && 'cursor-pointer',
+        enableRowSelection && row.getIsSelected() && 'bg-primary/5'
       )}
       onClick={() => onRowClick?.(row.original)}
     >
@@ -259,7 +342,7 @@ export function DataTable<T>({
                     {virtualizer.getVirtualItems().length > 0 && (
                       <tr>
                         <td
-                          colSpan={columns.length}
+                          colSpan={allColumns.length}
                           style={{ height: virtualizer.getVirtualItems()[0]?.start ?? 0, padding: 0 }}
                         />
                       </tr>
@@ -271,7 +354,7 @@ export function DataTable<T>({
                     {virtualizer.getVirtualItems().length > 0 && (
                       <tr>
                         <td
-                          colSpan={columns.length}
+                          colSpan={allColumns.length}
                           style={{
                             height:
                               virtualizer.getTotalSize() -
@@ -284,7 +367,7 @@ export function DataTable<T>({
                   </>
                 ) : (
                   <tr>
-                    <td colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                    <td colSpan={allColumns.length} className="h-24 text-center text-muted-foreground">
                       No results.
                     </td>
                   </tr>
@@ -314,7 +397,7 @@ export function DataTable<T>({
                   table.getRowModel().rows.map((row) => renderRow(row))
                 ) : (
                   <tr>
-                    <td colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                    <td colSpan={allColumns.length} className="h-24 text-center text-muted-foreground">
                       No results.
                     </td>
                   </tr>

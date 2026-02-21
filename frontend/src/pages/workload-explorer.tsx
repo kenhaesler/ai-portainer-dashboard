@@ -1,7 +1,7 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle, Eye, ScrollText } from 'lucide-react';
+import { AlertTriangle, Eye, GitCompareArrows, ScrollText } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -19,6 +19,9 @@ import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
+import { SelectionActionBar } from '@/components/shared/selection-action-bar';
+
+const MAX_COMPARE = 4;
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
@@ -100,6 +103,7 @@ export default function WorkloadExplorerPage() {
     });
   }, [containers, selectedStack, selectedGroup, knownStackNames]);
 
+  const [selectedContainers, setSelectedContainers] = useState<Container[]>([]);
   const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
 
   // Reset search-filtered results when the upstream (dropdown) filters change
@@ -132,6 +136,22 @@ export default function WorkloadExplorerPage() {
     const date = new Date().toISOString().slice(0, 10);
     exportToCsv(exportRows, `workload-explorer-${scope}-${date}.csv`);
   };
+
+  const handleSelectionChange = useCallback((rows: Container[]) => {
+    setSelectedContainers(rows);
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedContainers([]);
+  }, []);
+
+  const handleCompare = useCallback(() => {
+    if (selectedContainers.length < 2) return;
+    const param = selectedContainers
+      .map((c) => `${c.endpointId}:${c.id}`)
+      .join(',');
+    navigate(`/comparison?containers=${param}`);
+  }, [selectedContainers, navigate]);
 
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
@@ -423,9 +443,29 @@ export default function WorkloadExplorerPage() {
             data={searchFilteredContainers ?? filteredContainers}
             hideSearch
             pageSize={15}
+            enableRowSelection
+            maxSelection={MAX_COMPARE}
+            onSelectionChange={handleSelectionChange}
+            getRowId={(row) => `${row.endpointId}:${row.id}`}
           />
         </div>
       ) : null}
+
+      {/* Floating compare action bar */}
+      <SelectionActionBar
+        selectedCount={selectedContainers.length}
+        visible={selectedContainers.length >= 2}
+        onClear={handleClearSelection}
+      >
+        <button
+          data-testid="compare-button"
+          onClick={handleCompare}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <GitCompareArrows className="h-4 w-4" />
+          Compare ({selectedContainers.length})
+        </button>
+      </SelectionActionBar>
     </div>
   );
 }
