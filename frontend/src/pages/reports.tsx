@@ -408,7 +408,7 @@ export default function ReportsPage() {
   const sortedContainers = useMemo(() => {
     if (!report?.containers) return [];
     return [...report.containers].sort((a, b) => {
-      let cmp = 0;
+      let cmp: number;
       if (sortField === 'name') {
         cmp = a.container_name.localeCompare(b.container_name);
       } else if (sortField === 'cpu') {

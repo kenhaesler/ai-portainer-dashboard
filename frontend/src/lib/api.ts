@@ -80,9 +80,9 @@ class ApiClient {
     } catch (err) {
       clearTimeout(timeout);
       if (err instanceof DOMException && err.name === 'AbortError') {
-        throw new Error('Request timed out — server did not respond');
+        throw new Error('Request timed out — server did not respond', { cause: err });
       }
-      throw new Error('Network error — check your connection');
+      throw new Error('Network error — check your connection', { cause: err });
     } finally {
       clearTimeout(timeout);
     }
