@@ -16,7 +16,7 @@ services:
       # Public/LAN URL used by remote endpoints (Beyla) to call back into OTLP ingest.
       - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:-}
       - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin}                # DEV ONLY default
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme12345}        # DEV ONLY default
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme12345}         # DEV ONLY default (min 12 chars)
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production-must-be-at-least-32-chars}  # DEV ONLY default
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
@@ -75,7 +75,7 @@ services:
       postgres-app:
         condition: service_healthy
       timescaledb:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
     # Resource limits commented out for dev — uncomment to test constrained environments
@@ -107,7 +107,7 @@ services:
       - ../.git:/app/.git:ro
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
     # deploy:
@@ -228,7 +228,7 @@ services:
       - timescale-backups:/backups
     depends_on:
       timescaledb:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
 

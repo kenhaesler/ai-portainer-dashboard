@@ -40,7 +40,7 @@ describe('Dashboard Summary Route', () => {
     mockGetSecurityAudit.mockResolvedValue([]);
   });
 
-  it('returns 200 with empty recentContainers when container fetches fail', async () => {
+  it('returns 200 with KPIs when container fetches would fail (containers no longer fetched in summary)', async () => {
     const app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
@@ -52,7 +52,6 @@ describe('Dashboard Summary Route', () => {
       Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
       Snapshots: [{ RunningContainerCount: 2, StoppedContainerCount: 1, HealthyContainerCount: 2, UnhealthyContainerCount: 1, StackCount: 1, TotalCPU: 0, TotalMemory: 0 }],
     }] as any);
-    mockGetContainers.mockRejectedValue(new Error('portainer timeout'));
 
     const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
 
@@ -69,7 +68,8 @@ describe('Dashboard Summary Route', () => {
       total: 3,
       stacks: 1,
     });
-    expect(body.recentContainers).toEqual([]);
+    // recentContainers removed from summary (#801)
+    expect(body.recentContainers).toBeUndefined();
     // endpoints array removed from summary to reduce payload (#544)
     expect(body.endpoints).toBeUndefined();
 
