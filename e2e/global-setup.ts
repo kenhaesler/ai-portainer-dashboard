@@ -1,4 +1,4 @@
-import { test as setup } from '@playwright/test';
+import { test as setup, expect } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 
@@ -21,10 +21,9 @@ setup('authenticate', async ({ page }) => {
   await page.goto('/login');
 
   // Wait for the login page to render
-  await page.getByRole('heading', { name: /docker insights/i }).waitFor({
-    state: 'visible',
-    timeout: 15_000,
-  });
+  await expect(
+    page.getByRole('heading', { name: /docker insights/i }),
+  ).toBeVisible({ timeout: 15_000 });
 
   await page.getByLabel(/username/i).fill(username);
   await page.getByLabel(/password/i).fill(password);
