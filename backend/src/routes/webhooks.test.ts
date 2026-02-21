@@ -59,6 +59,7 @@ async function buildTestApp() {
     };
   });
   await app.register(webhookRoutes);
+  await app.ready();
   return {
     app,
     setRole: (role: 'viewer' | 'operator' | 'admin') => {
