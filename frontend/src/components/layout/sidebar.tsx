@@ -3,8 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Boxes,
-  Ship,
-  Layers,
+  Server,
   HeartPulse,
   GitCompareArrows,
   PackageOpen,
@@ -59,8 +58,7 @@ const navigation: NavGroup[] = [
     items: [
       { label: 'Home', to: '/', icon: LayoutDashboard },
       { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
-      { label: 'Fleet Overview', to: '/fleet', icon: Ship },
-      { label: 'Stack Overview', to: '/stacks', icon: Layers },
+      { label: 'Infrastructure', to: '/infrastructure', icon: Server },
     ],
   },
   {
@@ -198,8 +196,7 @@ export function Sidebar() {
   const prefetchMap: Record<string, (() => void) | undefined> = {
     '/': idlePrefetch(prefetchDashboard),
     '/workloads': idlePrefetch(prefetchContainers),
-    '/fleet': idlePrefetch(prefetchEndpoints),
-    '/stacks': idlePrefetch(prefetchStacks),
+    '/infrastructure': idlePrefetch(() => { prefetchEndpoints(); prefetchStacks(); }),
     '/health': idlePrefetch(prefetchContainers),
     '/comparison': idlePrefetch(prefetchContainers),
     '/images': idlePrefetch(prefetchImages),

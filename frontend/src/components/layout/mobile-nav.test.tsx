@@ -36,7 +36,7 @@ describe('MobileBottomNav - Mobile Optimization', () => {
     fireEvent.click(screen.getByLabelText('More pages'));
     expect(screen.getByText('More Pages')).toBeTruthy();
     expect(screen.getByText('Settings')).toBeTruthy();
-    expect(screen.getByText('Fleet')).toBeTruthy();
+    expect(screen.getByText('Infrastructure')).toBeTruthy();
   });
 
   it('secondary nav items in drawer have adequate touch targets', () => {

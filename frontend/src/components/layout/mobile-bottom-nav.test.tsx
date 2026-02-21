@@ -34,7 +34,7 @@ describe('MobileBottomNav', () => {
     const moreButton = screen.getByLabelText('More pages');
     fireEvent.click(moreButton);
     expect(screen.getByText('More Pages')).toBeTruthy();
-    expect(screen.getByText(/Fleet/)).toBeTruthy();
+    expect(screen.getByText(/Infrastructure/)).toBeTruthy();
     expect(screen.getByText(/Settings/)).toBeTruthy();
   });
 
@@ -57,7 +57,7 @@ describe('MobileBottomNav', () => {
   it('shows secondary nav items in the drawer grid', () => {
     renderNav();
     fireEvent.click(screen.getByLabelText('More pages'));
-    expect(screen.getByText(/Stacks/)).toBeTruthy();
+    expect(screen.getByText(/Infrastructure/)).toBeTruthy();
     expect(screen.getByText(/Monitor/)).toBeTruthy();
     expect(screen.getByText(/Remediation/)).toBeTruthy();
     expect(screen.getByText(/Traces/)).toBeTruthy();

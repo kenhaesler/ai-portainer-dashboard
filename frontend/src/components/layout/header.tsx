@@ -10,8 +10,7 @@ import { ConnectionOrb } from '@/components/shared/connection-orb';
 const routeLabels: Record<string, string> = {
   '/': 'Home',
   '/workloads': 'Workload Explorer',
-  '/fleet': 'Fleet Overview',
-  '/stacks': 'Stack Overview',
+  '/infrastructure': 'Infrastructure',
   '/health': 'Container Health',
   '/images': 'Image Footprint',
   '/topology': 'Network Topology',
