@@ -188,6 +188,15 @@ vi.mock('@/components/shared/workload-smart-search', () => ({
   },
 }));
 
+let mockOnStateFilterChange: ((state: string | undefined) => void) | undefined;
+
+vi.mock('@/components/workload/workload-status-summary', () => ({
+  WorkloadStatusSummary: ({ containers, activeStateFilter, onStateFilterChange }: { containers: unknown[]; activeStateFilter: string | undefined; onStateFilterChange: (s: string | undefined) => void }) => {
+    mockOnStateFilterChange = onStateFilterChange;
+    return <div data-testid="workload-status-summary" data-count={containers.length} data-active={activeStateFilter ?? ''} />;
+  },
+}));
+
 import WorkloadExplorerPage from './workload-explorer';
 
 describe('WorkloadExplorerPage', () => {
@@ -197,6 +206,7 @@ describe('WorkloadExplorerPage', () => {
     mockNavigate.mockReset();
     mockOnFiltered = undefined;
     mockOnSelectionChange = undefined;
+    mockOnStateFilterChange = undefined;
   });
 
   it('renders stack and group dropdowns with options', () => {
@@ -264,6 +274,25 @@ describe('WorkloadExplorerPage', () => {
     const beylaRow = rows.find((r) => r.name === 'beyla');
     expect(workersRow?.stack).toBe('workers');
     expect(beylaRow?.stack).toBe('No Stack');
+  });
+
+  it('renders WorkloadStatusSummary with pre-state container count', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    const summary = screen.getByTestId('workload-status-summary');
+    expect(summary).toBeInTheDocument();
+    // All 3 containers (no stack/group filter, no state filter)
+    expect(summary).toHaveAttribute('data-count', '3');
+    expect(summary).toHaveAttribute('data-active', '');
+  });
+
+  it('renders WorkloadStatusSummary with active state from URL', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+
+    const summary = screen.getByTestId('workload-status-summary');
+    expect(summary).toHaveAttribute('data-active', 'running');
   });
 
   it('renders state filter dropdown', () => {

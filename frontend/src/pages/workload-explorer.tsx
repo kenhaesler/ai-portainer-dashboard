@@ -20,6 +20,7 @@ import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '
 import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 import { SelectionActionBar } from '@/components/shared/selection-action-bar';
+import { WorkloadStatusSummary } from '@/components/workload/workload-status-summary';
 
 const MAX_COMPARE = 4;
 
@@ -27,7 +28,7 @@ export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Read endpoint and stack from URL params
+  // Read endpoint, stack, group, and state from URL params
   const endpointParam = searchParams.get('endpoint');
   const stackParam = searchParams.get('stack');
   const groupParam = searchParams.get('group');
@@ -471,6 +472,15 @@ export default function WorkloadExplorerPage() {
         </button>
 
       </div>
+
+      {/* Status summary bar */}
+      {preStateFilteredContainers.length > 0 && (
+        <WorkloadStatusSummary
+          containers={preStateFilteredContainers}
+          activeStateFilter={selectedState}
+          onStateFilterChange={setSelectedState}
+        />
+      )}
 
       {/* Smart search */}
       {filteredContainers && (
