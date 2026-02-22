@@ -19,12 +19,13 @@ import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
+import { WorkloadStatusSummary } from '@/components/workload/workload-status-summary';
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Read endpoint and stack from URL params
+  // Read endpoint, stack, group, and state from URL params
   const endpointParam = searchParams.get('endpoint');
   const stackParam = searchParams.get('stack');
   const groupParam = searchParams.get('group');
@@ -118,16 +119,11 @@ export default function WorkloadExplorerPage() {
     return counts;
   }, [preStateFilteredContainers]);
 
-  // Filter containers by stack/group/state URL params when present
+  // Apply state filter on top of stack/group filtering
   const filteredContainers = useMemo(() => {
-    if (!containers) return containers;
-    return containers.filter((container) => {
-      const stackMatches = !selectedStack || resolveContainerStackName(container, knownStackNames) === selectedStack;
-      const groupMatches = !selectedGroup || getContainerGroup(container) === selectedGroup;
-      const stateMatches = !selectedState || container.state === selectedState;
-      return stackMatches && groupMatches && stateMatches;
-    });
-  }, [containers, selectedStack, selectedGroup, selectedState, knownStackNames]);
+    if (!selectedState) return preStateFilteredContainers;
+    return preStateFilteredContainers.filter((container) => container.state === selectedState);
+  }, [preStateFilteredContainers, selectedState]);
 
   const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
 
@@ -449,6 +445,15 @@ export default function WorkloadExplorerPage() {
         </button>
 
       </div>
+
+      {/* Status summary bar */}
+      {preStateFilteredContainers.length > 0 && (
+        <WorkloadStatusSummary
+          containers={preStateFilteredContainers}
+          activeStateFilter={selectedState}
+          onStateFilterChange={setSelectedState}
+        />
+      )}
 
       {/* Smart search */}
       {filteredContainers && (
