@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Eye, ScrollText } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -17,7 +17,7 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
-import { formatDate, truncate } from '@/lib/utils';
+import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 
 export default function WorkloadExplorerPage() {
@@ -117,6 +117,7 @@ export default function WorkloadExplorerPage() {
       state: container.state,
       status: container.status,
       endpoint: container.endpointName,
+      age: formatRelativeAge(container.created),
       created: formatDate(new Date(container.created * 1000)),
     }));
   }, [filteredContainers, knownStackNames]);
@@ -165,13 +166,6 @@ export default function WorkloadExplorerPage() {
       accessorKey: 'state',
       header: 'State',
       cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
-    },
-    {
-      accessorKey: 'status',
-      header: 'Status',
-      cell: ({ getValue }) => (
-        <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
-      ),
     },
     {
       id: 'group',
@@ -228,9 +222,76 @@ export default function WorkloadExplorerPage() {
       },
     },
     {
+      id: 'age',
+      header: 'Age',
       accessorKey: 'created',
-      header: 'Created',
-      cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
+      cell: ({ row }) => {
+        const container = row.original;
+        const age = formatRelativeAge(container.created);
+        const absoluteDate = formatDate(new Date(container.created * 1000));
+        const state = container.state;
+
+        let prefix = '';
+        let colorClass = 'text-muted-foreground';
+
+        if (state === 'running') {
+          colorClass = 'text-emerald-600 dark:text-emerald-400';
+        } else if (state === 'exited' || state === 'stopped') {
+          prefix = state === 'exited' ? 'Exited ' : 'Stopped ';
+          colorClass = 'text-muted-foreground';
+        } else if (state === 'paused') {
+          prefix = 'Paused ';
+          colorClass = 'text-amber-600 dark:text-amber-400';
+        } else if (state === 'dead') {
+          prefix = 'Dead ';
+          colorClass = 'text-red-600 dark:text-red-400';
+        }
+
+        const display = state === 'running' ? age : `${prefix}${age} ago`;
+
+        return (
+          <span className={`text-xs ${colorClass}`} title={absoluteDate}>
+            {display}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'actions',
+      header: () => <span className="sr-only">Actions</span>,
+      size: 90,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const container = row.original;
+        return (
+          <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 group-focus-within/row:opacity-100 max-sm:opacity-100">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/containers/${container.endpointId}/${container.id}`);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent"
+              aria-label={`View details for ${container.name}`}
+              title="View details"
+            >
+              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/containers/${container.endpointId}/${container.id}?tab=logs`);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-accent"
+              aria-label={`View logs for ${container.name}`}
+              title="View logs"
+            >
+              <ScrollText className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </div>
+        );
+      },
     },
   ], [navigate, knownStackNames]);
 
