@@ -9,7 +9,7 @@
 import { vi } from 'vitest';
 
 /** Returns a fresh mock object covering every export from portainer-client.ts */
-export function createPortainerClientMock() {
+export function createPortainerClientMock(): Record<string, unknown> {
   return {
     _resetClientState: vi.fn(),
     isEndpointDegraded: vi.fn().mockReturnValue(false),
@@ -57,7 +57,7 @@ export function createPortainerClientMock() {
 }
 
 /** Returns a fresh mock object covering every export from portainer-cache.ts */
-export function createPortainerCacheMock() {
+export function createPortainerCacheMock(): Record<string, unknown> {
   return {
     cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn()),
     cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn()),

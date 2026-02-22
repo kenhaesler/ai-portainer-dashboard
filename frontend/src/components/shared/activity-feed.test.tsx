@@ -46,12 +46,14 @@ const mockGain = {
   connect: vi.fn(),
 };
 
-vi.stubGlobal('AudioContext', vi.fn().mockImplementation(() => ({
-  currentTime: 0,
-  destination: {},
-  createOscillator: () => mockOscillator,
-  createGain: () => mockGain,
-})));
+vi.stubGlobal('AudioContext', vi.fn(function () {
+  return {
+    currentTime: 0,
+    destination: {},
+    createOscillator: () => mockOscillator,
+    createGain: () => mockGain,
+  };
+}));
 
 describe('ActivityFeed', () => {
   beforeEach(() => {

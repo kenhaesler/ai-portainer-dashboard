@@ -16,22 +16,24 @@ const {
   const mockClose = vi.fn();
   const mockListTools = vi.fn();
   const mockCallTool = vi.fn();
-  const MockClient = vi.fn().mockImplementation(() => ({
-    connect: mockConnect,
-    close: mockClose,
-    listTools: mockListTools,
-    callTool: mockCallTool,
-  }));
+  const MockClient = vi.fn(function () {
+    return {
+      connect: mockConnect,
+      close: mockClose,
+      listTools: mockListTools,
+      callTool: mockCallTool,
+    };
+  });
   const mockTransportClose = vi.fn();
-  const MockStdioTransport = vi.fn().mockImplementation(() => ({
-    close: mockTransportClose,
-  }));
-  const MockSSETransport = vi.fn().mockImplementation(() => ({
-    close: mockTransportClose,
-  }));
-  const MockHTTPTransport = vi.fn().mockImplementation(() => ({
-    close: mockTransportClose,
-  }));
+  const MockStdioTransport = vi.fn(function () {
+    return { close: mockTransportClose };
+  });
+  const MockSSETransport = vi.fn(function () {
+    return { close: mockTransportClose };
+  });
+  const MockHTTPTransport = vi.fn(function () {
+    return { close: mockTransportClose };
+  });
   return {
     mockConnect, mockClose, mockListTools, mockCallTool, MockClient,
     mockTransportClose, MockStdioTransport, MockSSETransport, MockHTTPTransport,
