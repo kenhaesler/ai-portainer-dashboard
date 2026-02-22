@@ -343,4 +343,145 @@ describe('DataTable', () => {
       expect(screen.queryByTestId('server-pagination')).not.toBeInTheDocument();
     });
   });
+
+  describe('row selection', () => {
+    it('does not render checkboxes when enableRowSelection is false', () => {
+      render(<DataTable columns={testColumns} data={makeRows(3)} />);
+      expect(screen.queryByTestId('select-all-checkbox')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('row-checkbox-0')).not.toBeInTheDocument();
+    });
+
+    it('renders select-all and row checkboxes when enableRowSelection is true', () => {
+      render(
+        <DataTable columns={testColumns} data={makeRows(3)} enableRowSelection />
+      );
+      expect(screen.getByTestId('select-all-checkbox')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-0')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-1')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-2')).toBeInTheDocument();
+    });
+
+    it('toggles individual row selection', () => {
+      const onSelectionChange = vi.fn();
+      const data = makeRows(3);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          onSelectionChange={onSelectionChange}
+        />
+      );
+
+      const checkbox = screen.getByTestId('row-checkbox-0');
+      fireEvent.click(checkbox);
+
+      expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+    });
+
+    it('selects all rows on page when select-all is clicked', () => {
+      const onSelectionChange = vi.fn();
+      const data = makeRows(3);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          onSelectionChange={onSelectionChange}
+        />
+      );
+
+      const selectAll = screen.getByTestId('select-all-checkbox');
+      fireEvent.click(selectAll);
+
+      expect(onSelectionChange).toHaveBeenCalledWith(data);
+    });
+
+    it('disables unchecked row checkboxes when maxSelection is reached', () => {
+      const data = makeRows(5);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          maxSelection={2}
+        />
+      );
+
+      // Select first two rows
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+      fireEvent.click(screen.getByTestId('row-checkbox-1'));
+
+      // Third row should be disabled
+      expect(screen.getByTestId('row-checkbox-2')).toBeDisabled();
+      expect(screen.getByTestId('row-checkbox-3')).toBeDisabled();
+      expect(screen.getByTestId('row-checkbox-2')).toHaveAttribute(
+        'title',
+        'Maximum of 2 containers can be compared at once'
+      );
+      // Selected rows should still be enabled
+      expect(screen.getByTestId('row-checkbox-0')).not.toBeDisabled();
+      expect(screen.getByTestId('row-checkbox-1')).not.toBeDisabled();
+    });
+
+    it('applies bg-primary/5 class to selected rows', () => {
+      const data = makeRows(3);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+        />
+      );
+
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+
+      const selectedRow = screen.getByTestId('table-row-0');
+      expect(selectedRow.className).toContain('bg-primary/5');
+    });
+
+    it('uses custom getRowId when provided', () => {
+      const data = makeRows(3);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          getRowId={(row) => `custom-${row.id}`}
+        />
+      );
+
+      // Row IDs should use custom format
+      expect(screen.getByTestId('row-checkbox-custom-1')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-custom-2')).toBeInTheDocument();
+    });
+
+    it('clears internal selection when selectedRowIds is set to empty', () => {
+      const data = makeRows(3);
+      const { rerender } = render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+        />
+      );
+
+      // Select a row
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+      expect(screen.getByTestId('table-row-0').className).toContain('bg-primary/5');
+
+      // Parent clears selection via selectedRowIds
+      rerender(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          selectedRowIds={{}}
+        />
+      );
+
+      // Row should no longer be highlighted
+      expect(screen.getByTestId('table-row-0').className).not.toContain('bg-primary/5');
+    });
+  });
 });

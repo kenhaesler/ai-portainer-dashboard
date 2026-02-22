@@ -106,10 +106,37 @@ vi.mock('@/components/shared/themed-select', () => ({
   ),
 }));
 
+let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
+
 vi.mock('@/components/shared/data-table', () => ({
-  DataTable: ({ data }: { data: Array<{ name: string }> }) => (
-    <div data-testid="workloads-table">{data.map((container) => container.name).join(',')}</div>
-  ),
+  DataTable: ({
+    data,
+    enableRowSelection,
+    maxSelection,
+    onSelectionChange,
+    selectedRowIds,
+    onRowClick,
+  }: {
+    data: Array<{ name: string }>;
+    enableRowSelection?: boolean;
+    maxSelection?: number;
+    onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
+    selectedRowIds?: Record<string, boolean>;
+    onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
+  }) => {
+    mockOnSelectionChange = onSelectionChange;
+    return (
+      <div
+        data-testid="workloads-table"
+        data-enable-row-selection={enableRowSelection ? 'true' : undefined}
+        data-max-selection={maxSelection}
+        data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
+        data-has-row-click={onRowClick ? 'true' : undefined}
+      >
+        {data.map((container) => container.name).join(',')}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/components/shared/status-badge', () => ({
@@ -130,6 +157,26 @@ vi.mock('@/components/shared/favorite-button', () => ({
 
 vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('@/components/shared/selection-action-bar', () => ({
+  SelectionActionBar: ({
+    selectedCount,
+    visible,
+    onClear,
+    children,
+  }: {
+    selectedCount: number;
+    visible: boolean;
+    onClear: () => void;
+    children: ReactNode;
+  }) =>
+    visible ? (
+      <div data-testid="selection-action-bar" data-count={selectedCount}>
+        {children}
+        <button data-testid="clear-selection" onClick={onClear}>Clear</button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('@/lib/motion-tokens', () => ({
@@ -169,7 +216,9 @@ describe('WorkloadExplorerPage', () => {
     mockQueryString = 'endpoint=1&stack=workers';
     mockSetSearchParams.mockReset();
     mockExportToCsv.mockReset();
+    mockNavigate.mockReset();
     mockOnFiltered = undefined;
+    mockOnSelectionChange = undefined;
     mockOnStateFilterChange = undefined;
   });
 
@@ -347,5 +396,73 @@ describe('WorkloadExplorerPage', () => {
     expect((rows as Array<Record<string, unknown>>).length).toBe(3);
     expect((rows as Array<Record<string, unknown>>).some((row) => row.group === 'System')).toBe(true);
     expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('passes enableRowSelection and maxSelection to DataTable', () => {
+    render(<WorkloadExplorerPage />);
+    const table = screen.getByTestId('workloads-table');
+    expect(table).toHaveAttribute('data-enable-row-selection', 'true');
+    expect(table).toHaveAttribute('data-max-selection', '4');
+  });
+
+  it('passes row click navigation handler to DataTable', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-has-row-click', 'true');
+  });
+
+  it('does not show selection action bar when fewer than 2 containers selected', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.queryByTestId('selection-action-bar')).not.toBeInTheDocument();
+  });
+
+  it('shows selection action bar when 2+ containers are selected', () => {
+    render(<WorkloadExplorerPage />);
+
+    act(() => {
+      mockOnSelectionChange?.([
+        { id: 'c-workers', name: 'workers-api-1', endpointId: 1 },
+        { id: 'c-billing', name: 'billing-api-1', endpointId: 1 },
+      ]);
+    });
+
+    expect(screen.getByTestId('selection-action-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-button')).toBeInTheDocument();
+  });
+
+  it('navigates to comparison page when compare button is clicked', () => {
+    render(<WorkloadExplorerPage />);
+
+    act(() => {
+      mockOnSelectionChange?.([
+        { id: 'c-workers', name: 'workers-api-1', endpointId: 1 },
+        { id: 'c-billing', name: 'billing-api-1', endpointId: 1 },
+      ]);
+    });
+
+    fireEvent.click(screen.getByTestId('compare-button'));
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      '/comparison?containers=1:c-workers,1:c-billing'
+    );
+  });
+
+  it('clears selection when clear button is clicked', () => {
+    render(<WorkloadExplorerPage />);
+
+    act(() => {
+      mockOnSelectionChange?.([
+        { id: 'c-workers', name: 'workers-api-1', endpointId: 1 },
+        { id: 'c-billing', name: 'billing-api-1', endpointId: 1 },
+      ]);
+    });
+
+    expect(screen.getByTestId('selection-action-bar')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('clear-selection'));
+
+    expect(screen.queryByTestId('selection-action-bar')).not.toBeInTheDocument();
+    // Verify DataTable receives empty selectedRowIds to clear internal checkboxes
+    const table = screen.getByTestId('workloads-table');
+    expect(table).toHaveAttribute('data-selected-row-ids', '{}');
   });
 });
