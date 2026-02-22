@@ -101,7 +101,7 @@ export default function WorkloadExplorerPage() {
     return [...stackNames].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
   }, [containers, knownStackNames]);
 
-  // Filter containers by stack/group (pre-state) — used by status summary bar
+  // Containers filtered by stack/group (before state filter, used for state counts)
   const preStateFilteredContainers = useMemo(() => {
     if (!containers) return [];
     return containers.filter((container) => {
@@ -111,12 +111,19 @@ export default function WorkloadExplorerPage() {
     });
   }, [containers, selectedStack, selectedGroup, knownStackNames]);
 
-  // Apply state filter on top
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const container of preStateFilteredContainers) {
+      counts[container.state] = (counts[container.state] || 0) + 1;
+    }
+    return counts;
+  }, [preStateFilteredContainers]);
+
+  // Apply state filter on top of stack/group filtering
   const filteredContainers = useMemo(() => {
-    if (!containers) return containers;
     if (!selectedState) return preStateFilteredContainers;
     return preStateFilteredContainers.filter((container) => container.state === selectedState);
-  }, [containers, preStateFilteredContainers, selectedState]);
+  }, [preStateFilteredContainers, selectedState]);
 
   const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
 
@@ -406,6 +413,24 @@ export default function WorkloadExplorerPage() {
               { value: '__all__', label: 'All groups' },
               { value: 'system', label: 'System' },
               { value: 'workload', label: 'Workload' },
+            ]}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="state-select" className="text-sm font-medium">
+            State
+          </label>
+          <ThemedSelect
+            id="state-select"
+            value={selectedState ?? '__all__'}
+            onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
+            options={[
+              { value: '__all__', label: 'All states' },
+              ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
+                value: state,
+                label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
+              })),
             ]}
           />
         </div>

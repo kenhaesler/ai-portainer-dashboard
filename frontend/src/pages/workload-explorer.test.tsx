@@ -246,6 +246,32 @@ describe('WorkloadExplorerPage', () => {
     expect(summary).toHaveAttribute('data-active', 'running');
   });
 
+  it('renders state filter dropdown', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+    const stateSelect = screen.getByTestId('state-select');
+    expect(stateSelect).toBeInTheDocument();
+    expect(stateSelect).toHaveAttribute('data-value', '__all__');
+  });
+
+  it('filters by state when state param is set', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+    // All mock containers are running, so all should show
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('beyla');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('billing-api-1');
+  });
+
+  it('filters out containers when state does not match', () => {
+    mockQueryString = 'endpoint=1&state=stopped';
+    render(<WorkloadExplorerPage />);
+    // No mock containers are stopped, table should be empty
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('beyla');
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
+  });
+
   it('exports visible rows to CSV', () => {
     mockQueryString = 'endpoint=1';
     render(<WorkloadExplorerPage />);
