@@ -55,7 +55,7 @@ export function WorkloadStatusSummary({
   if (total === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-card/50 backdrop-blur-sm p-3 shadow-sm space-y-2">
+    <div className="border-t border-border/50 pt-3 space-y-2">
       <div className="flex items-center gap-3 flex-wrap">
         <button
           type="button"
