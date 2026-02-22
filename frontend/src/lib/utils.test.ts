@@ -114,6 +114,38 @@ describe('truncate', () => {
   });
 });
 
+describe('formatRelativeAge', () => {
+  it('should return "< 1m" for very recent timestamps', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatRelativeAge(now)).toBe('< 1m');
+    expect(formatRelativeAge(now - 30)).toBe('< 1m');
+  });
+
+  it('should format minutes', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatRelativeAge(now - 300)).toBe('5m');
+    expect(formatRelativeAge(now - 2700)).toBe('45m');
+  });
+
+  it('should format hours and minutes', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatRelativeAge(now - 3600)).toBe('1h 0m');
+    expect(formatRelativeAge(now - 12120)).toBe('3h 22m');
+  });
+
+  it('should format days and hours', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatRelativeAge(now - 86400)).toBe('1d 0h');
+    expect(formatRelativeAge(now - 100800)).toBe('1d 4h');
+    expect(formatRelativeAge(now - 3888000)).toBe('45d 0h');
+  });
+
+  it('should handle future timestamps', () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    expect(formatRelativeAge(future)).toBe('Future');
+  });
+});
+
 describe('cn', () => {
   it('should merge class names', () => {
     expect(cn('foo', 'bar')).toBe('foo bar');
