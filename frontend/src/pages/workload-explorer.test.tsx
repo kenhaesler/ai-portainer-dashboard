@@ -132,6 +132,18 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('@/lib/motion-tokens', () => ({
+  transition: { fast: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
+}));
+
+vi.mock('framer-motion', () => ({
+  AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  motion: {
+    span: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => <span {...Object.fromEntries(Object.entries(props).filter(([k]) => !['initial', 'animate', 'exit', 'transition', 'layout'].includes(k)))}>{children}</span>,
+  },
+  useReducedMotion: () => false,
+}));
+
 let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
 
 vi.mock('@/components/shared/workload-smart-search', () => ({
@@ -155,6 +167,7 @@ import WorkloadExplorerPage from './workload-explorer';
 describe('WorkloadExplorerPage', () => {
   beforeEach(() => {
     mockQueryString = 'endpoint=1&stack=workers';
+    mockSetSearchParams.mockReset();
     mockExportToCsv.mockReset();
     mockOnFiltered = undefined;
     mockOnStateFilterChange = undefined;
@@ -171,11 +184,11 @@ describe('WorkloadExplorerPage', () => {
     expect(groupSelect).toBeInTheDocument();
     expect(groupSelect).toHaveAttribute('data-value', '__all__');
     expect(screen.getByText('All stacks')).toBeInTheDocument();
-    expect(screen.getByText('workers')).toBeInTheDocument();
+    expect(screen.getAllByText('workers').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('billing')).toBeInTheDocument();
     expect(screen.getByText('All groups')).toBeInTheDocument();
-    expect(screen.getByText('System')).toBeInTheDocument();
-    expect(screen.getByText('Workload')).toBeInTheDocument();
+    expect(screen.getAllByText('System').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Workload').length).toBeGreaterThanOrEqual(1);
   });
 
   it('filters table rows using selected stack from URL', () => {
@@ -225,6 +238,56 @@ describe('WorkloadExplorerPage', () => {
     const beylaRow = rows.find((r) => r.name === 'beyla');
     expect(workersRow?.stack).toBe('workers');
     expect(beylaRow?.stack).toBe('No Stack');
+  });
+
+  it('renders active filter chips when filters are active', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.getByText('Stack:')).toBeInTheDocument();
+    expect(screen.getByText('Group:')).toBeInTheDocument();
+    expect(screen.getByText('Clear all')).toBeInTheDocument();
+  });
+
+  it('does not render filter chips when no filters are active', () => {
+    mockQueryString = '';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.queryByText('Endpoint:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('does not show Clear all with only one active filter', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('removes specific filter when chip dismiss button is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    // Click the dismiss button for the Stack chip
+    const dismissStackButton = screen.getByRole('button', { name: 'Remove Stack filter' });
+    fireEvent.click(dismissStackButton);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({ endpoint: '1', group: 'workload' });
+  });
+
+  it('clears all filters when Clear all is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByText('Clear all'));
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({});
   });
 
   it('renders WorkloadStatusSummary with pre-state container count', () => {
