@@ -21,13 +21,14 @@ import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '
 import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
 import { transition } from '@/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
+import { WorkloadStatusSummary } from '@/components/workload/workload-status-summary';
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Read endpoint and stack from URL params
+  // Read endpoint, stack, group, and state from URL params
   const endpointParam = searchParams.get('endpoint');
   const stackParam = searchParams.get('stack');
   const groupParam = searchParams.get('group');
@@ -478,6 +479,15 @@ export default function WorkloadExplorerPage() {
 
       </div>
 
+      {/* Status summary bar */}
+      {preStateFilteredContainers.length > 0 && (
+        <WorkloadStatusSummary
+          containers={preStateFilteredContainers}
+          activeStateFilter={selectedState}
+          onStateFilterChange={setSelectedState}
+        />
+      )}
+
       {/* Active filter chips */}
       {activeFilters.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
@@ -508,7 +518,7 @@ export default function WorkloadExplorerPage() {
           {activeFilters.length >= 2 && (
             <button
               type="button"
-              onClick={() => setFilters(undefined, undefined, undefined)}
+              onClick={() => setFilters(undefined, undefined, undefined, undefined)}
               className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
               Clear all
