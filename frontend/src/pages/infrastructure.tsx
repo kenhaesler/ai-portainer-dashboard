@@ -17,6 +17,7 @@ import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
@@ -514,6 +515,7 @@ export default function InfrastructurePage() {
 
       {/* Shared summary bar */}
       {!isLoading && (
+        <SpotlightCard>
         <div
           className="flex flex-wrap items-center gap-6 rounded-lg border bg-card px-6 py-4 shadow-sm text-sm"
           data-testid="summary-bar"
@@ -554,6 +556,7 @@ export default function InfrastructurePage() {
             )}
           </div>
         </div>
+        </SpotlightCard>
       )}
 
       {/* Error state */}
@@ -658,6 +661,7 @@ export default function InfrastructurePage() {
             )}
           </>
         ) : endpoints && fleetViewMode === 'table' ? (
+          <SpotlightCard>
           <div className="rounded-lg border bg-card p-6 shadow-sm">
             <DataTable
               columns={endpointColumns}
@@ -668,6 +672,7 @@ export default function InfrastructurePage() {
               onRowClick={(row) => handleEndpointClick(row.id)}
             />
           </div>
+          </SpotlightCard>
         ) : null}
       </section>
 
@@ -768,6 +773,7 @@ export default function InfrastructurePage() {
             ))}
           </div>
         ) : (
+          <SpotlightCard>
           <div className="rounded-lg border bg-card p-6 shadow-sm">
             <DataTable
               columns={stackColumns}
@@ -778,6 +784,7 @@ export default function InfrastructurePage() {
               onRowClick={handleStackClick}
             />
           </div>
+          </SpotlightCard>
         )}
       </section>
     </div>
