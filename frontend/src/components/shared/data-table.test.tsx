@@ -415,6 +415,10 @@ describe('DataTable', () => {
       // Third row should be disabled
       expect(screen.getByTestId('row-checkbox-2')).toBeDisabled();
       expect(screen.getByTestId('row-checkbox-3')).toBeDisabled();
+      expect(screen.getByTestId('row-checkbox-2')).toHaveAttribute(
+        'title',
+        'Maximum of 2 containers can be compared at once'
+      );
       // Selected rows should still be enabled
       expect(screen.getByTestId('row-checkbox-0')).not.toBeDisabled();
       expect(screen.getByTestId('row-checkbox-1')).not.toBeDisabled();

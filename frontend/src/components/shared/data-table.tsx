@@ -117,6 +117,7 @@ export function DataTable<T>({
             aria-label={`Select row ${row.id}`}
             checked={isSelected}
             disabled={isDisabled}
+            title={isDisabled ? `Maximum of ${maxSelection} containers can be compared at once` : undefined}
             onChange={row.getToggleSelectedHandler()}
             onClick={(e) => e.stopPropagation()}
             className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"

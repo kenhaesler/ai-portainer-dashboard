@@ -168,7 +168,10 @@ export default function WorkloadExplorerPage() {
           <div className="flex items-center gap-1">
             <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
             <button
-              onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/containers/${container.endpointId}/${container.id}`);
+              }}
               className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
             >
               {truncate(getValue<string>(), 45)}
@@ -452,6 +455,7 @@ export default function WorkloadExplorerPage() {
             onSelectionChange={handleSelectionChange}
             getRowId={(row) => `${row.endpointId}:${row.id}`}
             selectedRowIds={controlledRowIds}
+            onRowClick={(row) => navigate(`/containers/${row.endpointId}/${row.id}`)}
           />
         </div>
       ) : null}

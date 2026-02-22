@@ -115,12 +115,14 @@ vi.mock('@/components/shared/data-table', () => ({
     maxSelection,
     onSelectionChange,
     selectedRowIds,
+    onRowClick,
   }: {
     data: Array<{ name: string }>;
     enableRowSelection?: boolean;
     maxSelection?: number;
     onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
     selectedRowIds?: Record<string, boolean>;
+    onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
   }) => {
     mockOnSelectionChange = onSelectionChange;
     return (
@@ -129,6 +131,7 @@ vi.mock('@/components/shared/data-table', () => ({
         data-enable-row-selection={enableRowSelection ? 'true' : undefined}
         data-max-selection={maxSelection}
         data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
+        data-has-row-click={onRowClick ? 'true' : undefined}
       >
         {data.map((container) => container.name).join(',')}
       </div>
@@ -282,6 +285,11 @@ describe('WorkloadExplorerPage', () => {
     const table = screen.getByTestId('workloads-table');
     expect(table).toHaveAttribute('data-enable-row-selection', 'true');
     expect(table).toHaveAttribute('data-max-selection', '4');
+  });
+
+  it('passes row click navigation handler to DataTable', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-has-row-click', 'true');
   });
 
   it('does not show selection action bar when fewer than 2 containers selected', () => {

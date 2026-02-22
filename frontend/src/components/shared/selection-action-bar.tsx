@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 
 interface SelectionActionBarProps {
@@ -14,16 +14,22 @@ export function SelectionActionBar({
   onClear,
   visible,
 }: SelectionActionBarProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <AnimatePresence>
       {visible && (
         <motion.div
           data-testid="selection-action-bar"
-          initial={{ y: 80, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 80, opacity: 0 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl border bg-card/80 px-4 py-3 shadow-lg backdrop-blur-xl"
+          initial={reduceMotion ? false : { y: 80, opacity: 0 }}
+          animate={reduceMotion ? { opacity: 1 } : { y: 0, opacity: 1 }}
+          exit={reduceMotion ? { opacity: 0 } : { y: 80, opacity: 0 }}
+          transition={
+            reduceMotion
+              ? { duration: 0.15 }
+              : { type: 'spring', damping: 25, stiffness: 300 }
+          }
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-xl border bg-card/80 px-4 py-3 shadow-lg backdrop-blur-xl max-sm:left-4 max-sm:right-4 max-sm:bottom-4 max-sm:translate-x-0 max-sm:justify-between"
         >
           {/* Selection count badge */}
           <span
