@@ -410,6 +410,107 @@ describe('LLM Routes', () => {
       expect(mockChat).not.toHaveBeenCalled();
     });
 
+    it('returns filter action with containerNames and filters', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'Found 2 running nginx containers',
+            description: 'Filtered by state and image',
+            filters: { state: 'running', image: 'nginx' },
+            containerNames: ['nginx-proxy', 'nginx-web'],
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'show me running nginx containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.text).toBe('Found 2 running nginx containers');
+      expect(body.description).toBe('Filtered by state and image');
+      expect(body.filters).toEqual({ state: 'running', image: 'nginx' });
+      expect(body.containerNames).toEqual(['nginx-proxy', 'nginx-web']);
+    });
+
+    it('returns filter action with empty containerNames when array missing', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'No matching containers found',
+            description: 'No results',
+            filters: { state: 'dead' },
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'find dead containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.containerNames).toEqual([]);
+      expect(body.filters).toEqual({ state: 'dead' });
+    });
+
+    it('returns filter action with empty filters when filters object missing', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'Found 1 container',
+            containerNames: ['my-app'],
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'find my-app container' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.filters).toEqual({});
+      expect(body.containerNames).toEqual(['my-app']);
+    });
+
+    it('filters out non-string values from containerNames', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'Found containers',
+            filters: {},
+            containerNames: ['valid-name', 123, null, 'another-valid'],
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'show all containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.containerNames).toEqual(['valid-name', 'another-valid']);
+    });
+
     it('sanitizes leaked system prompt text from model output', async () => {
       mockChat.mockResolvedValue({
         message: {
