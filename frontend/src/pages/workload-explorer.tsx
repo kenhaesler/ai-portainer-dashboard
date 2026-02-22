@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
-import { AlertTriangle, Eye, GitCompareArrows, ScrollText } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AlertTriangle, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
 import { useEndpoints } from '@/hooks/use-endpoints';
@@ -18,6 +19,7 @@ import { resolveContainerStackName } from '@/lib/container-stack-grouping';
 import { exportToCsv } from '@/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/lib/system-container-grouping';
 import { formatDate, truncate, formatRelativeAge } from '@/lib/utils';
+import { transition } from '@/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 import { SelectionActionBar } from '@/components/shared/selection-action-bar';
 import { WorkloadStatusSummary } from '@/components/workload/workload-status-summary';
@@ -26,6 +28,7 @@ const MAX_COMPARE = 4;
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Read endpoint, stack, group, and state from URL params
@@ -128,8 +131,39 @@ export default function WorkloadExplorerPage() {
     return preStateFilteredContainers.filter((container) => container.state === selectedState);
   }, [preStateFilteredContainers, selectedState]);
 
+  const activeFilters = useMemo(() => {
+    const filters: { key: string; label: string; value: string; onRemove: () => void }[] = [];
+    if (selectedEndpoint !== undefined) {
+      const ep = endpoints?.find(e => e.id === selectedEndpoint);
+      filters.push({
+        key: 'endpoint',
+        label: 'Endpoint',
+        value: ep ? `${ep.name} (ID: ${ep.id})` : `ID: ${selectedEndpoint}`,
+        onRemove: () => setFilters(undefined, selectedStack, selectedGroup, selectedState),
+      });
+    }
+    if (selectedStack) {
+      filters.push({
+        key: 'stack',
+        label: 'Stack',
+        value: selectedStack,
+        onRemove: () => setFilters(selectedEndpoint, undefined, selectedGroup, selectedState),
+      });
+    }
+    if (selectedGroup) {
+      filters.push({
+        key: 'group',
+        label: 'Group',
+        value: selectedGroup === 'system' ? 'System' : 'Workload',
+        onRemove: () => setFilters(selectedEndpoint, selectedStack, undefined, selectedState),
+      });
+    }
+    return filters;
+  }, [selectedEndpoint, selectedStack, selectedGroup, selectedState, endpoints]);
+
   const [selectedContainers, setSelectedContainers] = useState<Container[]>([]);
   const [controlledRowIds, setControlledRowIds] = useState<RowSelectionState | undefined>(undefined);
+
   const [searchFilteredContainers, setSearchFilteredContainers] = useState<Container[] | undefined>(undefined);
 
   // Reset search-filtered results when the upstream (dropdown) filters change
@@ -480,6 +514,45 @@ export default function WorkloadExplorerPage() {
           activeStateFilter={selectedState}
           onStateFilterChange={setSelectedState}
         />
+      )}
+
+      {/* Active filter chips */}
+      {activeFilters.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
+          <AnimatePresence mode="popLayout">
+            {activeFilters.map((filter) => (
+              <motion.span
+                key={filter.key}
+                layout
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+                transition={reduceMotion ? { duration: 0 } : transition.fast}
+                className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
+              >
+                <span className="font-medium text-muted-foreground">{filter.label}:</span>
+                <span>{filter.value}</span>
+                <button
+                  type="button"
+                  onClick={filter.onRemove}
+                  className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`Remove ${filter.label} filter`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </motion.span>
+            ))}
+          </AnimatePresence>
+          {activeFilters.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => setFilters(undefined, undefined, undefined, undefined)}
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
       )}
 
       {/* Smart search */}
