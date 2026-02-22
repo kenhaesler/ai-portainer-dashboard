@@ -423,153 +423,151 @@ export default function WorkloadExplorerPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <label htmlFor="endpoint-select" className="text-sm font-medium">
-            Endpoint
-          </label>
-          <ThemedSelect
-            id="endpoint-select"
-            value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
-            onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
-            options={[
-              { value: '__all__', label: 'All endpoints' },
-              ...(endpoints?.map((ep) => ({
-                value: String(ep.id),
-                label: `${ep.name} (ID: ${ep.id})`,
-              })) ?? []),
-            ]}
-          />
+      {/* Filter pane: dropdowns + status summary */}
+      <div className="rounded-xl border bg-card/50 backdrop-blur-sm p-4 shadow-sm space-y-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label htmlFor="endpoint-select" className="text-sm font-medium">
+              Endpoint
+            </label>
+            <ThemedSelect
+              id="endpoint-select"
+              value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+              onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+              options={[
+                { value: '__all__', label: 'All endpoints' },
+                ...(endpoints?.map((ep) => ({
+                  value: String(ep.id),
+                  label: `${ep.name} (ID: ${ep.id})`,
+                })) ?? []),
+              ]}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="stack-select" className="text-sm font-medium">
+              Stack
+            </label>
+            <ThemedSelect
+              id="stack-select"
+              value={selectedStack ?? '__all__'}
+              onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
+              options={[
+                { value: '__all__', label: 'All stacks' },
+                ...availableStacks.map((stackName) => ({
+                  value: stackName,
+                  label: stackName,
+                })),
+              ]}
+              disabled={!containers || availableStacks.length === 0}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="group-select" className="text-sm font-medium">
+              Group
+            </label>
+            <ThemedSelect
+              id="group-select"
+              value={selectedGroup ?? '__all__'}
+              onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
+              options={[
+                { value: '__all__', label: 'All groups' },
+                { value: 'system', label: 'System' },
+                { value: 'workload', label: 'Workload' },
+              ]}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="state-select" className="text-sm font-medium">
+              State
+            </label>
+            <ThemedSelect
+              id="state-select"
+              value={selectedState ?? '__all__'}
+              onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
+              options={[
+                { value: '__all__', label: 'All states' },
+                ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
+                  value: state,
+                  label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
+                })),
+              ]}
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={!exportRows.length}
+            className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+          >
+            Export CSV
+          </button>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label htmlFor="stack-select" className="text-sm font-medium">
-            Stack
-          </label>
-          <ThemedSelect
-            id="stack-select"
-            value={selectedStack ?? '__all__'}
-            onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
-            options={[
-              { value: '__all__', label: 'All stacks' },
-              ...availableStacks.map((stackName) => ({
-                value: stackName,
-                label: stackName,
-              })),
-            ]}
-            disabled={!containers || availableStacks.length === 0}
+        {preStateFilteredContainers.length > 0 && (
+          <WorkloadStatusSummary
+            containers={preStateFilteredContainers}
+            activeStateFilter={selectedState}
+            onStateFilterChange={setSelectedState}
           />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label htmlFor="group-select" className="text-sm font-medium">
-            Group
-          </label>
-          <ThemedSelect
-            id="group-select"
-            value={selectedGroup ?? '__all__'}
-            onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
-            options={[
-              { value: '__all__', label: 'All groups' },
-              { value: 'system', label: 'System' },
-              { value: 'workload', label: 'Workload' },
-            ]}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label htmlFor="state-select" className="text-sm font-medium">
-            State
-          </label>
-          <ThemedSelect
-            id="state-select"
-            value={selectedState ?? '__all__'}
-            onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
-            options={[
-              { value: '__all__', label: 'All states' },
-              ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
-                value: state,
-                label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
-              })),
-            ]}
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleExportCsv}
-          disabled={!exportRows.length}
-          className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-        >
-          Export CSV
-        </button>
-
+        )}
       </div>
 
-      {/* Status summary bar */}
-      {preStateFilteredContainers.length > 0 && (
-        <WorkloadStatusSummary
-          containers={preStateFilteredContainers}
-          activeStateFilter={selectedState}
-          onStateFilterChange={setSelectedState}
-        />
-      )}
-
-      {/* Active filter chips */}
-      {activeFilters.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
-          <AnimatePresence mode="popLayout">
-            {activeFilters.map((filter) => (
-              <motion.span
-                key={filter.key}
-                layout
-                initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
-                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
-                transition={reduceMotion ? { duration: 0 } : transition.fast}
-                className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
-              >
-                <span className="font-medium text-muted-foreground">{filter.label}:</span>
-                <span>{filter.value}</span>
-                <button
-                  type="button"
-                  onClick={filter.onRemove}
-                  className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
-                  aria-label={`Remove ${filter.label} filter`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </motion.span>
-            ))}
-          </AnimatePresence>
-          {activeFilters.length >= 2 && (
-            <button
-              type="button"
-              onClick={() => setFilters(undefined, undefined, undefined, undefined)}
-              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Clear all
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Smart search */}
-      {filteredContainers && (
-        <WorkloadSmartSearch
-          containers={filteredContainers}
-          knownStackNames={knownStackNames}
-          onFiltered={setSearchFilteredContainers}
-          totalCount={filteredContainers.length}
-        />
-      )}
-
-      {/* Container Table */}
+      {/* Table pane: filter chips + search + table */}
       {isLoading ? (
         <SkeletonCard className="h-[500px]" />
       ) : filteredContainers ? (
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
+          {/* Active filter chips */}
+          {activeFilters.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
+              <AnimatePresence mode="popLayout">
+                {activeFilters.map((filter) => (
+                  <motion.span
+                    key={filter.key}
+                    layout
+                    initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+                    animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+                    transition={reduceMotion ? { duration: 0 } : transition.fast}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
+                  >
+                    <span className="font-medium text-muted-foreground">{filter.label}:</span>
+                    <span>{filter.value}</span>
+                    <button
+                      type="button"
+                      onClick={filter.onRemove}
+                      className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`Remove ${filter.label} filter`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </motion.span>
+                ))}
+              </AnimatePresence>
+              {activeFilters.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => setFilters(undefined, undefined, undefined, undefined)}
+                  className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Smart search */}
+          <WorkloadSmartSearch
+            containers={filteredContainers}
+            knownStackNames={knownStackNames}
+            onFiltered={setSearchFilteredContainers}
+            totalCount={filteredContainers.length}
+          />
+
           <DataTable
             columns={columns}
             data={searchFilteredContainers ?? filteredContainers}
