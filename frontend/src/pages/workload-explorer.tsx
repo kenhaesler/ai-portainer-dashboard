@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { AlertTriangle, Eye, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/components/shared/themed-select';
 import { useContainers, type Container } from '@/hooks/use-containers';
@@ -24,6 +24,7 @@ import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 
 export default function WorkloadExplorerPage() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Read endpoint and stack from URL params
@@ -443,15 +444,16 @@ export default function WorkloadExplorerPage() {
               <motion.span
                 key={filter.key}
                 layout
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.85 }}
-                transition={transition.fast}
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+                transition={reduceMotion ? { duration: 0 } : transition.fast}
                 className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
               >
                 <span className="font-medium text-muted-foreground">{filter.label}:</span>
                 <span>{filter.value}</span>
                 <button
+                  type="button"
                   onClick={filter.onRemove}
                   className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
                   aria-label={`Remove ${filter.label} filter`}
@@ -463,6 +465,7 @@ export default function WorkloadExplorerPage() {
           </AnimatePresence>
           {activeFilters.length >= 2 && (
             <button
+              type="button"
               onClick={() => setFilters(undefined, undefined, undefined)}
               className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >

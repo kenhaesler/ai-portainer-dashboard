@@ -141,6 +141,7 @@ vi.mock('framer-motion', () => ({
   motion: {
     span: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => <span {...Object.fromEntries(Object.entries(props).filter(([k]) => !['initial', 'animate', 'exit', 'transition', 'layout'].includes(k)))}>{children}</span>,
   },
+  useReducedMotion: () => false,
 }));
 
 let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
