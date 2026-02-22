@@ -109,7 +109,7 @@ const itemVariants = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: duration.base, ease: [...easing.pop] },
+    transition: { duration: duration.base, ease: [...easing.pop] as [number, number, number, number] },
   },
 };
 
