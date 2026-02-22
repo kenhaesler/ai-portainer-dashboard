@@ -23,6 +23,7 @@ import { transition } from '@/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/components/shared/workload-smart-search';
 import { SelectionActionBar } from '@/components/shared/selection-action-bar';
 import { WorkloadStatusSummary } from '@/components/workload/workload-status-summary';
+import { SpotlightCard } from '@/components/shared/spotlight-card';
 
 const MAX_COMPARE = 4;
 
@@ -424,7 +425,8 @@ export default function WorkloadExplorerPage() {
       </div>
 
       {/* Filter pane: dropdowns + status summary */}
-      <div className="rounded-xl border bg-card/50 backdrop-blur-sm p-4 shadow-sm space-y-3">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label htmlFor="endpoint-select" className="text-sm font-medium">
@@ -515,12 +517,14 @@ export default function WorkloadExplorerPage() {
           />
         )}
       </div>
+      </SpotlightCard>
 
       {/* Table pane: filter chips + search + table */}
       {isLoading ? (
         <SkeletonCard className="h-[500px]" />
       ) : filteredContainers ? (
-        <div className="rounded-xl border bg-card/50 backdrop-blur-sm p-6 shadow-sm space-y-4">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
           {/* Active filter chips */}
           {activeFilters.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
@@ -581,6 +585,7 @@ export default function WorkloadExplorerPage() {
             onRowClick={(row) => navigate(`/containers/${row.endpointId}/${row.id}`)}
           />
         </div>
+        </SpotlightCard>
       ) : null}
 
       {/* Floating compare action bar */}
