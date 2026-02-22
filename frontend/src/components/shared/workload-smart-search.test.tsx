@@ -258,4 +258,173 @@ describe('WorkloadSmartSearch', () => {
     renderComponent({ containers: [containers[0]], totalCount: 1 });
     expect(screen.getByText('1 container')).toBeInTheDocument();
   });
+
+  describe('filter action (AI search filtering)', () => {
+    it('applies AI filter and calls onFiltered with matching containers', async () => {
+      const { onFiltered } = renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'find nginx' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'filter',
+        text: 'Found 1 nginx container',
+        description: 'Filtered by image',
+        filters: { image: 'nginx' },
+        containerNames: ['nginx-proxy-1'],
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('AI filter active')).toBeInTheDocument();
+        expect(screen.getByText('Found 1 nginx container')).toBeInTheDocument();
+        expect(screen.getByText('Filtered by image')).toBeInTheDocument();
+      });
+
+      // onFiltered should have been called with only the matching container
+      const filterCalls = onFiltered.mock.calls;
+      const lastFilteredList = filterCalls[filterCalls.length - 1][0] as Container[];
+      expect(lastFilteredList).toHaveLength(1);
+      expect(lastFilteredList[0].name).toBe('nginx-proxy-1');
+    });
+
+    it('shows AI found count in status text', async () => {
+      renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'running containers' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'filter',
+        text: 'Found 2 running containers',
+        description: 'Filtered by state',
+        filters: { state: 'running' },
+        containerNames: ['nginx-proxy-1', 'redis-cache-1'],
+      });
+
+      await waitFor(() => {
+        // The count text appears in the card badge area and the footer count display
+        const matches = screen.getAllByText('AI found 2 of 3 containers');
+        expect(matches.length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it('performs case-insensitive name matching', async () => {
+      const { onFiltered } = renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'find nginx' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'filter',
+        text: 'Found 1 container',
+        filters: {},
+        containerNames: ['NGINX-PROXY-1'], // uppercase
+      });
+
+      await waitFor(() => {
+        const filterCalls = onFiltered.mock.calls;
+        const lastFilteredList = filterCalls[filterCalls.length - 1][0] as Container[];
+        expect(lastFilteredList).toHaveLength(1);
+        expect(lastFilteredList[0].name).toBe('nginx-proxy-1');
+      });
+    });
+
+    it('answer action does not change table filtering', async () => {
+      const { onFiltered } = renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'how many running?' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'answer',
+        text: '2 containers are running',
+        description: 'Based on current data',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('2 containers are running')).toBeInTheDocument();
+      });
+
+      // The last call to onFiltered should have been the local filter, not an AI filter override
+      // The count display should NOT show "AI found" text
+      expect(screen.queryByText('AI filter active')).not.toBeInTheDocument();
+      expect(screen.queryByText(/AI found/)).not.toBeInTheDocument();
+    });
+
+    it('clears AI filter when clear button is clicked', async () => {
+      const { onFiltered } = renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'find nginx' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'filter',
+        text: 'Found 1 container',
+        filters: { image: 'nginx' },
+        containerNames: ['nginx-proxy-1'],
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('AI filter active')).toBeInTheDocument();
+      });
+
+      // Click clear
+      fireEvent.click(screen.getByRole('button', { name: /clear search/i }));
+
+      expect(screen.queryByText('AI filter active')).not.toBeInTheDocument();
+      const filterCalls = onFiltered.mock.calls;
+      const lastFilteredList = filterCalls[filterCalls.length - 1][0] as Container[];
+      expect(lastFilteredList).toHaveLength(3); // all containers restored
+    });
+
+    it('clears AI filter when user types in input', async () => {
+      renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'find nginx' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'filter',
+        text: 'Found 1 container',
+        filters: { image: 'nginx' },
+        containerNames: ['nginx-proxy-1'],
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('AI filter active')).toBeInTheDocument();
+      });
+
+      // Type in input to go back to local filter mode
+      fireEvent.change(input, { target: { value: 'redis' } });
+
+      expect(screen.queryByText('AI filter active')).not.toBeInTheDocument();
+    });
+
+    it('handles filter action with empty containerNames (no matches)', async () => {
+      const { onFiltered } = renderComponent();
+      const input = screen.getByRole('textbox');
+      fireEvent.change(input, { target: { value: 'find nonexistent' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+      onSuccess({
+        action: 'filter',
+        text: 'No matching containers',
+        filters: { name: 'nonexistent' },
+        containerNames: [],
+      });
+
+      await waitFor(() => {
+        // With empty containerNames, the filter should not be applied (no AI filter active)
+        expect(screen.queryByText('AI filter active')).not.toBeInTheDocument();
+        expect(screen.getByText('No matching containers')).toBeInTheDocument();
+      });
+    });
+  });
 });

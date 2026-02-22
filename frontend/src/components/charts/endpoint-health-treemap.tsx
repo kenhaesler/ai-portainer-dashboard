@@ -14,6 +14,7 @@ export interface EndpointHealthTreemapProps {
 }
 
 interface TreemapEntry {
+  [key: string]: unknown;
   name: string;
   size: number;
   id: number;

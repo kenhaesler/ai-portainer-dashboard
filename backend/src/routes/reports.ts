@@ -203,7 +203,7 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         params.push(containerId);
         paramIdx++;
       }
-      paramIdx = addInfrastructureSqlFilter(
+      addInfrastructureSqlFilter(
         conditions,
         params,
         paramIdx,
@@ -276,11 +276,10 @@ export async function reportsRoutes(fastify: FastifyInstance) {
         // requires individual values that rollup tables do not carry).
         const pConditions = [`container_id = $1`, `metric_type = $2`, `timestamp >= NOW() - INTERVAL '${interval}'`];
         const pParams: unknown[] = [row.container_id, row.metric_type];
-        let pIdx = 3;
+        const pIdx = 3;
         if (endpointId) {
           pConditions.push(`endpoint_id = $${pIdx}`);
           pParams.push(endpointId);
-          pIdx++;
         }
 
         const pWhere = pConditions.join(' AND ');

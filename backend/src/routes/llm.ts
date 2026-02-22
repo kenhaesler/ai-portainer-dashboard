@@ -49,9 +49,11 @@ async function getInfrastructureSummary(): Promise<string> {
       c.state === 'dead' || c.state === 'paused' || c.state === 'unknown'
     ).length;
 
+    const containerList = allContainers.map(c => `${c.name} (${c.state}, image:${c.image})`).join(', ');
+
     return `Endpoints: ${normalized.length} (${normalized.filter(e => e.status === 'up').length} up)
 Containers: ${allContainers.length} total, ${running} running, ${stopped} stopped, ${unhealthy} unhealthy
-Top containers: ${allContainers.slice(0, 10).map(c => `${c.name} (${c.state})`).join(', ')}`;
+All containers: ${containerList}`;
   } catch (err) {
     log.error({ err }, 'Failed to build infrastructure summary for query');
     return 'Infrastructure data unavailable.';
@@ -155,6 +157,20 @@ export async function llmRoutes(fastify: FastifyInstance) {
           action: 'navigate',
           page: parsed.page,
           description: parsed.description || '',
+        };
+      }
+
+      if (parsed.action === 'filter') {
+        const filters = parsed.filters && typeof parsed.filters === 'object' ? parsed.filters : {};
+        const containerNames = Array.isArray(parsed.containerNames)
+          ? parsed.containerNames.filter((n: unknown): n is string => typeof n === 'string')
+          : [];
+        return {
+          action: 'filter',
+          text: sanitizeLlmOutput(typeof parsed.text === 'string' ? parsed.text : ''),
+          description: parsed.description || '',
+          filters,
+          containerNames,
         };
       }
 

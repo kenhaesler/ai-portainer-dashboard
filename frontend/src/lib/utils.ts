@@ -37,6 +37,24 @@ export function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`;
 }
 
+/**
+ * Format a Unix timestamp (seconds) as a compact relative age string.
+ */
+export function formatRelativeAge(timestampSeconds: number): string {
+  const diff = Date.now() - timestampSeconds * 1000;
+  if (diff < 0) return 'Future';
+
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return '< 1m';
+}
+
 export function truncate(str: string, length: number): string {
   return str.length > length ? `${str.slice(0, length)}...` : str;
 }

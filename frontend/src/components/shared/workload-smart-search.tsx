@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Sparkles, Loader2, ArrowRight, AlertCircle, X } from 'lucide-react';
+import { Search, Sparkles, Loader2, ArrowRight, AlertCircle, X, Filter } from 'lucide-react';
 import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
 import { cn } from '@/lib/utils';
 import type { Container } from '@/hooks/use-containers';
@@ -28,6 +28,13 @@ export interface WorkloadSmartSearchProps {
   placeholder?: string;
 }
 
+/** Apply AI filter results by matching containerNames against the containers list (case-insensitive). */
+function applyAiFilter(containers: Container[], containerNames: string[]): Container[] {
+  if (!containerNames.length) return containers;
+  const lowerNames = new Set(containerNames.map(n => n.toLowerCase()));
+  return containers.filter(c => lowerNames.has(c.name.toLowerCase()));
+}
+
 export function WorkloadSmartSearch({
   containers,
   knownStackNames,
@@ -39,6 +46,7 @@ export function WorkloadSmartSearch({
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<SearchMode>('filter');
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
+  const [aiFilteredCount, setAiFilteredCount] = useState<number | null>(null);
   const [filteredCount, setFilteredCount] = useState(containers.length);
   const nlQuery = useNlQuery();
 
@@ -51,13 +59,34 @@ export function WorkloadSmartSearch({
     [knownStackNames, onFiltered],
   );
 
+  /** Handle AI result — apply filter action to the table if applicable. */
+  const handleAiResult = useCallback(
+    (data: NlQueryResult) => {
+      setAiResult(data);
+      if (data.action === 'filter' && data.containerNames?.length) {
+        const matched = applyAiFilter(containers, data.containerNames);
+        setAiFilteredCount(matched.length);
+        onFiltered(matched);
+      } else {
+        setAiFilteredCount(null);
+      }
+    },
+    [containers, onFiltered],
+  );
+
   // Re-apply filter when upstream containers change (dropdown filter changed)
   useEffect(() => {
     setFilteredCount(containers.length);
     if (query && mode === 'filter') {
       applyFilter(query, containers);
     }
-    // Intentionally omit query/mode/applyFilter — we only want to re-run when the
+    // Re-apply AI filter if active
+    if (mode === 'ai' && aiResult?.action === 'filter' && aiResult.containerNames?.length) {
+      const matched = applyAiFilter(containers, aiResult.containerNames);
+      setAiFilteredCount(matched.length);
+      onFiltered(matched);
+    }
+    // Intentionally omit query/mode/applyFilter/aiResult — we only want to re-run when the
     // upstream containers list changes (endpoint/stack dropdown changed).
   }, [containers]);
 
@@ -67,6 +96,7 @@ export function WorkloadSmartSearch({
       setQuery(newQuery);
       setMode('filter');
       setAiResult(null);
+      setAiFilteredCount(null);
       applyFilter(newQuery, containers);
     },
     [applyFilter, containers],
@@ -77,17 +107,19 @@ export function WorkloadSmartSearch({
     if (!trimmed || nlQuery.isPending) return;
     setMode('ai');
     setAiResult(null);
+    setAiFilteredCount(null);
     nlQuery.mutate(trimmed, {
-      onSuccess: (data) => setAiResult(data),
+      onSuccess: handleAiResult,
       onError: () =>
         setAiResult({ action: 'error', text: 'Failed to process query. Is the LLM service available?' }),
     });
-  }, [query, nlQuery]);
+  }, [query, nlQuery, handleAiResult]);
 
   const handleClear = useCallback(() => {
     setQuery('');
     setMode('filter');
     setAiResult(null);
+    setAiFilteredCount(null);
     setFilteredCount(containers.length);
     onFiltered(containers);
   }, [containers, onFiltered]);
@@ -109,6 +141,7 @@ export function WorkloadSmartSearch({
       setQuery(label);
       setMode('filter');
       setAiResult(null);
+      setAiFilteredCount(null);
       applyFilter(label, containers);
     },
     [applyFilter, containers],
@@ -119,16 +152,18 @@ export function WorkloadSmartSearch({
       setQuery(label);
       setMode('ai');
       setAiResult(null);
+      setAiFilteredCount(null);
       nlQuery.mutate(label, {
-        onSuccess: (data) => setAiResult(data),
+        onSuccess: handleAiResult,
         onError: () =>
           setAiResult({ action: 'error', text: 'Failed to process query. Is the LLM service available?' }),
       });
     },
-    [nlQuery],
+    [nlQuery, handleAiResult],
   );
 
   const isAiMode = mode === 'ai';
+  const isAiFilterActive = isAiMode && aiResult?.action === 'filter' && aiFilteredCount !== null;
   const showFilteredCount = query && mode === 'filter' && filteredCount !== totalCount;
 
   return (
@@ -258,6 +293,28 @@ export function WorkloadSmartSearch({
             </div>
           )}
 
+          {aiResult.action === 'filter' && (
+            <div className="flex items-start gap-3">
+              <Filter className="mt-0.5 h-4 w-4 shrink-0 text-purple-500" />
+              <div className="space-y-1 flex-1 min-w-0">
+                {isAiFilterActive && (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                      AI filter active
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      AI found {aiFilteredCount} of {totalCount} containers
+                    </span>
+                  </div>
+                )}
+                <p className="text-sm font-medium">{aiResult.text}</p>
+                {aiResult.description && (
+                  <p className="text-xs text-muted-foreground">{aiResult.description}</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {aiResult.action === 'navigate' && aiResult.page && (
             <button
               onClick={() => navigate(aiResult.page!)}
@@ -282,9 +339,11 @@ export function WorkloadSmartSearch({
 
       {/* Count display */}
       <p className="text-sm text-muted-foreground">
-        {showFilteredCount
-          ? `Showing ${filteredCount} of ${totalCount} container${totalCount !== 1 ? 's' : ''}`
-          : `${totalCount} container${totalCount !== 1 ? 's' : ''}`}
+        {isAiFilterActive
+          ? `AI found ${aiFilteredCount} of ${totalCount} container${totalCount !== 1 ? 's' : ''}`
+          : showFilteredCount
+            ? `Showing ${filteredCount} of ${totalCount} container${totalCount !== 1 ? 's' : ''}`
+            : `${totalCount} container${totalCount !== 1 ? 's' : ''}`}
       </p>
     </div>
   );

@@ -1055,10 +1055,14 @@ function ForecastCard({
             />
             <Tooltip
               labelFormatter={(v) => formatDate(v as string)}
-              formatter={(value: number, name: string) => [
-                `${value}${unit}`,
-                name === 'projected' ? `${label} (projected)` : label,
-              ]}
+              formatter={(value, name) => {
+                const numericValue = typeof value === 'number' ? value : Number(value ?? 0);
+                const seriesName = typeof name === 'string' ? name : String(name ?? '');
+                return [
+                  `${numericValue}${unit}`,
+                  seriesName === 'projected' ? `${label} (projected)` : label,
+                ];
+              }}
             />
             <ReferenceLine y={90} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '90%', position: 'right', fontSize: 10, fill: '#ef4444' }} />
             {projectionStartIdx > 0 && (

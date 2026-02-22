@@ -22,14 +22,14 @@ let resizeCallback: ResizeObserverCallback | null = null;
 beforeEach(() => {
   mockNavigate.mockReset();
   resizeCallback = null;
-  global.ResizeObserver = vi.fn().mockImplementation((cb: ResizeObserverCallback) => {
-    resizeCallback = cb;
-    return {
-      observe: vi.fn(),
-      disconnect: vi.fn(),
-      unobserve: vi.fn(),
-    };
-  });
+  global.ResizeObserver = class {
+    constructor(cb: ResizeObserverCallback) {
+      resizeCallback = cb;
+    }
+    observe = vi.fn();
+    disconnect = vi.fn();
+    unobserve = vi.fn();
+  } as unknown as typeof ResizeObserver;
 });
 
 /** Render and trigger ResizeObserver with a simulated container width */
