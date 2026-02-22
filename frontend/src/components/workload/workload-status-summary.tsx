@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import type { Container } from '@/hooks/use-containers';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +28,7 @@ export function WorkloadStatusSummary({
   activeStateFilter,
   onStateFilterChange,
 }: WorkloadStatusSummaryProps) {
+  const reduceMotion = useReducedMotion();
   const stateCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const container of containers) {
@@ -57,6 +58,7 @@ export function WorkloadStatusSummary({
     <div className="rounded-lg border bg-card/50 backdrop-blur-sm p-3 shadow-sm space-y-2">
       <div className="flex items-center gap-3 flex-wrap">
         <button
+          type="button"
           onClick={() => onStateFilterChange(undefined)}
           className={cn(
             'text-sm font-medium transition-colors',
@@ -79,10 +81,11 @@ export function WorkloadStatusSummary({
             return (
               <motion.button
                 key={state}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.15 }}
+                type="button"
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
+                animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+                transition={reduceMotion ? { duration: 0 } : { duration: 0.15 }}
                 onClick={() => onStateFilterChange(isActive ? undefined : state)}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all duration-150',

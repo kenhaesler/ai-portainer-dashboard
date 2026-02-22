@@ -8,6 +8,7 @@ vi.mock('framer-motion', () => ({
     div: ({ children, ...props }: React.ComponentProps<'div'>) => <div {...props}>{children}</div>,
   },
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useReducedMotion: () => false,
 }));
 
 import { WorkloadStatusSummary } from './workload-status-summary';
