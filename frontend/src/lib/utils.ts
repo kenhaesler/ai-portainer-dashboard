@@ -38,8 +38,7 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Format a Unix timestamp (seconds) as a human-readable relative age.
- * Compact format for table cells: "11d 4h", "3h 22m", "45m", "< 1m"
+ * Format a Unix timestamp (seconds) as a compact relative age string.
  */
 export function formatRelativeAge(timestampSeconds: number): string {
   const diff = Date.now() - timestampSeconds * 1000;
