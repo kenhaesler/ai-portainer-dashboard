@@ -520,7 +520,7 @@ export default function WorkloadExplorerPage() {
       {isLoading ? (
         <SkeletonCard className="h-[500px]" />
       ) : filteredContainers ? (
-        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
+        <div className="rounded-xl border bg-card/50 backdrop-blur-sm p-6 shadow-sm space-y-4">
           {/* Active filter chips */}
           {activeFilters.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
