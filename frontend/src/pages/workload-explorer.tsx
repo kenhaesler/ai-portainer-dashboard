@@ -31,17 +31,20 @@ export default function WorkloadExplorerPage() {
   const endpointParam = searchParams.get('endpoint');
   const stackParam = searchParams.get('stack');
   const groupParam = searchParams.get('group');
+  const stateParam = searchParams.get('state');
   const selectedEndpoint = endpointParam ? Number(endpointParam) : undefined;
   const selectedStack = stackParam || undefined;
   const selectedGroup: ContainerGroup | undefined =
     groupParam === 'system' || groupParam === 'workload'
       ? groupParam
       : undefined;
+  const selectedState = stateParam || undefined;
 
   const setFilters = (
     endpointId: number | undefined,
     stackName: string | undefined,
-    group: ContainerGroup | undefined
+    group: ContainerGroup | undefined,
+    state?: string | undefined
   ) => {
     const params: Record<string, string> = {};
     if (endpointId !== undefined) {
@@ -53,19 +56,26 @@ export default function WorkloadExplorerPage() {
     if (group) {
       params.group = group;
     }
+    if (state) {
+      params.state = state;
+    }
     setSearchParams(params);
   };
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
-    setFilters(endpointId, undefined, selectedGroup);
+    setFilters(endpointId, undefined, selectedGroup, selectedState);
   };
 
   const setSelectedStack = (stackName: string | undefined) => {
-    setFilters(selectedEndpoint, stackName, selectedGroup);
+    setFilters(selectedEndpoint, stackName, selectedGroup, selectedState);
   };
 
   const setSelectedGroup = (group: ContainerGroup | undefined) => {
-    setFilters(selectedEndpoint, selectedStack, group);
+    setFilters(selectedEndpoint, selectedStack, group, selectedState);
+  };
+
+  const setSelectedState = (state: string | undefined) => {
+    setFilters(selectedEndpoint, selectedStack, selectedGroup, state);
   };
 
   const { data: endpoints } = useEndpoints();
@@ -93,15 +103,29 @@ export default function WorkloadExplorerPage() {
     return [...stackNames].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
   }, [containers, knownStackNames]);
 
-  // Filter containers by stack/group URL params when present
-  const filteredContainers = useMemo(() => {
-    if (!containers) return containers;
+  // Containers filtered by stack/group (before state filter, used for state counts)
+  const preStateFilteredContainers = useMemo(() => {
+    if (!containers) return [];
     return containers.filter((container) => {
       const stackMatches = !selectedStack || resolveContainerStackName(container, knownStackNames) === selectedStack;
       const groupMatches = !selectedGroup || getContainerGroup(container) === selectedGroup;
       return stackMatches && groupMatches;
     });
   }, [containers, selectedStack, selectedGroup, knownStackNames]);
+
+  const stateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const container of preStateFilteredContainers) {
+      counts[container.state] = (counts[container.state] || 0) + 1;
+    }
+    return counts;
+  }, [preStateFilteredContainers]);
+
+  // Apply state filter on top of stack/group filtering
+  const filteredContainers = useMemo(() => {
+    if (!selectedState) return preStateFilteredContainers;
+    return preStateFilteredContainers.filter((container) => container.state === selectedState);
+  }, [preStateFilteredContainers, selectedState]);
 
   const [selectedContainers, setSelectedContainers] = useState<Container[]>([]);
   const [controlledRowIds, setControlledRowIds] = useState<RowSelectionState | undefined>(undefined);
@@ -110,7 +134,7 @@ export default function WorkloadExplorerPage() {
   // Reset search-filtered results when the upstream (dropdown) filters change
   useEffect(() => {
     setSearchFilteredContainers(undefined);
-  }, [selectedEndpoint, selectedStack, selectedGroup]);
+  }, [selectedEndpoint, selectedStack, selectedGroup, selectedState]);
 
   const exportRows = useMemo<Record<string, unknown>[]>(() => {
     if (!filteredContainers) return [];
@@ -415,6 +439,24 @@ export default function WorkloadExplorerPage() {
               { value: '__all__', label: 'All groups' },
               { value: 'system', label: 'System' },
               { value: 'workload', label: 'Workload' },
+            ]}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="state-select" className="text-sm font-medium">
+            State
+          </label>
+          <ThemedSelect
+            id="state-select"
+            value={selectedState ?? '__all__'}
+            onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
+            options={[
+              { value: '__all__', label: 'All states' },
+              ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
+                value: state,
+                label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
+              })),
             ]}
           />
         </div>
