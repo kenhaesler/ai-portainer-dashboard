@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatBytes, formatDuration, truncate, cn } from './utils';
+import { formatBytes, formatDuration, formatRelativeAge, truncate, cn } from './utils';
 
 describe('formatBytes', () => {
   it('should return "0 B" for 0 bytes', () => {
@@ -46,6 +46,53 @@ describe('formatDuration', () => {
     expect(formatDuration(60000)).toBe('1.0m');
     expect(formatDuration(90000)).toBe('1.5m');
     expect(formatDuration(300000)).toBe('5.0m');
+  });
+});
+
+describe('formatRelativeAge', () => {
+  it('returns days and hours for multi-day durations', () => {
+    const nowMs = 1700000000000;
+    const timestamp = Math.floor((nowMs - ((11 * 24 + 4) * 60 * 60 * 1000)) / 1000);
+    const originalNow = Date.now;
+    Date.now = () => nowMs;
+    expect(formatRelativeAge(timestamp)).toBe('11d 4h');
+    Date.now = originalNow;
+  });
+
+  it('returns hours and minutes for multi-hour durations', () => {
+    const nowMs = 1700000000000;
+    const timestamp = Math.floor((nowMs - ((3 * 60 + 22) * 60 * 1000)) / 1000);
+    const originalNow = Date.now;
+    Date.now = () => nowMs;
+    expect(formatRelativeAge(timestamp)).toBe('3h 22m');
+    Date.now = originalNow;
+  });
+
+  it('returns minutes for short durations', () => {
+    const nowMs = 1700000000000;
+    const timestamp = Math.floor((nowMs - (45 * 60 * 1000)) / 1000);
+    const originalNow = Date.now;
+    Date.now = () => nowMs;
+    expect(formatRelativeAge(timestamp)).toBe('45m');
+    Date.now = originalNow;
+  });
+
+  it('returns less-than-a-minute marker for recent timestamps', () => {
+    const nowMs = 1700000000000;
+    const timestamp = Math.floor((nowMs - 30 * 1000) / 1000);
+    const originalNow = Date.now;
+    Date.now = () => nowMs;
+    expect(formatRelativeAge(timestamp)).toBe('< 1m');
+    Date.now = originalNow;
+  });
+
+  it('returns Future for timestamps ahead of now', () => {
+    const nowMs = 1700000000000;
+    const timestamp = Math.floor((nowMs + 10 * 1000) / 1000);
+    const originalNow = Date.now;
+    Date.now = () => nowMs;
+    expect(formatRelativeAge(timestamp)).toBe('Future');
+    Date.now = originalNow;
   });
 });
 
