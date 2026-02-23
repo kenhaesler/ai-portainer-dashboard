@@ -1,8 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import { verifyJwt } from '../utils/crypto.js';
-import { hasMinRole, type Role } from '../../services/user-store.js';
-import { getSession } from '../../services/session-store.js';
+import { hasMinRole, type Role } from '../services/user-store.js';
+import { getSession } from '../services/session-store.js';
 
 interface AuthenticatedUser {
   sub: string;

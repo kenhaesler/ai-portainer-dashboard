@@ -4,7 +4,7 @@ import { Server } from 'socket.io';
 import { IncomingMessage } from 'http';
 import { verifyJwt } from '../utils/crypto.js';
 import { createChildLogger } from '../utils/logger.js';
-import { getSession } from '../../services/session-store.js';
+import { getSession } from '../services/session-store.js';
 import { DEV_ALLOWED_ORIGINS } from './dev-origins.js';
 
 const log = createChildLogger('socket.io');
