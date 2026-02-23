@@ -397,7 +397,7 @@ Hope this helps!`;
 
   describe('triggerInvestigation', () => {
     it('should skip when investigation is disabled', async () => {
-      vi.doMock('../config/index.js', () => ({
+      vi.doMock('../core/config/index.js', () => ({
         getConfig: () => ({
           INVESTIGATION_ENABLED: false,
           INVESTIGATION_COOLDOWN_MINUTES: 30,
@@ -415,7 +415,7 @@ Hope this helps!`;
       expect(mockInsertInvestigation).not.toHaveBeenCalled();
 
       // Restore original mock
-      vi.doMock('../config/index.js', () => ({
+      vi.doMock('../core/config/index.js', () => ({
         getConfig: () => ({
           INVESTIGATION_ENABLED: true,
           INVESTIGATION_COOLDOWN_MINUTES: 30,

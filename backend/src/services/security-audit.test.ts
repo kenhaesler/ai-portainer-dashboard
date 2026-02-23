@@ -13,7 +13,7 @@ const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
 
 // Kept: settings-store mock — tests control settings responses
-vi.mock('./settings-store.js', () => ({
+vi.mock('../core/services/settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
 }));

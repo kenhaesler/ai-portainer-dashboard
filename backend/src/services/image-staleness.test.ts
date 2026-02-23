@@ -5,7 +5,7 @@ import type { AppDb } from '../core/db/app-db.js';
 let testDb: AppDb;
 
 // Kept: app-db-router mock — redirects to test PostgreSQL instance
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 

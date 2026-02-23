@@ -4,7 +4,7 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { searchRoutes } from './search.js';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: edge-capability-guard mock — avoids real edge device checks
 vi.mock('../services/edge-capability-guard.js', () => ({

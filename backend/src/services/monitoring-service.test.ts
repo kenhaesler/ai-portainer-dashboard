@@ -112,7 +112,7 @@ vi.mock('./notification-service.js', () => ({
   notifyInsight: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./event-bus.js', () => ({
+vi.mock('../core/services/event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 

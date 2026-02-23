@@ -13,7 +13,7 @@ vi.mock('../services/kpi-store.js', () => ({
 }));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 import * as portainerClient from '../core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';

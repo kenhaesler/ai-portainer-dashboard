@@ -13,7 +13,7 @@ const mockDb = {
 };
 
 // Kept: DB mock — tests assert SQL query patterns
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => mockDb,
 }));
 

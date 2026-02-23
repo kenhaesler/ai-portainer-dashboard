@@ -32,7 +32,7 @@ vi.mock('ollama', () => ({
 
 
 // Kept: app-db-router mock — routes to test DB
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 
@@ -52,7 +52,7 @@ vi.mock('../services/mcp-tool-bridge.js', () => ({
   getMcpToolPrompt: vi.fn(() => ''),
 }));
 
-vi.mock('../services/settings-store.js', () => ({
+vi.mock('../core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
 }));
 

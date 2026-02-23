@@ -23,7 +23,7 @@ const mockQueryOne = vi.fn();
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 const mockQuery = vi.fn().mockResolvedValue([]);
 // Kept: complex external deps (fetch, nodemailer); DB mock for notification_log INSERT
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
     queryOne: (...args: unknown[]) => mockQueryOne(...args),

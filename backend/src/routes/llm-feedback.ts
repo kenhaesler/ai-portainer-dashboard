@@ -271,7 +271,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
 
     try {
       // Dynamically import to avoid circular dependencies
-      const { getEffectiveLlmConfig } = await import('../services/settings-store.js');
+      const { getEffectiveLlmConfig } = await import('../core/services/settings-store.js');
 
       const llmConfig = await getEffectiveLlmConfig();
 

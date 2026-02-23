@@ -58,7 +58,7 @@ vi.mock('../services/ebpf-coverage.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

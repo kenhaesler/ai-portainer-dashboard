@@ -4,7 +4,7 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containerLogsRoutes } from './container-logs.js';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: edge service mocks — avoids real edge device interactions
 vi.mock('../services/edge-log-fetcher.js', () => ({
@@ -26,7 +26,7 @@ vi.mock('../services/edge-async-log-fetcher.js', () => ({
 }));
 
 
-vi.mock('../plugins/auth.js', () => ({
+vi.mock('../core/plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),
 }));
 

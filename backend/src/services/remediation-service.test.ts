@@ -23,7 +23,7 @@ vi.mock('./actions-store.js', () => ({
 }));
 
 // Kept: event-bus mock — tests control event emission
-vi.mock('./event-bus.js', () => ({
+vi.mock('../core/services/event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 

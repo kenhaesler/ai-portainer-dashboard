@@ -15,7 +15,7 @@ const mockGetConfig = vi.fn().mockReturnValue({
   maxTokens: 2048,
   maxToolIterations: 5,
 });
-vi.mock('./settings-store.js', () => ({
+vi.mock('../core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 

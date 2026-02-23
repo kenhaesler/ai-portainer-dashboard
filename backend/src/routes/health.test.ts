@@ -5,12 +5,12 @@ import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod
 import { healthRoutes } from './health.js';
 
 // Kept: timescale mock — no TimescaleDB in CI
-vi.mock('../db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
+vi.mock('../core/db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 // Kept: postgres mock — no PostgreSQL in CI
-vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
+vi.mock('../core/db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
-vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
 
 import { isMetricsDbHealthy, isMetricsDbReady } from '../core/db/timescale.js';
 import { isAppDbHealthy, isAppDbReady } from '../core/db/postgres.js';

@@ -5,12 +5,12 @@ import type { AppDb } from '../core/db/app-db.js';
 let testDb: AppDb;
 
 // Kept: app-db-router mock — redirects to test PostgreSQL instance
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 
 // Kept: event-bus mock — side-effect isolation
-vi.mock('./event-bus.js', () => ({
+vi.mock('../core/services/event-bus.js', () => ({
   onEvent: vi.fn(() => vi.fn()),
   emitEvent: vi.fn(),
 }));

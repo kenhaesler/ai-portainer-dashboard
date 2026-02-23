@@ -4,7 +4,7 @@
  *
  * Usage:
  *   import { createPortainerClientMock } from '../test-utils/mock-portainer.js';
- *   vi.mock('../services/portainer-client.js', () => createPortainerClientMock());
+ *   vi.mock('../core/portainer/portainer-client.js', () => createPortainerClientMock());
  */
 import { vi } from 'vitest';
 

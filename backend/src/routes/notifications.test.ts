@@ -8,7 +8,7 @@ import { notificationRoutes } from './notifications.js';
 let testDb: AppDb;
 
 // Kept: app-db-router mock — tests control database routing
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 

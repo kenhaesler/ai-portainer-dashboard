@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('./trace-context.js', () => ({
+vi.mock('../core/tracing/trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 

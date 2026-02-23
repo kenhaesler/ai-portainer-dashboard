@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Kept: timescale mock — no TimescaleDB in CI
-vi.mock('../db/timescale.js', () => ({
+vi.mock('../core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
 }));
 

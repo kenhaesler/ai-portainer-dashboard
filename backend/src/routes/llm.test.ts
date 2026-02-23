@@ -4,7 +4,7 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmRoutes } from './llm.js';
 
 // Mock settings-store (getEffectiveLlmConfig)
-vi.mock('../services/settings-store.js', () => ({
+vi.mock('../core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: vi.fn().mockReturnValue({
     ollamaUrl: 'http://localhost:11434',
     model: 'llama3.2',
@@ -32,7 +32,7 @@ vi.mock('ollama', () => ({
 }));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 import * as portainerClient from '../core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';

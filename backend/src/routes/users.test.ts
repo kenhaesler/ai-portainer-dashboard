@@ -4,7 +4,7 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { userRoutes } from './users.js';
 
 // Kept: user-store mock — no PostgreSQL in CI
-vi.mock('../services/user-store.js', () => ({
+vi.mock('../core/services/user-store.js', () => ({
   listUsers: vi.fn(),
   createUser: vi.fn(),
   updateUser: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('../services/user-store.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

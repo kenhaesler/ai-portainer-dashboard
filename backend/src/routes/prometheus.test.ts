@@ -8,7 +8,7 @@ import { setConfigForTest, resetConfig } from '../core/config/index.js';
 let appDb: AppDb;
 
 // Kept: app-db-router mock — tests control database routing
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
 }));
 

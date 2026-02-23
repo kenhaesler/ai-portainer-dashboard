@@ -16,7 +16,7 @@ vi.mock('../services/webhook-service.js', () => ({
 }));
 
 // Kept: event-bus mock — side-effect isolation
-vi.mock('../services/event-bus.js', () => ({
+vi.mock('../core/services/event-bus.js', () => ({
   onEvent: vi.fn(() => vi.fn()),
   emitEvent: vi.fn(),
 }));

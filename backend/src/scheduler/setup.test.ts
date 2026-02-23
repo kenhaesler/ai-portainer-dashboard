@@ -45,7 +45,7 @@ vi.mock('../services/portainer-backup.js', () => ({
   cleanupOldPortainerBackups: vi.fn(),
 }));
 // Kept: settings-store mock — tests control settings
-vi.mock('../services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
+vi.mock('../core/services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
 // Kept: webhook-service mock
 vi.mock('../services/webhook-service.js', () => ({
   startWebhookListener: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('../services/kpi-store.js', () => ({
 }));
 // Real portainer-normalizers used (pure function, no external deps)
 // Kept: trace-context mock
-vi.mock('../services/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
+vi.mock('../core/tracing/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
 // Kept: elasticsearch-log-forwarder mock
 vi.mock('../services/elasticsearch-log-forwarder.js', () => ({
   startElasticsearchLogForwarder: vi.fn(),
@@ -68,7 +68,7 @@ vi.mock('../services/elasticsearch-log-forwarder.js', () => ({
 
 const cleanExpiredSessionsMock = vi.fn().mockReturnValue(0);
 // Kept: session-store mock — tests control session cleanup
-vi.mock('../services/session-store.js', () => ({
+vi.mock('../core/services/session-store.js', () => ({
   cleanExpiredSessions: (...args: unknown[]) => cleanExpiredSessionsMock(...args),
 }));
 
@@ -145,7 +145,7 @@ beforeEach(async () => {
   vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
   const metricsStore = await import('../services/metrics-store.js');
   vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);
-  const settingsStore = await import('../services/settings-store.js');
+  const settingsStore = await import('../core/services/settings-store.js');
   vi.mocked(settingsStore.getSetting).mockReturnValue(null as any);
 
   // Bypass cache — delegates to fetcher
