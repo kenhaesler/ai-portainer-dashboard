@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as portainer from './portainer-client.js';
+import * as portainer from '../core/portainer/portainer-client.js';
 import {
   initiateEdgeAsyncLogCollection,
   checkEdgeJobStatus,

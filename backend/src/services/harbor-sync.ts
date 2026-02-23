@@ -1,9 +1,9 @@
-import { createChildLogger } from '../utils/logger.js';
-import { withSpan } from './trace-context.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { withSpan } from '../core/tracing/trace-context.js';
 import * as harbor from './harbor-client.js';
 import * as store from './harbor-vulnerability-store.js';
-import { getEndpoints, getContainers } from './portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
+import { getEndpoints, getContainers } from '../core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import { parseImageRef } from './image-staleness.js';
 import type { VulnerabilityInsert } from './harbor-vulnerability-store.js';
 

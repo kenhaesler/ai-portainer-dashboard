@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { healthRoutes } from './health.js';
 
@@ -12,10 +12,10 @@ vi.mock('../db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.
 vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
 
-import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
-import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
-import * as portainerCache from '../services/portainer-cache.js';
-import * as portainerClient from '../services/portainer-client.js';
+import { isMetricsDbHealthy, isMetricsDbReady } from '../core/db/timescale.js';
+import { isAppDbHealthy, isAppDbReady } from '../core/db/postgres.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 const { cache, waitForInFlight } = portainerCache;
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);

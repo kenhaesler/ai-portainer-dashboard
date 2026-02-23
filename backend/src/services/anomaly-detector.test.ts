@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 import { detectAnomaly } from './anomaly-detector.js';
 
 // Mock dependencies

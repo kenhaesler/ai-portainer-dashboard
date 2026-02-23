@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import * as portainer from '../services/portainer-client.js';
+import * as portainer from '../core/portainer/portainer-client.js';
 import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
-import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '../models/api-schemas.js';
+import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '../core/models/api-schemas.js';
 import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
   initiateEdgeAsyncLogCollection,
@@ -11,8 +11,8 @@ import {
   cleanupEdgeJob,
 } from '../services/edge-async-log-fetcher.js';
 import { IncrementalDockerFrameDecoder } from '../services/docker-frame-decoder.js';
-import { authenticateBearerHeader } from '../plugins/auth.js';
-import { createChildLogger } from '../utils/logger.js';
+import { authenticateBearerHeader } from '../core/plugins/auth.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('container-logs-route');
 

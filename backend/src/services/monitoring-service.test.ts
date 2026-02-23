@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 
 // Default config values used in tests
 const defaultConfig = {
@@ -122,9 +122,9 @@ vi.mock('./incident-correlator.js', () => ({
 }));
 
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('./monitoring-service.js');
-import * as portainerClient from './portainer-client.js';
-import * as portainerCache from './portainer-cache.js';
-import { cache } from './portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
+import { cache } from '../core/portainer/portainer-cache.js';
 import * as llmClient from './llm-client.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 

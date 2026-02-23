@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
-import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
-import type { AppDb } from '../db/app-db.js';
+import { getTestDb, truncateTestTables, closeTestDb } from '../core/db/test-db-helper.js';
+import type { AppDb } from '../core/db/app-db.js';
 
 let testDb: AppDb;
 

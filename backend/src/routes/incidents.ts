@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
-import { getDbForDomain } from '../db/app-db-router.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
 
 export async function incidentsRoutes(fastify: FastifyInstance) {
   // List incidents

@@ -1,10 +1,10 @@
 import pLimit from 'p-limit';
-import { createChildLogger } from '../utils/logger.js';
-import { getConfig } from '../config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { getConfig } from '../core/config/index.js';
 import { chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
-import { getContainerLogs } from './portainer-client.js';
-import { cachedFetch, getCacheKey } from './portainer-cache.js';
+import { getContainerLogs } from '../core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey } from '../core/portainer/portainer-cache.js';
 
 const log = createChildLogger('log-analyzer');
 

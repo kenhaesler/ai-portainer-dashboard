@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { FastifyInstance } from 'fastify';
-import * as portainer from '../services/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint } from '../services/portainer-normalizers.js';
-import { ContainerParamsSchema } from '../models/api-schemas.js';
-import { createChildLogger } from '../utils/logger.js';
+import * as portainer from '../core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpoint } from '../core/portainer/portainer-normalizers.js';
+import { ContainerParamsSchema } from '../core/models/api-schemas.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('route:containers');
 

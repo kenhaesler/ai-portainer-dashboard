@@ -1,16 +1,16 @@
-import * as portainer from './portainer-client.js';
+import * as portainer from '../core/portainer/portainer-client.js';
 import { getContainerLogsWithRetry } from './edge-log-fetcher.js';
 import { isEdgeAsync } from './edge-capability-guard.js';
 import { getEdgeAsyncContainerLogs } from './edge-async-log-fetcher.js';
-import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint } from './portainer-normalizers.js';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { getMetricsDb } from '../db/timescale.js';
-import { getTraces, getTrace, getTraceSummary } from './trace-store.js';
+import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpoint } from '../core/portainer/portainer-normalizers.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { getMetricsDb } from '../core/db/timescale.js';
+import { getTraces, getTrace, getTraceSummary } from '../core/tracing/trace-store.js';
 import { scrubPii } from '../utils/pii-scrubber.js';
 import { z } from 'zod';
-import { createChildLogger } from '../utils/logger.js';
-import { withSpan } from './trace-context.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { withSpan } from '../core/tracing/trace-context.js';
 
 const log = createChildLogger('llm-tools');
 

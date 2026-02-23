@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppDb } from '../db/app-db.js';
+import type { AppDb } from '../core/db/app-db.js';
 
 /**
  * Regression tests for status-page-store async AppDb queries.

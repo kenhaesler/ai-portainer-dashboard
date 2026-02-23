@@ -1,4 +1,4 @@
-import type { Insight } from '../models/monitoring.js';
+import type { Insight } from '../core/models/monitoring.js';
 
 export interface SimilarInsightGroup {
   insights: Insight[];

@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
-import { getConfig } from '../config/index.js';
-import { transformOtlpToSpans, type OtlpExportRequest } from '../services/otlp-transformer.js';
-import { decodeOtlpProtobuf } from '../services/otlp-protobuf.js';
-import { insertSpans } from '../services/trace-store.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../core/config/index.js';
+import { transformOtlpToSpans, type OtlpExportRequest } from '../core/tracing/otlp-transformer.js';
+import { decodeOtlpProtobuf } from '../core/tracing/otlp-protobuf.js';
+import { insertSpans } from '../core/tracing/trace-store.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('traces-ingest');
 

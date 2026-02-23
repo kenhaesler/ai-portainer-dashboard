@@ -5,7 +5,7 @@ import {
   waitForTunnel,
 } from './edge-log-fetcher.js';
 
-import * as portainer from './portainer-client.js';
+import * as portainer from '../core/portainer/portainer-client.js';
 
 describe('isDockerProxyUnavailable', () => {
   it('returns true for status 502', () => {

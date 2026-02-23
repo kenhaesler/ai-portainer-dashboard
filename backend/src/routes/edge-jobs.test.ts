@@ -12,9 +12,9 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
-import { writeAuditLog } from '../services/audit-logger.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
+import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEdgeJobs: any;

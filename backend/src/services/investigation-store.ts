@@ -1,6 +1,6 @@
-import { getDbForDomain } from '../db/app-db-router.js';
-import { createChildLogger } from '../utils/logger.js';
-import type { Investigation, InvestigationStatus, InvestigationWithInsight } from '../models/investigation.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import type { Investigation, InvestigationStatus, InvestigationWithInsight } from '../core/models/investigation.js';
 
 const log = createChildLogger('investigation-store');
 

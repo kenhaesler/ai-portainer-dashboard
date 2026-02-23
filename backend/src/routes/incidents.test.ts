@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
-import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
-import type { AppDb } from '../db/app-db.js';
+import { getTestDb, truncateTestTables, closeTestDb } from '../core/db/test-db-helper.js';
+import type { AppDb } from '../core/db/app-db.js';
 import { incidentsRoutes } from './incidents.js';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
 

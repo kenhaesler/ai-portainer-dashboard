@@ -11,8 +11,8 @@ vi.mock('../services/edge-capability-guard.js', () => ({
   supportsLiveFeatures: vi.fn(async () => true),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEndpoints: any;

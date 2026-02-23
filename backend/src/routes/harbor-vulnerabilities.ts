@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { createChildLogger } from '../utils/logger.js';
-import { writeAuditLog } from '../services/audit-logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
 import * as harborClient from '../services/harbor-client.js';
-import { getEffectiveHarborConfig } from '../services/settings-store.js';
+import { getEffectiveHarborConfig } from '../core/services/settings-store.js';
 import * as vulnStore from '../services/harbor-vulnerability-store.js';
 import { runFullSync } from '../services/harbor-sync.js';
 

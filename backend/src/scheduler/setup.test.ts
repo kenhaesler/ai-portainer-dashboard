@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 
 // ---------------------------------------------------------------------------
 // Kept mocks — internal services the scheduler depends on
@@ -78,9 +78,9 @@ vi.mock('../services/insights-store.js', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
-import * as portainerCache from '../services/portainer-cache.js';
-import { cache } from '../services/portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
+import { cache } from '../core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 import {

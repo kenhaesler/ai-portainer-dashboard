@@ -1,13 +1,13 @@
 import { FastifyInstance } from 'fastify';
-import { getMetricsDb } from '../db/timescale.js';
-import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../models/api-schemas.js';
+import { getMetricsDb } from '../core/db/timescale.js';
+import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '../core/models/api-schemas.js';
 import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
 import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('metrics-routes');
 

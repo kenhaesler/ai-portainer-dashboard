@@ -18,7 +18,7 @@ import {
   getEndpointOtlpOverride,
   setEndpointOtlpOverride,
 } from '../services/ebpf-coverage.js';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 
 const { mockedNetworkInterfaces } = vi.hoisted(() => ({
   mockedNetworkInterfaces: vi.fn(() => ({

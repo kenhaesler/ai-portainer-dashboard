@@ -4,10 +4,10 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containersRoutes } from './containers.js';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
-import * as portainerClient from '../services/portainer-client.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 import { checkPortainerAvailable } from '../test-utils/integration-setup.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 
 let portainerUp: boolean;
 

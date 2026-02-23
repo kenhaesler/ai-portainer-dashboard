@@ -1,8 +1,8 @@
 import { buildApp } from './app.js';
-import { getConfig } from './config/index.js';
-import { getMetricsDb, closeMetricsDb, closeReportsDb } from './db/timescale.js';
-import { getAppDb, closeAppDb } from './db/postgres.js';
-import { createChildLogger } from './utils/logger.js';
+import { getConfig } from './core/config/index.js';
+import { getMetricsDb, closeMetricsDb, closeReportsDb } from './core/db/timescale.js';
+import { getAppDb, closeAppDb } from './core/db/postgres.js';
+import { createChildLogger } from './core/utils/logger.js';
 import { setupLlmNamespace } from './sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './sockets/monitoring.js';
 import { setupRemediationNamespace } from './sockets/remediation.js';

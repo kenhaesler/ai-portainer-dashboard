@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { scanCapabilityPosture } from './security-scanner.js';
-import type { Container } from '../models/portainer.js';
+import type { Container } from '../core/models/portainer.js';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
   return {

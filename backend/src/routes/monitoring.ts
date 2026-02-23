@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '../models/api-schemas.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '../core/models/api-schemas.js';
 import {
   getSecurityAudit,
   getSecurityAuditIgnoreList,
@@ -8,7 +8,7 @@ import {
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
   SECURITY_AUDIT_IGNORE_KEY,
 } from '../services/security-audit.js';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('route:monitoring');
 

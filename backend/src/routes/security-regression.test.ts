@@ -12,7 +12,7 @@
  * @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/430
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { readFileSync } from 'node:fs';
@@ -332,8 +332,8 @@ vi.mock('ollama', async () =>
 );
 
 // ─── Route Imports ──────────────────────────────────────────────────────
-import authPlugin from '../plugins/auth.js';
-import rateLimitPlugin from '../plugins/rate-limit.js';
+import authPlugin from '../core/plugins/auth.js';
+import rateLimitPlugin from '../core/plugins/rate-limit.js';
 import { healthRoutes } from './health.js';
 import { authRoutes } from './auth.js';
 import { oidcRoutes } from './oidc.js';
@@ -373,9 +373,9 @@ import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
 import { edgeJobsRoutes } from './edge-jobs.js';
 
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
-import * as portainerClient from '../services/portainer-client.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
 
 // ─── Known Public Routes ────────────────────────────────────────────────
 // Routes that are intentionally accessible without a Bearer token.

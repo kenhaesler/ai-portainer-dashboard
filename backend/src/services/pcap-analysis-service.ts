@@ -1,12 +1,12 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { createChildLogger } from '../utils/logger.js';
-import { getConfig } from '../config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { getConfig } from '../core/config/index.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { getCapture, updateCaptureAnalysis } from './pcap-store.js';
 import { getCaptureFilePath } from './pcap-service.js';
-import type { PcapAnalysisResult, PcapSummary } from '../models/pcap.js';
+import type { PcapAnalysisResult, PcapSummary } from '../core/models/pcap.js';
 
 const log = createChildLogger('pcap-analysis');
 const execFileAsync = promisify(execFile);

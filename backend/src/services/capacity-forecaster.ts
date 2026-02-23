@@ -1,5 +1,5 @@
-import { getMetricsDb } from '../db/timescale.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getMetricsDb } from '../core/db/timescale.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('capacity-forecaster');
 

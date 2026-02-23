@@ -1,8 +1,8 @@
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
-import rateLimitPlugin from '../plugins/rate-limit.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import rateLimitPlugin from '../core/plugins/rate-limit.js';
 import { authRoutes } from './auth.js';
 
 const mockSignJwt = vi.fn();

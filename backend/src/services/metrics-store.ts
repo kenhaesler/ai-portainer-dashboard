@@ -1,6 +1,6 @@
-import { getMetricsDb } from '../db/timescale.js';
-import { createChildLogger } from '../utils/logger.js';
-import type { Metric } from '../models/metrics.js';
+import { getMetricsDb } from '../core/db/timescale.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import type { Metric } from '../core/models/metrics.js';
 
 const log = createChildLogger('metrics-store');
 

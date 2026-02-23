@@ -1,9 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
-import { getConfig } from '../config/index.js';
-import { createChildLogger } from '../utils/logger.js';
-import { getContainerLogs, getContainers } from './portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
+import { getConfig } from '../core/config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { getContainerLogs, getContainers } from '../core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import { getMetrics, getMovingAverage } from './metrics-store.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
@@ -14,8 +14,8 @@ import {
   getRecentInvestigationForContainer,
 } from './investigation-store.js';
 import { generateForecast, type CapacityForecast } from './capacity-forecaster.js';
-import type { Insight } from '../models/monitoring.js';
-import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '../models/investigation.js';
+import type { Insight } from '../core/models/monitoring.js';
+import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '../core/models/investigation.js';
 
 const log = createChildLogger('investigation-service');
 

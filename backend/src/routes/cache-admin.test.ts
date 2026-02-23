@@ -9,8 +9,8 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import { cache } from '../services/portainer-cache.js';
-import { writeAuditLog } from '../services/audit-logger.js';
+import { cache } from '../core/portainer/portainer-cache.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 const mockWriteAuditLog = vi.mocked(writeAuditLog);

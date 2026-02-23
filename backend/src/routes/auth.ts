@@ -1,11 +1,11 @@
 import { FastifyInstance } from 'fastify';
-import { signJwt } from '../utils/crypto.js';
-import { createSession, getSession, invalidateSession, refreshSession } from '../services/session-store.js';
-import { writeAuditLog } from '../services/audit-logger.js';
-import { authenticateUser, ensureDefaultAdmin, getUserDefaultLandingPage } from '../services/user-store.js';
-import { LoginRequestSchema } from '../models/auth.js';
-import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../models/api-schemas.js';
-import { getConfig } from '../config/index.js';
+import { signJwt } from '../core/utils/crypto.js';
+import { createSession, getSession, invalidateSession, refreshSession } from '../core/services/session-store.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
+import { authenticateUser, ensureDefaultAdmin, getUserDefaultLandingPage } from '../core/services/user-store.js';
+import { LoginRequestSchema } from '../core/models/auth.js';
+import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../core/models/api-schemas.js';
+import { getConfig } from '../core/config/index.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   const config = getConfig();

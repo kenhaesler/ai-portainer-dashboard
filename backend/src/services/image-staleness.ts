@@ -1,6 +1,6 @@
-import { getDbForDomain } from '../db/app-db-router.js';
-import { createChildLogger } from '../utils/logger.js';
-import { withSpan } from './trace-context.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { withSpan } from '../core/tracing/trace-context.js';
 
 const log = createChildLogger('image-staleness');
 

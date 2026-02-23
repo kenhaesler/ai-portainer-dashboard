@@ -1,5 +1,5 @@
-import { getConfig } from '../config/index.js';
-import { getSetting } from './settings-store.js';
+import { getConfig } from '../core/config/index.js';
+import { getSetting } from '../core/services/settings-store.js';
 
 export interface ElasticsearchConfig {
   enabled: boolean;

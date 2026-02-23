@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 
 // Kept: undici mock — external dependency
 vi.mock('undici', () => ({
@@ -25,7 +25,7 @@ vi.mock('./settings-store.js', () => ({
 }));
 
 import { Agent, fetch as undiciFetch } from 'undici';
-import { getEffectiveHarborConfig } from './settings-store.js';
+import { getEffectiveHarborConfig } from '../core/services/settings-store.js';
 import { isHarborConfigured, isHarborConfiguredAsync, testConnection, _resetHarborClientState } from './harbor-client.js';
 
 const MockAgent = vi.mocked(Agent);

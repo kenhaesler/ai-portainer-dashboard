@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
-import type { Insight } from '../models/monitoring.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import type { Insight } from '../core/models/monitoring.js';
 
 // Mock dependencies before importing the module under test
 
@@ -33,10 +33,10 @@ vi.mock('./capacity-forecaster.js', () => ({
 // Import after mocks are set up
 const { parseInvestigationResponse, buildInvestigationPrompt, triggerInvestigation } =
   await import('./investigation-service.js');
-import * as portainerClient from './portainer-client.js';
-import * as portainerCache from './portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
 import * as llmClient from './llm-client.js';
-import { cache } from './portainer-cache.js';
+import { cache } from '../core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetContainerLogs: any;

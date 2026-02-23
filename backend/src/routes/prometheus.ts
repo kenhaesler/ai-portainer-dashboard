@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { getConfig } from '../config/index.js';
-import { getDbForDomain } from '../db/app-db-router.js';
+import { getConfig } from '../core/config/index.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
 import { getPromptGuardNearMissTotal } from '../services/prompt-guard.js';
 
 const CACHE_TTL_MS = 15_000;

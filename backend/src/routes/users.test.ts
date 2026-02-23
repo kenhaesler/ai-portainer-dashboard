@@ -19,7 +19,7 @@ vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import { listUsers, createUser, updateUser, deleteUser } from '../services/user-store.js';
+import { listUsers, createUser, updateUser, deleteUser } from '../core/services/user-store.js';
 
 const mockListUsers = vi.mocked(listUsers);
 const mockCreateUser = vi.mocked(createUser);

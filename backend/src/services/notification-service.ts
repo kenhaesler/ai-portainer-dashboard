@@ -1,10 +1,10 @@
 import nodemailer from 'nodemailer';
 import { z } from 'zod';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { getConfig } from '../config/index.js';
-import { createChildLogger } from '../utils/logger.js';
-import type { Insight } from '../models/monitoring.js';
-import { withSpan } from './trace-context.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { getConfig } from '../core/config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import type { Insight } from '../core/models/monitoring.js';
+import { withSpan } from '../core/tracing/trace-context.js';
 
 const log = createChildLogger('notification-service');
 

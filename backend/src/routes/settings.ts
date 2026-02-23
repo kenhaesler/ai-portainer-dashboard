@@ -1,16 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { createChildLogger } from '../utils/logger.js';
-import { writeAuditLog } from '../services/audit-logger.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
 import {
   SettingsQuerySchema,
   SettingKeyParamsSchema,
   SettingUpdateBodySchema,
   AuditLogQuerySchema,
   PreferencesUpdateBodySchema,
-} from '../models/api-schemas.js';
-import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../services/user-store.js';
+} from '../core/models/api-schemas.js';
+import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../core/services/user-store.js';
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../services/prompt-store.js';
 import {
   createPromptVersion,

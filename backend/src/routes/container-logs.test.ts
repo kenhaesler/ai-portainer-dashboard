@@ -30,7 +30,7 @@ vi.mock('../plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
 import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
 import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
@@ -39,7 +39,7 @@ import {
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
 } from '../services/edge-async-log-fetcher.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetContainerLogs: any;

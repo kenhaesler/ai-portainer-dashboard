@@ -1,10 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import protobuf from 'protobufjs';
-import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
-import type { AppDb } from '../db/app-db.js';
+import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '../core/db/test-db-helper.js';
+import type { AppDb } from '../core/db/app-db.js';
 import { tracesIngestRoutes } from './traces-ingest.js';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 
 let appDb: AppDb;
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
 import {
   buildTeamsCard,
   buildEmailHtml,
@@ -13,7 +13,7 @@ import {
   _resetCooldownMap,
   _getCooldownMap,
 } from './notification-service.js';
-import type { Insight } from '../models/monitoring.js';
+import type { Insight } from '../core/models/monitoring.js';
 
 const COOLDOWN_MS = 15 * 60 * 1000;
 

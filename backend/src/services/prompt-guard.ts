@@ -1,5 +1,5 @@
-import { createChildLogger } from '../utils/logger.js';
-import { getConfig } from '../config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { getConfig } from '../core/config/index.js';
 
 const log = createChildLogger('service:prompt-guard');
 

@@ -1,4 +1,4 @@
-import { getSetting } from './settings-store.js';
+import { getSetting } from '../core/services/settings-store.js';
 
 const INFRASTRUCTURE_PATTERNS_KEY = 'reports.infrastructure_service_patterns';
 const DEFAULT_INFRASTRUCTURE_PATTERNS = ['traefik', 'portainer_agent', 'beyla'];
