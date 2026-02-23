@@ -114,6 +114,8 @@ export const envSchema = z.object({
   PCAP_MAX_CONCURRENT: z.coerce.number().int().min(1).max(10).default(2),
   PCAP_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   PCAP_STORAGE_DIR: z.string().default('./data/pcap'),
+  PCAP_CAPTURE_IMAGE: z.string().default('alpine:3.21'),
+  PCAP_CAPTURE_IMAGE_PULL: z.enum(['always', 'never', 'if-not-present']).default('if-not-present'),
 
   // Remediation Safety
   REMEDIATION_PROTECTED_CONTAINERS: z.string().optional(),

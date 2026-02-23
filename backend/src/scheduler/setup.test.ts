@@ -38,7 +38,7 @@ vi.mock('../services/monitoring-service.js', () => ({
   stopCooldownSweep: vi.fn(),
 }));
 // Kept: pcap-service mock
-vi.mock('../services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn() }));
+vi.mock('../services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
 // Kept: portainer-backup mock
 vi.mock('../services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn(),

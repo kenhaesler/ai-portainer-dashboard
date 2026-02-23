@@ -7,7 +7,7 @@ import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/m
 import { recordNetworkSample } from '../services/network-rate-tracker.js';
 import { getEndpoints, getContainers, isEndpointDegraded } from '../services/portainer-client.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
-import { cleanupOldCaptures } from '../services/pcap-service.js';
+import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../services/pcap-service.js';
 import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
 import { getSetting } from '../services/settings-store.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
@@ -338,6 +338,18 @@ export async function runCleanup(): Promise<void> {
     await cleanupOldCaptures();
   } catch (err) {
     log.error({ err }, 'PCAP captures cleanup failed');
+  }
+
+  try {
+    const endpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
+    const endpointIds = endpoints.map((ep) => ep.Id);
+    await cleanupOrphanedSidecars(endpointIds);
+  } catch (err) {
+    log.error({ err }, 'Orphaned sidecar cleanup failed');
   }
 
   try {

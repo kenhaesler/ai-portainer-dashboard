@@ -493,6 +493,8 @@ export async function pullImage(endpointId: number, image: string, tag = 'latest
 
 export interface CreateContainerPayload {
   Image: string;
+  Cmd?: string[];
+  Entrypoint?: string[];
   Env?: string[];
   Labels?: Record<string, string>;
   HostConfig?: {
@@ -501,6 +503,10 @@ export interface CreateContainerPayload {
     Init?: boolean;
     Binds?: string[];
     RestartPolicy?: { Name: string };
+    NetworkMode?: string;
+    CapAdd?: string[];
+    CapDrop?: string[];
+    AutoRemove?: boolean;
   };
 }
 

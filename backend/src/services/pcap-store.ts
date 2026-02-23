@@ -40,6 +40,7 @@ export async function updateCaptureStatus(
   status: CaptureStatus,
   updates?: {
     exec_id?: string;
+    sidecar_id?: string;
     capture_file?: string;
     file_size_bytes?: number;
     packet_count?: number;
