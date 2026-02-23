@@ -1,15 +1,15 @@
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
-import { getTestDb, truncateTestTables, closeTestDb } from '../core/db/test-db-helper.js';
-import type { AppDb } from '../core/db/app-db.js';
+import { getTestDb, truncateTestTables, closeTestDb } from '../../../core/db/test-db-helper.js';
+import type { AppDb } from '../../../core/db/app-db.js';
 
 let testDb: AppDb;
 
 // Kept: app-db-router mock — redirects to test PostgreSQL instance
-vi.mock('../core/db/app-db-router.js', () => ({
+vi.mock('../../../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 
-import { parseImageRef, getStalenessSummary, upsertStalenessRecord } from './image-staleness.js';
+import { parseImageRef, getStalenessSummary, upsertStalenessRecord } from '../services/image-staleness.js';
 
 beforeAll(async () => { testDb = await getTestDb(); });
 afterAll(async () => { await closeTestDb(); });

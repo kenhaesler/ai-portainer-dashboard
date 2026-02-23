@@ -7,7 +7,7 @@ import {
   setSecurityAuditIgnoreList,
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
   SECURITY_AUDIT_IGNORE_KEY,
-} from '../services/security-audit.js';
+} from '../modules/security/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('route:monitoring');

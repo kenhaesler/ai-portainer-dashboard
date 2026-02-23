@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { pcapRoutes } from './pcap.js';
+import { pcapRoutes } from '../routes/pcap.js';
 
 const mockStartCapture = vi.fn();
 const mockStopCapture = vi.fn();
@@ -29,12 +29,12 @@ vi.mock('../services/pcap-analysis-service.js', () => ({
 }));
 
 // Kept: edge-capability-guard mock — no Portainer API in CI
-vi.mock('../services/edge-capability-guard.js', () => ({
+vi.mock('../../../services/edge-capability-guard.js', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../core/services/audit-logger.js', () => ({
+vi.mock('../../../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

@@ -6,7 +6,7 @@ import { setConfigForTest, resetConfig } from '../core/config/index.js';
 // ---------------------------------------------------------------------------
 
 // Kept: image-staleness mock — tests control staleness results
-vi.mock('../services/image-staleness.js', () => ({
+vi.mock('../modules/security/services/image-staleness.js', () => ({
   runStalenessChecks: vi.fn().mockResolvedValue({ checked: 1, stale: 0 }),
 }));
 
@@ -38,7 +38,7 @@ vi.mock('../services/monitoring-service.js', () => ({
   stopCooldownSweep: vi.fn(),
 }));
 // Kept: pcap-service mock
-vi.mock('../services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
+vi.mock('../modules/security/services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
 // Kept: portainer-backup mock
 vi.mock('../services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn(),
@@ -141,7 +141,7 @@ beforeEach(async () => {
   cleanupOldInsightsMock.mockReturnValue(0);
 
   // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
-  const imageStaleness = await import('../services/image-staleness.js');
+  const imageStaleness = await import('../modules/security/services/image-staleness.js');
   vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
   const metricsStore = await import('../services/metrics-store.js');
   vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);

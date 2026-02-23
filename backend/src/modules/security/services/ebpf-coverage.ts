@@ -1,4 +1,4 @@
-import { getDbForDomain } from '../core/db/app-db-router.js';
+import { getDbForDomain } from '../../../core/db/app-db-router.js';
 import {
   getEndpoints,
   getContainers,
@@ -8,9 +8,9 @@ import {
   startContainer,
   stopContainer,
   removeContainer,
-} from '../core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
-import { createChildLogger } from '../core/utils/logger.js';
+} from '../../../core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
+import { createChildLogger } from '../../../core/utils/logger.js';
 
 const log = createChildLogger('ebpf-coverage');
 

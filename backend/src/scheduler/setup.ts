@@ -7,22 +7,21 @@ import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/m
 import { recordNetworkSample } from '../services/network-rate-tracker.js';
 import { getEndpoints, getContainers, isEndpointDegraded } from '../core/portainer/portainer-client.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
-import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../services/pcap-service.js';
+import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../modules/security/index.js';
 import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
 import { getSetting } from '../core/services/settings-store.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
 import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../services/kpi-store.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '../core/portainer/portainer-normalizers.js';
-import { runStalenessChecks } from '../services/image-staleness.js';
+import { runStalenessChecks } from '../modules/security/index.js';
 import { getImages } from '../core/portainer/portainer-client.js';
 import { runWithTraceContext } from '../core/tracing/trace-context.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
 import { cleanExpiredSessions } from '../core/services/session-store.js';
 import { cleanupOldInsights } from '../services/insights-store.js';
-import { runFullSync as runHarborSync } from '../services/harbor-sync.js';
-import { isHarborConfiguredAsync } from '../services/harbor-client.js';
+import { runHarborSync, isHarborConfiguredAsync } from '../modules/security/index.js';
 import { getEffectiveHarborConfig } from '../core/services/settings-store.js';
-import { cleanupOldVulnerabilities } from '../services/harbor-vulnerability-store.js';
+import { cleanupOldVulnerabilities } from '../modules/security/index.js';
 
 const log = createChildLogger('scheduler');
 

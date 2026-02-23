@@ -1,17 +1,17 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../core/tracing/trace-context.js', () => ({
+vi.mock('../../../core/tracing/trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
 // Kept: harbor-client mock — tests control harbor API responses
-vi.mock('./harbor-client.js', () => ({
+vi.mock('../services/harbor-client.js', () => ({
   isHarborConfiguredAsync: vi.fn(() => Promise.resolve(true)),
   listVulnerabilities: vi.fn(),
 }));
 
 // Kept: harbor-vulnerability-store mock — tests control DB store
-vi.mock('./harbor-vulnerability-store.js', () => ({
+vi.mock('../services/harbor-vulnerability-store.js', () => ({
   createSyncStatus: vi.fn(() => Promise.resolve(1)),
   completeSyncStatus: vi.fn(() => Promise.resolve()),
   failSyncStatus: vi.fn(() => Promise.resolve()),
@@ -19,7 +19,7 @@ vi.mock('./harbor-vulnerability-store.js', () => ({
 }));
 
 // Kept: image-staleness mock — tests control image parsing
-vi.mock('./image-staleness.js', () => ({
+vi.mock('../services/image-staleness.js', () => ({
   parseImageRef: vi.fn((ref: string) => {
     const parts = ref.split('/');
     let registry = 'docker.io';
@@ -44,13 +44,13 @@ vi.mock('./image-staleness.js', () => ({
   }),
 }));
 
-import { runFullSync } from './harbor-sync.js';
-import * as harborClient from './harbor-client.js';
-import * as store from './harbor-vulnerability-store.js';
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import * as portainerCache from '../core/portainer/portainer-cache.js';
-import { cache } from '../core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+import { runFullSync } from '../services/harbor-sync.js';
+import * as harborClient from '../services/harbor-client.js';
+import * as store from '../services/harbor-vulnerability-store.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import * as portainerCache from '../../../core/portainer/portainer-cache.js';
+import { cache } from '../../../core/portainer/portainer-cache.js';
+import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 beforeAll(async () => {
   await cache.clear();

@@ -6,7 +6,7 @@ import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '
 import { CircuitBreakerOpenError } from '../core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../core/portainer/portainer-normalizers.js';
-import { scanContainer } from './security-scanner.js';
+import { scanContainer } from '../modules/security/index.js';
 import { getLatestMetricsBatch } from './metrics-store.js';
 import type { MetricInsert } from './metrics-store.js';
 import { detectAnomalyAdaptive, detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
@@ -22,7 +22,7 @@ import { explainAnomalies } from './anomaly-explainer.js';
 import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '../core/models/monitoring.js';
-import type { SecurityFinding } from './security-scanner.js';
+import type { SecurityFinding } from '../modules/security/index.js';
 import { notifyInsight } from './notification-service.js';
 import { emitEvent } from '../core/services/event-bus.js';
 import { correlateInsights } from './incident-correlator.js';
