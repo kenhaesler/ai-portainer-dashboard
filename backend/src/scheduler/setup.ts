@@ -16,7 +16,7 @@ import { normalizeEndpoint, type NormalizedEndpoint } from '../core/portainer/po
 import { runStalenessChecks } from '../modules/security/index.js';
 import { getImages } from '../core/portainer/portainer-client.js';
 import { runWithTraceContext } from '../core/tracing/trace-context.js';
-import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../services/elasticsearch-log-forwarder.js';
+import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../modules/infrastructure/index.js';
 import { cleanExpiredSessions } from '../core/services/session-store.js';
 import { cleanupOldInsights } from '../services/insights-store.js';
 import { runHarborSync, isHarborConfiguredAsync } from '../modules/security/index.js';

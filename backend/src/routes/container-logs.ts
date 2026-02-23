@@ -1,16 +1,19 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as portainer from '../core/portainer/portainer-client.js';
-import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
 import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '../core/models/api-schemas.js';
-import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
+  getContainerLogsWithRetry,
+  waitForTunnel,
+  assertCapability,
+  isEdgeStandard,
+  isEdgeAsync,
   initiateEdgeAsyncLogCollection,
   checkEdgeJobStatus,
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
-} from '../services/edge-async-log-fetcher.js';
-import { IncrementalDockerFrameDecoder } from '../services/docker-frame-decoder.js';
+  IncrementalDockerFrameDecoder,
+} from '../modules/infrastructure/index.js';
 import { authenticateBearerHeader } from '../core/plugins/auth.js';
 import { createChildLogger } from '../core/utils/logger.js';
 

@@ -1,7 +1,5 @@
 import * as portainer from '../core/portainer/portainer-client.js';
-import { getContainerLogsWithRetry } from './edge-log-fetcher.js';
-import { isEdgeAsync } from './edge-capability-guard.js';
-import { getEdgeAsyncContainerLogs } from './edge-async-log-fetcher.js';
+import { getContainerLogsWithRetry, isEdgeAsync, getEdgeAsyncContainerLogs } from '../modules/infrastructure/index.js';
 import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '../core/portainer/portainer-normalizers.js';
 import { getDbForDomain } from '../core/db/app-db-router.js';

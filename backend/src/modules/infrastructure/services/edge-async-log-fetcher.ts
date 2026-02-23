@@ -1,5 +1,5 @@
-import * as portainer from '../core/portainer/portainer-client.js';
-import { createChildLogger } from '../core/utils/logger.js';
+import * as portainer from '../../../core/portainer/portainer-client.js';
+import { createChildLogger } from '../../../core/utils/logger.js';
 
 const log = createChildLogger('edge-async-log-fetcher');
 

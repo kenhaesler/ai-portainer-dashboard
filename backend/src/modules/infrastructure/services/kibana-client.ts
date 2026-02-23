@@ -1,6 +1,6 @@
-import { getConfig } from '../core/config/index.js';
-import { createChildLogger } from '../core/utils/logger.js';
-import { withSpan } from '../core/tracing/trace-context.js';
+import { getConfig } from '../../../core/config/index.js';
+import { createChildLogger } from '../../../core/utils/logger.js';
+import { withSpan } from '../../../core/tracing/trace-context.js';
 
 const log = createChildLogger('kibana-client');
 
