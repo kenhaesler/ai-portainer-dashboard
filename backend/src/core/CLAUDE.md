@@ -25,9 +25,17 @@ Shared foundation — all domain modules depend on core.
 ## Dependency Direction
 
 ```
-routes/ ──→ core/
-services/ ─→ core/
-sockets/ ──→ core/
-scheduler/ ─→ core/
-core/ ──────→ (npm packages only, never imports from above)
+routes/ ────────→ modules/*/ ──→ core/
+services/ ──────→ core/
+modules/security/ → core/ (+ cross-domain: services/llm-client, services/prompt-store)
+sockets/ ───────→ core/
+scheduler/ ─────→ modules/*/ ──→ core/
+core/ ──────────→ (npm packages only, never imports from above)
 ```
+
+## Domain Modules (`modules/<domain>/`)
+
+Each module has: `services/`, `routes/`, `models/`, `__tests__/`, and a barrel `index.ts`.
+- External consumers import ONLY from the barrel (`modules/security/index.ts`)
+- Routes are NOT re-exported from barrel (import directly from `routes/index.js`)
+- Internal module imports use relative paths between siblings

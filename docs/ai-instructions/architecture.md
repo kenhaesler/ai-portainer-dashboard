@@ -14,8 +14,9 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 | `core/portainer/` | Portainer API client, Redis cache, normalizers, circuit breaker |
 | `core/tracing/` | Distributed tracing context, span storage, OTLP export/transform |
 | `core/services/` | Auth stores (session, user), settings, audit logger, event bus, OIDC |
+| `modules/security/` | Security domain module: scanner, audit, Harbor, PCAP, eBPF, image staleness |
 | `routes/` | REST API endpoints by feature (auth, containers, metrics, monitoring) |
-| `services/` | Domain services: LLM, anomaly detection, monitoring, Harbor, PCAP, incidents, etc. |
+| `services/` | Domain services: LLM, anomaly detection, monitoring, incidents, etc. |
 | `sockets/` | Socket.IO: `/llm` (chat), `/monitoring` (insights), `/remediation` (actions) |
 | `scheduler/` | Background: metrics (60s), monitoring (5min), daily cleanup |
 | `utils/` | Domain-specific utils (pii-scrubber) — not kernel |
@@ -34,7 +35,8 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 ## Key Patterns
 
 - **Observer-First principle**: Visibility prioritized; actions require explicit approval.
-- **Layered backend architecture**: Routes → Services → Core (config, db, utils, models, plugins, portainer, tracing, auth services).
+- **Modular backend architecture**: `modules/<domain>/` for domain-specific code, barrel `index.ts` as public API. Routes → Services/Modules → Core.
+- Domain modules: `modules/security/` (services, routes, models, tests). More modules planned (ai-intelligence, monitoring).
 - **Server state**: TanStack React Query. **UI state**: Zustand.
 - Zod validation on all Portainer API responses.
 - Path alias `@/*` → `./src/*` in both workspaces.
