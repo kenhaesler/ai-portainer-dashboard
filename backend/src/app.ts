@@ -33,7 +33,6 @@ import { investigationRoutes } from './routes/investigations.js';
 import { searchRoutes } from './routes/search.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { cacheAdminRoutes } from './routes/cache-admin.js';
-import { pcapRoutes } from './routes/pcap.js';
 import { prometheusRoutes } from './routes/prometheus.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { reportsRoutes } from './routes/reports.js';
@@ -44,12 +43,11 @@ import { llmRoutes } from './routes/llm.js';
 import { llmObservabilityRoutes } from './routes/llm-observability.js';
 import { forecastRoutes } from './routes/forecasts.js';
 import { correlationRoutes } from './routes/correlations.js';
-import { ebpfCoverageRoutes } from './routes/ebpf-coverage.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { promptProfileRoutes } from './routes/prompt-profiles.js';
 import { llmFeedbackRoutes } from './routes/llm-feedback.js';
 import { edgeJobsRoutes } from './routes/edge-jobs.js';
-import { harborVulnerabilityRoutes } from './routes/harbor-vulnerabilities.js';
+import { securityRoutes } from './modules/security/index.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -125,7 +123,6 @@ export async function buildApp() {
   await app.register(searchRoutes);
   await app.register(notificationRoutes);
   await app.register(cacheAdminRoutes);
-  await app.register(pcapRoutes);
   await app.register(prometheusRoutes);
   await app.register(webhookRoutes);
   await app.register(reportsRoutes);
@@ -136,12 +133,11 @@ export async function buildApp() {
   await app.register(llmObservabilityRoutes);
   await app.register(forecastRoutes);
   await app.register(correlationRoutes);
-  await app.register(ebpfCoverageRoutes);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(llmFeedbackRoutes);
   await app.register(edgeJobsRoutes);
-  await app.register(harborVulnerabilityRoutes);
+  await app.register(securityRoutes);
 
   // Static files (production only)
   await app.register(staticPlugin);
