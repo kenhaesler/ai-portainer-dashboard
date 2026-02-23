@@ -1,10 +1,2 @@
-import { z } from 'zod';
-
-export const SettingSchema = z.object({
-  key: z.string(),
-  value: z.string(),
-  category: z.string(),
-  updated_at: z.string(),
-});
-
-export type Setting = z.infer<typeof SettingSchema>;
+// Shim — re-exports from core/models (will be removed in Phase H)
+export * from '../core/models/settings.js';
