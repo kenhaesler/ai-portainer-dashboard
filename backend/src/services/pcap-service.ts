@@ -4,10 +4,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import {
-  createExec,
-  startExec,
-  inspectExec,
+  createContainer,
+  startContainer,
+  stopContainer,
+  removeContainer,
+  getContainer,
   getArchive,
+  pullImage,
+  getImages,
+  getContainers,
 } from './portainer-client.js';
 import {
   insertCapture,
@@ -36,13 +41,16 @@ function getStorageDir(): string {
   return dir;
 }
 
-export function buildTcpdumpCommand(
+/**
+ * Build the command for the sidecar capture container.
+ * If the image is Alpine (the default), installs tcpdump on the fly.
+ * If a custom image with tcpdump is used, the install step is a no-op.
+ */
+export function buildSidecarCmd(
   captureId: string,
   filter?: string,
-  durationSeconds?: number,
   maxPackets?: number,
 ): string[] {
-  // Build the tcpdump args portion
   let tcpdumpArgs = `-i any -w /tmp/capture_${captureId}.pcap -U`;
 
   if (maxPackets) {
@@ -53,16 +61,10 @@ export function buildTcpdumpCommand(
     tcpdumpArgs += ` ${filter}`;
   }
 
-  // Wrap in sh -c to auto-install tcpdump if missing.
-  // Tries common package managers (apk for Alpine, apt for Debian/Ubuntu, yum for RHEL/CentOS).
-  const install = 'command -v tcpdump >/dev/null 2>&1 || ' +
-    'apk add --no-cache tcpdump 2>/dev/null || ' +
-    '(apt-get update -qq && apt-get install -y -qq tcpdump) 2>/dev/null || ' +
-    'yum install -y tcpdump 2>/dev/null || ' +
-    '{ echo "Failed to install tcpdump" >&2; exit 1; }';
-  const script = `${install} && exec tcpdump ${tcpdumpArgs}`;
-
-  return ['sh', '-c', script];
+  // Install tcpdump if not present (covers plain alpine:3.21 default image).
+  // Custom pcap-agent images already have tcpdump, so `command -v` succeeds immediately.
+  const install = 'command -v tcpdump >/dev/null 2>&1 || apk add --no-cache tcpdump >/dev/null 2>&1 || true';
+  return ['sh', '-c', `${install}; exec tcpdump ${tcpdumpArgs}`];
 }
 
 export function extractFromTar(tarBuffer: Buffer): Buffer | null {
@@ -78,6 +80,32 @@ export function extractFromTar(tarBuffer: Buffer): Buffer | null {
   if (tarBuffer.length < 512 + fileSize) return null;
 
   return tarBuffer.subarray(512, 512 + fileSize);
+}
+
+/**
+ * Ensure the capture image is available on the endpoint, pulling if necessary
+ * based on the configured pull policy.
+ */
+export async function ensureCaptureImage(
+  endpointId: number,
+  image: string,
+  pullPolicy: string,
+): Promise<void> {
+  if (pullPolicy === 'never') return;
+
+  if (pullPolicy === 'if-not-present') {
+    const images = await getImages(endpointId);
+    const exists = images.some((img) =>
+      img.RepoTags?.some((tag: string) => tag === image),
+    );
+    if (exists) return;
+  }
+
+  // pullPolicy === 'always' or image not present
+  const colonIdx = image.indexOf(':');
+  const name = colonIdx >= 0 ? image.substring(0, colonIdx) : image;
+  const tag = colonIdx >= 0 ? image.substring(colonIdx + 1) : 'latest';
+  await pullImage(endpointId, name, tag);
 }
 
 export async function startCapture(params: StartCaptureRequest): Promise<Capture> {
@@ -115,25 +143,53 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
   });
 
   try {
-    // Build tcpdump command
-    const cmd = buildTcpdumpCommand(captureId, params.filter, duration, params.maxPackets);
+    // Ensure the capture image is available on the endpoint
+    await ensureCaptureImage(
+      params.endpointId,
+      config.PCAP_CAPTURE_IMAGE,
+      config.PCAP_CAPTURE_IMAGE_PULL,
+    );
 
-    // Create and start exec (root required for NET_RAW capability)
-    const exec = await createExec(params.endpointId, params.containerId, cmd, { user: 'root' });
-    await startExec(params.endpointId, exec.Id);
+    // Build sidecar command
+    const cmd = buildSidecarCmd(captureId, params.filter, params.maxPackets);
+    const sidecarName = `ai-dash-pcap-${captureId.slice(0, 8)}`;
 
-    // Update status to capturing
+    // Create sidecar container sharing target's network namespace
+    const { Id: sidecarId } = await createContainer(
+      params.endpointId,
+      {
+        Image: config.PCAP_CAPTURE_IMAGE,
+        Entrypoint: ['sh', '-c'],
+        Cmd: [cmd[2]], // the script string from buildSidecarCmd
+        Labels: {
+          'ai-dash.pcap': 'true',
+          'ai-dash.pcap.capture-id': captureId,
+          'ai-dash.pcap.target': params.containerId,
+        },
+        HostConfig: {
+          NetworkMode: `container:${params.containerId}`,
+          CapAdd: ['NET_RAW'],
+          CapDrop: ['ALL'],
+        },
+      },
+      sidecarName,
+    );
+
+    // Start the sidecar container
+    await startContainer(params.endpointId, sidecarId);
+
+    // Update status to capturing with sidecar_id
     await updateCaptureStatus(captureId, 'capturing', {
-      exec_id: exec.Id,
+      sidecar_id: sidecarId,
       started_at: new Date().toISOString(),
     });
 
-    // Start polling
-    startPolling(captureId, params.endpointId, params.containerId, exec.Id, duration);
+    // Start polling sidecar container state
+    startPolling(captureId, params.endpointId, sidecarId, duration);
 
     log.info(
-      { captureId, containerId: params.containerId, filter: params.filter, duration },
-      'Packet capture started',
+      { captureId, containerId: params.containerId, sidecarId, filter: params.filter, duration },
+      'Packet capture started via sidecar container',
     );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Failed to start capture';
@@ -151,8 +207,7 @@ export async function startCapture(params: StartCaptureRequest): Promise<Capture
 function startPolling(
   captureId: string,
   endpointId: number,
-  containerId: string,
-  execId: string,
+  sidecarId: string,
   durationSeconds: number,
 ): void {
   const startTime = Date.now();
@@ -167,25 +222,41 @@ function startPolling(
         log.info({ captureId }, 'Capture duration limit reached, stopping');
         clearInterval(interval);
         activeCaptures.delete(captureId);
-        await stopCaptureInternal(captureId, endpointId, containerId);
+        await stopCaptureInternal(captureId, endpointId, sidecarId);
         return;
       }
 
-      // Poll exec status
-      const execInfo = await inspectExec(endpointId, execId);
+      // Poll sidecar container state.
+      // ContainerSchema parses State as a string ("running", "exited", "dead", etc.).
+      const containerInfo = await getContainer(endpointId, sidecarId);
+      const state = containerInfo.State;
 
-      if (!execInfo.Running) {
+      if (state !== 'running') {
         clearInterval(interval);
         activeCaptures.delete(captureId);
 
-        if (execInfo.ExitCode === 0 || execInfo.ExitCode === 137) {
-          // 0 = normal exit (e.g., max packets reached), 137 = killed (our stop signal)
-          await downloadAndProcessCapture(captureId, endpointId, containerId);
+        if (state === 'exited' || state === 'dead') {
+          // Attempt to download the capture regardless of exit code —
+          // if tcpdump wrote any data before exiting, we want it.
+          // downloadAndProcessCapture will mark as 'failed' if the pcap is empty.
+          log.info({ captureId, state }, 'Capture sidecar stopped, downloading capture');
+          await downloadAndProcessCapture(captureId, endpointId, sidecarId);
         } else {
+          log.warn(
+            { captureId, state },
+            'Capture sidecar in unexpected state',
+          );
           await updateCaptureStatus(captureId, 'failed', {
-            error_message: `tcpdump exited with code ${execInfo.ExitCode}`,
+            error_message: `Capture sidecar in unexpected state: ${state}`,
             completed_at: new Date().toISOString(),
           });
+        }
+
+        // Clean up sidecar container
+        try {
+          await removeContainer(endpointId, sidecarId, true);
+        } catch (cleanupErr) {
+          log.warn({ captureId, sidecarId, err: cleanupErr }, 'Failed to remove sidecar container');
         }
       }
     } catch (err) {
@@ -200,14 +271,16 @@ function startPolling(
 async function downloadAndProcessCapture(
   captureId: string,
   endpointId: number,
-  containerId: string,
+  sidecarId: string,
 ): Promise<void> {
   await updateCaptureStatus(captureId, 'processing');
 
   try {
     const config = getConfig();
     const containerPath = `/tmp/capture_${captureId}.pcap`;
-    const tarBuffer = await getArchive(endpointId, containerId, containerPath);
+
+    // Extract PCAP file from the sidecar container (not the target)
+    const tarBuffer = await getArchive(endpointId, sidecarId, containerPath);
 
     // Extract PCAP from tar
     const pcapData = extractFromTar(tarBuffer);
@@ -255,25 +328,29 @@ async function downloadAndProcessCapture(
 async function stopCaptureInternal(
   captureId: string,
   endpointId: number,
-  containerId: string,
+  sidecarId: string,
 ): Promise<void> {
   try {
-    // Send pkill to stop tcpdump (root to match the capture process)
-    const killExec = await createExec(endpointId, containerId, [
-      'pkill', '-f', `capture_${captureId}`,
-    ], { user: 'root' });
-    await startExec(endpointId, killExec.Id);
+    // Stop the sidecar container (sends SIGTERM → tcpdump flushes pcap)
+    await stopContainer(endpointId, sidecarId);
 
-    // Wait a moment for tcpdump to flush
+    // Wait a moment for graceful shutdown
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Try to download the partial capture
-    await downloadAndProcessCapture(captureId, endpointId, containerId);
+    // Download the capture from the stopped sidecar
+    await downloadAndProcessCapture(captureId, endpointId, sidecarId);
 
     // If it completed, override status to 'succeeded' to indicate manual stop
     const capture = await getCapture(captureId);
     if (capture && capture.status === 'complete') {
       await updateCaptureStatus(captureId, 'succeeded');
+    }
+
+    // Remove the sidecar container
+    try {
+      await removeContainer(endpointId, sidecarId, true);
+    } catch (cleanupErr) {
+      log.warn({ captureId, sidecarId, err: cleanupErr }, 'Failed to remove sidecar after stop');
     }
   } catch (err) {
     await updateCaptureStatus(captureId, 'succeeded', {
@@ -301,7 +378,9 @@ export async function stopCapture(id: string): Promise<Capture> {
     activeCaptures.delete(id);
   }
 
-  await stopCaptureInternal(id, capture.endpoint_id, capture.container_id);
+  // Use sidecar_id if available, fall back to container_id for legacy captures
+  const sidecarId = capture.sidecar_id || capture.container_id;
+  await stopCaptureInternal(id, capture.endpoint_id, sidecarId);
 
   return (await getCapture(id))!;
 }
@@ -401,6 +480,37 @@ export async function cleanupOldCaptures(): Promise<void> {
 
   // Clean DB records
   await cleanDbOldCaptures(config.PCAP_RETENTION_DAYS);
+}
+
+/**
+ * Find and remove orphaned sidecar containers (exited, dead, or created but never started).
+ * Runs as part of the periodic cleanup cycle to prevent container leaks.
+ */
+export async function cleanupOrphanedSidecars(endpointIds: number[]): Promise<number> {
+  let cleaned = 0;
+  for (const endpointId of endpointIds) {
+    try {
+      const containers = await getContainers(endpointId, true);
+      const orphans = containers.filter((c) =>
+        c.Labels?.['ai-dash.pcap'] === 'true' &&
+        (c.State === 'exited' || c.State === 'dead' || c.State === 'created'),
+      );
+      for (const orphan of orphans) {
+        try {
+          await removeContainer(endpointId, orphan.Id, true);
+          cleaned++;
+        } catch (err) {
+          log.warn({ containerId: orphan.Id, err }, 'Failed to clean orphaned sidecar');
+        }
+      }
+    } catch (err) {
+      log.warn({ endpointId, err }, 'Failed to list containers for sidecar cleanup');
+    }
+  }
+  if (cleaned > 0) {
+    log.info({ cleaned }, 'Orphaned capture sidecars cleaned up');
+  }
+  return cleaned;
 }
 
 async function getActiveCount(): Promise<number> {

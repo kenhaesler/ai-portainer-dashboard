@@ -25,6 +25,7 @@ export const CaptureSchema = z.object({
   packet_count: z.number().nullable(),
   protocol_stats: z.string().nullable(),
   exec_id: z.string().nullable(),
+  sidecar_id: z.string().nullable().optional(),
   error_message: z.string().nullable(),
   started_at: z.string().nullable(),
   completed_at: z.string().nullable(),
