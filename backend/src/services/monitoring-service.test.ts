@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Default config values used in tests
 const defaultConfig = {
-  ANOMALY_DETECTION_METHOD: 'adaptive',
+  ANOMALY_DETECTION_METHOD: 'adaptive' as const,
   ANOMALY_COOLDOWN_MINUTES: 0,
   ANOMALY_THRESHOLD_PCT: 80,
   ANOMALY_HARD_THRESHOLD_ENABLED: true,
@@ -21,49 +22,25 @@ const defaultConfig = {
   AI_ANALYSIS_ENABLED: false, // disabled by default in tests to avoid async side-effects
 };
 
-// Mock all dependencies
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue(defaultConfig),
-}));
+// Kept mocks — internal services the monitoring cycle depends on
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
-const mockGetEndpoints = vi.fn().mockResolvedValue([]);
-const mockGetContainers = vi.fn().mockResolvedValue([]);
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: () => mockGetEndpoints(),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-  isEndpointDegraded: () => false,
-}));
-
-const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
-
-vi.mock('./portainer-normalizers.js', () => ({
-  normalizeEndpoint: (ep: unknown) => ({ ...(ep as Record<string, unknown>), status: 'up', containersRunning: 0, containersStopped: 0, containersUnhealthy: 0, capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true } }),
-  normalizeContainer: (c: unknown, endpointId: number, endpointName: string) => ({
-    ...(c as Record<string, unknown>), endpointId, endpointName, state: 'running',
-  }),
-}));
+// Real portainer-normalizers used (pure function, no external deps)
 
 vi.mock('./security-scanner.js', () => ({
   scanContainer: () => [],
 }));
 
-const mockGetLatestMetrics = vi.fn().mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
+const mockGetLatestMetricsBatch = vi.fn().mockImplementation(
+  async (containerIds: string[]) => {
+    const map = new Map<string, Record<string, number>>();
+    for (const id of containerIds) {
+      map.set(id, { cpu: 50, memory: 60, memory_bytes: 1024 });
+    }
+    return map;
+  },
+);
 vi.mock('./metrics-store.js', () => ({
-  getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
+  getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
 const mockDetectAnomalyAdaptive = vi.fn().mockReturnValue(null);
@@ -106,14 +83,7 @@ vi.mock('./insights-store.js', () => ({
   getRecentInsights: (...args: unknown[]) => mockGetRecentInsights(...args),
 }));
 
-const mockIsOllamaAvailable = vi.fn().mockResolvedValue(false);
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: () => mockIsOllamaAvailable(),
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-  buildInfrastructureContext: () => 'context',
-}));
-
+// Kept: remediation-service mock — tests don't exercise remediation
 vi.mock('./remediation-service.js', () => ({
   suggestAction: () => null,
 }));
@@ -151,8 +121,21 @@ vi.mock('./incident-correlator.js', () => ({
   correlateInsights: (...args: unknown[]) => mockCorrelateInsights(...args),
 }));
 
-const { getConfig } = await import('../config/index.js');
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('./monitoring-service.js');
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import * as llmClient from './llm-client.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+// Spy references — assigned in beforeEach
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+let mockIsEndpointDegraded: any;
+let mockIsCircuitOpen: any;
+let mockCachedFetchSWR: any;
+let mockIsOllamaAvailable: any;
+let mockChatStream: any;
 
 /** Helper: extract insights from the batch insertInsights call */
 function getInsertedInsights(): Array<{ category: string; severity: string; description: string; container_id: string | null }> {
@@ -160,14 +143,30 @@ function getInsertedInsights(): Array<{ category: string; severity: string; desc
   return mockInsertInsights.mock.calls[0][0] as any[];
 }
 
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
 describe('monitoring-service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetEndpoints.mockResolvedValue([]);
-    mockGetContainers.mockResolvedValue([]);
-    mockGetLatestMetrics.mockResolvedValue({ cpu: 50, memory: 60, memory_bytes: 1024 });
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+
+    // Re-set forwarding-target mock defaults cleared by restoreAllMocks
+    mockGetLatestMetricsBatch.mockImplementation(
+      async (containerIds: string[]) => {
+        const map = new Map<string, Record<string, number>>();
+        for (const id of containerIds) {
+          map.set(id, { cpu: 50, memory: 60, memory_bytes: 1024 });
+        }
+        return map;
+      },
+    );
     mockDetectAnomalyAdaptive.mockReturnValue(null);
-    // Re-apply the delegating implementation (clearAllMocks removes it)
     mockDetectAnomaliesBatch.mockImplementation(
       async (items: Array<{ containerId: string; containerName: string; metricType: string; currentValue: number }>) => {
         const results = new Map();
@@ -180,26 +179,55 @@ describe('monitoring-service', () => {
         return results;
       },
     );
-    mockIsOllamaAvailable.mockResolvedValue(false);
-    mockGetCapacityForecasts.mockReturnValue([]);
-    mockExplainAnomalies.mockResolvedValue(new Map());
-    // Re-apply the default insertInsights implementation (returns all IDs as inserted)
     mockInsertInsights.mockImplementation(
       async (insights: Array<{ id: string }>) => new Set(insights.map((i) => i.id)),
     );
+    mockGetRecentInsights.mockReturnValue([]);
     mockTriggerInvestigation.mockResolvedValue(undefined);
     mockCorrelateInsights.mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });
-    // Re-apply the default cachedFetchSWR implementation (tests may override it)
-    mockCachedFetchSWR.mockImplementation(
-      (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    mockGetCapacityForecasts.mockReturnValue([]);
+    mockExplainAnomalies.mockResolvedValue(new Map());
+
+    // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
+    const isoForest = await import('./isolation-forest-detector.js');
+    vi.mocked(isoForest.detectAnomalyIsolationForest).mockReturnValue(null as any);
+    const logAnalyzer = await import('./log-analyzer.js');
+    vi.mocked(logAnalyzer.analyzeLogsForContainers).mockResolvedValue([] as any);
+    const notifService = await import('./notification-service.js');
+    vi.mocked(notifService.notifyInsight).mockResolvedValue(undefined as any);
+    const telemetryStore = await import('./monitoring-telemetry-store.js');
+    vi.mocked(telemetryStore.insertMonitoringCycle).mockResolvedValue(undefined as any);
+    vi.mocked(telemetryStore.insertMonitoringSnapshot).mockResolvedValue(undefined as any);
+
+    // Create portainer spies
+    mockCachedFetchSWR = vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
     );
-    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({ ...defaultConfig });
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as any);
+    mockIsEndpointDegraded = vi.spyOn(portainerClient, 'isEndpointDegraded').mockReturnValue(false);
+    mockIsCircuitOpen = vi.spyOn(portainerClient, 'isCircuitOpen').mockReturnValue(false);
+
+    // Create LLM spies
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
+
+    setConfigForTest(defaultConfig);
     resetPreviousCycleStats();
+    // Reset namespace so stale mock objects don't leak between tests
+    setMonitoringNamespace(null as any);
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('batch insight processing', () => {
     it('calls detectAnomaliesBatch instead of per-container detectAnomalyAdaptive (#546)', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
@@ -218,7 +246,7 @@ describe('monitoring-service', () => {
     });
 
     it('uses insertInsights (batch) instead of per-insight insertInsight', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -234,13 +262,12 @@ describe('monitoring-service', () => {
     });
 
     it('caps insights at MAX_INSIGHTS_PER_CYCLE', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         MAX_INSIGHTS_PER_CYCLE: 2,
         ANOMALY_COOLDOWN_MINUTES: 0,
       });
 
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
@@ -344,8 +371,7 @@ describe('monitoring-service', () => {
     });
 
     it('respects PREDICTIVE_ALERTING_ENABLED flag', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,
       });
@@ -367,7 +393,7 @@ describe('monitoring-service', () => {
 
   describe('anomaly explanations', () => {
     it('enriches anomaly description when LLM available', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -402,7 +428,7 @@ describe('monitoring-service', () => {
     });
 
     it('leaves description unchanged when LLM unavailable', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -424,11 +450,10 @@ describe('monitoring-service', () => {
     });
 
     it('respects ANOMALY_EXPLANATION_ENABLED flag', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         ANOMALY_EXPLANATION_ENABLED: false,
       });
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -449,8 +474,7 @@ describe('monitoring-service', () => {
 
   describe('AI analysis gate', () => {
     it('skips AI analysis when AI_ANALYSIS_ENABLED is false', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         AI_ANALYSIS_ENABLED: false,
       });
       mockIsOllamaAvailable.mockResolvedValue(true);
@@ -464,17 +488,16 @@ describe('monitoring-service', () => {
 
   describe('hard-threshold toggle', () => {
     it('does not create threshold anomalies when ANOMALY_HARD_THRESHOLD_ENABLED is false', async () => {
-      (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
-        ...defaultConfig,
+      setConfigForTest({
         ANOMALY_HARD_THRESHOLD_ENABLED: false,
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,
       });
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
-      mockGetLatestMetrics.mockResolvedValue({ cpu: 95, memory: 40, memory_bytes: 1024 });
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([['c1', { cpu: 95, memory: 40, memory_bytes: 1024 }]]));
       mockDetectAnomalyAdaptive.mockReturnValue(null);
 
       await runMonitoringCycle();
@@ -487,7 +510,7 @@ describe('monitoring-service', () => {
 
   describe('caching', () => {
     it('uses cachedFetchSWR for endpoints and containers', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
@@ -502,8 +525,8 @@ describe('monitoring-service', () => {
 
     it('uses cachedFetchSWR for each endpoint containers', async () => {
       mockGetEndpoints.mockResolvedValue([
-        { Id: 1, Name: 'prod' },
-        { Id: 2, Name: 'staging' },
+        { Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 2, Name: 'staging', Status: 1, Type: 1, URL: 'tcp://localhost' },
       ]);
       mockGetContainers.mockResolvedValue([]);
 
@@ -515,17 +538,33 @@ describe('monitoring-service', () => {
       expect(mockCachedFetchSWR).toHaveBeenCalledWith('containers:2', 300, expect.any(Function));
     });
 
-    it('reads metrics from DB instead of collecting from Portainer API', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+    it('reads metrics from DB using a single batch call instead of per-container calls', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
-      mockGetLatestMetrics.mockResolvedValue({ cpu: 75, memory: 80, memory_bytes: 2048 });
+      mockGetLatestMetricsBatch.mockResolvedValue(new Map([['c1', { cpu: 75, memory: 80, memory_bytes: 2048 }]]));
 
       await runMonitoringCycle();
 
-      // Should read from DB using getLatestMetrics
-      expect(mockGetLatestMetrics).toHaveBeenCalledWith('c1');
+      // Should use a single batch call with all container IDs
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledTimes(1);
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledWith(['c1']);
+    });
+
+    it('issues one batch metrics query for all running containers', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
+        { Id: 'c2', Names: ['/api'], State: 'running', Image: 'node:18' },
+        { Id: 'c3', Names: ['/web'], State: 'exited', Image: 'node:18' },
+      ]);
+
+      await runMonitoringCycle();
+
+      // Single call with only the two running container IDs (exited excluded)
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledTimes(1);
+      expect(mockGetLatestMetricsBatch).toHaveBeenCalledWith(['c1', 'c2']);
     });
   });
 
@@ -535,7 +574,7 @@ describe('monitoring-service', () => {
       const mockTo = vi.fn().mockReturnValue({ emit: vi.fn() });
       setMonitoringNamespace({ emit: mockEmit, to: mockTo } as unknown as import('socket.io').Namespace);
 
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app'], State: 'running', Image: 'node:18' },
       ]);
@@ -559,7 +598,7 @@ describe('monitoring-service', () => {
 
   describe('deduplication filters downstream FK references (#693)', () => {
     it('does not trigger investigation for deduplicated (skipped) insights', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/api-svc'], State: 'running', Image: 'node:18' },
@@ -593,7 +632,7 @@ describe('monitoring-service', () => {
     });
 
     it('does not pass deduplicated insights to correlateInsights', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/api-svc'], State: 'running', Image: 'node:18' },
@@ -622,7 +661,7 @@ describe('monitoring-service', () => {
     });
 
     it('skips investigation and correlation entirely when all insights are deduplicated', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -646,9 +685,9 @@ describe('monitoring-service', () => {
     it('aggregates container fetch failures into a single warning', async () => {
       // Set up 3 endpoints, where 2 of them fail to fetch containers
       mockGetEndpoints.mockResolvedValue([
-        { Id: 1, Name: 'ok' },
-        { Id: 2, Name: 'fail-1' },
-        { Id: 3, Name: 'fail-2' },
+        { Id: 1, Name: 'ok', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 2, Name: 'fail-1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 3, Name: 'fail-2', Status: 1, Type: 1, URL: 'tcp://localhost' },
       ]);
 
       // cachedFetchSWR succeeds for endpoints, but fails for endpoints 2 and 3
@@ -670,15 +709,15 @@ describe('monitoring-service', () => {
     });
 
     it('aggregates metrics read failures into a single warning', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/app-1'], State: 'running', Image: 'node:18' },
         { Id: 'c2', Names: ['/app-2'], State: 'running', Image: 'node:18' },
         { Id: 'c3', Names: ['/app-3'], State: 'running', Image: 'node:18' },
       ]);
 
-      // All metrics reads fail
-      mockGetLatestMetrics.mockRejectedValue(new Error('DB connection error'));
+      // Batch metrics read fails
+      mockGetLatestMetricsBatch.mockRejectedValue(new Error('DB connection error'));
 
       await runMonitoringCycle();
 
@@ -687,7 +726,7 @@ describe('monitoring-service', () => {
     });
 
     it('completes cycle without errors even when all data fetches fail', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'fail' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'fail', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
 
       // cachedFetchSWR fails for everything except endpoints
       mockCachedFetchSWR.mockImplementation(async (key: string, _ttl: number, fn: () => Promise<unknown>) => {
@@ -708,7 +747,7 @@ describe('monitoring-service', () => {
 
     it('sweepExpiredCooldowns removes entries older than cooldown period', async () => {
       // Set up: run a cycle that creates cooldown entries
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -728,7 +767,7 @@ describe('monitoring-service', () => {
     });
 
     it('sweepExpiredCooldowns keeps recent entries', async () => {
-      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local' }]);
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
       ]);
@@ -754,6 +793,29 @@ describe('monitoring-service', () => {
     it('startCooldownSweep and stopCooldownSweep do not throw', () => {
       expect(() => startCooldownSweep()).not.toThrow();
       expect(() => stopCooldownSweep()).not.toThrow();
+    });
+  });
+
+  describe('circuit breaker pre-check (#759)', () => {
+    it('skips endpoints with open circuit breakers and does not fetch their containers', async () => {
+      mockGetEndpoints.mockResolvedValue([
+        { Id: 1, Name: 'healthy', Status: 1, Type: 1, URL: 'tcp://localhost' },
+        { Id: 2, Name: 'failing', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      ]);
+
+      // Endpoint 2 has an open circuit breaker
+      mockIsCircuitOpen.mockImplementation((id: number) => id === 2);
+      mockIsEndpointDegraded.mockReturnValue(false);
+
+      mockGetContainers.mockResolvedValue([]);
+
+      await runMonitoringCycle();
+
+      // cachedFetchSWR should only be called for endpoint 1's containers, not endpoint 2
+      const swrKeys = mockCachedFetchSWR.mock.calls.map(([key]: [string]) => key);
+      const containerKeys = swrKeys.filter((k: string) => k.startsWith('containers:'));
+      expect(containerKeys).toContain('containers:1');
+      expect(containerKeys).not.toContain('containers:2');
     });
   });
 });

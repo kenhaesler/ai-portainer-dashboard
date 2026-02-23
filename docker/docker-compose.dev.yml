@@ -16,7 +16,7 @@ services:
       # Public/LAN URL used by remote endpoints (Beyla) to call back into OTLP ingest.
       - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:-}
       - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:-admin}                # DEV ONLY default
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme123}          # DEV ONLY default
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-changeme12345}         # DEV ONLY default (min 12 chars)
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production-must-be-at-least-32-chars}  # DEV ONLY default
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
@@ -75,7 +75,7 @@ services:
       postgres-app:
         condition: service_healthy
       timescaledb:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
     # Resource limits commented out for dev — uncomment to test constrained environments
@@ -107,7 +107,7 @@ services:
       - ../.git:/app/.git:ro
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
     # deploy:
@@ -117,8 +117,10 @@ services:
     #       memory: 256M
 
   redis:
-    image: dhi.io/redis:8.0-debian13
+    image: redis:8-alpine
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"         # Exposed for host-side tests (localhost only)
     command: >
       redis-server
       --maxmemory ${REDIS_MAXMEMORY:-512mb}
@@ -141,8 +143,9 @@ services:
 
   kali-mcp:
     build:
-      context: kali-mcp
+      context: ../tools/kali-mcp
       dockerfile: Dockerfile
+    profiles: [pentest]
     restart: unless-stopped
     # No host port — only accessible from dashboard backend via kali-mcp:8000
     cap_add:
@@ -189,10 +192,10 @@ services:
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-changeme-postgres-app}  # DEV ONLY default
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     volumes:
       - timescale-data:/var/lib/postgresql/data
       - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
@@ -225,7 +228,7 @@ services:
       - timescale-backups:/backups
     depends_on:
       timescaledb:
-        condition: service_healthy
+        condition: service_started
     networks:
       - dashboard-net
 

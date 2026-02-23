@@ -34,7 +34,9 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      // Edge Async endpoints cannot use Docker exec — reject early with a clear error
+      // Edge Async endpoints lack persistent Docker proxy tunnels — the sidecar approach
+      // still requires Docker API access (container create/start/stop), which maps to the
+      // same 'exec' capability gate (non-async endpoint with live Docker proxy).
       await assertCapability(parsed.data.endpointId, 'exec');
 
       const capture = await startCapture(parsed.data);

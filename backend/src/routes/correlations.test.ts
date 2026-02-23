@@ -1,33 +1,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { correlationRoutes, clearInsightsCache, buildCorrelationPrompt, parseInsightsResponse } from './correlations.js';
+import { correlationRoutes, clearInsightsCache, clearCorrelationsCache, buildCorrelationPrompt, parseInsightsResponse } from './correlations.js';
 import type { CorrelationPair } from '../services/metric-correlator.js';
 
 const mockDetectCorrelated = vi.fn();
 const mockFindCorrelatedContainers = vi.fn();
 
+// Kept: metric-correlator mock — no TimescaleDB in CI
 vi.mock('../services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: (...args: unknown[]) => mockDetectCorrelated(...args),
   findCorrelatedContainers: (...args: unknown[]) => mockFindCorrelatedContainers(...args),
 }));
 
-const mockChatStream = vi.fn();
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
+import * as llmClient from '../services/llm-client.js';
+let mockChatStream: any;
+
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
+// withStatementTimeout in correlations.ts calls getMetricsDb() → pool.connect()
+const mockClientRelease = vi.fn();
+const mockClientQuery = vi.fn().mockResolvedValue({ rows: [] });
+const mockConnect = vi.fn().mockResolvedValue({
+  query: (...args: unknown[]) => mockClientQuery(...args),
+  release: mockClientRelease,
+});
+
+// Kept: timescale mock — no TimescaleDB in CI
+vi.mock('../db/timescale.js', () => ({
+  getMetricsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
+}));
+
+const mockIsUndefinedTableError = vi.fn().mockReturnValue(false);
+// Kept: metrics-store mock — no TimescaleDB in CI
+vi.mock('../services/metrics-store.js', () => ({
+  isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
 }));
 
 const samplePairs: CorrelationPair[] = [
@@ -56,7 +69,15 @@ describe('Correlation Routes', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
     clearInsightsCache();
+    clearCorrelationsCache();
+    mockConnect.mockResolvedValue({
+      query: (...args: unknown[]) => mockClientQuery(...args),
+      release: mockClientRelease,
+    });
+    mockClientQuery.mockResolvedValue({ rows: [] });
+    mockIsUndefinedTableError.mockReturnValue(false);
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
@@ -105,6 +126,47 @@ describe('Correlation Routes', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual([]);
     });
+
+    it('serves cached result on repeat request (5-min TTL)', async () => {
+      mockDetectCorrelated.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      expect(mockDetectCorrelated).toHaveBeenCalledTimes(1);
+
+      // Second call — should hit cache, service not called again
+      await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      expect(mockDetectCorrelated).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies statement_timeout and passes client to service', async () => {
+      mockDetectCorrelated.mockResolvedValue([]);
+
+      const res = await app.inject({ method: 'GET', url: '/api/anomalies/correlated' });
+      expect(res.statusCode).toBe(200);
+
+      // The SET statement_timeout query should have been executed
+      expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
+      expect(mockClientRelease).toHaveBeenCalled();
+      // Client is passed as 3rd argument so queries use the timeout-protected connection
+      expect(mockDetectCorrelated).toHaveBeenCalledWith(
+        30, 2,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
+    });
+
+    it('returns 503 when metrics table is not ready', async () => {
+      mockDetectCorrelated.mockRejectedValue(new Error('relation "metrics" does not exist'));
+      mockIsUndefinedTableError.mockReturnValue(true);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/anomalies/correlated',
+      });
+
+      expect(res.statusCode).toBe(503);
+      const body = res.json();
+      expect(body.error).toBe('Metrics database not ready');
+    });
   });
 
   describe('GET /api/metrics/correlations', () => {
@@ -131,7 +193,10 @@ describe('Correlation Routes', () => {
         url: '/api/metrics/correlations?hours=6&minCorrelation=0.8',
       });
 
-      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(6, 0.8);
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        6, 0.8,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
 
     it('clamps hours to safe range', async () => {
@@ -142,7 +207,47 @@ describe('Correlation Routes', () => {
         url: '/api/metrics/correlations?hours=9999',
       });
 
-      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(168, 0.7);
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        168, 0.7,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
+    });
+
+    it('serves cached pairs on repeat request', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue(samplePairs);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledTimes(1);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies statement_timeout and passes client to service', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations' });
+
+      expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
+      expect(mockClientRelease).toHaveBeenCalled();
+      // Client is passed as 3rd argument so queries use the timeout-protected connection
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        24, 0.7,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
+    });
+
+    it('returns 503 when metrics table is not ready', async () => {
+      mockFindCorrelatedContainers.mockRejectedValue(new Error('relation "metrics" does not exist'));
+      mockIsUndefinedTableError.mockReturnValue(true);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/metrics/correlations',
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toBe('Metrics database not ready');
     });
   });
 
@@ -211,6 +316,19 @@ describe('Correlation Routes', () => {
       const res = await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
       expect(res.statusCode).toBe(200);
       expect(mockChatStream).toHaveBeenCalledTimes(1); // not called again
+    });
+
+    it('applies statement_timeout and passes client for the correlation query', async () => {
+      mockFindCorrelatedContainers.mockResolvedValue([]);
+
+      await app.inject({ method: 'GET', url: '/api/metrics/correlations/insights' });
+
+      expect(mockClientQuery).toHaveBeenCalledWith('SET statement_timeout = 10000');
+      expect(mockClientRelease).toHaveBeenCalled();
+      expect(mockFindCorrelatedContainers).toHaveBeenCalledWith(
+        24, 0.7,
+        expect.objectContaining({ query: expect.any(Function) }),
+      );
     });
   });
 });

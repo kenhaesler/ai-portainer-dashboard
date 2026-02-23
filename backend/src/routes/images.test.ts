@@ -1,23 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { imagesRoutes } from './images.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn(),
-  getImages: vi.fn(),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 30, CONTAINERS: 15 },
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-import * as portainer from '../services/portainer-client.js';
+let mockGetEndpoints: any;
+let mockGetImages: any;
 
-const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
-const mockGetImages = vi.mocked(portainer.getImages);
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 function buildApp() {
   const app = Fastify();
@@ -29,8 +31,12 @@ function buildApp() {
 }
 
 describe('images routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetImages = vi.spyOn(portainerClient, 'getImages');
   });
 
   it('should de-duplicate images across endpoints', async () => {

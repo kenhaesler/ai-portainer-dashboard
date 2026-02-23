@@ -30,7 +30,7 @@ interface PromptProfileRow {
   name: string;
   description: string;
   is_built_in: boolean;
-  prompts_json: string;
+  prompts_json: string | Record<string, unknown>; // JSONB: pg driver auto-parses to object
   created_at: string;
   updated_at: string;
 }
@@ -39,19 +39,29 @@ const ACTIVE_PROFILE_KEY = 'prompts.active_profile';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function rowToProfile(row: PromptProfileRow): PromptProfile {
-  let prompts: Record<string, PromptProfileFeatureConfig> = {};
-  try {
-    prompts = JSON.parse(row.prompts_json);
-  } catch {
-    log.warn({ id: row.id }, 'Failed to parse prompts_json, using empty object');
+function parsePromptsJson(raw: string | Record<string, unknown>, id: string): Record<string, PromptProfileFeatureConfig> {
+  // pg driver auto-deserializes JSONB columns into native JS objects.
+  // Handle both: object (from pg) and string (defensive / tests).
+  if (typeof raw === 'object' && raw !== null) {
+    return raw as Record<string, PromptProfileFeatureConfig>;
   }
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      log.warn({ id }, 'Failed to parse prompts_json string, using empty object');
+    }
+  }
+  return {};
+}
+
+function rowToProfile(row: PromptProfileRow): PromptProfile {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     isBuiltIn: !!row.is_built_in,
-    prompts,
+    prompts: parsePromptsJson(row.prompts_json, row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

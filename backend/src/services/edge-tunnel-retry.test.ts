@@ -5,24 +5,7 @@ import {
   waitForTunnel,
 } from './edge-log-fetcher.js';
 
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: vi.fn(),
-  getContainers: vi.fn(),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import * as portainer from './portainer-client.js';
-
-const mockGetContainerLogs = vi.mocked(portainer.getContainerLogs);
-const mockGetContainers = vi.mocked(portainer.getContainers);
 
 describe('isDockerProxyUnavailable', () => {
   it('returns true for status 502', () => {
@@ -52,57 +35,58 @@ describe('isDockerProxyUnavailable', () => {
 
 describe('getContainerLogsWithRetry', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('returns logs on first try when tunnel is up', async () => {
-    mockGetContainerLogs.mockResolvedValue('log line 1\nlog line 2');
+    vi.spyOn(portainer, 'getContainerLogs').mockResolvedValue('log line 1\nlog line 2');
 
     const result = await getContainerLogsWithRetry(1, 'abc', { tail: 100 });
     expect(result).toBe('log line 1\nlog line 2');
-    expect(mockGetContainerLogs).toHaveBeenCalledTimes(1);
+    expect(portainer.getContainerLogs).toHaveBeenCalledTimes(1);
   });
 
   it('retries after tunnel warm-up on 502', async () => {
     const proxyErr = Object.assign(new Error('Bad Gateway'), { status: 502 });
-    mockGetContainerLogs
+    vi.spyOn(portainer, 'getContainerLogs')
       .mockRejectedValueOnce(proxyErr)
       .mockResolvedValueOnce('retry logs');
-    mockGetContainers.mockResolvedValue([]);
+    vi.spyOn(portainer, 'getContainers').mockResolvedValue([]);
 
     const result = await getContainerLogsWithRetry(4, 'def', { tail: 50 }, { maxWaitMs: 100 });
     expect(result).toBe('retry logs');
-    expect(mockGetContainerLogs).toHaveBeenCalledTimes(2);
-    expect(mockGetContainers).toHaveBeenCalledWith(4, false);
+    expect(portainer.getContainerLogs).toHaveBeenCalledTimes(2);
+    expect(portainer.getContainers).toHaveBeenCalledWith(4, false);
   });
 
   it('throws non-proxy errors directly', async () => {
     const authErr = Object.assign(new Error('Unauthorized'), { status: 401 });
-    mockGetContainerLogs.mockRejectedValue(authErr);
+    vi.spyOn(portainer, 'getContainerLogs').mockRejectedValue(authErr);
+    const getContainersSpy = vi.spyOn(portainer, 'getContainers');
 
     await expect(
       getContainerLogsWithRetry(1, 'abc', { tail: 100 }),
     ).rejects.toThrow('Unauthorized');
-    expect(mockGetContainerLogs).toHaveBeenCalledTimes(1);
-    expect(mockGetContainers).not.toHaveBeenCalled();
+    expect(portainer.getContainerLogs).toHaveBeenCalledTimes(1);
+    expect(getContainersSpy).not.toHaveBeenCalled();
   });
 
   it('retries after tunnel warm-up on 404', async () => {
     const notFoundErr = Object.assign(new Error('Not Found'), { status: 404 });
-    mockGetContainerLogs
+    vi.spyOn(portainer, 'getContainerLogs')
       .mockRejectedValueOnce(notFoundErr)
       .mockResolvedValueOnce('found after warmup');
-    mockGetContainers.mockResolvedValue([]);
+    vi.spyOn(portainer, 'getContainers').mockResolvedValue([]);
 
     const result = await getContainerLogsWithRetry(4, 'ghi', { tail: 50 }, { maxWaitMs: 100 });
     expect(result).toBe('found after warmup');
-    expect(mockGetContainerLogs).toHaveBeenCalledTimes(2);
+    expect(portainer.getContainerLogs).toHaveBeenCalledTimes(2);
   });
 
   it('throws tunnel timeout when warmup fails', async () => {
     const proxyErr = Object.assign(new Error('Bad Gateway'), { status: 502 });
-    mockGetContainerLogs.mockRejectedValue(proxyErr);
-    mockGetContainers.mockRejectedValue(new Error('tunnel not ready'));
+    vi.spyOn(portainer, 'getContainerLogs').mockRejectedValue(proxyErr);
+    vi.spyOn(portainer, 'getContainers').mockRejectedValue(new Error('tunnel not ready'));
 
     await expect(
       getContainerLogsWithRetry(4, 'xyz', { tail: 50 }, { maxWaitMs: 100, pollIntervalMs: 50 }),
@@ -112,7 +96,7 @@ describe('getContainerLogsWithRetry', () => {
 
 describe('waitForTunnel', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.useFakeTimers();
   });
 
@@ -121,22 +105,22 @@ describe('waitForTunnel', () => {
   });
 
   it('resolves immediately when tunnel is already up', async () => {
-    mockGetContainers.mockResolvedValue([]);
+    vi.spyOn(portainer, 'getContainers').mockResolvedValue([]);
     const promise = waitForTunnel(4, { maxWaitMs: 5000, pollIntervalMs: 1000, stabilizationMs: 0 });
     await promise;
-    expect(mockGetContainers).toHaveBeenCalledTimes(1);
+    expect(portainer.getContainers).toHaveBeenCalledTimes(1);
   });
 
   it('resolves with stabilization delay when tunnel is already up', async () => {
-    mockGetContainers.mockResolvedValue([]);
+    vi.spyOn(portainer, 'getContainers').mockResolvedValue([]);
     const promise = waitForTunnel(4, { maxWaitMs: 5000, pollIntervalMs: 1000, stabilizationMs: 500 });
     await vi.advanceTimersByTimeAsync(500);
     await promise;
-    expect(mockGetContainers).toHaveBeenCalledTimes(1);
+    expect(portainer.getContainers).toHaveBeenCalledTimes(1);
   });
 
   it('polls until tunnel establishes', async () => {
-    mockGetContainers
+    vi.spyOn(portainer, 'getContainers')
       .mockRejectedValueOnce(new Error('not ready'))
       .mockRejectedValueOnce(new Error('not ready'))
       .mockResolvedValueOnce([]);
@@ -147,11 +131,11 @@ describe('waitForTunnel', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await promise;
 
-    expect(mockGetContainers).toHaveBeenCalledTimes(3);
+    expect(portainer.getContainers).toHaveBeenCalledTimes(3);
   });
 
   it('throws after timeout', async () => {
-    mockGetContainers.mockRejectedValue(new Error('not ready'));
+    vi.spyOn(portainer, 'getContainers').mockRejectedValue(new Error('not ready'));
 
     let caughtError: Error | undefined;
     const promise = waitForTunnel(4, { maxWaitMs: 3000, pollIntervalMs: 1000, stabilizationMs: 0 }).catch((err) => {

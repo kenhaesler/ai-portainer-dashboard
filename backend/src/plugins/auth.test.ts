@@ -5,10 +5,12 @@ import authPlugin from './auth.js';
 const mockVerifyJwt = vi.fn();
 const mockGetSession = vi.fn();
 
+// Kept: crypto mock — file I/O and bcrypt dependency
 vi.mock('../utils/crypto.js', () => ({
   verifyJwt: (...args: unknown[]) => mockVerifyJwt(...args),
 }));
 
+// Kept: session-store mock — no PostgreSQL in CI
 vi.mock('../services/session-store.js', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
 }));

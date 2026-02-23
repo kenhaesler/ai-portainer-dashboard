@@ -2,12 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { signJwt, verifyJwt, hashPassword, comparePassword, _resetKeyCache } from './crypto.js';
 
 // Mock the config module — default HS256
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long',
-    JWT_ALGORITHM: 'HS256',
-  })),
-}));
 
 describe('crypto', () => {
   beforeEach(() => {

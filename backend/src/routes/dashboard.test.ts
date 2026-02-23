@@ -1,49 +1,35 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
 
 const mockGetKpiHistory = vi.fn();
-const mockGetEndpoints = vi.fn();
-const mockGetContainers = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockGetLatestMetricsBatch = vi.fn();
 
+// Kept: kpi-store mock — avoids real DB lookup
 vi.mock('../services/kpi-store.js', () => ({
   getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
 }));
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: (_key: string, _ttl: number, fn: () => unknown) => fn(),
-  getCacheKey: (...parts: string[]) => parts.join(':'),
-  TTL: { ENDPOINTS: 30, CONTAINERS: 30 },
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-vi.mock('../services/portainer-normalizers.js', async () => {
-  return {
-    normalizeEndpoint: (ep: Record<string, unknown>) => ep,
-    normalizeContainer: (c: any, endpointId: number, endpointName: string) => ({
-      id: c.Id,
-      name: c.Names?.[0]?.replace('/', '') || c.Id,
-      image: c.Image || 'unknown',
-      state: c.State.toLowerCase(),
-      status: c.Status || '',
-      created: c.created || 0,
-      endpointId,
-      endpointName,
-      ports: [],
-      networks: [],
-      networkIPs: {},
-      labels: c.labels || {},
-      healthStatus: undefined,
-    }),
-  };
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+
+afterEach(async () => {
+  await waitForInFlight();
 });
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
 
 vi.mock('../services/security-audit.js', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
@@ -54,38 +40,36 @@ vi.mock('../services/metrics-store.js', () => ({
   getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
-function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up') {
+function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): any {
   return {
-    id,
-    name,
-    status,
-    containersRunning: 1,
-    containersStopped: 0,
-    containersHealthy: 1,
-    containersUnhealthy: 0,
-    totalContainers: 1,
-    stackCount: 0,
+    Id: id,
+    Name: name,
+    Type: 1,
+    URL: 'tcp://localhost',
+    Status: status === 'up' ? 1 : 2,
+    Snapshots: [{
+      RunningContainerCount: 1,
+      StoppedContainerCount: 0,
+      HealthyContainerCount: 1,
+      UnhealthyContainerCount: 0,
+      StackCount: 0,
+      TotalCPU: 0,
+      TotalMemory: 0,
+    }],
   };
 }
 
-function makeContainer(id: string, created: number, state = 'running', labels: Record<string, string> = {}) {
+function makeContainer(id: string, created: number, state = 'running', labels: Record<string, string> = {}): any {
   return {
     Id: id,
     Names: [`/${id}`],
     State: state,
     Status: state === 'running' ? 'Up' : 'Exited',
     Image: 'nginx',
-    created,
-    labels,
+    Created: created,
+    Ports: [],
+    NetworkSettings: { Networks: {} },
+    Labels: labels,
   };
 }
 
@@ -100,128 +84,44 @@ async function buildApp() {
 }
 
 describe('Dashboard Routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
     mockGetSecurityAudit.mockResolvedValue([]);
   });
 
   describe('GET /api/dashboard/summary', () => {
-    it('fetches containers from ALL up endpoints (no 5-endpoint cap)', async () => {
-      // Create 8 endpoints — all should be queried
-      const endpoints = Array.from({ length: 8 }, (_, i) =>
+    it('returns KPIs computed from endpoint snapshots without fetching containers (#801)', async () => {
+      const endpoints = Array.from({ length: 3 }, (_, i) =>
         makeEndpoint(i + 1, `ep-${i + 1}`),
       );
       mockGetEndpoints.mockResolvedValue(endpoints);
-      mockGetContainers.mockResolvedValue([makeContainer(`c-1`, Date.now())]);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
-
-      expect(res.statusCode).toBe(200);
-      // getContainers should have been called once per endpoint (8 times, not 5)
-      expect(mockGetContainers).toHaveBeenCalledTimes(8);
-      for (let i = 1; i <= 8; i++) {
-        expect(mockGetContainers).toHaveBeenCalledWith(i);
-      }
-
-      await app.close();
-    });
-
-    it('defaults recentLimit to 20', async () => {
-      const endpoints = [makeEndpoint(1, 'ep-1')];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      // Return 30 containers
-      const containers = Array.from({ length: 30 }, (_, i) =>
-        makeContainer(`c-${i}`, 1000 + i),
-      );
-      mockGetContainers.mockResolvedValue(containers);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json().recentContainers).toHaveLength(20);
-
-      await app.close();
-    });
-
-    it('respects recentLimit query parameter', async () => {
-      const endpoints = [makeEndpoint(1, 'ep-1')];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      const containers = Array.from({ length: 30 }, (_, i) =>
-        makeContainer(`c-${i}`, 1000 + i),
-      );
-      mockGetContainers.mockResolvedValue(containers);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary?recentLimit=5' });
-
-      expect(res.statusCode).toBe(200);
-      expect(res.json().recentContainers).toHaveLength(5);
-
-      await app.close();
-    });
-
-    it('caps recentLimit at 50', async () => {
-      const endpoints = [makeEndpoint(1, 'ep-1')];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      const containers = Array.from({ length: 60 }, (_, i) =>
-        makeContainer(`c-${i}`, 1000 + i),
-      );
-      mockGetContainers.mockResolvedValue(containers);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary?recentLimit=100' });
-
-      // Zod max(50) should reject values > 50 with a 400
-      expect(res.statusCode).toBe(400);
-
-      await app.close();
-    });
-
-    it('skips down endpoints when fetching containers', async () => {
-      const endpoints = [
-        makeEndpoint(1, 'ep-up', 'up'),
-        makeEndpoint(2, 'ep-down', 'down'),
-      ];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-      mockGetContainers.mockResolvedValue([makeContainer('c-1', Date.now())]);
-
-      const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
-
-      expect(res.statusCode).toBe(200);
-      // Only the 'up' endpoint should have been queried
-      expect(mockGetContainers).toHaveBeenCalledTimes(1);
-      expect(mockGetContainers).toHaveBeenCalledWith(1);
-
-      await app.close();
-    });
-
-    it('returns partial flag when some endpoints fail (#745)', async () => {
-      const endpoints = [
-        makeEndpoint(1, 'ep-healthy'),
-        makeEndpoint(2, 'ep-failing'),
-      ];
-      mockGetEndpoints.mockResolvedValue(endpoints);
-
-      mockGetContainers.mockImplementation((endpointId: number) => {
-        if (endpointId === 2) {
-          return Promise.reject(new Error('HTTP 500: Internal Server Error'));
-        }
-        return Promise.resolve([makeContainer('c-1', Date.now())]);
-      });
 
       const app = await buildApp();
       const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
 
       expect(res.statusCode).toBe(200);
       const data = res.json();
+      expect(data.kpis.endpoints).toBe(3);
+      // No container fetching in summary route
+      expect(mockGetContainers).not.toHaveBeenCalled();
+      // recentContainers removed from summary (#801)
+      expect(data.recentContainers).toBeUndefined();
 
-      expect(data.recentContainers).toHaveLength(1);
-      expect(data.partial).toBe(true);
-      expect(data.failedEndpoints).toHaveLength(1);
-      expect(data.failedEndpoints[0]).toContain('ep-failing');
+      await app.close();
+    });
+
+    it('returns 502 when Portainer is unreachable', async () => {
+      mockGetEndpoints.mockRejectedValue(new Error('Connection refused'));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toBe('Unable to connect to Portainer');
 
       await app.close();
     });
@@ -627,7 +527,7 @@ describe('Dashboard Routes', () => {
       expect(data.summary.kpis).toBeDefined();
       expect(data.summary.kpis.running).toBe(1);
       expect(data.summary.security).toBeDefined();
-      expect(data.summary.recentContainers).toHaveLength(1);
+      expect(data.summary.recentContainers).toBeUndefined();
       expect(data.summary.timestamp).toBeDefined();
 
       // Resources section
@@ -696,8 +596,6 @@ describe('Dashboard Routes', () => {
       expect(res.statusCode).toBe(200);
       const data = res.json();
 
-      // Should still return data from the healthy endpoint
-      expect(data.summary.recentContainers).toHaveLength(1);
       // Should include partial flag
       expect(data.partial).toBe(true);
       expect(data.failedEndpoints).toBeDefined();
@@ -726,7 +624,7 @@ describe('Dashboard Routes', () => {
       await app.close();
     });
 
-    it('respects recentLimit and topN query parameters', async () => {
+    it('respects topN query parameter', async () => {
       const endpoints = [makeEndpoint(1, 'ep-1')];
       const containers = Array.from({ length: 15 }, (_, i) =>
         makeContainer(`c-${i}`, 1000 + i, 'running', { 'com.docker.compose.project': `stack-${i}` }),
@@ -741,12 +639,113 @@ describe('Dashboard Routes', () => {
       mockGetLatestMetricsBatch.mockResolvedValue(batchMap);
 
       const app = await buildApp();
-      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?recentLimit=5&topN=3' });
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?topN=3' });
 
       expect(res.statusCode).toBe(200);
       const data = res.json();
-      expect(data.summary.recentContainers).toHaveLength(5);
+      expect(data.summary.recentContainers).toBeUndefined();
       expect(data.resources.topStacks).toHaveLength(3);
+
+      await app.close();
+    });
+
+    it('includes kpiHistory when kpiHistoryHours > 0', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const mockSnapshots = [
+        { endpoints: 1, endpoints_up: 1, endpoints_down: 0, running: 2, stopped: 0, healthy: 2, unhealthy: 0, total: 2, stacks: 1, timestamp: '2026-02-20 12:00:00' },
+      ];
+      mockGetKpiHistory.mockResolvedValue(mockSnapshots);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?kpiHistoryHours=24' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      expect(data.kpiHistory).toBeDefined();
+      expect(data.kpiHistory).toHaveLength(1);
+      expect(data.kpiHistory[0].running).toBe(2);
+      expect(mockGetKpiHistory).toHaveBeenCalledWith(24);
+
+      await app.close();
+    });
+
+    it('does not include kpiHistory when kpiHistoryHours is 0 (default)', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+
+      expect(data.kpiHistory).toBeUndefined();
+      expect(mockGetKpiHistory).not.toHaveBeenCalled();
+
+      await app.close();
+    });
+
+    it('includes Server-Timing header', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full' });
+
+      expect(res.statusCode).toBe(200);
+      const serverTiming = res.headers['server-timing'];
+      expect(serverTiming).toBeDefined();
+      expect(serverTiming).toContain('endpoints;dur=');
+      expect(serverTiming).toContain('resources;dur=');
+      expect(serverTiming).toContain('total;dur=');
+
+      await app.close();
+    });
+
+    it('includes kpi timing in Server-Timing when kpiHistoryHours > 0', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+      mockGetKpiHistory.mockResolvedValue([]);
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?kpiHistoryHours=24' });
+
+      expect(res.statusCode).toBe(200);
+      const serverTiming = res.headers['server-timing'] as string;
+      expect(serverTiming).toContain('kpi;dur=');
+
+      await app.close();
+    });
+
+    it('returns empty kpiHistory on KPI store error', async () => {
+      const endpoints = [makeEndpoint(1, 'ep-1')];
+      mockGetEndpoints.mockResolvedValue(endpoints);
+      mockGetContainers.mockResolvedValue([
+        makeContainer('c-1', 1000, 'running', { 'com.docker.compose.project': 'web' }),
+      ]);
+      mockGetKpiHistory.mockRejectedValue(new Error('DB unavailable'));
+
+      const app = await buildApp();
+      const res = await app.inject({ method: 'GET', url: '/api/dashboard/full?kpiHistoryHours=24' });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      expect(data.kpiHistory).toEqual([]);
 
       await app.close();
     });

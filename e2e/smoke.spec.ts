@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 const USERNAME = process.env.E2E_USERNAME ?? 'admin';
-const PASSWORD = process.env.E2E_PASSWORD ?? 'changeme123';
+const PASSWORD = process.env.E2E_PASSWORD ?? 'changeme12345';
 
 test.describe('Smoke Tests', () => {
   test('login flow redirects to dashboard', async ({ page }) => {

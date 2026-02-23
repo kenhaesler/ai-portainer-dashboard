@@ -1,29 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import { detectAnomaly } from './anomaly-detector.js';
 
 // Mock dependencies
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({
-    ANOMALY_ZSCORE_THRESHOLD: 2.5,
-    ANOMALY_MOVING_AVERAGE_WINDOW: 10,
-    ANOMALY_MIN_SAMPLES: 5,
-  }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    warn: vi.fn(),
-    info: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
 
 // Mock metrics-store module
 const mockGetMovingAverage = vi.fn();
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('./metrics-store.js', () => ({
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
 }));
+
+
+beforeAll(() => {
+    setConfigForTest({
+      ANOMALY_ZSCORE_THRESHOLD: 2.5,
+      ANOMALY_MOVING_AVERAGE_WINDOW: 10,
+      ANOMALY_MIN_SAMPLES: 5,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('anomaly-detector', () => {
   beforeEach(() => {

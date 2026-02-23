@@ -1,31 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import { correlateInsights } from './incident-correlator.js';
 import type { Insight } from '../models/monitoring.js';
 import { insertIncident, addInsightToIncident, getActiveIncidentForContainer } from './incident-store.js';
 
-// Mock the stores
+// Kept: DB-backed store mock — incident-store writes to PostgreSQL
 vi.mock('./incident-store.js', () => ({
   insertIncident: vi.fn(() => Promise.resolve()),
   addInsightToIncident: vi.fn(() => Promise.resolve()),
   getActiveIncidentForContainer: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    SMART_GROUPING_ENABLED: false,
-    SMART_GROUPING_SIMILARITY_THRESHOLD: 0.3,
-    INCIDENT_SUMMARY_ENABLED: false,
-  })),
-}));
-
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: vi.fn(() => Promise.resolve(false)),
-}));
-
+// Kept: internal service mock — alert similarity computation
 vi.mock('./alert-similarity.js', () => ({
   findSimilarInsights: vi.fn(() => []),
 }));
 
+// Kept: internal service mock — incident summarizer (tests correlation, not summarization)
 vi.mock('./incident-summarizer.js', () => ({
   generateLlmIncidentSummary: vi.fn(() => Promise.resolve(null)),
 }));
@@ -51,6 +42,19 @@ function makeInsight(overrides: Partial<Insight> = {}): Insight {
     ...overrides,
   };
 }
+
+
+beforeAll(() => {
+    setConfigForTest({
+      SMART_GROUPING_ENABLED: false,
+      SMART_GROUPING_SIMILARITY_THRESHOLD: 0.3,
+      INCIDENT_SUMMARY_ENABLED: false,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('incident-correlator', () => {
   beforeEach(() => {
@@ -124,7 +128,6 @@ describe('incident-correlator', () => {
       ];
 
       const result = await correlateInsights(insights);
-      // No cascade created — same metric type on all containers
       expect(result.incidentsCreated).toBe(0);
       expect(result.insightsUngrouped).toBe(3);
     });
@@ -170,7 +173,6 @@ describe('incident-correlator', () => {
       ];
 
       const result = await correlateInsights(insights);
-      // Two singles on different endpoints — no cascade possible
       expect(result.incidentsCreated).toBe(0);
       expect(result.insightsUngrouped).toBe(2);
     });

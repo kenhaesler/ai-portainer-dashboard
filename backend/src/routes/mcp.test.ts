@@ -6,6 +6,7 @@ import { mcpRoutes } from './mcp.js';
 const mockQuery = vi.fn().mockResolvedValue([]);
 const mockQueryOne = vi.fn().mockResolvedValue(null);
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1, lastInsertRowid: 1 });
+// Kept: uses lastInsertRowid (SQLite-only API); needs migration to PostgreSQL RETURNING
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
@@ -32,15 +33,6 @@ vi.mock('../services/mcp-manager.js', () => ({
   getConnectedServers: () => mockGetConnectedServers(),
   getServerTools: (...args: unknown[]) => mockGetServerTools(...args),
   isConnected: (...args: unknown[]) => mockIsConnected(...args),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
 }));
 
 describe('MCP Routes', () => {

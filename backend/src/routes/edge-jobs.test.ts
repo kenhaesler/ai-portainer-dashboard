@@ -1,61 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import Fastify from 'fastify';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach, afterAll } from 'vitest';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import { edgeJobsRoutes } from './edge-jobs.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEdgeJobs: vi.fn(),
-  getEdgeJob: vi.fn(),
-  createEdgeJob: vi.fn(),
-  deleteEdgeJob: vi.fn(),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 900 },
-}));
-
+// Kept: audit-logger mock — avoids side effects from real audit log writes
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
-import * as portainer from '../services/portainer-client.js';
+import * as portainerClient from '../services/portainer-client.js';
 import { writeAuditLog } from '../services/audit-logger.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-const mockGetEdgeJobs = vi.mocked(portainer.getEdgeJobs);
-const mockGetEdgeJob = vi.mocked(portainer.getEdgeJob);
-const mockCreateEdgeJob = vi.mocked(portainer.createEdgeJob);
-const mockDeleteEdgeJob = vi.mocked(portainer.deleteEdgeJob);
+let mockGetEdgeJobs: any;
+let mockGetEdgeJob: any;
+let mockCreateEdgeJob: any;
+let mockDeleteEdgeJob: any;
 const mockWriteAuditLog = vi.mocked(writeAuditLog);
-
-function buildApp(currentRole: 'viewer' | 'operator' | 'admin' = 'admin') {
-  const app = Fastify();
-  app.setValidatorCompiler(validatorCompiler);
-  app.decorate('authenticate', async () => undefined);
-  app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
-    const rank = { viewer: 0, operator: 1, admin: 2 };
-    const userRole = request.user?.role ?? 'viewer';
-    if (rank[userRole] < rank[minRole]) {
-      reply.code(403).send({ error: 'Insufficient permissions' });
-    }
-  });
-  app.decorateRequest('user', undefined);
-  app.addHook('preHandler', async (request) => {
-    request.user = { sub: 'u1', username: 'test-user', sessionId: 's1', role: currentRole };
-  });
-  app.register(edgeJobsRoutes);
-  return app;
-}
 
 const fakeEdgeJob = (id: number, name: string) => ({
   Id: id,
@@ -67,8 +33,47 @@ const fakeEdgeJob = (id: number, name: string) => ({
 });
 
 describe('edge-jobs routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'test-user', sessionId: 's1', role: currentRole };
+    });
+    await app.register(edgeJobsRoutes);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await waitForInFlight();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await closeTestRedis();
+  });
+
+  beforeEach(async () => {
+    currentRole = 'admin';
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEdgeJobs = vi.spyOn(portainerClient, 'getEdgeJobs');
+    mockGetEdgeJob = vi.spyOn(portainerClient, 'getEdgeJob');
+    mockCreateEdgeJob = vi.spyOn(portainerClient, 'createEdgeJob');
+    mockDeleteEdgeJob = vi.spyOn(portainerClient, 'deleteEdgeJob');
   });
 
   describe('GET /api/edge-jobs', () => {
@@ -78,7 +83,6 @@ describe('edge-jobs routes', () => {
         fakeEdgeJob(2, 'cleanup-job'),
       ] as any);
 
-      const app = buildApp();
       const res = await app.inject({
         method: 'GET',
         url: '/api/edge-jobs',
@@ -95,7 +99,6 @@ describe('edge-jobs routes', () => {
     it('returns a single edge job', async () => {
       mockGetEdgeJob.mockResolvedValue(fakeEdgeJob(1, 'backup-job') as any);
 
-      const app = buildApp();
       const res = await app.inject({
         method: 'GET',
         url: '/api/edge-jobs/1',
@@ -112,7 +115,6 @@ describe('edge-jobs routes', () => {
     it('creates an edge job and audit logs', async () => {
       mockCreateEdgeJob.mockResolvedValue(fakeEdgeJob(3, 'new-job') as any);
 
-      const app = buildApp();
       const res = await app.inject({
         method: 'POST',
         url: '/api/edge-jobs',
@@ -138,7 +140,6 @@ describe('edge-jobs routes', () => {
     });
 
     it('rejects invalid body', async () => {
-      const app = buildApp();
       const res = await app.inject({
         method: 'POST',
         url: '/api/edge-jobs',
@@ -153,31 +154,12 @@ describe('edge-jobs routes', () => {
 
       expect(res.statusCode).toBe(500); // Zod parse error
     });
-
-    it('returns 403 for authenticated non-admin users', async () => {
-      const app = buildApp('viewer');
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/edge-jobs',
-        payload: {
-          name: 'new-job',
-          cronExpression: '*/5 * * * *',
-          recurring: true,
-          endpoints: [1],
-          fileContent: '#!/bin/sh\necho hello',
-        },
-      });
-
-      expect(res.statusCode).toBe(403);
-      expect(mockCreateEdgeJob).not.toHaveBeenCalled();
-    });
   });
 
   describe('DELETE /api/edge-jobs/:id', () => {
     it('deletes an edge job and audit logs', async () => {
       mockDeleteEdgeJob.mockResolvedValue(undefined);
 
-      const app = buildApp();
       const res = await app.inject({
         method: 'DELETE',
         url: '/api/edge-jobs/5',
@@ -193,29 +175,28 @@ describe('edge-jobs routes', () => {
         }),
       );
     });
+  });
 
-    it('returns 403 for authenticated non-admin users', async () => {
-      const app = buildApp('operator');
-      const res = await app.inject({
-        method: 'DELETE',
-        url: '/api/edge-jobs/5',
-      });
-
-      expect(res.statusCode).toBe(403);
-      expect(mockDeleteEdgeJob).not.toHaveBeenCalled();
-    });
+  describe('RBAC', () => {
+    const setRole = (r: 'viewer' | 'operator' | 'admin') => { currentRole = r; };
+    testAdminOnly(
+      () => app, setRole,
+      'POST', '/api/edge-jobs',
+      { name: 'new-job', cronExpression: '*/5 * * * *', recurring: true, endpoints: [1], fileContent: '#!/bin/sh\necho hello' },
+    );
+    testAdminOnly(() => app, setRole, 'DELETE', '/api/edge-jobs/5');
   });
 
   describe('authentication', () => {
     it('requires auth on all routes', async () => {
-      const app = Fastify();
-      app.setValidatorCompiler(validatorCompiler);
+      const authApp = Fastify();
+      authApp.setValidatorCompiler(validatorCompiler);
       // Decorate authenticate to reject
-      app.decorate('authenticate', async (_req: any, reply: any) => {
+      authApp.decorate('authenticate', async (_req: any, reply: any) => {
         reply.code(401).send({ error: 'Unauthorized' });
       });
-      app.decorate('requireRole', () => async () => undefined);
-      app.register(edgeJobsRoutes);
+      authApp.decorate('requireRole', () => async () => undefined);
+      authApp.register(edgeJobsRoutes);
 
       const routes = [
         { method: 'GET' as const, url: '/api/edge-jobs' },
@@ -225,7 +206,7 @@ describe('edge-jobs routes', () => {
       ];
 
       for (const route of routes) {
-        const res = await app.inject(route);
+        const res = await authApp.inject(route);
         expect(res.statusCode).toBe(401);
       }
     });

@@ -3,43 +3,34 @@ import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { forecastRoutes, buildForecastPrompt, clearNarrativeCache } from './forecasts.js';
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({}),
-}));
-
 const mockGetCapacityForecasts = vi.fn();
 const mockGenerateForecast = vi.fn();
 const mockLookupContainerName = vi.fn();
 
+// Kept: capacity-forecaster mock — no TimescaleDB in CI
 vi.mock('../services/capacity-forecaster.js', () => ({
   getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
   lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
 }));
 
-const mockChatStream = vi.fn();
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
+import * as llmClient from '../services/llm-client.js';
+let mockChatStream: any;
+
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a concise infrastructure analyst.'),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
 }));
 
 describe('Forecast Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
     clearNarrativeCache();
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);

@@ -134,10 +134,10 @@ export default function MetricsDashboardPage() {
   const llmAvailable = (llmModels?.models?.length ?? 0) > 0;
 
   // Fetch endpoints
-  const { data: endpoints, isLoading: endpointsLoading } = useEndpoints();
+  const { data: endpoints, isLoading: endpointsLoading, isPending: endpointsPending } = useEndpoints();
 
   // Fetch containers
-  const { data: allContainers, isLoading: containersLoading, refetch, isFetching } = useContainers();
+  const { data: allContainers, isLoading: containersLoading, isPending: containersPending, refetch, isFetching } = useContainers();
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint ?? undefined);
   const { data: stacks } = useStacks();
 
@@ -359,7 +359,9 @@ export default function MetricsDashboardPage() {
     }
   };
 
-  const isLoading = endpointsLoading || containersLoading;
+  // Treat both isLoading and isPending-without-data as "loading" to avoid
+  // rendering a blank page during SPA navigation before data arrives.
+  const isLoading = endpointsLoading || containersLoading || (endpointsPending && !endpoints) || (containersPending && !allContainers);
   const hasSelection = selectedEndpoint && selectedContainer;
   const metricsLoading = cpuLoading || memoryLoading || memoryBytesLoading;
   const allMetricsEmpty = !metricsLoading && hasSelection
@@ -1053,10 +1055,14 @@ function ForecastCard({
             />
             <Tooltip
               labelFormatter={(v) => formatDate(v as string)}
-              formatter={(value: number, name: string) => [
-                `${value}${unit}`,
-                name === 'projected' ? `${label} (projected)` : label,
-              ]}
+              formatter={(value, name) => {
+                const numericValue = typeof value === 'number' ? value : Number(value ?? 0);
+                const seriesName = typeof name === 'string' ? name : String(name ?? '');
+                return [
+                  `${numericValue}${unit}`,
+                  seriesName === 'projected' ? `${label} (projected)` : label,
+                ];
+              }}
             />
             <ReferenceLine y={90} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '90%', position: 'right', fontSize: 10, fill: '#ef4444' }} />
             {projectionStartIdx > 0 && (

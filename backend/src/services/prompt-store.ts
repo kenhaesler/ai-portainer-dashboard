@@ -69,11 +69,17 @@ Available pages and their routes:
 
 Response format — choose ONE:
 
-For navigation actions:
+For navigation actions (user wants to go to a page):
 {"action":"navigate","page":"/route","description":"Brief explanation of where to look"}
 
-For inline answers (simple factual questions):
+For filter actions (user wants to find/filter specific containers by name, image, state, or other criteria):
+{"action":"filter","text":"Found N matching containers","description":"Filtered by criteria","filters":{"state":"running","image":"nginx"},"containerNames":["container-name-1","container-name-2"]}
+The "filters" object describes what criteria were used. The "containerNames" array MUST contain the exact container names from the infrastructure context that match the query. Only include containers that actually exist in the infrastructure context.
+
+For inline answers (simple factual questions that do not involve finding containers):
 {"action":"answer","text":"The answer text","description":"Based on current infrastructure data"}
+
+IMPORTANT: Use "filter" when the user asks to find, show, list, or filter containers (e.g. "show me running nginx containers", "find all stopped containers", "which containers use postgres image"). Use "answer" for general questions (e.g. "how many containers are running?", "what is the total count?"). Use "navigate" when the user wants to go to a specific page.
 
 INFRASTRUCTURE CONTEXT:`,
 

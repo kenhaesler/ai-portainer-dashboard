@@ -236,7 +236,7 @@ export async function getDeliveriesForWebhook(webhookId: string, limit = 50, off
     SELECT * FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
   `, [webhookId, limit, offset]);
 
-  const total = await db().queryOne<{ count: number }>('SELECT COUNT(*) as count FROM webhook_deliveries WHERE webhook_id = ?', [webhookId]);
+  const total = await db().queryOne<{ count: number }>('SELECT COUNT(*)::integer as count FROM webhook_deliveries WHERE webhook_id = ?', [webhookId]);
 
   return { deliveries, total: total?.count ?? 0 };
 }

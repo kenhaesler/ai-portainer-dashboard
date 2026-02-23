@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
 
 // ── Mocks ──────────────────────────────────────────────────────────
@@ -14,6 +15,7 @@ const mockDuplicateProfile = vi.fn();
 const mockGetActiveProfileId = vi.fn();
 const mockSwitchProfile = vi.fn();
 
+// Kept: prompt-profile-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-profile-store.js', () => ({
   getAllProfiles: (...args: unknown[]) => mockGetAllProfiles(...args),
   getProfileById: (...args: unknown[]) => mockGetProfileById(...args),
@@ -25,6 +27,7 @@ vi.mock('../services/prompt-profile-store.js', () => ({
   switchProfile: (...args: unknown[]) => mockSwitchProfile(...args),
 }));
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   PROMPT_FEATURES: [
     { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
@@ -34,6 +37,7 @@ vi.mock('../services/prompt-store.js', () => ({
   estimateTokens: (text: string) => Math.ceil(text.length / 4),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
@@ -547,31 +551,36 @@ describe('prompt-profiles routes', () => {
 });
 
 describe('prompt-profiles access control', () => {
-  it('blocks non-admin users', async () => {
-    const app = Fastify({ logger: false });
-    app.setValidatorCompiler(validatorCompiler);
-    app.decorate('authenticate', async () => undefined);
-    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+  let rbacApp: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    rbacApp = Fastify({ logger: false });
+    rbacApp.setValidatorCompiler(validatorCompiler);
+    rbacApp.decorate('authenticate', async () => undefined);
+    rbacApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
       const rank = { viewer: 0, operator: 1, admin: 2 };
       const userRole = request.user?.role ?? 'viewer';
       if (rank[userRole as keyof typeof rank] < rank[minRole]) {
         reply.code(403).send({ error: 'Insufficient permissions' });
       }
     });
-    app.decorateRequest('user', undefined);
-    app.addHook('preHandler', async (request) => {
-      request.user = { sub: 'u2', username: 'viewer', sessionId: 's2', role: 'viewer' as const };
+    rbacApp.decorateRequest('user', undefined);
+    rbacApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u2', username: 'viewer', sessionId: 's2', role: currentRole };
     });
-    await app.register(promptProfileRoutes);
-    await app.ready();
-
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/prompt-profiles',
-      headers: { authorization: 'Bearer test' },
-    });
-
-    expect(response.statusCode).toBe(403);
-    await app.close();
+    await rbacApp.register(promptProfileRoutes);
+    await rbacApp.ready();
   });
+
+  afterAll(async () => {
+    await rbacApp.close();
+  });
+
+  beforeEach(() => {
+    currentRole = 'admin';
+  });
+
+  testAdminOnly(() => rbacApp, (r) => { currentRole = r; }, 'GET', '/api/prompt-profiles');
 });

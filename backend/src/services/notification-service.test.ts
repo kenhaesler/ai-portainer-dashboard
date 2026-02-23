@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import {
   buildTeamsCard,
   buildEmailHtml,
@@ -17,40 +18,11 @@ import type { Insight } from '../models/monitoring.js';
 const COOLDOWN_MS = 15 * 60 * 1000;
 
 // Mock dependencies
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
-const mockGetConfig = vi.fn().mockReturnValue({
-  TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
-  TEAMS_NOTIFICATIONS_ENABLED: false,
-  SMTP_HOST: 'smtp.example.com',
-  SMTP_PORT: 587,
-  SMTP_SECURE: true,
-  SMTP_USER: 'user@example.com',
-  SMTP_PASSWORD: 'password',
-  SMTP_FROM: 'AI Dashboard <noreply@example.com>',
-  EMAIL_NOTIFICATIONS_ENABLED: false,
-  EMAIL_RECIPIENTS: 'admin@example.com',
-  DISCORD_WEBHOOK_URL: '',
-  DISCORD_NOTIFICATIONS_ENABLED: false,
-  TELEGRAM_BOT_TOKEN: '',
-  TELEGRAM_CHAT_ID: '',
-  TELEGRAM_NOTIFICATIONS_ENABLED: false,
-});
-
-vi.mock('../config/index.js', () => ({
-  getConfig: (...args: unknown[]) => mockGetConfig(...args),
-}));
 
 const mockQueryOne = vi.fn();
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 const mockQuery = vi.fn().mockResolvedValue([]);
+// Kept: complex external deps (fetch, nodemailer); DB mock for notification_log INSERT
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
@@ -79,7 +51,7 @@ describe('notification-service', () => {
     _resetCooldownMap();
     // Default: settings not found in DB -> fall back to env config
     mockQueryOne.mockResolvedValue(null);
-    mockGetConfig.mockReturnValue({
+    setConfigForTest({
       TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
       TEAMS_NOTIFICATIONS_ENABLED: false,
       SMTP_HOST: 'smtp.example.com',
@@ -96,6 +68,10 @@ describe('notification-service', () => {
       TELEGRAM_CHAT_ID: '',
       TELEGRAM_NOTIFICATIONS_ENABLED: false,
     });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('buildTeamsCard', () => {
@@ -303,7 +279,7 @@ describe('notification-service', () => {
     });
 
     it('should throw if no SMTP host configured', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         SMTP_HOST: undefined,
         SMTP_PORT: 587,
         SMTP_SECURE: true,
@@ -324,7 +300,7 @@ describe('notification-service', () => {
     });
 
     it('should throw if no recipients configured', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         SMTP_HOST: 'smtp.example.com',
         SMTP_PORT: 587,
         SMTP_SECURE: true,
@@ -404,7 +380,7 @@ describe('notification-service', () => {
     });
 
     it('should send Teams notification when enabled for security insight', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
@@ -441,7 +417,7 @@ describe('notification-service', () => {
     });
 
     it('should rate-limit duplicate notifications for the same container', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
@@ -529,7 +505,7 @@ describe('notification-service', () => {
 
   describe('SSRF prevention - webhook URL validation', () => {
     it('should reject HTTP (non-HTTPS) webhook URLs', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: 'http://169.254.169.254/latest/meta-data/',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
@@ -548,7 +524,7 @@ describe('notification-service', () => {
     });
 
     it('should reject invalid webhook URLs', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: 'not-a-url',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
@@ -567,7 +543,7 @@ describe('notification-service', () => {
     });
 
     it('should reject non-office webhook domains', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: 'https://example.com/webhook',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
@@ -588,7 +564,7 @@ describe('notification-service', () => {
 
   describe('SSRF prevention - SMTP host validation', () => {
     it('should reject private SMTP hosts from environment', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: undefined,
         TEAMS_NOTIFICATIONS_ENABLED: false,
         SMTP_HOST: '127.0.0.1',
@@ -614,7 +590,7 @@ describe('notification-service', () => {
 
   describe('rate limiting - failure handling', () => {
     it('should NOT record cooldown when all notifications fail', async () => {
-      mockGetConfig.mockReturnValue({
+      setConfigForTest({
         TEAMS_WEBHOOK_URL: 'https://contoso.webhook.office.com/webhookb2/incoming',
         TEAMS_NOTIFICATIONS_ENABLED: true,
         EMAIL_NOTIFICATIONS_ENABLED: false,
@@ -688,9 +664,7 @@ describe('notification-service', () => {
     });
 
     it('should return success for discord test', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
         DISCORD_NOTIFICATIONS_ENABLED: true,
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
@@ -702,9 +676,7 @@ describe('notification-service', () => {
     });
 
     it('should return success for telegram test', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: '123456789:ABCDefGH-IJKlmnoPQRSTUVwxyz012345678',
+      setConfigForTest({TELEGRAM_BOT_TOKEN: '123456789:ABCDefGH-IJKlmnoPQRSTUVwxyz012345678',
         TELEGRAM_CHAT_ID: '-1001234567890',
         TELEGRAM_NOTIFICATIONS_ENABLED: true,
       });
@@ -719,9 +691,7 @@ describe('notification-service', () => {
 
   describe('sendDiscordNotification', () => {
     it('should POST embed to Discord webhook URL', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
 
@@ -758,9 +728,7 @@ describe('notification-service', () => {
     });
 
     it('should use warning color for warning severity', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
 
@@ -776,9 +744,7 @@ describe('notification-service', () => {
     });
 
     it('should use info color for info severity', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
 
@@ -794,9 +760,7 @@ describe('notification-service', () => {
     });
 
     it('should use green color for unknown severity', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
 
@@ -812,9 +776,7 @@ describe('notification-service', () => {
     });
 
     it('should throw on webhook failure', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
       });
       mockFetch.mockResolvedValueOnce({
         ok: false,
@@ -833,9 +795,7 @@ describe('notification-service', () => {
     });
 
     it('should throw when Discord webhook URL is not configured', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: '',
+      setConfigForTest({DISCORD_WEBHOOK_URL: '',
       });
 
       await expect(
@@ -850,9 +810,7 @@ describe('notification-service', () => {
     });
 
     it('should log notification on success', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
 
@@ -869,9 +827,7 @@ describe('notification-service', () => {
 
   describe('SSRF prevention - Discord webhook URL validation', () => {
     it('should reject non-discord.com URLs', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://evil.com/api/webhooks/123/abc',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://evil.com/api/webhooks/123/abc',
       });
 
       await expect(
@@ -886,9 +842,7 @@ describe('notification-service', () => {
     });
 
     it('should reject HTTP (non-HTTPS) Discord URLs', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'http://discord.com/api/webhooks/123/abc',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'http://discord.com/api/webhooks/123/abc',
       });
 
       await expect(
@@ -903,9 +857,7 @@ describe('notification-service', () => {
     });
 
     it('should reject Discord URLs without /api/webhooks/ path', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discord.com/channels/123/456',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discord.com/channels/123/456',
       });
 
       await expect(
@@ -920,9 +872,7 @@ describe('notification-service', () => {
     });
 
     it('should accept discordapp.com webhook URLs', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://discordapp.com/api/webhooks/123/abc',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://discordapp.com/api/webhooks/123/abc',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') });
 
@@ -937,9 +887,7 @@ describe('notification-service', () => {
     });
 
     it('should reject SSRF attempts via private IPs', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        DISCORD_WEBHOOK_URL: 'https://169.254.169.254/api/webhooks/123/abc',
+      setConfigForTest({DISCORD_WEBHOOK_URL: 'https://169.254.169.254/api/webhooks/123/abc',
       });
 
       await expect(
@@ -958,9 +906,7 @@ describe('notification-service', () => {
     const validToken = '123456789:ABCDefGH-IJKlmnoPQRSTUVwxyz012345678';
 
     it('should POST HTML message to Telegram API', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: validToken,
+      setConfigForTest({TELEGRAM_BOT_TOKEN: validToken,
         TELEGRAM_CHAT_ID: '-1001234567890',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });
@@ -993,9 +939,7 @@ describe('notification-service', () => {
     });
 
     it('should escape HTML in message content', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: validToken,
+      setConfigForTest({TELEGRAM_BOT_TOKEN: validToken,
         TELEGRAM_CHAT_ID: '-1001234567890',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });
@@ -1014,9 +958,7 @@ describe('notification-service', () => {
     });
 
     it('should throw when bot token is not configured', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: '',
+      setConfigForTest({TELEGRAM_BOT_TOKEN: '',
         TELEGRAM_CHAT_ID: '-1001234567890',
       });
 
@@ -1032,9 +974,7 @@ describe('notification-service', () => {
     });
 
     it('should throw when chat ID is not configured', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: validToken,
+      setConfigForTest({TELEGRAM_BOT_TOKEN: validToken,
         TELEGRAM_CHAT_ID: '',
       });
 
@@ -1050,9 +990,7 @@ describe('notification-service', () => {
     });
 
     it('should throw on invalid bot token format', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: 'invalid-token-format',
+      setConfigForTest({TELEGRAM_BOT_TOKEN: 'invalid-token-format',
         TELEGRAM_CHAT_ID: '-1001234567890',
       });
 
@@ -1068,9 +1006,7 @@ describe('notification-service', () => {
     });
 
     it('should throw on API failure', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: validToken,
+      setConfigForTest({TELEGRAM_BOT_TOKEN: validToken,
         TELEGRAM_CHAT_ID: '-1001234567890',
       });
       mockFetch.mockResolvedValueOnce({
@@ -1090,9 +1026,7 @@ describe('notification-service', () => {
     });
 
     it('should log notification on success', async () => {
-      mockGetConfig.mockReturnValue({
-        ...mockGetConfig(),
-        TELEGRAM_BOT_TOKEN: validToken,
+      setConfigForTest({TELEGRAM_BOT_TOKEN: validToken,
         TELEGRAM_CHAT_ID: '-1001234567890',
       });
       mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('{}') });

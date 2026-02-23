@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   demo-app:
     image: hashicorp/http-echo:1.0.0

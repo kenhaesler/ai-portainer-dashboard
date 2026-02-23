@@ -1,23 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    ISOLATION_FOREST_ENABLED: true,
-    ISOLATION_FOREST_TREES: 50,
-    ISOLATION_FOREST_SAMPLE_SIZE: 64,
-    ISOLATION_FOREST_CONTAMINATION: 0.1,
-    ISOLATION_FOREST_RETRAIN_HOURS: 6,
-  }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // Generate mock metric data
 function generateMetrics(count: number, baseValue: number) {
@@ -33,11 +15,27 @@ function generateMetrics(count: number, baseValue: number) {
 }
 
 const mockGetMetrics = vi.fn();
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('./metrics-store.js', () => ({
   getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
 }));
 
 import { detectAnomalyIsolationForest, getOrTrainModel, clearModelCache } from './isolation-forest-detector.js';
+
+
+beforeAll(() => {
+    setConfigForTest({
+      ISOLATION_FOREST_ENABLED: true,
+      ISOLATION_FOREST_TREES: 50,
+      ISOLATION_FOREST_SAMPLE_SIZE: 64,
+      ISOLATION_FOREST_CONTAMINATION: 0.1,
+      ISOLATION_FOREST_RETRAIN_HOURS: 6,
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('isolation-forest-detector', () => {
   beforeEach(() => {

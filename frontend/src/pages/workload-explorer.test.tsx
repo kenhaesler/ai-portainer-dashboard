@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 const mockSetSearchParams = vi.fn();
@@ -106,10 +106,37 @@ vi.mock('@/components/shared/themed-select', () => ({
   ),
 }));
 
+let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
+
 vi.mock('@/components/shared/data-table', () => ({
-  DataTable: ({ data }: { data: Array<{ name: string }> }) => (
-    <div data-testid="workloads-table">{data.map((container) => container.name).join(',')}</div>
-  ),
+  DataTable: ({
+    data,
+    enableRowSelection,
+    maxSelection,
+    onSelectionChange,
+    selectedRowIds,
+    onRowClick,
+  }: {
+    data: Array<{ name: string }>;
+    enableRowSelection?: boolean;
+    maxSelection?: number;
+    onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
+    selectedRowIds?: Record<string, boolean>;
+    onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
+  }) => {
+    mockOnSelectionChange = onSelectionChange;
+    return (
+      <div
+        data-testid="workloads-table"
+        data-enable-row-selection={enableRowSelection ? 'true' : undefined}
+        data-max-selection={maxSelection}
+        data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
+        data-has-row-click={onRowClick ? 'true' : undefined}
+      >
+        {data.map((container) => container.name).join(',')}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/components/shared/status-badge', () => ({
@@ -132,12 +159,67 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('@/components/shared/selection-action-bar', () => ({
+  SelectionActionBar: ({
+    selectedCount,
+    visible,
+    onClear,
+    children,
+  }: {
+    selectedCount: number;
+    visible: boolean;
+    onClear: () => void;
+    children: ReactNode;
+  }) =>
+    visible ? (
+      <div data-testid="selection-action-bar" data-count={selectedCount}>
+        {children}
+        <button data-testid="clear-selection" onClick={onClear}>Clear</button>
+      </div>
+    ) : null,
+}));
+
+vi.mock('@/lib/motion-tokens', () => ({
+  transition: { fast: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
+}));
+
+vi.mock('framer-motion', () => ({
+  AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  motion: {
+    span: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => <span {...Object.fromEntries(Object.entries(props).filter(([k]) => !['initial', 'animate', 'exit', 'transition', 'layout'].includes(k)))}>{children}</span>,
+  },
+  useReducedMotion: () => false,
+}));
+
+let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
+
+vi.mock('@/components/shared/workload-smart-search', () => ({
+  WorkloadSmartSearch: ({ onFiltered, totalCount }: { onFiltered: (c: unknown[]) => void; totalCount: number }) => {
+    mockOnFiltered = onFiltered;
+    return <div data-testid="workload-smart-search" data-total={totalCount} />;
+  },
+}));
+
+let mockOnStateFilterChange: ((state: string | undefined) => void) | undefined;
+
+vi.mock('@/components/workload/workload-status-summary', () => ({
+  WorkloadStatusSummary: ({ containers, activeStateFilter, onStateFilterChange }: { containers: unknown[]; activeStateFilter: string | undefined; onStateFilterChange: (s: string | undefined) => void }) => {
+    mockOnStateFilterChange = onStateFilterChange;
+    return <div data-testid="workload-status-summary" data-count={containers.length} data-active={activeStateFilter ?? ''} />;
+  },
+}));
+
 import WorkloadExplorerPage from './workload-explorer';
 
 describe('WorkloadExplorerPage', () => {
   beforeEach(() => {
     mockQueryString = 'endpoint=1&stack=workers';
+    mockSetSearchParams.mockReset();
     mockExportToCsv.mockReset();
+    mockNavigate.mockReset();
+    mockOnFiltered = undefined;
+    mockOnSelectionChange = undefined;
+    mockOnStateFilterChange = undefined;
   });
 
   it('renders stack and group dropdowns with options', () => {
@@ -151,11 +233,11 @@ describe('WorkloadExplorerPage', () => {
     expect(groupSelect).toBeInTheDocument();
     expect(groupSelect).toHaveAttribute('data-value', '__all__');
     expect(screen.getByText('All stacks')).toBeInTheDocument();
-    expect(screen.getByText('workers')).toBeInTheDocument();
+    expect(screen.getAllByText('workers').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('billing')).toBeInTheDocument();
     expect(screen.getByText('All groups')).toBeInTheDocument();
-    expect(screen.getByText('System')).toBeInTheDocument();
-    expect(screen.getByText('Workload')).toBeInTheDocument();
+    expect(screen.getAllByText('System').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Workload').length).toBeGreaterThanOrEqual(1);
   });
 
   it('filters table rows using selected stack from URL', () => {
@@ -164,6 +246,142 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
     expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
     expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('beyla');
+  });
+
+  it('renders WorkloadSmartSearch with totalCount', () => {
+    mockQueryString = 'endpoint=1&stack=workers';
+    render(<WorkloadExplorerPage />);
+
+    const search = screen.getByTestId('workload-smart-search');
+    expect(search).toBeInTheDocument();
+    // workers stack filters to 1 container
+    expect(search).toHaveAttribute('data-total', '1');
+  });
+
+  it('filters table rows via WorkloadSmartSearch onFiltered', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    // Initially all 3 containers shown
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('billing-api-1');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('beyla');
+
+    // Simulate WorkloadSmartSearch calling onFiltered with a subset
+    act(() => {
+      mockOnFiltered?.([{ id: 'c-workers', name: 'workers-api-1' }]);
+    });
+
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
+  });
+
+  it('includes stack field in CSV export rows', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    const [rows] = mockExportToCsv.mock.calls[0] as [Array<Record<string, unknown>>];
+    const workersRow = rows.find((r) => r.name === 'workers-api-1');
+    const beylaRow = rows.find((r) => r.name === 'beyla');
+    expect(workersRow?.stack).toBe('workers');
+    expect(beylaRow?.stack).toBe('No Stack');
+  });
+
+  it('renders active filter chips when filters are active', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.getByText('Stack:')).toBeInTheDocument();
+    expect(screen.getByText('Group:')).toBeInTheDocument();
+    expect(screen.getByText('Clear all')).toBeInTheDocument();
+  });
+
+  it('does not render filter chips when no filters are active', () => {
+    mockQueryString = '';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.queryByText('Endpoint:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('does not show Clear all with only one active filter', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument();
+  });
+
+  it('removes specific filter when chip dismiss button is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    // Click the dismiss button for the Stack chip
+    const dismissStackButton = screen.getByRole('button', { name: 'Remove Stack filter' });
+    fireEvent.click(dismissStackButton);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({ endpoint: '1', group: 'workload' });
+  });
+
+  it('clears all filters when Clear all is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(screen.getByText('Clear all'));
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({});
+  });
+
+  it('renders WorkloadStatusSummary with pre-state container count', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+
+    const summary = screen.getByTestId('workload-status-summary');
+    expect(summary).toBeInTheDocument();
+    // All 3 containers (no stack/group filter, no state filter)
+    expect(summary).toHaveAttribute('data-count', '3');
+    expect(summary).toHaveAttribute('data-active', '');
+  });
+
+  it('renders WorkloadStatusSummary with active state from URL', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+
+    const summary = screen.getByTestId('workload-status-summary');
+    expect(summary).toHaveAttribute('data-active', 'running');
+  });
+
+  it('renders state filter dropdown', () => {
+    mockQueryString = 'endpoint=1';
+    render(<WorkloadExplorerPage />);
+    const stateSelect = screen.getByTestId('state-select');
+    expect(stateSelect).toBeInTheDocument();
+    expect(stateSelect).toHaveAttribute('data-value', '__all__');
+  });
+
+  it('filters by state when state param is set', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+    // All mock containers are running, so all should show
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('beyla');
+    expect(screen.getByTestId('workloads-table')).toHaveTextContent('billing-api-1');
+  });
+
+  it('filters out containers when state does not match', () => {
+    mockQueryString = 'endpoint=1&state=stopped';
+    render(<WorkloadExplorerPage />);
+    // No mock containers are stopped, table should be empty
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('workers-api-1');
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('beyla');
+    expect(screen.getByTestId('workloads-table')).not.toHaveTextContent('billing-api-1');
   });
 
   it('exports visible rows to CSV', () => {
@@ -178,5 +396,73 @@ describe('WorkloadExplorerPage', () => {
     expect((rows as Array<Record<string, unknown>>).length).toBe(3);
     expect((rows as Array<Record<string, unknown>>).some((row) => row.group === 'System')).toBe(true);
     expect(filename).toMatch(/^workload-explorer-endpoint-1-all-stacks-all-groups-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('passes enableRowSelection and maxSelection to DataTable', () => {
+    render(<WorkloadExplorerPage />);
+    const table = screen.getByTestId('workloads-table');
+    expect(table).toHaveAttribute('data-enable-row-selection', 'true');
+    expect(table).toHaveAttribute('data-max-selection', '4');
+  });
+
+  it('passes row click navigation handler to DataTable', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-has-row-click', 'true');
+  });
+
+  it('does not show selection action bar when fewer than 2 containers selected', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.queryByTestId('selection-action-bar')).not.toBeInTheDocument();
+  });
+
+  it('shows selection action bar when 2+ containers are selected', () => {
+    render(<WorkloadExplorerPage />);
+
+    act(() => {
+      mockOnSelectionChange?.([
+        { id: 'c-workers', name: 'workers-api-1', endpointId: 1 },
+        { id: 'c-billing', name: 'billing-api-1', endpointId: 1 },
+      ]);
+    });
+
+    expect(screen.getByTestId('selection-action-bar')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-button')).toBeInTheDocument();
+  });
+
+  it('navigates to comparison page when compare button is clicked', () => {
+    render(<WorkloadExplorerPage />);
+
+    act(() => {
+      mockOnSelectionChange?.([
+        { id: 'c-workers', name: 'workers-api-1', endpointId: 1 },
+        { id: 'c-billing', name: 'billing-api-1', endpointId: 1 },
+      ]);
+    });
+
+    fireEvent.click(screen.getByTestId('compare-button'));
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      '/comparison?containers=1:c-workers,1:c-billing'
+    );
+  });
+
+  it('clears selection when clear button is clicked', () => {
+    render(<WorkloadExplorerPage />);
+
+    act(() => {
+      mockOnSelectionChange?.([
+        { id: 'c-workers', name: 'workers-api-1', endpointId: 1 },
+        { id: 'c-billing', name: 'billing-api-1', endpointId: 1 },
+      ]);
+    });
+
+    expect(screen.getByTestId('selection-action-bar')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('clear-selection'));
+
+    expect(screen.queryByTestId('selection-action-bar')).not.toBeInTheDocument();
+    // Verify DataTable receives empty selectedRowIds to clear internal checkboxes
+    const table = screen.getByTestId('workloads-table');
+    expect(table).toHaveAttribute('data-selected-row-ids', '{}');
   });
 });

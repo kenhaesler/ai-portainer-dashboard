@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,24 +14,17 @@ const mockDeleteBackup = vi.fn();
 
 let cwdValue = '';
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
 
+// Kept: backup-service mock — external service boundary
 vi.mock('../services/backup-service.js', () => ({
   createBackup: (...args: unknown[]) => mockCreateBackup(...args),
   listBackups: (...args: unknown[]) => mockListBackups(...args),
   restoreBackup: (...args: unknown[]) => mockRestoreBackup(...args),
   deleteBackup: (...args: unknown[]) => mockDeleteBackup(...args),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
 }));
 
 import { backupRoutes } from './backup.js';
@@ -166,37 +160,13 @@ describe('backup routes', () => {
     }));
   });
 
-  it('rejects create for non-admin users', async () => {
-    currentRole = 'viewer';
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/backup',
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects list for non-admin users', async () => {
-    currentRole = 'viewer';
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/backup',
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects download for non-admin users', async () => {
-    currentRole = 'viewer';
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/backup/backup-1.dump',
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
+  describe('RBAC', () => {
+    const setRole = (r: 'viewer' | 'operator' | 'admin') => { currentRole = r; };
+    testAdminOnly(() => app, setRole, 'POST', '/api/backup');
+    testAdminOnly(() => app, setRole, 'GET', '/api/backup');
+    testAdminOnly(() => app, setRole, 'GET', '/api/backup/backup-1.dump');
+    testAdminOnly(() => app, setRole, 'POST', '/api/backup/backup-1.dump/restore');
+    testAdminOnly(() => app, setRole, 'DELETE', '/api/backup/backup-1.dump');
   });
 
   it('rejects traversal attempts on download endpoint', async () => {
@@ -226,25 +196,4 @@ describe('backup routes', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('rejects restore for non-admin users', async () => {
-    currentRole = 'viewer';
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/backup/backup-1.dump/restore',
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects delete for non-admin users', async () => {
-    currentRole = 'viewer';
-    const response = await app.inject({
-      method: 'DELETE',
-      url: '/api/backup/backup-1.dump',
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Insufficient permissions' });
-  });
 });

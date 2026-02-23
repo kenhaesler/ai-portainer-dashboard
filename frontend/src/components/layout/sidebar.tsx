@@ -3,8 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Boxes,
-  Ship,
-  Layers,
+  Server,
   HeartPulse,
   GitCompareArrows,
   PackageOpen,
@@ -59,8 +58,7 @@ const navigation: NavGroup[] = [
     items: [
       { label: 'Home', to: '/', icon: LayoutDashboard },
       { label: 'Workload Explorer', to: '/workloads', icon: Boxes },
-      { label: 'Fleet Overview', to: '/fleet', icon: Ship },
-      { label: 'Stack Overview', to: '/stacks', icon: Layers },
+      { label: 'Infrastructure', to: '/infrastructure', icon: Server },
     ],
   },
   {
@@ -183,14 +181,25 @@ export function Sidebar() {
   const hasAnimatedBg = dashboardBackground !== 'none';
   const { prefetchContainers, prefetchEndpoints, prefetchDashboard, prefetchImages, prefetchStacks } = usePrefetch();
 
+  // Wrap prefetch in requestIdleCallback to avoid blocking hover interactions
+  const idlePrefetch = (fn: (() => void) | undefined) => {
+    if (!fn) return undefined;
+    return () => {
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => fn());
+      } else {
+        setTimeout(fn, 0);
+      }
+    };
+  };
+
   const prefetchMap: Record<string, (() => void) | undefined> = {
-    '/': prefetchDashboard,
-    '/workloads': prefetchContainers,
-    '/fleet': prefetchEndpoints,
-    '/stacks': prefetchStacks,
-    '/health': prefetchContainers,
-    '/comparison': prefetchContainers,
-    '/images': prefetchImages,
+    '/': idlePrefetch(prefetchDashboard),
+    '/workloads': idlePrefetch(prefetchContainers),
+    '/infrastructure': idlePrefetch(() => { prefetchEndpoints(); prefetchStacks(); }),
+    '/health': idlePrefetch(prefetchContainers),
+    '/comparison': idlePrefetch(prefetchContainers),
+    '/images': idlePrefetch(prefetchImages),
   };
 
   // Compute effective nav — hide items that are feature-gated

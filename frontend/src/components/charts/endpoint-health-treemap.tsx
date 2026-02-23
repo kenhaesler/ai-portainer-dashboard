@@ -14,6 +14,7 @@ export interface EndpointHealthTreemapProps {
 }
 
 interface TreemapEntry {
+  [key: string]: unknown;
   name: string;
   size: number;
   id: number;
@@ -170,7 +171,7 @@ export const EndpointHealthTreemap = memo(function EndpointHealthTreemap({
   const handleClick = useCallback(
     (entry: any) => {
       if (entry?.id) {
-        navigate(`/fleet`);
+        navigate(`/infrastructure`);
       }
     },
     [navigate],

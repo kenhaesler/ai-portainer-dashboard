@@ -1,23 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('./trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
+// Kept: harbor-client mock — tests control harbor API responses
 vi.mock('./harbor-client.js', () => ({
   isHarborConfiguredAsync: vi.fn(() => Promise.resolve(true)),
   listVulnerabilities: vi.fn(),
 }));
 
+// Kept: harbor-vulnerability-store mock — tests control DB store
 vi.mock('./harbor-vulnerability-store.js', () => ({
   createSyncStatus: vi.fn(() => Promise.resolve(1)),
   completeSyncStatus: vi.fn(() => Promise.resolve()),
@@ -25,29 +18,7 @@ vi.mock('./harbor-vulnerability-store.js', () => ({
   replaceAllVulnerabilities: vi.fn((vulns: unknown[]) => Promise.resolve(vulns.length)),
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: vi.fn(() => Promise.resolve([
-    { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost:2375', Status: 1, Snapshots: [] },
-  ])),
-  getContainers: vi.fn(() => Promise.resolve([
-    {
-      Id: 'abc123def456',
-      Names: ['/my-nginx'],
-      Image: 'harbor.example.com/myproject/nginx:latest',
-      State: 'running',
-      Status: 'Up 2 hours',
-      Created: 0,
-      Labels: {},
-    },
-  ])),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
-  getCacheKey: (...args: string[]) => args.join(':'),
-  TTL: { ENDPOINTS: 60, CONTAINERS: 30 },
-}));
-
+// Kept: image-staleness mock — tests control image parsing
 vi.mock('./image-staleness.js', () => ({
   parseImageRef: vi.fn((ref: string) => {
     const parts = ref.split('/');
@@ -76,10 +47,52 @@ vi.mock('./image-staleness.js', () => ({
 import { runFullSync } from './harbor-sync.js';
 import * as harborClient from './harbor-client.js';
 import * as store from './harbor-vulnerability-store.js';
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('harbor-sync', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    // Re-set vi.mock defaults cleared by restoreAllMocks
+    vi.mocked(harborClient.isHarborConfiguredAsync).mockResolvedValue(true);
+    vi.mocked(store.createSyncStatus).mockResolvedValue(1 as any);
+    vi.mocked(store.completeSyncStatus).mockResolvedValue(undefined as any);
+    vi.mocked(store.failSyncStatus).mockResolvedValue(undefined as any);
+    vi.mocked(store.replaceAllVulnerabilities).mockImplementation(
+      async (vulns: any) => vulns.length,
+    );
+    // Bypass cache — delegates to fetcher
+    vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+      { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost:2375', Status: 1, Snapshots: [] },
+    ] as any);
+    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
+      {
+        Id: 'abc123def456',
+        Names: ['/my-nginx'],
+        Image: 'harbor.example.com/myproject/nginx:latest',
+        State: 'running',
+        Status: 'Up 2 hours',
+        Created: 0,
+        Labels: {},
+      },
+    ] as any);
   });
 
   it('syncs vulnerabilities and marks in-use correctly', async () => {

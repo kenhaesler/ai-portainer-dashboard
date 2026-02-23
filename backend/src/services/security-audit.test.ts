@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import {
   buildSecurityAuditSummary,
   getSecurityAudit,
@@ -7,48 +7,49 @@ import {
   resolveAuditSeverity,
   setSecurityAuditIgnoreList,
 } from './security-audit.js';
+import { CircuitBreakerOpenError } from './circuit-breaker.js';
 
-const mockGetEndpoints = vi.fn();
-const mockGetContainers = vi.fn();
-const mockGetContainerHostConfig = vi.fn();
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
-const mockCachedFetch = vi.fn();
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
-  }),
-}));
-
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-  getContainerHostConfig: (...args: unknown[]) => mockGetContainerHostConfig(...args),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, CONTAINER_INSPECT: 300 },
-}));
-
+// Kept: settings-store mock — tests control settings responses
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
 }));
 
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+let mockGetContainerHostConfig: any;
+let mockCachedFetch: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
 describe('security-audit service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
     mockGetSetting.mockResolvedValue(undefined);
     mockSetSetting.mockResolvedValue(undefined);
-    // cachedFetch delegates to the fetcher function (3rd arg)
-    mockCachedFetch.mockImplementation((_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
+    // Spy on cachedFetch — delegates to fetcher function (3rd arg)
+    mockCachedFetch = vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+    );
 
-    mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'prod' }]);
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([{ Id: 1, Name: 'prod' }] as any);
     // List endpoint returns sparse HostConfig (only NetworkMode in practice)
-    mockGetContainers.mockResolvedValue([
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
       {
         Id: 'c1',
         Names: ['/api'],
@@ -69,9 +70,9 @@ describe('security-audit service', () => {
         Labels: {},
         HostConfig: { NetworkMode: 'bridge' },
       },
-    ]);
+    ] as any);
     // Inspect endpoint returns full HostConfig
-    mockGetContainerHostConfig.mockImplementation((endpointId: number, containerId: string) => {
+    mockGetContainerHostConfig = vi.spyOn(portainerClient, 'getContainerHostConfig').mockImplementation((endpointId: number, containerId: string) => {
       if (containerId === 'c1') {
         return Promise.resolve({ Privileged: false, CapAdd: ['NET_ADMIN'], NetworkMode: 'bridge', PidMode: 'private' });
       }
@@ -171,6 +172,74 @@ describe('security-audit service', () => {
     // Outer audit cache should include the endpointId in the key
     expect(calls[0][0]).toBe('security-audit:42');
     expect(calls[0][1]).toBe(300);
+  });
+
+  it('skips endpoint and continues when circuit breaker is open', async () => {
+    // Two endpoints: endpoint 1 has open circuit breaker, endpoint 2 works fine
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod' },
+      { Id: 2, Name: 'staging' },
+    ]);
+
+    // mockCachedFetch: endpoint 1 containers fetch throws CircuitBreakerOpenError,
+    // endpoint 2 returns containers normally
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key === 'containers:1') {
+        return Promise.reject(new CircuitBreakerOpenError('endpoint-1', 5000));
+      }
+      return fetcher();
+    });
+
+    mockGetContainers.mockResolvedValue([
+      {
+        Id: 'c2',
+        Names: ['/web'],
+        Image: 'nginx:latest',
+        Created: 1,
+        State: 'running',
+        Status: 'Up',
+        Labels: {},
+        HostConfig: { NetworkMode: 'bridge' },
+      },
+    ]);
+
+    const entries = await getSecurityAudit();
+
+    // Only containers from endpoint 2 should appear — endpoint 1 was skipped
+    expect(entries.every((e) => e.endpointId === 2)).toBe(true);
+    expect(entries.some((e) => e.endpointId === 1)).toBe(false);
+  });
+
+  it('skips endpoint and continues when containers fetch fails with non-CB error', async () => {
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod' },
+      { Id: 2, Name: 'staging' },
+    ]);
+
+    mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+      if (key === 'containers:1') {
+        return Promise.reject(new Error('network timeout'));
+      }
+      return fetcher();
+    });
+
+    mockGetContainers.mockResolvedValue([
+      {
+        Id: 'c2',
+        Names: ['/web'],
+        Image: 'nginx:latest',
+        Created: 1,
+        State: 'running',
+        Status: 'Up',
+        Labels: {},
+        HostConfig: { NetworkMode: 'bridge' },
+      },
+    ]);
+
+    const entries = await getSecurityAudit();
+
+    // endpoint 1 skipped due to network error; endpoint 2 succeeds
+    expect(entries.every((e) => e.endpointId === 2)).toBe(true);
   });
 
   it('computes audit summary counts', () => {

@@ -1,32 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { networksRoutes } from './networks.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn(),
-  getNetworks: vi.fn(),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 30, NETWORKS: 60 },
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
+let mockGetEndpoints: any;
+let mockGetNetworks: any;
 
-import * as portainer from '../services/portainer-client.js';
+afterEach(async () => {
+  await waitForInFlight();
+});
 
-const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
-const mockGetNetworks = vi.mocked(portainer.getNetworks);
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 function buildApp() {
   const app = Fastify();
@@ -53,8 +46,12 @@ const fakeNetwork = (id: string, name: string) => ({
 });
 
 describe('networks routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetNetworks = vi.spyOn(portainerClient, 'getNetworks');
   });
 
   it('should return networks from healthy endpoints', async () => {

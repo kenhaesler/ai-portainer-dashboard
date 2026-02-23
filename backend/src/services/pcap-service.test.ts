@@ -1,35 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    PCAP_ENABLED: true,
-    PCAP_MAX_DURATION_SECONDS: 300,
-    PCAP_MAX_FILE_SIZE_MB: 50,
-    PCAP_MAX_CONCURRENT: 2,
-    PCAP_RETENTION_DAYS: 7,
-    PCAP_STORAGE_DIR: '/tmp/test-pcap',
-  }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
-const mockCreateExec = vi.fn();
-const mockStartExec = vi.fn();
-const mockInspectExec = vi.fn();
-const mockGetArchive = vi.fn();
-vi.mock('./portainer-client.js', () => ({
-  createExec: (...args: unknown[]) => mockCreateExec(...args),
-  startExec: (...args: unknown[]) => mockStartExec(...args),
-  inspectExec: (...args: unknown[]) => mockInspectExec(...args),
-  getArchive: (...args: unknown[]) => mockGetArchive(...args),
-}));
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 const mockInsertCapture = vi.fn().mockResolvedValue(undefined);
 const mockUpdateCaptureStatus = vi.fn().mockResolvedValue(undefined);
@@ -38,6 +8,7 @@ const mockGetCaptures = vi.fn().mockResolvedValue([]);
 const mockGetCapturesCount = vi.fn().mockResolvedValue(0);
 const mockDeleteCapture = vi.fn().mockResolvedValue(true);
 const mockCleanOldCaptures = vi.fn().mockResolvedValue(0);
+// Kept: DB-backed store mock — pcap-store writes to PostgreSQL
 vi.mock('./pcap-store.js', () => ({
   insertCapture: (...args: unknown[]) => mockInsertCapture(...args),
   updateCaptureStatus: (...args: unknown[]) => mockUpdateCaptureStatus(...args),
@@ -48,6 +19,7 @@ vi.mock('./pcap-store.js', () => ({
   cleanOldCaptures: (...args: unknown[]) => mockCleanOldCaptures(...args),
 }));
 
+// Kept: filesystem mock — prevents real disk writes during tests
 vi.mock('fs', () => ({
   default: {
     existsSync: vi.fn().mockReturnValue(true),
@@ -57,39 +29,65 @@ vi.mock('fs', () => ({
   },
 }));
 
-const { buildTcpdumpCommand, extractFromTar, startCapture, stopCapture, getCaptureById, deleteCaptureById } =
-  await import('./pcap-service.js');
+const {
+  buildSidecarCmd,
+  extractFromTar,
+  ensureCaptureImage,
+  startCapture,
+  stopCapture,
+  getCaptureById,
+  deleteCaptureById,
+  cleanupOrphanedSidecars,
+} = await import('./pcap-service.js');
+import * as portainer from './portainer-client.js';
+
+
+beforeAll(() => {
+    setConfigForTest({
+      PCAP_ENABLED: true,
+      PCAP_MAX_DURATION_SECONDS: 300,
+      PCAP_MAX_FILE_SIZE_MB: 50,
+      PCAP_MAX_CONCURRENT: 2,
+      PCAP_RETENTION_DAYS: 7,
+      PCAP_STORAGE_DIR: '/tmp/test-pcap',
+      PCAP_CAPTURE_IMAGE: 'alpine:3.21',
+      PCAP_CAPTURE_IMAGE_PULL: 'if-not-present',
+    });
+});
+
+afterAll(() => {
+  resetConfig();
+});
 
 describe('pcap-service', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     mockGetCapturesCount.mockResolvedValue(0);
   });
 
-  describe('buildTcpdumpCommand', () => {
+  describe('buildSidecarCmd', () => {
     it('should build sh -c wrapper with tcpdump', () => {
-      const cmd = buildTcpdumpCommand('test-id-123');
+      const cmd = buildSidecarCmd('test-id-123');
       expect(cmd[0]).toBe('sh');
       expect(cmd[1]).toBe('-c');
       const script = cmd[2];
       expect(script).toContain('command -v tcpdump');
       expect(script).toContain('apk add');
-      expect(script).toContain('apt-get');
       expect(script).toContain('exec tcpdump -i any -w /tmp/capture_test-id-123.pcap -U');
     });
 
     it('should include filter in command', () => {
-      const cmd = buildTcpdumpCommand('test-id', 'port 80');
+      const cmd = buildSidecarCmd('test-id', 'port 80');
       expect(cmd[2]).toContain('port 80');
     });
 
     it('should include max packets flag', () => {
-      const cmd = buildTcpdumpCommand('test-id', undefined, undefined, 1000);
+      const cmd = buildSidecarCmd('test-id', undefined, 1000);
       expect(cmd[2]).toContain('-c 1000');
     });
 
-    it('should combine all options', () => {
-      const cmd = buildTcpdumpCommand('test-id', 'tcp', 60, 500);
+    it('should combine filter and maxPackets', () => {
+      const cmd = buildSidecarCmd('test-id', 'tcp', 500);
       expect(cmd[2]).toContain('-c 500');
       expect(cmd[2]).toContain('tcp');
     });
@@ -138,12 +136,57 @@ describe('pcap-service', () => {
     });
   });
 
+  describe('ensureCaptureImage', () => {
+    it('should skip pull when policy is "never"', async () => {
+      const pullSpy = vi.spyOn(portainer, 'pullImage').mockResolvedValue(undefined);
+      const imagesSpy = vi.spyOn(portainer, 'getImages').mockResolvedValue([]);
+
+      await ensureCaptureImage(1, 'alpine:3.21', 'never');
+
+      expect(pullSpy).not.toHaveBeenCalled();
+      expect(imagesSpy).not.toHaveBeenCalled();
+    });
+
+    it('should skip pull when policy is "if-not-present" and image exists', async () => {
+      const pullSpy = vi.spyOn(portainer, 'pullImage').mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'getImages').mockResolvedValue([
+        { Id: 'sha256:abc', RepoTags: ['alpine:3.21'], Created: 0, Size: 0 },
+      ] as any);
+
+      await ensureCaptureImage(1, 'alpine:3.21', 'if-not-present');
+
+      expect(pullSpy).not.toHaveBeenCalled();
+    });
+
+    it('should pull when policy is "if-not-present" and image is missing', async () => {
+      const pullSpy = vi.spyOn(portainer, 'pullImage').mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'getImages').mockResolvedValue([]);
+
+      await ensureCaptureImage(1, 'alpine:3.21', 'if-not-present');
+
+      expect(pullSpy).toHaveBeenCalledWith(1, 'alpine', '3.21');
+    });
+
+    it('should always pull when policy is "always"', async () => {
+      const pullSpy = vi.spyOn(portainer, 'pullImage').mockResolvedValue(undefined);
+
+      await ensureCaptureImage(1, 'alpine:3.21', 'always');
+
+      expect(pullSpy).toHaveBeenCalledWith(1, 'alpine', '3.21');
+    });
+
+    it('should default to "latest" tag when no tag specified', async () => {
+      const pullSpy = vi.spyOn(portainer, 'pullImage').mockResolvedValue(undefined);
+
+      await ensureCaptureImage(1, 'myimage', 'always');
+
+      expect(pullSpy).toHaveBeenCalledWith(1, 'myimage', 'latest');
+    });
+  });
+
   describe('startCapture', () => {
     it('should throw when PCAP is disabled', async () => {
-      const { getConfig } = await import('../config/index.js');
-      vi.mocked(getConfig).mockReturnValue({
-        PCAP_ENABLED: false,
-      } as ReturnType<typeof getConfig>);
+      setConfigForTest({ PCAP_ENABLED: false });
 
       await expect(startCapture({
         endpointId: 1,
@@ -151,15 +194,17 @@ describe('pcap-service', () => {
         containerName: 'test',
       })).rejects.toThrow('Packet capture is not enabled');
 
-      // Restore
-      vi.mocked(getConfig).mockReturnValue({
+      // Restore defaults for remaining tests
+      setConfigForTest({
         PCAP_ENABLED: true,
         PCAP_MAX_DURATION_SECONDS: 300,
         PCAP_MAX_FILE_SIZE_MB: 50,
         PCAP_MAX_CONCURRENT: 2,
         PCAP_RETENTION_DAYS: 7,
         PCAP_STORAGE_DIR: '/tmp/test-pcap',
-      } as ReturnType<typeof getConfig>);
+        PCAP_CAPTURE_IMAGE: 'alpine:3.21',
+        PCAP_CAPTURE_IMAGE_PULL: 'if-not-present',
+      });
     });
 
     it('should throw when concurrency limit is reached', async () => {
@@ -172,16 +217,20 @@ describe('pcap-service', () => {
       })).rejects.toThrow('Concurrency limit reached');
     });
 
-    it('should create exec and start polling on success', async () => {
+    it('should create sidecar container and start polling on success', async () => {
       mockGetCapturesCount.mockResolvedValue(0);
-      mockCreateExec.mockResolvedValue({ Id: 'exec-123' });
-      mockStartExec.mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'getImages').mockResolvedValue([
+        { Id: 'sha256:abc', RepoTags: ['alpine:3.21'], Created: 0, Size: 0 },
+      ] as any);
+      vi.spyOn(portainer, 'createContainer').mockResolvedValue({ Id: 'sidecar-123' });
+      vi.spyOn(portainer, 'startContainer').mockResolvedValue(undefined);
       mockGetCapture.mockResolvedValue({
         id: 'capture-id',
         status: 'capturing',
         endpoint_id: 1,
         container_id: 'abc123',
         container_name: 'test',
+        sidecar_id: 'sidecar-123',
       });
 
       const result = await startCapture({
@@ -201,20 +250,38 @@ describe('pcap-service', () => {
           duration_seconds: 60,
         }),
       );
-      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc123', expect.arrayContaining(['sh', '-c']), { user: 'root' });
-      expect(mockStartExec).toHaveBeenCalledWith(1, 'exec-123');
+      expect(portainer.createContainer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          Image: 'alpine:3.21',
+          Labels: expect.objectContaining({
+            'ai-dash.pcap': 'true',
+            'ai-dash.pcap.target': 'abc123',
+          }),
+          HostConfig: expect.objectContaining({
+            NetworkMode: 'container:abc123',
+            CapAdd: ['NET_RAW'],
+            CapDrop: ['ALL'],
+          }),
+        }),
+        expect.stringContaining('ai-dash-pcap-'),
+      );
+      expect(portainer.startContainer).toHaveBeenCalledWith(1, 'sidecar-123');
       expect(mockUpdateCaptureStatus).toHaveBeenCalledWith(
         expect.any(String),
         'capturing',
-        expect.objectContaining({ exec_id: 'exec-123' }),
+        expect.objectContaining({ sidecar_id: 'sidecar-123' }),
       );
       expect(result.status).toBe('capturing');
     });
 
     it('should enforce max duration from config', async () => {
       mockGetCapturesCount.mockResolvedValue(0);
-      mockCreateExec.mockResolvedValue({ Id: 'exec-123' });
-      mockStartExec.mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'getImages').mockResolvedValue([
+        { Id: 'sha256:abc', RepoTags: ['alpine:3.21'], Created: 0, Size: 0 },
+      ] as any);
+      vi.spyOn(portainer, 'createContainer').mockResolvedValue({ Id: 'sidecar-123' });
+      vi.spyOn(portainer, 'startContainer').mockResolvedValue(undefined);
       mockGetCapture.mockResolvedValue({ id: 'x', status: 'capturing' });
 
       await startCapture({
@@ -229,9 +296,12 @@ describe('pcap-service', () => {
       );
     });
 
-    it('should mark as failed when exec creation fails', async () => {
+    it('should mark as failed when container creation fails', async () => {
       mockGetCapturesCount.mockResolvedValue(0);
-      mockCreateExec.mockRejectedValue(new Error('Container not found'));
+      vi.spyOn(portainer, 'getImages').mockResolvedValue([
+        { Id: 'sha256:abc', RepoTags: ['alpine:3.21'], Created: 0, Size: 0 },
+      ] as any);
+      vi.spyOn(portainer, 'createContainer').mockRejectedValue(new Error('Container not found'));
 
       await expect(startCapture({
         endpointId: 1,
@@ -244,6 +314,29 @@ describe('pcap-service', () => {
         'failed',
         expect.objectContaining({ error_message: 'Container not found' }),
       );
+    });
+
+    it('should create sidecar with correct NetworkMode and capabilities', async () => {
+      mockGetCapturesCount.mockResolvedValue(0);
+      vi.spyOn(portainer, 'getImages').mockResolvedValue([
+        { Id: 'sha256:abc', RepoTags: ['alpine:3.21'], Created: 0, Size: 0 },
+      ] as any);
+      const createSpy = vi.spyOn(portainer, 'createContainer').mockResolvedValue({ Id: 'sc-1' });
+      vi.spyOn(portainer, 'startContainer').mockResolvedValue(undefined);
+      mockGetCapture.mockResolvedValue({ id: 'x', status: 'capturing', sidecar_id: 'sc-1' });
+
+      await startCapture({
+        endpointId: 2,
+        containerId: 'target-container-id',
+        containerName: 'my-app',
+      });
+
+      const payload = createSpy.mock.calls[0][1];
+      expect(payload.HostConfig?.NetworkMode).toBe('container:target-container-id');
+      expect(payload.HostConfig?.CapAdd).toEqual(['NET_RAW']);
+      expect(payload.HostConfig?.CapDrop).toEqual(['ALL']);
+      expect(payload.Labels?.['ai-dash.pcap']).toBe('true');
+      expect(payload.Labels?.['ai-dash.pcap.target']).toBe('target-container-id');
     });
   });
 
@@ -258,21 +351,18 @@ describe('pcap-service', () => {
       await expect(stopCapture('x')).rejects.toThrow('Cannot stop capture in status: complete');
     });
 
-    it('should send pkill and update status', async () => {
-      // First call: stopCapture checks status
-      // Second call: stopCaptureInternal → downloadAndProcessCapture → getCapture for status check after processing
-      // Third call: final getCapture at end of stopCapture
+    it('should stop sidecar container and update status', async () => {
       mockGetCapture
-        .mockResolvedValueOnce({ id: 'x', status: 'capturing', endpoint_id: 1, container_id: 'abc' })
-        .mockResolvedValueOnce({ id: 'x', status: 'complete', endpoint_id: 1, container_id: 'abc' })
-        .mockResolvedValueOnce({ id: 'x', status: 'succeeded', endpoint_id: 1, container_id: 'abc' });
-      mockCreateExec.mockResolvedValue({ Id: 'kill-exec' });
-      mockStartExec.mockResolvedValue(undefined);
-      mockGetArchive.mockRejectedValue(new Error('no file'));
+        .mockResolvedValueOnce({ id: 'x', status: 'capturing', endpoint_id: 1, container_id: 'abc', sidecar_id: 'sc-1' })
+        .mockResolvedValueOnce({ id: 'x', status: 'complete', endpoint_id: 1, container_id: 'abc', sidecar_id: 'sc-1' })
+        .mockResolvedValueOnce({ id: 'x', status: 'succeeded', endpoint_id: 1, container_id: 'abc', sidecar_id: 'sc-1' });
+      vi.spyOn(portainer, 'stopContainer').mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'removeContainer').mockResolvedValue(undefined);
+      vi.spyOn(portainer, 'getArchive').mockRejectedValue(new Error('no file'));
 
       const result = await stopCapture('x');
 
-      expect(mockCreateExec).toHaveBeenCalledWith(1, 'abc', ['pkill', '-f', 'capture_x'], { user: 'root' });
+      expect(portainer.stopContainer).toHaveBeenCalledWith(1, 'sc-1');
       expect(result.status).toBe('succeeded');
     });
   });
@@ -311,6 +401,101 @@ describe('pcap-service', () => {
       await deleteCaptureById('x');
 
       expect(mockDeleteCapture).toHaveBeenCalledWith('x');
+    });
+  });
+
+  describe('cleanupOrphanedSidecars', () => {
+    it('should find and remove exited sidecar containers', async () => {
+      vi.spyOn(portainer, 'getContainers').mockResolvedValue([
+        {
+          Id: 'orphan-1',
+          Names: ['/ai-dash-pcap-abc'],
+          State: 'exited',
+          Status: 'Exited (0)',
+          Labels: { 'ai-dash.pcap': 'true', 'ai-dash.pcap.capture-id': 'cap-1' },
+        },
+        {
+          Id: 'running-1',
+          Names: ['/ai-dash-pcap-def'],
+          State: 'running',
+          Status: 'Up 5 minutes',
+          Labels: { 'ai-dash.pcap': 'true' },
+        },
+        {
+          Id: 'normal-1',
+          Names: ['/my-app'],
+          State: 'running',
+          Status: 'Up 1 hour',
+          Labels: {},
+        },
+      ] as any);
+      const removeSpy = vi.spyOn(portainer, 'removeContainer').mockResolvedValue(undefined);
+
+      const cleaned = await cleanupOrphanedSidecars([1]);
+
+      expect(cleaned).toBe(1);
+      expect(removeSpy).toHaveBeenCalledWith(1, 'orphan-1', true);
+      expect(removeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle multiple endpoints', async () => {
+      vi.spyOn(portainer, 'getContainers').mockImplementation(async (endpointId: number) => {
+        if (endpointId === 1) {
+          return [{
+            Id: 'orphan-1',
+            Names: ['/ai-dash-pcap-a'],
+            State: 'exited',
+            Status: 'Exited (0)',
+            Labels: { 'ai-dash.pcap': 'true' },
+          }] as any;
+        }
+        return [{
+          Id: 'orphan-2',
+          Names: ['/ai-dash-pcap-b'],
+          State: 'dead',
+          Status: 'Dead',
+          Labels: { 'ai-dash.pcap': 'true' },
+        }] as any;
+      });
+      vi.spyOn(portainer, 'removeContainer').mockResolvedValue(undefined);
+
+      const cleaned = await cleanupOrphanedSidecars([1, 2]);
+
+      expect(cleaned).toBe(2);
+    });
+
+    it('should handle remove failures gracefully', async () => {
+      vi.spyOn(portainer, 'getContainers').mockResolvedValue([
+        {
+          Id: 'orphan-1',
+          Names: ['/ai-dash-pcap-a'],
+          State: 'exited',
+          Status: 'Exited (0)',
+          Labels: { 'ai-dash.pcap': 'true' },
+        },
+      ] as any);
+      vi.spyOn(portainer, 'removeContainer').mockRejectedValue(new Error('busy'));
+
+      const cleaned = await cleanupOrphanedSidecars([1]);
+
+      // Failed to remove, so cleaned count stays 0
+      expect(cleaned).toBe(0);
+    });
+
+    it('should return 0 when no orphans exist', async () => {
+      vi.spyOn(portainer, 'getContainers').mockResolvedValue([
+        {
+          Id: 'running-1',
+          Names: ['/ai-dash-pcap-a'],
+          State: 'running',
+          Status: 'Up',
+          Labels: { 'ai-dash.pcap': 'true' },
+        },
+      ] as any);
+
+      const cleaned = await cleanupOrphanedSidecars([1]);
+
+      expect(cleaned).toBe(0);
     });
   });
 });

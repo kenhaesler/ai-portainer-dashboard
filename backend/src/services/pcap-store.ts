@@ -40,6 +40,7 @@ export async function updateCaptureStatus(
   status: CaptureStatus,
   updates?: {
     exec_id?: string;
+    sidecar_id?: string;
     capture_file?: string;
     file_size_bytes?: number;
     packet_count?: number;
@@ -108,12 +109,12 @@ export async function getCaptures(options: GetCapturesOptions = {}): Promise<Cap
 export async function getCapturesCount(status?: CaptureStatus): Promise<number> {
   if (status) {
     const row = await db().queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM pcap_captures WHERE status = ?', [status],
+      'SELECT COUNT(*)::integer as count FROM pcap_captures WHERE status = ?', [status],
     );
     return row?.count ?? 0;
   }
   const row = await db().queryOne<{ count: number }>(
-    'SELECT COUNT(*) as count FROM pcap_captures', [],
+    'SELECT COUNT(*)::integer as count FROM pcap_captures', [],
   );
   return row?.count ?? 0;
 }

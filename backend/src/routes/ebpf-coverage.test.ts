@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { ebpfCoverageRoutes } from './ebpf-coverage.js';
@@ -18,7 +18,7 @@ import {
   getEndpointOtlpOverride,
   setEndpointOtlpOverride,
 } from '../services/ebpf-coverage.js';
-import { getConfig } from '../config/index.js';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 const { mockedNetworkInterfaces } = vi.hoisted(() => ({
   mockedNetworkInterfaces: vi.fn(() => ({
@@ -26,10 +26,12 @@ const { mockedNetworkInterfaces } = vi.hoisted(() => ({
   })),
 }));
 
+// Kept: node:os mock — external dependency
 vi.mock('node:os', () => ({
   networkInterfaces: mockedNetworkInterfaces,
 }));
 
+// Kept: ebpf-coverage mock — no Portainer API in CI
 vi.mock('../services/ebpf-coverage.js', () => ({
   getEndpointCoverage: vi.fn(async () => []),
   updateCoverageStatus: vi.fn(async () => {}),
@@ -55,20 +57,9 @@ vi.mock('../services/ebpf-coverage.js', () => ({
   setEndpointOtlpOverride: vi.fn(async () => {}),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    PORT: 3051,
-    TRACES_INGESTION_API_KEY: 'ingest-key',
-    DASHBOARD_EXTERNAL_URL: '',
-  })),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 const mockedGetEndpointCoverage = vi.mocked(getEndpointCoverage);
@@ -85,21 +76,20 @@ const mockedDeployBeylaBulk = vi.mocked(deployBeylaBulk);
 const mockedRemoveBeylaBulk = vi.mocked(removeBeylaBulk);
 const mockedGetEndpointOtlpOverride = vi.mocked(getEndpointOtlpOverride);
 const mockedSetEndpointOtlpOverride = vi.mocked(setEndpointOtlpOverride);
-const mockedGetConfig = vi.mocked(getConfig);
 
 describe('ebpf-coverage routes', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    mockedNetworkInterfaces.mockReturnValue({
-      en0: [{ address: '192.168.178.20', family: 'IPv4', internal: false }],
-    });
-    mockedGetConfig.mockReturnValue({
+    setConfigForTest({
       PORT: 3051,
       TRACES_INGESTION_API_KEY: 'ingest-key',
       DASHBOARD_EXTERNAL_URL: '',
-    } as any);
+    });
+    mockedNetworkInterfaces.mockReturnValue({
+      en0: [{ address: '192.168.178.20', family: 'IPv4', internal: false }],
+    });
     mockedGetEndpointOtlpOverride.mockResolvedValue(null);
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
@@ -109,6 +99,10 @@ describe('ebpf-coverage routes', () => {
     app.decorate('requireRole', () => async () => {});
     await app.register(ebpfCoverageRoutes);
     await app.ready();
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('GET /api/ebpf/coverage', () => {
@@ -437,11 +431,11 @@ describe('ebpf-coverage routes', () => {
     });
 
     it('POST /api/ebpf/deploy/:endpointId prefers DASHBOARD_EXTERNAL_URL when configured', async () => {
-      mockedGetConfig.mockReturnValue({
+      setConfigForTest({
         PORT: 3051,
         TRACES_INGESTION_API_KEY: 'ingest-key',
         DASHBOARD_EXTERNAL_URL: 'https://dashboard.example.com',
-      } as any);
+      });
 
       const response = await app.inject({
         method: 'POST',

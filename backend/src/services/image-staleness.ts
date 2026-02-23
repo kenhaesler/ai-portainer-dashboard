@@ -169,10 +169,10 @@ export async function getStalenessRecords(): Promise<ImageStalenessRecord[]> {
 export async function getStalenessSummary(): Promise<{ total: number; stale: number; upToDate: number; unchecked: number }> {
   const row = await db().queryOne<{ total: number; stale: number; up_to_date: number; unchecked: number }>(`
     SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN is_stale = true THEN 1 ELSE 0 END) as stale,
-      SUM(CASE WHEN is_stale = false AND remote_digest IS NOT NULL THEN 1 ELSE 0 END) as up_to_date,
-      SUM(CASE WHEN remote_digest IS NULL THEN 1 ELSE 0 END) as unchecked
+      COUNT(*)::integer as total,
+      SUM(CASE WHEN is_stale = true THEN 1 ELSE 0 END)::integer as stale,
+      SUM(CASE WHEN is_stale = false AND remote_digest IS NOT NULL THEN 1 ELSE 0 END)::integer as up_to_date,
+      SUM(CASE WHEN remote_digest IS NULL THEN 1 ELSE 0 END)::integer as unchecked
     FROM image_staleness
   `);
 

@@ -20,11 +20,22 @@
     "loadtest:bench": "docker compose -f docker/docker-compose.loadtest.yml run --rm bench",
     "loadtest:llm": "docker compose -f docker/docker-compose.loadtest.yml run --rm llm",
     "loadtest:all": "docker compose -f docker/docker-compose.loadtest.yml run --rm all",
-    "test:e2e": "npx playwright test"
+    "test:e2e": "npx playwright test",
+    "test:integration": "npm run test -w backend && npm run test -w frontend && npm run test:e2e",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "audit:all": "npm audit --audit-level=critical",
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "husky": "^9.1.7"
+  },
+  "dependencies": {
+    "zod": "^3.25.0"
+  },
+  "overrides": {
+    "zod": "^3.25.0"
   },
   "engines": {
     "node": ">=22.0.0"

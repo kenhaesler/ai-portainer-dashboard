@@ -1,12 +1,17 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 import { monitoringRoutes } from './monitoring.js';
+
+let testDb: AppDb;
 
 const mockGetSecurityAudit = vi.fn();
 const mockGetSecurityAuditIgnoreList = vi.fn();
 const mockSetSecurityAuditIgnoreList = vi.fn();
 
+// Kept: security-audit mock — no Portainer API in CI
 vi.mock('../services/security-audit.js', () => ({
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore_list',
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS: ['portainer', 'traefik'],
@@ -15,13 +20,13 @@ vi.mock('../services/security-audit.js', () => ({
   setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
 }));
 
+// Kept: app-db-router mock — tests control database routing
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: () => ({
-    query: async () => [],
-    queryOne: async () => ({ count: 0 }),
-    execute: async () => ({ changes: 1 }),
-  }),
+  getDbForDomain: () => testDb,
 }));
+
+beforeAll(async () => { testDb = await getTestDb(); });
+afterAll(async () => { await closeTestDb(); });
 
 describe('security audit routes', () => {
   let app: FastifyInstance;

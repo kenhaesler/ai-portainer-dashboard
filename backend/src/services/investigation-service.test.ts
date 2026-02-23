@@ -1,53 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import type { Insight } from '../models/monitoring.js';
 
 // Mock dependencies before importing the module under test
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({
-    INVESTIGATION_ENABLED: true,
-    INVESTIGATION_COOLDOWN_MINUTES: 30,
-    INVESTIGATION_MAX_CONCURRENT: 2,
-    INVESTIGATION_LOG_TAIL_LINES: 50,
-    INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
-    INVESTIGATION_MIN_SEVERITY: 'warning',
-    OLLAMA_MODEL: 'llama3.2',
-  }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
-const mockGetContainerLogs = vi.fn();
-const mockGetContainers = vi.fn();
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-}));
 
 const mockGetMetrics = vi.fn();
 const mockGetMovingAverage = vi.fn();
+// Kept: metrics-store mock — tests control metrics responses
 vi.mock('./metrics-store.js', () => ({
   getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
-}));
-
-const mockIsOllamaAvailable = vi.fn();
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: () => mockIsOllamaAvailable(),
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
 }));
 
 const mockInsertInvestigation = vi.fn();
 const mockUpdateInvestigationStatus = vi.fn();
 const mockGetInvestigation = vi.fn();
 const mockGetRecentInvestigationForContainer = vi.fn();
+// Kept: investigation-store mock — tests control investigation persistence
 vi.mock('./investigation-store.js', () => ({
   insertInvestigation: (...args: unknown[]) => mockInsertInvestigation(...args),
   updateInvestigationStatus: (...args: unknown[]) => mockUpdateInvestigationStatus(...args),
@@ -55,14 +24,8 @@ vi.mock('./investigation-store.js', () => ({
   getRecentInvestigationForContainer: (...args: unknown[]) => mockGetRecentInvestigationForContainer(...args),
 }));
 
-const mockCachedFetchSWR = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { CONTAINERS: 300 },
-}));
-
 const mockGenerateForecast = vi.fn();
+// Kept: capacity-forecaster mock — tests control forecast responses
 vi.mock('./capacity-forecaster.js', () => ({
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
 }));
@@ -70,6 +33,17 @@ vi.mock('./capacity-forecaster.js', () => ({
 // Import after mocks are set up
 const { parseInvestigationResponse, buildInvestigationPrompt, triggerInvestigation } =
   await import('./investigation-service.js');
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import * as llmClient from './llm-client.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockGetContainerLogs: any;
+let mockGetContainers: any;
+let mockCachedFetchSWR: any;
+let mockIsOllamaAvailable: any;
+let mockChatStream: any;
 
 function makeInsight(overrides?: Partial<Insight>): Insight {
   return {
@@ -89,9 +63,41 @@ function makeInsight(overrides?: Partial<Insight>): Insight {
   };
 }
 
+
+beforeAll(async () => {
+  await cache.clear();
+  setConfigForTest({
+    INVESTIGATION_ENABLED: true,
+    INVESTIGATION_COOLDOWN_MINUTES: 30,
+    INVESTIGATION_MAX_CONCURRENT: 2,
+    INVESTIGATION_LOG_TAIL_LINES: 50,
+    INVESTIGATION_METRICS_WINDOW_MINUTES: 60,
+    INVESTIGATION_MIN_SEVERITY: 'warning',
+  });
+});
+
+afterAll(async () => {
+  resetConfig();
+  await closeTestRedis();
+});
+
 describe('investigation-service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    // Bypass cache — delegates to fetcher
+    mockCachedFetchSWR = vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    // Portainer spies
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
+    // LLM spies
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable');
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
   });
 
   describe('parseInvestigationResponse', () => {

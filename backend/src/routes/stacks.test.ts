@@ -1,37 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { stacksRoutes } from './stacks.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn(),
-  getStacks: vi.fn(),
-  getStack: vi.fn(),
-  getStacksByEndpoint: vi.fn(),
-  getContainers: vi.fn(),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: (string | number)[]) => args.join(':')),
-  TTL: { STACKS: 60, ENDPOINTS: 900 },
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
+let mockGetEndpoints: any;
+let mockGetStack: any;
+let mockGetStacksByEndpoint: any;
+let mockGetContainers: any;
 
-import * as portainer from '../services/portainer-client.js';
+afterEach(async () => {
+  await waitForInFlight();
+});
 
-const mockGetEndpoints = vi.mocked(portainer.getEndpoints);
-const mockGetStack = vi.mocked(portainer.getStack);
-const mockGetStacksByEndpoint = vi.mocked(portainer.getStacksByEndpoint);
-const mockGetContainers = vi.mocked(portainer.getContainers);
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 function buildApp() {
   const app = Fastify();
@@ -86,8 +76,14 @@ const fakeContainer = (id: string, labels: Record<string, string> = {}) => ({
 });
 
 describe('stacks routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetStack = vi.spyOn(portainerClient, 'getStack');
+    mockGetStacksByEndpoint = vi.spyOn(portainerClient, 'getStacksByEndpoint');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
   });
 
   it('returns stacks from all up endpoints', async () => {

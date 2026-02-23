@@ -7,6 +7,7 @@ const mockQuery = vi.fn().mockResolvedValue([]);
 const mockQueryOne = vi.fn().mockResolvedValue({ count: 0 });
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 
+// Kept: tests verify cursor pagination and SQL parameter assertions
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
@@ -18,15 +19,6 @@ vi.mock('../db/app-db-router.js', () => ({
       execute: (...a: unknown[]) => mockExecute(...a),
     })),
     healthCheck: vi.fn(async () => true),
-  }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
   }),
 }));
 

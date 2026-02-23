@@ -38,12 +38,12 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     `, [...params, limit, offset]);
 
     const total = await db.queryOne<{ count: number }>(
-      `SELECT COUNT(*) as count FROM actions ${where}`,
+      `SELECT COUNT(*)::integer as count FROM actions ${where}`,
       [...params]
     );
 
     const pending = await db.queryOne<{ count: number }>(
-      "SELECT COUNT(*) as count FROM actions WHERE status = 'pending'"
+      "SELECT COUNT(*)::integer as count FROM actions WHERE status = 'pending'"
     );
 
     return { actions, total: total?.count ?? 0, pendingCount: pending?.count ?? 0, limit, offset };

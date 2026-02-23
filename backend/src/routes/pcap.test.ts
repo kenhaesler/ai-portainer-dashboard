@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { pcapRoutes } from './pcap.js';
@@ -12,6 +13,7 @@ const mockGetCaptureFilePath = vi.fn();
 const mockAnalyzeCapture = vi.fn();
 const mockAssertCapability = vi.fn();
 
+// Kept: pcap-service mock — no Portainer API in CI
 vi.mock('../services/pcap-service.js', () => ({
   startCapture: (...args: unknown[]) => mockStartCapture(...args),
   stopCapture: (...args: unknown[]) => mockStopCapture(...args),
@@ -21,27 +23,22 @@ vi.mock('../services/pcap-service.js', () => ({
   getCaptureFilePath: (...args: unknown[]) => mockGetCaptureFilePath(...args),
 }));
 
+// Kept: pcap-analysis-service mock — no Ollama in CI
 vi.mock('../services/pcap-analysis-service.js', () => ({
   analyzeCapture: (...args: unknown[]) => mockAnalyzeCapture(...args),
 }));
 
+// Kept: edge-capability-guard mock — no Portainer API in CI
 vi.mock('../services/edge-capability-guard.js', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
+// Kept: fs mock — external dependency
 vi.mock('fs', () => ({
   default: {
     createReadStream: vi.fn().mockReturnValue('mock-stream'),
@@ -188,23 +185,11 @@ describe('PCAP Routes', () => {
       expect(mockStartCapture).not.toHaveBeenCalled();
     });
 
-    it('should return 403 for non-admin users', async () => {
-      currentRole = 'viewer';
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/pcap/captures',
-        headers: { authorization: 'Bearer test' },
-        payload: {
-          endpointId: 1,
-          containerId: 'abc123',
-          containerName: 'web',
-        },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(mockStartCapture).not.toHaveBeenCalled();
-    });
+    testAdminOnly(
+      () => app, (r) => { currentRole = r; },
+      'POST', '/api/pcap/captures',
+      { endpointId: 1, containerId: 'abc123', containerName: 'web' },
+    );
   });
 
   describe('GET /api/pcap/captures', () => {
@@ -301,18 +286,7 @@ describe('PCAP Routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('should return 403 for non-admin users', async () => {
-      currentRole = 'operator';
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/pcap/captures/c1/stop',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(mockStopCapture).not.toHaveBeenCalled();
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/pcap/captures/c1/stop');
   });
 
   describe('GET /api/pcap/captures/:id/download', () => {
@@ -379,18 +353,7 @@ describe('PCAP Routes', () => {
       expect(body.error).toContain('Cannot analyze');
     });
 
-    it('should return 403 for non-admin users', async () => {
-      currentRole = 'viewer';
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/pcap/captures/c1/analyze',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(mockAnalyzeCapture).not.toHaveBeenCalled();
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'POST', '/api/pcap/captures/c1/analyze');
   });
 
   describe('DELETE /api/pcap/captures/:id', () => {
@@ -422,17 +385,6 @@ describe('PCAP Routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('should return 403 for non-admin users', async () => {
-      currentRole = 'operator';
-
-      const response = await app.inject({
-        method: 'DELETE',
-        url: '/api/pcap/captures/c1',
-        headers: { authorization: 'Bearer test' },
-      });
-
-      expect(response.statusCode).toBe(403);
-      expect(mockDeleteCaptureById).not.toHaveBeenCalled();
-    });
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'DELETE', '/api/pcap/captures/c1');
   });
 });

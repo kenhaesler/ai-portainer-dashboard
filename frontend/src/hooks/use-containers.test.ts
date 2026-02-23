@@ -83,6 +83,22 @@ describe('useContainers', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockApi.get).toHaveBeenCalledWith('/api/containers');
   });
+
+  it('normalizes partial wrapped response into container array', async () => {
+    const containers = [{ id: 'c1', name: 'partial' }];
+    mockApi.get.mockResolvedValueOnce({
+      data: containers,
+      partial: true,
+      failedEndpoints: ['edge-1: timeout'],
+    });
+
+    const { result } = renderHook(() => useContainers(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(containers);
+  });
 });
 
 describe('usePaginatedContainers', () => {
@@ -139,9 +155,8 @@ describe('useFavoriteContainers', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     const calledUrl = mockApi.get.mock.calls[0][0];
-    expect(calledUrl).toContain('/api/containers/favorites?');
-    expect(calledUrl).toContain('ids=1%3Ac1');
-    expect(calledUrl).toContain('ids=2%3Ac2');
+    // ids are comma-separated in a single param (not repeated &ids= params)
+    expect(calledUrl).toBe('/api/containers/favorites?ids=1%3Ac1,2%3Ac2');
   });
 
   it('does not fetch when ids is empty', () => {

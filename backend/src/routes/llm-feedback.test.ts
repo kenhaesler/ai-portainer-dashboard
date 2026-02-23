@@ -19,6 +19,7 @@ const mockInsertPromptSuggestion = vi.fn();
 const mockListPromptSuggestions = vi.fn();
 const mockUpdatePromptSuggestionStatus = vi.fn();
 
+// Kept: feedback-store mock — no PostgreSQL in CI
 vi.mock('../services/feedback-store.js', () => ({
   insertFeedback: (...args: unknown[]) => mockInsertFeedback(...args),
   listFeedback: (...args: unknown[]) => mockListFeedback(...args),
@@ -35,6 +36,7 @@ vi.mock('../services/feedback-store.js', () => ({
   updatePromptSuggestionStatus: (...args: unknown[]) => mockUpdatePromptSuggestionStatus(...args),
 }));
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: () => 'You are a helpful assistant.',
   PROMPT_FEATURES: [
@@ -42,17 +44,9 @@ vi.mock('../services/prompt-store.js', () => ({
   ],
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
 }));
 
 // ── Test Setup ─────────────────────────────────────────────────────
@@ -249,11 +243,13 @@ describe('LLM Feedback Routes', () => {
     it('filters by feature', async () => {
       mockListFeedback.mockReturnValue({ items: [], total: 0 });
 
-      await app.inject({
+      const res = await app.inject({
         method: 'GET',
         url: '/api/llm/feedback?feature=chat_assistant',
       });
 
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toEqual([]);
       expect(mockListFeedback).toHaveBeenCalledWith(
         expect.objectContaining({ feature: 'chat_assistant' }),
       );
@@ -262,11 +258,13 @@ describe('LLM Feedback Routes', () => {
     it('filters by rating', async () => {
       mockListFeedback.mockReturnValue({ items: [], total: 0 });
 
-      await app.inject({
+      const res = await app.inject({
         method: 'GET',
         url: '/api/llm/feedback?rating=negative',
       });
 
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toEqual([]);
       expect(mockListFeedback).toHaveBeenCalledWith(
         expect.objectContaining({ rating: 'negative' }),
       );

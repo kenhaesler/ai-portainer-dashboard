@@ -24,6 +24,7 @@ const mockIncidentsDb: AppDb = {
   healthCheck: vi.fn(async () => true),
 };
 
+// Kept: tests verify domain-based routing (monitoring vs incidents) and SQL parameter passing
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn((domain: string) => {
     if (domain === 'monitoring') return mockMonitoringDb;

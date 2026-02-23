@@ -23,6 +23,7 @@ export function useNetworks(endpointId?: number) {
       return api.get<Network[]>(path);
     },
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 }

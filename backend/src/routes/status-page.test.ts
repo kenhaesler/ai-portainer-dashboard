@@ -10,6 +10,7 @@ import {
   getRecentIncidentsPublic,
 } from '../services/status-page-store.js';
 
+// Kept: status-page-store mock — no PostgreSQL in CI
 vi.mock('../services/status-page-store.js', () => ({
   getStatusPageConfig: vi.fn(async () => ({
     enabled: true,
@@ -33,14 +34,6 @@ vi.mock('../services/status-page-store.js', () => ({
     { date: '2026-02-06', uptime_pct: 99.5 },
   ]),
   getRecentIncidentsPublic: vi.fn(async () => []),
-}));
-
-vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: vi.fn(() => ({
-    query: vi.fn(async () => []),
-    queryOne: vi.fn(async () => null),
-    execute: vi.fn(async () => ({ changes: 0 })),
-  })),
 }));
 
 const mockedGetStatusPageConfig = vi.mocked(getStatusPageConfig);

@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { FastifyInstance } from 'fastify';
 import * as portainer from '../services/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
@@ -7,7 +8,10 @@ import { createChildLogger } from '../utils/logger.js';
 import { SearchQuerySchema } from '../models/api-schemas.js';
 
 const log = createChildLogger('search-route');
-const TTL_LOG_SEARCH = 30; // 30 seconds — short cache for repeated/refined searches
+const TTL_LOG_SEARCH = 120; // 120 seconds — cache for repeated/refined searches
+
+/** Max concurrent log fetches per search — avoids saturating Portainer. */
+const LOG_FETCH_CONCURRENCY = 3;
 
 interface NormalizedImage {
   id: string;
@@ -85,76 +89,94 @@ async function searchContainerLogs(
     () => portainer.getEndpoints(),
   );
 
-  const containers: ReturnType<typeof normalizeContainer>[] = [];
-  for (const ep of endpoints) {
-    const norm = normalizeEndpoint(ep);
-    if (norm.status !== 'up') continue;
-    try {
-      const rawContainers = await cachedFetch(
-        getCacheKey('containers', ep.Id),
-        TTL.CONTAINERS,
-        () => portainer.getContainers(ep.Id),
-      );
-      containers.push(...rawContainers.map((c) => normalizeContainer(c, ep.Id, ep.Name)));
-    } catch (err) {
-      log.warn({ endpointId: ep.Id, err }, 'Failed to load containers for log search');
-    }
-  }
+  // Fetch containers from all endpoints in parallel
+  const upEndpoints = endpoints
+    .map(normalizeEndpoint)
+    .filter((ep) => ep.status === 'up');
 
-  const candidates = containers
+  const containerResults = await Promise.allSettled(
+    upEndpoints.map(async (ep) => {
+      const rawContainers = await cachedFetch(
+        getCacheKey('containers', ep.id),
+        TTL.CONTAINERS,
+        () => portainer.getContainers(ep.id),
+      );
+      return rawContainers.map((c) => normalizeContainer(c, ep.id, ep.name));
+    }),
+  );
+
+  const allContainers = containerResults.flatMap((r) => {
+    if (r.status === 'fulfilled') return r.value;
+    log.warn({ err: r.reason }, 'Failed to load containers for log search');
+    return [];
+  });
+
+  const candidates = allContainers
     .filter((c) => c.state === 'running')
     .sort((a, b) => b.created - a.created)
     .slice(0, maxContainers);
 
+  // Check live capability for all candidate endpoints in parallel
+  const uniqueEndpointIds = [...new Set(candidates.map((c) => c.endpointId))];
+  const capabilityResults = await Promise.allSettled(
+    uniqueEndpointIds.map(async (epId) => ({ epId, live: await supportsLiveFeatures(epId) })),
+  );
+  const liveCapableEndpoints = new Set<number>(
+    capabilityResults
+      .filter((r): r is PromiseFulfilledResult<{ epId: number; live: boolean }> => r.status === 'fulfilled' && r.value.live)
+      .map((r) => r.value.epId),
+  );
+
   const queryLower = query.toLowerCase();
+  const limit$ = pLimit(LOG_FETCH_CONCURRENCY);
 
-  // Pre-check which endpoints support live logs to avoid 404s on Edge Async
-  const liveCapableEndpoints = new Set<number>();
-  const endpointIds = new Set(candidates.map((c) => c.endpointId));
-  for (const epId of endpointIds) {
-    if (await supportsLiveFeatures(epId)) {
-      liveCapableEndpoints.add(epId);
-    }
-  }
+  // Fetch logs from all candidates in parallel (bounded by concurrency limit)
+  const logResults = await Promise.allSettled(
+    candidates
+      .filter((c) => liveCapableEndpoints.has(c.endpointId))
+      .map((container) =>
+        limit$(async () => {
+          const logCacheKey = getCacheKey('search-logs', container.endpointId, container.id, query);
+          const logs = await cachedFetch(
+            logCacheKey,
+            TTL_LOG_SEARCH,
+            () => portainer.getContainerLogs(container.endpointId, container.id, {
+              tail,
+              timestamps: true,
+            }),
+          );
 
-  for (const container of candidates) {
-    if (results.length >= limit) break;
-    if (!liveCapableEndpoints.has(container.endpointId)) continue;
-    try {
-      const logCacheKey = getCacheKey('search-logs', container.endpointId, container.id, query);
-      const logs = await cachedFetch(
-        logCacheKey,
-        TTL_LOG_SEARCH,
-        () => portainer.getContainerLogs(container.endpointId, container.id, {
-          tail,
-          timestamps: true,
+          const matches: LogSearchResult[] = [];
+          const lines = logs.split('\n').filter((line) => line.trim().length > 0);
+          for (const line of lines) {
+            if (!line.toLowerCase().includes(queryLower)) continue;
+            const match = line.match(/^(\d{4}-\d{2}-\d{2}T[^\s]+)\s+(.*)$/);
+            const timestamp = match?.[1];
+            const message = match?.[2] ?? line;
+            matches.push({
+              id: `${container.endpointId}:${container.id}:${matches.length}`,
+              endpointId: container.endpointId,
+              endpointName: container.endpointName,
+              containerId: container.id,
+              containerName: container.name,
+              message,
+              timestamp,
+            });
+          }
+          return matches;
         }),
-      );
-      const lines = logs.split('\n').filter((line) => line.trim().length > 0);
-      for (const line of lines) {
-        if (results.length >= limit) break;
-        if (!line.toLowerCase().includes(queryLower)) continue;
+      ),
+  );
 
-        const match = line.match(/^(\d{4}-\d{2}-\d{2}T[^\s]+)\s+(.*)$/);
-        const timestamp = match?.[1];
-        const message = match?.[2] ?? line;
-
-        results.push({
-          id: `${container.endpointId}:${container.id}:${results.length}`,
-          endpointId: container.endpointId,
-          endpointName: container.endpointName,
-          containerId: container.id,
-          containerName: container.name,
-          message,
-          timestamp,
-        });
-      }
-    } catch (err) {
-      log.warn({ endpointId: container.endpointId, containerId: container.id, err }, 'Failed to fetch container logs');
+  for (const r of logResults) {
+    if (r.status === 'fulfilled') {
+      results.push(...r.value);
+    } else {
+      log.warn({ err: r.reason }, 'Failed to fetch container logs for search');
     }
   }
 
-  return results;
+  return results.slice(0, limit);
 }
 
 export async function searchRoutes(fastify: FastifyInstance) {
@@ -194,41 +216,65 @@ export async function searchRoutes(fastify: FastifyInstance) {
       () => portainer.getEndpoints(),
     );
 
+    const upEndpoints = endpoints.map(normalizeEndpoint).filter((ep) => ep.status === 'up');
+
+    // Fetch containers, images, and stacks in parallel across all endpoints
+    const [endpointResults, stacksRaw] = await Promise.all([
+      Promise.allSettled(
+        upEndpoints.map(async (ep) => {
+          const [rawContainers, rawImages] = await Promise.allSettled([
+            cachedFetch(
+              getCacheKey('containers', ep.id),
+              TTL.CONTAINERS,
+              () => portainer.getContainers(ep.id),
+            ),
+            cachedFetch(
+              getCacheKey('images', ep.id),
+              TTL.IMAGES,
+              () => portainer.getImages(ep.id),
+            ),
+          ]);
+
+          let epContainers: ReturnType<typeof normalizeContainer>[] = [];
+          let epImages: NormalizedImage[] = [];
+
+          if (rawContainers.status === 'fulfilled') {
+            epContainers = rawContainers.value.map((c) => normalizeContainer(c, ep.id, ep.name));
+          } else {
+            log.warn({ endpointId: ep.id, err: rawContainers.reason }, 'Failed to fetch containers for search');
+          }
+
+          if (rawImages.status === 'fulfilled') {
+            epImages = rawImages.value.map((img) => normalizeImage(img, ep.id, ep.name));
+          } else {
+            log.warn({ endpointId: ep.id, err: rawImages.reason }, 'Failed to fetch images for search');
+          }
+
+          return {
+            epId: ep.id,
+            epName: ep.name,
+            containers: epContainers,
+            images: epImages,
+          };
+        }),
+      ),
+      cachedFetch(
+        getCacheKey('stacks'),
+        TTL.STACKS,
+        () => portainer.getStacks(),
+      ),
+    ]);
+
     const containers: ReturnType<typeof normalizeContainer>[] = [];
     const images: NormalizedImage[] = [];
 
-    for (const ep of endpoints) {
-      const norm = normalizeEndpoint(ep);
-      if (norm.status !== 'up') continue;
-
-      try {
-        const rawContainers = await cachedFetch(
-          getCacheKey('containers', ep.Id),
-          TTL.CONTAINERS,
-          () => portainer.getContainers(ep.Id),
-        );
-        containers.push(...rawContainers.map((c) => normalizeContainer(c, ep.Id, ep.Name)));
-      } catch (err) {
-        log.warn({ endpointId: ep.Id, err }, 'Failed to fetch containers for search');
-      }
-
-      try {
-        const rawImages = await cachedFetch(
-          getCacheKey('images', ep.Id),
-          TTL.IMAGES,
-          () => portainer.getImages(ep.Id),
-        );
-        images.push(...rawImages.map((img) => normalizeImage(img, ep.Id, ep.Name)));
-      } catch (err) {
-        log.warn({ endpointId: ep.Id, err }, 'Failed to fetch images for search');
+    for (const result of endpointResults) {
+      if (result.status === 'fulfilled') {
+        containers.push(...result.value.containers);
+        images.push(...result.value.images);
       }
     }
 
-    const stacksRaw = await cachedFetch(
-      getCacheKey('stacks'),
-      TTL.STACKS,
-      () => portainer.getStacks(),
-    );
     const stacks = stacksRaw.map(normalizeStack);
 
     const containerMatches = containers.filter((container) => {

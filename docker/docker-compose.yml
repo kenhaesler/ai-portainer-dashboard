@@ -9,6 +9,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      - LOG_LEVEL=debug
       - NODE_ENV=production
       - PORT=3051
       # Public/LAN URL used by remote endpoints (Beyla) to call back into OTLP ingest.

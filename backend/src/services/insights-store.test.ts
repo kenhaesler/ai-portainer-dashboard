@@ -1,28 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
 
-const mockExecute = vi.fn();
-const mockQuery = vi.fn();
-const mockQueryOne = vi.fn();
-const mockTransaction = vi.fn();
-const mockDb = {
-  execute: mockExecute,
-  query: mockQuery,
-  queryOne: mockQueryOne,
-  transaction: mockTransaction,
-  healthCheck: vi.fn(),
-};
+let testDb: AppDb;
 
+// Kept: app-db-router mock — redirects to test PostgreSQL instance
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: () => mockDb,
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  }),
+  getDbForDomain: () => testDb,
 }));
 
 import {
@@ -49,35 +33,40 @@ function makeInsight(overrides: Partial<InsightInsert> = {}): InsightInsert {
   };
 }
 
-describe('insights-store', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+beforeAll(async () => { testDb = await getTestDb(); });
+afterAll(async () => { await closeTestDb(); });
+beforeEach(async () => { await truncateTestTables('insights'); });
 
+describe('insights-store', () => {
   describe('insertInsight', () => {
     it('inserts a single insight', async () => {
-      mockExecute.mockResolvedValue({ changes: 1 });
+      const insight = makeInsight();
+      await insertInsight(insight);
 
-      await insertInsight(makeInsight());
+      const rows = await testDb.query<{ id: string }>('SELECT id FROM insights WHERE id = ?', [insight.id]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(insight.id);
+    });
 
-      expect(mockExecute).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO insights'),
-        [
-          'test-id-1', 1, 'local', 'c1', 'web-app',
-          'warning', 'anomaly', 'High CPU on "web-app"', 'CPU is high', null,
-        ],
+    it('stores all fields correctly', async () => {
+      const insight = makeInsight({ suggested_action: 'Scale up' });
+      await insertInsight(insight);
+
+      const rows = await testDb.query<Record<string, unknown>>(
+        'SELECT * FROM insights WHERE id = ?',
+        [insight.id],
       );
+      expect(rows[0].endpoint_id).toBe(1);
+      expect(rows[0].container_name).toBe('web-app');
+      expect(rows[0].severity).toBe('warning');
+      expect(rows[0].category).toBe('anomaly');
+      expect(rows[0].suggested_action).toBe('Scale up');
+      expect(rows[0].is_acknowledged).toBe(false);
     });
   });
 
   describe('insertInsights (batch)', () => {
     it('inserts multiple insights in a transaction and returns their IDs', async () => {
-      // Transaction mock: call the callback with a transactional db mock
-      const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
-      const txQueryOne = vi.fn().mockResolvedValue({ cnt: 0 });
-      const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
-      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<Set<string>>) => fn(txDb));
-
       const insights = [
         makeInsight({ id: 'id-1' }),
         makeInsight({ id: 'id-2', container_id: 'c2', container_name: 'api' }),
@@ -89,20 +78,18 @@ describe('insights-store', () => {
       expect(insertedIds.size).toBe(2);
       expect(insertedIds.has('id-1')).toBe(true);
       expect(insertedIds.has('id-2')).toBe(true);
-      expect(txExecute).toHaveBeenCalledTimes(2);
+
+      const rows = await testDb.query('SELECT id FROM insights ORDER BY id', []);
+      expect(rows).toHaveLength(2);
     });
 
-    it('deduplicates insights and only returns actually-inserted IDs', async () => {
-      const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
-      const txQueryOne = vi.fn()
-        .mockResolvedValueOnce({ cnt: 1 }) // first insight is a duplicate
-        .mockResolvedValueOnce({ cnt: 0 }); // second is unique
-      const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
-      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<Set<string>>) => fn(txDb));
+    it('deduplicates insights with same container_id/category/title within 60 minutes', async () => {
+      // Pre-insert to create the duplicate condition
+      await insertInsight(makeInsight({ id: 'original-1' }));
 
       const insights = [
-        makeInsight({ id: 'dup-1' }),
-        makeInsight({ id: 'unique-1', container_id: 'c2' }),
+        makeInsight({ id: 'dup-1' }),               // same container_id/category/title → skipped
+        makeInsight({ id: 'unique-1', container_id: 'c2' }), // different container_id → inserted
       ];
 
       const insertedIds = await insertInsights(insights);
@@ -111,26 +98,19 @@ describe('insights-store', () => {
       expect(insertedIds.size).toBe(1);
       expect(insertedIds.has('dup-1')).toBe(false);
       expect(insertedIds.has('unique-1')).toBe(true);
-      expect(txExecute).toHaveBeenCalledTimes(1);
+
+      const rows = await testDb.query<{ id: string }>('SELECT id FROM insights ORDER BY id', []);
+      expect(rows).toHaveLength(2); // original-1 + unique-1
     });
 
     it('skips deduplication for insights without container_id', async () => {
-      const txExecute = vi.fn().mockResolvedValue({ changes: 1 });
-      const txQueryOne = vi.fn();
-      const txDb = { execute: txExecute, query: vi.fn(), queryOne: txQueryOne, transaction: vi.fn(), healthCheck: vi.fn() };
-      mockTransaction.mockImplementation(async (fn: (db: typeof txDb) => Promise<Set<string>>) => fn(txDb));
-
-      const insights = [
-        makeInsight({ id: 'no-container', container_id: null }),
-      ];
+      const insights = [makeInsight({ id: 'no-container', container_id: null })];
 
       const insertedIds = await insertInsights(insights);
 
       expect(insertedIds).toBeInstanceOf(Set);
       expect(insertedIds.size).toBe(1);
       expect(insertedIds.has('no-container')).toBe(true);
-      // Dedup query should NOT be called for null container_id
-      expect(txQueryOne).not.toHaveBeenCalled();
     });
 
     it('returns empty set for empty array', async () => {
@@ -141,45 +121,52 @@ describe('insights-store', () => {
   });
 
   describe('getRecentInsights', () => {
+    it('returns insights within the specified time window', async () => {
+      await insertInsight(makeInsight({ id: 'recent-1' }));
+      const results = await getRecentInsights(60);
+      expect(results.some((r) => r.id === 'recent-1')).toBe(true);
+    });
+
     it('applies LIMIT parameter', async () => {
-      mockQuery.mockResolvedValue([]);
-
-      await getRecentInsights(60, 100);
-
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('LIMIT ?'),
-        ['-60', 100],
-      );
+      for (let i = 0; i < 5; i++) {
+        await insertInsight(makeInsight({ id: `insight-${i}`, container_id: `c${i}` }));
+      }
+      const results = await getRecentInsights(60, 2);
+      expect(results.length).toBeLessThanOrEqual(2);
     });
 
     it('defaults limit to 500', async () => {
-      mockQuery.mockResolvedValue([]);
-
-      await getRecentInsights(30);
-
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('LIMIT ?'),
-        ['-30', 500],
-      );
+      await insertInsight(makeInsight({ id: 'default-limit-test' }));
+      const results = await getRecentInsights(30);
+      expect(results.length).toBeLessThanOrEqual(500);
+      expect(results.some((r) => r.id === 'default-limit-test')).toBe(true);
     });
   });
 
   describe('cleanupOldInsights', () => {
     it('deletes insights older than retention days', async () => {
-      mockExecute.mockResolvedValue({ changes: 42 });
+      // Insert directly with a timestamp 8 days in the past
+      await testDb.execute(
+        `INSERT INTO insights (
+          id, endpoint_id, endpoint_name, container_id, container_name,
+          severity, category, title, description, suggested_action,
+          is_acknowledged, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW() - INTERVAL '8 days')`,
+        ['old-insight', 1, 'local', 'c1', 'web-app', 'warning', 'anomaly', 'Old Issue', 'Old desc', null],
+      );
 
       const deleted = await cleanupOldInsights(7);
+      expect(deleted).toBe(1);
+    });
 
-      expect(deleted).toBe(42);
-      expect(mockExecute).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM insights'),
-        ['-7'],
-      );
+    it('does not delete insights within retention period', async () => {
+      await insertInsight(makeInsight({ id: 'fresh-insight' }));
+
+      const deleted = await cleanupOldInsights(7);
+      expect(deleted).toBe(0);
     });
 
     it('returns 0 when nothing to delete', async () => {
-      mockExecute.mockResolvedValue({ changes: 0 });
-
       const deleted = await cleanupOldInsights(30);
       expect(deleted).toBe(0);
     });

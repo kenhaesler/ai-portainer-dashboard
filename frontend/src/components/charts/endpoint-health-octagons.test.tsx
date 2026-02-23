@@ -22,14 +22,14 @@ let resizeCallback: ResizeObserverCallback | null = null;
 beforeEach(() => {
   mockNavigate.mockReset();
   resizeCallback = null;
-  global.ResizeObserver = vi.fn().mockImplementation((cb: ResizeObserverCallback) => {
-    resizeCallback = cb;
-    return {
-      observe: vi.fn(),
-      disconnect: vi.fn(),
-      unobserve: vi.fn(),
-    };
-  });
+  global.ResizeObserver = class {
+    constructor(cb: ResizeObserverCallback) {
+      resizeCallback = cb;
+    }
+    observe = vi.fn();
+    disconnect = vi.fn();
+    unobserve = vi.fn();
+  } as unknown as typeof ResizeObserver;
 });
 
 /** Render and trigger ResizeObserver with a simulated container width */
@@ -75,10 +75,10 @@ describe('EndpointHealthOctagons', () => {
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
-  it('navigates to /fleet on click', () => {
+  it('navigates to /infrastructure on click', () => {
     renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     fireEvent.click(screen.getByTestId('octagon-Production'));
-    expect(mockNavigate).toHaveBeenCalledWith('/fleet');
+    expect(mockNavigate).toHaveBeenCalledWith('/infrastructure');
   });
 
   it('renders the legend', () => {

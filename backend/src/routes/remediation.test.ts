@@ -1,12 +1,10 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
+import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { remediationRoutes } from './remediation.js';
 
 const mockBroadcastActionUpdate = vi.fn();
-const mockRestartContainer = vi.fn();
-const mockStopContainer = vi.fn();
-const mockStartContainer = vi.fn();
 
 let state: { action: any } = {
   action: null,
@@ -20,12 +18,18 @@ vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
 }));
 
-vi.mock('../services/portainer-client.js', () => ({
-  restartContainer: (...args: unknown[]) => mockRestartContainer(...args),
-  stopContainer: (...args: unknown[]) => mockStopContainer(...args),
-  startContainer: (...args: unknown[]) => mockStartContainer(...args),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockRestartContainer: any;
+let mockStopContainer: any;
+let mockStartContainer: any;
+
+// Kept: stateful SQL mock simulates approve/reject/execute state transitions
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
@@ -89,16 +93,23 @@ describe('remediation routes', () => {
     await app.ready();
   });
 
-  afterAll(async () => {
-    await app.close();
+  afterEach(async () => {
+    await waitForInFlight();
   });
 
-  beforeEach(() => {
+  afterAll(async () => {
+    await app.close();
+    await closeTestRedis();
+  });
+
+  beforeEach(async () => {
     currentRole = 'admin';
-    vi.clearAllMocks();
-    mockRestartContainer.mockResolvedValue(undefined);
-    mockStopContainer.mockResolvedValue(undefined);
-    mockStartContainer.mockResolvedValue(undefined);
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockRestartContainer = vi.spyOn(portainerClient, 'restartContainer').mockResolvedValue(undefined);
+    mockStopContainer = vi.spyOn(portainerClient, 'stopContainer').mockResolvedValue(undefined);
+    mockStartContainer = vi.spyOn(portainerClient, 'startContainer').mockResolvedValue(undefined);
     state.action = {
       id: 'a1',
       status: 'pending',
@@ -130,43 +141,11 @@ describe('remediation routes', () => {
     expect(mockBroadcastActionUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
   });
 
-  it('rejects approve for non-admin users', async () => {
-    currentRole = 'viewer';
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/remediation/actions/a1/approve',
-    });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects reject for non-admin users', async () => {
-    currentRole = 'operator';
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/remediation/actions/a1/reject',
-      payload: { reason: 'not now' },
-    });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-  });
-
-  it('rejects execute for non-admin users', async () => {
-    currentRole = 'operator';
-    state.action.status = 'approved';
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/remediation/actions/a1/execute',
-    });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'Insufficient permissions' });
-    expect(mockRestartContainer).not.toHaveBeenCalled();
+  describe('RBAC', () => {
+    const setRole = (r: 'viewer' | 'operator' | 'admin') => { currentRole = r; };
+    testAdminOnly(() => app, setRole, 'POST', '/api/remediation/actions/a1/approve');
+    testAdminOnly(() => app, setRole, 'POST', '/api/remediation/actions/a1/reject', { reason: 'not now' });
+    testAdminOnly(() => app, setRole, 'POST', '/api/remediation/actions/a1/execute');
   });
 
   it('rejects execute when action is not approved', async () => {

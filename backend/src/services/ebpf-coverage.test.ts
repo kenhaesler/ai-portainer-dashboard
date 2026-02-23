@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
 const mockExecute = vi.fn(async () => ({ changes: 1 }));
 const mockQuery = vi.fn(async (): Promise<any[]> => []);
@@ -12,34 +12,15 @@ const mockDb = {
   healthCheck: vi.fn(),
 };
 
+// Kept: DB mock — tests assert SQL query patterns
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: () => mockDb,
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getEndpoints: vi.fn(async () => [
-    { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
-    { Id: 2, Name: 'remote', Type: 1, URL: 'tcp://remote', Status: 1, Snapshots: [] },
-  ]),
-  getEndpoint: vi.fn(async (id: number) => ({ Id: id, Name: `endpoint-${id}`, Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] })),
-  getContainers: vi.fn(async () => []),
-  pullImage: vi.fn(async () => {}),
-  createContainer: vi.fn(async () => ({ Id: 'new-beyla-id' })),
-  startContainer: vi.fn(async () => {}),
-  stopContainer: vi.fn(async () => {}),
-  removeContainer: vi.fn(async () => {}),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: (_key: string, _ttl: number, fn: () => unknown) => fn(),
-  getCacheKey: (...parts: (string | number)[]) => parts.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
-
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 import {
   getEndpointCoverage,
   updateCoverageStatus,
@@ -54,30 +35,47 @@ import {
   enableBeyla,
   removeBeylaFromEndpoint,
 } from './ebpf-coverage.js';
-import {
-  getEndpoints,
-  getContainers,
-  getEndpoint,
-  pullImage,
-  createContainer,
-  startContainer,
-  stopContainer,
-  removeContainer,
-} from './portainer-client.js';
 
-const mockGetContainers = vi.mocked(getContainers);
-const mockGetEndpoints = vi.mocked(getEndpoints);
-const mockGetEndpoint = vi.mocked(getEndpoint);
-const mockPullImage = vi.mocked(pullImage);
-const mockCreateContainer = vi.mocked(createContainer);
-const mockStartContainer = vi.mocked(startContainer);
-const mockStopContainer = vi.mocked(stopContainer);
-const mockRemoveContainer = vi.mocked(removeContainer);
+let mockGetContainers: any;
+let mockGetEndpoints: any;
+let mockGetEndpoint: any;
+let mockPullImage: any;
+let mockCreateContainer: any;
+let mockStartContainer: any;
+let mockStopContainer: any;
+let mockRemoveContainer: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('ebpf-coverage service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    // Bypass cache — calls fetcher directly
+    vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+    );
+    // Default portainer spies
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+      { Id: 1, Name: 'local', Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] },
+      { Id: 2, Name: 'remote', Type: 1, URL: 'tcp://remote', Status: 1, Snapshots: [] },
+    ] as any);
+    mockGetEndpoint = vi.spyOn(portainerClient, 'getEndpoint').mockImplementation(async (id: number) => ({ Id: id, Name: `endpoint-${id}`, Type: 1, URL: 'tcp://localhost', Status: 1, Snapshots: [] }) as any);
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
+    mockPullImage = vi.spyOn(portainerClient, 'pullImage').mockResolvedValue(undefined as any);
+    mockCreateContainer = vi.spyOn(portainerClient, 'createContainer').mockResolvedValue({ Id: 'new-beyla-id' } as any);
+    mockStartContainer = vi.spyOn(portainerClient, 'startContainer').mockResolvedValue(undefined as any);
+    mockStopContainer = vi.spyOn(portainerClient, 'stopContainer').mockResolvedValue(undefined as any);
+    mockRemoveContainer = vi.spyOn(portainerClient, 'removeContainer').mockResolvedValue(undefined as any);
     mockExecute.mockResolvedValue({ changes: 1 });
+    mockQuery.mockResolvedValue([]);
+    mockQueryOne.mockResolvedValue(null);
   });
 
   describe('BEYLA_COMPATIBLE_TYPES', () => {

@@ -15,18 +15,20 @@ const mocks = vi.hoisted(() => {
   const splitTextToSizeMock = vi.fn((text: string) => [text]);
   const addPageMock = vi.fn();
   const saveMock = vi.fn();
-  const JsPdfConstructorMock = vi.fn(() => ({
-    addImage: addImageMock,
-    setTextColor: setTextColorMock,
-    setFontSize: setFontSizeMock,
-    text: textMock,
-    setFillColor: setFillColorMock,
-    roundedRect: roundedRectMock,
-    splitTextToSize: splitTextToSizeMock,
-    addPage: addPageMock,
-    save: saveMock,
-    lastAutoTable: { finalY: 120 },
-  }));
+  const JsPdfConstructorMock = vi.fn(function () {
+    return {
+      addImage: addImageMock,
+      setTextColor: setTextColorMock,
+      setFontSize: setFontSizeMock,
+      text: textMock,
+      setFillColor: setFillColorMock,
+      roundedRect: roundedRectMock,
+      splitTextToSize: splitTextToSizeMock,
+      addPage: addPageMock,
+      save: saveMock,
+      lastAutoTable: { finalY: 120 },
+    };
+  });
   const autoTableMock = vi.fn();
   return {
     addImageMock,

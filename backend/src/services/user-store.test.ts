@@ -1,16 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { roleLevel, hasMinRole } from './user-store.js';
 
-vi.mock('../db/app-db-router.js', () => ({ getDbForDomain: vi.fn() }));
+// Kept: crypto mock — file I/O and bcrypt dependency
 vi.mock('../utils/crypto.js', () => ({
   hashPassword: vi.fn(async (p: string) => `hashed:${p}`),
   comparePassword: vi.fn(async (p: string, h: string) => h === `hashed:${p}`),
-}));
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({ DASHBOARD_USERNAME: 'admin', DASHBOARD_PASSWORD: 'changeme123' })),
-}));
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
 describe('user-store', () => {

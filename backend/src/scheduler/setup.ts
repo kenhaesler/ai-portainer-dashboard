@@ -7,7 +7,7 @@ import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../services/m
 import { recordNetworkSample } from '../services/network-rate-tracker.js';
 import { getEndpoints, getContainers, isEndpointDegraded } from '../services/portainer-client.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
-import { cleanupOldCaptures } from '../services/pcap-service.js';
+import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../services/pcap-service.js';
 import { createPortainerBackup, cleanupOldPortainerBackups } from '../services/portainer-backup.js';
 import { getSetting } from '../services/settings-store.js';
 import { startWebhookListener, stopWebhookListener, processRetries } from '../services/webhook-service.js';
@@ -341,6 +341,18 @@ export async function runCleanup(): Promise<void> {
   }
 
   try {
+    const endpoints = await cachedFetchSWR(
+      getCacheKey('endpoints'),
+      TTL.ENDPOINTS,
+      () => getEndpoints(),
+    );
+    const endpointIds = endpoints.map((ep) => ep.Id);
+    await cleanupOrphanedSidecars(endpointIds);
+  } catch (err) {
+    log.error({ err }, 'Orphaned sidecar cleanup failed');
+  }
+
+  try {
     const kpiDeleted = await cleanOldKpiSnapshots(getConfig().METRICS_RETENTION_DAYS);
     if (kpiDeleted > 0) {
       log.info({ deleted: kpiDeleted }, 'Old KPI snapshots cleaned up');
@@ -521,17 +533,18 @@ export async function startScheduler(): Promise<void> {
     setTimeout(() => { runWithTraceContext({ source: 'scheduler' }, runImageStalenessCheck).catch(() => {}); }, 30_000);
   }
 
-  // Harbor vulnerability sync (reads from DB settings with env var fallback)
-  const harborConfig = await getEffectiveHarborConfig();
-  if (harborConfig.enabled && await isHarborConfiguredAsync()) {
-    const harborIntervalMs = harborConfig.syncIntervalMinutes * 60 * 1000;
-    log.info(
-      { intervalMinutes: harborConfig.syncIntervalMinutes },
-      'Starting Harbor vulnerability sync scheduler',
-    );
+  // Harbor vulnerability sync — re-reads config on each 1-minute tick so changes
+  // to enabled/syncIntervalMinutes in the Settings UI take effect without a restart.
+  {
+    let lastHarborSyncAt = 0;
     const harborInterval = setInterval(
       () => runWithTraceContext({ source: 'scheduler' }, async () => {
         try {
+          const cfg = await getEffectiveHarborConfig();
+          if (!cfg.enabled || !(await isHarborConfiguredAsync())) return;
+          const syncIntervalMs = cfg.syncIntervalMinutes * 60 * 1000;
+          if (Date.now() - lastHarborSyncAt < syncIntervalMs) return;
+          lastHarborSyncAt = Date.now();
           const result = await runHarborSync();
           if (result.error) {
             log.warn({ error: result.error }, 'Harbor sync completed with errors');
@@ -540,13 +553,19 @@ export async function startScheduler(): Promise<void> {
           log.error({ err }, 'Harbor vulnerability sync failed');
         }
       }),
-      harborIntervalMs,
+      60_000, // poll every minute; actual sync cadence is controlled by syncIntervalMinutes
     );
     intervals.push(harborInterval);
-    // Run once after warm-up delay
+    // Run once after warm-up delay if Harbor is already configured at startup
     setTimeout(() => {
       runWithTraceContext({ source: 'scheduler' }, async () => {
-        try { await runHarborSync(); } catch { /* logged inside */ }
+        try {
+          const cfg = await getEffectiveHarborConfig();
+          if (!cfg.enabled || !(await isHarborConfiguredAsync())) return;
+          log.info({ intervalMinutes: cfg.syncIntervalMinutes }, 'Starting Harbor vulnerability sync scheduler');
+          lastHarborSyncAt = Date.now();
+          await runHarborSync();
+        } catch { /* logged inside */ }
       }).catch(() => {});
     }, 60_000);
   }

@@ -24,7 +24,7 @@ export const envSchema = z.object({
 
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
-  PORTAINER_API_KEY: z.string().min(1).default(''),
+  PORTAINER_API_KEY: z.string().default(''),
   PORTAINER_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   PORTAINER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(30),
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
@@ -114,6 +114,8 @@ export const envSchema = z.object({
   PCAP_MAX_CONCURRENT: z.coerce.number().int().min(1).max(10).default(2),
   PCAP_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   PCAP_STORAGE_DIR: z.string().default('./data/pcap'),
+  PCAP_CAPTURE_IMAGE: z.string().default('alpine:3.21'),
+  PCAP_CAPTURE_IMAGE_PULL: z.enum(['always', 'never', 'if-not-present']).default('if-not-present'),
 
   // Remediation Safety
   REMEDIATION_PROTECTED_CONTAINERS: z.string().optional(),
@@ -132,6 +134,7 @@ export const envSchema = z.object({
   // TimescaleDB (metrics + KPI storage)
   TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
   TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(50),
+  TIMESCALE_REPORTS_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(5),
   METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   METRICS_ROLLUP_5MIN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
   METRICS_ROLLUP_1HOUR_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),

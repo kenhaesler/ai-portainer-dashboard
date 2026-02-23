@@ -2,7 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { isMetricsDbHealthy, isMetricsDbReady } from '../db/timescale.js';
 import { isAppDbHealthy, isAppDbReady } from '../db/postgres.js';
 import { getConfig } from '../config/index.js';
-import { cache } from '../services/portainer-cache.js';
+import { cache, cachedFetch } from '../services/portainer-cache.js';
+import { checkPortainerReachable } from '../services/portainer-client.js';
 import { HealthResponseSchema, ReadinessResponseSchema } from '../models/api-schemas.js';
 
 type DependencyCheck = { status: string; url?: string; error?: string };
@@ -33,48 +34,27 @@ async function runChecks(): Promise<{ checks: Record<string, DependencyCheck>; o
     checks.metricsDb = { status: 'unhealthy', error: 'TimescaleDB query failed' };
   }
 
-  // Check Portainer
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`${config.PORTAINER_API_URL}/api/status`, {
-      signal: controller.signal,
-      headers: config.PORTAINER_API_KEY
-        ? { 'X-API-Key': config.PORTAINER_API_KEY }
-        : {},
-    });
-    clearTimeout(timeout);
-    checks.portainer = {
-      status: res.ok ? 'healthy' : 'degraded',
-      url: config.PORTAINER_API_URL,
-    };
-  } catch (err) {
-    checks.portainer = {
-      status: 'unhealthy',
-      url: config.PORTAINER_API_URL,
-      error: err instanceof Error ? err.message : 'Connection failed',
-    };
-  }
+  // Check Portainer (cached 30s — prevents stampede from frequent load-balancer polls)
+  checks.portainer = await cachedFetch<DependencyCheck>('health:portainer', 30, async () => {
+    const { reachable, ok } = await checkPortainerReachable();
+    if (!reachable) return { status: 'unhealthy', url: config.PORTAINER_API_URL, error: 'Connection failed' };
+    return { status: ok ? 'healthy' : 'degraded', url: config.PORTAINER_API_URL };
+  });
 
-  // Check Ollama
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`${config.OLLAMA_BASE_URL}/api/tags`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    checks.ollama = {
-      status: res.ok ? 'healthy' : 'degraded',
-      url: config.OLLAMA_BASE_URL,
-    };
-  } catch (err) {
-    checks.ollama = {
-      status: 'unhealthy',
-      url: config.OLLAMA_BASE_URL,
-      error: err instanceof Error ? err.message : 'Connection failed',
-    };
-  }
+  // Check Ollama (cached 30s — same rationale as Portainer)
+  checks.ollama = await cachedFetch<DependencyCheck>('health:ollama', 30, async () => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${config.OLLAMA_BASE_URL}/api/tags`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      return { status: res.ok ? 'healthy' : 'degraded', url: config.OLLAMA_BASE_URL };
+    } catch (err) {
+      return { status: 'unhealthy', url: config.OLLAMA_BASE_URL, error: err instanceof Error ? err.message : 'Connection failed' };
+    }
+  });
 
   // Check Redis (only when configured -- degraded not unhealthy because L1 fallback works)
   const backoff = cache.getBackoffState();

@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
+import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
+import type { AppDb } from '../db/app-db.js';
+
+let testDb: AppDb;
 
 // ── Hoisted mock references (available inside vi.mock factories) ──
 
@@ -19,48 +23,22 @@ const {
 
 // ── Module mocks ──
 
+// Kept: ollama mock — tests control LLM chat responses
 vi.mock('ollama', () => ({
-  Ollama: vi.fn().mockImplementation(() => ({
-    chat: mockOllamaChat,
-  })),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
+  Ollama: vi.fn(function () {
+    return { chat: mockOllamaChat };
   }),
 }));
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn().mockResolvedValue([]),
-  getContainers: vi.fn().mockResolvedValue([]),
-}));
 
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: vi.fn((e: any) => e),
-  normalizeContainer: vi.fn((c: any) => c),
-}));
-
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 60, CONTAINERS: 60 },
-}));
-
+// Kept: app-db-router mock — routes to test DB
 vi.mock('../db/app-db-router.js', () => ({
-  getDbForDomain: vi.fn(() => ({
-    query: vi.fn(async () => []),
-    queryOne: vi.fn(async () => null),
-    execute: vi.fn(async () => ({ changes: 0 })),
-  })),
+  getDbForDomain: () => testDb,
 }));
 
-vi.mock('../services/llm-trace-store.js', () => ({
-  insertLlmTrace: vi.fn(),
-}));
+vi.mock('../services/llm-trace-store.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
+);
 
 vi.mock('../services/llm-tools.js', () => ({
   getToolSystemPrompt: vi.fn(() => ''),
@@ -82,11 +60,29 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
 }));
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    MAX_LLM_HISTORY_MESSAGES: 50,
-  })),
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import * as portainerCache from '../services/portainer-cache.js';
+import { cache } from '../services/portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+// ── Spy on real portainer modules (prevent real API calls) ──
+vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+  async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+);
+vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+  async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+);
+vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
+vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as any);
+
+beforeAll(async () => {
+  testDb = await getTestDb();
+  await cache.clear();
+});
+afterAll(async () => {
+  await closeTestDb();
+  await closeTestRedis();
+});
 
 // ── Import the module under test AFTER mocks are registered ──
 import {
@@ -183,6 +179,31 @@ describe('looksLikeToolCallAttempt', () => {
   it('returns false for JSON that does not contain tool_calls', () => {
     const json = '{"containers":[{"name":"nginx","state":"running"}]}';
     expect(looksLikeToolCallAttempt(json)).toBe(false);
+  });
+
+  it('returns true for inline tool_calls embedded in a sentence', () => {
+    const inline = 'I will now call: {"tool_calls":[{"tool":"get_containers","arguments":{}}]}';
+    expect(looksLikeToolCallAttempt(inline)).toBe(true);
+  });
+
+  it('returns true for OpenAI streaming delta format with "tool_call"', () => {
+    const delta = '{"tool_call":{"id":"call_1","function":{"name":"get_containers","arguments":"{}"}}}';
+    expect(looksLikeToolCallAttempt(delta)).toBe(true);
+  });
+
+  it('returns true for JSON array of function-call objects at root', () => {
+    const arr = '[{"function":{"name":"get_logs","arguments":{"container":"nginx"}}}]';
+    expect(looksLikeToolCallAttempt(arr)).toBe(true);
+  });
+
+  it('returns true for code fence with function-call array', () => {
+    const fenced = '```json\n[{"function":{"name":"list_containers","arguments":{}}}]\n```';
+    expect(looksLikeToolCallAttempt(fenced)).toBe(true);
+  });
+
+  it('returns false for a JSON array of container objects (not tool calls)', () => {
+    const arr = '[{"name":"nginx","state":"running"},{"name":"redis","state":"stopped"}]';
+    expect(looksLikeToolCallAttempt(arr)).toBe(false);
   });
 });
 

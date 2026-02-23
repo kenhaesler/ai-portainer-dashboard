@@ -1,7 +1,7 @@
 import { type Page, expect } from '@playwright/test';
 
 const DEFAULT_USERNAME = 'admin';
-const DEFAULT_PASSWORD = 'changeme123';
+const DEFAULT_PASSWORD = 'changeme12345';
 
 /**
  * Log in to the dashboard via the login form.

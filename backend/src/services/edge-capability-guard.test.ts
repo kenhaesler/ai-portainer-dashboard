@@ -1,19 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// Mock dependencies before importing
-vi.mock('./portainer-client.js', () => ({
-  getEndpoint: vi.fn(),
-}));
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => unknown) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 60 },
-}));
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 import { getEndpointCapabilities, assertCapability, supportsLiveFeatures } from './edge-capability-guard.js';
-import { getEndpoint } from './portainer-client.js';
 
-const mockGetEndpoint = vi.mocked(getEndpoint);
+// Prime the cache's Redis connection so cache.clear() in beforeEach can delete stale keys
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 function makeRawEndpoint(overrides: Record<string, unknown> = {}) {
   return {
@@ -38,13 +38,15 @@ function makeRawEndpoint(overrides: Record<string, unknown> = {}) {
 }
 
 describe('edge-capability-guard', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
   });
 
   describe('getEndpointCapabilities', () => {
     it('returns full capabilities for a non-edge endpoint', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint() as any);
+      // vi.spyOn: controlled input for deterministic assertion
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint() as any);
       const caps = await getEndpointCapabilities(1);
       expect(caps).toEqual({
         exec: true,
@@ -55,7 +57,7 @@ describe('edge-capability-guard', () => {
     });
 
     it('returns full capabilities for Edge Standard endpoint', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint({
         Type: 4,
         EdgeID: 'edge-std-123',
         LastCheckInDate: Math.floor(Date.now() / 1000) - 30,
@@ -71,7 +73,7 @@ describe('edge-capability-guard', () => {
     });
 
     it('returns no capabilities for Edge Async endpoint (Type 7)', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint({
         Type: 7,
         EdgeID: 'edge-async-456',
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
@@ -89,12 +91,12 @@ describe('edge-capability-guard', () => {
 
   describe('assertCapability', () => {
     it('does not throw for a capable endpoint', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint() as any);
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint() as any);
       await expect(assertCapability(1, 'exec')).resolves.toBeUndefined();
     });
 
     it('throws 422 for Edge Async endpoint missing exec capability', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint({
         Type: 7,
         EdgeID: 'edge-async',
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
@@ -120,7 +122,7 @@ describe('edge-capability-guard', () => {
       });
 
       for (const cap of ['exec', 'realtimeLogs', 'liveStats', 'immediateActions'] as const) {
-        mockGetEndpoint.mockResolvedValue(asyncEndpoint as any);
+        vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(asyncEndpoint as any);
         await expect(assertCapability(1, cap)).rejects.toThrow(/Edge Async/);
       }
     });
@@ -128,12 +130,12 @@ describe('edge-capability-guard', () => {
 
   describe('supportsLiveFeatures', () => {
     it('returns true for non-edge endpoint', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint() as any);
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint() as any);
       expect(await supportsLiveFeatures(1)).toBe(true);
     });
 
     it('returns false for Edge Async endpoint (Type 7)', async () => {
-      mockGetEndpoint.mockResolvedValue(makeRawEndpoint({
+      vi.spyOn(portainerClient, 'getEndpoint').mockResolvedValue(makeRawEndpoint({
         Type: 7,
         EdgeID: 'edge-async',
         LastCheckInDate: Math.floor(Date.now() / 1000) - 120,
@@ -143,7 +145,11 @@ describe('edge-capability-guard', () => {
     });
 
     it('returns true when endpoint lookup fails (safe default)', async () => {
-      mockGetEndpoint.mockRejectedValue(new Error('Network error'));
+      // Bypass cache to avoid unhandled rejection from cachedFetch's promise.finally() chain
+      vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+        (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+      );
+      vi.spyOn(portainerClient, 'getEndpoint').mockRejectedValue(new Error('Network error'));
       expect(await supportsLiveFeatures(999)).toBe(true);
     });
   });

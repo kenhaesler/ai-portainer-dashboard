@@ -4,10 +4,12 @@ import requestTracing from './request-tracing.js';
 
 const mockInsertSpan = vi.fn();
 
+// Kept: trace-store mock — no PostgreSQL in CI
 vi.mock('../services/trace-store.js', () => ({
   insertSpan: (...args: unknown[]) => mockInsertSpan(...args),
 }));
 
+// Kept: trace-context mock — side-effect isolation
 vi.mock('../services/trace-context.js', () => ({
   runWithTraceContext: (_ctx: unknown, fn: () => unknown) => fn(),
   getCurrentTraceContext: () => undefined,

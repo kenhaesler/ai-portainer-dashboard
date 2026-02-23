@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockInsertAction = vi.fn();
 const mockGetAction = vi.fn();
@@ -7,15 +7,13 @@ const mockUpdateActionRationale = vi.fn();
 const mockHasPendingAction = vi.fn().mockReturnValue(false);
 const mockBroadcastNewAction = vi.fn();
 const mockBroadcastActionUpdate = vi.fn();
-const mockIsOllamaAvailable = vi.fn();
-const mockChatStream = vi.fn();
-const mockGetContainerLogs = vi.fn();
 const mockGetLatestMetrics = vi.fn();
 
 vi.mock('uuid', () => ({
   v4: () => 'action-123',
 }));
 
+// Kept: actions-store mock — tests control action persistence
 vi.mock('./actions-store.js', () => ({
   insertAction: (...args: unknown[]) => mockInsertAction(...args),
   getAction: (...args: unknown[]) => mockGetAction(...args),
@@ -24,34 +22,25 @@ vi.mock('./actions-store.js', () => ({
   hasPendingAction: (...args: unknown[]) => mockHasPendingAction(...args),
 }));
 
+// Kept: event-bus mock — tests control event emission
 vi.mock('./event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-}));
-
+// Kept: metrics-store mock — tests control metrics responses
 vi.mock('./metrics-store.js', () => ({
   getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
 }));
 
-vi.mock('./llm-client.js', () => ({
-  isOllamaAvailable: (...args: unknown[]) => mockIsOllamaAvailable(...args),
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
-
+// Kept: remediation socket mock — tests control broadcast
 vi.mock('../sockets/remediation.js', () => ({
   broadcastNewAction: (...args: unknown[]) => mockBroadcastNewAction(...args),
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
 }));
 
+// Kept: prompt-store mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: () => ({}),
+  getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
 import {
@@ -60,14 +49,33 @@ import {
   buildRemediationPrompt,
   isProtectedContainer,
 } from './remediation-service.js';
+import * as portainerClient from './portainer-client.js';
+import * as llmClient from './llm-client.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockGetContainerLogs: any;
+let mockIsOllamaAvailable: any;
+let mockChatStream: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 async function flushMicrotasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe('remediation-service', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await cache.clear();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    // Re-set forwarding mock defaults
     mockInsertAction.mockReturnValue(true);
     mockGetAction.mockReturnValue({
       id: 'action-123',
@@ -76,10 +84,14 @@ describe('remediation-service', () => {
     });
     mockUpdateActionRationale.mockReturnValue(true);
     mockHasPendingAction.mockReturnValue(false);
-    mockIsOllamaAvailable.mockResolvedValue(false);
-    mockGetContainerLogs.mockResolvedValue('line 1\nline 2');
     mockGetLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
-    mockChatStream.mockResolvedValue('');
+    // Re-set prompt-store default
+    const { getEffectivePrompt } = await import('./prompt-store.js');
+    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
+    // Portainer + LLM spies
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
+    mockChatStream = vi.spyOn(llmClient, 'chatStream').mockResolvedValue('');
   });
 
   it('maps OOM insights to INVESTIGATE (not STOP_CONTAINER) and broadcasts', async () => {
@@ -174,7 +186,7 @@ describe('remediation-service', () => {
 
   it('enriches rationale with structured LLM analysis when available', async () => {
     mockIsOllamaAvailable.mockResolvedValue(true);
-    mockChatStream.mockImplementation(async (_messages, _system, onChunk) => {
+    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       onChunk(JSON.stringify({
         root_cause: 'OOM due to connection pool leak',
         severity: 'critical',
@@ -358,11 +370,20 @@ describe('isProtectedContainer', () => {
 });
 
 describe('protected container safety', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await cache.clear();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    // Re-set forwarding mock defaults
     mockInsertAction.mockReturnValue(true);
     mockHasPendingAction.mockReturnValue(false);
-    mockIsOllamaAvailable.mockResolvedValue(false);
+    // Re-set prompt-store default
+    const { getEffectivePrompt } = await import('./prompt-store.js');
+    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
+    // Portainer + LLM spies
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
+    mockChatStream = vi.spyOn(llmClient, 'chatStream').mockResolvedValue('');
   });
 
   it('never suggests STOP_CONTAINER — OOM maps to INVESTIGATE', async () => {

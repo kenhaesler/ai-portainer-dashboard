@@ -42,7 +42,8 @@ export async function userRoutes(fastify: FastifyInstance) {
       });
       return reply.status(201).send(user);
     } catch (err) {
-      if (err instanceof Error && err.message.includes('UNIQUE constraint')) {
+      // PostgreSQL unique violation (23505); also handles legacy SQLite 'UNIQUE constraint' messages
+      if ((err as { code?: string }).code === '23505' || (err instanceof Error && err.message.includes('UNIQUE constraint'))) {
         return reply.status(409).send({ error: 'Username already exists' });
       }
       throw err;
@@ -63,7 +64,16 @@ export async function userRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const body = request.body as { username?: string; password?: string; role?: Role };
 
-    const user = await updateUser(id, body);
+    let user;
+    try {
+      user = await updateUser(id, body);
+    } catch (err) {
+      // PostgreSQL unique violation (23505); also handles legacy SQLite 'UNIQUE constraint' messages
+      if ((err as { code?: string }).code === '23505' || (err instanceof Error && err.message.includes('UNIQUE constraint'))) {
+        return reply.status(409).send({ error: 'Username already exists' });
+      }
+      throw err;
+    }
     if (!user) return reply.status(404).send({ error: 'User not found' });
 
     writeAuditLog({

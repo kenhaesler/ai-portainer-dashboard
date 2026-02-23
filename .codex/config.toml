@@ -1,0 +1,22 @@
+# Codex CLI project configuration
+# See: https://github.com/openai/codex
+
+# Fallback to CLAUDE.md if AGENTS.md is absent in a subdirectory
+project_doc_fallback_filenames = ["AGENTS.md", "CLAUDE.md"]
+
+# Approval policy: require approval for destructive operations
+approval_policy = "on-request"
+
+# Supplemental instructions (project-specific rules)
+instructions = """
+This is an AI-powered container monitoring dashboard extending Portainer.
+Monorepo: backend/ (Fastify 5 + PostgreSQL) and frontend/ (React 19 + Vite).
+
+Key rules:
+- Tests required for every change. Never use --no-verify.
+- Observer-first: do not add container-mutating actions without explicit request.
+- Never push to main or dev. Branch from dev as feature/<issue#>-<desc>.
+- Never commit secrets (.env, API keys, passwords).
+- Never work on NO AI issues.
+- Always run npm install from the repo root (npm workspaces).
+"""

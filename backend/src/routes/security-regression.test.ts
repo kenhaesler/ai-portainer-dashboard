@@ -11,7 +11,8 @@
  *
  * @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/430
  */
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { readFileSync } from 'node:fs';
@@ -22,6 +23,7 @@ import path from 'node:path';
 // so that route registration succeeds without real DB/network connections.
 let mockRemediationAction: Record<string, unknown> | undefined;
 
+// Kept: full-app auth sweep test; DB mock is scaffolding for route registration
 vi.mock('../db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     queryOne: vi.fn(async (sql: string) => {
@@ -87,73 +89,6 @@ vi.mock('../db/timescale.js', () => ({
   isMetricsDbHealthy: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    PORTAINER_API_URL: 'http://localhost:9000',
-    PORTAINER_API_KEY: 'test-key',
-    PORTAINER_VERIFY_SSL: true,
-    PORTAINER_CONCURRENCY: 10,
-    PORTAINER_MAX_CONNECTIONS: 20,
-    OLLAMA_BASE_URL: 'http://localhost:11434',
-    OLLAMA_MODEL: 'llama3.2',
-    LLM_OPENAI_ENDPOINT: undefined,
-    LLM_BEARER_TOKEN: undefined,
-    JWT_SECRET: 'a'.repeat(32),
-    JWT_ALGORITHM: 'HS256',
-    DASHBOARD_USERNAME: 'admin',
-    DASHBOARD_PASSWORD: 'test-password-12345',
-    MONITORING_ENABLED: false,
-    MONITORING_INTERVAL_MINUTES: 5,
-    METRICS_COLLECTION_ENABLED: false,
-    PROMETHEUS_METRICS_ENABLED: false,
-    PROMETHEUS_BEARER_TOKEN: '',
-    ANOMALY_ZSCORE_THRESHOLD: 3.0,
-    ANOMALY_MOVING_AVERAGE_WINDOW: 30,
-    ANOMALY_MIN_SAMPLES: 30,
-    ANOMALY_DETECTION_METHOD: 'adaptive',
-    ANOMALY_COOLDOWN_MINUTES: 15,
-    ANOMALY_THRESHOLD_PCT: 80,
-    PREDICTIVE_ALERTING_ENABLED: false,
-    ANOMALY_EXPLANATION_ENABLED: false,
-    ANOMALY_EXPLANATION_MAX_PER_CYCLE: 20,
-    ISOLATION_FOREST_ENABLED: false,
-    NLP_LOG_ANALYSIS_ENABLED: false,
-    SMART_GROUPING_ENABLED: false,
-    INCIDENT_SUMMARY_ENABLED: false,
-    INVESTIGATION_ENABLED: false,
-    INVESTIGATION_COOLDOWN_MINUTES: 30,
-    INVESTIGATION_MAX_CONCURRENT: 2,
-    PCAP_ENABLED: false,
-    PCAP_MAX_CONCURRENT: 2,
-    PCAP_MAX_DURATION_SECONDS: 300,
-    PCAP_MAX_FILE_SIZE_MB: 50,
-    PCAP_RETENTION_DAYS: 7,
-    PCAP_STORAGE_DIR: './data/pcap',
-    CACHE_ENABLED: false,
-    CACHE_TTL_SECONDS: 900,
-    REDIS_URL: undefined,
-    REDIS_KEY_PREFIX: 'aidash:cache:',
-    TIMESCALE_URL: 'postgresql://localhost/test',
-    PORT: 3051,
-    LOG_LEVEL: 'silent',
-    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
-    TEAMS_WEBHOOK_URL: undefined,
-    TEAMS_NOTIFICATIONS_ENABLED: false,
-    EMAIL_NOTIFICATIONS_ENABLED: false,
-    WEBHOOKS_ENABLED: false,
-    WEBHOOKS_MAX_RETRIES: 5,
-    WEBHOOKS_RETRY_INTERVAL_SECONDS: 60,
-    IMAGE_STALENESS_CHECK_ENABLED: false,
-    MCP_TOOL_TIMEOUT: 60,
-    LLM_MAX_TOOL_ITERATIONS: 10,
-    TRACES_INGESTION_ENABLED: false,
-    TRACES_INGESTION_API_KEY: '',
-    API_RATE_LIMIT: 1200,
-    LOGIN_RATE_LIMIT: 5,
-    HTTP2_ENABLED: false,
-  })),
-}));
-
 vi.mock('../utils/crypto.js', () => ({
   verifyJwt: vi.fn().mockResolvedValue(null),
   signJwt: vi.fn().mockResolvedValue('mock-token'),
@@ -195,52 +130,12 @@ vi.mock('../services/oidc.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn().mockResolvedValue([]),
-  getEndpoint: vi.fn().mockResolvedValue({}),
-  getContainers: vi.fn().mockResolvedValue([]),
-  getContainer: vi.fn().mockResolvedValue({}),
-  getContainerHostConfig: vi.fn().mockResolvedValue({}),
-  startContainer: vi.fn().mockResolvedValue(undefined),
-  stopContainer: vi.fn().mockResolvedValue(undefined),
-  restartContainer: vi.fn().mockResolvedValue(undefined),
-  getContainerLogs: vi.fn().mockResolvedValue(''),
-  getContainerStats: vi.fn().mockResolvedValue({}),
-  getStacks: vi.fn().mockResolvedValue([]),
-  getStack: vi.fn().mockResolvedValue({}),
-  getNetworks: vi.fn().mockResolvedValue([]),
-  getImages: vi.fn().mockResolvedValue([]),
-  getEdgeJobs: vi.fn().mockResolvedValue([]),
-  getEdgeJob: vi.fn().mockResolvedValue({ Id: 1 }),
-  createEdgeJob: vi.fn().mockResolvedValue({ Id: 1 }),
-  deleteEdgeJob: vi.fn().mockResolvedValue(undefined),
-  createExec: vi.fn().mockResolvedValue({ Id: 'exec-1' }),
-  startExec: vi.fn().mockResolvedValue(undefined),
-  inspectExec: vi.fn().mockResolvedValue({ Running: false, ExitCode: 0, Pid: 0 }),
-  getArchive: vi.fn().mockResolvedValue(Buffer.from('')),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: vi.fn((e: unknown) => e),
-  normalizeContainer: vi.fn((c: unknown) => c),
-  normalizeStack: vi.fn((s: unknown) => s),
-  normalizeNetwork: vi.fn((n: unknown) => n),
-}));
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn((_key: string, _ttl: number, fn: () => unknown) => fn()),
-  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fn: () => unknown) => fn()),
-  getCacheKey: vi.fn((...args: string[]) => args.join(':')),
-  TTL: { ENDPOINTS: 300, CONTAINERS: 60, STACKS: 300, NETWORKS: 300, IMAGES: 600 },
-  cache: {
-    get: vi.fn(),
-    set: vi.fn(),
-    del: vi.fn(),
-    clear: vi.fn(),
-    getStats: vi.fn(() => ({ hits: 0, misses: 0, size: 0 })),
-    invalidateTag: vi.fn(),
-  },
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-cache.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../services/settings-store.js', () => ({
   getEffectiveLlmConfig: vi.fn(() => ({
@@ -259,11 +154,9 @@ vi.mock('../services/prompt-store.js', () => ({
   estimateTokens: vi.fn(() => 100),
 }));
 
-vi.mock('../services/llm-trace-store.js', () => ({
-  insertLlmTrace: vi.fn(),
-  getRecentTraces: vi.fn(() => []),
-  getLlmStats: vi.fn(() => ({ total: 0, success: 0, error: 0, avgLatency: 0 })),
-}));
+vi.mock('../services/llm-trace-store.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
+);
 
 vi.mock('../services/prompt-test-fixtures.js', () => ({
   PROMPT_TEST_FIXTURES: [],
@@ -278,9 +171,6 @@ vi.mock('../services/security-audit.js', () => ({
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore',
 }));
 
-vi.mock('../services/otlp-transformer.js', () => ({
-  transformOtlpToSpans: vi.fn(() => []),
-}));
 
 vi.mock('../services/otlp-protobuf.js', () => ({
   decodeOtlpProtobuf: vi.fn(() => ({ resourceSpans: [] })),
@@ -320,10 +210,8 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   lookupContainerName: vi.fn(() => 'test-container'),
 }));
 
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: vi.fn(async function* () { yield 'test'; }),
-  isOllamaAvailable: vi.fn().mockResolvedValue(true),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
@@ -425,9 +313,6 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   selectRollupTable: vi.fn(() => 'metrics_raw'),
 }));
 
-vi.mock('../services/lttb-decimator.js', () => ({
-  decimateLTTB: vi.fn((rows: unknown[]) => rows),
-}));
 
 vi.mock('../services/backup-service.js', () => ({
   createBackup: vi.fn().mockResolvedValue('backup.db'),
@@ -436,34 +321,15 @@ vi.mock('../services/backup-service.js', () => ({
   getBackupPath: vi.fn(() => null),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: vi.fn(() => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    trace: vi.fn(),
-    fatal: vi.fn(),
-    child: vi.fn(() => ({
-      info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
-    })),
-  })),
-}));
-
-vi.mock('../utils/network-security.js', () => ({
-  validateOutboundWebhookUrl: vi.fn(),
-}));
 
 vi.mock('../sockets/remediation.js', () => ({
   broadcastActionUpdate: vi.fn(),
 }));
 
-vi.mock('ollama', () => ({
-  Ollama: vi.fn(() => ({
-    chat: vi.fn().mockResolvedValue({ message: { content: '{}' } }),
-    list: vi.fn().mockResolvedValue({ models: [] }),
-  })),
-}));
+// Kept: external boundary mock — ollama npm SDK has no local test equivalent
+vi.mock('ollama', async () =>
+  (await import('../test-utils/mock-llm.js')).createOllamaMock()
+);
 
 // ─── Route Imports ──────────────────────────────────────────────────────
 import authPlugin from '../plugins/auth.js';
@@ -506,6 +372,10 @@ import { ebpfCoverageRoutes } from './ebpf-coverage.js';
 import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
 import { edgeJobsRoutes } from './edge-jobs.js';
+
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../services/portainer-client.js';
 
 // ─── Known Public Routes ────────────────────────────────────────────────
 // Routes that are intentionally accessible without a Bearer token.
@@ -599,6 +469,89 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
 // =====================================================================
 //  1. AUTH ENFORCEMENT SWEEP
 // =====================================================================
+beforeAll(async () => {
+  // Default spies on portainer-client to prevent real HTTP calls in RBAC tests
+  vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'getImages').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'getStacks').mockResolvedValue([]);
+  vi.spyOn(portainerClient, 'restartContainer').mockResolvedValue(undefined);
+  vi.spyOn(portainerClient, 'stopContainer').mockResolvedValue(undefined);
+  vi.spyOn(portainerClient, 'startContainer').mockResolvedValue(undefined);
+  vi.spyOn(portainerClient, 'checkPortainerReachable').mockResolvedValue({ reachable: true, ok: true });
+  await cache.clear();
+  await flushTestCache();
+  setConfigForTest({
+    PORTAINER_API_URL: 'http://localhost:9000',
+    PORTAINER_VERIFY_SSL: true,
+    PORTAINER_CONCURRENCY: 10,
+    PORTAINER_MAX_CONNECTIONS: 20,
+    OLLAMA_BASE_URL: 'http://localhost:11434',
+    OLLAMA_MODEL: 'llama3.2',
+    LLM_OPENAI_ENDPOINT: undefined,
+    LLM_BEARER_TOKEN: undefined,
+    JWT_ALGORITHM: 'HS256',
+    MONITORING_ENABLED: false,
+    MONITORING_INTERVAL_MINUTES: 5,
+    METRICS_COLLECTION_ENABLED: false,
+    PROMETHEUS_METRICS_ENABLED: false,
+    PROMETHEUS_BEARER_TOKEN: '',
+    ANOMALY_ZSCORE_THRESHOLD: 3.0,
+    ANOMALY_MOVING_AVERAGE_WINDOW: 30,
+    ANOMALY_MIN_SAMPLES: 30,
+    ANOMALY_DETECTION_METHOD: 'adaptive',
+    ANOMALY_COOLDOWN_MINUTES: 15,
+    ANOMALY_THRESHOLD_PCT: 80,
+    PREDICTIVE_ALERTING_ENABLED: false,
+    ANOMALY_EXPLANATION_ENABLED: false,
+    ANOMALY_EXPLANATION_MAX_PER_CYCLE: 20,
+    ISOLATION_FOREST_ENABLED: false,
+    NLP_LOG_ANALYSIS_ENABLED: false,
+    SMART_GROUPING_ENABLED: false,
+    INCIDENT_SUMMARY_ENABLED: false,
+    INVESTIGATION_ENABLED: false,
+    INVESTIGATION_COOLDOWN_MINUTES: 30,
+    INVESTIGATION_MAX_CONCURRENT: 2,
+    PCAP_ENABLED: false,
+    PCAP_MAX_CONCURRENT: 2,
+    PCAP_MAX_DURATION_SECONDS: 300,
+    PCAP_MAX_FILE_SIZE_MB: 50,
+    PCAP_RETENTION_DAYS: 7,
+    PCAP_STORAGE_DIR: './data/pcap',
+    CACHE_ENABLED: false,
+    CACHE_TTL_SECONDS: 900,
+    REDIS_URL: undefined,
+    REDIS_KEY_PREFIX: 'aidash:cache:',
+    TIMESCALE_URL: 'postgresql://localhost/test',
+    PORT: 3051,
+    LOG_LEVEL: 'fatal' as const,
+    POSTGRES_APP_URL: 'postgresql://test:test@localhost:5432/test',
+    TEAMS_WEBHOOK_URL: undefined,
+    TEAMS_NOTIFICATIONS_ENABLED: false,
+    EMAIL_NOTIFICATIONS_ENABLED: false,
+    WEBHOOKS_ENABLED: false,
+    WEBHOOKS_MAX_RETRIES: 5,
+    WEBHOOKS_RETRY_INTERVAL_SECONDS: 60,
+    IMAGE_STALENESS_CHECK_ENABLED: false,
+    MCP_TOOL_TIMEOUT: 60,
+    LLM_MAX_TOOL_ITERATIONS: 10,
+    TRACES_INGESTION_ENABLED: false,
+    TRACES_INGESTION_API_KEY: '',
+    API_RATE_LIMIT: 1200,
+    LOGIN_RATE_LIMIT: 5,
+    HTTP2_ENABLED: false,
+  });
+});
+
+afterAll(async () => {
+  resetConfig();
+  await closeTestRedis();
+});
+
+afterEach(async () => {
+  await waitForInFlight();
+});
+
 describe('Auth Enforcement Sweep', () => {
   let app: FastifyInstance;
   let registeredRoutes: string[];
@@ -1159,6 +1112,9 @@ describe('Edge Jobs Admin RBAC Enforcement', () => {
     });
     await app.register(edgeJobsRoutes);
     await app.ready();
+    // Prevent real Portainer calls when RBAC passes for admin role
+    vi.spyOn(portainerClient, 'createEdgeJob').mockResolvedValue({} as any);
+    vi.spyOn(portainerClient, 'deleteEdgeJob').mockResolvedValue(undefined);
   });
 
   afterAll(async () => {
@@ -1471,5 +1427,24 @@ describe('OIDC Group-to-Role Mapping Security', () => {
     );
     // Explicit match 'viewer' should be used; wildcard is only for unmatched groups
     expect(result).toBe('viewer');
+  });
+});
+
+// =====================================================================
+//  11. NO GLOBAL TLS OVERRIDE
+// =====================================================================
+describe('No Global TLS Override', () => {
+  it('should never set NODE_TLS_REJECT_UNAUTHORIZED to 0 globally', () => {
+    // The global override was removed in favor of per-connection undici Agent.
+    // This test guards against accidental reintroduction.
+    expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).not.toBe('0');
+  });
+
+  it('should scope TLS bypass to LLM connections only via undici Agent', async () => {
+    // Verify the LLM service creates a per-connection agent rather than
+    // modifying the global TLS setting
+    const indexPath = path.resolve(process.cwd(), 'src', 'index.ts');
+    const content = readFileSync(indexPath, 'utf8');
+    expect(content).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });
 });

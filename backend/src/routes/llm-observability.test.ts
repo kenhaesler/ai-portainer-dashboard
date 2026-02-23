@@ -6,18 +6,10 @@ import { llmObservabilityRoutes } from './llm-observability.js';
 const mockGetRecentTraces = vi.fn();
 const mockGetLlmStats = vi.fn();
 
+// Kept: llm-trace-store mock — no PostgreSQL in CI
 vi.mock('../services/llm-trace-store.js', () => ({
   getRecentTraces: (...args: unknown[]) => mockGetRecentTraces(...args),
   getLlmStats: (...args: unknown[]) => mockGetLlmStats(...args),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
 }));
 
 describe('LLM Observability Routes', () => {

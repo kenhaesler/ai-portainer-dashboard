@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmRoutes } from './llm.js';
@@ -16,36 +16,27 @@ vi.mock('../services/settings-store.js', () => ({
 }));
 
 // Mock llm-trace-store
-const mockInsertLlmTrace = vi.fn();
-vi.mock('../services/llm-trace-store.js', () => ({
-  insertLlmTrace: (...args: unknown[]) => mockInsertLlmTrace(...args),
-}));
+vi.mock('../services/llm-trace-store.js', async () =>
+  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
+);
+import { insertLlmTrace } from '../services/llm-trace-store.js';
+const mockInsertLlmTrace = vi.mocked(insertLlmTrace);
 
 // Mock Ollama
 const mockChat = vi.fn();
 const mockList = vi.fn();
 vi.mock('ollama', () => ({
-  Ollama: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: mockList,
-  })),
+  Ollama: vi.fn(function () {
+    return { chat: mockChat, list: mockList };
+  }),
 }));
 
-// Mock portainer
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn().mockResolvedValue([]),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: vi.fn((ep: any) => ep),
-  normalizeContainer: vi.fn((c: any) => c),
-}));
-
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn().mockResolvedValue([]),
-  getCacheKey: vi.fn((...args: any[]) => args.join(':')),
-  TTL: { ENDPOINTS: 60, CONTAINERS: 30 },
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 // Mock prompt-store
 vi.mock('../services/prompt-store.js', () => ({
@@ -70,44 +61,45 @@ vi.mock('../services/prompt-test-fixtures.js', () => ({
   },
 }));
 
-// Mock llm-client (llmFetch, getAuthHeaders, etc.)
-const mockLlmFetch = vi.fn();
-vi.mock('../services/llm-client.js', () => ({
-  getAuthHeaders: vi.fn().mockReturnValue({}),
-  getFetchErrorMessage: vi.fn((err: unknown) => err instanceof Error ? err.message : 'Unknown error'),
-  llmFetch: (...args: unknown[]) => mockLlmFetch(...args),
-  createOllamaClient: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: mockList,
-  })),
-  createConfiguredOllamaClient: vi.fn().mockImplementation(() => ({
-    chat: mockChat,
-    list: mockList,
-  })),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
+import * as llmClient from '../services/llm-client.js';
+let mockLlmFetch: any;
+let mockCreateOllamaClient: any;
+let mockCreateConfiguredOllamaClient: any;
 
 // Mock config
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    AI_SEARCH_MODEL: 'llama3.2:latest',
-  }),
-}));
 
 // Mock logger
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
+
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('LLM Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
     vi.clearAllMocks();
+    // Mock portainer-client so getInfrastructureSummary() doesn't hit real Portainer
+    vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([]);
+    vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
+    mockLlmFetch = vi.spyOn(llmClient, 'llmFetch');
+    mockCreateOllamaClient = vi.spyOn(llmClient, 'createOllamaClient').mockReturnValue({
+      chat: mockChat,
+      list: mockList,
+    } as unknown as ReturnType<typeof llmClient.createOllamaClient>);
+    mockCreateConfiguredOllamaClient = vi.spyOn(llmClient, 'createConfiguredOllamaClient').mockResolvedValue({
+      chat: mockChat,
+      list: mockList,
+    } as unknown as Awaited<ReturnType<typeof llmClient.createConfiguredOllamaClient>>);
+    vi.spyOn(llmClient, 'getAuthHeaders').mockReturnValue({});
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
@@ -223,7 +215,6 @@ describe('LLM Routes', () => {
     });
 
     it('uses ollamaUrl when provided', async () => {
-      const { createConfiguredOllamaClient } = await import('../services/llm-client.js');
       mockList.mockResolvedValue({
         models: [{ name: 'gemma2', size: 5_000_000_000, modified_at: '2024-04-01T00:00:00Z' }],
       });
@@ -239,7 +230,7 @@ describe('LLM Routes', () => {
       expect(body.ok).toBe(true);
       expect(body.models).toContain('gemma2');
       // Verify createConfiguredOllamaClient was called with the custom host
-      expect(createConfiguredOllamaClient).toHaveBeenCalledWith(
+      expect(mockCreateConfiguredOllamaClient).toHaveBeenCalledWith(
         expect.objectContaining({ ollamaUrl: 'http://custom-ollama:11434' }),
       );
     });
@@ -417,6 +408,107 @@ describe('LLM Routes', () => {
       expect(body.action).toBe('answer');
       expect(body.text).toContain('cannot provide internal system instructions');
       expect(mockChat).not.toHaveBeenCalled();
+    });
+
+    it('returns filter action with containerNames and filters', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'Found 2 running nginx containers',
+            description: 'Filtered by state and image',
+            filters: { state: 'running', image: 'nginx' },
+            containerNames: ['nginx-proxy', 'nginx-web'],
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'show me running nginx containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.text).toBe('Found 2 running nginx containers');
+      expect(body.description).toBe('Filtered by state and image');
+      expect(body.filters).toEqual({ state: 'running', image: 'nginx' });
+      expect(body.containerNames).toEqual(['nginx-proxy', 'nginx-web']);
+    });
+
+    it('returns filter action with empty containerNames when array missing', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'No matching containers found',
+            description: 'No results',
+            filters: { state: 'dead' },
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'find dead containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.containerNames).toEqual([]);
+      expect(body.filters).toEqual({ state: 'dead' });
+    });
+
+    it('returns filter action with empty filters when filters object missing', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'Found 1 container',
+            containerNames: ['my-app'],
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'find my-app container' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.filters).toEqual({});
+      expect(body.containerNames).toEqual(['my-app']);
+    });
+
+    it('filters out non-string values from containerNames', async () => {
+      mockChat.mockResolvedValue({
+        message: {
+          content: JSON.stringify({
+            action: 'filter',
+            text: 'Found containers',
+            filters: {},
+            containerNames: ['valid-name', 123, null, 'another-valid'],
+          }),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'show all containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('filter');
+      expect(body.containerNames).toEqual(['valid-name', 'another-valid']);
     });
 
     it('sanitizes leaked system prompt text from model output', async () => {

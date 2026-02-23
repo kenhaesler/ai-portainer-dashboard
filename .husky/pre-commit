@@ -1,0 +1,8 @@
+#!/bin/sh
+# Validate lock file consistency with package.json before committing.
+# Prevents broken CI due to out-of-sync dependency manifests.
+npm ci --dry-run 2>/dev/null || {
+  echo "ERROR: package-lock.json is out of sync with package.json"
+  echo "Run 'npm install' from the repo root to fix."
+  exit 1
+}

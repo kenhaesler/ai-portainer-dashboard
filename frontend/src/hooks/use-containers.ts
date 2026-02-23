@@ -28,12 +28,26 @@ export interface PaginatedContainers {
   pageSize: number;
 }
 
+interface PartialContainersResponse {
+  data: Container[];
+  partial?: boolean;
+  failedEndpoints?: string[];
+}
+
 export interface UseContainersParams {
   page?: number;
   pageSize?: number;
   search?: string;
   state?: string;
   endpointId?: number;
+}
+
+function normalizeContainersResponse(
+  response: Container[] | PartialContainersResponse,
+): Container[] {
+  if (Array.isArray(response)) return response;
+  if (response && Array.isArray(response.data)) return response.data;
+  return [];
 }
 
 /**
@@ -52,9 +66,11 @@ export function useContainers(params?: UseContainersParams) {
 
       const qs = searchParams.toString();
       const path = qs ? `/api/containers?${qs}` : '/api/containers';
-      return api.get<Container[]>(path);
+      const response = await api.get<Container[] | PartialContainersResponse>(path);
+      return normalizeContainersResponse(response);
     },
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 }
@@ -84,6 +100,7 @@ export function usePaginatedContainers(params: {
       return api.get<PaginatedContainers>(`/api/containers?${searchParams.toString()}`);
     },
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 }
@@ -93,7 +110,7 @@ export function useFavoriteContainers(ids: string[]) {
     queryKey: ['containers', 'favorites', ids],
     queryFn: async () => {
       if (ids.length === 0) return [];
-      const qs = ids.map((id) => `ids=${encodeURIComponent(id)}`).join('&');
+      const qs = `ids=${ids.map(encodeURIComponent).join(',')}`;
       return api.get<Container[]>(`/api/containers/favorites?${qs}`);
     },
     staleTime: 60 * 1000,

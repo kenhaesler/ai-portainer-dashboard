@@ -208,7 +208,13 @@ class HybridCache {
 
     const config = getConfig();
     const redisUrl = this.buildRedisUrl(config.REDIS_URL!, config.REDIS_PASSWORD);
-    const client = createClient({ url: redisUrl });
+    const client = createClient({
+      url: redisUrl,
+      socket: {
+        connectTimeout: 3_000,
+        reconnectStrategy: false,
+      },
+    });
     client.on('error', (err) => {
       this.disableRedisTemporarily('redis-client-error', err);
     });
@@ -216,7 +222,17 @@ class HybridCache {
       this.disableRedisTemporarily('redis-client-closed');
     });
     this.redisClient = client;
-    this.redisConnectPromise = client.connect()
+
+    // Race the connect() against a short deadline so tests and environments
+    // without Redis fail fast instead of hanging until vitest's hook timeout.
+    const connectWithTimeout = Promise.race([
+      client.connect(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Redis connect timeout (5s)')), 5_000),
+      ),
+    ]);
+
+    this.redisConnectPromise = connectWithTimeout
       .then(() => {
         const safeUrl = new URL(redisUrl);
         if (safeUrl.password) safeUrl.password = '***';
@@ -236,12 +252,7 @@ class HybridCache {
   private async redisKeys(client: RedisClient): Promise<string[]> {
     const config = getConfig();
     const prefix = config.REDIS_KEY_PREFIX || 'aidash:cache:';
-    const keys: string[] = [];
-    for await (const key of client.scanIterator({ MATCH: `${prefix}*`, COUNT: 250 })) {
-      const normalized = Array.isArray(key) ? key[0] : key;
-      keys.push(String(normalized));
-    }
-    return keys;
+    return client.keys(`${prefix}*`);
   }
 
   async get<T>(key: string): Promise<T | undefined> {
@@ -678,14 +689,17 @@ export function cachedFetch<T>(
     reject = rej;
   });
 
+  // Prevent Node.js unhandled rejection warning: the caller will handle
+  // the rejection via .then()/.catch()/await, but the handler may not be
+  // attached in the same microtask tick as the rejection.
+  promise.catch(() => {});
   inFlight.set(key, promise);
-  promise.finally(() => {
-    inFlight.delete(key);
-  });
 
   // Run the fetch in a self-contained async block.
   // All errors are caught and forwarded explicitly via reject(),
   // preventing unhandled promise rejections from crashing the process.
+  // inFlight cleanup is in `finally` to avoid a dangling promise chain
+  // (.finally() on the promise would create a second unhandled rejection).
   (async () => {
     try {
       const cached = await cache.get<T>(key);
@@ -698,6 +712,8 @@ export function cachedFetch<T>(
       resolve(data);
     } catch (err) {
       reject(err);
+    } finally {
+      inFlight.delete(key);
     }
   })();
 
@@ -736,8 +752,10 @@ export function cachedFetchSWR<T>(
           }
         })();
         inFlight.set(key, revalidate);
-        // Attach .catch() to prevent unhandled rejection if something unexpected happens
-        revalidate.catch(() => {});
+        // Safety net: catch any error that escapes the inner try/catch (e.g. from finally)
+        revalidate.catch((err) => {
+          log.warn({ key, err }, 'SWR background revalidation unhandled error');
+        });
       }
     }
     return Promise.resolve(staleInfo.data);
@@ -759,8 +777,10 @@ export function cachedFetchSWR<T>(
           }
         })();
         inFlight.set(key, revalidate);
-        // Prevent unhandled rejection warning if something unexpected escapes the try/catch
-        revalidate.catch(() => {});
+        // Safety net: catch any error that escapes the inner try/catch
+        revalidate.catch((err) => {
+          log.warn({ key, err }, 'SWR L2 background revalidation unhandled error');
+        });
       }
       return l2Data;
     }
@@ -787,4 +807,11 @@ export async function cachedFetchMany<T>(
 /** Expose inFlight map size for testing/monitoring */
 export function getInFlightCount(): number {
   return inFlight.size;
+}
+
+/** Wait for all in-flight cache promises to settle (for test isolation) */
+export async function waitForInFlight(): Promise<void> {
+  const pending = [...inFlight.values()];
+  if (pending.length === 0) return;
+  await Promise.allSettled(pending);
 }

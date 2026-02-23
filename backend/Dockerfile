@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build stage — compile TypeScript to JavaScript
 FROM dhi.io/node:24-alpine3.23-dev AS builder
 
@@ -7,7 +8,7 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN npm ci -w backend
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend
 COPY backend/tsconfig.json ./backend/
 COPY backend/src/ backend/src/
 RUN npm run build -w backend
@@ -21,7 +22,7 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN npm ci -w backend --omit=dev
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -50,6 +51,8 @@ WORKDIR /app
 COPY --chown=node:node --from=builder /app/backend/package.json ./
 # Copy production node_modules (hoisted to root by npm workspaces)
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
+# Merge any backend-workspace-local packages not hoisted to root (e.g. fastify-type-provider-zod)
+COPY --chown=node:node --from=prod-deps /app/backend/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/backend/dist/ dist/
 COPY --chown=node:node --from=builder /app/backend/src/db/postgres-migrations/ dist/db/postgres-migrations/
 COPY --chown=node:node --from=builder /app/backend/src/db/timescale-migrations/ dist/db/timescale-migrations/

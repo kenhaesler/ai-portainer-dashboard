@@ -1,30 +1,31 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type ColumnDef } from '@tanstack/react-table';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
-import { type NormalizedContainer } from '@/hooks/use-dashboard';
 import { useDashboardFull } from '@/hooks/use-dashboard-full';
 import { useFavoriteContainers } from '@/hooks/use-containers';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useKpiHistory } from '@/hooks/use-kpi-history';
 import { KpiCard } from '@/components/shared/kpi-card';
-import { DataTable } from '@/components/shared/data-table';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { SkeletonCard } from '@/components/shared/loading-skeleton';
 import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
 import { RefreshButton } from '@/components/shared/refresh-button';
 import { useForceRefresh } from '@/hooks/use-force-refresh';
 import { FavoriteButton } from '@/components/shared/favorite-button';
-import { EndpointHealthOctagons } from '@/components/charts/endpoint-health-octagons';
-import { WorkloadTopBar } from '@/components/charts/workload-top-bar';
-import { FleetSummaryCard } from '@/components/charts/fleet-summary-card';
-import { ResourceOverviewCard } from '@/components/charts/resource-overview-card';
 import { useFavoritesStore } from '@/stores/favorites-store';
-import { formatDate, truncate } from '@/lib/utils';
 import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
 import { TiltCard } from '@/components/shared/tilt-card';
 import { SpotlightCard } from '@/components/shared/spotlight-card';
-import { ContainerSmartSearch } from '@/components/shared/container-smart-search';
+
+// Lazy-loaded chart components — lets KPI cards render first
+const EndpointHealthOctagons = lazy(() => import('@/components/charts/endpoint-health-octagons').then(m => ({ default: m.EndpointHealthOctagons })));
+const WorkloadTopBar = lazy(() => import('@/components/charts/workload-top-bar').then(m => ({ default: m.WorkloadTopBar })));
+const FleetSummaryCard = lazy(() => import('@/components/charts/fleet-summary-card').then(m => ({ default: m.FleetSummaryCard })));
+const ResourceOverviewCard = lazy(() => import('@/components/charts/resource-overview-card').then(m => ({ default: m.ResourceOverviewCard })));
+
+function ChartSkeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg bg-muted/50 ${className ?? 'h-[200px]'}`} />;
+}
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -39,73 +40,6 @@ export default function HomePage() {
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   const { data: kpiHistory } = useKpiHistory(24);
-  const [containerSearch, setContainerSearch] = useState('');
-
-  // Filter containers based on search
-  const filteredContainers = useMemo(() => {
-    if (!data || !containerSearch) return data?.recentContainers ?? [];
-    const searchLower = containerSearch.toLowerCase();
-    return data.recentContainers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(searchLower) ||
-        c.image.toLowerCase().includes(searchLower) ||
-        c.state.toLowerCase().includes(searchLower) ||
-        c.status.toLowerCase().includes(searchLower),
-    );
-  }, [data, containerSearch]);
-
-  const containerColumns: ColumnDef<NormalizedContainer, any>[] = useMemo(() => [
-    {
-      accessorKey: 'name',
-      header: 'Name',
-      cell: ({ row, getValue }) => {
-        const container = row.original;
-        return (
-          <div className="flex items-center gap-1">
-            <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
-            <button
-              onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-              className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
-            >
-              {truncate(getValue<string>(), 40)}
-            </button>
-          </div>
-        );
-      },
-    },
-    {
-      accessorKey: 'image',
-      header: 'Image',
-      cell: ({ getValue }) => (
-        <span className="text-muted-foreground">{truncate(getValue<string>(), 50)}</span>
-      ),
-    },
-    {
-      accessorKey: 'state',
-      header: 'State',
-      cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
-    },
-    {
-      accessorKey: 'status',
-      header: 'Status',
-      cell: ({ getValue }) => (
-        <span className="text-muted-foreground text-xs">{getValue<string>()}</span>
-      ),
-    },
-    {
-      accessorKey: 'endpointName',
-      header: 'Endpoint',
-      cell: ({ row }) => {
-        const container = row.original;
-        return `${container.endpointName} (ID: ${container.endpointId})`;
-      },
-    },
-    {
-      accessorKey: 'created',
-      header: 'Created',
-      cell: ({ getValue }) => formatDate(new Date(getValue<number>() * 1000)),
-    },
-  ], [navigate]);
 
   const endpointChartData = useMemo(() => {
     if (!endpoints) return [];
@@ -172,7 +106,7 @@ export default function HomePage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
-            Dashboard overview with KPIs, charts, and recent containers
+            Dashboard overview with KPIs and charts
           </p>
         </div>
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
@@ -199,7 +133,7 @@ export default function HomePage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Home</h1>
           <p className="text-muted-foreground">
-            Dashboard overview with KPIs, charts, and recent containers
+            Dashboard overview with KPIs and charts
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -339,7 +273,9 @@ export default function HomePage() {
               <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                 Endpoint Health
               </h3>
-              <EndpointHealthOctagons endpoints={endpointChartData} />
+              <Suspense fallback={<ChartSkeleton className="h-[200px]" />}>
+                <EndpointHealthOctagons endpoints={endpointChartData} />
+              </Suspense>
             </div>
           </SpotlightCard>
         </MotionReveal>
@@ -359,15 +295,19 @@ export default function HomePage() {
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                     Top Workloads
                   </h3>
-                  <div className="mb-4">
-                    <ResourceOverviewCard
-                      cpuPercent={resourcesData.fleetCpuPercent}
-                      memoryPercent={resourcesData.fleetMemoryPercent}
-                    />
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <WorkloadTopBar endpoints={stackChartData} />
-                  </div>
+                  <Suspense fallback={<ChartSkeleton className="h-[60px] mb-4" />}>
+                    <div className="mb-4">
+                      <ResourceOverviewCard
+                        cpuPercent={resourcesData.fleetCpuPercent}
+                        memoryPercent={resourcesData.fleetMemoryPercent}
+                      />
+                    </div>
+                  </Suspense>
+                  <Suspense fallback={<ChartSkeleton className="flex-1" />}>
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      <WorkloadTopBar endpoints={stackChartData} />
+                    </div>
+                  </Suspense>
                 </div>
               </SpotlightCard>
             </MotionReveal>
@@ -377,67 +317,20 @@ export default function HomePage() {
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground">
                     Fleet Summary
                   </h3>
-                  <div className="flex-1 min-h-0">
-                    <FleetSummaryCard
-                      endpoints={endpointChartData}
-                      totalContainers={data.kpis.total}
-                    />
-                  </div>
+                  <Suspense fallback={<ChartSkeleton className="flex-1" />}>
+                    <div className="flex-1 min-h-0">
+                      <FleetSummaryCard
+                        endpoints={endpointChartData}
+                        totalContainers={data.kpis.total}
+                      />
+                    </div>
+                  </Suspense>
                 </div>
               </SpotlightCard>
             </MotionReveal>
           </MotionStagger>
       ) : null}
 
-      {/* Recent Containers Table */}
-      {isLoading ? (
-        <SkeletonCard className="h-[400px]" />
-      ) : data ? (
-        <MotionReveal>
-          <SpotlightCard>
-            <div className="rounded-lg border bg-card p-6 shadow-sm">
-              <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-                Recent Containers
-              </h3>
-              {/* Smart search with filtering + LLM */}
-              <div className="mb-6">
-                <ContainerSmartSearch
-                  value={containerSearch}
-                  onChange={setContainerSearch}
-                  onClear={() => setContainerSearch('')}
-                />
-              </div>
-              {/* Desktop table */}
-              <div className="hidden sm:block">
-                <DataTable
-                  columns={containerColumns}
-                  data={filteredContainers}
-                  pageSize={10}
-                />
-              </div>
-              {/* Mobile card list */}
-              <div className="block sm:hidden space-y-3">
-                {filteredContainers.slice(0, 10).map((container) => (
-                    <button
-                      key={`${container.endpointId}-${container.id}`}
-                      onClick={() => navigate(`/containers/${container.endpointId}/${container.id}`)}
-                      className="flex w-full items-center gap-3 rounded-xl border bg-card/60 p-4 text-left transition-colors hover:bg-accent/50"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{container.name}</p>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(container.image, 40)}</p>
-                        <div className="mt-2 flex items-center gap-2">
-                          <StatusBadge status={container.state} />
-                          <span className="text-xs text-muted-foreground">{container.endpointName}</span>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          </SpotlightCard>
-        </MotionReveal>
-      ) : null}
     </MotionPage>
   );
 }

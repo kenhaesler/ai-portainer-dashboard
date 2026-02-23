@@ -6,6 +6,7 @@ import {
 
 const mockGetSetting = vi.hoisted(() => vi.fn());
 
+// Kept: settings-store mock — no PostgreSQL in CI
 vi.mock('./settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
 }));

@@ -3,39 +3,30 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { searchRoutes } from './search.js';
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: vi.fn(),
-  getContainers: vi.fn(),
-  getImages: vi.fn(),
-  getStacks: vi.fn(),
-  getContainerLogs: vi.fn(),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetch: vi.fn(async (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher()),
-  getCacheKey: (...args: Array<string | number>) => args.join(':'),
-  TTL: {
-    ENDPOINTS: 0,
-    CONTAINERS: 0,
-    IMAGES: 0,
-    STACKS: 0,
-  },
-}));
-
+// Kept: edge-capability-guard mock — avoids real edge device checks
 vi.mock('../services/edge-capability-guard.js', () => ({
   supportsLiveFeatures: vi.fn(async () => true),
 }));
 
-import * as portainer from '../services/portainer-client.js';
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-const mockPortainer = vi.mocked(portainer);
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+let mockGetImages: any;
+let mockGetStacks: any;
+let mockGetContainerLogs: any;
 
 function seedPortainerMocks() {
-  mockPortainer.getEndpoints.mockResolvedValue([
+  mockGetEndpoints.mockResolvedValue([
     { Id: 1, Name: 'prod', Status: 1 },
   ] as any);
 
-  mockPortainer.getContainers.mockResolvedValue([
+  mockGetContainers.mockResolvedValue([
     {
       Id: 'abc123',
       Names: ['/web-frontend'],
@@ -49,15 +40,15 @@ function seedPortainerMocks() {
     },
   ] as any);
 
-  mockPortainer.getImages.mockResolvedValue([
+  mockGetImages.mockResolvedValue([
     { Id: 'img1', RepoTags: ['web-proxy:latest'], Size: 123, Created: 1700000000 },
   ] as any);
 
-  mockPortainer.getStacks.mockResolvedValue([
+  mockGetStacks.mockResolvedValue([
     { Id: 7, Name: 'web-stack', Type: 1, EndpointId: 1, Status: 1, Env: [] },
   ] as any);
 
-  mockPortainer.getContainerLogs.mockResolvedValue(
+  mockGetContainerLogs.mockResolvedValue(
     '2024-01-01T10:00:00Z web request handled\n2024-01-01T10:00:01Z ok',
   );
 }
@@ -75,10 +66,18 @@ describe('Search Routes', () => {
 
   afterAll(async () => {
     await app.close();
+    await closeTestRedis();
   });
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
+    mockGetImages = vi.spyOn(portainerClient, 'getImages');
+    mockGetStacks = vi.spyOn(portainerClient, 'getStacks');
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs');
   });
 
   it('returns matches across containers, images, and stacks without logs by default', async () => {
@@ -97,7 +96,7 @@ describe('Search Routes', () => {
     expect(body.stacks).toHaveLength(1);
     // Logs are opt-in — not included by default
     expect(body.logs).toHaveLength(0);
-    expect(mockPortainer.getContainerLogs).not.toHaveBeenCalled();
+    expect(mockGetContainerLogs).not.toHaveBeenCalled();
   });
 
   it('includes log results when includeLogs=true', async () => {
@@ -114,7 +113,7 @@ describe('Search Routes', () => {
     expect(body.containers).toHaveLength(1);
     expect(body.logs).toHaveLength(1);
     expect(body.logs[0].containerName).toBe('web-frontend');
-    expect(mockPortainer.getContainerLogs).toHaveBeenCalled();
+    expect(mockGetContainerLogs).toHaveBeenCalled();
   });
 
   it('does not fetch logs when includeLogs=false explicitly', async () => {
@@ -129,7 +128,7 @@ describe('Search Routes', () => {
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
     expect(body.logs).toHaveLength(0);
-    expect(mockPortainer.getContainerLogs).not.toHaveBeenCalled();
+    expect(mockGetContainerLogs).not.toHaveBeenCalled();
   });
 
   it('returns empty results for short queries', async () => {
@@ -145,5 +144,81 @@ describe('Search Routes', () => {
     expect(body.images).toHaveLength(0);
     expect(body.stacks).toHaveLength(0);
     expect(body.logs).toHaveLength(0);
+  });
+
+  it('fetches containers and images in parallel across multiple endpoints', async () => {
+    // Two endpoints — verify containers and images are fetched for both
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod', Status: 1 },
+      { Id: 2, Name: 'staging', Status: 1 },
+    ] as any);
+
+    mockGetContainers.mockResolvedValue([
+      {
+        Id: 'abc123',
+        Names: ['/web-app'],
+        Image: 'nginx:alpine',
+        State: 'running',
+        Status: 'Up 2 hours',
+        Created: 1700000000,
+        Ports: [],
+        NetworkSettings: { Networks: {} },
+        Labels: {},
+      },
+    ] as any);
+
+    mockGetImages.mockResolvedValue([]) as any;
+    mockGetStacks.mockResolvedValue([]) as any;
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/search?query=web-app',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // getContainers and getImages should have been called once per endpoint
+    expect(mockGetContainers).toHaveBeenCalledTimes(2);
+    expect(mockGetImages).toHaveBeenCalledTimes(2);
+    // Results from both endpoints
+    const body = JSON.parse(response.body);
+    expect(body.containers).toHaveLength(2);
+  });
+
+  it('returns partial results when one endpoint fails', async () => {
+    mockGetEndpoints.mockResolvedValue([
+      { Id: 1, Name: 'prod', Status: 1 },
+      { Id: 2, Name: 'broken', Status: 1 },
+    ] as any);
+
+    mockGetContainers
+      .mockResolvedValueOnce([
+        {
+          Id: 'abc123',
+          Names: ['/web-app'],
+          Image: 'nginx:alpine',
+          State: 'running',
+          Status: 'Up 2 hours',
+          Created: 1700000000,
+          Ports: [],
+          NetworkSettings: { Networks: {} },
+          Labels: {},
+        },
+      ] as any)
+      .mockRejectedValueOnce(new Error('endpoint unreachable'));
+
+    mockGetImages.mockResolvedValue([]) as any;
+    mockGetStacks.mockResolvedValue([]) as any;
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/search?query=web-app',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    // Should still succeed with results from the working endpoint
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.containers).toHaveLength(1);
   });
 });

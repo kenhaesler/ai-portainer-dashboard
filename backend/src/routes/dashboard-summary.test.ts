@@ -1,58 +1,46 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { dashboardRoutes } from './dashboard.js';
 
-const mockGetEndpoints = vi.fn();
-const mockGetContainers = vi.fn();
-const mockNormalizeEndpoint = vi.fn();
-const mockNormalizeContainer = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockBuildSecurityAuditSummary = vi.fn();
-const mockCachedFetchSWR = vi.fn();
 
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => mockGetEndpoints(...args),
-  getContainers: (...args: unknown[]) => mockGetContainers(...args),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) => mockCachedFetchSWR(...args),
-  getCacheKey: (...parts: unknown[]) => parts.join(':'),
-  TTL: {
-    ENDPOINTS: 30_000,
-    CONTAINERS: 30_000,
-  },
-}));
+import * as portainerClient from '../services/portainer-client.js';
+import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: (...args: unknown[]) => mockNormalizeEndpoint(...args),
-  normalizeContainer: (...args: unknown[]) => mockNormalizeContainer(...args),
-}));
+let mockGetEndpoints: any;
+let mockGetContainers: any;
+
+afterEach(async () => {
+  await waitForInFlight();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 vi.mock('../services/security-audit.js', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
   buildSecurityAuditSummary: (...args: unknown[]) => mockBuildSecurityAuditSummary(...args),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 describe('Dashboard Summary Route', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCachedFetchSWR.mockImplementation(async (_key, _ttl, fetcher: () => Promise<unknown>) => fetcher());
+  beforeEach(async () => {
+    await cache.clear();
+    await flushTestCache();
+    vi.restoreAllMocks();
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints');
+    mockGetContainers = vi.spyOn(portainerClient, 'getContainers');
     mockBuildSecurityAuditSummary.mockReturnValue({ totalAudited: 0, flagged: 0, ignored: 0 });
     mockGetSecurityAudit.mockResolvedValue([]);
   });
 
-  it('returns 200 with empty recentContainers when container fetches fail', async () => {
+  it('returns 200 with KPIs when container fetches would fail (containers no longer fetched in summary)', async () => {
     const app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
@@ -60,24 +48,10 @@ describe('Dashboard Summary Route', () => {
     await app.register(dashboardRoutes);
     await app.ready();
 
-    mockGetEndpoints.mockResolvedValue([{ id: 1, name: 'ep-1' }]);
-    mockNormalizeEndpoint.mockReturnValue({
-      id: 1,
-      name: 'ep-1',
-      type: 1,
-      url: 'http://ep-1',
-      status: 'up',
-      containersRunning: 2,
-      containersStopped: 1,
-      containersHealthy: 2,
-      containersUnhealthy: 1,
-      totalContainers: 3,
-      stackCount: 1,
-      totalCpu: 0,
-      totalMemory: 0,
-      isEdge: false,
-    });
-    mockGetContainers.mockRejectedValue(new Error('portainer timeout'));
+    mockGetEndpoints.mockResolvedValue([{
+      Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
+      Snapshots: [{ RunningContainerCount: 2, StoppedContainerCount: 1, HealthyContainerCount: 2, UnhealthyContainerCount: 1, StackCount: 1, TotalCPU: 0, TotalMemory: 0 }],
+    }] as any);
 
     const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
 
@@ -94,7 +68,8 @@ describe('Dashboard Summary Route', () => {
       total: 3,
       stacks: 1,
     });
-    expect(body.recentContainers).toEqual([]);
+    // recentContainers removed from summary (#801)
+    expect(body.recentContainers).toBeUndefined();
     // endpoints array removed from summary to reduce payload (#544)
     expect(body.endpoints).toBeUndefined();
 

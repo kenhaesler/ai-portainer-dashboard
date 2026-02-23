@@ -21,35 +21,32 @@ const SocketContext = createContext<SocketContextType>({
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { token, isAuthenticated } = useAuth();
   const potatoMode = useUiStore((state) => state.potatoMode);
-  const [sockets, setSockets] = useState<SocketContextType>({
+  const [sockets, setSockets] = useState<Omit<SocketContextType, 'connected'>>({
     llmSocket: null,
     monitoringSocket: null,
     remediationSocket: null,
-    connected: false,
   });
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
       disconnectAll();
-      setSockets({
-        llmSocket: null,
-        monitoringSocket: null,
-        remediationSocket: null,
-        connected: false,
-      });
+      setSockets({ llmSocket: null, monitoringSocket: null, remediationSocket: null });
+      setConnected(false);
       return;
     }
 
+    // getNamespaceSocket is idempotent: returns the cached socket if it already
+    // exists for this namespace+token, so calling this on every effect run is safe.
     const monitoring = getNamespaceSocket('monitoring', token);
     const llm = potatoMode ? null : getNamespaceSocket('llm', token);
     const remediation = potatoMode ? null : getNamespaceSocket('remediation', token);
     const activeSockets = [llm, monitoring, remediation].filter((s): s is Socket => s !== null);
 
+    setSockets({ llmSocket: llm, monitoringSocket: monitoring, remediationSocket: remediation });
+
     const updateConnected = () => {
-      setSockets((prev) => ({
-        ...prev,
-        connected: activeSockets.some((socket) => socket.connected),
-      }));
+      setConnected(activeSockets.some((s) => s.connected));
     };
 
     for (const s of activeSockets) {
@@ -57,22 +54,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       s.on('disconnect', updateConnected);
     }
 
-    setSockets({
-      llmSocket: llm,
-      monitoringSocket: monitoring,
-      remediationSocket: remediation,
-      connected: activeSockets.some((socket) => socket.connected),
-    });
+    // Set initial connected state
+    updateConnected();
 
+    // Clean up ONLY the event listeners — do NOT disconnect the sockets.
+    // Disconnecting on every effect cleanup causes thrashing: each re-run due to
+    // potatoMode or token changes would tear down all connections and immediately
+    // recreate them, racing with socket.io's own reconnection timers.
     return () => {
-      for (const socket of activeSockets) {
-        socket.disconnect();
+      for (const s of activeSockets) {
+        s.off('connect', updateConnected);
+        s.off('disconnect', updateConnected);
       }
     };
   }, [isAuthenticated, token, potatoMode]);
 
   return (
-    <SocketContext.Provider value={sockets}>
+    <SocketContext.Provider value={{ ...sockets, connected }}>
       {children}
     </SocketContext.Provider>
   );

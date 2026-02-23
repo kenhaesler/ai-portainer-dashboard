@@ -5,16 +5,19 @@ import { metricsRoutes } from './metrics.js';
 
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
+// Kept: timescale mock — no TimescaleDB in CI
 vi.mock('../db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 
+// Kept: metrics-store mock — no TimescaleDB in CI
 vi.mock('../services/metrics-store.js', () => ({
   getNetworkRates: vi.fn(),
   isUndefinedTableError: (err: unknown) =>
     err instanceof Error && 'code' in err && (err as { code: string }).code === '42P01',
 }));
 
+// Kept: metrics-rollup-selector mock — no TimescaleDB in CI
 vi.mock('../services/metrics-rollup-selector.js', () => ({
   selectRollupTable: vi.fn().mockReturnValue({
     table: 'metrics',
@@ -24,33 +27,20 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   }),
 }));
 
-vi.mock('../services/lttb-decimator.js', () => ({
-  decimateLTTB: vi.fn((data: unknown[]) => data),
-}));
 
-vi.mock('../services/llm-client.js', () => ({
-  chatStream: vi.fn(),
-  isOllamaAvailable: vi.fn(),
-}));
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
+// Kept: prompt-store mock — no PostgreSQL in CI
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
 }));
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
 import { getNetworkRates } from '../services/metrics-store.js';
-import { chatStream, isOllamaAvailable } from '../services/llm-client.js';
+import * as llmClient from '../services/llm-client.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);
-const mockChatStream = vi.mocked(chatStream);
-const mockIsOllamaAvailable = vi.mocked(isOllamaAvailable);
+let mockChatStream: any;
+let mockIsOllamaAvailable: any;
 
 function buildApp() {
   const app = Fastify();
@@ -75,6 +65,8 @@ describe('metrics routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
+    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable');
     mockQuery.mockResolvedValue({ rows: [] });
   });
 
@@ -340,7 +332,7 @@ describe('metrics routes', () => {
 
     it('should stream SSE response when LLM is available', async () => {
       mockIsOllamaAvailable.mockResolvedValue(true);
-      mockChatStream.mockImplementation(async (_msgs, _sys, onChunk) => {
+      mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
         onChunk('CPU is stable.');
         return 'CPU is stable.';
       });
@@ -359,7 +351,7 @@ describe('metrics routes', () => {
 
     it('should pass correct time range to metrics query', async () => {
       mockIsOllamaAvailable.mockResolvedValue(true);
-      mockChatStream.mockImplementation(async (_msgs, _sys, onChunk) => {
+      mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
         onChunk('All good.');
         return 'All good.';
       });

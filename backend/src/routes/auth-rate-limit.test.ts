@@ -1,23 +1,21 @@
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 import rateLimitPlugin from '../plugins/rate-limit.js';
 import { authRoutes } from './auth.js';
 
-const mockGetConfig = vi.fn();
 const mockSignJwt = vi.fn();
 const mockCreateSession = vi.fn();
 const mockAuthenticateUser = vi.fn();
 const mockEnsureDefaultAdmin = vi.fn();
 
-vi.mock('../config/index.js', () => ({
-  getConfig: () => mockGetConfig(),
-}));
-
+// Kept: crypto mock — file I/O and bcrypt dependency
 vi.mock('../utils/crypto.js', () => ({
   signJwt: (...args: unknown[]) => mockSignJwt(...args),
 }));
 
+// Kept: session-store mock — no PostgreSQL in CI
 vi.mock('../services/session-store.js', () => ({
   createSession: (...args: unknown[]) => mockCreateSession(...args),
   getSession: vi.fn(),
@@ -25,10 +23,12 @@ vi.mock('../services/session-store.js', () => ({
   refreshSession: vi.fn(),
 }));
 
+// Kept: audit-logger mock — side-effect isolation
 vi.mock('../services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
+// Kept: user-store mock — no PostgreSQL in CI
 vi.mock('../services/user-store.js', () => ({
   authenticateUser: (...args: unknown[]) => mockAuthenticateUser(...args),
   ensureDefaultAdmin: (...args: unknown[]) => mockEnsureDefaultAdmin(...args),
@@ -38,11 +38,7 @@ vi.mock('../services/user-store.js', () => ({
 describe('auth login rate limit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetConfig.mockReturnValue({
-      API_RATE_LIMIT: 1000,
-      LOGIN_RATE_LIMIT: 2,
-    });
+    setConfigForTest({ API_RATE_LIMIT: 1000, LOGIN_RATE_LIMIT: 2 });
     mockEnsureDefaultAdmin.mockResolvedValue(undefined);
     mockAuthenticateUser.mockResolvedValue({
       id: 'user-1',
@@ -77,5 +73,9 @@ describe('auth login rate limit', () => {
     expect(responses[2]?.statusCode).toBe(429);
 
     await app.close();
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 });

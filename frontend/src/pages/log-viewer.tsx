@@ -13,6 +13,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { usePageVisibility } from '@/hooks/use-page-visibility';
 import { useLogStream } from '@/hooks/use-log-stream';
 
+const FALLBACK_POLL_INTERVAL_MS = 5000;
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
 const LEVEL_OPTIONS: Array<{ value: LogLevel | 'all'; label: string }> = [
   { value: 'all', label: 'All Levels' },
@@ -63,7 +64,7 @@ function colorizeLogMessage(message: string): ReactNode[] {
     if (start > cursor) parts.push(message.slice(cursor, start));
 
     const lowered = token.toLowerCase();
-    let className = 'text-slate-100';
+    let className: string;
     if (/(error|fatal|panic)/.test(lowered)) className = 'text-rose-300';
     else if (/warn/.test(lowered)) className = 'text-amber-300';
     else if (/info/.test(lowered)) className = 'text-emerald-300';
@@ -252,7 +253,7 @@ export default function LogViewerPage() {
       queryFn: () => api.get<LogsResponse>(`/api/containers/${container.endpointId}/${container.id}/logs`, {
         params: { tail: bufferSize, timestamps: true },
       }),
-      refetchInterval: usePollingForLiveTail ? 2000 : false,
+      refetchInterval: usePollingForLiveTail ? FALLBACK_POLL_INTERVAL_MS : false,
       enabled: true,
     })),
   });

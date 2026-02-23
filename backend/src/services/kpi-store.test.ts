@@ -2,17 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockQuery = vi.fn();
 
+// Kept: timescale mock — no TimescaleDB in CI
 vi.mock('../db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
 }));
 
 import { insertKpiSnapshot, getKpiHistory, cleanOldKpiSnapshots } from './kpi-store.js';

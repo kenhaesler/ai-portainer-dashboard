@@ -1,46 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
+// Kept: prompt-store mock — avoids DB lookup for prompt store
 vi.mock('./prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
-}));
-
-const mockChatStream = vi.fn();
-vi.mock('./llm-client.js', () => ({
-  chatStream: (...args: unknown[]) => mockChatStream(...args),
-}));
-
-const mockGetContainerLogs = vi.fn();
-vi.mock('./portainer-client.js', () => ({
-  getContainerLogs: (...args: unknown[]) => mockGetContainerLogs(...args),
-}));
-
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn(() => ({
-    LOG_ANALYSIS_CONCURRENCY: 3,
-  })),
-}));
-
-// cachedFetch passthrough — invokes the fetcher function directly
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
+  getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
 import { analyzeContainerLogs, analyzeLogsForContainers } from './log-analyzer.js';
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import * as llmClient from './llm-client.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+
+let mockGetContainerLogs: any;
+let mockChatStream: any;
+
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
 
 describe('log-analyzer', () => {
-  beforeEach(() => {
-    mockChatStream.mockReset();
-    mockGetContainerLogs.mockReset();
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    // Re-set prompt-store default cleared by restoreAllMocks
+    const { getEffectivePrompt } = await import('./prompt-store.js');
+    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
+    // Bypass cache — delegates to fetcher
+    vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+    );
+    mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs');
+    mockChatStream = vi.spyOn(llmClient, 'chatStream');
   });
 
   it('returns analysis when logs contain errors', async () => {

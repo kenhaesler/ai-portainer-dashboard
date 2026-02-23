@@ -24,6 +24,8 @@ export function useCorrelatedAnomalies(windowSize: number = 30, minScore: number
         `/api/anomalies/correlated?windowSize=${windowSize}&minScore=${minScore}`,
       ),
     staleTime: 60 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 }

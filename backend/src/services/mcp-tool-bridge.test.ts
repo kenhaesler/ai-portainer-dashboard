@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockGetAllMcpTools = vi.fn();
 const mockExecuteMcpToolCall = vi.fn();
 
+// Kept: mcp-manager mock — external service boundary
 vi.mock('./mcp-manager.js', () => ({
   getAllMcpTools: () => mockGetAllMcpTools(),
   executeMcpToolCall: (...args: unknown[]) => mockExecuteMcpToolCall(...args),
@@ -11,11 +12,13 @@ vi.mock('./mcp-manager.js', () => ({
 
 // Mock llm-tools
 const mockExecuteToolCalls = vi.fn();
+// Kept: llm-tools mock — tests control tool definitions
 vi.mock('./llm-tools.js', () => ({
   TOOL_DEFINITIONS: [
     {
       name: 'query_containers',
       description: 'Search containers',
+      requiresApproval: false,
       parameters: {
         type: 'object',
         properties: {
@@ -26,6 +29,7 @@ vi.mock('./llm-tools.js', () => ({
     {
       name: 'navigate_to',
       description: 'Navigate to a page',
+      requiresApproval: false,
       parameters: {
         type: 'object',
         properties: {
@@ -36,15 +40,6 @@ vi.mock('./llm-tools.js', () => ({
     },
   ],
   executeToolCalls: (...args: unknown[]) => mockExecuteToolCalls(...args),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
 }));
 
 import {
@@ -121,6 +116,7 @@ describe('MCP Tool Bridge', () => {
       const result = convertBuiltinToolToOllama({
         name: 'query_containers',
         description: 'Search containers',
+        requiresApproval: false,
         parameters: {
           type: 'object',
           properties: { name: { type: 'string', description: 'Filter by name' } },

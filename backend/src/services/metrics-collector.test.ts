@@ -1,33 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
-const mockGetContainerStats = vi.fn();
-const mockCachedFetch = vi.fn((_key: string, _ttl: number, fn: () => Promise<unknown>) => fn());
-
-vi.mock('./portainer-client.js', () => ({
-  getContainerStats: (...args: unknown[]) => mockGetContainerStats(...args),
-}));
-
-vi.mock('./portainer-cache.js', () => ({
-  cachedFetch: (...args: unknown[]) => mockCachedFetch(...args as [string, number, () => Promise<unknown>]),
-  getCacheKey: (...args: (string | number)[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, STATS: 60 },
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
+import * as portainerClient from './portainer-client.js';
+import * as portainerCache from './portainer-cache.js';
+import { cache } from './portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 const { collectMetrics } = await import('./metrics-collector.js');
 
+beforeAll(async () => {
+  await cache.clear();
+});
+
+afterAll(async () => {
+  await closeTestRedis();
+});
+
 describe('metrics-collector', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetContainerStats.mockResolvedValue({
+  beforeEach(async () => {
+    await cache.clear();
+    vi.restoreAllMocks();
+    vi.spyOn(portainerClient, 'getContainerStats').mockResolvedValue({
       cpu_stats: {
         cpu_usage: { total_usage: 200 },
         system_cpu_usage: 1000,
@@ -61,21 +53,28 @@ describe('metrics-collector', () => {
   });
 
   it('wraps getContainerStats in cachedFetch with STATS TTL', async () => {
+    const cachedFetchSpy = vi.spyOn(portainerCache, 'cachedFetch');
+
     await collectMetrics(1, 'abc123');
 
-    expect(mockCachedFetch).toHaveBeenCalledTimes(1);
-    expect(mockCachedFetch).toHaveBeenCalledWith('stats:1:abc123', 60, expect.any(Function));
+    expect(cachedFetchSpy).toHaveBeenCalledTimes(1);
+    expect(cachedFetchSpy).toHaveBeenCalledWith('stats:1:abc123', 60, expect.any(Function));
   });
 
   it('calls getContainerStats with correct endpoint and container IDs', async () => {
+    // Bypass cache to ensure fetcher is called (verifies getContainerStats args)
+    vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+      async (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+    );
+
     await collectMetrics(5, 'def456');
 
-    expect(mockGetContainerStats).toHaveBeenCalledWith(5, 'def456');
-    expect(mockCachedFetch).toHaveBeenCalledWith('stats:5:def456', 60, expect.any(Function));
+    expect(portainerClient.getContainerStats).toHaveBeenCalledWith(5, 'def456');
+    expect(portainerCache.cachedFetch).toHaveBeenCalledWith('stats:5:def456', 60, expect.any(Function));
   });
 
   it('computes network totals across multiple interfaces', async () => {
-    mockGetContainerStats.mockResolvedValue({
+    vi.spyOn(portainerClient, 'getContainerStats').mockResolvedValue({
       cpu_stats: {
         cpu_usage: { total_usage: 200 },
         system_cpu_usage: 1000,

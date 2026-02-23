@@ -2,6 +2,7 @@ import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatBytes } from '@/lib/utils';
 
 interface ImageData {
+  [key: string]: unknown;
   name: string;
   size: number;
   children?: ImageData[];
@@ -11,10 +12,11 @@ interface ImageTreemapProps {
   data: ImageData[];
 }
 
+// Soft pastel palette
 const COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1',
-  '#14b8a6', '#a855f7', '#f43f5e', '#22c55e', '#eab308',
+  '#93c5fd', '#a5b4fc', '#c4b5fd', '#f9a8d4', '#fda4af',
+  '#fcd34d', '#86efac', '#6ee7b7', '#67e8f9', '#7dd3fc',
+  '#d8b4fe', '#fbcfe8', '#fde68a', '#a7f3d0', '#bae6fd',
 ];
 
 interface LabelStyle {
@@ -64,7 +66,7 @@ function CustomContent(props: any) {
         height={height}
         fill={fill}
         fillOpacity={opacity}
-        stroke="#fff"
+        stroke="rgba(255,255,255,0.3)"
         strokeWidth={1}
       />
       {/* Show name label when cell is large enough */}

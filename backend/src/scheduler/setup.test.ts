@@ -1,35 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // ---------------------------------------------------------------------------
-// Mocks — hoisted so every import sees them
+// Kept mocks — internal services the scheduler depends on
 // ---------------------------------------------------------------------------
 
-const cachedFetchSWRSpy = vi.fn((_key: string, _ttl: number, fetcher: () => Promise<unknown>) =>
-  fetcher(),
-);
-
-vi.mock('../services/portainer-cache.js', () => ({
-  cachedFetchSWR: (...args: unknown[]) =>
-    cachedFetchSWRSpy(args[0] as string, args[1] as number, args[2] as () => Promise<unknown>),
-  cachedFetch: (...args: unknown[]) =>
-    (args[2] as () => Promise<unknown>)(),
-  getCacheKey: (...args: unknown[]) => args.join(':'),
-  TTL: { ENDPOINTS: 900, CONTAINERS: 300, IMAGES: 600, STATS: 30 },
-}));
-
-const getEndpointsMock = vi.fn().mockResolvedValue([{ Id: 1, Name: 'local' }]);
-const getContainersMock = vi.fn().mockResolvedValue([]);
-const getImagesMock = vi.fn().mockResolvedValue([
-  { Id: 'sha256:abc123', RepoTags: ['nginx:latest'] },
-]);
-
-vi.mock('../services/portainer-client.js', () => ({
-  getEndpoints: (...args: unknown[]) => getEndpointsMock(...args),
-  getContainers: (...args: unknown[]) => getContainersMock(...args),
-  getImages: (...args: unknown[]) => getImagesMock(...args),
-  isEndpointDegraded: () => false,
-}));
-
+// Kept: image-staleness mock — tests control staleness results
 vi.mock('../services/image-staleness.js', () => ({
   runStalenessChecks: vi.fn().mockResolvedValue({ checked: 1, stale: 0 }),
 }));
@@ -42,88 +18,70 @@ const collectMetricsMock = vi.fn().mockResolvedValue({
   networkTxBytes: 3000,
 });
 
+// Kept: metrics-collector mock — tests control collected metrics
 vi.mock('../services/metrics-collector.js', () => ({
   collectMetrics: (...args: unknown[]) => collectMetricsMock(...args),
 }));
 
 const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
 
+// Kept: metrics-store mock — tests control metrics storage
 vi.mock('../services/metrics-store.js', () => ({
   insertMetrics: (...args: unknown[]) => insertMetricsMock(...args),
   cleanOldMetrics: vi.fn().mockResolvedValue(0),
 }));
 
-vi.mock('../config/index.js', () => ({
-  getConfig: vi.fn().mockReturnValue({
-    CACHE_ENABLED: true,
-    METRICS_COLLECTION_ENABLED: false,
-    MONITORING_ENABLED: false,
-    WEBHOOKS_ENABLED: false,
-    IMAGE_STALENESS_CHECK_ENABLED: false,
-    METRICS_RETENTION_DAYS: 30,
-    METRICS_ENDPOINT_CONCURRENCY: 10,
-    METRICS_CONTAINER_CONCURRENCY: 20,
-    METRICS_COLLECTION_INTERVAL_SECONDS: 60,
-  }),
-}));
-
-vi.mock('../utils/logger.js', () => ({
-  createChildLogger: () => ({
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  }),
-}));
-
+// Kept: monitoring-service mock — tests don't exercise monitoring
 vi.mock('../services/monitoring-service.js', () => ({
   runMonitoringCycle: vi.fn(),
   startCooldownSweep: vi.fn(),
   stopCooldownSweep: vi.fn(),
 }));
-vi.mock('../services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn() }));
+// Kept: pcap-service mock
+vi.mock('../services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
+// Kept: portainer-backup mock
 vi.mock('../services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn(),
   cleanupOldPortainerBackups: vi.fn(),
 }));
+// Kept: settings-store mock — tests control settings
 vi.mock('../services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
+// Kept: webhook-service mock
 vi.mock('../services/webhook-service.js', () => ({
   startWebhookListener: vi.fn(),
   stopWebhookListener: vi.fn(),
   processRetries: vi.fn(),
 }));
+// Kept: kpi-store mock
 vi.mock('../services/kpi-store.js', () => ({
   insertKpiSnapshot: vi.fn(),
   cleanOldKpiSnapshots: vi.fn(),
 }));
-vi.mock('../services/portainer-normalizers.js', () => ({
-  normalizeEndpoint: (ep: { Id: number }) => ({
-    id: ep.Id,
-    capabilities: { liveStats: true },
-    status: 'up',
-    containersRunning: 1,
-    containersStopped: 0,
-    containersHealthy: 1,
-    containersUnhealthy: 0,
-    totalContainers: 1,
-    stackCount: 0,
-  }),
-}));
+// Real portainer-normalizers used (pure function, no external deps)
+// Kept: trace-context mock
 vi.mock('../services/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
+// Kept: elasticsearch-log-forwarder mock
 vi.mock('../services/elasticsearch-log-forwarder.js', () => ({
   startElasticsearchLogForwarder: vi.fn(),
   stopElasticsearchLogForwarder: vi.fn(),
 }));
 
 const cleanExpiredSessionsMock = vi.fn().mockReturnValue(0);
+// Kept: session-store mock — tests control session cleanup
 vi.mock('../services/session-store.js', () => ({
   cleanExpiredSessions: (...args: unknown[]) => cleanExpiredSessionsMock(...args),
 }));
 
 const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
+// Kept: insights-store mock — tests control insights cleanup
 vi.mock('../services/insights-store.js', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
 }));
+
+import * as portainerClient from '../services/portainer-client.js';
+import * as portainerCache from '../services/portainer-cache.js';
+import { cache } from '../services/portainer-cache.js';
+import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 import {
   runCleanup,
@@ -134,19 +92,93 @@ import {
 } from './setup.js';
 
 // ---------------------------------------------------------------------------
+// Spy references — assigned in global beforeEach
+// ---------------------------------------------------------------------------
+let getEndpointsMock: any;
+let getContainersMock: any;
+let getImagesMock: any;
+let cachedFetchSWRSpy: any;
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+beforeAll(async () => {
+  await cache.clear();
+  setConfigForTest({
+    CACHE_ENABLED: true,
+    METRICS_COLLECTION_ENABLED: false,
+    MONITORING_ENABLED: false,
+    WEBHOOKS_ENABLED: false,
+    IMAGE_STALENESS_CHECK_ENABLED: false,
+    METRICS_RETENTION_DAYS: 30,
+    METRICS_ENDPOINT_CONCURRENCY: 10,
+    METRICS_CONTAINER_CONCURRENCY: 20,
+    METRICS_COLLECTION_INTERVAL_SECONDS: 60,
+  });
+});
+
+afterAll(async () => {
+  resetConfig();
+  await closeTestRedis();
+});
+
+// Global beforeEach — restore mocks, re-create spies, re-set defaults
+beforeEach(async () => {
+  await cache.clear();
+  vi.restoreAllMocks();
+
+  // Re-set forwarding-target mock defaults cleared by restoreAllMocks
+  collectMetricsMock.mockResolvedValue({
+    cpu: 25.5,
+    memory: 40.2,
+    memoryBytes: 1024000,
+    networkRxBytes: 5000,
+    networkTxBytes: 3000,
+  });
+  insertMetricsMock.mockResolvedValue(undefined);
+  cleanExpiredSessionsMock.mockReturnValue(0);
+  cleanupOldInsightsMock.mockReturnValue(0);
+
+  // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
+  const imageStaleness = await import('../services/image-staleness.js');
+  vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
+  const metricsStore = await import('../services/metrics-store.js');
+  vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);
+  const settingsStore = await import('../services/settings-store.js');
+  vi.mocked(settingsStore.getSetting).mockReturnValue(null as any);
+
+  // Bypass cache — delegates to fetcher
+  cachedFetchSWRSpy = vi.spyOn(portainerCache, 'cachedFetchSWR').mockImplementation(
+    async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+  );
+  vi.spyOn(portainerCache, 'cachedFetch').mockImplementation(
+    async (_key: string, _ttl: number, fn: () => Promise<unknown>) => fn(),
+  );
+
+  // Default portainer spies — empty responses
+  getEndpointsMock = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([] as any);
+  getContainersMock = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([] as any);
+  getImagesMock = vi.spyOn(portainerClient, 'getImages').mockResolvedValue([] as any);
+});
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('scheduler/setup – runImageStalenessCheck', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Override defaults for image staleness tests
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValue([] as any);
+    getImagesMock.mockResolvedValue([{ Id: 'sha256:abc123', RepoTags: ['nginx:latest'] }] as any);
   });
 
   it('uses cachedFetchSWR for getEndpoints with TTL.ENDPOINTS', async () => {
     await runImageStalenessCheck();
 
     const endpointsCall = cachedFetchSWRSpy.mock.calls.find(
-      (call) => call[0] === 'endpoints',
+      (call: any) => call[0] === 'endpoints',
     );
     expect(endpointsCall).toBeDefined();
     expect(endpointsCall![1]).toBe(900); // TTL.ENDPOINTS
@@ -156,7 +188,7 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
     await runImageStalenessCheck();
 
     const imagesCall = cachedFetchSWRSpy.mock.calls.find(
-      (call) => (call[0] as string).startsWith('images:'),
+      (call: any) => (call[0] as string).startsWith('images:'),
     );
     expect(imagesCall).toBeDefined();
     expect(imagesCall![0]).toBe('images:1'); // getCacheKey('images', ep.Id)
@@ -177,9 +209,9 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
 
   it('calls cachedFetchSWR for images per endpoint', async () => {
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'local' },
-      { Id: 2, Name: 'remote' },
-    ]);
+      { Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'remote', Status: 1, Type: 1, URL: 'tcp://localhost' },
+    ] as any);
 
     await runImageStalenessCheck();
 
@@ -187,7 +219,7 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
     expect(cachedFetchSWRSpy).toHaveBeenCalledTimes(3);
 
     const imagesCalls = cachedFetchSWRSpy.mock.calls.filter(
-      (call) => (call[0] as string).startsWith('images:'),
+      (call: any) => (call[0] as string).startsWith('images:'),
     );
     expect(imagesCalls).toHaveLength(2);
     expect(imagesCalls[0][0]).toBe('images:1');
@@ -197,10 +229,10 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
   it('processes image endpoints in parallel (not sequentially)', async () => {
     const callOrder: string[] = [];
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
-      { Id: 3, Name: 'ep3' },
-    ]);
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 3, Name: 'ep3', Status: 1, Type: 1, URL: 'tcp://localhost' },
+    ] as any);
     getImagesMock.mockImplementation((epId: number) => {
       callOrder.push(`start-${epId}`);
       return new Promise((resolve) => {
@@ -224,7 +256,6 @@ describe('scheduler/setup – runImageStalenessCheck', () => {
 
 describe('scheduler/setup – runMetricsCollection', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     _resetMetricsMutex();
   });
 
@@ -234,14 +265,14 @@ describe('scheduler/setup – runMetricsCollection', () => {
 
   it('collects metrics for running containers across endpoints', async () => {
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
-    ]);
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
+    ] as any);
     getContainersMock.mockImplementation((epId: number) =>
       Promise.resolve([
         { Id: `container-${epId}-a`, Names: ['/app-a'], State: 'running' },
         { Id: `container-${epId}-b`, Names: ['/app-b'], State: 'running' },
-      ]),
+      ] as any),
     );
 
     await runMetricsCollection();
@@ -256,10 +287,10 @@ describe('scheduler/setup – runMetricsCollection', () => {
   it('processes endpoints in parallel (not sequentially)', async () => {
     const callOrder: string[] = [];
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
-      { Id: 3, Name: 'ep3' },
-    ]);
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 3, Name: 'ep3', Status: 1, Type: 1, URL: 'tcp://localhost' },
+    ] as any);
     getContainersMock.mockImplementation((epId: number) => {
       callOrder.push(`start-ep-${epId}`);
       return new Promise((resolve) => {
@@ -267,7 +298,7 @@ describe('scheduler/setup – runMetricsCollection', () => {
           callOrder.push(`end-ep-${epId}`);
           resolve([
             { Id: `c-${epId}`, Names: [`/app-${epId}`], State: 'running' },
-          ]);
+          ] as any);
         }, 10);
       });
     });
@@ -282,11 +313,11 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('skips stopped containers', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'running-1', Names: ['/app'], State: 'running' },
       { Id: 'stopped-1', Names: ['/db'], State: 'exited' },
-    ]);
+    ] as any);
 
     await runMetricsCollection();
 
@@ -295,12 +326,12 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('handles individual container failures gracefully', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'ok-1', Names: ['/app-a'], State: 'running' },
       { Id: 'fail-1', Names: ['/app-b'], State: 'running' },
       { Id: 'ok-2', Names: ['/app-c'], State: 'running' },
-    ]);
+    ] as any);
     collectMetricsMock
       .mockResolvedValueOnce({ cpu: 10, memory: 20, memoryBytes: 100, networkRxBytes: 0, networkTxBytes: 0 })
       .mockRejectedValueOnce(new Error('container gone'))
@@ -315,14 +346,14 @@ describe('scheduler/setup – runMetricsCollection', () => {
 
   it('handles entire endpoint failure gracefully', async () => {
     getEndpointsMock.mockResolvedValueOnce([
-      { Id: 1, Name: 'ep1' },
-      { Id: 2, Name: 'ep2' },
-    ]);
+      { Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' },
+      { Id: 2, Name: 'ep2', Status: 1, Type: 1, URL: 'tcp://localhost' },
+    ] as any);
     getContainersMock
       .mockRejectedValueOnce(new Error('endpoint unreachable'))
       .mockResolvedValueOnce([
         { Id: 'c-2', Names: ['/app'], State: 'running' },
-      ]);
+      ] as any);
 
     await runMetricsCollection();
 
@@ -333,8 +364,8 @@ describe('scheduler/setup – runMetricsCollection', () => {
   });
 
   it('does not insert metrics when no containers are found', async () => {
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
-    getContainersMock.mockResolvedValueOnce([]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
+    getContainersMock.mockResolvedValueOnce([] as any);
 
     await runMetricsCollection();
 
@@ -345,7 +376,6 @@ describe('scheduler/setup – runMetricsCollection', () => {
 
 describe('scheduler/setup – mutex guard (cycle overlap prevention)', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     _resetMetricsMutex();
   });
 
@@ -405,10 +435,10 @@ describe('scheduler/setup – mutex guard (cycle overlap prevention)', () => {
   });
 
   it('allows a new cycle after the previous one completes', async () => {
-    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValue([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValue([
       { Id: 'c-1', Names: ['/app'], State: 'running' },
-    ]);
+    ] as any);
 
     // First cycle
     await runMetricsCollection();
@@ -422,7 +452,6 @@ describe('scheduler/setup – mutex guard (cycle overlap prevention)', () => {
 
 describe('scheduler/setup – no double-collection (monitoring reuses scheduler data)', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     _resetMetricsMutex();
   });
 
@@ -437,10 +466,10 @@ describe('scheduler/setup – no double-collection (monitoring reuses scheduler 
     // runMetricsCollection calls collectMetrics while the monitoring
     // service (which we mock) does NOT.
 
-    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1' }]);
+    getEndpointsMock.mockResolvedValueOnce([{ Id: 1, Name: 'ep1', Status: 1, Type: 1, URL: 'tcp://localhost' }] as any);
     getContainersMock.mockResolvedValueOnce([
       { Id: 'c-1', Names: ['/app'], State: 'running' },
-    ]);
+    ] as any);
 
     await runMetricsCollection();
 
@@ -451,10 +480,6 @@ describe('scheduler/setup – no double-collection (monitoring reuses scheduler 
 });
 
 describe('scheduler/setup – runCleanup includes session cleanup', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('calls cleanExpiredSessions during cleanup', async () => {
     cleanExpiredSessionsMock.mockReturnValue(5);
 
@@ -481,10 +506,6 @@ describe('scheduler/setup – runCleanup includes session cleanup', () => {
 });
 
 describe('scheduler/setup – runCleanup includes insights cleanup', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('calls cleanupOldInsights during cleanup', async () => {
     cleanupOldInsightsMock.mockReturnValue(10);
 
@@ -502,8 +523,7 @@ describe('scheduler/setup – runCleanup includes insights cleanup', () => {
   });
 
   it('passes INSIGHTS_RETENTION_DAYS from config', async () => {
-    const { getConfig } = await import('../config/index.js');
-    (getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+    setConfigForTest({
       METRICS_RETENTION_DAYS: 30,
       INSIGHTS_RETENTION_DAYS: 14,
     });
