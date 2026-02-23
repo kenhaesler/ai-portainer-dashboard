@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getRecentTraces, getLlmStats } from '../services/llm-trace-store.js';
-import { LlmTracesQuerySchema, LlmStatsQuerySchema } from '../models/api-schemas.js';
+import { LlmTracesQuerySchema, LlmStatsQuerySchema } from '../core/models/api-schemas.js';
 
 export async function llmObservabilityRoutes(fastify: FastifyInstance) {
   fastify.get('/api/llm/traces', {

@@ -6,13 +6,19 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 
 | Directory | Purpose |
 |-----------|---------|
+| `core/config/` | Env schema (Zod), validated config singleton |
+| `core/db/` | PostgreSQL pools, adapter, migrations (postgres + timescale), test helpers |
+| `core/utils/` | Logger (pino), crypto (JWT/bcrypt), log sanitizer, network security |
+| `core/models/` | Zod schemas + TypeScript interfaces (auth, portainer, metrics, tracing, etc.) |
+| `core/plugins/` | Fastify plugins (auth, CORS, rate-limit, tracing, compression, Socket.IO, etc.) |
+| `core/portainer/` | Portainer API client, Redis cache, normalizers, circuit breaker |
+| `core/tracing/` | Distributed tracing context, span storage, OTLP export/transform |
+| `core/services/` | Auth stores (session, user), settings, audit logger, event bus, OIDC |
 | `routes/` | REST API endpoints by feature (auth, containers, metrics, monitoring) |
-| `services/` | Portainer client, anomaly detection (z-score), monitoring, hybrid cache (Redis + in-memory), Harbor client (vulnerability sync) |
+| `services/` | Domain services: LLM, anomaly detection, monitoring, Harbor, PCAP, incidents, etc. |
 | `sockets/` | Socket.IO: `/llm` (chat), `/monitoring` (insights), `/remediation` (actions) |
-| `models/` | Zod schemas + database query functions |
-| `db/postgres-migrations/` | PostgreSQL migrations (auto-run via `getAppDb()`) |
-| `db/test-db-helper.ts` | Test PostgreSQL helper: `getTestDb()`, `truncateTestTables()`, `closeTestDb()` |
 | `scheduler/` | Background: metrics (60s), monitoring (5min), daily cleanup |
+| `utils/` | Domain-specific utils (pii-scrubber) — not kernel |
 
 ## Frontend (`frontend/src/`) — React 19, TypeScript, Vite, Tailwind CSS v4
 
@@ -28,7 +34,7 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 ## Key Patterns
 
 - **Observer-First principle**: Visibility prioritized; actions require explicit approval.
-- **Layered backend architecture**: Routes → Services → Models.
+- **Layered backend architecture**: Routes → Services → Core (config, db, utils, models, plugins, portainer, tracing, auth services).
 - **Server state**: TanStack React Query. **UI state**: Zustand.
 - Zod validation on all Portainer API responses.
 - Path alias `@/*` → `./src/*` in both workspaces.

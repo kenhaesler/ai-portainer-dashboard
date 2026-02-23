@@ -1,9 +1,9 @@
-import { getEndpoints, getContainers, getContainerHostConfig } from './portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from './portainer-cache.js';
-import type { Container } from '../models/portainer.js';
-import { getSetting, setSetting } from './settings-store.js';
-import { createChildLogger } from '../utils/logger.js';
-import { CircuitBreakerOpenError } from './circuit-breaker.js';
+import { getEndpoints, getContainers, getContainerHostConfig } from '../core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
+import type { Container } from '../core/models/portainer.js';
+import { getSetting, setSetting } from '../core/services/settings-store.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { CircuitBreakerOpenError } from '../core/portainer/circuit-breaker.js';
 import {
   scanCapabilityPosture,
   type CapabilityPosture,

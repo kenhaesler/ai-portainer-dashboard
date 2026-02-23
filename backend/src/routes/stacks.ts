@@ -1,15 +1,15 @@
 import { FastifyInstance } from 'fastify';
-import * as portainer from '../services/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
+import * as portainer from '../core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import {
   normalizeStack,
   normalizeEndpoint,
   COMPOSE_PROJECT_LABELS,
   syntheticStackId,
   type NormalizedStack,
-} from '../services/portainer-normalizers.js';
-import { StackIdParamsSchema } from '../models/api-schemas.js';
-import { createChildLogger } from '../utils/logger.js';
+} from '../core/portainer/portainer-normalizers.js';
+import { StackIdParamsSchema } from '../core/models/api-schemas.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('route:stacks');
 

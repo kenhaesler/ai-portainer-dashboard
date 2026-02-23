@@ -2,8 +2,8 @@ import { execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
-import { getConfig } from '../config/index.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../core/config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const execFileAsync = promisify(execFile);
 const log = createChildLogger('backup-service');

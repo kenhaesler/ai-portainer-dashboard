@@ -1,11 +1,11 @@
 import pLimit from 'p-limit';
 import { FastifyInstance } from 'fastify';
-import * as portainer from '../services/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../services/portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint, normalizeStack } from '../services/portainer-normalizers.js';
+import * as portainer from '../core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpoint, normalizeStack } from '../core/portainer/portainer-normalizers.js';
 import { supportsLiveFeatures } from '../services/edge-capability-guard.js';
-import { createChildLogger } from '../utils/logger.js';
-import { SearchQuerySchema } from '../models/api-schemas.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { SearchQuerySchema } from '../core/models/api-schemas.js';
 
 const log = createChildLogger('search-route');
 const TTL_LOG_SEARCH = 120; // 120 seconds — cache for repeated/refined searches

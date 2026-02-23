@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { getConfig } from '../config/index.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../core/config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
 import {
   createContainer,
   startContainer,
@@ -13,7 +13,7 @@ import {
   pullImage,
   getImages,
   getContainers,
-} from './portainer-client.js';
+} from '../core/portainer/portainer-client.js';
 import {
   insertCapture,
   updateCaptureStatus,
@@ -23,7 +23,7 @@ import {
   deleteCapture as deleteDbCapture,
   cleanOldCaptures as cleanDbOldCaptures,
 } from './pcap-store.js';
-import type { StartCaptureRequest, Capture, CaptureStatus } from '../models/pcap.js';
+import type { StartCaptureRequest, Capture, CaptureStatus } from '../core/models/pcap.js';
 
 const log = createChildLogger('pcap-service');
 

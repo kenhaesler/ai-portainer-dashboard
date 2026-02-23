@@ -1,7 +1,7 @@
 import { createChildLogger } from '../utils/logger.js';
 import { getConfig } from '../config/index.js';
 import { createClient } from 'redis';
-import { withSpan } from './trace-context.js';
+import { withSpan } from '../tracing/trace-context.js';
 import { gzip, gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 

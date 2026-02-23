@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { writeAuditLog } from '../services/audit-logger.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
 import {
   connectServer,
   disconnectServer,

@@ -17,9 +17,9 @@ import {
   getEndpointOtlpOverride,
   setEndpointOtlpOverride,
 } from '../services/ebpf-coverage.js';
-import { writeAuditLog } from '../services/audit-logger.js';
-import { createChildLogger } from '../utils/logger.js';
-import { getConfig } from '../config/index.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import { getConfig } from '../core/config/index.js';
 
 const log = createChildLogger('ebpf-coverage-route');
 

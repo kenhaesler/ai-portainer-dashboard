@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import * as portainer from '../services/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../services/portainer-cache.js';
-import { normalizeEndpoint, normalizeContainer } from '../services/portainer-normalizers.js';
+import * as portainer from '../core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
+import { normalizeEndpoint, normalizeContainer } from '../core/portainer/portainer-normalizers.js';
 import { getKpiHistory } from '../services/kpi-store.js';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '../services/security-audit.js';
 import { getLatestMetricsBatch } from '../services/metrics-store.js';
 

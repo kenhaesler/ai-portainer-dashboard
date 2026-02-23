@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import pLimit from 'p-limit';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { withSpan } from './trace-context.js';
+import { withSpan } from '../tracing/trace-context.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import {
   EndpointSchema, ContainerSchema, StackSchema,

@@ -16,9 +16,9 @@ import {
   updatePromptSuggestionStatus,
 } from '../services/feedback-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
-import { writeAuditLog } from '../services/audit-logger.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
 import { getAuthHeaders, llmFetch, createConfiguredOllamaClient } from '../services/llm-client.js';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
 
@@ -271,7 +271,7 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
 
     try {
       // Dynamically import to avoid circular dependencies
-      const { getEffectiveLlmConfig } = await import('../services/settings-store.js');
+      const { getEffectiveLlmConfig } = await import('../core/services/settings-store.js');
 
       const llmConfig = await getEffectiveLlmConfig();
 

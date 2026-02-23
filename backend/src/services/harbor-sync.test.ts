@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('./trace-context.js', () => ({
+vi.mock('../core/tracing/trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
@@ -47,9 +47,9 @@ vi.mock('./image-staleness.js', () => ({
 import { runFullSync } from './harbor-sync.js';
 import * as harborClient from './harbor-client.js';
 import * as store from './harbor-vulnerability-store.js';
-import * as portainerClient from './portainer-client.js';
-import * as portainerCache from './portainer-cache.js';
-import { cache } from './portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
+import { cache } from '../core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 beforeAll(async () => {

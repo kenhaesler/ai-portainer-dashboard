@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { tokenize, jaccardSimilarity, findSimilarInsights } from './alert-similarity.js';
-import type { Insight } from '../models/monitoring.js';
+import type { Insight } from '../core/models/monitoring.js';
 
 function makeInsight(overrides: Partial<Insight> = {}): Insight {
   return {

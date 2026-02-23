@@ -1,8 +1,8 @@
 import { Agent } from 'undici';
-import { getContainers, getContainerLogs, getEndpoints } from './portainer-client.js';
+import { getContainers, getContainerLogs, getEndpoints } from '../core/portainer/portainer-client.js';
 import { getElasticsearchConfig, type ElasticsearchConfig } from './elasticsearch-config.js';
-import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from './portainer-cache.js';
-import { createChildLogger } from '../utils/logger.js';
+import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('es-log-forwarder');
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppDb } from '../db/app-db.js';
+import type { AppDb } from '../core/db/app-db.js';
 
 /**
  * Regression tests for status-page-store async AppDb queries.
@@ -25,7 +25,7 @@ const mockIncidentsDb: AppDb = {
 };
 
 // Kept: tests verify domain-based routing (monitoring vs incidents) and SQL parameter passing
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: vi.fn((domain: string) => {
     if (domain === 'monitoring') return mockMonitoringDb;
     if (domain === 'incidents') return mockIncidentsDb;
@@ -34,7 +34,7 @@ vi.mock('../db/app-db-router.js', () => ({
 }));
 
 // Mock settings-store so getStatusPageConfig doesn't hit a real settings table
-vi.mock('./settings-store.js', () => ({
+vi.mock('../core/services/settings-store.js', () => ({
   getSetting: vi.fn(async () => undefined),
 }));
 

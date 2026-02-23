@@ -5,16 +5,16 @@ import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import { edgeJobsRoutes } from './edge-jobs.js';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: audit-logger mock — avoids side effects from real audit log writes
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
-import { writeAuditLog } from '../services/audit-logger.js';
-import { cache, waitForInFlight } from '../services/portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
+import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetEdgeJobs: any;

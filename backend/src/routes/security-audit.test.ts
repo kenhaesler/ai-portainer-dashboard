@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
-import type { AppDb } from '../db/app-db.js';
+import { getTestDb, truncateTestTables, closeTestDb } from '../core/db/test-db-helper.js';
+import type { AppDb } from '../core/db/app-db.js';
 import { monitoringRoutes } from './monitoring.js';
 
 let testDb: AppDb;
@@ -21,7 +21,7 @@ vi.mock('../services/security-audit.js', () => ({
 }));
 
 // Kept: app-db-router mock — tests control database routing
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 

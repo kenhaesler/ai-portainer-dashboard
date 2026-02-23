@@ -1,7 +1,7 @@
-import { getConfig } from '../config/index.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../core/config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
 import { getMovingAverage } from './metrics-store.js';
-import type { AnomalyDetection } from '../models/metrics.js';
+import type { AnomalyDetection } from '../core/models/metrics.js';
 
 const log = createChildLogger('adaptive-anomaly');
 

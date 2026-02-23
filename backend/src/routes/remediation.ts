@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { writeAuditLog } from '../services/audit-logger.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
 import { broadcastActionUpdate } from '../sockets/remediation.js';
-import { RemediationQuerySchema, ActionIdParamsSchema, RejectBodySchema } from '../models/api-schemas.js';
-import { restartContainer, startContainer, stopContainer } from '../services/portainer-client.js';
+import { RemediationQuerySchema, ActionIdParamsSchema, RejectBodySchema } from '../core/models/api-schemas.js';
+import { restartContainer, startContainer, stopContainer } from '../core/portainer/portainer-client.js';
 
 export async function remediationRoutes(fastify: FastifyInstance) {
   // List actions

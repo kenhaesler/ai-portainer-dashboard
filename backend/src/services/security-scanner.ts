@@ -1,5 +1,5 @@
-import { createChildLogger } from '../utils/logger.js';
-import type { Container } from '../models/portainer.js';
+import { createChildLogger } from '../core/utils/logger.js';
+import type { Container } from '../core/models/portainer.js';
 
 const log = createChildLogger('security-scanner');
 

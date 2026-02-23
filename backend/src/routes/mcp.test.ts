@@ -7,7 +7,7 @@ const mockQuery = vi.fn().mockResolvedValue([]);
 const mockQueryOne = vi.fn().mockResolvedValue(null);
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1, lastInsertRowid: 1 });
 // Kept: uses lastInsertRowid (SQLite-only API); needs migration to PostgreSQL RETURNING
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
     queryOne: (...args: unknown[]) => mockQueryOne(...args),
@@ -16,7 +16,7 @@ vi.mock('../db/app-db-router.js', () => ({
 }));
 
 // Mock audit logger
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

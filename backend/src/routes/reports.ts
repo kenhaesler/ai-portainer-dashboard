@@ -1,14 +1,14 @@
 import type { PoolClient } from 'pg';
 import { FastifyInstance } from 'fastify';
-import { getReportsDb } from '../db/timescale.js';
-import { ReportsQuerySchema } from '../models/api-schemas.js';
+import { getReportsDb } from '../core/db/timescale.js';
+import { ReportsQuerySchema } from '../core/models/api-schemas.js';
 import {
   getInfrastructureServicePatterns,
   matchesInfrastructurePattern,
 } from '../services/infrastructure-service-classifier.js';
 import { isUndefinedTableError } from '../services/metrics-store.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('reports-routes');
 

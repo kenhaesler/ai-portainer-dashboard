@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseTcpdumpOutput, buildAnalysisPrompt, parseAnalysisResponse } from './pcap-analysis-service.js';
-import type { PcapSummary } from '../models/pcap.js';
+import type { PcapSummary } from '../core/models/pcap.js';
 
 describe('parseTcpdumpOutput', () => {
   it('parses TCP packets with source/dest IP and ports', () => {

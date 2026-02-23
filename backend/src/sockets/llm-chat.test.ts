@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
-import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
-import type { AppDb } from '../db/app-db.js';
+import { getTestDb, truncateTestTables, closeTestDb } from '../core/db/test-db-helper.js';
+import type { AppDb } from '../core/db/app-db.js';
 
 let testDb: AppDb;
 
@@ -32,7 +32,7 @@ vi.mock('ollama', () => ({
 
 
 // Kept: app-db-router mock — routes to test DB
-vi.mock('../db/app-db-router.js', () => ({
+vi.mock('../core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 
@@ -52,7 +52,7 @@ vi.mock('../services/mcp-tool-bridge.js', () => ({
   getMcpToolPrompt: vi.fn(() => ''),
 }));
 
-vi.mock('../services/settings-store.js', () => ({
+vi.mock('../core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
 }));
 
@@ -60,9 +60,9 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
 }));
 
-import * as portainerClient from '../services/portainer-client.js';
-import * as portainerCache from '../services/portainer-cache.js';
-import { cache } from '../services/portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
+import { cache } from '../core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 // ── Spy on real portainer modules (prevent real API calls) ──

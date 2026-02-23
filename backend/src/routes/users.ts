@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { listUsers, createUser, updateUser, deleteUser, type Role } from '../services/user-store.js';
-import { writeAuditLog } from '../services/audit-logger.js';
-import { UserCreateBodySchema, UserIdParamsSchema, UserUpdateBodySchema } from '../models/api-schemas.js';
+import { listUsers, createUser, updateUser, deleteUser, type Role } from '../core/services/user-store.js';
+import { writeAuditLog } from '../core/services/audit-logger.js';
+import { UserCreateBodySchema, UserIdParamsSchema, UserUpdateBodySchema } from '../core/models/api-schemas.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // List all users (admin only)

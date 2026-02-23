@@ -1,8 +1,8 @@
-import { getConfig } from '../config/index.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getConfig } from '../core/config/index.js';
+import { createChildLogger } from '../core/utils/logger.js';
 import { getMetrics } from './metrics-store.js';
 import { IsolationForest } from './isolation-forest.js';
-import type { AnomalyDetection } from '../models/metrics.js';
+import type { AnomalyDetection } from '../core/models/metrics.js';
 
 const log = createChildLogger('isolation-forest-detector');
 

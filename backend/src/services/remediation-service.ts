@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 import {
   insertAction,
   getAction,
@@ -8,14 +8,14 @@ import {
   hasPendingAction,
   type ActionInsert,
 } from './actions-store.js';
-import type { Insight } from '../models/monitoring.js';
-import { emitEvent } from './event-bus.js';
-import { getContainerLogs } from './portainer-client.js';
+import type { Insight } from '../core/models/monitoring.js';
+import { emitEvent } from '../core/services/event-bus.js';
+import { getContainerLogs } from '../core/portainer/portainer-client.js';
 import { getLatestMetrics } from './metrics-store.js';
 import { chatStream, isOllamaAvailable } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
-import { getConfig } from '../config/index.js';
+import { getConfig } from '../core/config/index.js';
 
 const log = createChildLogger('remediation-service');
 

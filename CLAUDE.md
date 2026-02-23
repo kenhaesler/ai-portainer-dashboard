@@ -34,7 +34,7 @@ npm run test -w frontend   # Frontend only
 
 ## Architecture
 
-See `@docs/ai-instructions/architecture.md` for complete backend/frontend directory structure and key patterns.
+Backend uses a `core/` kernel architecture (`backend/src/core/`). See `@docs/ai-instructions/architecture.md` for complete directory structure. See `@backend/src/core/CLAUDE.md` for kernel boundaries and security-critical files.
 
 ## Security (Project-Specific)
 

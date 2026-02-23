@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { v4 as uuidv4 } from 'uuid';
-import { insertSpan } from '../services/trace-store.js';
-import { runWithTraceContext, getCurrentTraceContext } from '../services/trace-context.js';
+import { insertSpan } from '../tracing/trace-store.js';
+import { runWithTraceContext, getCurrentTraceContext } from '../tracing/trace-context.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('request-tracing');

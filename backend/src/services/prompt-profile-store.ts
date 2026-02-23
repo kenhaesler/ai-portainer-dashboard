@@ -1,6 +1,6 @@
-import { getDbForDomain } from '../db/app-db-router.js';
-import { getSetting, setSetting, deleteSetting } from './settings-store.js';
-import { createChildLogger } from '../utils/logger.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { getSetting, setSetting, deleteSetting } from '../core/services/settings-store.js';
+import { createChildLogger } from '../core/utils/logger.js';
 import { PROMPT_FEATURES, type PromptFeature } from './prompt-store.js';
 
 const log = createChildLogger('prompt-profile-store');

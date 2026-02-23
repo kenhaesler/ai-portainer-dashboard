@@ -1,8 +1,8 @@
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setConfigForTest, resetConfig } from '../config/index.js';
-import rateLimitPlugin from '../plugins/rate-limit.js';
+import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import rateLimitPlugin from '../core/plugins/rate-limit.js';
 import { authRoutes } from './auth.js';
 
 const mockSignJwt = vi.fn();
@@ -11,12 +11,12 @@ const mockAuthenticateUser = vi.fn();
 const mockEnsureDefaultAdmin = vi.fn();
 
 // Kept: crypto mock — file I/O and bcrypt dependency
-vi.mock('../utils/crypto.js', () => ({
+vi.mock('../core/utils/crypto.js', () => ({
   signJwt: (...args: unknown[]) => mockSignJwt(...args),
 }));
 
 // Kept: session-store mock — no PostgreSQL in CI
-vi.mock('../services/session-store.js', () => ({
+vi.mock('../core/services/session-store.js', () => ({
   createSession: (...args: unknown[]) => mockCreateSession(...args),
   getSession: vi.fn(),
   invalidateSession: vi.fn(),
@@ -24,12 +24,12 @@ vi.mock('../services/session-store.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../services/audit-logger.js', () => ({
+vi.mock('../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
 // Kept: user-store mock — no PostgreSQL in CI
-vi.mock('../services/user-store.js', () => ({
+vi.mock('../core/services/user-store.js', () => ({
   authenticateUser: (...args: unknown[]) => mockAuthenticateUser(...args),
   ensureDefaultAdmin: (...args: unknown[]) => mockEnsureDefaultAdmin(...args),
   getUserDefaultLandingPage: vi.fn().mockReturnValue('/'),

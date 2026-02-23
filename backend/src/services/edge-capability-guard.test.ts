@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-import * as portainerClient from './portainer-client.js';
-import * as portainerCache from './portainer-cache.js';
-import { cache } from './portainer-cache.js';
+import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerCache from '../core/portainer/portainer-cache.js';
+import { cache } from '../core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 import { getEndpointCapabilities, assertCapability, supportsLiveFeatures } from './edge-capability-guard.js';

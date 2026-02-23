@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getCapacityForecasts, generateForecast, lookupContainerName } from '../services/capacity-forecaster.js';
 import { chatStream } from '../services/llm-client.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
-import { createChildLogger } from '../utils/logger.js';
+import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('routes:forecasts');
 

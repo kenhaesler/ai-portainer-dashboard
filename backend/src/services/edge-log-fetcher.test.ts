@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isDockerProxyUnavailable, waitForTunnel, getContainerLogsWithRetry } from './edge-log-fetcher.js';
 
-import * as portainer from './portainer-client.js';
+import * as portainer from '../core/portainer/portainer-client.js';
 
 describe('isDockerProxyUnavailable', () => {
   it('returns true for status 502', () => {

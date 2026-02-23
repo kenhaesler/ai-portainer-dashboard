@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { getDbForDomain } from '../db/app-db-router.js';
-import { TracesQuerySchema, TraceIdParamsSchema } from '../models/api-schemas.js';
+import { getDbForDomain } from '../core/db/app-db-router.js';
+import { TracesQuerySchema, TraceIdParamsSchema } from '../core/models/api-schemas.js';
 
 type TraceFilters = {
   from?: string;
