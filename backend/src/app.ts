@@ -47,7 +47,7 @@ import { mcpRoutes } from './routes/mcp.js';
 import { promptProfileRoutes } from './routes/prompt-profiles.js';
 import { llmFeedbackRoutes } from './routes/llm-feedback.js';
 import { edgeJobsRoutes } from './routes/edge-jobs.js';
-import { securityRoutes } from './modules/security/index.js';
+import { securityRoutes } from './modules/security/routes/index.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';

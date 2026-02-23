@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { pcapRoutes } from '../routes/pcap.js';
