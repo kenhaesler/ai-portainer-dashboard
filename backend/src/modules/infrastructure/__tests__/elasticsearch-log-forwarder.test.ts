@@ -3,21 +3,21 @@ import { afterEach, beforeAll, beforeEach, afterAll, describe, expect, it, vi } 
 const mockGetElasticsearchConfig = vi.fn();
 
 // Kept: elasticsearch-config mock — tests control config responses
-vi.mock('./elasticsearch-config.js', () => ({
+vi.mock('../services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: (...args: unknown[]) => mockGetElasticsearchConfig(...args),
 }));
 
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import * as portainerCache from '../core/portainer/portainer-cache.js';
-import { cache } from '../core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import * as portainerCache from '../../../core/portainer/portainer-cache.js';
+import { cache } from '../../../core/portainer/portainer-cache.js';
+import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 const {
   resetElasticsearchLogForwarderState,
   runElasticsearchLogForwardingCycle,
   startElasticsearchLogForwarder,
   stopElasticsearchLogForwarder,
-} = await import('./elasticsearch-log-forwarder.js');
+} = await import('../services/elasticsearch-log-forwarder.js');
 
 let mockGetEndpoints: any;
 let mockGetContainers: any;

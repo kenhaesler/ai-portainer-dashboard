@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
-import { edgeJobsRoutes } from './edge-jobs.js';
+import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
+import { edgeJobsRoutes } from '../routes/edge-jobs.js';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../../../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: audit-logger mock — avoids side effects from real audit log writes
-vi.mock('../core/services/audit-logger.js', () => ({
+vi.mock('../../../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import { writeAuditLog } from '../core/services/audit-logger.js';
-import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
-import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import { writeAuditLog } from '../../../core/services/audit-logger.js';
+import { cache, waitForInFlight } from '../../../core/portainer/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockGetEdgeJobs: any;
 let mockGetEdgeJob: any;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { IncrementalDockerFrameDecoder } from './docker-frame-decoder.js';
+import { IncrementalDockerFrameDecoder } from '../services/docker-frame-decoder.js';
 
 /** Build a Docker multiplexed frame: [streamType, 0, 0, 0, len(4 bytes BE), payload] */
 function makeFrame(payload: string, streamType = 1): Buffer {

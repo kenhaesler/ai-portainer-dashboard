@@ -60,8 +60,8 @@ vi.mock('../services/kpi-store.js', () => ({
 // Real portainer-normalizers used (pure function, no external deps)
 // Kept: trace-context mock
 vi.mock('../core/tracing/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
-// Kept: elasticsearch-log-forwarder mock
-vi.mock('../services/elasticsearch-log-forwarder.js', () => ({
+// Kept: infrastructure module mock (elasticsearch log forwarder)
+vi.mock('../modules/infrastructure/index.js', () => ({
   startElasticsearchLogForwarder: vi.fn(),
   stopElasticsearchLogForwarder: vi.fn(),
 }));

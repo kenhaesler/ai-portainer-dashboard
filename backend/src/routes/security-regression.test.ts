@@ -280,7 +280,7 @@ vi.mock('../services/incident-store.js', () => ({
   getIncidentCount: vi.fn(() => 0),
 }));
 
-vi.mock('../services/elasticsearch-config.js', () => ({
+vi.mock('../modules/infrastructure/services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: vi.fn(() => null),
 }));
 
@@ -371,7 +371,7 @@ import { correlationRoutes } from './correlations.js';
 import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
 import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
-import { edgeJobsRoutes } from './edge-jobs.js';
+import { edgeJobsRoutes } from '../modules/infrastructure/routes/edge-jobs.js';
 
 import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
