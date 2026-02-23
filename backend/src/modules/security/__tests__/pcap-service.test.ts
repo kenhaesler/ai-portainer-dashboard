@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
 
 const mockInsertCapture = vi.fn().mockResolvedValue(undefined);
 const mockUpdateCaptureStatus = vi.fn().mockResolvedValue(undefined);
@@ -9,7 +9,7 @@ const mockGetCapturesCount = vi.fn().mockResolvedValue(0);
 const mockDeleteCapture = vi.fn().mockResolvedValue(true);
 const mockCleanOldCaptures = vi.fn().mockResolvedValue(0);
 // Kept: DB-backed store mock — pcap-store writes to PostgreSQL
-vi.mock('./pcap-store.js', () => ({
+vi.mock('../services/pcap-store.js', () => ({
   insertCapture: (...args: unknown[]) => mockInsertCapture(...args),
   updateCaptureStatus: (...args: unknown[]) => mockUpdateCaptureStatus(...args),
   getCapture: (...args: unknown[]) => mockGetCapture(...args),
@@ -38,8 +38,8 @@ const {
   getCaptureById,
   deleteCaptureById,
   cleanupOrphanedSidecars,
-} = await import('./pcap-service.js');
-import * as portainer from '../core/portainer/portainer-client.js';
+} = await import('../services/pcap-service.js');
+import * as portainer from '../../../core/portainer/portainer-client.js';
 
 
 beforeAll(() => {

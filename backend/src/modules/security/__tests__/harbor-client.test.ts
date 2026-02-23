@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
 
 // Kept: undici mock — external dependency
 vi.mock('undici', () => ({
@@ -8,12 +8,12 @@ vi.mock('undici', () => ({
 }));
 
 // Kept: trace-context mock — side-effect isolation
-vi.mock('../core/tracing/trace-context.js', () => ({
+vi.mock('../../../core/tracing/trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
 // Kept: settings-store mock — no PostgreSQL in CI
-vi.mock('../core/services/settings-store.js', () => ({
+vi.mock('../../../core/services/settings-store.js', () => ({
   getEffectiveHarborConfig: vi.fn(() => Promise.resolve({
     enabled: true,
     apiUrl: 'https://harbor.example.com',
@@ -25,8 +25,8 @@ vi.mock('../core/services/settings-store.js', () => ({
 }));
 
 import { Agent, fetch as undiciFetch } from 'undici';
-import { getEffectiveHarborConfig } from '../core/services/settings-store.js';
-import { isHarborConfigured, isHarborConfiguredAsync, testConnection, _resetHarborClientState } from './harbor-client.js';
+import { getEffectiveHarborConfig } from '../../../core/services/settings-store.js';
+import { isHarborConfigured, isHarborConfiguredAsync, testConnection, _resetHarborClientState } from '../services/harbor-client.js';
 
 const MockAgent = vi.mocked(Agent);
 const mockFetch = vi.mocked(undiciFetch);
@@ -153,7 +153,7 @@ describe('harbor-client', () => {
         headers: new Headers(), // no x-total-count header
       } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
 
-      const { listVulnerabilities } = await import('./harbor-client.js');
+      const { listVulnerabilities } = await import('../services/harbor-client.js');
       const result = await listVulnerabilities({ page: 1, pageSize: 100 });
       expect(result.total).toBe(0);
       expect(result.items).toEqual(mockItems);
@@ -170,7 +170,7 @@ describe('harbor-client', () => {
         headers,
       } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
 
-      const { listVulnerabilities } = await import('./harbor-client.js');
+      const { listVulnerabilities } = await import('../services/harbor-client.js');
       const result = await listVulnerabilities({ page: 1, pageSize: 100 });
       expect(result.total).toBe(500);
     });
@@ -228,7 +228,7 @@ describe('harbor-client', () => {
         headers: new Headers({ 'x-total-count': '0' }),
       } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
 
-      const { getProjects } = await import('./harbor-client.js');
+      const { getProjects } = await import('../services/harbor-client.js');
       await getProjects();
 
       const headers = mockFetch.mock.calls[0][1]?.headers as Record<string, string>;
@@ -252,7 +252,7 @@ describe('harbor-client', () => {
         headers: new Headers(),
       } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
 
-      const { listVulnerabilities } = await import('./harbor-client.js');
+      const { listVulnerabilities } = await import('../services/harbor-client.js');
       await listVulnerabilities({ page: 1, pageSize: 10 });
 
       const headers = mockFetch.mock.calls[0][1]?.headers as Record<string, string>;
@@ -276,7 +276,7 @@ describe('harbor-client', () => {
         headers: new Headers({ 'x-total-count': '0' }),
       } as unknown as ReturnType<typeof undiciFetch> extends Promise<infer R> ? R : never);
 
-      const { getProjects } = await import('./harbor-client.js');
+      const { getProjects } = await import('../services/harbor-client.js');
       await getProjects();
 
       const url = mockFetch.mock.calls[0][0] as string;

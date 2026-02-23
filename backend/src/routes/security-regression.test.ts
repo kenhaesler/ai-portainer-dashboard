@@ -162,7 +162,7 @@ vi.mock('../services/prompt-test-fixtures.js', () => ({
   PROMPT_TEST_FIXTURES: [],
 }));
 
-vi.mock('../services/security-audit.js', () => ({
+vi.mock('../modules/security/services/security-audit.js', () => ({
   getSecurityAudit: vi.fn().mockResolvedValue({ findings: [], summary: {} }),
   buildSecurityAuditSummary: vi.fn(() => ({})),
   getSecurityAuditIgnoreList: vi.fn(() => []),
@@ -218,7 +218,7 @@ vi.mock('../services/metric-correlator.js', () => ({
   findCorrelatedContainers: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../services/ebpf-coverage.js', () => ({
+vi.mock('../modules/security/services/ebpf-coverage.js', () => ({
   getEndpointCoverage: vi.fn().mockResolvedValue([]),
   updateCoverageStatus: vi.fn().mockResolvedValue(undefined),
   deleteCoverageRecord: vi.fn().mockResolvedValue(true),
@@ -261,7 +261,7 @@ vi.mock('../services/portainer-backup.js', () => ({
   deletePortainerBackup: vi.fn(),
 }));
 
-vi.mock('../services/image-staleness.js', () => ({
+vi.mock('../modules/security/services/image-staleness.js', () => ({
   getStalenessRecords: vi.fn().mockResolvedValue([]),
   getStalenessSummary: vi.fn().mockResolvedValue({ total: 0, stale: 0 }),
   runStalenessChecks: vi.fn().mockResolvedValue(undefined),
@@ -284,7 +284,7 @@ vi.mock('../services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: vi.fn(() => null),
 }));
 
-vi.mock('../services/pcap-service.js', () => ({
+vi.mock('../modules/security/services/pcap-service.js', () => ({
   startCapture: vi.fn().mockResolvedValue({ id: 'cap-1' }),
   stopCapture: vi.fn().mockResolvedValue(undefined),
   getCaptureById: vi.fn(() => null),
@@ -293,7 +293,7 @@ vi.mock('../services/pcap-service.js', () => ({
   getCaptureFilePath: vi.fn(() => null),
 }));
 
-vi.mock('../services/pcap-analysis-service.js', () => ({
+vi.mock('../modules/security/services/pcap-analysis-service.js', () => ({
   analyzeCapture: vi.fn().mockResolvedValue('analysis'),
 }));
 
@@ -357,7 +357,7 @@ import { investigationRoutes } from './investigations.js';
 import { searchRoutes } from './search.js';
 import { notificationRoutes } from './notifications.js';
 import { cacheAdminRoutes } from './cache-admin.js';
-import { pcapRoutes } from './pcap.js';
+import { pcapRoutes } from '../modules/security/routes/pcap.js';
 import { prometheusRoutes } from './prometheus.js';
 import { webhookRoutes } from './webhooks.js';
 import { reportsRoutes } from './reports.js';
@@ -368,7 +368,7 @@ import { llmRoutes } from './llm.js';
 import { llmObservabilityRoutes } from './llm-observability.js';
 import { forecastRoutes } from './forecasts.js';
 import { correlationRoutes } from './correlations.js';
-import { ebpfCoverageRoutes } from './ebpf-coverage.js';
+import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
 import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
 import { edgeJobsRoutes } from './edge-jobs.js';

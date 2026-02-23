@@ -6,22 +6,22 @@ import {
   isIgnoredContainer,
   resolveAuditSeverity,
   setSecurityAuditIgnoreList,
-} from './security-audit.js';
-import { CircuitBreakerOpenError } from '../core/portainer/circuit-breaker.js';
+} from '../services/security-audit.js';
+import { CircuitBreakerOpenError } from '../../../core/portainer/circuit-breaker.js';
 
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
 
 // Kept: settings-store mock — tests control settings responses
-vi.mock('../core/services/settings-store.js', () => ({
+vi.mock('../../../core/services/settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
 }));
 
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import * as portainerCache from '../core/portainer/portainer-cache.js';
-import { cache } from '../core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import * as portainerCache from '../../../core/portainer/portainer-cache.js';
+import { cache } from '../../../core/portainer/portainer-cache.js';
+import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockGetEndpoints: any;
 let mockGetContainers: any;

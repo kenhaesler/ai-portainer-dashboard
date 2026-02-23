@@ -24,7 +24,7 @@ afterAll(async () => {
   await closeTestRedis();
 });
 
-vi.mock('../services/security-audit.js', () => ({
+vi.mock('../modules/security/services/security-audit.js', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
   buildSecurityAuditSummary: (...args: unknown[]) => mockBuildSecurityAuditSummary(...args),
 }));

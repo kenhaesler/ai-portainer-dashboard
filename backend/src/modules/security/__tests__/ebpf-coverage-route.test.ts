@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { ebpfCoverageRoutes } from './ebpf-coverage.js';
+import { ebpfCoverageRoutes } from '../routes/ebpf-coverage.js';
 import {
   getEndpointCoverage,
   updateCoverageStatus,
@@ -18,7 +18,7 @@ import {
   getEndpointOtlpOverride,
   setEndpointOtlpOverride,
 } from '../services/ebpf-coverage.js';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
 
 const { mockedNetworkInterfaces } = vi.hoisted(() => ({
   mockedNetworkInterfaces: vi.fn(() => ({
@@ -58,7 +58,7 @@ vi.mock('../services/ebpf-coverage.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../core/services/audit-logger.js', () => ({
+vi.mock('../../../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

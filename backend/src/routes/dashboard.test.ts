@@ -31,7 +31,7 @@ afterAll(async () => {
 });
 
 
-vi.mock('../services/security-audit.js', () => ({
+vi.mock('../modules/security/services/security-audit.js', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
   buildSecurityAuditSummary: () => ({ totalAudited: 0, flagged: 0, ignored: 0 }),
 }));

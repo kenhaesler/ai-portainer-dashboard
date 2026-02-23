@@ -26,7 +26,7 @@ const defaultConfig = {
 
 // Real portainer-normalizers used (pure function, no external deps)
 
-vi.mock('./security-scanner.js', () => ({
+vi.mock('../modules/security/services/security-scanner.js', () => ({
   scanContainer: () => [],
 }));
 

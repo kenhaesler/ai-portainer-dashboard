@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StartCaptureRequestSchema } from './pcap.js';
+import { StartCaptureRequestSchema } from '../models/pcap.js';
 
 describe('StartCaptureRequestSchema filter validation', () => {
   const basePayload = {
