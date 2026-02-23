@@ -28,8 +28,8 @@ vi.mock('../services/pcap-analysis-service.js', () => ({
   analyzeCapture: (...args: unknown[]) => mockAnalyzeCapture(...args),
 }));
 
-// Kept: edge-capability-guard mock — no Portainer API in CI
-vi.mock('../../../services/edge-capability-guard.js', () => ({
+// Kept: infrastructure module mock — no Portainer API in CI
+vi.mock('../../infrastructure/index.js', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 
