@@ -46,7 +46,7 @@ import { correlationRoutes } from './routes/correlations.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { promptProfileRoutes } from './routes/prompt-profiles.js';
 import { llmFeedbackRoutes } from './routes/llm-feedback.js';
-import { edgeJobsRoutes } from './routes/edge-jobs.js';
+import { infrastructureRoutes } from './modules/infrastructure/routes/index.js';
 import { securityRoutes } from './modules/security/routes/index.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
@@ -136,7 +136,7 @@ export async function buildApp() {
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(llmFeedbackRoutes);
-  await app.register(edgeJobsRoutes);
+  await app.register(infrastructureRoutes);
   await app.register(securityRoutes);
 
   // Static files (production only)

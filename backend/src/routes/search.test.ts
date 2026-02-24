@@ -6,8 +6,8 @@ import { searchRoutes } from './search.js';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-// Kept: edge-capability-guard mock — avoids real edge device checks
-vi.mock('../services/edge-capability-guard.js', () => ({
+// Kept: infrastructure module mock — avoids real edge device checks
+vi.mock('../modules/infrastructure/index.js', () => ({
   supportsLiveFeatures: vi.fn(async () => true),
 }));
 

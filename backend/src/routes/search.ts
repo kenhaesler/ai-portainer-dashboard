@@ -3,7 +3,7 @@ import { FastifyInstance } from 'fastify';
 import * as portainer from '../core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint, normalizeStack } from '../core/portainer/portainer-normalizers.js';
-import { supportsLiveFeatures } from '../services/edge-capability-guard.js';
+import { supportsLiveFeatures } from '../modules/infrastructure/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
 import { SearchQuerySchema } from '../core/models/api-schemas.js';
 

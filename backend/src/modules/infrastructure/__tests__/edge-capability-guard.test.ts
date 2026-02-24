@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import * as portainerCache from '../core/portainer/portainer-cache.js';
-import { cache } from '../core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import * as portainerCache from '../../../core/portainer/portainer-cache.js';
+import { cache } from '../../../core/portainer/portainer-cache.js';
+import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
-import { getEndpointCapabilities, assertCapability, supportsLiveFeatures } from './edge-capability-guard.js';
+import { getEndpointCapabilities, assertCapability, supportsLiveFeatures } from '../services/edge-capability-guard.js';
 
 // Prime the cache's Redis connection so cache.clear() in beforeEach can delete stale keys
 beforeAll(async () => {

@@ -12,7 +12,7 @@ import {
 } from '../services/pcap-service.js';
 import { analyzeCapture } from '../services/pcap-analysis-service.js';
 import { writeAuditLog } from '../../../core/services/audit-logger.js';
-import { assertCapability } from '../../../services/edge-capability-guard.js';
+import { assertCapability } from '../../infrastructure/index.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
 
 const log = createChildLogger('pcap-route');

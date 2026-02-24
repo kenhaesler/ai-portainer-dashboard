@@ -6,39 +6,36 @@ import { containerLogsRoutes } from './container-logs.js';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-// Kept: edge service mocks — avoids real edge device interactions
-vi.mock('../services/edge-log-fetcher.js', () => ({
+// Kept: infrastructure module mock — avoids real edge device interactions
+vi.mock('../modules/infrastructure/index.js', () => ({
   getContainerLogsWithRetry: vi.fn(),
   waitForTunnel: vi.fn(),
-}));
-
-vi.mock('../services/edge-capability-guard.js', () => ({
   assertCapability: vi.fn(),
   isEdgeStandard: vi.fn(),
   isEdgeAsync: vi.fn(),
-}));
-
-vi.mock('../services/edge-async-log-fetcher.js', () => ({
   initiateEdgeAsyncLogCollection: vi.fn(),
   checkEdgeJobStatus: vi.fn(),
   retrieveEdgeJobLogs: vi.fn(),
   cleanupEdgeJob: vi.fn(),
+  IncrementalDockerFrameDecoder: vi.fn(),
 }));
-
 
 vi.mock('../core/plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),
 }));
 
 import * as portainerClient from '../core/portainer/portainer-client.js';
-import { getContainerLogsWithRetry, waitForTunnel } from '../services/edge-log-fetcher.js';
-import { assertCapability, isEdgeStandard, isEdgeAsync } from '../services/edge-capability-guard.js';
 import {
+  getContainerLogsWithRetry,
+  waitForTunnel,
+  assertCapability,
+  isEdgeStandard,
+  isEdgeAsync,
   initiateEdgeAsyncLogCollection,
   checkEdgeJobStatus,
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
-} from '../services/edge-async-log-fetcher.js';
+} from '../modules/infrastructure/index.js';
 import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
