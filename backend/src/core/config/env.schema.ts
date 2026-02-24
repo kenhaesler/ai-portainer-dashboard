@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 /** Optional URL that treats empty strings as undefined (common in Docker Compose env defaults). */
 const optionalUrl = z.preprocess(

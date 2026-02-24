@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 const QueryBooleanSchema = z.preprocess((value) => {
   if (typeof value === 'string') {
@@ -112,7 +112,7 @@ export const NormalizedContainerSchema = z.object({
     type: z.string().optional(),
   })),
   created: z.number(),
-  labels: z.record(z.string()),
+  labels: z.record(z.string(), z.string()),
   networks: z.array(z.string()),
   healthStatus: z.string().optional(),
 });

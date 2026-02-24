@@ -373,9 +373,9 @@ describe('LLM Feedback Routes', () => {
         url: '/api/llm/feedback/bulk-delete',
         payload: {
           ids: [
-            'a0a0a0a0-b1b1-c2c2-d3d3-e4e4e4e4e4e4',
-            'f5f5f5f5-a6a6-b7b7-c8c8-d9d9d9d9d9d9',
-            '10101010-2020-3030-4040-505050505050',
+            'a0a0a0a0-b1b1-4c2c-8d3d-e4e4e4e4e4e4',
+            'f5f5f5f5-a6a6-4b7b-9c8c-d9d9d9d9d9d9',
+            '10101010-2020-4030-b040-505050505050',
           ],
         },
       });
