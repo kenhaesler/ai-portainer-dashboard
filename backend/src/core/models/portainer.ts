@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 export const EndpointSchema = z.object({
   Id: z.number(),
@@ -47,9 +47,9 @@ export const ContainerSchema = z.object({
     PublicPort: z.number().optional(),
     Type: z.string().optional(),
   })).nullish().default([]),
-  Labels: z.record(z.string()).optional().default({}),
+  Labels: z.record(z.string(), z.string()).optional().default({}),
   NetworkSettings: z.object({
-    Networks: z.record(z.object({
+    Networks: z.record(z.string(), z.object({
       NetworkID: z.string().optional(),
       IPAddress: z.string().optional(),
       Gateway: z.string().optional(),
@@ -107,7 +107,7 @@ export const ContainerStatsSchema = z.object({
       total_cache: z.number().optional(),
     }).optional(),
   }),
-  networks: z.record(z.object({
+  networks: z.record(z.string(), z.object({
     rx_bytes: z.number().optional().default(0),
     tx_bytes: z.number().optional().default(0),
   })).optional(),
@@ -124,7 +124,7 @@ export const NetworkSchema = z.object({
       Gateway: z.string().optional(),
     })).nullable().optional(),
   }).optional(),
-  Containers: z.record(z.object({
+  Containers: z.record(z.string(), z.object({
     Name: z.string().optional(),
     EndpointID: z.string().optional(),
     MacAddress: z.string().optional(),
@@ -147,7 +147,7 @@ export const EdgeJobSchema = z.object({
   ScriptPath: z.string().optional(),
   Recurring: z.boolean(),
   Version: z.number().optional(),
-  Endpoints: z.record(z.object({
+  Endpoints: z.record(z.string(), z.object({
     LogsStatus: z.number().optional(),
     CollectLogs: z.boolean().optional(),
   })).optional(),

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import * as portainer from '../../../core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
 import { writeAuditLog } from '../../../core/services/audit-logger.js';
