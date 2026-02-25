@@ -19,19 +19,21 @@ import { containersRoutes } from './routes/containers.js';
 import { containerLogsRoutes } from './routes/container-logs.js';
 import { stacksRoutes } from './routes/stacks.js';
 import { monitoringRoutes } from './routes/monitoring.js';
-import { remediationRoutes } from './routes/remediation.js';
-import { backupRoutes } from './routes/backup.js';
-import { portainerBackupRoutes } from './routes/portainer-backup.js';
 import { settingsRoutes } from './routes/settings.js';
-import { logsRoutes } from './routes/logs.js';
 import { imagesRoutes } from './routes/images.js';
 import { networksRoutes } from './routes/networks.js';
 import { investigationRoutes } from './routes/investigations.js';
 import { searchRoutes } from './routes/search.js';
-import { notificationRoutes } from './routes/notifications.js';
 import { cacheAdminRoutes } from './routes/cache-admin.js';
-import { webhookRoutes } from './routes/webhooks.js';
 import { userRoutes } from './routes/users.js';
+import {
+  remediationRoutes,
+  backupRoutes,
+  portainerBackupRoutes,
+  logsRoutes,
+  notificationRoutes,
+  webhookRoutes,
+} from './modules/operations/index.js';
 import { incidentsRoutes } from './routes/incidents.js';
 import { llmRoutes } from './routes/llm.js';
 import { llmObservabilityRoutes } from './routes/llm-observability.js';

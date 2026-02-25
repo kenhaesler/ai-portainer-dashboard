@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
-import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { remediationRoutes } from './remediation.js';
+import { remediationRoutes } from '../routes/remediation.js';
 
 const mockBroadcastActionUpdate = vi.fn();
 
@@ -21,9 +21,9 @@ vi.mock('../sockets/remediation.js', () => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
-import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import { cache, waitForInFlight } from '../../../core/portainer/portainer-cache.js';
+import { flushTestCache, closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockRestartContainer: any;
 let mockStopContainer: any;

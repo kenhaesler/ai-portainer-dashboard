@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { Agent } from 'undici';
-import { getConfig } from '../core/config/index.js';
-import { createChildLogger } from '../core/utils/logger.js';
+import { getConfig } from '../../../core/config/index.js';
+import { createChildLogger } from '../../../core/utils/logger.js';
 
 const log = createChildLogger('portainer-backup');
 

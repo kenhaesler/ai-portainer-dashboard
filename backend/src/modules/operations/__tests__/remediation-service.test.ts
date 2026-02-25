@@ -14,7 +14,7 @@ vi.mock('uuid', () => ({
 }));
 
 // Kept: actions-store mock — tests control action persistence
-vi.mock('./actions-store.js', () => ({
+vi.mock('../services/actions-store.js', () => ({
   insertAction: (...args: unknown[]) => mockInsertAction(...args),
   getAction: (...args: unknown[]) => mockGetAction(...args),
   updateActionStatus: (...args: unknown[]) => mockUpdateActionStatus(...args),
@@ -23,12 +23,12 @@ vi.mock('./actions-store.js', () => ({
 }));
 
 // Kept: event-bus mock — tests control event emission
-vi.mock('../core/services/event-bus.js', () => ({
+vi.mock('../../../core/services/event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 
 // Kept: metrics-store mock — tests control metrics responses (now in modules/observability)
-vi.mock('../modules/observability/services/metrics-store.js', () => ({
+vi.mock('../../../modules/observability/services/metrics-store.js', () => ({
   getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
 }));
 
@@ -39,7 +39,7 @@ vi.mock('../sockets/remediation.js', () => ({
 }));
 
 // Kept: prompt-store mock — avoids DB lookup for prompt store
-vi.mock('./prompt-store.js', () => ({
+vi.mock('../../../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
@@ -48,11 +48,11 @@ import {
   parseRemediationAnalysis,
   buildRemediationPrompt,
   isProtectedContainer,
-} from './remediation-service.js';
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import * as llmClient from './llm-client.js';
-import { cache } from '../core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../test-utils/test-redis-helper.js';
+} from '../services/remediation-service.js';
+import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import * as llmClient from '../../../services/llm-client.js';
+import { cache } from '../../../core/portainer/portainer-cache.js';
+import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockGetContainerLogs: any;
 let mockIsOllamaAvailable: any;
@@ -86,7 +86,7 @@ describe('remediation-service', () => {
     mockHasPendingAction.mockReturnValue(false);
     mockGetLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
     // Re-set prompt-store default
-    const { getEffectivePrompt } = await import('./prompt-store.js');
+    const { getEffectivePrompt } = await import('../../../services/prompt-store.js');
     vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Portainer + LLM spies
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
@@ -378,7 +378,7 @@ describe('protected container safety', () => {
     mockInsertAction.mockReturnValue(true);
     mockHasPendingAction.mockReturnValue(false);
     // Re-set prompt-store default
-    const { getEffectivePrompt } = await import('./prompt-store.js');
+    const { getEffectivePrompt } = await import('../../../services/prompt-store.js');
     vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Portainer + LLM spies
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');

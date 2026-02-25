@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { webhookRoutes } from './webhooks.js';
+import { webhookRoutes } from '../routes/webhooks.js';
 
 // Kept: webhook-service mock — no PostgreSQL in CI
 vi.mock('../services/webhook-service.js', () => ({

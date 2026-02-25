@@ -110,7 +110,7 @@ vi.mock('./monitoring-telemetry-store.js', () => ({
   insertMonitoringSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('./notification-service.js', () => ({
+vi.mock('../modules/operations/services/notification-service.js', () => ({
   notifyInsight: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -195,7 +195,7 @@ describe('monitoring-service', () => {
     vi.mocked(isoForest.detectAnomalyIsolationForest).mockReturnValue(null as any);
     const logAnalyzer = await import('./log-analyzer.js');
     vi.mocked(logAnalyzer.analyzeLogsForContainers).mockResolvedValue([] as any);
-    const notifService = await import('./notification-service.js');
+    const notifService = await import('../modules/operations/services/notification-service.js');
     vi.mocked(notifService.notifyInsight).mockResolvedValue(undefined as any);
     const telemetryStore = await import('./monitoring-telemetry-store.js');
     vi.mocked(telemetryStore.insertMonitoringCycle).mockResolvedValue(undefined as any);

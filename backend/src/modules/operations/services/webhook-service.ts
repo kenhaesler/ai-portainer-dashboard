@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import { getDbForDomain } from '../core/db/app-db-router.js';
-import { createChildLogger } from '../core/utils/logger.js';
-import { onEvent, type WebhookEvent } from '../core/services/event-bus.js';
-import { withSpan } from '../core/tracing/trace-context.js';
+import { getDbForDomain } from '../../../core/db/app-db-router.js';
+import { createChildLogger } from '../../../core/utils/logger.js';
+import { onEvent, type WebhookEvent } from '../../../core/services/event-bus.js';
+import { withSpan } from '../../../core/tracing/trace-context.js';
 
 const log = createChildLogger('webhook-service');
 
