@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 export const SpanKindSchema = z.enum(['client', 'server', 'internal']);
 export const SpanStatusSchema = z.enum(['ok', 'error', 'unset']);

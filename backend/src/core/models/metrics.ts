@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 export const MetricSchema = z.object({
   id: z.number(),
@@ -17,7 +17,7 @@ export const AnomalyDetectionSchema = z.object({
   current_value: z.number(),
   mean: z.number(),
   std_dev: z.number(),
-  z_score: z.number(),
+  z_score: z.number().or(z.literal(Infinity)).or(z.literal(-Infinity)),
   is_anomalous: z.boolean(),
   threshold: z.number(),
   timestamp: z.string(),

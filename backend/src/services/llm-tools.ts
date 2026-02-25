@@ -6,7 +6,7 @@ import { getDbForDomain } from '../core/db/app-db-router.js';
 import { getMetricsDb } from '../core/db/timescale.js';
 import { getTraces, getTrace, getTraceSummary } from '../core/tracing/trace-store.js';
 import { scrubPii } from '../utils/pii-scrubber.js';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { createChildLogger } from '../core/utils/logger.js';
 import { withSpan } from '../core/tracing/trace-context.js';
 
@@ -15,10 +15,10 @@ const log = createChildLogger('llm-tools');
 /** Schema for tool call structure (supports both Ollama and OpenAI-like formats) */
 const ToolCallSchema = z.object({
   tool: z.string().optional(),
-  arguments: z.record(z.unknown()).optional(),
+  arguments: z.record(z.string(), z.unknown()).optional(),
   function: z.object({
     name: z.string(),
-    arguments: z.union([z.string(), z.record(z.unknown())]).optional(),
+    arguments: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
   }).optional(),
 }).refine(
   (data) => data.tool !== undefined || data.function !== undefined,

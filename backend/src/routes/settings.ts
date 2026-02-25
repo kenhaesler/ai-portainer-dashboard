@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { getDbForDomain } from '../core/db/app-db-router.js';
 import { createChildLogger } from '../core/utils/logger.js';
 import { writeAuditLog } from '../core/services/audit-logger.js';

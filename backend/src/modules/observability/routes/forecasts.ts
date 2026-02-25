@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { getCapacityForecasts, generateForecast, lookupContainerName } from '../services/capacity-forecaster.js';
 // Phase 3 TODO: replace with @dashboard/ai-intelligence contract
 import { chatStream } from '../../../services/llm-client.js';

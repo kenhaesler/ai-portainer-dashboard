@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair, type Queryable } from '../modules/observability/index.js';
 import { getMetricsDb } from '../core/db/timescale.js';
 import { chatStream } from '../services/llm-client.js';
