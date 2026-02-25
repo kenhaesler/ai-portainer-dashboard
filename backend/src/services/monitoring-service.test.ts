@@ -84,9 +84,10 @@ vi.mock('./insights-store.js', () => ({
   getRecentInsights: (...args: unknown[]) => mockGetRecentInsights(...args),
 }));
 
-// Kept: remediation-service mock — tests don't exercise remediation
-vi.mock('./remediation-service.js', () => ({
+// Kept: operations module mock — tests don't exercise remediation or notifications via the barrel
+vi.mock('../modules/operations/index.js', () => ({
   suggestAction: () => null,
+  notifyInsight: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockTriggerInvestigation = vi.fn().mockResolvedValue(undefined);
@@ -195,8 +196,8 @@ describe('monitoring-service', () => {
     vi.mocked(isoForest.detectAnomalyIsolationForest).mockReturnValue(null as any);
     const logAnalyzer = await import('./log-analyzer.js');
     vi.mocked(logAnalyzer.analyzeLogsForContainers).mockResolvedValue([] as any);
-    const notifService = await import('../modules/operations/services/notification-service.js');
-    vi.mocked(notifService.notifyInsight).mockResolvedValue(undefined as any);
+    const opsModule = await import('../modules/operations/index.js');
+    vi.mocked(opsModule.notifyInsight).mockResolvedValue(undefined as any);
     const telemetryStore = await import('./monitoring-telemetry-store.js');
     vi.mocked(telemetryStore.insertMonitoringCycle).mockResolvedValue(undefined as any);
     vi.mocked(telemetryStore.insertMonitoringSnapshot).mockResolvedValue(undefined as any);
