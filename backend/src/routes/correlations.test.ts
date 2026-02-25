@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { correlationRoutes, clearInsightsCache, clearCorrelationsCache, buildCorrelationPrompt, parseInsightsResponse } from './correlations.js';
-import type { CorrelationPair } from '../services/metric-correlator.js';
+import type { CorrelationPair } from '../modules/observability/index.js';
 
 const mockDetectCorrelated = vi.fn();
 const mockFindCorrelatedContainers = vi.fn();
 
-// Kept: metric-correlator mock — no TimescaleDB in CI
-vi.mock('../services/metric-correlator.js', () => ({
+// Kept: metric-correlator mock — no TimescaleDB in CI (now in modules/observability)
+vi.mock('../modules/observability/services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: (...args: unknown[]) => mockDetectCorrelated(...args),
   findCorrelatedContainers: (...args: unknown[]) => mockFindCorrelatedContainers(...args),
 }));
@@ -38,8 +38,8 @@ vi.mock('../core/db/timescale.js', () => ({
 }));
 
 const mockIsUndefinedTableError = vi.fn().mockReturnValue(false);
-// Kept: metrics-store mock — no TimescaleDB in CI
-vi.mock('../services/metrics-store.js', () => ({
+// Kept: metrics-store mock — no TimescaleDB in CI (now in modules/observability)
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
 }));
 

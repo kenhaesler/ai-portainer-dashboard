@@ -3,10 +3,10 @@ import { z } from 'zod/v4';
 import * as portainer from '../core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '../core/portainer/portainer-normalizers.js';
-import { getKpiHistory } from '../services/kpi-store.js';
+import { getKpiHistory } from '../modules/observability/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '../modules/security/index.js';
-import { getLatestMetricsBatch } from '../services/metrics-store.js';
+import { getLatestMetricsBatch } from '../modules/observability/index.js';
 
 const log = createChildLogger('route:dashboard');
 

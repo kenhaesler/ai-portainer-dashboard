@@ -9,7 +9,7 @@ import {
   getActiveIncidentForContainer,
   type IncidentInsert,
 } from './incident-store.js';
-import { findSimilarInsights } from './alert-similarity.js';
+import { findSimilarInsights } from '../modules/observability/index.js';
 import { generateLlmIncidentSummary } from './incident-summarizer.js';
 
 const log = createChildLogger('incident-correlator');

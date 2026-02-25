@@ -195,7 +195,7 @@ vi.mock('../core/services/event-bus.js', () => ({
   onEvent: vi.fn(),
 }));
 
-vi.mock('../services/status-page-store.js', () => ({
+vi.mock('../modules/observability/services/status-page-store.js', () => ({
   getStatusPageConfig: vi.fn(async () => ({ enabled: false })),
   getOverallUptime: vi.fn(async () => 100),
   getEndpointUptime: vi.fn(async () => []),
@@ -204,7 +204,7 @@ vi.mock('../services/status-page-store.js', () => ({
   getRecentIncidentsPublic: vi.fn(async () => []),
 }));
 
-vi.mock('../services/capacity-forecaster.js', () => ({
+vi.mock('../modules/observability/services/capacity-forecaster.js', () => ({
   getCapacityForecasts: vi.fn().mockResolvedValue([]),
   generateForecast: vi.fn().mockResolvedValue(null),
   lookupContainerName: vi.fn(() => 'test-container'),
@@ -213,7 +213,7 @@ vi.mock('../services/capacity-forecaster.js', () => ({
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../services/metric-correlator.js', () => ({
+vi.mock('../modules/observability/services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
   findCorrelatedContainers: vi.fn().mockResolvedValue([]),
 }));
@@ -301,15 +301,15 @@ vi.mock('../services/notification-service.js', () => ({
   sendTestNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../services/kpi-store.js', () => ({
+vi.mock('../modules/observability/services/kpi-store.js', () => ({
   getKpiHistory: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../services/metrics-store.js', () => ({
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   getNetworkRates: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../services/metrics-rollup-selector.js', () => ({
+vi.mock('../modules/observability/services/metrics-rollup-selector.js', () => ({
   selectRollupTable: vi.fn(() => 'metrics_raw'),
 }));
 
@@ -343,10 +343,7 @@ import { containersRoutes } from './containers.js';
 import { containerLogsRoutes } from './container-logs.js';
 import { stacksRoutes } from './stacks.js';
 import { monitoringRoutes } from './monitoring.js';
-import { metricsRoutes } from './metrics.js';
 import { remediationRoutes } from './remediation.js';
-import { tracesRoutes } from './traces.js';
-import { tracesIngestRoutes } from './traces-ingest.js';
 import { backupRoutes } from './backup.js';
 import { portainerBackupRoutes } from './portainer-backup.js';
 import { settingsRoutes } from './settings.js';
@@ -358,20 +355,17 @@ import { searchRoutes } from './search.js';
 import { notificationRoutes } from './notifications.js';
 import { cacheAdminRoutes } from './cache-admin.js';
 import { pcapRoutes } from '../modules/security/routes/pcap.js';
-import { prometheusRoutes } from './prometheus.js';
 import { webhookRoutes } from './webhooks.js';
-import { reportsRoutes } from './reports.js';
 import { userRoutes } from './users.js';
 import { incidentsRoutes } from './incidents.js';
-import { statusPageRoutes } from './status-page.js';
 import { llmRoutes } from './llm.js';
 import { llmObservabilityRoutes } from './llm-observability.js';
-import { forecastRoutes } from './forecasts.js';
 import { correlationRoutes } from './correlations.js';
 import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
 import { mcpRoutes } from './mcp.js';
 import { promptProfileRoutes } from './prompt-profiles.js';
 import { edgeJobsRoutes } from '../modules/infrastructure/routes/edge-jobs.js';
+import { observabilityRoutes } from '../modules/observability/index.js';
 
 import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
@@ -432,10 +426,8 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(containerLogsRoutes);
   await app.register(stacksRoutes);
   await app.register(monitoringRoutes);
-  await app.register(metricsRoutes);
+  await app.register(observabilityRoutes);
   await app.register(remediationRoutes);
-  await app.register(tracesRoutes);
-  await app.register(tracesIngestRoutes);
   await app.register(backupRoutes);
   await app.register(portainerBackupRoutes);
   await app.register(settingsRoutes);
@@ -447,15 +439,11 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(notificationRoutes);
   await app.register(cacheAdminRoutes);
   await app.register(pcapRoutes);
-  await app.register(prometheusRoutes);
   await app.register(webhookRoutes);
-  await app.register(reportsRoutes);
   await app.register(userRoutes);
   await app.register(incidentsRoutes);
-  await app.register(statusPageRoutes);
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
-  await app.register(forecastRoutes);
   await app.register(correlationRoutes);
   await app.register(ebpfCoverageRoutes);
   await app.register(mcpRoutes);

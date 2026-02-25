@@ -11,7 +11,7 @@ import {
 import type { Insight } from '../core/models/monitoring.js';
 import { emitEvent } from '../core/services/event-bus.js';
 import { getContainerLogs } from '../core/portainer/portainer-client.js';
-import { getLatestMetrics } from './metrics-store.js';
+import { getLatestMetrics } from '../modules/observability/index.js';
 import { chatStream, isOllamaAvailable } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';

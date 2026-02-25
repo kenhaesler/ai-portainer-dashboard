@@ -1,6 +1,6 @@
 import { getConfig } from '../core/config/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
-import { getMovingAverage } from './metrics-store.js';
+import { getMovingAverage } from '../modules/observability/index.js';
 import type { AnomalyDetection } from '../core/models/metrics.js';
 
 const log = createChildLogger('anomaly-detector');

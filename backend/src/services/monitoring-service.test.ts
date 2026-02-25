@@ -39,7 +39,8 @@ const mockGetLatestMetricsBatch = vi.fn().mockImplementation(
     return map;
   },
 );
-vi.mock('./metrics-store.js', () => ({
+// Kept: metrics-store mock — now in modules/observability
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 
@@ -94,7 +95,8 @@ vi.mock('./investigation-service.js', () => ({
 }));
 
 const mockGetCapacityForecasts = vi.fn().mockReturnValue([]);
-vi.mock('./capacity-forecaster.js', () => ({
+// Kept: capacity-forecaster mock — now in modules/observability
+vi.mock('../modules/observability/services/capacity-forecaster.js', () => ({
   getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
 }));
 

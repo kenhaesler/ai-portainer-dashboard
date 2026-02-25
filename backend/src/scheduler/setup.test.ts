@@ -18,15 +18,15 @@ const collectMetricsMock = vi.fn().mockResolvedValue({
   networkTxBytes: 3000,
 });
 
-// Kept: metrics-collector mock — tests control collected metrics
-vi.mock('../services/metrics-collector.js', () => ({
+// Kept: metrics-collector mock — tests control collected metrics (now in modules/observability)
+vi.mock('../modules/observability/services/metrics-collector.js', () => ({
   collectMetrics: (...args: unknown[]) => collectMetricsMock(...args),
 }));
 
 const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
 
-// Kept: metrics-store mock — tests control metrics storage
-vi.mock('../services/metrics-store.js', () => ({
+// Kept: metrics-store mock — tests control metrics storage (now in modules/observability)
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   insertMetrics: (...args: unknown[]) => insertMetricsMock(...args),
   cleanOldMetrics: vi.fn().mockResolvedValue(0),
 }));
@@ -52,8 +52,8 @@ vi.mock('../services/webhook-service.js', () => ({
   stopWebhookListener: vi.fn(),
   processRetries: vi.fn(),
 }));
-// Kept: kpi-store mock
-vi.mock('../services/kpi-store.js', () => ({
+// Kept: kpi-store mock (now in modules/observability)
+vi.mock('../modules/observability/services/kpi-store.js', () => ({
   insertKpiSnapshot: vi.fn(),
   cleanOldKpiSnapshots: vi.fn(),
 }));
@@ -143,7 +143,7 @@ beforeEach(async () => {
   // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
   const imageStaleness = await import('../modules/security/services/image-staleness.js');
   vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
-  const metricsStore = await import('../services/metrics-store.js');
+  const metricsStore = await import('../modules/observability/services/metrics-store.js');
   vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);
   const settingsStore = await import('../core/services/settings-store.js');
   vi.mocked(settingsStore.getSetting).mockReturnValue(null as any);

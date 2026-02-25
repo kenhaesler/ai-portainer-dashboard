@@ -12,7 +12,7 @@ vi.mock('./incident-store.js', () => ({
 }));
 
 // Kept: internal service mock — alert similarity computation
-vi.mock('./alert-similarity.js', () => ({
+vi.mock('../modules/observability/services/alert-similarity.js', () => ({
   findSimilarInsights: vi.fn(() => []),
 }));
 
