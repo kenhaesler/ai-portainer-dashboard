@@ -1,6 +1,6 @@
 import { getConfig } from '../core/config/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
-import { getMetrics } from './metrics-store.js';
+import { getMetrics } from '../modules/observability/index.js';
 import { IsolationForest } from './isolation-forest.js';
 import type { AnomalyDetection } from '../core/models/metrics.js';
 

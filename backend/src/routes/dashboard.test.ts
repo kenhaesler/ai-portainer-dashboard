@@ -7,8 +7,8 @@ const mockGetKpiHistory = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockGetLatestMetricsBatch = vi.fn();
 
-// Kept: kpi-store mock — avoids real DB lookup
-vi.mock('../services/kpi-store.js', () => ({
+// Kept: kpi-store mock — avoids real DB lookup (now in modules/observability)
+vi.mock('../modules/observability/services/kpi-store.js', () => ({
   getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
 }));
 
@@ -36,7 +36,7 @@ vi.mock('../modules/security/services/security-audit.js', () => ({
   buildSecurityAuditSummary: () => ({ totalAudited: 0, flagged: 0, ignored: 0 }),
 }));
 
-vi.mock('../services/metrics-store.js', () => ({
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
 }));
 

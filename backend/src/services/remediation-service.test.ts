@@ -27,8 +27,8 @@ vi.mock('../core/services/event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
 
-// Kept: metrics-store mock — tests control metrics responses
-vi.mock('./metrics-store.js', () => ({
+// Kept: metrics-store mock — tests control metrics responses (now in modules/observability)
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
 }));
 

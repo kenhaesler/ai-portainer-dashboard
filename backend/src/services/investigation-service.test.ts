@@ -7,7 +7,7 @@ import type { Insight } from '../core/models/monitoring.js';
 const mockGetMetrics = vi.fn();
 const mockGetMovingAverage = vi.fn();
 // Kept: metrics-store mock — tests control metrics responses
-vi.mock('./metrics-store.js', () => ({
+vi.mock('../modules/observability/services/metrics-store.js', () => ({
   getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
   getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
 }));
@@ -26,7 +26,7 @@ vi.mock('./investigation-store.js', () => ({
 
 const mockGenerateForecast = vi.fn();
 // Kept: capacity-forecaster mock — tests control forecast responses
-vi.mock('./capacity-forecaster.js', () => ({
+vi.mock('../modules/observability/services/capacity-forecaster.js', () => ({
   generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
 }));
 

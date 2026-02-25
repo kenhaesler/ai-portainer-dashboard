@@ -4,7 +4,7 @@ import { getConfig } from '../core/config/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
 import { getContainerLogs, getContainers } from '../core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
-import { getMetrics, getMovingAverage } from './metrics-store.js';
+import { getMetrics, getMovingAverage } from '../modules/observability/index.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import {
@@ -13,7 +13,7 @@ import {
   getInvestigation,
   getRecentInvestigationForContainer,
 } from './investigation-store.js';
-import { generateForecast, type CapacityForecast } from './capacity-forecaster.js';
+import { generateForecast, type CapacityForecast } from '../modules/observability/index.js';
 import type { Insight } from '../core/models/monitoring.js';
 import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '../core/models/investigation.js';
 

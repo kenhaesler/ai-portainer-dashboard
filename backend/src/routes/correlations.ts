@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair, type Queryable } from '../services/metric-correlator.js';
+import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair, type Queryable } from '../modules/observability/index.js';
 import { getMetricsDb } from '../core/db/timescale.js';
 import { chatStream } from '../services/llm-client.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
-import { isUndefinedTableError } from '../services/metrics-store.js';
+import { isUndefinedTableError } from '../modules/observability/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
 
 const log = createChildLogger('routes:correlations');
