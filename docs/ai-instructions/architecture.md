@@ -16,6 +16,7 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 | `core/services/` | Auth stores (session, user), settings, audit logger, event bus, OIDC |
 | `modules/infrastructure/` | Infrastructure domain module: edge agents, Docker frame decoder, ELK integration |
 | `modules/security/` | Security domain module: scanner, audit, Harbor, PCAP, eBPF, image staleness |
+| `modules/observability/` | Observability domain module: metrics, traces, KPIs, forecasts, reports, status page |
 | `routes/` | REST API endpoints by feature (auth, containers, metrics, monitoring) |
 | `services/` | Domain services: LLM, anomaly detection, monitoring, incidents, etc. |
 | `sockets/` | Socket.IO: `/llm` (chat), `/monitoring` (insights), `/remediation` (actions) |
@@ -37,7 +38,7 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 
 - **Observer-First principle**: Visibility prioritized; actions require explicit approval.
 - **Modular backend architecture**: `modules/<domain>/` for domain-specific code, barrel `index.ts` as public API. Routes → Services/Modules → Core.
-- Domain modules: `modules/security/`, `modules/infrastructure/` (services, routes, tests). More modules planned (#709 observability, #710 operations, #711 ai-intelligence).
+- Domain modules: `modules/security/`, `modules/infrastructure/`, `modules/observability/` (services, routes, tests). More modules planned (#710 operations, #711 ai-intelligence).
 - **Server state**: TanStack React Query. **UI state**: Zustand.
 - Zod validation on all Portainer API responses.
 - Path alias `@/*` → `./src/*` in both workspaces.

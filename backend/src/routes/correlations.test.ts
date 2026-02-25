@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { correlationRoutes, clearInsightsCache, clearCorrelationsCache, buildCorrelationPrompt, parseInsightsResponse } from './correlations.js';
-import type { CorrelationPair } from '../modules/observability/services/metric-correlator.js';
+import type { CorrelationPair } from '../modules/observability/index.js';
 
 const mockDetectCorrelated = vi.fn();
 const mockFindCorrelatedContainers = vi.fn();

@@ -28,6 +28,7 @@ Shared foundation — all domain modules depend on core.
 routes/ ────────→ modules/*/ ──→ core/
 services/ ──────→ core/
 modules/infrastructure/ → core/ (no cross-module deps)
+modules/observability/ → core/ (+ cross-domain: services/llm-client, services/prompt-store, services/prompt-guard)
 modules/security/ → core/ + modules/infrastructure/ (+ cross-domain: services/llm-client, services/prompt-store)
 sockets/ ───────→ core/
 scheduler/ ─────→ modules/*/ ──→ core/
@@ -37,7 +38,7 @@ core/ ──────────→ (npm packages only, never imports from a
 ## Domain Modules (`modules/<domain>/`)
 
 Each module has: `services/`, `routes/`, `models/`, `__tests__/`, and a barrel `index.ts`.
-- External consumers import ONLY from the barrel (`modules/security/index.ts`, `modules/infrastructure/index.ts`)
+- External consumers import ONLY from the barrel (`modules/security/index.ts`, `modules/infrastructure/index.ts`, `modules/observability/index.ts`)
 - Routes are NOT re-exported from barrel (import directly from `routes/index.js`)
 - Internal module imports use relative paths between siblings
 - Cross-module imports allowed in Phase 2 (e.g., security → infrastructure)
