@@ -51,7 +51,7 @@ function stubMatchMedia() {
 // Mock: Auth hooks (login page)
 // ---------------------------------------------------------------------------
 const mockLogin = vi.fn();
-vi.mock('@/hooks/use-auth', () => ({
+vi.mock('@/features/core/hooks/use-auth', () => ({
   useAuth: () => ({
     login: mockLogin,
     isAuthenticated: false,
@@ -61,7 +61,7 @@ vi.mock('@/hooks/use-auth', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-oidc', () => ({
+vi.mock('@/features/core/hooks/use-oidc', () => ({
   useOIDCStatus: () => ({ data: { enabled: false, authUrl: null } }),
 }));
 
@@ -95,14 +95,14 @@ vi.mock('@/providers/socket-provider', () => ({
 // ---------------------------------------------------------------------------
 // Mock: Remediation actions (sidebar badge)
 // ---------------------------------------------------------------------------
-vi.mock('@/hooks/use-remediation', () => ({
+vi.mock('@/features/operations/hooks/use-remediation', () => ({
   useRemediationActions: () => ({ data: [] }),
 }));
 
 // ---------------------------------------------------------------------------
 // Mock: Prefetch (sidebar)
 // ---------------------------------------------------------------------------
-vi.mock('@/hooks/use-prefetch', () => ({
+vi.mock('@/shared/hooks/use-prefetch', () => ({
   usePrefetch: () => ({ prefetch: vi.fn() }),
 }));
 
@@ -191,7 +191,7 @@ vi.mock('@/stores/ui-store', () => {
 // ---------------------------------------------------------------------------
 // Mock: Reports hooks
 // ---------------------------------------------------------------------------
-vi.mock('@/hooks/use-reports', () => ({
+vi.mock('@/features/observability/hooks/use-reports', () => ({
   useUtilizationReport: vi.fn(() => ({
     data: {
       timeRange: '24h',
@@ -229,14 +229,14 @@ vi.mock('@/hooks/use-reports', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn(() => ({
     data: [{ id: 1, name: 'local' }],
     isLoading: false,
   })),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: vi.fn(() => ({
     data: [
       { id: 'c1', name: 'test-web', image: 'nginx:latest', state: 'running', status: 'Up 2h', endpointId: 1, endpointName: 'local', ports: [], created: 0, labels: {}, networks: [] },
@@ -246,11 +246,11 @@ vi.mock('@/hooks/use-containers', () => ({
 }));
 
 // Mock chart components that use canvas/SVG (not relevant to a11y structure)
-vi.mock('@/components/charts/metrics-line-chart', () => ({
+vi.mock('@/shared/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: () => <div data-testid="metrics-line-chart" />,
 }));
 
-vi.mock('@/components/shared/loading-skeleton', () => ({
+vi.mock('@/shared/components/loading-skeleton', () => ({
   SkeletonCard: ({ className }: { className?: string }) => (
     <div data-testid="skeleton" className={className} />
   ),
@@ -259,7 +259,7 @@ vi.mock('@/components/shared/loading-skeleton', () => ({
 // ---------------------------------------------------------------------------
 // Mock: eBPF Coverage hooks
 // ---------------------------------------------------------------------------
-vi.mock('@/hooks/use-ebpf-coverage', () => ({
+vi.mock('@/features/security/hooks/use-ebpf-coverage', () => ({
   useEbpfCoverage: () => ({
     data: {
       coverage: [
@@ -361,7 +361,7 @@ beforeEach(() => {
 
 describe('Accessibility: Login Page', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
-    const LoginPage = (await import('@/pages/login')).default;
+    const LoginPage = (await import('@/features/core/pages/login')).default;
 
     const { container } = renderWithProviders(<LoginPage />, { route: '/login' });
 
@@ -372,7 +372,7 @@ describe('Accessibility: Login Page', () => {
 
 describe('Accessibility: Sidebar', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
-    const { Sidebar } = await import('@/components/layout/sidebar');
+    const { Sidebar } = await import('@/features/core/components/layout/sidebar');
 
     const { container } = renderWithProviders(<Sidebar />);
 
@@ -383,7 +383,7 @@ describe('Accessibility: Sidebar', () => {
 
 describe('Accessibility: Header', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
-    const { Header } = await import('@/components/layout/header');
+    const { Header } = await import('@/features/core/components/layout/header');
 
     const { container } = renderWithProviders(<Header />);
 
@@ -407,7 +407,7 @@ describe('Accessibility: Reports Page', () => {
   // These rules are excluded below so the test catches any NEW violations.
 
   it('should have no WCAG 2.1 AA violations (excluding known issues)', async () => {
-    const ReportsPage = (await import('@/pages/reports')).default;
+    const ReportsPage = (await import('@/features/observability/pages/reports')).default;
 
     const { container } = renderWithProviders(<ReportsPage />);
 
@@ -423,7 +423,7 @@ describe('Accessibility: Reports Page', () => {
 
 describe('Accessibility: eBPF Coverage Page', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
-    const EbpfCoveragePage = (await import('@/pages/ebpf-coverage')).default;
+    const EbpfCoveragePage = (await import('@/features/security/pages/ebpf-coverage')).default;
 
     const { container } = renderWithProviders(<EbpfCoveragePage />);
 
@@ -434,7 +434,7 @@ describe('Accessibility: eBPF Coverage Page', () => {
 
 describe('Accessibility: Status Page', () => {
   it('should have no WCAG 2.1 AA violations', async () => {
-    const StatusPage = (await import('@/pages/status-page')).default;
+    const StatusPage = (await import('@/features/observability/pages/status-page')).default;
 
     const { container } = render(<MemoryRouter><StatusPage /></MemoryRouter>);
 

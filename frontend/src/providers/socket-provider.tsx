@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Socket } from 'socket.io-client';
-import { getNamespaceSocket, disconnectAll } from '@/lib/socket';
+import { getNamespaceSocket, disconnectAll } from '@/shared/lib/socket';
 import { useAuth } from './auth-provider';
 import { useUiStore } from '@/stores/ui-store';
 
