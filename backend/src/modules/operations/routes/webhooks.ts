@@ -9,8 +9,8 @@ import {
   signPayload,
   type Webhook,
 } from '../services/webhook-service.js';
-import { emitEvent } from '../../../core/services/event-bus.js';
-import { onEvent, type WebhookEvent } from '../../../core/services/event-bus.js';
+import { eventBus } from '../../../core/services/typed-event-bus.js';
+import { toWebhookEvent, type WebhookEvent } from '@dashboard/contracts';
 import { validateOutboundWebhookUrl } from '../../../core/utils/network-security.js';
 import {
   WebhookCreateBodySchema,
@@ -255,12 +255,11 @@ export async function webhookRoutes(fastify: FastifyInstance) {
 
     reply.raw.write(':ok\n\n');
 
-    const handler = (event: WebhookEvent) => {
+    const unsubscribe = eventBus.onAny((domainEvent) => {
+      const event: WebhookEvent = toWebhookEvent(domainEvent);
       reply.raw.write(`event: ${event.type}\n`);
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-    };
-
-    const unsubscribe = onEvent(handler);
+    });
 
     // Heartbeat to keep connection alive
     const heartbeat = setInterval(() => {

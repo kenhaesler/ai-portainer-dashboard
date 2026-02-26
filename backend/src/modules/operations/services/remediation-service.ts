@@ -9,7 +9,7 @@ import {
   type ActionInsert,
 } from './actions-store.js';
 import type { Insight } from '../../../core/models/monitoring.js';
-import { emitEvent } from '../../../core/services/event-bus.js';
+import { eventBus } from '../../../core/services/typed-event-bus.js';
 import { getContainerLogs } from '../../../core/portainer/portainer-client.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { getLatestMetrics } from '../../observability/index.js';
@@ -435,7 +435,7 @@ export async function approveAction(actionId: string, username: string): Promise
   const success = await updateActionStatus(actionId, 'approved', { approved_by: username });
   if (success) {
     log.info({ actionId, approvedBy: username }, 'Action approved');
-    emitEvent({ type: 'remediation.approved', timestamp: new Date().toISOString(), data: { actionId, approvedBy: username } });
+    eventBus.emit('remediation.approved', { actionId, approvedBy: username });
   }
   return success;
 }
@@ -451,7 +451,7 @@ export async function rejectAction(
   });
   if (success) {
     log.info({ actionId, rejectedBy: username, reason }, 'Action rejected');
-    emitEvent({ type: 'remediation.rejected', timestamp: new Date().toISOString(), data: { actionId, rejectedBy: username, reason } });
+    eventBus.emit('remediation.rejected', { actionId, rejectedBy: username, reason });
   }
   return success;
 }

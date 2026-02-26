@@ -34,4 +34,4 @@ export { getSetting, setSetting, getSettings, getEffectiveLlmConfig } from './se
 export { createSession, getSession, invalidateSession, refreshSession } from './services/session-store.js';
 export { getUserById, getUserByUsername, authenticateUser, hasMinRole } from './services/user-store.js';
 export { writeAuditLog, getAuditLogs } from './services/audit-logger.js';
-export { emitEvent, onEvent } from './services/event-bus.js';
+export { eventBus } from './services/typed-event-bus.js';

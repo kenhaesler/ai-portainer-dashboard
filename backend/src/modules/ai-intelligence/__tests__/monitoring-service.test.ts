@@ -115,8 +115,8 @@ vi.mock('../../operations/services/notification-service.js', () => ({
   notifyInsight: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../core/services/event-bus.js', () => ({
-  emitEvent: vi.fn(),
+vi.mock('../../../core/services/typed-event-bus.js', () => ({
+  eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
 const mockCorrelateInsights = vi.fn().mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });

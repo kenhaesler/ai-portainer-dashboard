@@ -32,7 +32,7 @@ import type { Insight } from '../../../core/models/monitoring.js';
 import type { SecurityFinding } from '../../security/index.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
 import { notifyInsight } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
-import { emitEvent } from '../../../core/services/event-bus.js';
+import { eventBus } from '../../../core/services/typed-event-bus.js';
 import { correlateInsights } from './incident-correlator.js';
 
 const log = createChildLogger('monitoring-service');
@@ -653,22 +653,22 @@ export async function runMonitoringCycle(): Promise<void> {
     for (const insight of allInsights) {
       const wasInserted = insertedIds.has(insight.id);
 
-      // Emit event for webhooks (safe regardless of DB state)
-      const eventType = insight.category === 'anomaly' ? 'anomaly.detected' : 'insight.created';
-      emitEvent({
-        type: eventType,
-        timestamp: new Date().toISOString(),
-        data: {
-          insightId: insight.id,
-          severity: insight.severity,
-          category: insight.category,
-          title: insight.title,
-          description: insight.description,
-          containerId: insight.container_id,
-          containerName: insight.container_name,
-          endpointId: insight.endpoint_id,
-        },
-      });
+      // Emit typed event (safe regardless of DB state)
+      const insightEventData = {
+        insightId: insight.id,
+        severity: insight.severity,
+        category: insight.category,
+        title: insight.title,
+        description: insight.description,
+        containerId: insight.container_id,
+        containerName: insight.container_name,
+        endpointId: insight.endpoint_id,
+      };
+      if (insight.category === 'anomaly') {
+        eventBus.emit('anomaly.detected', insightEventData);
+      } else {
+        eventBus.emit('insight.created', insightEventData);
+      }
 
       // Send notification for critical/warning insights (safe regardless of DB state)
       if (insight.severity === 'critical' || insight.severity === 'warning') {

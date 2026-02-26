@@ -7,18 +7,59 @@ describe('toWebhookEvent', () => {
     const event: DashboardEvent = {
       type: 'insight.created',
       data: {
-        insight: {
-          id: 'i1', endpoint_id: 1, endpoint_name: 'local', container_id: 'c1',
-          container_name: 'nginx', severity: 'warning', category: 'cpu',
-          title: 'High CPU', description: 'CPU is high', suggested_action: null,
-          is_acknowledged: 0, created_at: '2024-01-01T00:00:00.000Z',
-        },
+        insightId: 'i1',
+        severity: 'warning',
+        category: 'cpu',
+        title: 'High CPU',
+        description: 'CPU is high',
+        containerId: 'c1',
+        containerName: 'nginx',
+        endpointId: 1,
       },
     };
     const webhook = toWebhookEvent(event);
     expect(webhook.type).toBe('insight.created');
     expect(typeof webhook.timestamp).toBe('string');
     expect(webhook.data).toEqual(event.data);
+  });
+
+  it('converts anomaly.detected to WebhookEvent', () => {
+    const event: DashboardEvent = {
+      type: 'anomaly.detected',
+      data: {
+        insightId: 'i2',
+        severity: 'critical',
+        category: 'anomaly',
+        title: 'CPU anomaly',
+        description: 'Z-score > 3',
+        containerId: 'c1',
+        containerName: 'redis',
+        endpointId: 2,
+      },
+    };
+    const webhook = toWebhookEvent(event);
+    expect(webhook.type).toBe('anomaly.detected');
+    expect(webhook.data).toHaveProperty('insightId', 'i2');
+  });
+
+  it('converts remediation.approved to WebhookEvent', () => {
+    const event: DashboardEvent = {
+      type: 'remediation.approved',
+      data: { actionId: 'a1', approvedBy: 'admin' },
+    };
+    const webhook = toWebhookEvent(event);
+    expect(webhook.type).toBe('remediation.approved');
+    expect(webhook.data).toEqual({ actionId: 'a1', approvedBy: 'admin' });
+  });
+
+  it('converts remediation.rejected to WebhookEvent', () => {
+    const event: DashboardEvent = {
+      type: 'remediation.rejected',
+      data: { actionId: 'a1', rejectedBy: 'admin', reason: 'Too risky' },
+    };
+    const webhook = toWebhookEvent(event);
+    expect(webhook.type).toBe('remediation.rejected');
+    expect(webhook.data).toHaveProperty('reason', 'Too risky');
   });
 
   it('converts harbor.sync_completed to WebhookEvent', () => {
