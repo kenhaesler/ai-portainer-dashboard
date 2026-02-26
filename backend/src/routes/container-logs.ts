@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
-import * as portainer from '../core/portainer/portainer-client.js';
-import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '../core/models/api-schemas.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
+import { ContainerParamsSchema, ContainerLogsQuerySchema, ContainerLogStreamQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import {
   getContainerLogsWithRetry,
   waitForTunnel,
@@ -14,8 +14,8 @@ import {
   cleanupEdgeJob,
   IncrementalDockerFrameDecoder,
 } from '../modules/infrastructure/index.js';
-import { authenticateBearerHeader } from '../core/plugins/auth.js';
-import { createChildLogger } from '../core/utils/logger.js';
+import { authenticateBearerHeader } from '@dashboard/core/plugins/auth.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('container-logs-route');
 

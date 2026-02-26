@@ -12,7 +12,7 @@ import {
   switchProfile,
 } from '../services/prompt-profile-store.js';
 import { PROMPT_FEATURES, estimateTokens } from '../services/prompt-store.js';
-import { writeAuditLog } from '../../../core/services/audit-logger.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 
 // ── Zod Schemas ──────────────────────────────────────────────────────
 

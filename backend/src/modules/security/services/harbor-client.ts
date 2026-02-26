@@ -1,9 +1,9 @@
 import { Agent, fetch as undiciFetch } from 'undici';
 import pLimit from 'p-limit';
-import { getConfig } from '../../../core/config/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { withSpan } from '../../../core/tracing/trace-context.js';
-import { getEffectiveHarborConfig } from '../../../core/services/settings-store.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { withSpan } from '@dashboard/core/tracing/trace-context.js';
+import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
 
 const log = createChildLogger('harbor-client');
 

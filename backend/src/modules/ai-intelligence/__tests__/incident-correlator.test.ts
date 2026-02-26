@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { correlateInsights } from '../services/incident-correlator.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 import { insertIncident, addInsightToIncident, getActiveIncidentForContainer } from '../services/incident-store.js';
 
 // Kept: DB-backed store mock — incident-store writes to PostgreSQL

@@ -2,8 +2,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 
 const log = createChildLogger('mcp-manager');
 

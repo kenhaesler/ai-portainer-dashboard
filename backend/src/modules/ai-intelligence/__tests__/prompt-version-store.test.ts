@@ -9,7 +9,7 @@ const mockDbQueryOne = vi.fn();
 const mockDbExecute = vi.fn().mockResolvedValue(undefined);
 
 // Kept: tests verify SQL patterns via mock assertions
-vi.mock('../../../core/db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockDbQuery(...args),
     queryOne: (...args: unknown[]) => mockDbQueryOne(...args),
@@ -18,7 +18,7 @@ vi.mock('../../../core/db/app-db-router.js', () => ({
 }));
 
 const mockGetSetting = vi.fn();
-vi.mock('../../../core/services/settings-store.js', () => ({
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
 }));
 

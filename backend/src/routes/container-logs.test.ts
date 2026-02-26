@@ -4,7 +4,7 @@ import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containerLogsRoutes } from './container-logs.js';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: infrastructure module mock — avoids real edge device interactions
 vi.mock('../modules/infrastructure/index.js', () => ({
@@ -20,11 +20,11 @@ vi.mock('../modules/infrastructure/index.js', () => ({
   IncrementalDockerFrameDecoder: vi.fn(),
 }));
 
-vi.mock('../core/plugins/auth.js', () => ({
+vi.mock('@dashboard/core/plugins/auth.js', () => ({
   authenticateBearerHeader: vi.fn(),
 }));
 
-import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import {
   getContainerLogsWithRetry,
   waitForTunnel,
@@ -36,7 +36,7 @@ import {
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
 } from '../modules/infrastructure/index.js';
-import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 let mockGetContainerLogs: any;

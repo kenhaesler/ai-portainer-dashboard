@@ -34,7 +34,7 @@ vi.mock('../../infrastructure/index.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../../../core/services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

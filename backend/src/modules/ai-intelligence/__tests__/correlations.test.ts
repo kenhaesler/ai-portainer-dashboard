@@ -33,7 +33,7 @@ const mockConnect = vi.fn().mockResolvedValue({
 });
 
 // Kept: timescale mock — no TimescaleDB in CI
-vi.mock('../../../core/db/timescale.js', () => ({
+vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
 }));
 

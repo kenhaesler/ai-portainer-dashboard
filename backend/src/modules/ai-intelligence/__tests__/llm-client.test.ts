@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { Agent } from 'undici';
 import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, type LlmAuthType } from '../services/llm-client.js';
 import { Ollama } from 'ollama';
@@ -15,7 +15,7 @@ const mockGetConfig = vi.fn().mockReturnValue({
   maxTokens: 2048,
   maxToolIterations: 5,
 });
-vi.mock('../../../core/services/settings-store.js', () => ({
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 

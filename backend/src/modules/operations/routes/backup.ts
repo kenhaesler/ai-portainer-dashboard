@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
-import { writeAuditLog } from '../../../core/services/audit-logger.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup } from '../services/backup-service.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { FilenameParamsSchema } from '../../../core/models/api-schemas.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { FilenameParamsSchema } from '@dashboard/core/models/api-schemas.js';
 
 const log = createChildLogger('backup-route');
 

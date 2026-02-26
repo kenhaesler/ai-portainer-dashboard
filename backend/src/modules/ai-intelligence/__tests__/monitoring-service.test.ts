@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 // Default config values used in tests
 const defaultConfig = {
@@ -115,7 +115,7 @@ vi.mock('../../operations/services/notification-service.js', () => ({
   notifyInsight: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../core/services/typed-event-bus.js', () => ({
+vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
@@ -125,9 +125,9 @@ vi.mock('../services/incident-correlator.js', () => ({
 }));
 
 const { runMonitoringCycle, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('../services/monitoring-service.js');
-import * as portainerClient from '../../../core/portainer/portainer-client.js';
-import * as portainerCache from '../../../core/portainer/portainer-cache.js';
-import { cache } from '../../../core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
+import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import * as llmClient from '../services/llm-client.js';
 import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 

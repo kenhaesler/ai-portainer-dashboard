@@ -14,7 +14,7 @@ const mockGetSetting = vi.fn();
 const mockGetGlobalLlmConfig = vi.fn();
 
 // Kept: settings-store mock — no PostgreSQL in CI
-vi.mock('../../../core/services/settings-store.js', () => ({
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetGlobalLlmConfig(...args),
 }));

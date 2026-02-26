@@ -1,6 +1,6 @@
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
-import { getSetting } from '../../../core/services/settings-store.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { getSetting } from '@dashboard/core/services/settings-store.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('prompt-version-store');
 

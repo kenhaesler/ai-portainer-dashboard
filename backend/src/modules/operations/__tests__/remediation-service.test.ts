@@ -23,7 +23,7 @@ vi.mock('../services/actions-store.js', () => ({
 }));
 
 // Kept: event-bus mock — tests control event emission
-vi.mock('../../../core/services/typed-event-bus.js', () => ({
+vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
@@ -49,9 +49,9 @@ import {
   buildRemediationPrompt,
   isProtectedContainer,
 } from '../services/remediation-service.js';
-import * as portainerClient from '../../../core/portainer/portainer-client.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as llmClient from '../../ai-intelligence/services/llm-client.js';
-import { cache } from '../../../core/portainer/portainer-cache.js';
+import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockGetContainerLogs: any;

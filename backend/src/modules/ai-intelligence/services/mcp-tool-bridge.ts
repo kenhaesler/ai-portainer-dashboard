@@ -9,8 +9,8 @@ import {
   type ToolDefinition,
   type ToolCallResult,
 } from './llm-tools.js';
-import { getEffectiveMcpConfig } from '../../../core/services/settings-store.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getEffectiveMcpConfig } from '@dashboard/core/services/settings-store.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('mcp-tool-bridge');
 

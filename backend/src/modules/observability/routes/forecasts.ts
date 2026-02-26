@@ -5,7 +5,7 @@ import { getCapacityForecasts, generateForecast, lookupContainerName } from '../
 import { chatStream } from '../../ai-intelligence/services/llm-client.js';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('routes:forecasts');
 

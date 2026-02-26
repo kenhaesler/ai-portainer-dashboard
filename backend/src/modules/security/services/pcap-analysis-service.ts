@@ -1,7 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { getConfig } from '../../../core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { isOllamaAvailable, chatStream } from '../../ai-intelligence/services/llm-client.js';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface

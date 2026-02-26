@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { getConfig } from '../../../core/config/index.js';
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { getPromptGuardNearMissTotal } from '../../ai-intelligence/services/prompt-guard.js';
 

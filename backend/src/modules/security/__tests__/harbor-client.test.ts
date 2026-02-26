@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 // Kept: undici mock — external dependency
 vi.mock('undici', () => ({
@@ -8,12 +8,12 @@ vi.mock('undici', () => ({
 }));
 
 // Kept: trace-context mock — side-effect isolation
-vi.mock('../../../core/tracing/trace-context.js', () => ({
+vi.mock('@dashboard/core/tracing/trace-context.js', () => ({
   withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
 }));
 
 // Kept: settings-store mock — no PostgreSQL in CI
-vi.mock('../../../core/services/settings-store.js', () => ({
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getEffectiveHarborConfig: vi.fn(() => Promise.resolve({
     enabled: true,
     apiUrl: 'https://harbor.example.com',
@@ -25,7 +25,7 @@ vi.mock('../../../core/services/settings-store.js', () => ({
 }));
 
 import { Agent, fetch as undiciFetch } from 'undici';
-import { getEffectiveHarborConfig } from '../../../core/services/settings-store.js';
+import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
 import { isHarborConfigured, isHarborConfiguredAsync, testConnection, _resetHarborClientState } from '../services/harbor-client.js';
 
 const MockAgent = vi.mocked(Agent);

@@ -6,7 +6,7 @@
  * calls `recordNetworkSample()` every collection cycle (default 60 s).
  * After two samples, `getRatesForEndpoint()` returns computed rates.
  */
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('network-rate-tracker');
 

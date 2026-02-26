@@ -9,15 +9,15 @@ import {
   signPayload,
   type Webhook,
 } from '../services/webhook-service.js';
-import { eventBus } from '../../../core/services/typed-event-bus.js';
+import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { toWebhookEvent, type WebhookEvent } from '@dashboard/contracts';
-import { validateOutboundWebhookUrl } from '../../../core/utils/network-security.js';
+import { validateOutboundWebhookUrl } from '@dashboard/core/utils/network-security.js';
 import {
   WebhookCreateBodySchema,
   WebhookDeliveriesQuerySchema,
   WebhookIdParamsSchema,
   WebhookUpdateBodySchema,
-} from '../../../core/models/api-schemas.js';
+} from '@dashboard/core/models/api-schemas.js';
 
 const VALID_EVENT_TYPES = [
   'insight.created',

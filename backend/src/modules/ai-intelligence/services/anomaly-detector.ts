@@ -1,8 +1,8 @@
-import { getConfig } from '../../../core/config/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { getMovingAverage } from '../../observability/index.js';
-import type { AnomalyDetection } from '../../../core/models/metrics.js';
+import type { AnomalyDetection } from '@dashboard/core/models/metrics.js';
 
 const log = createChildLogger('anomaly-detector');
 

@@ -1,6 +1,6 @@
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 const log = createChildLogger('insights-store');
 

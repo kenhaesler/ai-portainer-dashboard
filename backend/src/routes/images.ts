@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import * as portainer from '../core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
-import { EndpointIdQuerySchema } from '../core/models/api-schemas.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { EndpointIdQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import { getStalenessRecords, getStalenessSummary, runStalenessChecks } from '../modules/security/index.js';
-import { createChildLogger } from '../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('route:images');
 

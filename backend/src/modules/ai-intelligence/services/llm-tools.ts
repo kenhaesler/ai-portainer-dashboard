@@ -1,15 +1,15 @@
-import * as portainer from '../../../core/portainer/portainer-client.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts infrastructure interface
 import { getContainerLogsWithRetry, isEdgeAsync, getEdgeAsyncContainerLogs } from '../../infrastructure/index.js';
-import { cachedFetch, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
-import { normalizeContainer, normalizeEndpoint } from '../../../core/portainer/portainer-normalizers.js';
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
-import { getMetricsDb } from '../../../core/db/timescale.js';
-import { getTraces, getTrace, getTraceSummary } from '../../../core/tracing/trace-store.js';
-import { scrubPii } from '../../../core/utils/pii-scrubber.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { getMetricsDb } from '@dashboard/core/db/timescale.js';
+import { getTraces, getTrace, getTraceSummary } from '@dashboard/core/tracing/trace-store.js';
+import { scrubPii } from '@dashboard/core/utils/pii-scrubber.js';
 import { z } from 'zod/v4';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { withSpan } from '../../../core/tracing/trace-context.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { withSpan } from '@dashboard/core/tracing/trace-context.js';
 
 const log = createChildLogger('llm-tools');
 

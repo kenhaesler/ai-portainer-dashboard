@@ -7,8 +7,8 @@
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
-import { getTestDb, truncateTestTables, closeTestDb } from '../../../core/db/test-db-helper.js';
-import type { AppDb } from '../../../core/db/app-db.js';
+import { getTestDb, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
+import type { AppDb } from '@dashboard/core/db/app-db.js';
 import { incidentsRoutes } from '../routes/incidents.js';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount, addInsightToIncident } from '../services/incident-store.js';
 import type { Incident } from '../services/incident-store.js';
@@ -27,7 +27,7 @@ vi.mock('../services/incident-store.js', () => ({
 }));
 
 // Kept: app-db-router mock — tests control database routing
-vi.mock('../../../core/db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => testDb,
 }));
 

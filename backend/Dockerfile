@@ -8,7 +8,12 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/core/package.json ./packages/core/
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core
+COPY packages/contracts/ ./packages/contracts/
+COPY packages/core/ ./packages/core/
+RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core
 COPY backend/tsconfig.json ./backend/
 COPY backend/src/ backend/src/
 RUN npm run build -w backend
@@ -22,7 +27,9 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend --omit=dev
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/core/package.json ./packages/core/
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -53,9 +60,12 @@ COPY --chown=node:node --from=builder /app/backend/package.json ./
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 # Merge any backend-workspace-local packages not hoisted to root (e.g. fastify-type-provider-zod)
 COPY --chown=node:node --from=prod-deps /app/backend/node_modules ./node_modules
+# Copy built @dashboard/core so backend can resolve it at runtime
+COPY --chown=node:node --from=builder /app/packages/core/dist/ ./node_modules/@dashboard/core/dist/
+COPY --chown=node:node --from=builder /app/packages/core/package.json ./node_modules/@dashboard/core/package.json
 COPY --chown=node:node --from=builder /app/backend/dist/ dist/
-COPY --chown=node:node --from=builder /app/backend/src/core/db/postgres-migrations/ dist/core/db/postgres-migrations/
-COPY --chown=node:node --from=builder /app/backend/src/core/db/timescale-migrations/ dist/core/db/timescale-migrations/
+COPY --chown=node:node --from=builder /app/packages/core/src/db/postgres-migrations/ dist/core/db/postgres-migrations/
+COPY --chown=node:node --from=builder /app/packages/core/src/db/timescale-migrations/ dist/core/db/timescale-migrations/
 
 USER node
 

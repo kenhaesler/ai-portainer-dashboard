@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
-import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '../../../core/models/api-schemas.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 /* eslint-disable boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface */
 import {
   getSecurityAudit,
@@ -10,7 +10,7 @@ import {
   SECURITY_AUDIT_IGNORE_KEY,
 } from '../../security/index.js';
 /* eslint-enable boundaries/element-types */
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('route:monitoring');
 

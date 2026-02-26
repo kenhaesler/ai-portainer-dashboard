@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 // ---------------------------------------------------------------------------
 // Kept mocks — internal services the scheduler depends on
@@ -45,7 +45,7 @@ vi.mock('../modules/operations/services/portainer-backup.js', () => ({
   cleanupOldPortainerBackups: vi.fn(),
 }));
 // Kept: settings-store mock — tests control settings
-vi.mock('../core/services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
+vi.mock('@dashboard/core/services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
 // Kept: webhook-service mock
 vi.mock('../modules/operations/services/webhook-service.js', () => ({
   startWebhookListener: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('../modules/observability/services/kpi-store.js', () => ({
 }));
 // Real portainer-normalizers used (pure function, no external deps)
 // Kept: trace-context mock
-vi.mock('../core/tracing/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
+vi.mock('@dashboard/core/tracing/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
 // Kept: infrastructure module mock (elasticsearch log forwarder)
 vi.mock('../modules/infrastructure/index.js', () => ({
   startElasticsearchLogForwarder: vi.fn(),
@@ -68,7 +68,7 @@ vi.mock('../modules/infrastructure/index.js', () => ({
 
 const cleanExpiredSessionsMock = vi.fn().mockReturnValue(0);
 // Kept: session-store mock — tests control session cleanup
-vi.mock('../core/services/session-store.js', () => ({
+vi.mock('@dashboard/core/services/session-store.js', () => ({
   cleanExpiredSessions: (...args: unknown[]) => cleanExpiredSessionsMock(...args),
 }));
 
@@ -78,9 +78,9 @@ vi.mock('../modules/ai-intelligence/services/insights-store.js', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
 }));
 
-import * as portainerClient from '../core/portainer/portainer-client.js';
-import * as portainerCache from '../core/portainer/portainer-cache.js';
-import { cache } from '../core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
+import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../test-utils/test-redis-helper.js';
 
 import {
@@ -145,7 +145,7 @@ beforeEach(async () => {
   vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
   const metricsStore = await import('../modules/observability/services/metrics-store.js');
   vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);
-  const settingsStore = await import('../core/services/settings-store.js');
+  const settingsStore = await import('@dashboard/core/services/settings-store.js');
   vi.mocked(settingsStore.getSetting).mockReturnValue(null as any);
 
   // Bypass cache — delegates to fetcher

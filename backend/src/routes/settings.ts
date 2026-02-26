@@ -1,16 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
-import { getDbForDomain } from '../core/db/app-db-router.js';
-import { createChildLogger } from '../core/utils/logger.js';
-import { writeAuditLog } from '../core/services/audit-logger.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import {
   SettingsQuerySchema,
   SettingKeyParamsSchema,
   SettingUpdateBodySchema,
   AuditLogQuerySchema,
   PreferencesUpdateBodySchema,
-} from '../core/models/api-schemas.js';
-import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../core/services/user-store.js';
+} from '@dashboard/core/models/api-schemas.js';
+import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
 // eslint-disable-next-line boundaries/entry-point -- consuming specific prompt services, not using full barrel to avoid eager route loading
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../modules/ai-intelligence/services/prompt-store.js';
 // eslint-disable-next-line boundaries/entry-point -- consuming specific prompt version services, not using full barrel to avoid eager route loading
