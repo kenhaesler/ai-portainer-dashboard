@@ -1,4 +1,7 @@
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import {
   createWebhook,
   listWebhooks,

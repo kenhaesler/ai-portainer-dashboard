@@ -9,7 +9,7 @@ export {
 } from './routes/index.js';
 
 // Services
-export { suggestAction, approveAction, rejectAction } from './services/remediation-service.js';
+export { suggestAction, approveAction, rejectAction, initRemediationDeps } from './services/remediation-service.js';
 export { notifyInsight } from './services/notification-service.js';
 export {
   startWebhookListener,

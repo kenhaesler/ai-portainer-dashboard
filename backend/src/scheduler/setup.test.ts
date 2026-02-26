@@ -47,18 +47,20 @@ vi.mock('../modules/ai-intelligence/services/monitoring-service.js', () => ({
 }));
 // pcap-service mock consolidated into @dashboard/security above
 // Kept: portainer-backup mock
-vi.mock('../modules/operations/services/portainer-backup.js', () => ({
-  createPortainerBackup: vi.fn(),
-  cleanupOldPortainerBackups: vi.fn(),
-}));
+vi.mock('@dashboard/operations', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    createPortainerBackup: vi.fn(),
+    cleanupOldPortainerBackups: vi.fn(),
+    startWebhookListener: vi.fn(),
+    stopWebhookListener: vi.fn(),
+    processRetries: vi.fn(),
+  };
+});
 // Kept: settings-store mock — tests control settings
 vi.mock('@dashboard/core/services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
-// Kept: webhook-service mock
-vi.mock('../modules/operations/services/webhook-service.js', () => ({
-  startWebhookListener: vi.fn(),
-  stopWebhookListener: vi.fn(),
-  processRetries: vi.fn(),
-}));
+// @dashboard/operations mock is consolidated above
 // kpi-store functions mocked inside @dashboard/observability mock above
 // Real portainer-normalizers used (pure function, no external deps)
 // Kept: trace-context mock

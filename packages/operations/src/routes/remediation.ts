@@ -1,4 +1,7 @@
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { broadcastActionUpdate } from '../sockets/remediation.js';

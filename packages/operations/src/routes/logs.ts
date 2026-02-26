@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { Agent } from 'undici';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { LogsSearchQuerySchema, LogsTestBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { getElasticsearchConfig } from '@dashboard/infrastructure';

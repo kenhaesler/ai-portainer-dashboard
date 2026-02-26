@@ -9,7 +9,7 @@ import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '../modules/ai-intelligence/index.js';
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
-import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '../modules/operations/index.js';
+import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
 
 const log = createChildLogger('scheduler');

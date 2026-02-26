@@ -33,7 +33,8 @@ import {
   logsRoutes,
   notificationRoutes,
   webhookRoutes,
-} from './modules/operations/index.js';
+  initRemediationDeps,
+} from '@dashboard/operations';
 import {
   monitoringRoutes,
   investigationRoutes,
@@ -51,7 +52,8 @@ import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './modules/ai-intelligence/services/llm-client.js';
 import { getEffectivePrompt } from './modules/ai-intelligence/services/prompt-store.js';
 import { getPromptGuardNearMissTotal } from './modules/ai-intelligence/services/prompt-guard.js';
-import type { LLMInterface } from '@dashboard/contracts';
+import type { LLMInterface, MetricsInterface } from '@dashboard/contracts';
+import { getLatestMetrics, getMetrics } from '@dashboard/observability';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -111,6 +113,17 @@ export async function buildApp() {
     buildInfrastructureContext,
     getEffectivePrompt,
   };
+
+  // Metrics adapter — wires observability services to the MetricsInterface contract
+  // Note: MetricsInterface.getMetrics has (endpointId, containerId, metricType, from, to)
+  // but observability.getMetrics has (containerId, metricType, from, to) — endpointId unused
+  const metricsAdapter: MetricsInterface = {
+    getLatestMetrics,
+    getMetrics: async (_endpointId, containerId, metricType, from, to) =>
+      getMetrics(containerId, metricType, from.toISOString(), to.toISOString()),
+    detectAnomalies: async () => [],  // stub — not needed in Phase 3
+  };
+  initRemediationDeps(llmAdapter, metricsAdapter);
 
   // Routes
   await app.register(healthRoutes);

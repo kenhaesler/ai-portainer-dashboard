@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { webhookRoutes } from '../routes/webhooks.js';

@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import { z } from 'zod/v4';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import {

@@ -42,7 +42,8 @@
     "@dashboard/core": "*",
     "@dashboard/infrastructure": "*",
     "@dashboard/security": "*",
-    "@dashboard/observability": "*"
+    "@dashboard/observability": "*",
+    "@dashboard/operations": "*"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

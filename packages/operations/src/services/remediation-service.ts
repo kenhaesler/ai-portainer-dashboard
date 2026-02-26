@@ -11,11 +11,19 @@ import {
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getContainerLogs } from '@dashboard/core/portainer/portainer-client.js';
-import { getLatestMetrics } from '@dashboard/observability';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/llm-client.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
+import type { LLMInterface, MetricsInterface } from '@dashboard/contracts';
+
+let _llm: LLMInterface | null = null;
+let _metrics: MetricsInterface | null = null;
+
+/**
+ * Initialize remediation dependencies. Must be called before suggestAction is used.
+ * Called from the server composition root (app.ts) during startup.
+ */
+export function initRemediationDeps(llm: LLMInterface, metrics: MetricsInterface): void {
+  _llm = llm;
+  _metrics = metrics;
+}
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 
@@ -278,7 +286,7 @@ async function gatherRemediationEvidence(insight: Insight): Promise<RemediationE
   if (insight.container_id) {
     tasks.push((async () => {
       try {
-        evidence.metrics = await getLatestMetrics(insight.container_id!);
+        evidence.metrics = _metrics ? await _metrics.getLatestMetrics(insight.container_id!) : {};
       } catch (err) {
         log.warn({ err, containerId: insight.container_id }, 'Failed to gather remediation metrics');
       }
@@ -303,16 +311,16 @@ async function enrichActionWithLlmAnalysis(
   actionId: string,
   insight: Insight,
 ): Promise<void> {
-  const available = await isOllamaAvailable();
+  const available = _llm ? await _llm.isAvailable() : false;
   if (!available) return;
 
   try {
     const evidence = await gatherRemediationEvidence(insight);
     const prompt = buildRemediationPrompt(insight, evidence);
-    const systemPrompt = await getEffectivePrompt('remediation');
+    const systemPrompt = await _llm!.getEffectivePrompt('remediation');
     let rawResponse = '';
 
-    await chatStream(
+    await _llm!.chatStream(
       [{ role: 'user', content: prompt }],
       systemPrompt,
       (chunk) => {
@@ -326,7 +334,7 @@ async function enrichActionWithLlmAnalysis(
     if (!parsed) {
       log.warn({ actionId, insightId: insight.id }, 'First LLM attempt returned unstructured output, retrying with stricter prompt');
       let retryResponse = '';
-      await chatStream(
+      await _llm!.chatStream(
         [
           { role: 'user', content: prompt },
           { role: 'assistant', content: rawResponse },

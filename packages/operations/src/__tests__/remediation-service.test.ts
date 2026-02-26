@@ -7,7 +7,6 @@ const mockUpdateActionRationale = vi.fn();
 const mockHasPendingAction = vi.fn().mockReturnValue(false);
 const mockBroadcastNewAction = vi.fn();
 const mockBroadcastActionUpdate = vi.fn();
-const mockGetLatestMetrics = vi.fn();
 
 vi.mock('uuid', () => ({
   v4: () => 'action-123',
@@ -27,24 +26,10 @@ vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
-// Kept: metrics-store mock — tests control metrics responses
-vi.mock('@dashboard/observability', async (importOriginal) => {
-  const orig = await importOriginal() as Record<string, unknown>;
-  return {
-    ...orig,
-    getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
-  };
-});
-
 // Kept: remediation socket mock — tests control broadcast
 vi.mock('../sockets/remediation.js', () => ({
   broadcastNewAction: (...args: unknown[]) => mockBroadcastNewAction(...args),
   broadcastActionUpdate: (...args: unknown[]) => mockBroadcastActionUpdate(...args),
-}));
-
-// Kept: prompt-store mock — avoids DB lookup for prompt store
-vi.mock('../../ai-intelligence/services/prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
 import {
@@ -52,15 +37,25 @@ import {
   parseRemediationAnalysis,
   buildRemediationPrompt,
   isProtectedContainer,
+  initRemediationDeps,
 } from '../services/remediation-service.js';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
-import * as llmClient from '../../ai-intelligence/services/llm-client.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
+import { closeTestRedis } from '@dashboard/core/test-utils/test-redis-helper.js';
+
+const mockLlm = {
+  isAvailable: vi.fn().mockResolvedValue(true),
+  chatStream: vi.fn().mockResolvedValue('action: RESTART rationale: High CPU'),
+  getEffectivePrompt: vi.fn().mockResolvedValue('You are a remediation assistant.'),
+  buildInfrastructureContext: vi.fn().mockReturnValue(''),
+};
+const mockMetrics = {
+  getLatestMetrics: vi.fn().mockResolvedValue({ cpu_percent: 95, mem_percent: 80 }),
+  getMetrics: vi.fn().mockResolvedValue([]),
+  detectAnomalies: vi.fn().mockResolvedValue([]),
+};
 
 let mockGetContainerLogs: any;
-let mockIsOllamaAvailable: any;
-let mockChatStream: any;
 
 beforeAll(async () => {
   await cache.clear();
@@ -88,14 +83,15 @@ describe('remediation-service', () => {
     });
     mockUpdateActionRationale.mockReturnValue(true);
     mockHasPendingAction.mockReturnValue(false);
-    mockGetLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
-    // Re-set prompt-store default
-    const { getEffectivePrompt } = await import('../../ai-intelligence/services/prompt-store.js');
-    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
-    // Portainer + LLM spies
+    // Re-set LLM/metrics mock defaults
+    mockLlm.isAvailable.mockResolvedValue(false);
+    mockLlm.chatStream.mockResolvedValue('');
+    mockLlm.getEffectivePrompt.mockResolvedValue('You are a test assistant.');
+    mockMetrics.getLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
+    // Wire injected dependencies
+    initRemediationDeps(mockLlm, mockMetrics);
+    // Portainer spy
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
-    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
-    mockChatStream = vi.spyOn(llmClient, 'chatStream').mockResolvedValue('');
   });
 
   it('maps OOM insights to INVESTIGATE (not STOP_CONTAINER) and broadcasts', async () => {
@@ -189,8 +185,8 @@ describe('remediation-service', () => {
   });
 
   it('enriches rationale with structured LLM analysis when available', async () => {
-    mockIsOllamaAvailable.mockResolvedValue(true);
-    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
+    mockLlm.isAvailable.mockResolvedValue(true);
+    mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       onChunk(JSON.stringify({
         root_cause: 'OOM due to connection pool leak',
         severity: 'critical',
@@ -222,7 +218,7 @@ describe('remediation-service', () => {
     await flushMicrotasks();
 
     expect(mockGetContainerLogs).toHaveBeenCalledWith(1, 'container-4', { tail: 50, timestamps: true });
-    expect(mockGetLatestMetrics).toHaveBeenCalledWith('container-4');
+    expect(mockMetrics.getLatestMetrics).toHaveBeenCalledWith('container-4');
     expect(mockUpdateActionRationale).toHaveBeenCalledTimes(1);
     const stored = mockUpdateActionRationale.mock.calls[0]?.[1];
     expect(typeof stored).toBe('string');
@@ -231,9 +227,9 @@ describe('remediation-service', () => {
   });
 
   it('retries with stricter prompt when first LLM attempt returns unstructured output (#746)', async () => {
-    mockIsOllamaAvailable.mockResolvedValue(true);
+    mockLlm.isAvailable.mockResolvedValue(true);
     let callCount = 0;
-    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
+    mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       callCount++;
       if (callCount === 1) {
         // First attempt: unstructured
@@ -268,9 +264,9 @@ describe('remediation-service', () => {
     await flushMicrotasks();
 
     // chatStream should have been called twice (original + retry)
-    expect(mockChatStream).toHaveBeenCalledTimes(2);
+    expect(mockLlm.chatStream).toHaveBeenCalledTimes(2);
     // Retry should include the original response as assistant message
-    const retryCall = mockChatStream.mock.calls[1];
+    const retryCall = mockLlm.chatStream.mock.calls[1];
     const retryMessages = retryCall[0] as Array<{ role: string; content: string }>;
     expect(retryMessages.some((m: any) => m.role === 'assistant')).toBe(true);
     expect(retryMessages.some((m: any) => m.content.includes('not valid JSON'))).toBe(true);
@@ -283,8 +279,8 @@ describe('remediation-service', () => {
   });
 
   it('gives up after retry also returns unstructured output (#746)', async () => {
-    mockIsOllamaAvailable.mockResolvedValue(true);
-    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
+    mockLlm.isAvailable.mockResolvedValue(true);
+    mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       // Both attempts return unstructured output
       onChunk('I think the container needs attention');
       return '';
@@ -305,15 +301,15 @@ describe('remediation-service', () => {
     await flushMicrotasks();
 
     // chatStream called twice (original + retry)
-    expect(mockChatStream).toHaveBeenCalledTimes(2);
+    expect(mockLlm.chatStream).toHaveBeenCalledTimes(2);
     // But neither produced parseable JSON, so no rationale update
     expect(mockUpdateActionRationale).not.toHaveBeenCalled();
     expect(mockBroadcastActionUpdate).not.toHaveBeenCalled();
   });
 
   it('keeps fallback rationale when LLM output is unstructured (both attempts fail)', async () => {
-    mockIsOllamaAvailable.mockResolvedValue(true);
-    mockChatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
+    mockLlm.isAvailable.mockResolvedValue(true);
+    mockLlm.chatStream.mockImplementation(async (_messages: any, _system: any, onChunk: any) => {
       onChunk('container looks unhealthy, maybe restart');
       return '';
     });
@@ -333,7 +329,7 @@ describe('remediation-service', () => {
     await flushMicrotasks();
 
     expect(mockGetContainerLogs).toHaveBeenCalledWith(1, 'container-7', { tail: 50, timestamps: true });
-    expect(mockGetLatestMetrics).toHaveBeenCalledWith('container-7');
+    expect(mockMetrics.getLatestMetrics).toHaveBeenCalledWith('container-7');
     // Both attempts return unstructured output, so no rationale update
     expect(mockUpdateActionRationale).not.toHaveBeenCalled();
     expect(mockBroadcastActionUpdate).not.toHaveBeenCalled();
@@ -381,13 +377,15 @@ describe('protected container safety', () => {
     // Re-set forwarding mock defaults
     mockInsertAction.mockReturnValue(true);
     mockHasPendingAction.mockReturnValue(false);
-    // Re-set prompt-store default
-    const { getEffectivePrompt } = await import('../../ai-intelligence/services/prompt-store.js');
-    vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
-    // Portainer + LLM spies
+    // Re-set LLM/metrics mock defaults
+    mockLlm.isAvailable.mockResolvedValue(false);
+    mockLlm.chatStream.mockResolvedValue('');
+    mockLlm.getEffectivePrompt.mockResolvedValue('You are a test assistant.');
+    mockMetrics.getLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
+    // Wire injected dependencies
+    initRemediationDeps(mockLlm, mockMetrics);
+    // Portainer spy
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
-    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
-    mockChatStream = vi.spyOn(llmClient, 'chatStream').mockResolvedValue('');
   });
 
   it('never suggests STOP_CONTAINER — OOM maps to INVESTIGATE', async () => {

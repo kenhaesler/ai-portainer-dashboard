@@ -15,8 +15,7 @@ import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, insertInsights, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
-import { suggestAction } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
+import { suggestAction } from '@dashboard/operations';
 import { triggerInvestigation } from './investigation-service.js';
 import { getCapacityForecasts } from '@dashboard/observability';
 import { explainAnomalies } from './anomaly-explainer.js';
@@ -24,8 +23,7 @@ import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import type { SecurityFinding } from '@dashboard/security';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
-import { notifyInsight } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
+import { notifyInsight } from '@dashboard/operations';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { correlateInsights } from './incident-correlator.js';
 

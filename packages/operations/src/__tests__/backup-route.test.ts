@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

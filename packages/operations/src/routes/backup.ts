@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import path from 'path';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup } from '../services/backup-service.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';

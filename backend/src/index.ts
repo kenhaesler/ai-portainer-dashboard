@@ -5,7 +5,7 @@ import { getAppDb, closeAppDb } from '@dashboard/core/db/postgres.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { setupLlmNamespace } from './modules/ai-intelligence/sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './modules/ai-intelligence/sockets/monitoring.js';
-import { setupRemediationNamespace } from './modules/operations/index.js';
+import { setupRemediationNamespace } from '@dashboard/operations';
 import { startScheduler, stopScheduler } from './scheduler/setup.js';
 import { setMonitoringNamespace } from './modules/ai-intelligence/services/monitoring-service.js';
 import { setInvestigationNamespace } from './modules/ai-intelligence/services/investigation-service.js';

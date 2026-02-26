@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
-import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { remediationRoutes } from '../routes/remediation.js';
@@ -23,7 +23,7 @@ vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) 
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
-import { flushTestCache, closeTestRedis } from '../../../test-utils/test-redis-helper.js';
+import { flushTestCache, closeTestRedis } from '@dashboard/core/test-utils/test-redis-helper.js';
 
 let mockRestartContainer: any;
 let mockStopContainer: any;

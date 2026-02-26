@@ -1,4 +1,7 @@
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { sendTestNotification } from '../services/notification-service.js';
 import { NotificationHistoryQuerySchema, NotificationTestBodySchema } from '@dashboard/core/models/api-schemas.js';

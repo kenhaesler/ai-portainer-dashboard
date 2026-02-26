@@ -209,15 +209,30 @@ vi.mock('@dashboard/core/tracing/trace-store.js', () => ({
   insertSpans: vi.fn(async () => 0),
 }));
 
-vi.mock('../modules/operations/services/webhook-service.js', () => ({
-  createWebhook: vi.fn(),
-  listWebhooks: vi.fn(() => []),
-  getWebhookById: vi.fn(),
-  updateWebhook: vi.fn(),
-  deleteWebhook: vi.fn(),
-  getDeliveriesForWebhook: vi.fn(() => []),
-  signPayload: vi.fn(() => 'sig'),
-}));
+vi.mock('@dashboard/operations', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    createWebhook: vi.fn(),
+    listWebhooks: vi.fn(() => []),
+    getWebhookById: vi.fn(),
+    updateWebhook: vi.fn(),
+    deleteWebhook: vi.fn(),
+    getDeliveriesForWebhook: vi.fn(() => []),
+    signPayload: vi.fn(() => 'sig'),
+    createPortainerBackup: vi.fn().mockResolvedValue('backup.tar.gz'),
+    listPortainerBackups: vi.fn().mockResolvedValue([]),
+    getPortainerBackupPath: vi.fn(() => null),
+    deletePortainerBackup: vi.fn(),
+    sendTestNotification: vi.fn().mockResolvedValue(undefined),
+    createBackup: vi.fn().mockResolvedValue('backup.db'),
+    listBackups: vi.fn().mockResolvedValue([]),
+    deleteBackup: vi.fn(),
+    getBackupPath: vi.fn(() => null),
+    broadcastActionUpdate: vi.fn(),
+    initRemediationDeps: vi.fn(),
+  };
+});
 
 vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
@@ -275,13 +290,7 @@ vi.mock('../modules/ai-intelligence/services/prompt-profile-store.js', () => ({
   switchProfile: vi.fn(),
 }));
 
-vi.mock('../modules/operations/services/portainer-backup.js', () => ({
-  createPortainerBackup: vi.fn().mockResolvedValue('backup.tar.gz'),
-  listPortainerBackups: vi.fn().mockResolvedValue([]),
-  getPortainerBackupPath: vi.fn(() => null),
-  deletePortainerBackup: vi.fn(),
-}));
-
+// portainer-backup mocked inside @dashboard/operations mock above
 
 vi.mock('../modules/ai-intelligence/services/investigation-store.js', () => ({
   getInvestigations: vi.fn(() => []),
@@ -301,24 +310,9 @@ vi.mock('@dashboard/infrastructure/services/elasticsearch-config.js', () => ({
 }));
 
 
-vi.mock('../modules/operations/services/notification-service.js', () => ({
-  sendTestNotification: vi.fn().mockResolvedValue(undefined),
-}));
+// notification-service, backup-service, sockets/remediation mocked inside @dashboard/operations mock above
 
 // kpi-store, metrics-store, metrics-rollup-selector mocked inside @dashboard/observability mock above
-
-
-vi.mock('../modules/operations/services/backup-service.js', () => ({
-  createBackup: vi.fn().mockResolvedValue('backup.db'),
-  listBackups: vi.fn().mockResolvedValue([]),
-  deleteBackup: vi.fn(),
-  getBackupPath: vi.fn(() => null),
-}));
-
-
-vi.mock('../modules/operations/sockets/remediation.js', () => ({
-  broadcastActionUpdate: vi.fn(),
-}));
 
 // Kept: external boundary mock — ollama npm SDK has no local test equivalent
 vi.mock('ollama', async () =>
@@ -344,7 +338,7 @@ import {
   logsRoutes,
   notificationRoutes,
   webhookRoutes,
-} from '../modules/operations/index.js';
+} from '@dashboard/operations';
 import { settingsRoutes } from './settings.js';
 import { imagesRoutes } from './images.js';
 import { networksRoutes } from './networks.js';
