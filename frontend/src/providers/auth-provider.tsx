@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 const AUTH_TOKEN_KEY = 'auth_token';
 const AUTH_USERNAME_KEY = 'auth_username';

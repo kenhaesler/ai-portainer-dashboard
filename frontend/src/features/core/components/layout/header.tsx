@@ -1,0 +1,253 @@
+import { useLocation, Link } from 'react-router-dom';
+import { Sun, Moon, Search, LogOut, User, Keyboard } from 'lucide-react';
+import { useAuth } from '@/providers/auth-provider';
+import { useThemeStore } from '@/stores/theme-store';
+import { useUiStore } from '@/stores/ui-store';
+import { cn } from '@/shared/lib/utils';
+import { useState, useRef, useEffect } from 'react';
+import { ConnectionOrb } from '@/shared/components/connection-orb';
+
+const routeLabels: Record<string, string> = {
+  '/': 'Home',
+  '/workloads': 'Workload Explorer',
+  '/infrastructure': 'Infrastructure',
+  '/health': 'Container Health',
+  '/images': 'Image Footprint',
+  '/topology': 'Network Topology',
+  '/ai-monitor': 'AI Monitor',
+  '/metrics': 'Metrics Dashboard',
+  '/remediation': 'Remediation',
+  '/traces': 'Trace Explorer',
+  '/assistant': 'LLM Assistant',
+  '/security/audit': 'Security Audit',
+  '/edge-logs': 'Edge Agent Logs',
+  '/settings': 'Settings',
+};
+
+
+export function Header() {
+  const location = useLocation();
+  const { username, logout } = useAuth();
+  const { theme, toggleTheme, dashboardBackground } = useThemeStore();
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
+  const potatoMode = useUiStore((s) => s.potatoMode);
+  const setPotatoMode = useUiStore((s) => s.setPotatoMode);
+  const hasAnimatedBg = dashboardBackground !== 'none';
+  const [appBuildRef, setAppBuildRef] = useState(
+    import.meta.env.DEV
+      ? (
+        import.meta.env.VITE_GIT_COMMIT
+        || import.meta.env.VITE_APP_COMMIT
+        || import.meta.env.VITE_BUILD_NUMBER
+        || 'dev'
+      )
+      : (
+        import.meta.env.VITE_BUILD_NUMBER
+        || import.meta.env.VITE_GIT_COMMIT
+        || import.meta.env.VITE_APP_COMMIT
+        || ''
+      )
+  );
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Check if the current route is a container detail page
+  const containerDetailMatch = location.pathname.match(/^\/containers\/(\d+)\/([a-f0-9]+)$/);
+
+  const currentLabel = routeLabels[location.pathname] || 'Dashboard';
+  let breadcrumbs = [
+    { label: 'Dashboard', path: '/' },
+    ...(location.pathname !== '/'
+      ? [{ label: currentLabel, path: location.pathname }]
+      : []),
+  ];
+
+  // Handle dynamic container detail breadcrumbs
+  if (containerDetailMatch) {
+    breadcrumbs = [
+      { label: 'Dashboard', path: '/' },
+      { label: 'Workload Explorer', path: '/workloads' },
+      { label: 'Container Details', path: location.pathname },
+    ];
+  }
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let isMounted = true;
+    fetch('/__commit')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { commit?: string } | null) => {
+        if (!isMounted) return;
+        if (data?.commit) setAppBuildRef(data.commit);
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const buildChannel = import.meta.env.DEV ? 'DEV' : 'BUILD';
+  const normalizedBuildRef = appBuildRef.trim();
+  const buildToken = normalizedBuildRef
+    && normalizedBuildRef.toLowerCase() !== 'dev'
+    && normalizedBuildRef.toLowerCase() !== 'build'
+    ? normalizedBuildRef.slice(0, 16).toLowerCase()
+    : '';
+  const buildBadge = buildToken ? `${buildChannel} ${buildToken}` : buildChannel;
+
+  return (
+    <header
+      data-testid="header"
+      data-animated-bg={hasAnimatedBg || undefined}
+      className="relative z-40 mx-2 mt-2 flex h-12 shrink-0 items-center justify-between rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10 px-2 md:mx-4 md:mt-4 md:px-4"
+    >
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
+        {breadcrumbs.map((crumb, index) => (
+          <span key={crumb.path} className="flex items-center gap-1.5">
+            {index > 0 && (
+              <span className="text-muted-foreground">/</span>
+            )}
+            {index === breadcrumbs.length - 1 ? (
+              <span className="font-medium text-foreground">
+                {crumb.label}
+              </span>
+            ) : (
+              <Link
+                to={crumb.path}
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {crumb.label}
+              </Link>
+            )}
+          </span>
+        ))}
+        {(appBuildRef || buildChannel) && (
+          <span
+            className="ml-2 inline-flex items-center rounded-full border border-border/60 bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+            aria-label={`Build ${buildBadge}`}
+            title={`Build ${buildBadge}`}
+          >
+            {buildBadge}
+          </span>
+        )}
+      </nav>
+
+      {/* Right-side actions */}
+      <div className="flex items-center gap-2">
+        {/* Command palette trigger */}
+        <button
+          onClick={() => setCommandPaletteOpen(true)}
+          className="flex items-center gap-2 rounded-xl bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <Search className="h-4 w-4" />
+          <span className="hidden sm:inline">Search...</span>
+          <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
+            {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl+'}K
+          </kbd>
+          <kbd className="pointer-events-none hidden select-none rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-xs sm:inline-block">
+            /
+          </kbd>
+        </button>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={Boolean(potatoMode)}
+          aria-label={`Potato mode ${potatoMode ? 'on' : 'off'}`}
+          title="Toggle Potato Mode"
+          onClick={() => setPotatoMode(Boolean(!potatoMode))}
+          className={cn(
+            'inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium',
+            potatoMode
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-border bg-muted text-muted-foreground'
+          )}
+        >
+          <span aria-hidden="true">🥔</span>
+        </button>
+
+        {/* Theme toggle — pill switch between two configured themes */}
+        {(() => {
+          const isDark = useThemeStore.getState().resolvedTheme() === 'dark';
+          return (
+            <button
+              data-testid="theme-toggle"
+              onClick={toggleTheme}
+              className="relative flex h-8 w-14 items-center justify-between rounded-full bg-muted px-1.5 transition-colors"
+              aria-label={`Switch to ${isDark ? 'light' : 'dark'} theme`}
+            >
+              <span
+                className={cn(
+                  'absolute h-5 w-5 rounded-full bg-background shadow-sm transition-all duration-200',
+                  isDark ? 'left-[calc(100%-1.625rem)]' : 'left-1.5'
+                )}
+              />
+              <Sun className={cn(
+                'relative z-10 h-3.5 w-3.5 transition-colors',
+                isDark ? 'text-muted-foreground' : 'text-amber-500'
+              )} />
+              <Moon className={cn(
+                'relative z-10 h-3.5 w-3.5 transition-colors',
+                isDark ? 'text-blue-400' : 'text-muted-foreground'
+              )} />
+            </button>
+          );
+        })()}
+
+        {/* Connection status orb */}
+        <ConnectionOrb />
+
+        {/* User menu */}
+        <div ref={userMenuRef} className="relative">
+          <button
+            data-testid="user-menu-trigger"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition-colors hover:bg-muted/50"
+          >
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <User className="h-3.5 w-3.5" />
+            </div>
+            <span className="hidden font-medium sm:inline">
+              {username || 'User'}
+            </span>
+          </button>
+
+          {userMenuOpen && (
+            <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border border-border bg-popover p-1 shadow-lg">
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                Signed in as <span className="font-medium text-foreground">{username}</span>
+              </div>
+              <div className="my-1 h-px bg-border" />
+              <button
+                data-testid="logout-button"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  logout();
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-accent"
+              >
+                <LogOut className="h-4 w-4" />
+                Log out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

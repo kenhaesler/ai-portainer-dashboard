@@ -1,37 +1,37 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { AppLayout } from '@/components/layout/app-layout';
-import { RouteErrorBoundary } from '@/components/shared/route-error-boundary';
-import { ChunkLoadErrorBoundary } from '@/components/shared/chunk-load-error-boundary';
+import { AppLayout } from '@/features/core/components/layout/app-layout';
+import { RouteErrorBoundary } from '@/shared/components/route-error-boundary';
+import { ChunkLoadErrorBoundary } from '@/shared/components/chunk-load-error-boundary';
 
 // Lazy-loaded pages
-const Login = lazy(() => import('@/pages/login'));
-const AuthCallback = lazy(() => import('@/pages/auth-callback'));
-const Home = lazy(() => import('@/pages/home'));
-const WorkloadExplorer = lazy(() => import('@/pages/workload-explorer'));
-const Infrastructure = lazy(() => import('@/pages/infrastructure'));
-const ContainerHealth = lazy(() => import('@/pages/container-health'));
-const ImageFootprint = lazy(() => import('@/pages/image-footprint'));
-const NetworkTopology = lazy(() => import('@/pages/network-topology'));
-const AiMonitor = lazy(() => import('@/pages/ai-monitor'));
-const MetricsDashboard = lazy(() => import('@/pages/metrics-dashboard'));
-const Remediation = lazy(() => import('@/pages/remediation'));
-const TraceExplorer = lazy(() => import('@/pages/trace-explorer'));
-const LlmAssistant = lazy(() => import('@/pages/llm-assistant'));
-const LlmObservability = lazy(() => import('@/pages/llm-observability'));
-const EdgeAgentLogs = lazy(() => import('@/pages/edge-agent-logs'));
-const Settings = lazy(() => import('@/pages/settings'));
-const Backups = lazy(() => import('@/pages/backups'));
-const ContainerDetail = lazy(() => import('@/pages/container-detail'));
-const PacketCapture = lazy(() => import('@/pages/packet-capture'));
-const ContainerComparison = lazy(() => import('@/pages/container-comparison'));
-const StatusPage = lazy(() => import('@/pages/status-page'));
-const Reports = lazy(() => import('@/pages/reports'));
-const LogViewer = lazy(() => import('@/pages/log-viewer'));
-const InvestigationDetail = lazy(() => import('@/pages/investigation-detail'));
-const SecurityAudit = lazy(() => import('@/pages/security-audit'));
-const EbpfCoverage = lazy(() => import('@/pages/ebpf-coverage'));
-const HarborVulnerabilities = lazy(() => import('@/pages/harbor-vulnerabilities'));
+const Login = lazy(() => import('@/features/core/pages/login'));
+const AuthCallback = lazy(() => import('@/features/core/pages/auth-callback'));
+const Home = lazy(() => import('@/features/core/pages/home'));
+const WorkloadExplorer = lazy(() => import('@/features/containers/pages/workload-explorer'));
+const Infrastructure = lazy(() => import('@/features/containers/pages/fleet-overview'));
+const ContainerHealth = lazy(() => import('@/features/containers/pages/container-health'));
+const ImageFootprint = lazy(() => import('@/features/containers/pages/image-footprint'));
+const NetworkTopology = lazy(() => import('@/features/containers/pages/network-topology'));
+const AiMonitor = lazy(() => import('@/features/ai-intelligence/pages/ai-monitor'));
+const MetricsDashboard = lazy(() => import('@/features/observability/pages/metrics-dashboard'));
+const Remediation = lazy(() => import('@/features/operations/pages/remediation'));
+const TraceExplorer = lazy(() => import('@/features/observability/pages/trace-explorer'));
+const LlmAssistant = lazy(() => import('@/features/ai-intelligence/pages/llm-assistant'));
+const LlmObservability = lazy(() => import('@/features/ai-intelligence/pages/llm-observability'));
+const EdgeAgentLogs = lazy(() => import('@/features/operations/pages/edge-agent-logs'));
+const Settings = lazy(() => import('@/features/core/pages/settings'));
+const Backups = lazy(() => import('@/features/core/pages/backups'));
+const ContainerDetail = lazy(() => import('@/features/containers/pages/container-detail'));
+const PacketCapture = lazy(() => import('@/features/security/pages/packet-capture'));
+const ContainerComparison = lazy(() => import('@/features/containers/pages/container-comparison'));
+const StatusPage = lazy(() => import('@/features/observability/pages/status-page'));
+const Reports = lazy(() => import('@/features/observability/pages/reports'));
+const LogViewer = lazy(() => import('@/features/observability/pages/log-viewer'));
+const InvestigationDetail = lazy(() => import('@/features/ai-intelligence/pages/investigation-detail'));
+const SecurityAudit = lazy(() => import('@/features/security/pages/security-audit'));
+const EbpfCoverage = lazy(() => import('@/features/security/pages/ebpf-coverage'));
+const HarborVulnerabilities = lazy(() => import('@/features/security/pages/harbor-vulnerabilities'));
 
 function PageLoader() {
   return (
