@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { getConfig } from '../../../core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 import { isOllamaAvailable } from './llm-client.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 import {
   insertIncident,
   addInsightToIncident,

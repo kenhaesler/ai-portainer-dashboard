@@ -12,7 +12,7 @@
  * @see https://github.com/kenhaesler/ai-portainer-dashboard/issues/430
  */
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { readFileSync } from 'node:fs';
@@ -24,7 +24,7 @@ import path from 'node:path';
 let mockRemediationAction: Record<string, unknown> | undefined;
 
 // Kept: full-app auth sweep test; DB mock is scaffolding for route registration
-vi.mock('../core/db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     queryOne: vi.fn(async (sql: string) => {
       if (sql.includes('SELECT * FROM actions WHERE id = ?')) {
@@ -82,32 +82,32 @@ vi.mock('../core/db/app-db-router.js', () => ({
   })),
 }));
 
-vi.mock('../core/db/timescale.js', () => ({
+vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn(() => ({
     query: vi.fn().mockResolvedValue({ rows: [] }),
   })),
   isMetricsDbHealthy: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../core/utils/crypto.js', () => ({
+vi.mock('@dashboard/core/utils/crypto.js', () => ({
   verifyJwt: vi.fn().mockResolvedValue(null),
   signJwt: vi.fn().mockResolvedValue('mock-token'),
   hashPassword: vi.fn().mockResolvedValue('hashed'),
   verifyPassword: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock('../core/services/session-store.js', () => ({
+vi.mock('@dashboard/core/services/session-store.js', () => ({
   createSession: vi.fn(() => ({ id: 'sess-1', user_id: 'u1', username: 'admin' })),
   getSession: vi.fn(() => null),
   invalidateSession: vi.fn(),
   refreshSession: vi.fn(() => null),
 }));
 
-vi.mock('../core/services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../core/services/user-store.js', () => ({
+vi.mock('@dashboard/core/services/user-store.js', () => ({
   authenticateUser: vi.fn().mockResolvedValue(null),
   ensureDefaultAdmin: vi.fn().mockResolvedValue(undefined),
   getUserDefaultLandingPage: vi.fn(() => '/'),
@@ -119,8 +119,8 @@ vi.mock('../core/services/user-store.js', () => ({
   hasMinRole: vi.fn(() => false),
 }));
 
-vi.mock('../core/services/oidc.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../core/services/oidc.js')>();
+vi.mock('@dashboard/core/services/oidc.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dashboard/core/services/oidc.js')>();
   return {
     ...actual,
     isOIDCEnabled: vi.fn(() => false),
@@ -131,13 +131,13 @@ vi.mock('../core/services/oidc.js', async (importOriginal) => {
 });
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../core/services/settings-store.js', () => ({
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: vi.fn(() => ({
     model: 'llama3.2',
     ollamaUrl: 'http://localhost:11434',
@@ -172,11 +172,11 @@ vi.mock('../modules/security/services/security-audit.js', () => ({
 }));
 
 
-vi.mock('../core/tracing/otlp-protobuf.js', () => ({
+vi.mock('@dashboard/core/tracing/otlp-protobuf.js', () => ({
   decodeOtlpProtobuf: vi.fn(() => ({ resourceSpans: [] })),
 }));
 
-vi.mock('../core/tracing/trace-store.js', () => ({
+vi.mock('@dashboard/core/tracing/trace-store.js', () => ({
   insertSpans: vi.fn(async () => 0),
 }));
 
@@ -190,7 +190,7 @@ vi.mock('../modules/operations/services/webhook-service.js', () => ({
   signPayload: vi.fn(() => 'sig'),
 }));
 
-vi.mock('../core/services/typed-event-bus.js', () => ({
+vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
@@ -331,8 +331,8 @@ vi.mock('ollama', async () =>
 );
 
 // ─── Route Imports ──────────────────────────────────────────────────────
-import authPlugin from '../core/plugins/auth.js';
-import rateLimitPlugin from '../core/plugins/rate-limit.js';
+import authPlugin from '@dashboard/core/plugins/auth.js';
+import rateLimitPlugin from '@dashboard/core/plugins/rate-limit.js';
 import { healthRoutes } from './health.js';
 import { authRoutes } from './auth.js';
 import { oidcRoutes } from './oidc.js';
@@ -368,9 +368,9 @@ import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-pr
 import { edgeJobsRoutes } from '../modules/infrastructure/routes/edge-jobs.js';
 import { observabilityRoutes } from '../modules/observability/index.js';
 
-import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
-import * as portainerClient from '../core/portainer/portainer-client.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 
 // ─── Known Public Routes ────────────────────────────────────────────────
 // Routes that are intentionally accessible without a Bearer token.
@@ -1354,11 +1354,11 @@ describe('Rate Limiting Verification', () => {
 
 describe('OIDC Group-to-Role Mapping Security', () => {
   // Import the pure functions directly (they don't need Fastify)
-  let resolveRoleFromGroups: typeof import('../core/services/oidc.js').resolveRoleFromGroups;
-  let extractGroups: typeof import('../core/services/oidc.js').extractGroups;
+  let resolveRoleFromGroups: typeof import('@dashboard/core/services/oidc.js').resolveRoleFromGroups;
+  let extractGroups: typeof import('@dashboard/core/services/oidc.js').extractGroups;
 
   beforeAll(async () => {
-    const oidc = await import('../core/services/oidc.js');
+    const oidc = await import('@dashboard/core/services/oidc.js');
     resolveRoleFromGroups = oidc.resolveRoleFromGroups;
     extractGroups = oidc.extractGroups;
   });

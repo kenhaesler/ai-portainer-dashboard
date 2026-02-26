@@ -3,11 +3,11 @@ import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { containersRoutes } from './containers.js';
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
-import * as portainerClient from '../core/portainer/portainer-client.js';
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 import { checkPortainerAvailable } from '../test-utils/integration-setup.js';
-import { cache, waitForInFlight } from '../core/portainer/portainer-cache.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 
 let portainerUp: boolean;
 

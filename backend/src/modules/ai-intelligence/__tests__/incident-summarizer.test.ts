@@ -7,7 +7,7 @@ vi.mock('../services/prompt-store.js', () => ({
 
 import * as llmClient from '../services/llm-client.js';
 import { generateLlmIncidentSummary } from '../services/incident-summarizer.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 function makeInsight(overrides: Partial<Insight> = {}): Insight {
   return {

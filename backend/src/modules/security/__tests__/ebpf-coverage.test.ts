@@ -13,13 +13,13 @@ const mockDb = {
 };
 
 // Kept: DB mock — tests assert SQL query patterns
-vi.mock('../../../core/db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => mockDb,
 }));
 
-import * as portainerClient from '../../../core/portainer/portainer-client.js';
-import * as portainerCache from '../../../core/portainer/portainer-cache.js';
-import { cache } from '../../../core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
+import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 import {
   getEndpointCoverage,

@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { getConfig } from '../../../core/config/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import {
   createContainer,
   startContainer,
@@ -13,7 +13,7 @@ import {
   pullImage,
   getImages,
   getContainers,
-} from '../../../core/portainer/portainer-client.js';
+} from '@dashboard/core/portainer/portainer-client.js';
 import {
   insertCapture,
   updateCaptureStatus,

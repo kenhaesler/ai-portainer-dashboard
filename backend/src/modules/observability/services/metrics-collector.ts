@@ -1,6 +1,6 @@
-import { getContainerStats } from '../../../core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getContainerStats } from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('metrics-collector');
 

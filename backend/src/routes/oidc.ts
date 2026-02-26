@@ -1,12 +1,12 @@
 import { FastifyInstance } from 'fastify';
-import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups } from '../core/services/oidc.js';
-import { createSession, invalidateSession } from '../core/services/session-store.js';
-import { signJwt } from '../core/utils/crypto.js';
-import { writeAuditLog } from '../core/services/audit-logger.js';
-import { upsertOIDCUser, getUserById } from '../core/services/user-store.js';
-import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '../core/models/api-schemas.js';
-import { getConfig } from '../core/config/index.js';
-import { createChildLogger } from '../core/utils/logger.js';
+import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups } from '@dashboard/core/services/oidc.js';
+import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
+import { signJwt } from '@dashboard/core/utils/crypto.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
+import { upsertOIDCUser, getUserById } from '@dashboard/core/services/user-store.js';
+import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('oidc-routes');
 

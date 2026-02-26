@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 // Mock dependencies before importing the module under test
 
@@ -33,10 +33,10 @@ vi.mock('../../observability/services/capacity-forecaster.js', () => ({
 // Import after mocks are set up
 const { parseInvestigationResponse, buildInvestigationPrompt, triggerInvestigation } =
   await import('../services/investigation-service.js');
-import * as portainerClient from '../../../core/portainer/portainer-client.js';
-import * as portainerCache from '../../../core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 import * as llmClient from '../services/llm-client.js';
-import { cache } from '../../../core/portainer/portainer-cache.js';
+import { cache } from '@dashboard/core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockGetContainerLogs: any;
@@ -397,7 +397,7 @@ Hope this helps!`;
 
   describe('triggerInvestigation', () => {
     it('should skip when investigation is disabled', async () => {
-      vi.doMock('../core/config/index.js', () => ({
+      vi.doMock('@dashboard/core/config/index.js', () => ({
         getConfig: () => ({
           INVESTIGATION_ENABLED: false,
           INVESTIGATION_COOLDOWN_MINUTES: 30,
@@ -415,7 +415,7 @@ Hope this helps!`;
       expect(mockInsertInvestigation).not.toHaveBeenCalled();
 
       // Restore original mock
-      vi.doMock('../core/config/index.js', () => ({
+      vi.doMock('@dashboard/core/config/index.js', () => ({
         getConfig: () => ({
           INVESTIGATION_ENABLED: true,
           INVESTIGATION_COOLDOWN_MINUTES: 30,

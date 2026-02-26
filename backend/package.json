@@ -38,7 +38,8 @@
     "undici": "^7.22.0",
     "uuid": "^13.0.0",
     "zod": "^4.3.6",
-    "@dashboard/contracts": "*"
+    "@dashboard/contracts": "*",
+    "@dashboard/core": "*"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

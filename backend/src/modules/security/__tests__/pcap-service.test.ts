@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect, vi, beforeEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 const mockInsertCapture = vi.fn().mockResolvedValue(undefined);
 const mockUpdateCaptureStatus = vi.fn().mockResolvedValue(undefined);
@@ -39,7 +39,7 @@ const {
   deleteCaptureById,
   cleanupOrphanedSidecars,
 } = await import('../services/pcap-service.js');
-import * as portainer from '../../../core/portainer/portainer-client.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 
 
 beforeAll(() => {

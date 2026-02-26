@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { FastifyInstance } from 'fastify';
 import { StartCaptureRequestSchema, CaptureListQuerySchema } from '../models/pcap.js';
-import { ActionIdParamsSchema } from '../../../core/models/api-schemas.js';
+import { ActionIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import {
   startCapture,
   stopCapture,
@@ -11,10 +11,10 @@ import {
   getCaptureFilePath,
 } from '../services/pcap-service.js';
 import { analyzeCapture } from '../services/pcap-analysis-service.js';
-import { writeAuditLog } from '../../../core/services/audit-logger.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts infrastructure interface
 import { assertCapability } from '../../infrastructure/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('pcap-route');
 

@@ -6,7 +6,7 @@ import { metricsRoutes } from '../routes/metrics.js';
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
 
 // Kept: timescale mock — no TimescaleDB in CI
-vi.mock('../../../core/db/timescale.js', () => ({
+vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ query: (...args: unknown[]) => mockQuery(...args) }),
 }));
 

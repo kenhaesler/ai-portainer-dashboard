@@ -1,9 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
-import { getConfig } from '../../../core/config/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { getContainerLogs, getContainers } from '../../../core/portainer/portainer-client.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getContainerLogs, getContainers } from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { getMetrics, getMovingAverage } from '../../observability/index.js';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
@@ -16,8 +16,8 @@ import {
 } from './investigation-store.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { generateForecast, type CapacityForecast } from '../../observability/index.js';
-import type { Insight } from '../../../core/models/monitoring.js';
-import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '../../../core/models/investigation.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
+import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '@dashboard/core/models/investigation.js';
 
 const log = createChildLogger('investigation-service');
 

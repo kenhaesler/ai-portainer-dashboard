@@ -2,12 +2,12 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { detectCorrelatedAnomalies, findCorrelatedContainers, type CorrelationPair, type Queryable } from '../../observability/index.js';
-import { getMetricsDb } from '../../../core/db/timescale.js';
+import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { chatStream } from '../services/llm-client.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { isUndefinedTableError } from '../../observability/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('routes:correlations');
 

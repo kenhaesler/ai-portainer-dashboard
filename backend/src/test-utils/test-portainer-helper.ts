@@ -1,7 +1,7 @@
 /**
  * Test helper — checks Portainer connectivity and fetches real data for assertions.
  */
-import { getConfig } from '../core/config/index.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 
 /**
  * Check if Portainer API is reachable.

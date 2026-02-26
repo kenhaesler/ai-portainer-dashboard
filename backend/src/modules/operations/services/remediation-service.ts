@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import {
   insertAction,
   getAction,
@@ -8,9 +8,9 @@ import {
   hasPendingAction,
   type ActionInsert,
 } from './actions-store.js';
-import type { Insight } from '../../../core/models/monitoring.js';
-import { eventBus } from '../../../core/services/typed-event-bus.js';
-import { getContainerLogs } from '../../../core/portainer/portainer-client.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
+import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
+import { getContainerLogs } from '@dashboard/core/portainer/portainer-client.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { getLatestMetrics } from '../../observability/index.js';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
@@ -18,7 +18,7 @@ import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/ll
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
-import { getConfig } from '../../../core/config/index.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 
 const log = createChildLogger('remediation-service');
 

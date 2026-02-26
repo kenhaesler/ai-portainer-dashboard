@@ -101,6 +101,7 @@ describe('trace-context', () => {
           } catch (e) {
             return e;
           }
+          return undefined;
         },
       );
 

@@ -1,21 +1,21 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { healthRoutes } from './health.js';
 
 // Kept: timescale mock — no TimescaleDB in CI
-vi.mock('../core/db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
+vi.mock('@dashboard/core/db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));
 // Kept: postgres mock — no PostgreSQL in CI
-vi.mock('../core/db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
+vi.mock('@dashboard/core/db/postgres.js', () => ({ isAppDbHealthy: vi.fn(), isAppDbReady: vi.fn() }));
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
-vi.mock('../core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
 
-import { isMetricsDbHealthy, isMetricsDbReady } from '../core/db/timescale.js';
-import { isAppDbHealthy, isAppDbReady } from '../core/db/postgres.js';
-import * as portainerCache from '../core/portainer/portainer-cache.js';
-import * as portainerClient from '../core/portainer/portainer-client.js';
+import { isMetricsDbHealthy, isMetricsDbReady } from '@dashboard/core/db/timescale.js';
+import { isAppDbHealthy, isAppDbReady } from '@dashboard/core/db/postgres.js';
+import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 const { cache, waitForInFlight } = portainerCache;
 const mockIsMetricsDbHealthy = vi.mocked(isMetricsDbHealthy);

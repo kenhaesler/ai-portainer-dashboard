@@ -1,8 +1,8 @@
 import { buildApp } from './app.js';
-import { getConfig } from './core/config/index.js';
-import { getMetricsDb, closeMetricsDb, closeReportsDb } from './core/db/timescale.js';
-import { getAppDb, closeAppDb } from './core/db/postgres.js';
-import { createChildLogger } from './core/utils/logger.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { getMetricsDb, closeMetricsDb, closeReportsDb } from '@dashboard/core/db/timescale.js';
+import { getAppDb, closeAppDb } from '@dashboard/core/db/postgres.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { setupLlmNamespace } from './modules/ai-intelligence/sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './modules/ai-intelligence/sockets/monitoring.js';
 import { setupRemediationNamespace } from './modules/operations/index.js';

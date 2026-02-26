@@ -15,7 +15,7 @@ const mockDeleteBackup = vi.fn();
 let cwdValue = '';
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../../../core/services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
 

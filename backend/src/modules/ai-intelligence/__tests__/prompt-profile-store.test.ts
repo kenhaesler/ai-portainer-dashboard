@@ -19,7 +19,7 @@ const mockGet = vi.fn();
 const mockRun = vi.fn();
 
 // Kept: tests verify JSONB parsing edge cases via SQL mock assertions
-vi.mock('../../../core/db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => Promise.resolve(mockAll(...args)),
     queryOne: (...args: unknown[]) => Promise.resolve(mockGet(...args)),
@@ -30,7 +30,7 @@ vi.mock('../../../core/db/app-db-router.js', () => ({
 const mockGetSetting = vi.fn();
 const mockSetSetting = vi.fn();
 const mockDeleteSetting = vi.fn();
-vi.mock('../../../core/services/settings-store.js', () => ({
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getSetting: (...args: unknown[]) => mockGetSetting(...args),
   setSetting: (...args: unknown[]) => mockSetSetting(...args),
   deleteSetting: (...args: unknown[]) => mockDeleteSetting(...args),

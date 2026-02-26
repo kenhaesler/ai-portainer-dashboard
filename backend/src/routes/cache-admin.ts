@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { cache } from '../core/portainer/portainer-cache.js';
-import { writeAuditLog } from '../core/services/audit-logger.js';
-import { CacheInvalidateQuerySchema } from '../core/models/api-schemas.js';
+import { cache } from '@dashboard/core/portainer/portainer-cache.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
+import { CacheInvalidateQuerySchema } from '@dashboard/core/models/api-schemas.js';
 
 const VALID_RESOURCES = ['endpoints', 'containers', 'images', 'networks', 'stacks'] as const;
 type CacheResource = (typeof VALID_RESOURCES)[number];

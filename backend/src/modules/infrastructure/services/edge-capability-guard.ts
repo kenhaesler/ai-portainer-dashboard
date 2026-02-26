@@ -1,7 +1,7 @@
-import { getEndpoint } from '../../../core/portainer/portainer-client.js';
-import { normalizeEndpoint, type EdgeCapabilities } from '../../../core/portainer/portainer-normalizers.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getEndpoint } from '@dashboard/core/portainer/portainer-client.js';
+import { normalizeEndpoint, type EdgeCapabilities } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('edge-capability-guard');
 

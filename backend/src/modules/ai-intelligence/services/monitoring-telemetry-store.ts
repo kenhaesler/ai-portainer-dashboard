@@ -1,4 +1,4 @@
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 
 const db = getDbForDomain('monitoring');
 

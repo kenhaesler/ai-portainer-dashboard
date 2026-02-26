@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { isMetricsDbHealthy, isMetricsDbReady } from '../core/db/timescale.js';
-import { isAppDbHealthy, isAppDbReady } from '../core/db/postgres.js';
-import { getConfig } from '../core/config/index.js';
-import { cache, cachedFetch } from '../core/portainer/portainer-cache.js';
-import { checkPortainerReachable } from '../core/portainer/portainer-client.js';
-import { HealthResponseSchema, ReadinessResponseSchema } from '../core/models/api-schemas.js';
+import { isMetricsDbHealthy, isMetricsDbReady } from '@dashboard/core/db/timescale.js';
+import { isAppDbHealthy, isAppDbReady } from '@dashboard/core/db/postgres.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { cache, cachedFetch } from '@dashboard/core/portainer/portainer-cache.js';
+import { checkPortainerReachable } from '@dashboard/core/portainer/portainer-client.js';
+import { HealthResponseSchema, ReadinessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 
 type DependencyCheck = { status: string; url?: string; error?: string };
 

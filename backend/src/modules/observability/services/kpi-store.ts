@@ -1,5 +1,5 @@
-import { getMetricsDb } from '../../../core/db/timescale.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { getMetricsDb } from '@dashboard/core/db/timescale.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('kpi-store');
 

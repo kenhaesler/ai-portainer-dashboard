@@ -2,7 +2,7 @@
  * Test mock factories for backend unit and integration tests
  */
 
-import type { Endpoint, Container, Stack, ContainerStats, Network, DockerImage } from '../core/models/portainer.js';
+import type { Endpoint, Container, Stack, ContainerStats, Network, DockerImage } from '@dashboard/core/models/portainer.js';
 
 // Factory functions for creating test data
 

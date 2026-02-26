@@ -1,11 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
-import { getConfig } from '../../../core/config/index.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '../../../core/portainer/portainer-client.js';
-import { CircuitBreakerOpenError } from '../../../core/portainer/circuit-breaker.js';
-import { cachedFetchSWR, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
-import { normalizeEndpoint, normalizeContainer } from '../../../core/portainer/portainer-normalizers.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
+import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
+import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 // Phase 3 TODO: replace cross-domain imports with inter-module contracts / event bus
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface
 import { scanContainer } from '../../security/index.js'; // cross-domain: security → ai-intelligence
@@ -27,12 +27,12 @@ import { getCapacityForecasts } from '../../observability/index.js'; // cross-do
 import { explainAnomalies } from './anomaly-explainer.js';
 import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface
 import type { SecurityFinding } from '../../security/index.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
 import { notifyInsight } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
-import { eventBus } from '../../../core/services/typed-event-bus.js';
+import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { correlateInsights } from './incident-correlator.js';
 
 const log = createChildLogger('monitoring-service');

@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import * as portainer from '../core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
-import { normalizeEndpoint } from '../core/portainer/portainer-normalizers.js';
-import { EndpointIdParamsSchema } from '../core/models/api-schemas.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { EndpointIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 
 export async function endpointsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/endpoints', {

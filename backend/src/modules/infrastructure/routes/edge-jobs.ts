@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
-import * as portainer from '../../../core/portainer/portainer-client.js';
-import { cachedFetch, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
-import { writeAuditLog } from '../../../core/services/audit-logger.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 
 const EdgeJobIdParamsSchema = z.object({
   id: z.coerce.number(),

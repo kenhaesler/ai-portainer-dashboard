@@ -1,7 +1,7 @@
-import { getSetting } from '../../../core/services/settings-store.js';
-import { getEffectiveLlmConfig as getGlobalLlmConfig } from '../../../core/services/settings-store.js';
+import { getSetting } from '@dashboard/core/services/settings-store.js';
+import { getEffectiveLlmConfig as getGlobalLlmConfig } from '@dashboard/core/services/settings-store.js';
 import { getProfilePromptConfig, getActiveProfileId } from './prompt-profile-store.js';
-import { createChildLogger } from '../../../core/utils/logger.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('prompt-store');
 

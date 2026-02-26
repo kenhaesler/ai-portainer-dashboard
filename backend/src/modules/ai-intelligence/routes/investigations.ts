@@ -4,8 +4,8 @@ import {
   getInvestigation,
   getInvestigationByInsightId,
 } from '../services/investigation-store.js';
-import type { InvestigationStatus } from '../../../core/models/investigation.js';
-import { InvestigationsQuerySchema, InvestigationIdParamsSchema, InsightIdParamsForInvestigationSchema } from '../../../core/models/api-schemas.js';
+import type { InvestigationStatus } from '@dashboard/core/models/investigation.js';
+import { InvestigationsQuerySchema, InvestigationIdParamsSchema, InsightIdParamsForInvestigationSchema } from '@dashboard/core/models/api-schemas.js';
 
 export async function investigationRoutes(fastify: FastifyInstance) {
   fastify.get('/api/investigations', {

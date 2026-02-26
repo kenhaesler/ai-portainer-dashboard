@@ -1,0 +1,106 @@
+{
+  "name": "@dashboard/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Core kernel: DB, config, auth, Portainer client, tracing, event bus — shared foundation for all domain modules",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config/index.js",
+      "types": "./dist/config/index.d.ts"
+    },
+    "./config/*.js": {
+      "import": "./dist/config/*.js",
+      "types": "./dist/config/*.d.ts"
+    },
+    "./db/*.js": {
+      "import": "./dist/db/*.js",
+      "types": "./dist/db/*.d.ts"
+    },
+    "./models/*.js": {
+      "import": "./dist/models/*.js",
+      "types": "./dist/models/*.d.ts"
+    },
+    "./plugins/*.js": {
+      "import": "./dist/plugins/*.js",
+      "types": "./dist/plugins/*.d.ts"
+    },
+    "./portainer": {
+      "import": "./dist/portainer/index.js",
+      "types": "./dist/portainer/index.d.ts"
+    },
+    "./portainer/*.js": {
+      "import": "./dist/portainer/*.js",
+      "types": "./dist/portainer/*.d.ts"
+    },
+    "./services": {
+      "import": "./dist/services/index.js",
+      "types": "./dist/services/index.d.ts"
+    },
+    "./services/*.js": {
+      "import": "./dist/services/*.js",
+      "types": "./dist/services/*.d.ts"
+    },
+    "./tracing": {
+      "import": "./dist/tracing/index.js",
+      "types": "./dist/tracing/index.d.ts"
+    },
+    "./tracing/*.js": {
+      "import": "./dist/tracing/*.js",
+      "types": "./dist/tracing/*.d.ts"
+    },
+    "./utils/*.js": {
+      "import": "./dist/utils/*.js",
+      "types": "./dist/utils/*.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/db && cp -r src/db/postgres-migrations dist/db/ && cp -r src/db/timescale-migrations dist/db/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@dashboard/contracts": "*",
+    "@fastify/compress": "^8.3.1",
+    "@fastify/cors": "^11.0.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "@fastify/static": "^9.0.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.1",
+    "@fastify/websocket": "^11.0.2",
+    "bcrypt": "^6.0.0",
+    "fastify": "^5.2.1",
+    "fastify-plugin": "^5.0.1",
+    "fastify-type-provider-zod": "^6.1.0",
+    "jose": "^6.0.8",
+    "openid-client": "^6.8.2",
+    "p-limit": "^7.3.0",
+    "pg": "^8.18.0",
+    "pino": "^10.3.1",
+    "protobufjs": "^8.0.0",
+    "redis": "^5.11.0",
+    "socket.io": "^4.8.1",
+    "undici": "^7.22.0",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^25.3.0",
+    "@types/pg": "^8.16.0",
+    "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  }
+}

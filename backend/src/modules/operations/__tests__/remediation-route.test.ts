@@ -10,7 +10,7 @@ let state: { action: any } = {
   action: null,
 };
 
-vi.mock('../../../core/services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
@@ -19,10 +19,10 @@ vi.mock('../sockets/remediation.js', () => ({
 }));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../../../core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
-import * as portainerClient from '../../../core/portainer/portainer-client.js';
-import { cache, waitForInFlight } from '../../../core/portainer/portainer-cache.js';
+import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
 let mockRestartContainer: any;
@@ -30,7 +30,7 @@ let mockStopContainer: any;
 let mockStartContainer: any;
 
 // Kept: stateful SQL mock simulates approve/reject/execute state transitions
-vi.mock('../../../core/db/app-db-router.js', () => ({
+vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes('SELECT * FROM actions WHERE id = ?')) {

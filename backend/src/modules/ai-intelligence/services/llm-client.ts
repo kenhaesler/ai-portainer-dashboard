@@ -3,14 +3,14 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import pLimit from 'p-limit';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import { getConfig } from '../../../core/config/index.js';
-import { getEffectiveLlmConfig } from '../../../core/services/settings-store.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getConfig } from '@dashboard/core/config/index.js';
+import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
-import { withSpan } from '../../../core/tracing/trace-context.js';
-import { scrubPii, scrubPiiDeep } from '../../../core/utils/pii-scrubber.js';
-import type { NormalizedEndpoint, NormalizedContainer } from '../../../core/portainer/portainer-normalizers.js';
-import type { Insight } from '../../../core/models/monitoring.js';
+import { withSpan } from '@dashboard/core/tracing/trace-context.js';
+import { scrubPii, scrubPiiDeep } from '@dashboard/core/utils/pii-scrubber.js';
+import type { NormalizedEndpoint, NormalizedContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 const log = createChildLogger('llm-client');
 

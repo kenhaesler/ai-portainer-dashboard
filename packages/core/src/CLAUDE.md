@@ -1,4 +1,4 @@
-# Core Kernel (backend/src/core/)
+# Core Kernel (packages/core/)
 
 Shared foundation — all domain modules depend on core.
 **core/ MUST NOT import from**: `routes/`, `services/` (non-core), `sockets/`, `scheduler/`

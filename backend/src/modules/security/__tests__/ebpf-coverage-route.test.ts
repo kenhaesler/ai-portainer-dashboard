@@ -18,7 +18,7 @@ import {
   getEndpointOtlpOverride,
   setEndpointOtlpOverride,
 } from '../services/ebpf-coverage.js';
-import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
+import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 const { mockedNetworkInterfaces } = vi.hoisted(() => ({
   mockedNetworkInterfaces: vi.fn(() => ({
@@ -58,7 +58,7 @@ vi.mock('../services/ebpf-coverage.js', () => ({
 }));
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../../../core/services/audit-logger.js', () => ({
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 

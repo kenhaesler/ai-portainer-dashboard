@@ -1,18 +1,18 @@
 import { Namespace } from 'socket.io';
-import { createChildLogger } from '../../../core/utils/logger.js';
-import * as portainer from '../../../core/portainer/portainer-client.js';
-import { normalizeEndpoint, normalizeContainer } from '../../../core/portainer/portainer-normalizers.js';
-import { cachedFetch, getCacheKey, TTL } from '../../../core/portainer/portainer-cache.js';
-import { getEffectiveLlmConfig } from '../../../core/services/settings-store.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import * as portainer from '@dashboard/core/portainer/portainer-client.js';
+import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
+import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
 import { getEffectivePrompt } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
-import { getDbForDomain } from '../../../core/db/app-db-router.js';
+import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { randomUUID } from 'crypto';
 import { getToolSystemPrompt, parseToolCalls, executeToolCalls, type ToolCallResult } from '../services/llm-tools.js';
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks } from '../services/prompt-guard.js';
 import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
-import { getConfig } from '../../../core/config/index.js';
+import { getConfig } from '@dashboard/core/config/index.js';
 
 const log = createChildLogger('socket:llm');
 
