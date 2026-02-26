@@ -13,15 +13,13 @@ COPY packages/core/package.json ./packages/core/
 COPY packages/infrastructure/package.json ./packages/infrastructure/
 COPY packages/security/package.json ./packages/security/
 COPY packages/observability/package.json ./packages/observability/
-COPY packages/operations/package.json ./packages/operations/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability
 COPY packages/contracts/ ./packages/contracts/
 COPY packages/core/ ./packages/core/
 COPY packages/infrastructure/ ./packages/infrastructure/
 COPY packages/security/ ./packages/security/
 COPY packages/observability/ ./packages/observability/
-COPY packages/operations/ ./packages/operations/
-RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations
+RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability
 COPY backend/tsconfig.json ./backend/
 COPY backend/src/ backend/src/
 RUN npm run build -w backend
@@ -40,8 +38,7 @@ COPY packages/core/package.json ./packages/core/
 COPY packages/infrastructure/package.json ./packages/infrastructure/
 COPY packages/security/package.json ./packages/security/
 COPY packages/observability/package.json ./packages/observability/
-COPY packages/operations/package.json ./packages/operations/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations --omit=dev
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -81,8 +78,6 @@ COPY --chown=node:node --from=builder /app/packages/security/dist/ ./node_module
 COPY --chown=node:node --from=builder /app/packages/security/package.json ./node_modules/@dashboard/security/package.json
 COPY --chown=node:node --from=builder /app/packages/observability/dist/ ./node_modules/@dashboard/observability/dist/
 COPY --chown=node:node --from=builder /app/packages/observability/package.json ./node_modules/@dashboard/observability/package.json
-COPY --chown=node:node --from=builder /app/packages/operations/dist/ ./node_modules/@dashboard/operations/dist/
-COPY --chown=node:node --from=builder /app/packages/operations/package.json ./node_modules/@dashboard/operations/package.json
 COPY --chown=node:node --from=builder /app/backend/dist/ dist/
 COPY --chown=node:node --from=builder /app/packages/core/src/db/postgres-migrations/ dist/core/db/postgres-migrations/
 COPY --chown=node:node --from=builder /app/packages/core/src/db/timescale-migrations/ dist/core/db/timescale-migrations/
