@@ -46,5 +46,8 @@ export {
 // Services — investigation
 export { triggerInvestigation, setInvestigationNamespace } from './services/investigation-service.js';
 
+// Services — prompt guard
+export { getPromptGuardNearMissTotal } from './services/prompt-guard.js';
+
 // Services — MCP
 export { autoConnectAll, disconnectAll } from './services/mcp-manager.js';

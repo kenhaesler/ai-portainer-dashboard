@@ -1,5 +1,6 @@
 import { getConfig } from '../../../core/config/index.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
+// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { getMetrics } from '../../observability/index.js';
 import { IsolationForest } from './isolation-forest.js';
 import type { AnomalyDetection } from '../../../core/models/metrics.js';

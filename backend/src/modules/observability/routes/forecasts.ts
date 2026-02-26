@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 import { getCapacityForecasts, generateForecast, lookupContainerName } from '../services/capacity-forecaster.js';
-// Phase 3 TODO: replace with @dashboard/ai-intelligence contract
+// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { chatStream } from '../../ai-intelligence/services/llm-client.js';
-// Phase 3 TODO: replace with @dashboard/ai-intelligence contract
+// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
 
