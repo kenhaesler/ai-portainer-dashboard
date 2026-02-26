@@ -12,7 +12,7 @@ const mockGetSecurityAuditIgnoreList = vi.fn();
 const mockSetSecurityAuditIgnoreList = vi.fn();
 
 // Kept: security-audit mock — no Portainer API in CI
-vi.mock('../services/security-audit.js', () => ({
+vi.mock('@dashboard/security', () => ({
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore_list',
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS: ['portainer', 'traefik'],
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),

@@ -7,10 +7,15 @@ const mockGetKpiHistory = vi.fn();
 const mockGetSecurityAudit = vi.fn();
 const mockGetLatestMetricsBatch = vi.fn();
 
-// Kept: kpi-store mock — avoids real DB lookup (now in modules/observability)
-vi.mock('../modules/observability/services/kpi-store.js', () => ({
-  getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
-}));
+// Kept: kpi-store + metrics-store mock — avoids real DB lookup
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getKpiHistory: (...args: unknown[]) => mockGetKpiHistory(...args),
+    getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
+  };
+});
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
@@ -31,14 +36,12 @@ afterAll(async () => {
 });
 
 
-vi.mock('../modules/security/services/security-audit.js', () => ({
+vi.mock('@dashboard/security', () => ({
   getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
   buildSecurityAuditSummary: () => ({ totalAudited: 0, flagged: 0, ignored: 0 }),
 }));
 
-vi.mock('../modules/observability/services/metrics-store.js', () => ({
-  getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
-}));
+// getLatestMetricsBatch mocked inside @dashboard/observability mock above
 
 function makeEndpoint(id: number, name: string, status: 'up' | 'down' = 'up'): any {
   return {

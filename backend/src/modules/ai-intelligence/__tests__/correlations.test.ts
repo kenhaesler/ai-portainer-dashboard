@@ -2,16 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { correlationRoutes, clearInsightsCache, clearCorrelationsCache, buildCorrelationPrompt, parseInsightsResponse } from '../routes/correlations.js';
-import type { CorrelationPair } from '../../observability/index.js';
+import type { CorrelationPair } from '@dashboard/observability';
 
 const mockDetectCorrelated = vi.fn();
 const mockFindCorrelatedContainers = vi.fn();
+const mockIsUndefinedTableError = vi.fn().mockReturnValue(false);
 
-// Kept: metric-correlator mock — no TimescaleDB in CI (now in modules/observability)
-vi.mock('../../observability/services/metric-correlator.js', () => ({
-  detectCorrelatedAnomalies: (...args: unknown[]) => mockDetectCorrelated(...args),
-  findCorrelatedContainers: (...args: unknown[]) => mockFindCorrelatedContainers(...args),
-}));
+// Kept: metric-correlator + metrics-store mock — no TimescaleDB in CI
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    detectCorrelatedAnomalies: (...args: unknown[]) => mockDetectCorrelated(...args),
+    findCorrelatedContainers: (...args: unknown[]) => mockFindCorrelatedContainers(...args),
+    isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
+  };
+});
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
@@ -37,11 +43,7 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
   getMetricsDb: vi.fn().mockResolvedValue({ connect: () => mockConnect() }),
 }));
 
-const mockIsUndefinedTableError = vi.fn().mockReturnValue(false);
-// Kept: metrics-store mock — no TimescaleDB in CI (now in modules/observability)
-vi.mock('../../observability/services/metrics-store.js', () => ({
-  isUndefinedTableError: (...args: unknown[]) => mockIsUndefinedTableError(...args),
-}));
+// isUndefinedTableError mocked inside @dashboard/observability mock above
 
 const samplePairs: CorrelationPair[] = [
   {

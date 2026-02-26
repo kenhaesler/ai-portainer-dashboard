@@ -33,7 +33,8 @@ import {
   logsRoutes,
   notificationRoutes,
   webhookRoutes,
-} from './modules/operations/index.js';
+  initRemediationDeps,
+} from '@dashboard/operations';
 import {
   monitoringRoutes,
   investigationRoutes,
@@ -44,11 +45,17 @@ import {
   llmFeedbackRoutes,
   mcpRoutes,
   promptProfileRoutes,
+  isOllamaAvailable,
+  chatStream,
+  buildInfrastructureContext,
+  getEffectivePrompt,
+  getPromptGuardNearMissTotal,
 } from './modules/ai-intelligence/index.js';
 import { infrastructureRoutes } from '@dashboard/infrastructure/routes/index.js';
-// eslint-disable-next-line boundaries/entry-point -- routes/index.ts not re-exported from barrel (avoids eager loading)
-import { securityRoutes } from './modules/security/routes/index.js';
-import { observabilityRoutes } from './modules/observability/index.js';
+import { securityRoutes } from '@dashboard/security/routes/index.js';
+import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
+import type { LLMInterface, MetricsInterface } from '@dashboard/contracts';
+import { getLatestMetrics, getMetrics } from '@dashboard/observability';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -100,6 +107,26 @@ export async function buildApp() {
   await app.register(authPlugin);
   await app.register(socketIoPlugin);
 
+  // LLM adapter — wires ai-intelligence services to the LLMInterface contract
+  // Defined once and reused for all packages that need LLM access (security, observability, etc.)
+  const llmAdapter: LLMInterface = {
+    isAvailable: isOllamaAvailable,
+    chatStream,
+    buildInfrastructureContext,
+    getEffectivePrompt,
+  };
+
+  // Metrics adapter — wires observability services to the MetricsInterface contract
+  // Note: MetricsInterface.getMetrics has (endpointId, containerId, metricType, from, to)
+  // but observability.getMetrics has (containerId, metricType, from, to) — endpointId unused
+  const metricsAdapter: MetricsInterface = {
+    getLatestMetrics,
+    getMetrics: async (_endpointId, containerId, metricType, from, to) =>
+      getMetrics(containerId, metricType, from.toISOString(), to.toISOString()),
+    detectAnomalies: async () => [],  // stub — not needed in Phase 3
+  };
+  initRemediationDeps(llmAdapter, metricsAdapter);
+
   // Routes
   await app.register(healthRoutes);
   await app.register(authRoutes);
@@ -131,8 +158,8 @@ export async function buildApp() {
   await app.register(promptProfileRoutes);
   await app.register(llmFeedbackRoutes);
   await app.register(infrastructureRoutes);
-  await app.register(securityRoutes);
-  await app.register(observabilityRoutes);
+  await app.register(securityRoutes, { llm: llmAdapter });
+  await app.register(observabilityRoutes, { llm: llmAdapter, getPromptGuardNearMissTotal });
 
   // Static files (production only)
   await app.register(staticPlugin);

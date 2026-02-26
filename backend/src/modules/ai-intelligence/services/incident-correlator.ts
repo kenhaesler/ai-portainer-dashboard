@@ -9,8 +9,7 @@ import {
   getActiveIncidentForContainer,
   type IncidentInsert,
 } from './incident-store.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { findSimilarInsights } from '../../observability/index.js';
+import { findSimilarInsights } from '@dashboard/observability';
 import { generateLlmIncidentSummary } from './incident-summarizer.js';
 
 const log = createChildLogger('incident-correlator');

@@ -162,62 +162,15 @@ vi.mock('../modules/ai-intelligence/services/prompt-test-fixtures.js', () => ({
   PROMPT_TEST_FIXTURES: [],
 }));
 
-vi.mock('../modules/security/services/security-audit.js', () => ({
+vi.mock('@dashboard/security', () => ({
+  // security-audit
   getSecurityAudit: vi.fn().mockResolvedValue({ findings: [], summary: {} }),
   buildSecurityAuditSummary: vi.fn(() => ({})),
   getSecurityAuditIgnoreList: vi.fn(() => []),
   setSecurityAuditIgnoreList: vi.fn(),
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS: [],
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore',
-}));
-
-
-vi.mock('@dashboard/core/tracing/otlp-protobuf.js', () => ({
-  decodeOtlpProtobuf: vi.fn(() => ({ resourceSpans: [] })),
-}));
-
-vi.mock('@dashboard/core/tracing/trace-store.js', () => ({
-  insertSpans: vi.fn(async () => 0),
-}));
-
-vi.mock('../modules/operations/services/webhook-service.js', () => ({
-  createWebhook: vi.fn(),
-  listWebhooks: vi.fn(() => []),
-  getWebhookById: vi.fn(),
-  updateWebhook: vi.fn(),
-  deleteWebhook: vi.fn(),
-  getDeliveriesForWebhook: vi.fn(() => []),
-  signPayload: vi.fn(() => 'sig'),
-}));
-
-vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
-  eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
-}));
-
-vi.mock('../modules/observability/services/status-page-store.js', () => ({
-  getStatusPageConfig: vi.fn(async () => ({ enabled: false })),
-  getOverallUptime: vi.fn(async () => 100),
-  getEndpointUptime: vi.fn(async () => []),
-  getLatestSnapshot: vi.fn(async () => null),
-  getDailyUptimeBuckets: vi.fn(async () => []),
-  getRecentIncidentsPublic: vi.fn(async () => []),
-}));
-
-vi.mock('../modules/observability/services/capacity-forecaster.js', () => ({
-  getCapacityForecasts: vi.fn().mockResolvedValue([]),
-  generateForecast: vi.fn().mockResolvedValue(null),
-  lookupContainerName: vi.fn(() => 'test-container'),
-}));
-
-// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../modules/ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
-
-vi.mock('../modules/observability/services/metric-correlator.js', () => ({
-  detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
-  findCorrelatedContainers: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../modules/security/services/ebpf-coverage.js', () => ({
+  // ebpf-coverage
   getEndpointCoverage: vi.fn().mockResolvedValue([]),
   updateCoverageStatus: vi.fn().mockResolvedValue(undefined),
   deleteCoverageRecord: vi.fn().mockResolvedValue(true),
@@ -232,7 +185,91 @@ vi.mock('../modules/security/services/ebpf-coverage.js', () => ({
   removeBeylaBulk: vi.fn().mockResolvedValue([]),
   getEndpointOtlpOverride: vi.fn().mockResolvedValue(null),
   setEndpointOtlpOverride: vi.fn().mockResolvedValue(undefined),
+  // image-staleness
+  getStalenessRecords: vi.fn().mockResolvedValue([]),
+  getStalenessSummary: vi.fn().mockResolvedValue({ total: 0, stale: 0 }),
+  runStalenessChecks: vi.fn().mockResolvedValue(undefined),
+  // pcap-service
+  startCapture: vi.fn().mockResolvedValue({ id: 'cap-1' }),
+  stopCapture: vi.fn().mockResolvedValue(undefined),
+  getCaptureById: vi.fn(() => null),
+  listCaptures: vi.fn(() => []),
+  deleteCaptureById: vi.fn(),
+  getCaptureFilePath: vi.fn(() => null),
+  // pcap-analysis-service
+  analyzeCapture: vi.fn().mockResolvedValue('analysis'),
 }));
+
+
+vi.mock('@dashboard/core/tracing/otlp-protobuf.js', () => ({
+  decodeOtlpProtobuf: vi.fn(() => ({ resourceSpans: [] })),
+}));
+
+vi.mock('@dashboard/core/tracing/trace-store.js', () => ({
+  insertSpans: vi.fn(async () => 0),
+}));
+
+vi.mock('@dashboard/operations', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    createWebhook: vi.fn(),
+    listWebhooks: vi.fn(() => []),
+    getWebhookById: vi.fn(),
+    updateWebhook: vi.fn(),
+    deleteWebhook: vi.fn(),
+    getDeliveriesForWebhook: vi.fn(() => []),
+    signPayload: vi.fn(() => 'sig'),
+    createPortainerBackup: vi.fn().mockResolvedValue('backup.tar.gz'),
+    listPortainerBackups: vi.fn().mockResolvedValue([]),
+    getPortainerBackupPath: vi.fn(() => null),
+    deletePortainerBackup: vi.fn(),
+    sendTestNotification: vi.fn().mockResolvedValue(undefined),
+    createBackup: vi.fn().mockResolvedValue('backup.db'),
+    listBackups: vi.fn().mockResolvedValue([]),
+    deleteBackup: vi.fn(),
+    getBackupPath: vi.fn(() => null),
+    broadcastActionUpdate: vi.fn(),
+    initRemediationDeps: vi.fn(),
+  };
+});
+
+vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
+  eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
+}));
+
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getStatusPageConfig: vi.fn(async () => ({ enabled: false })),
+    getOverallUptime: vi.fn(async () => 100),
+    getEndpointUptime: vi.fn(async () => []),
+    getLatestSnapshot: vi.fn(async () => null),
+    getDailyUptimeBuckets: vi.fn(async () => []),
+    getRecentIncidentsPublic: vi.fn(async () => []),
+    getCapacityForecasts: vi.fn().mockResolvedValue([]),
+    generateForecast: vi.fn().mockResolvedValue(null),
+    lookupContainerName: vi.fn(() => 'test-container'),
+    detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
+    findCorrelatedContainers: vi.fn().mockResolvedValue([]),
+    getKpiHistory: vi.fn().mockResolvedValue([]),
+    getNetworkRates: vi.fn().mockResolvedValue([]),
+    getAllNetworkRates: vi.fn().mockResolvedValue({}),
+    selectRollupTable: vi.fn(() => ({ table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false })),
+    isUndefinedTableError: vi.fn(() => false),
+    getLatestMetrics: vi.fn().mockResolvedValue([]),
+    getLatestMetricsBatch: vi.fn().mockResolvedValue({}),
+  };
+});
+
+// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
+vi.mock('../modules/ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
+
+// metric-correlator mocked inside @dashboard/observability mock above
+
+// ebpf-coverage, image-staleness, pcap-service, pcap-analysis-service mocks
+// are consolidated into vi.mock('@dashboard/security', ...) above
 
 vi.mock('../modules/ai-intelligence/services/mcp-manager.js', () => ({
   connectServer: vi.fn().mockResolvedValue(undefined),
@@ -253,18 +290,7 @@ vi.mock('../modules/ai-intelligence/services/prompt-profile-store.js', () => ({
   switchProfile: vi.fn(),
 }));
 
-vi.mock('../modules/operations/services/portainer-backup.js', () => ({
-  createPortainerBackup: vi.fn().mockResolvedValue('backup.tar.gz'),
-  listPortainerBackups: vi.fn().mockResolvedValue([]),
-  getPortainerBackupPath: vi.fn(() => null),
-  deletePortainerBackup: vi.fn(),
-}));
-
-vi.mock('../modules/security/services/image-staleness.js', () => ({
-  getStalenessRecords: vi.fn().mockResolvedValue([]),
-  getStalenessSummary: vi.fn().mockResolvedValue({ total: 0, stale: 0 }),
-  runStalenessChecks: vi.fn().mockResolvedValue(undefined),
-}));
+// portainer-backup mocked inside @dashboard/operations mock above
 
 vi.mock('../modules/ai-intelligence/services/investigation-store.js', () => ({
   getInvestigations: vi.fn(() => []),
@@ -283,47 +309,10 @@ vi.mock('@dashboard/infrastructure/services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: vi.fn(() => null),
 }));
 
-vi.mock('../modules/security/services/pcap-service.js', () => ({
-  startCapture: vi.fn().mockResolvedValue({ id: 'cap-1' }),
-  stopCapture: vi.fn().mockResolvedValue(undefined),
-  getCaptureById: vi.fn(() => null),
-  listCaptures: vi.fn(() => []),
-  deleteCaptureById: vi.fn(),
-  getCaptureFilePath: vi.fn(() => null),
-}));
 
-vi.mock('../modules/security/services/pcap-analysis-service.js', () => ({
-  analyzeCapture: vi.fn().mockResolvedValue('analysis'),
-}));
+// notification-service, backup-service, sockets/remediation mocked inside @dashboard/operations mock above
 
-vi.mock('../modules/operations/services/notification-service.js', () => ({
-  sendTestNotification: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../modules/observability/services/kpi-store.js', () => ({
-  getKpiHistory: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../modules/observability/services/metrics-store.js', () => ({
-  getNetworkRates: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../modules/observability/services/metrics-rollup-selector.js', () => ({
-  selectRollupTable: vi.fn(() => 'metrics_raw'),
-}));
-
-
-vi.mock('../modules/operations/services/backup-service.js', () => ({
-  createBackup: vi.fn().mockResolvedValue('backup.db'),
-  listBackups: vi.fn().mockResolvedValue([]),
-  deleteBackup: vi.fn(),
-  getBackupPath: vi.fn(() => null),
-}));
-
-
-vi.mock('../modules/operations/sockets/remediation.js', () => ({
-  broadcastActionUpdate: vi.fn(),
-}));
+// kpi-store, metrics-store, metrics-rollup-selector mocked inside @dashboard/observability mock above
 
 // Kept: external boundary mock — ollama npm SDK has no local test equivalent
 vi.mock('ollama', async () =>
@@ -349,24 +338,24 @@ import {
   logsRoutes,
   notificationRoutes,
   webhookRoutes,
-} from '../modules/operations/index.js';
+} from '@dashboard/operations';
 import { settingsRoutes } from './settings.js';
 import { imagesRoutes } from './images.js';
 import { networksRoutes } from './networks.js';
 import { investigationRoutes } from '../modules/ai-intelligence/routes/investigations.js';
 import { searchRoutes } from './search.js';
 import { cacheAdminRoutes } from './cache-admin.js';
-import { pcapRoutes } from '../modules/security/routes/pcap.js';
+import { securityRoutes } from '@dashboard/security/routes/index.js';
+import type { LLMInterface } from '@dashboard/contracts';
 import { userRoutes } from './users.js';
 import { incidentsRoutes } from '../modules/ai-intelligence/routes/incidents.js';
 import { llmRoutes } from '../modules/ai-intelligence/routes/llm.js';
 import { llmObservabilityRoutes } from '../modules/ai-intelligence/routes/llm-observability.js';
 import { correlationRoutes } from '../modules/ai-intelligence/routes/correlations.js';
-import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
 import { mcpRoutes } from '../modules/ai-intelligence/routes/mcp.js';
 import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-profiles.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
-import { observabilityRoutes } from '../modules/observability/index.js';
+import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
@@ -439,14 +428,14 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(searchRoutes);
   await app.register(notificationRoutes);
   await app.register(cacheAdminRoutes);
-  await app.register(pcapRoutes);
+  const mockLlm: LLMInterface = { isAvailable: vi.fn(), chatStream: vi.fn(), getEffectivePrompt: vi.fn(), buildInfrastructureContext: vi.fn() };
+  await app.register(securityRoutes, { llm: mockLlm });
   await app.register(webhookRoutes);
   await app.register(userRoutes);
   await app.register(incidentsRoutes);
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
   await app.register(correlationRoutes);
-  await app.register(ebpfCoverageRoutes);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(edgeJobsRoutes);
@@ -1016,7 +1005,8 @@ describe('PCAP Admin RBAC Enforcement', () => {
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
     });
-    await app.register(pcapRoutes);
+    const mockLlm: LLMInterface = { isAvailable: vi.fn(), chatStream: vi.fn(), getEffectivePrompt: vi.fn(), buildInfrastructureContext: vi.fn() };
+    await app.register(securityRoutes, { llm: mockLlm });
     await app.ready();
   });
 

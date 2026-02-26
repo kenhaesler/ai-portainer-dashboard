@@ -28,7 +28,7 @@ export {
 } from './services/monitoring-service.js';
 
 // Services — LLM client
-export { isOllamaAvailable, ensureModel, chatStream } from './services/llm-client.js';
+export { isOllamaAvailable, ensureModel, chatStream, buildInfrastructureContext } from './services/llm-client.js';
 
 // Services — insights
 export { cleanupOldInsights } from './services/insights-store.js';

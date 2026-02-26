@@ -12,9 +12,13 @@ vi.mock('../services/incident-store.js', () => ({
 }));
 
 // Kept: internal service mock — alert similarity computation
-vi.mock('../../observability/services/alert-similarity.js', () => ({
-  findSimilarInsights: vi.fn(() => []),
-}));
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    findSimilarInsights: vi.fn(() => []),
+  };
+});
 
 // Kept: internal service mock — incident summarizer (tests correlation, not summarization)
 vi.mock('../services/incident-summarizer.js', () => ({

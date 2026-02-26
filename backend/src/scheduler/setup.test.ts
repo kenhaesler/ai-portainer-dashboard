@@ -6,8 +6,13 @@ import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 // ---------------------------------------------------------------------------
 
 // Kept: image-staleness mock — tests control staleness results
-vi.mock('../modules/security/services/image-staleness.js', () => ({
+vi.mock('@dashboard/security', () => ({
   runStalenessChecks: vi.fn().mockResolvedValue({ checked: 1, stale: 0 }),
+  cleanupOldCaptures: vi.fn(),
+  cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0),
+  cleanupOldVulnerabilities: vi.fn().mockResolvedValue(0),
+  isHarborConfiguredAsync: vi.fn().mockResolvedValue(false),
+  runHarborSync: vi.fn().mockResolvedValue({}),
 }));
 
 const collectMetricsMock = vi.fn().mockResolvedValue({
@@ -18,18 +23,21 @@ const collectMetricsMock = vi.fn().mockResolvedValue({
   networkTxBytes: 3000,
 });
 
-// Kept: metrics-collector mock — tests control collected metrics (now in modules/observability)
-vi.mock('../modules/observability/services/metrics-collector.js', () => ({
-  collectMetrics: (...args: unknown[]) => collectMetricsMock(...args),
-}));
+// Kept: metrics-collector mock — tests control collected metrics
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    collectMetrics: (...args: unknown[]) => collectMetricsMock(...args),
+    insertMetrics: (...args: unknown[]) => insertMetricsMock(...args),
+    cleanOldMetrics: vi.fn().mockResolvedValue(0),
+    insertKpiSnapshot: vi.fn(),
+    cleanOldKpiSnapshots: vi.fn(),
+    recordNetworkSample: vi.fn(),
+  };
+});
 
 const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
-
-// Kept: metrics-store mock — tests control metrics storage (now in modules/observability)
-vi.mock('../modules/observability/services/metrics-store.js', () => ({
-  insertMetrics: (...args: unknown[]) => insertMetricsMock(...args),
-  cleanOldMetrics: vi.fn().mockResolvedValue(0),
-}));
 
 // Kept: monitoring-service mock — tests don't exercise monitoring
 vi.mock('../modules/ai-intelligence/services/monitoring-service.js', () => ({
@@ -37,26 +45,23 @@ vi.mock('../modules/ai-intelligence/services/monitoring-service.js', () => ({
   startCooldownSweep: vi.fn(),
   stopCooldownSweep: vi.fn(),
 }));
-// Kept: pcap-service mock
-vi.mock('../modules/security/services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
+// pcap-service mock consolidated into @dashboard/security above
 // Kept: portainer-backup mock
-vi.mock('../modules/operations/services/portainer-backup.js', () => ({
-  createPortainerBackup: vi.fn(),
-  cleanupOldPortainerBackups: vi.fn(),
-}));
+vi.mock('@dashboard/operations', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    createPortainerBackup: vi.fn(),
+    cleanupOldPortainerBackups: vi.fn(),
+    startWebhookListener: vi.fn(),
+    stopWebhookListener: vi.fn(),
+    processRetries: vi.fn(),
+  };
+});
 // Kept: settings-store mock — tests control settings
 vi.mock('@dashboard/core/services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
-// Kept: webhook-service mock
-vi.mock('../modules/operations/services/webhook-service.js', () => ({
-  startWebhookListener: vi.fn(),
-  stopWebhookListener: vi.fn(),
-  processRetries: vi.fn(),
-}));
-// Kept: kpi-store mock (now in modules/observability)
-vi.mock('../modules/observability/services/kpi-store.js', () => ({
-  insertKpiSnapshot: vi.fn(),
-  cleanOldKpiSnapshots: vi.fn(),
-}));
+// @dashboard/operations mock is consolidated above
+// kpi-store functions mocked inside @dashboard/observability mock above
 // Real portainer-normalizers used (pure function, no external deps)
 // Kept: trace-context mock
 vi.mock('@dashboard/core/tracing/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
@@ -141,10 +146,10 @@ beforeEach(async () => {
   cleanupOldInsightsMock.mockReturnValue(0);
 
   // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
-  const imageStaleness = await import('../modules/security/services/image-staleness.js');
-  vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
-  const metricsStore = await import('../modules/observability/services/metrics-store.js');
-  vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);
+  const securityPkg = await import('@dashboard/security');
+  vi.mocked(securityPkg.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
+  const obsModule = await import('@dashboard/observability');
+  vi.mocked(obsModule.cleanOldMetrics).mockResolvedValue(0 as any);
   const settingsStore = await import('@dashboard/core/services/settings-store.js');
   vi.mocked(settingsStore.getSetting).mockReturnValue(null as any);
 

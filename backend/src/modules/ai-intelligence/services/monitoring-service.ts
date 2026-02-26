@@ -6,32 +6,24 @@ import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
-// Phase 3 TODO: replace cross-domain imports with inter-module contracts / event bus
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface
-import { scanContainer } from '../../security/index.js'; // cross-domain: security → ai-intelligence
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { getLatestMetricsBatch } from '../../observability/index.js'; // cross-domain: observability → ai-intelligence
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import type { MetricInsert } from '../../observability/index.js';
+import { scanContainer } from '@dashboard/security';
+import { getLatestMetricsBatch } from '@dashboard/observability';
+import type { MetricInsert } from '@dashboard/observability';
 import { detectAnomalyAdaptive, detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
 import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, insertInsights, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
-import { suggestAction } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
+import { suggestAction } from '@dashboard/operations';
 import { triggerInvestigation } from './investigation-service.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { getCapacityForecasts } from '../../observability/index.js'; // cross-domain: observability → ai-intelligence
+import { getCapacityForecasts } from '@dashboard/observability';
 import { explainAnomalies } from './anomaly-explainer.js';
 import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface
-import type { SecurityFinding } from '../../security/index.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
-import { notifyInsight } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
+import type { SecurityFinding } from '@dashboard/security';
+import { notifyInsight } from '@dashboard/operations';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { correlateInsights } from './incident-correlator.js';
 
