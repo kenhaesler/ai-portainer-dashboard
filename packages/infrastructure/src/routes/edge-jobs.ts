@@ -1,5 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
+import '@dashboard/core/plugins/auth.js';
+import '@fastify/swagger';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';

@@ -18,4 +18,7 @@ export interface MetricsInterface {
     endpointId: number,
     containerId: string,
   ): Promise<AnomalyDetection[]>;
+
+  /** Retrieve the latest value for each metric type for a container. */
+  getLatestMetrics(containerId: string): Promise<Record<string, number>>;
 }

@@ -29,7 +29,7 @@ vi.mock('../services/pcap-analysis-service.js', () => ({
 }));
 
 // Kept: infrastructure module mock — no Portainer API in CI
-vi.mock('../../infrastructure/index.js', () => ({
+vi.mock('@dashboard/infrastructure', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 

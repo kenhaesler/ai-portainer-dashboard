@@ -10,7 +10,7 @@ import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep, cleanupOldIn
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '../modules/observability/index.js';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '../modules/security/index.js';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '../modules/operations/index.js';
-import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../modules/infrastructure/index.js';
+import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
 
 const log = createChildLogger('scheduler');
 

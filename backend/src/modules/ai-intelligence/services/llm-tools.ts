@@ -1,6 +1,5 @@
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts infrastructure interface
-import { getContainerLogsWithRetry, isEdgeAsync, getEdgeAsyncContainerLogs } from '../../infrastructure/index.js';
+import { getContainerLogsWithRetry, isEdgeAsync, getEdgeAsyncContainerLogs } from '@dashboard/infrastructure';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';

@@ -279,7 +279,7 @@ vi.mock('../modules/ai-intelligence/services/incident-store.js', () => ({
   getIncidentCount: vi.fn(() => 0),
 }));
 
-vi.mock('../modules/infrastructure/services/elasticsearch-config.js', () => ({
+vi.mock('@dashboard/infrastructure/services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: vi.fn(() => null),
 }));
 
@@ -365,7 +365,7 @@ import { correlationRoutes } from '../modules/ai-intelligence/routes/correlation
 import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
 import { mcpRoutes } from '../modules/ai-intelligence/routes/mcp.js';
 import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-profiles.js';
-import { edgeJobsRoutes } from '../modules/infrastructure/routes/edge-jobs.js';
+import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { observabilityRoutes } from '../modules/observability/index.js';
 
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';

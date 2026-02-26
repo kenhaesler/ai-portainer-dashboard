@@ -12,8 +12,7 @@ import {
 } from '../services/pcap-service.js';
 import { analyzeCapture } from '../services/pcap-analysis-service.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts infrastructure interface
-import { assertCapability } from '../../infrastructure/index.js';
+import { assertCapability } from '@dashboard/infrastructure';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('pcap-route');

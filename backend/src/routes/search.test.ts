@@ -7,7 +7,7 @@ import { searchRoutes } from './search.js';
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: infrastructure module mock — avoids real edge device checks
-vi.mock('../modules/infrastructure/index.js', () => ({
+vi.mock('@dashboard/infrastructure', () => ({
   supportsLiveFeatures: vi.fn(async () => true),
 }));
 
