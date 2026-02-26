@@ -84,6 +84,22 @@ describe('AnomalyDetectionSchema', () => {
     const result = AnomalyDetectionSchema.parse(raw);
     expect(result.is_anomalous).toBe(true);
   });
+
+  it('accepts Infinity z_score for zero-variance samples', () => {
+    const raw = { container_id: 'c1', container_name: 'nginx', metric_type: 'cpu',
+      current_value: 95, mean: 30, std_dev: 0, z_score: Infinity, is_anomalous: true,
+      threshold: 3, timestamp: '2024-01-01T00:00:00.000Z' };
+    const result = AnomalyDetectionSchema.parse(raw);
+    expect(result.z_score).toBe(Infinity);
+  });
+
+  it('accepts -Infinity z_score', () => {
+    const raw = { container_id: 'c1', container_name: 'nginx', metric_type: 'cpu',
+      current_value: 0, mean: 30, std_dev: 0, z_score: -Infinity, is_anomalous: false,
+      threshold: 3, timestamp: '2024-01-01T00:00:00.000Z' };
+    const result = AnomalyDetectionSchema.parse(raw);
+    expect(result.z_score).toBe(-Infinity);
+  });
 });
 
 describe('NormalizedContainerSchema', () => {
@@ -105,7 +121,7 @@ describe('NormalizedContainerSchema', () => {
 
 describe('NormalizedEndpointSchema', () => {
   it('parses a valid endpoint', () => {
-    const raw = { id: 1, name: 'local', type: 'docker', url: 'http://localhost:2375',
+    const raw = { id: 1, name: 'local', type: 1, url: 'http://localhost:2375',
       status: 'up', containersRunning: 5, containersStopped: 2, containersHealthy: 4,
       containersUnhealthy: 1, totalContainers: 7, stackCount: 3 };
     expect(NormalizedEndpointSchema.parse(raw).id).toBe(1);

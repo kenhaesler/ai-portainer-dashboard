@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 export const NormalizedEndpointSchema = z.object({
   id: z.number(),
   name: z.string(),
-  type: z.string(),
+  type: z.number(),
   url: z.string(),
   status: z.string(),
   containersRunning: z.number(),

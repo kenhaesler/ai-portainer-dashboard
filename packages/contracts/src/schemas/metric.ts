@@ -24,7 +24,7 @@ export const AnomalyDetectionSchema = z.object({
   mean: z.number(),
   std_dev: z.number(),
   /** z-score value; Infinity/-Infinity are valid sentinel values for zero-variance samples */
-  z_score: z.number(),
+  z_score: z.number().or(z.literal(Infinity)).or(z.literal(-Infinity)),
   is_anomalous: z.boolean(),
   threshold: z.number(),
   timestamp: z.string(),
