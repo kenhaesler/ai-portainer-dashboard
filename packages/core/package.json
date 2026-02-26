@@ -56,6 +56,10 @@
     "./utils/*.js": {
       "import": "./dist/utils/*.js",
       "types": "./dist/utils/*.d.ts"
+    },
+    "./test-utils/*.js": {
+      "import": "./dist/test-utils/*.js",
+      "types": "./dist/test-utils/*.d.ts"
     }
   },
   "main": "./dist/index.js",

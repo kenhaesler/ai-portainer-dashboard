@@ -24,4 +24,6 @@ export interface LLMInterface {
     containers: NormalizedContainer[],
     insights: Insight[],
   ): string;
+  /** Retrieve the effective system prompt for a named domain (e.g. 'pcap_analyzer'). */
+  getEffectivePrompt(domain: string): Promise<string>;
 }
