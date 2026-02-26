@@ -45,8 +45,7 @@ import {
   mcpRoutes,
   promptProfileRoutes,
 } from './modules/ai-intelligence/index.js';
-// eslint-disable-next-line boundaries/entry-point -- routes/index.ts not re-exported from barrel (avoids eager loading)
-import { infrastructureRoutes } from './modules/infrastructure/routes/index.js';
+import { infrastructureRoutes } from '@dashboard/infrastructure/routes/index.js';
 // eslint-disable-next-line boundaries/entry-point -- routes/index.ts not re-exported from barrel (avoids eager loading)
 import { securityRoutes } from './modules/security/routes/index.js';
 import { observabilityRoutes } from './modules/observability/index.js';

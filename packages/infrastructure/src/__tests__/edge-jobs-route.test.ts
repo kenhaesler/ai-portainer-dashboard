@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import { edgeJobsRoutes } from '../routes/edge-jobs.js';
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
@@ -15,7 +15,7 @@ vi.mock('@dashboard/core/services/audit-logger.js', () => ({
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
-import { flushTestCache, closeTestRedis } from '../../../test-utils/test-redis-helper.js';
+import { flushTestCache, closeTestRedis } from '@dashboard/core/test-utils/test-redis-helper.js';
 
 let mockGetEdgeJobs: any;
 let mockGetEdgeJob: any;

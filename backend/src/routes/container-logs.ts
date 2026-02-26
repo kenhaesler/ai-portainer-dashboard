@@ -13,7 +13,7 @@ import {
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
   IncrementalDockerFrameDecoder,
-} from '../modules/infrastructure/index.js';
+} from '@dashboard/infrastructure';
 import { authenticateBearerHeader } from '@dashboard/core/plugins/auth.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 

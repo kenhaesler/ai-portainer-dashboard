@@ -7,7 +7,7 @@ import { containerLogsRoutes } from './container-logs.js';
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 
 // Kept: infrastructure module mock — avoids real edge device interactions
-vi.mock('../modules/infrastructure/index.js', () => ({
+vi.mock('@dashboard/infrastructure', () => ({
   getContainerLogsWithRetry: vi.fn(),
   waitForTunnel: vi.fn(),
   assertCapability: vi.fn(),
@@ -35,7 +35,7 @@ import {
   checkEdgeJobStatus,
   retrieveEdgeJobLogs,
   cleanupEdgeJob,
-} from '../modules/infrastructure/index.js';
+} from '@dashboard/infrastructure';
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';
 

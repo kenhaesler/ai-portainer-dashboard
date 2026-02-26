@@ -39,7 +39,8 @@
     "uuid": "^13.0.0",
     "zod": "^4.3.6",
     "@dashboard/contracts": "*",
-    "@dashboard/core": "*"
+    "@dashboard/core": "*",
+    "@dashboard/infrastructure": "*"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

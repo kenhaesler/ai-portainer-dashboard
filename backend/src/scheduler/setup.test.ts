@@ -61,7 +61,7 @@ vi.mock('../modules/observability/services/kpi-store.js', () => ({
 // Kept: trace-context mock
 vi.mock('@dashboard/core/tracing/trace-context.js', () => ({ runWithTraceContext: vi.fn() }));
 // Kept: infrastructure module mock (elasticsearch log forwarder)
-vi.mock('../modules/infrastructure/index.js', () => ({
+vi.mock('@dashboard/infrastructure', () => ({
   startElasticsearchLogForwarder: vi.fn(),
   stopElasticsearchLogForwarder: vi.fn(),
 }));
