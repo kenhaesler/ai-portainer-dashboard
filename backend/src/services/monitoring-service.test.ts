@@ -111,10 +111,6 @@ vi.mock('./monitoring-telemetry-store.js', () => ({
   insertMonitoringSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../modules/operations/services/notification-service.js', () => ({
-  notifyInsight: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock('../core/services/event-bus.js', () => ({
   emitEvent: vi.fn(),
 }));
