@@ -1,4 +1,4 @@
-import { createChildLogger } from '../core/utils/logger.js';
+import { createChildLogger } from './logger.js';
 
 const log = createChildLogger('utils:pii-scrubber');
 

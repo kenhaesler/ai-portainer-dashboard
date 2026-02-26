@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { Agent } from 'undici';
 import { createChildLogger } from '../../../core/utils/logger.js';
 import { LogsSearchQuerySchema, LogsTestBodySchema } from '../../../core/models/api-schemas.js';
+// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts infrastructure interface
 import { getElasticsearchConfig } from '../../infrastructure/index.js';
 
 const log = createChildLogger('logs-route');

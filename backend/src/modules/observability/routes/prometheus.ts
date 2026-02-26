@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getConfig } from '../../../core/config/index.js';
 import { getDbForDomain } from '../../../core/db/app-db-router.js';
-// Phase 3 TODO: replace with @dashboard/ai-intelligence contract
+// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { getPromptGuardNearMissTotal } from '../../ai-intelligence/services/prompt-guard.js';
 
 const CACHE_TTL_MS = 15_000;

@@ -11,12 +11,10 @@ import {
   PreferencesUpdateBodySchema,
 } from '../core/models/api-schemas.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../core/services/user-store.js';
+// eslint-disable-next-line boundaries/entry-point -- consuming specific prompt services, not using full barrel to avoid eager route loading
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../modules/ai-intelligence/services/prompt-store.js';
-import {
-  createPromptVersion,
-  getPromptHistory,
-  getPromptVersionById,
-} from '../modules/ai-intelligence/services/prompt-version-store.js';
+// eslint-disable-next-line boundaries/entry-point -- consuming specific prompt version services, not using full barrel to avoid eager route loading
+import { createPromptVersion, getPromptHistory, getPromptVersionById } from '../modules/ai-intelligence/services/prompt-version-store.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',

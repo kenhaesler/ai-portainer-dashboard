@@ -5,9 +5,9 @@ import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../s
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
-// Phase 3 TODO: replace with @dashboard/ai-intelligence contract
+// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/llm-client.js';
-// Phase 3 TODO: replace with @dashboard/ai-intelligence contract
+// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
 
