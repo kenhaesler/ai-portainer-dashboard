@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import type { LLMInterface } from '@dashboard/contracts';
 import { forecastRoutes, buildForecastPrompt, clearNarrativeCache } from '../routes/forecasts.js';
 
 const mockGetCapacityForecasts = vi.fn();
@@ -14,29 +15,28 @@ vi.mock('../services/capacity-forecaster.js', () => ({
   lookupContainerName: (...args: unknown[]) => mockLookupContainerName(...args),
 }));
 
-// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../../ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
+// Mock LLM passed via opts — replaces ai-intelligence module mocks
+const mockChatStream = vi.fn();
+const mockGetEffectivePrompt = vi.fn().mockResolvedValue('You are a concise infrastructure analyst.');
 
-import * as llmClient from '../../ai-intelligence/services/llm-client.js';
-let mockChatStream: any;
-
-// Kept: prompt-store mock — no PostgreSQL in CI
-vi.mock('../../ai-intelligence/services/prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockReturnValue('You are a concise infrastructure analyst.'),
-}));
+const mockLlm: LLMInterface = {
+  isAvailable: vi.fn().mockResolvedValue(true),
+  chatStream: mockChatStream,
+  getEffectivePrompt: mockGetEffectivePrompt,
+  buildInfrastructureContext: vi.fn().mockReturnValue('context'),
+};
 
 describe('Forecast Routes', () => {
   let app: ReturnType<typeof Fastify>;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
-    mockChatStream = vi.spyOn(llmClient, 'chatStream');
     clearNarrativeCache();
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
-    await app.register(forecastRoutes);
+    await app.register(forecastRoutes, { llm: mockLlm });
     await app.ready();
   });
 

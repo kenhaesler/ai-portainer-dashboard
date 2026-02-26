@@ -6,11 +6,17 @@ import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 const mockGetMetrics = vi.fn();
 const mockGetMovingAverage = vi.fn();
-// Kept: metrics-store mock — tests control metrics responses
-vi.mock('../../observability/services/metrics-store.js', () => ({
-  getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
-  getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
-}));
+const mockGenerateForecast = vi.fn();
+// Kept: metrics-store + capacity-forecaster mock — no TimescaleDB in CI
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
+    getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
+    generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
+  };
+});
 
 const mockInsertInvestigation = vi.fn();
 const mockUpdateInvestigationStatus = vi.fn();
@@ -22,12 +28,6 @@ vi.mock('../services/investigation-store.js', () => ({
   updateInvestigationStatus: (...args: unknown[]) => mockUpdateInvestigationStatus(...args),
   getInvestigation: (...args: unknown[]) => mockGetInvestigation(...args),
   getRecentInvestigationForContainer: (...args: unknown[]) => mockGetRecentInvestigationForContainer(...args),
-}));
-
-const mockGenerateForecast = vi.fn();
-// Kept: capacity-forecaster mock — tests control forecast responses
-vi.mock('../../observability/services/capacity-forecaster.js', () => ({
-  generateForecast: (...args: unknown[]) => mockGenerateForecast(...args),
 }));
 
 // Import after mocks are set up

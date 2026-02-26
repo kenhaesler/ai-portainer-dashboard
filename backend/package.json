@@ -41,7 +41,8 @@
     "@dashboard/contracts": "*",
     "@dashboard/core": "*",
     "@dashboard/infrastructure": "*",
-    "@dashboard/security": "*"
+    "@dashboard/security": "*",
+    "@dashboard/observability": "*"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
+import '@fastify/swagger';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { transformOtlpToSpans, type OtlpExportRequest } from '@dashboard/core/tracing/otlp-transformer.js';
 import { decodeOtlpProtobuf } from '@dashboard/core/tracing/otlp-protobuf.js';

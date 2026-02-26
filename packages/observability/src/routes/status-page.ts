@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import '@fastify/swagger';
 import {
   getStatusPageConfig,
   getOverallUptime,

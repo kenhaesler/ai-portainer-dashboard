@@ -223,28 +223,35 @@ vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
-vi.mock('../modules/observability/services/status-page-store.js', () => ({
-  getStatusPageConfig: vi.fn(async () => ({ enabled: false })),
-  getOverallUptime: vi.fn(async () => 100),
-  getEndpointUptime: vi.fn(async () => []),
-  getLatestSnapshot: vi.fn(async () => null),
-  getDailyUptimeBuckets: vi.fn(async () => []),
-  getRecentIncidentsPublic: vi.fn(async () => []),
-}));
-
-vi.mock('../modules/observability/services/capacity-forecaster.js', () => ({
-  getCapacityForecasts: vi.fn().mockResolvedValue([]),
-  generateForecast: vi.fn().mockResolvedValue(null),
-  lookupContainerName: vi.fn(() => 'test-container'),
-}));
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getStatusPageConfig: vi.fn(async () => ({ enabled: false })),
+    getOverallUptime: vi.fn(async () => 100),
+    getEndpointUptime: vi.fn(async () => []),
+    getLatestSnapshot: vi.fn(async () => null),
+    getDailyUptimeBuckets: vi.fn(async () => []),
+    getRecentIncidentsPublic: vi.fn(async () => []),
+    getCapacityForecasts: vi.fn().mockResolvedValue([]),
+    generateForecast: vi.fn().mockResolvedValue(null),
+    lookupContainerName: vi.fn(() => 'test-container'),
+    detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
+    findCorrelatedContainers: vi.fn().mockResolvedValue([]),
+    getKpiHistory: vi.fn().mockResolvedValue([]),
+    getNetworkRates: vi.fn().mockResolvedValue([]),
+    getAllNetworkRates: vi.fn().mockResolvedValue({}),
+    selectRollupTable: vi.fn(() => ({ table: 'metrics', timestampCol: 'timestamp', valueCol: 'value', isRollup: false })),
+    isUndefinedTableError: vi.fn(() => false),
+    getLatestMetrics: vi.fn().mockResolvedValue([]),
+    getLatestMetricsBatch: vi.fn().mockResolvedValue({}),
+  };
+});
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
 vi.mock('../modules/ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
 
-vi.mock('../modules/observability/services/metric-correlator.js', () => ({
-  detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
-  findCorrelatedContainers: vi.fn().mockResolvedValue([]),
-}));
+// metric-correlator mocked inside @dashboard/observability mock above
 
 // ebpf-coverage, image-staleness, pcap-service, pcap-analysis-service mocks
 // are consolidated into vi.mock('@dashboard/security', ...) above
@@ -298,17 +305,7 @@ vi.mock('../modules/operations/services/notification-service.js', () => ({
   sendTestNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../modules/observability/services/kpi-store.js', () => ({
-  getKpiHistory: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../modules/observability/services/metrics-store.js', () => ({
-  getNetworkRates: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../modules/observability/services/metrics-rollup-selector.js', () => ({
-  selectRollupTable: vi.fn(() => 'metrics_raw'),
-}));
+// kpi-store, metrics-store, metrics-rollup-selector mocked inside @dashboard/observability mock above
 
 
 vi.mock('../modules/operations/services/backup-service.js', () => ({
@@ -364,7 +361,7 @@ import { correlationRoutes } from '../modules/ai-intelligence/routes/correlation
 import { mcpRoutes } from '../modules/ai-intelligence/routes/mcp.js';
 import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-profiles.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
-import { observabilityRoutes } from '../modules/observability/index.js';
+import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 
 import { cache, waitForInFlight } from '@dashboard/core/portainer/portainer-cache.js';
 import { flushTestCache, closeTestRedis } from '../test-utils/test-redis-helper.js';

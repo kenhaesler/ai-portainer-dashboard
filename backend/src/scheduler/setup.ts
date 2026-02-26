@@ -7,7 +7,7 @@ import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/port
 import { getSetting, getEffectiveHarborConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '../modules/ai-intelligence/index.js';
-import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '../modules/observability/index.js';
+import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '../modules/operations/index.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';

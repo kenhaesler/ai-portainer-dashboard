@@ -1,4 +1,6 @@
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@fastify/swagger';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { TracesQuerySchema, TraceIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 

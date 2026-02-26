@@ -1,5 +1,7 @@
 import type { PoolClient } from 'pg';
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@fastify/swagger';
 import { getReportsDb } from '@dashboard/core/db/timescale.js';
 import { ReportsQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import {

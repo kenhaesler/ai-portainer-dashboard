@@ -27,10 +27,14 @@ vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
-// Kept: metrics-store mock — tests control metrics responses (now in modules/observability)
-vi.mock('../../../modules/observability/services/metrics-store.js', () => ({
-  getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
-}));
+// Kept: metrics-store mock — tests control metrics responses
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getLatestMetrics: (...args: unknown[]) => mockGetLatestMetrics(...args),
+  };
+});
 
 // Kept: remediation socket mock — tests control broadcast
 vi.mock('../sockets/remediation.js', () => ({

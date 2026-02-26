@@ -3,9 +3,13 @@ import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 
 const mockGetMovingAverage = vi.fn();
 // Kept: metrics-store mock — no TimescaleDB in CI
-vi.mock('../../observability/services/metrics-store.js', () => ({
-  getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
-}));
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
+  };
+});
 
 import { calculateBollingerBands, detectAnomalyAdaptive } from '../services/adaptive-anomaly-detector.js';
 

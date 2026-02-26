@@ -1,14 +1,13 @@
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@fastify/swagger';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { ContainerParamsSchema, MetricsQuerySchema, MetricsResponseSchema, AnomaliesQuerySchema } from '@dashboard/core/models/api-schemas.js';
 import { getNetworkRates, getAllNetworkRates, isUndefinedTableError } from '../services/metrics-store.js';
 import { getRatesForEndpoint, getAllRates } from '../services/network-rate-tracker.js';
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/llm-client.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
+import type { LLMInterface } from '@dashboard/contracts';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('metrics-routes');
@@ -35,7 +34,7 @@ function parseTimeRange(timeRange: string): { from: Date; to: Date } {
   return { from, to };
 }
 
-export async function metricsRoutes(fastify: FastifyInstance) {
+export async function metricsRoutes(fastify: FastifyInstance, opts: { llm?: LLMInterface } = {}) {
   fastify.get('/api/metrics/:endpointId/:containerId', {
     schema: {
       tags: ['Metrics'],
@@ -232,8 +231,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     const timeRange = query.timeRange || '1h';
 
     // Check LLM availability
-    const available = await isOllamaAvailable();
-    if (!available) {
+    if (!opts.llm || !(await opts.llm.isAvailable())) {
       return reply.code(503).send({ error: 'LLM service unavailable' });
     }
 
@@ -281,7 +279,7 @@ export async function metricsRoutes(fastify: FastifyInstance) {
     `, [containerId, from.toISOString()]);
     const anomalyCount = { count: Number(anomalyRows[0]?.count ?? 0) };
 
-    const systemPrompt = await getEffectivePrompt('metrics_summary');
+    const systemPrompt = await opts.llm.getEffectivePrompt('metrics_summary');
 
     const userPrompt = `Summarize the metrics for container "${containerName}" over the last ${timeRange}:
 
@@ -309,7 +307,7 @@ Endpoint ID: ${endpointId}`;
     });
 
     try {
-      await chatStream(
+      await opts.llm.chatStream(
         [{ role: 'user', content: userPrompt }],
         systemPrompt,
         (chunk: string) => {

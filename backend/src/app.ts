@@ -47,9 +47,10 @@ import {
 } from './modules/ai-intelligence/index.js';
 import { infrastructureRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
-import { observabilityRoutes } from './modules/observability/index.js';
+import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './modules/ai-intelligence/services/llm-client.js';
 import { getEffectivePrompt } from './modules/ai-intelligence/services/prompt-store.js';
+import { getPromptGuardNearMissTotal } from './modules/ai-intelligence/services/prompt-guard.js';
 import type { LLMInterface } from '@dashboard/contracts';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
@@ -143,7 +144,7 @@ export async function buildApp() {
   await app.register(llmFeedbackRoutes);
   await app.register(infrastructureRoutes);
   await app.register(securityRoutes, { llm: llmAdapter });
-  await app.register(observabilityRoutes);
+  await app.register(observabilityRoutes, { llm: llmAdapter, getPromptGuardNearMissTotal });
 
   // Static files (production only)
   await app.register(staticPlugin);

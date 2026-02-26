@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vites
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
+import { closeTestRedis } from '@dashboard/core/test-utils/test-redis-helper.js';
 
 const { collectMetrics } = await import('../services/metrics-collector.js');
 

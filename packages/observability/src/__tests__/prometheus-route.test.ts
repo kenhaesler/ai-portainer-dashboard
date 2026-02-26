@@ -12,11 +12,6 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
 }));
 
-// Kept: prompt-guard mock — side-effect isolation
-vi.mock('../../ai-intelligence/services/prompt-guard.js', () => ({
-  getPromptGuardNearMissTotal: () => 0,
-}));
-
 describe('Prometheus Routes', () => {
   let app: FastifyInstance;
   let pool: Awaited<ReturnType<typeof getTestPool>>;
@@ -26,7 +21,8 @@ describe('Prometheus Routes', () => {
     pool = await getTestPool();
 
     app = Fastify({ logger: false });
-    await app.register(prometheusRoutes);
+    // Pass a mock getPromptGuardNearMissTotal via opts instead of mocking the module
+    await app.register(prometheusRoutes, { getPromptGuardNearMissTotal: () => 0 });
     await app.ready();
   });
 

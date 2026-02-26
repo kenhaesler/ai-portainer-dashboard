@@ -4,8 +4,7 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getContainerLogs, getContainers } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { getMetrics, getMovingAverage } from '../../observability/index.js';
+import { getMetrics, getMovingAverage } from '@dashboard/observability';
 import { isOllamaAvailable, chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import {
@@ -14,8 +13,7 @@ import {
   getInvestigation,
   getRecentInvestigationForContainer,
 } from './investigation-store.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { generateForecast, type CapacityForecast } from '../../observability/index.js';
+import { generateForecast, type CapacityForecast } from '@dashboard/observability';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import type { EvidenceSummary, MetricSnapshot, RecommendedAction } from '@dashboard/core/models/investigation.js';
 

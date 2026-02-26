@@ -11,8 +11,7 @@ import {
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import { getContainerLogs } from '@dashboard/core/portainer/portainer-client.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { getLatestMetrics } from '../../observability/index.js';
+import { getLatestMetrics } from '@dashboard/observability';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
 import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/llm-client.js';
 // eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface

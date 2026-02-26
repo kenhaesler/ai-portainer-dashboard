@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
+import type { LLMInterface } from '@dashboard/contracts';
 import { metricsRoutes } from '../routes/metrics.js';
 
 const mockQuery = vi.fn().mockResolvedValue({ rows: [] });
@@ -27,27 +28,27 @@ vi.mock('../services/metrics-rollup-selector.js', () => ({
   }),
 }));
 
-
-// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../../ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
-
-// Kept: prompt-store mock — no PostgreSQL in CI
-vi.mock('../../ai-intelligence/services/prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn().mockReturnValue('You are a test assistant.'),
-}));
-
 import { getNetworkRates } from '../services/metrics-store.js';
-import * as llmClient from '../../ai-intelligence/services/llm-client.js';
 const mockGetNetworkRates = vi.mocked(getNetworkRates);
-let mockChatStream: any;
-let mockIsOllamaAvailable: any;
 
-function buildApp() {
+// Mock LLM passed via opts — replaces ai-intelligence module mocks
+const mockChatStream = vi.fn();
+const mockIsAvailable = vi.fn();
+const mockGetEffectivePrompt = vi.fn().mockResolvedValue('You are a test assistant.');
+
+const mockLlm: LLMInterface = {
+  isAvailable: mockIsAvailable,
+  chatStream: mockChatStream,
+  getEffectivePrompt: mockGetEffectivePrompt,
+  buildInfrastructureContext: vi.fn().mockReturnValue('context'),
+};
+
+function buildApp(llm?: LLMInterface) {
   const app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.decorate('authenticate', async () => undefined);
-  app.register(metricsRoutes);
+  app.register(metricsRoutes, { llm });
   return app;
 }
 
@@ -55,7 +56,7 @@ describe('metrics routes', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = buildApp();
+    app = buildApp(mockLlm);
     await app.ready();
   });
 
@@ -65,8 +66,7 @@ describe('metrics routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockChatStream = vi.spyOn(llmClient, 'chatStream');
-    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable');
+    mockIsAvailable.mockResolvedValue(false);
     mockQuery.mockResolvedValue({ rows: [] });
   });
 
@@ -318,7 +318,7 @@ describe('metrics routes', () => {
 
   describe('GET /api/metrics/:endpointId/:containerId/ai-summary', () => {
     it('should return 503 when LLM is unavailable', async () => {
-      mockIsOllamaAvailable.mockResolvedValue(false);
+      mockIsAvailable.mockResolvedValue(false);
 
       const response = await app.inject({
         method: 'GET',
@@ -331,7 +331,7 @@ describe('metrics routes', () => {
     });
 
     it('should stream SSE response when LLM is available', async () => {
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsAvailable.mockResolvedValue(true);
       mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
         onChunk('CPU is stable.');
         return 'CPU is stable.';
@@ -350,7 +350,7 @@ describe('metrics routes', () => {
     });
 
     it('should pass correct time range to metrics query', async () => {
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsAvailable.mockResolvedValue(true);
       mockChatStream.mockImplementation(async (_msgs: any, _sys: any, onChunk: any) => {
         onChunk('All good.');
         return 'All good.';
@@ -376,7 +376,7 @@ describe('metrics routes', () => {
     });
 
     it('should handle chatStream errors gracefully', async () => {
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsAvailable.mockResolvedValue(true);
       mockChatStream.mockRejectedValue(new Error('Ollama timeout'));
 
       const response = await app.inject({

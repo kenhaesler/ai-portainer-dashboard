@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { getPromptGuardNearMissTotal } from '../../ai-intelligence/services/prompt-guard.js';
+
+type PrometheusRoutesOpts = { getPromptGuardNearMissTotal?: () => number };
 
 const CACHE_TTL_MS = 15_000;
 
@@ -178,7 +178,7 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
   return snapshotData;
 }
 
-async function buildMetricsPayload(): Promise<string> {
+async function buildMetricsPayload(getPromptGuardNearMissTotal: () => number): Promise<string> {
   const snapshot = await getCachedSnapshot();
   const lines: string[] = [];
 
@@ -258,7 +258,8 @@ async function buildMetricsPayload(): Promise<string> {
   return `${lines.join('\n')}\n`;
 }
 
-export async function prometheusRoutes(fastify: FastifyInstance) {
+export async function prometheusRoutes(fastify: FastifyInstance, opts: PrometheusRoutesOpts = {}) {
+  const getCounter = opts.getPromptGuardNearMissTotal ?? (() => 0);
   fastify.get('/metrics', async (request, reply) => {
     const config = getConfig();
 
@@ -287,6 +288,6 @@ export async function prometheusRoutes(fastify: FastifyInstance) {
 
     return reply
       .header('content-type', 'text/plain; version=0.0.4; charset=utf-8')
-      .send(await buildMetricsPayload());
+      .send(await buildMetricsPayload(getCounter));
   });
 }

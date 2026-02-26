@@ -7,10 +7,8 @@ import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-break
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { scanContainer } from '@dashboard/security';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { getLatestMetricsBatch } from '../../observability/index.js'; // cross-domain: observability → ai-intelligence
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import type { MetricInsert } from '../../observability/index.js';
+import { getLatestMetricsBatch } from '@dashboard/observability';
+import type { MetricInsert } from '@dashboard/observability';
 import { detectAnomalyAdaptive, detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
 import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
@@ -20,8 +18,7 @@ import { getEffectivePrompt } from './prompt-store.js';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
 import { suggestAction } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
 import { triggerInvestigation } from './investigation-service.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
-import { getCapacityForecasts } from '../../observability/index.js'; // cross-domain: observability → ai-intelligence
+import { getCapacityForecasts } from '@dashboard/observability';
 import { explainAnomalies } from './anomaly-explainer.js';
 import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';

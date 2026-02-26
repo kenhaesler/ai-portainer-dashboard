@@ -1,10 +1,9 @@
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@fastify/swagger';
 import { z } from 'zod/v4';
 import { getCapacityForecasts, generateForecast, lookupContainerName } from '../services/capacity-forecaster.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { chatStream } from '../../ai-intelligence/services/llm-client.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
+import type { LLMInterface } from '@dashboard/contracts';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('routes:forecasts');
@@ -61,7 +60,7 @@ Threshold: ${threshold}
 Confidence: ${forecast.confidence}`;
 }
 
-export async function forecastRoutes(fastify: FastifyInstance) {
+export async function forecastRoutes(fastify: FastifyInstance, opts: { llm?: LLMInterface } = {}) {
   fastify.get('/api/forecasts', {
     schema: {
       tags: ['Forecasts'],
@@ -138,12 +137,17 @@ export async function forecastRoutes(fastify: FastifyInstance) {
       return { narrative: null };
     }
 
-    // Build prompt and call LLM
+    // Build prompt and call LLM (if available)
+    if (!opts.llm) {
+      return { narrative: null };
+    }
+
     const prompt = buildForecastPrompt(forecast);
     try {
-      const narrative = await chatStream(
+      const systemPrompt = await opts.llm.getEffectivePrompt('capacity_forecast');
+      const narrative = await opts.llm.chatStream(
         [{ role: 'user', content: prompt }],
-        await getEffectivePrompt('capacity_forecast'),
+        systemPrompt,
         () => {}, // no streaming needed for this endpoint
       );
 

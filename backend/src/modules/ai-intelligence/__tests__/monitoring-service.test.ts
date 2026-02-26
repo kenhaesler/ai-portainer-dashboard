@@ -39,10 +39,15 @@ const mockGetLatestMetricsBatch = vi.fn().mockImplementation(
     return map;
   },
 );
-// Kept: metrics-store mock — now in modules/observability
-vi.mock('../../observability/services/metrics-store.js', () => ({
-  getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
-}));
+// Kept: metrics-store + capacity-forecaster mock — now in @dashboard/observability
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getLatestMetricsBatch: (...args: unknown[]) => mockGetLatestMetricsBatch(...args),
+    getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
+  };
+});
 
 const mockDetectAnomalyAdaptive = vi.fn().mockReturnValue(null);
 // detectAnomaliesBatch delegates to mockDetectAnomalyAdaptive so existing tests that
@@ -96,10 +101,7 @@ vi.mock('../services/investigation-service.js', () => ({
 }));
 
 const mockGetCapacityForecasts = vi.fn().mockReturnValue([]);
-// Kept: capacity-forecaster mock — now in modules/observability
-vi.mock('../../observability/services/capacity-forecaster.js', () => ({
-  getCapacityForecasts: (...args: unknown[]) => mockGetCapacityForecasts(...args),
-}));
+// getCapacityForecasts mocked inside @dashboard/observability mock above
 
 const mockExplainAnomalies = vi.fn().mockResolvedValue(new Map());
 vi.mock('../services/anomaly-explainer.js', () => ({

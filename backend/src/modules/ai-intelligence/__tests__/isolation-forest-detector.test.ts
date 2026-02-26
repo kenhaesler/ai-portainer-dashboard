@@ -16,9 +16,13 @@ function generateMetrics(count: number, baseValue: number) {
 
 const mockGetMetrics = vi.fn();
 // Kept: metrics-store mock — no TimescaleDB in CI
-vi.mock('../../observability/services/metrics-store.js', () => ({
-  getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
-}));
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getMetrics: (...args: unknown[]) => mockGetMetrics(...args),
+  };
+});
 
 import { detectAnomalyIsolationForest, getOrTrainModel, clearModelCache } from '../services/isolation-forest-detector.js';
 

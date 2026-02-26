@@ -7,9 +7,13 @@ import { detectAnomaly } from '../services/anomaly-detector.js';
 // Mock metrics-store module
 const mockGetMovingAverage = vi.fn();
 // Kept: metrics-store mock — no TimescaleDB in CI
-vi.mock('../../observability/services/metrics-store.js', () => ({
-  getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
-}));
+vi.mock('@dashboard/observability', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getMovingAverage: (...args: unknown[]) => mockGetMovingAverage(...args),
+  };
+});
 
 
 beforeAll(() => {
