@@ -1,5 +1,9 @@
 import fs from 'fs';
 import { FastifyInstance } from 'fastify';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
+import type { LLMInterface } from '@dashboard/contracts';
 import { StartCaptureRequestSchema, CaptureListQuerySchema } from '../models/pcap.js';
 import { ActionIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import {
@@ -17,7 +21,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('pcap-route');
 
-export async function pcapRoutes(fastify: FastifyInstance) {
+export async function pcapRoutes(fastify: FastifyInstance, opts: { llm: LLMInterface }) {
   // Start a new capture
   fastify.post('/api/pcap/captures', {
     schema: {
@@ -182,7 +186,7 @@ export async function pcapRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
 
     try {
-      const result = await analyzeCapture(id);
+      const result = await analyzeCapture(id, opts.llm);
 
       writeAuditLog({
         user_id: request.user?.sub,

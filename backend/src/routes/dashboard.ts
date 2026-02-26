@@ -5,7 +5,7 @@ import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/port
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { getKpiHistory } from '../modules/observability/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { buildSecurityAuditSummary, getSecurityAudit } from '../modules/security/index.js';
+import { buildSecurityAuditSummary, getSecurityAudit } from '@dashboard/security';
 import { getLatestMetricsBatch } from '../modules/observability/index.js';
 
 const log = createChildLogger('route:dashboard');

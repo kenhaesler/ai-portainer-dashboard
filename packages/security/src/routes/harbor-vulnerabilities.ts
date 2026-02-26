@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import * as harborClient from '../services/harbor-client.js';

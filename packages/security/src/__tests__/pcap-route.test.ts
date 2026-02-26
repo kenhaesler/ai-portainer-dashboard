@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { pcapRoutes } from '../routes/pcap.js';
+import type { LLMInterface } from '@dashboard/contracts';
 
 const mockStartCapture = vi.fn();
 const mockStopCapture = vi.fn();
@@ -29,7 +30,7 @@ vi.mock('../services/pcap-analysis-service.js', () => ({
 }));
 
 // Kept: infrastructure module mock — no Portainer API in CI
-vi.mock('../../infrastructure/index.js', () => ({
+vi.mock('@dashboard/infrastructure', () => ({
   assertCapability: (...args: unknown[]) => mockAssertCapability(...args),
 }));
 
@@ -44,6 +45,13 @@ vi.mock('fs', () => ({
     createReadStream: vi.fn().mockReturnValue('mock-stream'),
   },
 }));
+
+const mockLlm: LLMInterface = {
+  isAvailable: vi.fn(),
+  chatStream: vi.fn(),
+  getEffectivePrompt: vi.fn(),
+  buildInfrastructureContext: vi.fn(),
+};
 
 describe('PCAP Routes', () => {
   let app: FastifyInstance;
@@ -65,7 +73,10 @@ describe('PCAP Routes', () => {
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'test-user', sessionId: 's1', role: currentRole };
     });
-    await app.register(pcapRoutes);
+    await app.register((f, _opts, done) => {
+      void pcapRoutes(f, { llm: mockLlm });
+      done();
+    });
     await app.ready();
   });
 
@@ -322,7 +333,7 @@ describe('PCAP Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.health_status).toBe('healthy');
       expect(body.confidence_score).toBe(0.9);
-      expect(mockAnalyzeCapture).toHaveBeenCalledWith('c1');
+      expect(mockAnalyzeCapture).toHaveBeenCalledWith('c1', mockLlm);
     });
 
     it('should return 400 when analysis fails', async () => {

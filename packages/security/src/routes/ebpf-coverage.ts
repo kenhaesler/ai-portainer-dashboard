@@ -1,6 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 import { networkInterfaces } from 'node:os';
+import '@dashboard/core/plugins/auth.js';
+import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/swagger';
 import {
   getEndpointCoverage,
   updateCoverageStatus,

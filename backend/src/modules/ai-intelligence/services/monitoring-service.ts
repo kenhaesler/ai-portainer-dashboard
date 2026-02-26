@@ -6,9 +6,7 @@ import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
-// Phase 3 TODO: replace cross-domain imports with inter-module contracts / event bus
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface
-import { scanContainer } from '../../security/index.js'; // cross-domain: security → ai-intelligence
+import { scanContainer } from '@dashboard/security';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
 import { getLatestMetricsBatch } from '../../observability/index.js'; // cross-domain: observability → ai-intelligence
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts observability interface
@@ -28,8 +26,7 @@ import { explainAnomalies } from './anomaly-explainer.js';
 import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
-// eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface
-import type { SecurityFinding } from '../../security/index.js';
+import type { SecurityFinding } from '@dashboard/security';
 // eslint-disable-next-line boundaries/element-types -- Phase 3: replace with @dashboard/contracts operations interface
 import { notifyInsight } from '../../operations/index.js'; // cross-domain: operations → ai-intelligence
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';

@@ -2,10 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { isOllamaAvailable, chatStream } from '../../ai-intelligence/services/llm-client.js';
-// eslint-disable-next-line boundaries/element-types, boundaries/entry-point -- Phase 3: replace with @dashboard/contracts AI interface
-import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
+import type { LLMInterface } from '@dashboard/contracts';
 import { getCapture, updateCaptureAnalysis } from './pcap-store.js';
 import { getCaptureFilePath } from './pcap-service.js';
 import type { PcapAnalysisResult, PcapSummary } from '../models/pcap.js';
@@ -288,7 +285,7 @@ function validateAnalysisResult(parsed: Record<string, unknown>): PcapAnalysisRe
  * Analyze a completed packet capture using tcpdump + LLM.
  * Idempotent: re-analyzing overwrites previous results.
  */
-export async function analyzeCapture(captureId: string): Promise<PcapAnalysisResult> {
+export async function analyzeCapture(captureId: string, llm: LLMInterface): Promise<PcapAnalysisResult> {
   const config = getConfig();
 
   // Guard: feature flag
@@ -312,7 +309,7 @@ export async function analyzeCapture(captureId: string): Promise<PcapAnalysisRes
   }
 
   // Guard: LLM must be available
-  const llmAvailable = await isOllamaAvailable();
+  const llmAvailable = await llm.isAvailable();
   if (!llmAvailable) {
     throw new Error('LLM service is not available');
   }
@@ -326,9 +323,9 @@ export async function analyzeCapture(captureId: string): Promise<PcapAnalysisRes
   const prompt = buildAnalysisPrompt(summary, capture.container_name);
 
   let llmResponse = '';
-  await chatStream(
+  await llm.chatStream(
     [{ role: 'user', content: prompt }],
-    await getEffectivePrompt('pcap_analyzer'),
+    await llm.getEffectivePrompt('pcap_analyzer'),
     (chunk) => { llmResponse += chunk; },
   );
 

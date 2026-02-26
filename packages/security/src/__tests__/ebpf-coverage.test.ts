@@ -20,7 +20,7 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
-import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
+import { closeTestRedis } from '@dashboard/core/test-utils/test-redis-helper.js';
 import {
   getEndpointCoverage,
   updateCoverageStatus,

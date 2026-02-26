@@ -1,15 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
-/* eslint-disable boundaries/element-types -- Phase 3: replace with @dashboard/contracts security interface */
 import {
   getSecurityAudit,
   getSecurityAuditIgnoreList,
   setSecurityAuditIgnoreList,
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
   SECURITY_AUDIT_IGNORE_KEY,
-} from '../../security/index.js';
-/* eslint-enable boundaries/element-types */
+} from '@dashboard/security';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('route:monitoring');

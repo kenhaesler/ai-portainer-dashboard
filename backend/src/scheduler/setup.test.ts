@@ -6,8 +6,13 @@ import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 // ---------------------------------------------------------------------------
 
 // Kept: image-staleness mock — tests control staleness results
-vi.mock('../modules/security/services/image-staleness.js', () => ({
+vi.mock('@dashboard/security', () => ({
   runStalenessChecks: vi.fn().mockResolvedValue({ checked: 1, stale: 0 }),
+  cleanupOldCaptures: vi.fn(),
+  cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0),
+  cleanupOldVulnerabilities: vi.fn().mockResolvedValue(0),
+  isHarborConfiguredAsync: vi.fn().mockResolvedValue(false),
+  runHarborSync: vi.fn().mockResolvedValue({}),
 }));
 
 const collectMetricsMock = vi.fn().mockResolvedValue({
@@ -37,8 +42,7 @@ vi.mock('../modules/ai-intelligence/services/monitoring-service.js', () => ({
   startCooldownSweep: vi.fn(),
   stopCooldownSweep: vi.fn(),
 }));
-// Kept: pcap-service mock
-vi.mock('../modules/security/services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
+// pcap-service mock consolidated into @dashboard/security above
 // Kept: portainer-backup mock
 vi.mock('../modules/operations/services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn(),
@@ -141,8 +145,8 @@ beforeEach(async () => {
   cleanupOldInsightsMock.mockReturnValue(0);
 
   // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
-  const imageStaleness = await import('../modules/security/services/image-staleness.js');
-  vi.mocked(imageStaleness.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
+  const securityPkg = await import('@dashboard/security');
+  vi.mocked(securityPkg.runStalenessChecks).mockResolvedValue({ checked: 1, stale: 0 } as any);
   const metricsStore = await import('../modules/observability/services/metrics-store.js');
   vi.mocked(metricsStore.cleanOldMetrics).mockResolvedValue(0 as any);
   const settingsStore = await import('@dashboard/core/services/settings-store.js');

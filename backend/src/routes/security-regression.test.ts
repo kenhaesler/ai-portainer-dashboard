@@ -162,13 +162,42 @@ vi.mock('../modules/ai-intelligence/services/prompt-test-fixtures.js', () => ({
   PROMPT_TEST_FIXTURES: [],
 }));
 
-vi.mock('../modules/security/services/security-audit.js', () => ({
+vi.mock('@dashboard/security', () => ({
+  // security-audit
   getSecurityAudit: vi.fn().mockResolvedValue({ findings: [], summary: {} }),
   buildSecurityAuditSummary: vi.fn(() => ({})),
   getSecurityAuditIgnoreList: vi.fn(() => []),
   setSecurityAuditIgnoreList: vi.fn(),
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS: [],
   SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore',
+  // ebpf-coverage
+  getEndpointCoverage: vi.fn().mockResolvedValue([]),
+  updateCoverageStatus: vi.fn().mockResolvedValue(undefined),
+  deleteCoverageRecord: vi.fn().mockResolvedValue(true),
+  syncEndpointCoverage: vi.fn().mockResolvedValue(undefined),
+  verifyCoverage: vi.fn().mockResolvedValue(undefined),
+  getCoverageSummary: vi.fn().mockResolvedValue({ total: 0, deployed: 0 }),
+  deployBeyla: vi.fn().mockResolvedValue(undefined),
+  disableBeyla: vi.fn().mockResolvedValue(undefined),
+  enableBeyla: vi.fn().mockResolvedValue(undefined),
+  removeBeylaFromEndpoint: vi.fn().mockResolvedValue(undefined),
+  deployBeylaBulk: vi.fn().mockResolvedValue([]),
+  removeBeylaBulk: vi.fn().mockResolvedValue([]),
+  getEndpointOtlpOverride: vi.fn().mockResolvedValue(null),
+  setEndpointOtlpOverride: vi.fn().mockResolvedValue(undefined),
+  // image-staleness
+  getStalenessRecords: vi.fn().mockResolvedValue([]),
+  getStalenessSummary: vi.fn().mockResolvedValue({ total: 0, stale: 0 }),
+  runStalenessChecks: vi.fn().mockResolvedValue(undefined),
+  // pcap-service
+  startCapture: vi.fn().mockResolvedValue({ id: 'cap-1' }),
+  stopCapture: vi.fn().mockResolvedValue(undefined),
+  getCaptureById: vi.fn(() => null),
+  listCaptures: vi.fn(() => []),
+  deleteCaptureById: vi.fn(),
+  getCaptureFilePath: vi.fn(() => null),
+  // pcap-analysis-service
+  analyzeCapture: vi.fn().mockResolvedValue('analysis'),
 }));
 
 
@@ -217,22 +246,8 @@ vi.mock('../modules/observability/services/metric-correlator.js', () => ({
   findCorrelatedContainers: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('../modules/security/services/ebpf-coverage.js', () => ({
-  getEndpointCoverage: vi.fn().mockResolvedValue([]),
-  updateCoverageStatus: vi.fn().mockResolvedValue(undefined),
-  deleteCoverageRecord: vi.fn().mockResolvedValue(true),
-  syncEndpointCoverage: vi.fn().mockResolvedValue(undefined),
-  verifyCoverage: vi.fn().mockResolvedValue(undefined),
-  getCoverageSummary: vi.fn().mockResolvedValue({ total: 0, deployed: 0 }),
-  deployBeyla: vi.fn().mockResolvedValue(undefined),
-  disableBeyla: vi.fn().mockResolvedValue(undefined),
-  enableBeyla: vi.fn().mockResolvedValue(undefined),
-  removeBeylaFromEndpoint: vi.fn().mockResolvedValue(undefined),
-  deployBeylaBulk: vi.fn().mockResolvedValue([]),
-  removeBeylaBulk: vi.fn().mockResolvedValue([]),
-  getEndpointOtlpOverride: vi.fn().mockResolvedValue(null),
-  setEndpointOtlpOverride: vi.fn().mockResolvedValue(undefined),
-}));
+// ebpf-coverage, image-staleness, pcap-service, pcap-analysis-service mocks
+// are consolidated into vi.mock('@dashboard/security', ...) above
 
 vi.mock('../modules/ai-intelligence/services/mcp-manager.js', () => ({
   connectServer: vi.fn().mockResolvedValue(undefined),
@@ -260,11 +275,6 @@ vi.mock('../modules/operations/services/portainer-backup.js', () => ({
   deletePortainerBackup: vi.fn(),
 }));
 
-vi.mock('../modules/security/services/image-staleness.js', () => ({
-  getStalenessRecords: vi.fn().mockResolvedValue([]),
-  getStalenessSummary: vi.fn().mockResolvedValue({ total: 0, stale: 0 }),
-  runStalenessChecks: vi.fn().mockResolvedValue(undefined),
-}));
 
 vi.mock('../modules/ai-intelligence/services/investigation-store.js', () => ({
   getInvestigations: vi.fn(() => []),
@@ -283,18 +293,6 @@ vi.mock('@dashboard/infrastructure/services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: vi.fn(() => null),
 }));
 
-vi.mock('../modules/security/services/pcap-service.js', () => ({
-  startCapture: vi.fn().mockResolvedValue({ id: 'cap-1' }),
-  stopCapture: vi.fn().mockResolvedValue(undefined),
-  getCaptureById: vi.fn(() => null),
-  listCaptures: vi.fn(() => []),
-  deleteCaptureById: vi.fn(),
-  getCaptureFilePath: vi.fn(() => null),
-}));
-
-vi.mock('../modules/security/services/pcap-analysis-service.js', () => ({
-  analyzeCapture: vi.fn().mockResolvedValue('analysis'),
-}));
 
 vi.mock('../modules/operations/services/notification-service.js', () => ({
   sendTestNotification: vi.fn().mockResolvedValue(undefined),
@@ -356,13 +354,13 @@ import { networksRoutes } from './networks.js';
 import { investigationRoutes } from '../modules/ai-intelligence/routes/investigations.js';
 import { searchRoutes } from './search.js';
 import { cacheAdminRoutes } from './cache-admin.js';
-import { pcapRoutes } from '../modules/security/routes/pcap.js';
+import { securityRoutes } from '@dashboard/security/routes/index.js';
+import type { LLMInterface } from '@dashboard/contracts';
 import { userRoutes } from './users.js';
 import { incidentsRoutes } from '../modules/ai-intelligence/routes/incidents.js';
 import { llmRoutes } from '../modules/ai-intelligence/routes/llm.js';
 import { llmObservabilityRoutes } from '../modules/ai-intelligence/routes/llm-observability.js';
 import { correlationRoutes } from '../modules/ai-intelligence/routes/correlations.js';
-import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
 import { mcpRoutes } from '../modules/ai-intelligence/routes/mcp.js';
 import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-profiles.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
@@ -439,14 +437,14 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(searchRoutes);
   await app.register(notificationRoutes);
   await app.register(cacheAdminRoutes);
-  await app.register(pcapRoutes);
+  const mockLlm: LLMInterface = { isAvailable: vi.fn(), chatStream: vi.fn(), getEffectivePrompt: vi.fn(), buildInfrastructureContext: vi.fn() };
+  await app.register(securityRoutes, { llm: mockLlm });
   await app.register(webhookRoutes);
   await app.register(userRoutes);
   await app.register(incidentsRoutes);
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
   await app.register(correlationRoutes);
-  await app.register(ebpfCoverageRoutes);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(edgeJobsRoutes);
@@ -1016,7 +1014,8 @@ describe('PCAP Admin RBAC Enforcement', () => {
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
     });
-    await app.register(pcapRoutes);
+    const mockLlm: LLMInterface = { isAvailable: vi.fn(), chatStream: vi.fn(), getEffectivePrompt: vi.fn(), buildInfrastructureContext: vi.fn() };
+    await app.register(securityRoutes, { llm: mockLlm });
     await app.ready();
   });
 
