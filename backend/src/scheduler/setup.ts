@@ -1,26 +1,16 @@
 import pLimit from 'p-limit';
 import { getConfig } from '../core/config/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
-import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep } from '../modules/ai-intelligence/services/monitoring-service.js';
-import { collectMetrics } from '../modules/observability/index.js';
-import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../modules/observability/index.js';
-import { recordNetworkSample } from '../modules/observability/index.js';
-import { getEndpoints, getContainers, isEndpointDegraded } from '../core/portainer/portainer-client.js';
-import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/portainer-cache.js';
-import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../modules/security/index.js';
+import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '../core/portainer/index.js';
+import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '../core/portainer/index.js';
+import { normalizeEndpoint, type NormalizedEndpoint } from '../core/portainer/index.js';
+import { getSetting, getEffectiveHarborConfig, cleanExpiredSessions } from '../core/services/index.js';
+import { runWithTraceContext } from '../core/tracing/index.js';
+import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '../modules/ai-intelligence/index.js';
+import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '../modules/observability/index.js';
+import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '../modules/security/index.js';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '../modules/operations/index.js';
-import { getSetting } from '../core/services/settings-store.js';
-import { insertKpiSnapshot, cleanOldKpiSnapshots } from '../modules/observability/index.js';
-import { normalizeEndpoint, type NormalizedEndpoint } from '../core/portainer/portainer-normalizers.js';
-import { runStalenessChecks } from '../modules/security/index.js';
-import { getImages } from '../core/portainer/portainer-client.js';
-import { runWithTraceContext } from '../core/tracing/trace-context.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../modules/infrastructure/index.js';
-import { cleanExpiredSessions } from '../core/services/session-store.js';
-import { cleanupOldInsights } from '../modules/ai-intelligence/services/insights-store.js';
-import { runHarborSync, isHarborConfiguredAsync } from '../modules/security/index.js';
-import { getEffectiveHarborConfig } from '../core/services/settings-store.js';
-import { cleanupOldVulnerabilities } from '../modules/security/index.js';
 
 const log = createChildLogger('scheduler');
 
