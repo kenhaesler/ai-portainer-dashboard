@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setConfigForTest, resetConfig } from '../core/config/index.js';
+import { setConfigForTest, resetConfig } from '../../../core/config/index.js';
 import {
   buildTeamsCard,
   buildEmailHtml,
@@ -12,8 +12,8 @@ import {
   sendTestNotification,
   _resetCooldownMap,
   _getCooldownMap,
-} from './notification-service.js';
-import type { Insight } from '../core/models/monitoring.js';
+} from '../services/notification-service.js';
+import type { Insight } from '../../../core/models/monitoring.js';
 
 const COOLDOWN_MS = 15 * 60 * 1000;
 
@@ -23,7 +23,7 @@ const mockQueryOne = vi.fn();
 const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 const mockQuery = vi.fn().mockResolvedValue([]);
 // Kept: complex external deps (fetch, nodemailer); DB mock for notification_log INSERT
-vi.mock('../core/db/app-db-router.js', () => ({
+vi.mock('../../../core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     query: (...args: unknown[]) => mockQuery(...args),
     queryOne: (...args: unknown[]) => mockQueryOne(...args),

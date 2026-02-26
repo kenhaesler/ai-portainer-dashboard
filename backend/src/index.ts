@@ -5,7 +5,7 @@ import { getAppDb, closeAppDb } from './core/db/postgres.js';
 import { createChildLogger } from './core/utils/logger.js';
 import { setupLlmNamespace } from './sockets/llm-chat.js';
 import { setupMonitoringNamespace } from './sockets/monitoring.js';
-import { setupRemediationNamespace } from './sockets/remediation.js';
+import { setupRemediationNamespace } from './modules/operations/index.js';
 import { startScheduler, stopScheduler } from './scheduler/setup.js';
 import { setMonitoringNamespace } from './services/monitoring-service.js';
 import { setInvestigationNamespace } from './services/investigation-service.js';

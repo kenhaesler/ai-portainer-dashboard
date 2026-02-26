@@ -1,15 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
 import { z } from 'zod/v4';
-import { writeAuditLog } from '../core/services/audit-logger.js';
-import { createChildLogger } from '../core/utils/logger.js';
+import { writeAuditLog } from '../../../core/services/audit-logger.js';
+import { createChildLogger } from '../../../core/utils/logger.js';
 import {
   createPortainerBackup,
   listPortainerBackups,
   getPortainerBackupPath,
   deletePortainerBackup,
 } from '../services/portainer-backup.js';
-import { PortainerBackupFilenameParamsSchema } from '../core/models/api-schemas.js';
+import { PortainerBackupFilenameParamsSchema } from '../../../core/models/api-schemas.js';
 
 const log = createChildLogger('portainer-backup-route');
 

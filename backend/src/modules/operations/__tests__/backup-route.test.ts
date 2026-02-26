@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
+import { testAdminOnly } from '../../../test-utils/rbac-test-helper.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +15,7 @@ const mockDeleteBackup = vi.fn();
 let cwdValue = '';
 
 // Kept: audit-logger mock — side-effect isolation
-vi.mock('../core/services/audit-logger.js', () => ({
+vi.mock('../../../core/services/audit-logger.js', () => ({
   writeAuditLog: (...args: unknown[]) => mockWriteAuditLog(...args),
 }));
 
@@ -27,7 +27,7 @@ vi.mock('../services/backup-service.js', () => ({
   deleteBackup: (...args: unknown[]) => mockDeleteBackup(...args),
 }));
 
-import { backupRoutes } from './backup.js';
+import { backupRoutes } from '../routes/backup.js';
 
 describe('backup routes', () => {
   let app: FastifyInstance;

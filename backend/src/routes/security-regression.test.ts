@@ -180,7 +180,7 @@ vi.mock('../core/tracing/trace-store.js', () => ({
   insertSpans: vi.fn(async () => 0),
 }));
 
-vi.mock('../services/webhook-service.js', () => ({
+vi.mock('../modules/operations/services/webhook-service.js', () => ({
   createWebhook: vi.fn(),
   listWebhooks: vi.fn(() => []),
   getWebhookById: vi.fn(),
@@ -254,7 +254,7 @@ vi.mock('../services/prompt-profile-store.js', () => ({
   switchProfile: vi.fn(),
 }));
 
-vi.mock('../services/portainer-backup.js', () => ({
+vi.mock('../modules/operations/services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn().mockResolvedValue('backup.tar.gz'),
   listPortainerBackups: vi.fn().mockResolvedValue([]),
   getPortainerBackupPath: vi.fn(() => null),
@@ -297,7 +297,7 @@ vi.mock('../modules/security/services/pcap-analysis-service.js', () => ({
   analyzeCapture: vi.fn().mockResolvedValue('analysis'),
 }));
 
-vi.mock('../services/notification-service.js', () => ({
+vi.mock('../modules/operations/services/notification-service.js', () => ({
   sendTestNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -314,7 +314,7 @@ vi.mock('../modules/observability/services/metrics-rollup-selector.js', () => ({
 }));
 
 
-vi.mock('../services/backup-service.js', () => ({
+vi.mock('../modules/operations/services/backup-service.js', () => ({
   createBackup: vi.fn().mockResolvedValue('backup.db'),
   listBackups: vi.fn().mockResolvedValue([]),
   deleteBackup: vi.fn(),
@@ -322,7 +322,7 @@ vi.mock('../services/backup-service.js', () => ({
 }));
 
 
-vi.mock('../sockets/remediation.js', () => ({
+vi.mock('../modules/operations/sockets/remediation.js', () => ({
   broadcastActionUpdate: vi.fn(),
 }));
 
@@ -343,19 +343,21 @@ import { containersRoutes } from './containers.js';
 import { containerLogsRoutes } from './container-logs.js';
 import { stacksRoutes } from './stacks.js';
 import { monitoringRoutes } from './monitoring.js';
-import { remediationRoutes } from './remediation.js';
-import { backupRoutes } from './backup.js';
-import { portainerBackupRoutes } from './portainer-backup.js';
+import {
+  remediationRoutes,
+  backupRoutes,
+  portainerBackupRoutes,
+  logsRoutes,
+  notificationRoutes,
+  webhookRoutes,
+} from '../modules/operations/index.js';
 import { settingsRoutes } from './settings.js';
-import { logsRoutes } from './logs.js';
 import { imagesRoutes } from './images.js';
 import { networksRoutes } from './networks.js';
 import { investigationRoutes } from './investigations.js';
 import { searchRoutes } from './search.js';
-import { notificationRoutes } from './notifications.js';
 import { cacheAdminRoutes } from './cache-admin.js';
 import { pcapRoutes } from '../modules/security/routes/pcap.js';
-import { webhookRoutes } from './webhooks.js';
 import { userRoutes } from './users.js';
 import { incidentsRoutes } from './incidents.js';
 import { llmRoutes } from './llm.js';

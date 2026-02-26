@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { getDbForDomain } from '../core/db/app-db-router.js';
+import { getDbForDomain } from '../../../core/db/app-db-router.js';
 import { sendTestNotification } from '../services/notification-service.js';
-import { NotificationHistoryQuerySchema, NotificationTestBodySchema } from '../core/models/api-schemas.js';
+import { NotificationHistoryQuerySchema, NotificationTestBodySchema } from '../../../core/models/api-schemas.js';
 
 export async function notificationRoutes(fastify: FastifyInstance) {
   // Get notification history

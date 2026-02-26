@@ -15,7 +15,7 @@ import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, insertInsights, getRecentInsights, type InsightInsert } from './insights-store.js';
 import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
-import { suggestAction } from './remediation-service.js';
+import { suggestAction } from '../modules/operations/index.js';
 import { triggerInvestigation } from './investigation-service.js';
 import { getCapacityForecasts } from '../modules/observability/index.js';
 import { explainAnomalies } from './anomaly-explainer.js';
@@ -23,7 +23,7 @@ import { analyzeLogsForContainers } from './log-analyzer.js';
 import { insertMonitoringCycle, insertMonitoringSnapshot } from './monitoring-telemetry-store.js';
 import type { Insight } from '../core/models/monitoring.js';
 import type { SecurityFinding } from '../modules/security/index.js';
-import { notifyInsight } from './notification-service.js';
+import { notifyInsight } from '../modules/operations/index.js';
 import { emitEvent } from '../core/services/event-bus.js';
 import { correlateInsights } from './incident-correlator.js';
 
