@@ -6,9 +6,9 @@ import { getRatesForEndpoint, getAllRates } from '../services/network-rate-track
 import { selectRollupTable } from '../services/metrics-rollup-selector.js';
 import { decimateLTTB } from '../services/lttb-decimator.js';
 // Phase 3 TODO: replace with @dashboard/ai-intelligence contract
-import { chatStream, isOllamaAvailable } from '../../../services/llm-client.js';
+import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/llm-client.js';
 // Phase 3 TODO: replace with @dashboard/ai-intelligence contract
-import { getEffectivePrompt } from '../../../services/prompt-store.js';
+import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
 
 const log = createChildLogger('metrics-routes');

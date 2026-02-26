@@ -342,7 +342,7 @@ import { endpointsRoutes } from './endpoints.js';
 import { containersRoutes } from './containers.js';
 import { containerLogsRoutes } from './container-logs.js';
 import { stacksRoutes } from './stacks.js';
-import { monitoringRoutes } from './monitoring.js';
+import { monitoringRoutes } from '../modules/ai-intelligence/routes/monitoring.js';
 import {
   remediationRoutes,
   backupRoutes,
@@ -354,18 +354,18 @@ import {
 import { settingsRoutes } from './settings.js';
 import { imagesRoutes } from './images.js';
 import { networksRoutes } from './networks.js';
-import { investigationRoutes } from './investigations.js';
+import { investigationRoutes } from '../modules/ai-intelligence/routes/investigations.js';
 import { searchRoutes } from './search.js';
 import { cacheAdminRoutes } from './cache-admin.js';
 import { pcapRoutes } from '../modules/security/routes/pcap.js';
 import { userRoutes } from './users.js';
-import { incidentsRoutes } from './incidents.js';
-import { llmRoutes } from './llm.js';
-import { llmObservabilityRoutes } from './llm-observability.js';
-import { correlationRoutes } from './correlations.js';
+import { incidentsRoutes } from '../modules/ai-intelligence/routes/incidents.js';
+import { llmRoutes } from '../modules/ai-intelligence/routes/llm.js';
+import { llmObservabilityRoutes } from '../modules/ai-intelligence/routes/llm-observability.js';
+import { correlationRoutes } from '../modules/ai-intelligence/routes/correlations.js';
 import { ebpfCoverageRoutes } from '../modules/security/routes/ebpf-coverage.js';
-import { mcpRoutes } from './mcp.js';
-import { promptProfileRoutes } from './prompt-profiles.js';
+import { mcpRoutes } from '../modules/ai-intelligence/routes/mcp.js';
+import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-profiles.js';
 import { edgeJobsRoutes } from '../modules/infrastructure/routes/edge-jobs.js';
 import { observabilityRoutes } from '../modules/observability/index.js';
 

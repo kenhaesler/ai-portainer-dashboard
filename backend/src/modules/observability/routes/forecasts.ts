@@ -2,9 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
 import { getCapacityForecasts, generateForecast, lookupContainerName } from '../services/capacity-forecaster.js';
 // Phase 3 TODO: replace with @dashboard/ai-intelligence contract
-import { chatStream } from '../../../services/llm-client.js';
+import { chatStream } from '../../ai-intelligence/services/llm-client.js';
 // Phase 3 TODO: replace with @dashboard/ai-intelligence contract
-import { getEffectivePrompt } from '../../../services/prompt-store.js';
+import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
 
 const log = createChildLogger('routes:forecasts');

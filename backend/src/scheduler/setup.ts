@@ -1,7 +1,7 @@
 import pLimit from 'p-limit';
 import { getConfig } from '../core/config/index.js';
 import { createChildLogger } from '../core/utils/logger.js';
-import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep } from '../services/monitoring-service.js';
+import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep } from '../modules/ai-intelligence/services/monitoring-service.js';
 import { collectMetrics } from '../modules/observability/index.js';
 import { insertMetrics, cleanOldMetrics, type MetricInsert } from '../modules/observability/index.js';
 import { recordNetworkSample } from '../modules/observability/index.js';
@@ -17,7 +17,7 @@ import { getImages } from '../core/portainer/portainer-client.js';
 import { runWithTraceContext } from '../core/tracing/trace-context.js';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '../modules/infrastructure/index.js';
 import { cleanExpiredSessions } from '../core/services/session-store.js';
-import { cleanupOldInsights } from '../services/insights-store.js';
+import { cleanupOldInsights } from '../modules/ai-intelligence/services/insights-store.js';
 import { runHarborSync, isHarborConfiguredAsync } from '../modules/security/index.js';
 import { getEffectiveHarborConfig } from '../core/services/settings-store.js';
 import { cleanupOldVulnerabilities } from '../modules/security/index.js';

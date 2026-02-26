@@ -13,7 +13,7 @@ vi.mock('../../../core/db/app-db-router.js', () => ({
 }));
 
 // Kept: prompt-guard mock — side-effect isolation
-vi.mock('../../../services/prompt-guard.js', () => ({
+vi.mock('../../ai-intelligence/services/prompt-guard.js', () => ({
   getPromptGuardNearMissTotal: () => 0,
 }));
 

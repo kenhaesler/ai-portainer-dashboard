@@ -15,13 +15,13 @@ vi.mock('../services/capacity-forecaster.js', () => ({
 }));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../../../services/llm-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../../ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
 
-import * as llmClient from '../../../services/llm-client.js';
+import * as llmClient from '../../ai-intelligence/services/llm-client.js';
 let mockChatStream: any;
 
 // Kept: prompt-store mock — no PostgreSQL in CI
-vi.mock('../../../services/prompt-store.js', () => ({
+vi.mock('../../ai-intelligence/services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('You are a concise infrastructure analyst.'),
 }));
 

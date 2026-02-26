@@ -73,8 +73,8 @@ vi.mock('../core/services/session-store.js', () => ({
 }));
 
 const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
-// Kept: insights-store mock — tests control insights cleanup
-vi.mock('../services/insights-store.js', () => ({
+// Kept: insights-store mock — tests control insights cleanup (now in modules/ai-intelligence)
+vi.mock('../modules/ai-intelligence/services/insights-store.js', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
 }));
 

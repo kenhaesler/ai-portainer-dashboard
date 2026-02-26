@@ -39,7 +39,7 @@ vi.mock('../sockets/remediation.js', () => ({
 }));
 
 // Kept: prompt-store mock — avoids DB lookup for prompt store
-vi.mock('../../../services/prompt-store.js', () => ({
+vi.mock('../../ai-intelligence/services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
@@ -50,7 +50,7 @@ import {
   isProtectedContainer,
 } from '../services/remediation-service.js';
 import * as portainerClient from '../../../core/portainer/portainer-client.js';
-import * as llmClient from '../../../services/llm-client.js';
+import * as llmClient from '../../ai-intelligence/services/llm-client.js';
 import { cache } from '../../../core/portainer/portainer-cache.js';
 import { closeTestRedis } from '../../../test-utils/test-redis-helper.js';
 
@@ -86,7 +86,7 @@ describe('remediation-service', () => {
     mockHasPendingAction.mockReturnValue(false);
     mockGetLatestMetrics.mockResolvedValue({ cpu: 93.1, memory: 88.4 });
     // Re-set prompt-store default
-    const { getEffectivePrompt } = await import('../../../services/prompt-store.js');
+    const { getEffectivePrompt } = await import('../../ai-intelligence/services/prompt-store.js');
     vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Portainer + LLM spies
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
@@ -378,7 +378,7 @@ describe('protected container safety', () => {
     mockInsertAction.mockReturnValue(true);
     mockHasPendingAction.mockReturnValue(false);
     // Re-set prompt-store default
-    const { getEffectivePrompt } = await import('../../../services/prompt-store.js');
+    const { getEffectivePrompt } = await import('../../ai-intelligence/services/prompt-store.js');
     vi.mocked(getEffectivePrompt).mockResolvedValue('You are a test assistant.');
     // Portainer + LLM spies
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs').mockResolvedValue('line 1\nline 2');
