@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { DashboardEvent } from '@dashboard/contracts';
 
 // Import the module fresh each test using a factory so state resets.

@@ -3,7 +3,6 @@ import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('event-bus');
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyHandler = EventHandler<any>;
 type AnyEventHandler = (event: DashboardEvent) => void | Promise<void>;
 
