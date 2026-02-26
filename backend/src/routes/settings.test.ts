@@ -34,7 +34,7 @@ vi.mock('../core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../services/prompt-store.js', () => {
+vi.mock('../modules/ai-intelligence/services/prompt-store.js', () => {
   const defaults: Record<string, string> = {
     chat_assistant: 'You are a helpful assistant.',
     anomaly_explainer: 'You are an anomaly explainer.',
@@ -53,7 +53,7 @@ const mockCreatePromptVersion = vi.fn().mockResolvedValue({ id: 1, version: 1 })
 const mockGetPromptHistory = vi.fn().mockResolvedValue([]);
 const mockGetPromptVersionById = vi.fn().mockResolvedValue(null);
 
-vi.mock('../services/prompt-version-store.js', () => ({
+vi.mock('../modules/ai-intelligence/services/prompt-version-store.js', () => ({
   createPromptVersion: (...args: unknown[]) => mockCreatePromptVersion(...args),
   getPromptHistory: (...args: unknown[]) => mockGetPromptHistory(...args),
   getPromptVersionById: (...args: unknown[]) => mockGetPromptVersionById(...args),

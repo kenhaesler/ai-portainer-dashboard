@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { getConfig } from '../../../core/config/index.js';
 import { getDbForDomain } from '../../../core/db/app-db-router.js';
 // Phase 3 TODO: replace with @dashboard/ai-intelligence contract
-import { getPromptGuardNearMissTotal } from '../../../services/prompt-guard.js';
+import { getPromptGuardNearMissTotal } from '../../ai-intelligence/services/prompt-guard.js';
 
 const CACHE_TTL_MS = 15_000;
 

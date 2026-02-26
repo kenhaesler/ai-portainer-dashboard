@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { getTestDb, truncateTestTables, closeTestDb } from '../../../core/db/test-db-helper.js';
 import type { AppDb } from '../../../core/db/app-db.js';
-import { monitoringRoutes } from '../../../routes/monitoring.js';
+import { monitoringRoutes } from '../../ai-intelligence/routes/monitoring.js';
 
 let testDb: AppDb;
 

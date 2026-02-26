@@ -13,8 +13,8 @@ import { emitEvent } from '../../../core/services/event-bus.js';
 import { getContainerLogs } from '../../../core/portainer/portainer-client.js';
 import { getLatestMetrics } from '../../observability/index.js';
 // TODO Phase 3: move llm-client and prompt-store to AI module
-import { chatStream, isOllamaAvailable } from '../../../services/llm-client.js';
-import { getEffectivePrompt } from '../../../services/prompt-store.js';
+import { chatStream, isOllamaAvailable } from '../../ai-intelligence/services/llm-client.js';
+import { getEffectivePrompt } from '../../ai-intelligence/services/prompt-store.js';
 import { broadcastActionUpdate, broadcastNewAction } from '../sockets/remediation.js';
 import { getConfig } from '../../../core/config/index.js';
 

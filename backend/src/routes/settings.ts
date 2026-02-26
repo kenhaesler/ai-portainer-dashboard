@@ -11,12 +11,12 @@ import {
   PreferencesUpdateBodySchema,
 } from '../core/models/api-schemas.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '../core/services/user-store.js';
-import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../services/prompt-store.js';
+import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../modules/ai-intelligence/services/prompt-store.js';
 import {
   createPromptVersion,
   getPromptHistory,
   getPromptVersionById,
-} from '../services/prompt-version-store.js';
+} from '../modules/ai-intelligence/services/prompt-version-store.js';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',

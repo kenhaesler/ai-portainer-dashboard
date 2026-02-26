@@ -18,11 +18,11 @@ import { endpointsRoutes } from './routes/endpoints.js';
 import { containersRoutes } from './routes/containers.js';
 import { containerLogsRoutes } from './routes/container-logs.js';
 import { stacksRoutes } from './routes/stacks.js';
-import { monitoringRoutes } from './routes/monitoring.js';
+import { monitoringRoutes } from './modules/ai-intelligence/routes/monitoring.js';
 import { settingsRoutes } from './routes/settings.js';
 import { imagesRoutes } from './routes/images.js';
 import { networksRoutes } from './routes/networks.js';
-import { investigationRoutes } from './routes/investigations.js';
+import { investigationRoutes } from './modules/ai-intelligence/routes/investigations.js';
 import { searchRoutes } from './routes/search.js';
 import { cacheAdminRoutes } from './routes/cache-admin.js';
 import { userRoutes } from './routes/users.js';
@@ -34,13 +34,13 @@ import {
   notificationRoutes,
   webhookRoutes,
 } from './modules/operations/index.js';
-import { incidentsRoutes } from './routes/incidents.js';
-import { llmRoutes } from './routes/llm.js';
-import { llmObservabilityRoutes } from './routes/llm-observability.js';
-import { correlationRoutes } from './routes/correlations.js';
-import { mcpRoutes } from './routes/mcp.js';
-import { promptProfileRoutes } from './routes/prompt-profiles.js';
-import { llmFeedbackRoutes } from './routes/llm-feedback.js';
+import { incidentsRoutes } from './modules/ai-intelligence/routes/incidents.js';
+import { llmRoutes } from './modules/ai-intelligence/routes/llm.js';
+import { llmObservabilityRoutes } from './modules/ai-intelligence/routes/llm-observability.js';
+import { correlationRoutes } from './modules/ai-intelligence/routes/correlations.js';
+import { mcpRoutes } from './modules/ai-intelligence/routes/mcp.js';
+import { promptProfileRoutes } from './modules/ai-intelligence/routes/prompt-profiles.js';
+import { llmFeedbackRoutes } from './modules/ai-intelligence/routes/llm-feedback.js';
 import { infrastructureRoutes } from './modules/infrastructure/routes/index.js';
 import { securityRoutes } from './modules/security/routes/index.js';
 import { observabilityRoutes } from './modules/observability/index.js';

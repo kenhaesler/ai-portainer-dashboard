@@ -3,14 +3,14 @@ import { getConfig } from './core/config/index.js';
 import { getMetricsDb, closeMetricsDb, closeReportsDb } from './core/db/timescale.js';
 import { getAppDb, closeAppDb } from './core/db/postgres.js';
 import { createChildLogger } from './core/utils/logger.js';
-import { setupLlmNamespace } from './sockets/llm-chat.js';
-import { setupMonitoringNamespace } from './sockets/monitoring.js';
+import { setupLlmNamespace } from './modules/ai-intelligence/sockets/llm-chat.js';
+import { setupMonitoringNamespace } from './modules/ai-intelligence/sockets/monitoring.js';
 import { setupRemediationNamespace } from './modules/operations/index.js';
 import { startScheduler, stopScheduler } from './scheduler/setup.js';
-import { setMonitoringNamespace } from './services/monitoring-service.js';
-import { setInvestigationNamespace } from './services/investigation-service.js';
-import { ensureModel } from './services/llm-client.js';
-import { autoConnectAll, disconnectAll } from './services/mcp-manager.js';
+import { setMonitoringNamespace } from './modules/ai-intelligence/services/monitoring-service.js';
+import { setInvestigationNamespace } from './modules/ai-intelligence/services/investigation-service.js';
+import { ensureModel } from './modules/ai-intelligence/services/llm-client.js';
+import { autoConnectAll, disconnectAll } from './modules/ai-intelligence/services/mcp-manager.js';
 
 const log = createChildLogger('server');
 

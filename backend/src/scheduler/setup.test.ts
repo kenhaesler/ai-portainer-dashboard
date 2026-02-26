@@ -32,7 +32,7 @@ vi.mock('../modules/observability/services/metrics-store.js', () => ({
 }));
 
 // Kept: monitoring-service mock — tests don't exercise monitoring
-vi.mock('../services/monitoring-service.js', () => ({
+vi.mock('../modules/ai-intelligence/services/monitoring-service.js', () => ({
   runMonitoringCycle: vi.fn(),
   startCooldownSweep: vi.fn(),
   stopCooldownSweep: vi.fn(),
@@ -40,14 +40,14 @@ vi.mock('../services/monitoring-service.js', () => ({
 // Kept: pcap-service mock
 vi.mock('../modules/security/services/pcap-service.js', () => ({ cleanupOldCaptures: vi.fn(), cleanupOrphanedSidecars: vi.fn().mockResolvedValue(0) }));
 // Kept: portainer-backup mock
-vi.mock('../services/portainer-backup.js', () => ({
+vi.mock('../modules/operations/services/portainer-backup.js', () => ({
   createPortainerBackup: vi.fn(),
   cleanupOldPortainerBackups: vi.fn(),
 }));
 // Kept: settings-store mock — tests control settings
 vi.mock('../core/services/settings-store.js', () => ({ getSetting: vi.fn().mockReturnValue(null) }));
 // Kept: webhook-service mock
-vi.mock('../services/webhook-service.js', () => ({
+vi.mock('../modules/operations/services/webhook-service.js', () => ({
   startWebhookListener: vi.fn(),
   stopWebhookListener: vi.fn(),
   processRetries: vi.fn(),
@@ -73,8 +73,8 @@ vi.mock('../core/services/session-store.js', () => ({
 }));
 
 const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
-// Kept: insights-store mock — tests control insights cleanup
-vi.mock('../services/insights-store.js', () => ({
+// Kept: insights-store mock — tests control insights cleanup (now in modules/ai-intelligence)
+vi.mock('../modules/ai-intelligence/services/insights-store.js', () => ({
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
 }));
 
