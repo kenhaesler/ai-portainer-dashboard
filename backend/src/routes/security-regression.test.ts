@@ -147,18 +147,18 @@ vi.mock('../core/services/settings-store.js', () => ({
   })),
 }));
 
-vi.mock('../services/prompt-store.js', () => ({
+vi.mock('../modules/ai-intelligence/services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are a dashboard query interpreter.'),
   PROMPT_FEATURES: ['command_palette', 'monitoring_analysis', 'anomaly_explanation', 'incident_summary', 'forecast_narrative', 'correlation_insight'],
   DEFAULT_PROMPTS: {},
   estimateTokens: vi.fn(() => 100),
 }));
 
-vi.mock('../services/llm-trace-store.js', async () =>
+vi.mock('../modules/ai-intelligence/services/llm-trace-store.js', async () =>
   (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
 );
 
-vi.mock('../services/prompt-test-fixtures.js', () => ({
+vi.mock('../modules/ai-intelligence/services/prompt-test-fixtures.js', () => ({
   PROMPT_TEST_FIXTURES: [],
 }));
 
@@ -211,7 +211,7 @@ vi.mock('../modules/observability/services/capacity-forecaster.js', () => ({
 }));
 
 // Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../services/llm-client.js', async (importOriginal) => await importOriginal());
+vi.mock('../modules/ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
 
 vi.mock('../modules/observability/services/metric-correlator.js', () => ({
   detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
@@ -235,7 +235,7 @@ vi.mock('../modules/security/services/ebpf-coverage.js', () => ({
   setEndpointOtlpOverride: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../services/mcp-manager.js', () => ({
+vi.mock('../modules/ai-intelligence/services/mcp-manager.js', () => ({
   connectServer: vi.fn().mockResolvedValue(undefined),
   disconnectServer: vi.fn().mockResolvedValue(undefined),
   getConnectedServers: vi.fn(() => []),
@@ -243,7 +243,7 @@ vi.mock('../services/mcp-manager.js', () => ({
   isConnected: vi.fn(() => false),
 }));
 
-vi.mock('../services/prompt-profile-store.js', () => ({
+vi.mock('../modules/ai-intelligence/services/prompt-profile-store.js', () => ({
   getAllProfiles: vi.fn(() => []),
   getProfileById: vi.fn(() => null),
   createProfile: vi.fn(() => ({ id: '1' })),
@@ -267,13 +267,13 @@ vi.mock('../modules/security/services/image-staleness.js', () => ({
   runStalenessChecks: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../services/investigation-store.js', () => ({
+vi.mock('../modules/ai-intelligence/services/investigation-store.js', () => ({
   getInvestigations: vi.fn(() => []),
   getInvestigation: vi.fn(() => null),
   getInvestigationByInsightId: vi.fn(() => null),
 }));
 
-vi.mock('../services/incident-store.js', () => ({
+vi.mock('../modules/ai-intelligence/services/incident-store.js', () => ({
   getIncidents: vi.fn(() => []),
   getIncident: vi.fn(() => null),
   resolveIncident: vi.fn(),
