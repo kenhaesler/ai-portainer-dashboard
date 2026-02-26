@@ -190,9 +190,8 @@ vi.mock('../modules/operations/services/webhook-service.js', () => ({
   signPayload: vi.fn(() => 'sig'),
 }));
 
-vi.mock('../core/services/event-bus.js', () => ({
-  emitEvent: vi.fn(),
-  onEvent: vi.fn(),
+vi.mock('../core/services/typed-event-bus.js', () => ({
+  eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
 vi.mock('../modules/observability/services/status-page-store.js', () => ({

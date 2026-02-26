@@ -23,8 +23,8 @@ vi.mock('../services/actions-store.js', () => ({
 }));
 
 // Kept: event-bus mock — tests control event emission
-vi.mock('../../../core/services/event-bus.js', () => ({
-  emitEvent: vi.fn(),
+vi.mock('../../../core/services/typed-event-bus.js', () => ({
+  eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
 // Kept: metrics-store mock — tests control metrics responses (now in modules/observability)

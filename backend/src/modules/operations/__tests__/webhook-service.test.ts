@@ -10,9 +10,8 @@ vi.mock('../../../core/db/app-db-router.js', () => ({
 }));
 
 // Kept: event-bus mock — side-effect isolation
-vi.mock('../../../core/services/event-bus.js', () => ({
-  onEvent: vi.fn(() => vi.fn()),
-  emitEvent: vi.fn(),
+vi.mock('../../../core/services/typed-event-bus.js', () => ({
+  eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
 import {

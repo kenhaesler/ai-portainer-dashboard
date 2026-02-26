@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { getDbForDomain } from '../../../core/db/app-db-router.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
-import { onEvent, type WebhookEvent } from '../../../core/services/event-bus.js';
+import { eventBus } from '../../../core/services/typed-event-bus.js';
+import { toWebhookEvent, type WebhookEvent } from '@dashboard/contracts';
 import { withSpan } from '../../../core/tracing/trace-context.js';
 
 const log = createChildLogger('webhook-service');
@@ -286,9 +287,10 @@ let unsubscribe: (() => void) | null = null;
 
 export function startWebhookListener(): void {
   if (unsubscribe) return;
-  unsubscribe = onEvent((event) => {
-    dispatchEvent(event).catch((err) => {
-      log.error({ err, eventType: event.type }, 'Failed to dispatch webhook event');
+  unsubscribe = eventBus.onAny((event) => {
+    const webhookEvent = toWebhookEvent(event);
+    dispatchEvent(webhookEvent).catch((err) => {
+      log.error({ err, eventType: webhookEvent.type }, 'Failed to dispatch webhook event');
     });
   });
   log.info('Webhook event listener started');
