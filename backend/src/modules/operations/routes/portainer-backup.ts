@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import fs from 'fs';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { writeAuditLog } from '../../../core/services/audit-logger.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
 import {

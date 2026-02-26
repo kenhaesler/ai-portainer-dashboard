@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { getDbForDomain } from '../../../core/db/app-db-router.js';
 import { getConfig } from '../../../core/config/index.js';
 import { createChildLogger } from '../../../core/utils/logger.js';
