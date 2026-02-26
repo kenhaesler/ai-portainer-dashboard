@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 export type EdgeAsyncLogStatus = 'idle' | 'initiating' | 'collecting' | 'complete' | 'error';
 

@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Loader2, Shield } from 'lucide-react';
-import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/hooks/use-security-audit';
+import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/features/security/hooks/use-security-audit';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
 import { GroupRoleMappingEditor } from './group-role-mapping-editor';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { toast } from 'sonner';
 
-const LazyUsersPanel = lazy(() => import('@/pages/users').then((m) => ({ default: m.UsersPanel })));
+const LazyUsersPanel = lazy(() => import('@/features/core/pages/users').then((m) => ({ default: m.UsersPanel })));
 
 export function SecurityTab({ editedValues, originalValues, onChange, isSaving }: SettingsTabProps) {
   // Filter out group_role_mappings from auto-rendered settings — it has a custom editor

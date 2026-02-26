@@ -4,7 +4,7 @@ import type {
   ContainerReport,
   Recommendation,
   TrendsReport,
-} from '@/hooks/use-reports';
+} from '@/features/observability/hooks/use-reports';
 
 export type ManagementPdfTheme = 'ocean' | 'forest' | 'slate' | 'sunset';
 

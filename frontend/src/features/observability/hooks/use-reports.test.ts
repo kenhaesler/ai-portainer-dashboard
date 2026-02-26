@@ -3,9 +3,9 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { useUtilizationReport, useTrendsReport } from './use-reports';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn((url: string) => {
       if (url === '/api/reports/utilization') {

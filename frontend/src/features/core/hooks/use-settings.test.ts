@@ -9,7 +9,7 @@ const mockDelete = vi.fn();
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     put: (...args: unknown[]) => mockPut(...args),
     delete: (...args: unknown[]) => mockDelete(...args),

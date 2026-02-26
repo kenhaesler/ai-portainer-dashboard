@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockMutate = vi.fn();
 
-vi.mock('@/hooks/use-llm-feedback', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-feedback', () => ({
   useSubmitFeedback: () => ({
     mutate: (...args: unknown[]) => mockMutate(...args),
     isPending: false,

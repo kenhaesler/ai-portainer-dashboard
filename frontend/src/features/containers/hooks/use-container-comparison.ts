@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 interface MetricDataPoint {
   timestamp: string;

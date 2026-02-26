@@ -1,5 +1,5 @@
 import { Download } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 
 interface ExportCsvButtonProps {
   data: Record<string, unknown>[];

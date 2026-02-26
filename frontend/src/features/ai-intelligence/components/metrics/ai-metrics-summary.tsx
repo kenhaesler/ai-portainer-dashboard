@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Bot, RefreshCw, AlertCircle } from 'lucide-react';
-import { useAiMetricsSummary } from '@/hooks/use-ai-metrics-summary';
-import { cn } from '@/lib/utils';
+import { useAiMetricsSummary } from '@/features/ai-intelligence/hooks/use-ai-metrics-summary';
+import { cn } from '@/shared/lib/utils';
 
 interface AiMetricsSummaryProps {
   endpointId: number | undefined;

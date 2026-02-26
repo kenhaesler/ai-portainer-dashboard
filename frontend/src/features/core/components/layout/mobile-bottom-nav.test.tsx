@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { MobileBottomNav } from './mobile-bottom-nav';
 
-vi.mock('@/lib/utils', () => ({
+vi.mock('@/shared/lib/utils', () => ({
   cn: (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(' '),
 }));
 

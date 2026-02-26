@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { useCaptures, useCapture, useStartCapture, useStopCapture, useDeleteCapture, useAnalyzeCapture } from './use-pcap';
 
 const mockApi = vi.mocked(api);

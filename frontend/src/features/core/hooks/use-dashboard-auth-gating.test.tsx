@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryProvider } from '@/providers/query-provider';
 import { AuthProvider } from '@/providers/auth-provider';
-import { useDashboard } from '@/hooks/use-dashboard';
-import { api } from '@/lib/api';
+import { useDashboard } from '@/features/core/hooks/use-dashboard';
+import { api } from '@/shared/lib/api';
 
 function createJwtWithFutureExpiry(): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))

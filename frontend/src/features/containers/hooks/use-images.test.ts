@@ -14,7 +14,7 @@ const mockApi = vi.hoisted(() => ({
   getToken: vi.fn(),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: mockApi,
 }));
 

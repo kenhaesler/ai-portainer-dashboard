@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import type { Container } from '@/hooks/use-containers';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
 const mockMutate = vi.fn();
 const mockNavigate = vi.fn();
 
-vi.mock('@/hooks/use-nl-query', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({
   useNlQuery: () => ({
     mutate: mockMutate,
     isPending: false,

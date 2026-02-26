@@ -7,7 +7,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { useSearchStore } from '@/stores/search-store';
 import { SearchProvider } from '@/providers/search-provider';
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn(() => ({
     data: [
       { id: 1, name: 'prod-server', status: 'up', totalContainers: 12, stackCount: 3 },
@@ -16,7 +16,7 @@ vi.mock('@/hooks/use-endpoints', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-stacks', () => ({
+vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: vi.fn(() => ({
     data: [
       { id: 1, name: 'web-stack', status: 'active', endpointId: 1, containerCount: 4 },
@@ -25,7 +25,7 @@ vi.mock('@/hooks/use-stacks', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-global-search', () => ({
+vi.mock('@/shared/hooks/use-global-search', () => ({
   useGlobalSearch: vi.fn(() => ({
     data: {
       query: 'web',
@@ -56,7 +56,7 @@ vi.mock('@/hooks/use-global-search', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-nl-query', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({
   useNlQuery: vi.fn(() => ({
     mutate: vi.fn(),
     isPending: false,

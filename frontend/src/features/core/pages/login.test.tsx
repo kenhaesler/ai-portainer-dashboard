@@ -25,15 +25,15 @@ vi.mock('@tanstack/react-query', async () => {
   };
 });
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: { get: vi.fn() },
 }));
 
-vi.mock('@/hooks/use-auth', () => ({
+vi.mock('@/features/core/hooks/use-auth', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-vi.mock('@/hooks/use-oidc', () => ({
+vi.mock('@/features/core/hooks/use-oidc', () => ({
   useOIDCStatus: () => mockUseOIDCStatus(),
 }));
 

@@ -5,7 +5,7 @@ import { render, screen } from '@testing-library/react';
 const mockUseInvestigationDetail = vi.fn();
 const mockUseInvestigationByInsightId = vi.fn();
 
-vi.mock('@/hooks/use-investigations', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-investigations', () => ({
   safeParseJson: (value: string | null) => {
     if (!value) return null;
     return JSON.parse(value);

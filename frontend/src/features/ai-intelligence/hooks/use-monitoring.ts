@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 
 type Severity = 'critical' | 'warning' | 'info';

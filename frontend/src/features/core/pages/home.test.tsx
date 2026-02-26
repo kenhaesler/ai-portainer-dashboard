@@ -25,31 +25,31 @@ vi.mock('@tanstack/react-virtual', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-dashboard', () => ({
+vi.mock('@/features/core/hooks/use-dashboard', () => ({
   useDashboard: vi.fn(),
 }));
 
-vi.mock('@/hooks/use-dashboard-full', () => ({
+vi.mock('@/features/core/hooks/use-dashboard-full', () => ({
   useDashboardFull: vi.fn(),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useFavoriteContainers: () => ({ data: [] }),
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({ data: [] }),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn(), enabled: true, toggle: vi.fn() }),
 }));
 
-vi.mock('@/hooks/use-force-refresh', () => ({
+vi.mock('@/shared/hooks/use-force-refresh', () => ({
   useForceRefresh: () => ({ forceRefresh: vi.fn(), isForceRefreshing: false }),
 }));
 
-vi.mock('@/hooks/use-kpi-history', () => ({
+vi.mock('@/features/observability/hooks/use-kpi-history', () => ({
   useKpiHistory: () => ({ data: null }),
 }));
 
@@ -58,56 +58,56 @@ vi.mock('@/stores/favorites-store', () => ({
 }));
 
 // Mock chart components that use canvas/SVG
-vi.mock('@/components/charts/container-state-pie', () => ({
+vi.mock('@/shared/components/charts/container-state-pie', () => ({
   ContainerStatePie: () => <div data-testid="mock-pie">Pie</div>,
 }));
-vi.mock('@/components/charts/endpoint-health-treemap', () => ({
+vi.mock('@/shared/components/charts/endpoint-health-treemap', () => ({
   EndpointHealthTreemap: () => <div data-testid="mock-treemap">Treemap</div>,
 }));
-vi.mock('@/components/charts/endpoint-health-octagons', () => ({
+vi.mock('@/shared/components/charts/endpoint-health-octagons', () => ({
   EndpointHealthOctagons: () => <div data-testid="mock-octagons">Octagons</div>,
 }));
-vi.mock('@/components/charts/workload-top-bar', () => ({
+vi.mock('@/shared/components/charts/workload-top-bar', () => ({
   WorkloadTopBar: () => <div data-testid="mock-workload">Workload</div>,
 }));
-vi.mock('@/components/charts/fleet-summary-card', () => ({
+vi.mock('@/shared/components/charts/fleet-summary-card', () => ({
   FleetSummaryCard: () => <div data-testid="mock-fleet">Fleet</div>,
 }));
-vi.mock('@/components/charts/resource-overview-card', () => ({
+vi.mock('@/shared/components/charts/resource-overview-card', () => ({
   ResourceOverviewCard: () => <div data-testid="mock-resource">Resource</div>,
 }));
-vi.mock('@/components/shared/kpi-card', () => ({
+vi.mock('@/shared/components/kpi-card', () => ({
   KpiCard: ({ label }: { label: string }) => <div data-testid="mock-kpi">{label}</div>,
 }));
-vi.mock('@/components/shared/tilt-card', () => ({
+vi.mock('@/shared/components/tilt-card', () => ({
   TiltCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/components/shared/spotlight-card', () => ({
+vi.mock('@/shared/components/spotlight-card', () => ({
   SpotlightCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/components/shared/motion-page', () => ({
+vi.mock('@/shared/components/motion-page', () => ({
   MotionPage: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   MotionReveal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   MotionStagger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/components/shared/auto-refresh-toggle', () => ({
+vi.mock('@/shared/components/auto-refresh-toggle', () => ({
   AutoRefreshToggle: () => <div data-testid="mock-auto-refresh" />,
 }));
-vi.mock('@/components/shared/refresh-button', () => ({
+vi.mock('@/shared/components/refresh-button', () => ({
   RefreshButton: () => <button data-testid="mock-refresh" />,
 }));
-vi.mock('@/components/shared/status-badge', () => ({
+vi.mock('@/shared/components/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
 }));
-vi.mock('@/components/shared/favorite-button', () => ({
+vi.mock('@/shared/components/favorite-button', () => ({
   FavoriteButton: () => <button data-testid="mock-fav" />,
 }));
-vi.mock('@/hooks/use-nl-query', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({
   useNlQuery: () => ({ mutate: vi.fn(), isPending: false, data: null, error: null }),
 }));
 
-import { useDashboardFull } from '@/hooks/use-dashboard-full';
-import type { DashboardSummary } from '@/hooks/use-dashboard';
+import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
+import type { DashboardSummary } from '@/features/core/hooks/use-dashboard';
 
 const mockUseDashboardFull = vi.mocked(useDashboardFull);
 

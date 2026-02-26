@@ -4,7 +4,7 @@ import {
   formatReport,
   type BudgetConfig,
   type ChunkMeasurement,
-} from '../../scripts/check-bundle-size';
+} from '../../../scripts/check-bundle-size';
 
 const defaultConfig: BudgetConfig = {
   budgets: {

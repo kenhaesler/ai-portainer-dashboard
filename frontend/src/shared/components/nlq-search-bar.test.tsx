@@ -12,7 +12,7 @@ const mockNlQuery = {
   error: null,
 };
 
-vi.mock('@/hooks/use-nl-query', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({
   useNlQuery: () => mockNlQuery,
 }));
 

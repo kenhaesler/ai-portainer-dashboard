@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { usePageVisibility } from '@/hooks/use-page-visibility';
+import { api } from '@/shared/lib/api';
+import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
 
 interface CacheEntry {
   key: string;

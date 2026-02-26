@@ -6,18 +6,18 @@ import {
   ChevronLeft, ChevronRight, Search, ArrowRight, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useEndpoints, type Endpoint } from '@/hooks/use-endpoints';
-import { useStacks, type Stack } from '@/hooks/use-stacks';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { DataTable } from '@/components/shared/data-table';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useEndpoints, type Endpoint } from '@/features/containers/hooks/use-endpoints';
+import { useStacks, type Stack } from '@/features/containers/hooks/use-stacks';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { DataTable } from '@/shared/components/data-table';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
 import { useUiStore } from '@/stores/ui-store';
-import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { api } from '@/shared/lib/api';
+import { cn } from '@/shared/lib/utils';
+import { SpotlightCard } from '@/shared/components/spotlight-card';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;

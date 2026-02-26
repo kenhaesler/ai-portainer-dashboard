@@ -17,7 +17,7 @@ const stableMutationResult = {
   isPending: false,
 };
 
-vi.mock('@/hooks/use-security-audit', () => ({
+vi.mock('@/features/security/hooks/use-security-audit', () => ({
   useSecurityIgnoreList: () => ({
     data: ignoreListData,
     isLoading: false,

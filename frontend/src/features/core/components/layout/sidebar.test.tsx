@@ -5,11 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar, getSidebarBottomClass } from './sidebar';
 import { useUiStore } from '@/stores/ui-store';
 
-vi.mock('@/hooks/use-remediation', () => ({
+vi.mock('@/features/operations/hooks/use-remediation', () => ({
   useRemediationActions: vi.fn(),
 }));
 
-import { useRemediationActions } from '@/hooks/use-remediation';
+import { useRemediationActions } from '@/features/operations/hooks/use-remediation';
 
 const mockUseRemediationActions = vi.mocked(useRemediationActions);
 

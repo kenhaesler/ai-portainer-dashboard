@@ -16,11 +16,11 @@ import {
   Info,
   Loader2,
 } from 'lucide-react';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { useEndpoints, useEndpointCapabilities } from '@/hooks/use-endpoints';
-import { useContainers } from '@/hooks/use-containers';
-import { useStacks } from '@/hooks/use-stacks';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { useEndpoints, useEndpointCapabilities } from '@/features/containers/hooks/use-endpoints';
+import { useContainers } from '@/features/containers/hooks/use-containers';
+import { useStacks } from '@/features/containers/hooks/use-stacks';
 import {
   useCaptures,
   useStartCapture,
@@ -31,11 +31,11 @@ import {
   type Capture,
   type PcapAnalysisResult,
   type PcapFinding,
-} from '@/hooks/use-pcap';
-import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
+} from '@/features/security/hooks/use-pcap';
+import { api } from '@/shared/lib/api';
+import { cn } from '@/shared/lib/utils';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';

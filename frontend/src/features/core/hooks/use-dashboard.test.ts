@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDashboard } from './use-dashboard';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 const mockUseQuery = vi.fn();
 const mockUseAutoRefresh = vi.fn();
@@ -9,7 +9,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: (...args: unknown[]) => mockUseQuery(...args),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: (...args: unknown[]) => mockUseAutoRefresh(...args),
 }));
 

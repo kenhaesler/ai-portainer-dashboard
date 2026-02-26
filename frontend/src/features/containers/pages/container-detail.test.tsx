@@ -12,7 +12,7 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/hooks/use-container-detail', () => ({
+vi.mock('@/features/containers/hooks/use-container-detail', () => ({
   useContainerDetail: () => ({
     data: {
       id: 'c1',
@@ -35,34 +35,34 @@ vi.mock('@/hooks/use-container-detail', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-force-refresh', () => ({
+vi.mock('@/shared/hooks/use-force-refresh', () => ({
   useForceRefresh: () => ({
     forceRefresh: mockForceRefresh,
     isForceRefreshing: false,
   }),
 }));
 
-vi.mock('@/components/shared/favorite-button', () => ({
+vi.mock('@/shared/components/favorite-button', () => ({
   FavoriteButton: () => <button type="button">Favorite</button>,
 }));
 
-vi.mock('@/components/shared/refresh-button', () => ({
+vi.mock('@/shared/components/refresh-button', () => ({
   RefreshButton: () => <button type="button" data-testid="refresh-button">Refresh</button>,
 }));
 
-vi.mock('@/components/container/container-overview', () => ({
+vi.mock('@/features/containers/components/container/container-overview', () => ({
   ContainerOverview: () => <div>Overview</div>,
 }));
 
-vi.mock('@/components/container/container-logs-viewer', () => ({
+vi.mock('@/features/containers/components/container/container-logs-viewer', () => ({
   ContainerLogsViewer: () => <div>Logs</div>,
 }));
 
-vi.mock('@/components/container/container-metrics-viewer', () => ({
+vi.mock('@/features/containers/components/container/container-metrics-viewer', () => ({
   ContainerMetricsViewer: () => <div>Metrics</div>,
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({ data: [], isLoading: false }),
   useEndpointCapabilities: () => ({
     capabilities: { exec: true, realtimeLogs: true, liveStats: true, immediateActions: true },

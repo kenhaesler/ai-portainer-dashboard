@@ -22,7 +22,7 @@ vi.mock('@/providers/socket-provider', () => ({
   }),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn().mockResolvedValue({ explanations: [] }),
   },
@@ -33,7 +33,7 @@ vi.mock('@/stores/ui-store', () => ({
     selector({ potatoMode: false }),
 }));
 
-vi.mock('@/hooks/use-page-visibility', () => ({
+vi.mock('@/shared/hooks/use-page-visibility', () => ({
   usePageVisibility: () => true,
 }));
 

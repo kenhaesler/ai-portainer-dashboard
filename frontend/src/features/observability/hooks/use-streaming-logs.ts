@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 export type StreamStatus = 'idle' | 'connecting' | 'streaming' | 'reconnecting' | 'error' | 'stopped';
 

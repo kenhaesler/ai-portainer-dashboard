@@ -10,13 +10,13 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Plus, X, GitCompareArrows, BarChart3, Info, Clock } from 'lucide-react';
-import { useContainers, Container } from '@/hooks/use-containers';
-import { useComparisonMetrics, ComparisonTarget } from '@/hooks/use-container-comparison';
-import { formatDate, cn } from '@/lib/utils';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useForceRefresh } from '@/hooks/use-force-refresh';
+import { useContainers, Container } from '@/features/containers/hooks/use-containers';
+import { useComparisonMetrics, ComparisonTarget } from '@/features/containers/hooks/use-container-comparison';
+import { formatDate, cn } from '@/shared/lib/utils';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 const TIME_RANGES = ['15m', '1h', '6h', '24h', '7d'] as const;

@@ -1,10 +1,10 @@
 import { memo, useMemo, useState, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
 import { Bot, X, AlertTriangle, Lightbulb } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
-import { cn } from '@/lib/utils';
-import type { AnomalyExplanation } from '@/hooks/use-metrics';
-import { decimateTimeSeries } from '@/lib/metrics-decimation';
+import { formatDate } from '@/shared/lib/utils';
+import { cn } from '@/shared/lib/utils';
+import type { AnomalyExplanation } from '@/features/observability/hooks/use-metrics';
+import { decimateTimeSeries } from '@/features/observability/lib/metrics-decimation';
 import { useUiStore } from '@/stores/ui-store';
 import { GlassTooltip } from './glass-tooltip';
 

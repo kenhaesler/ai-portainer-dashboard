@@ -20,7 +20,7 @@ const mockSetInterval = vi.fn();
 const mockRefetch = vi.fn();
 const mockForceRefresh = vi.fn();
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({
     data: [{ id: 1, name: 'local' }],
   }),
@@ -48,11 +48,11 @@ const mockUseImages = vi.fn().mockReturnValue({
   isFetching: false,
 });
 
-vi.mock('@/hooks/use-images', () => ({
+vi.mock('@/features/containers/hooks/use-images', () => ({
   useImages: (...args: unknown[]) => mockUseImages(...args),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({
     interval: 60,
     setInterval: mockSetInterval,
@@ -60,42 +60,42 @@ vi.mock('@/hooks/use-auto-refresh', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-image-staleness', () => ({
+vi.mock('@/features/containers/hooks/use-image-staleness', () => ({
   useImageStaleness: () => ({ data: null }),
 }));
 
-vi.mock('@/hooks/use-force-refresh', () => ({
+vi.mock('@/shared/hooks/use-force-refresh', () => ({
   useForceRefresh: () => ({
     forceRefresh: mockForceRefresh,
     isForceRefreshing: false,
   }),
 }));
 
-vi.mock('@/components/charts/image-treemap', () => ({
+vi.mock('@/shared/components/charts/image-treemap', () => ({
   ImageTreemap: () => <div data-testid="image-treemap" />,
 }));
 
-vi.mock('@/components/charts/image-sunburst', () => ({
+vi.mock('@/shared/components/charts/image-sunburst', () => ({
   ImageSunburst: () => <div data-testid="image-sunburst" />,
 }));
 
-vi.mock('@/components/shared/themed-select', () => ({
+vi.mock('@/shared/components/themed-select', () => ({
   ThemedSelect: () => <div data-testid="themed-select" />,
 }));
 
-vi.mock('@/components/shared/auto-refresh-toggle', () => ({
+vi.mock('@/shared/components/auto-refresh-toggle', () => ({
   AutoRefreshToggle: () => <div data-testid="auto-refresh-toggle" />,
 }));
 
-vi.mock('@/components/shared/refresh-button', () => ({
+vi.mock('@/shared/components/refresh-button', () => ({
   RefreshButton: () => <button type="button">Refresh</button>,
 }));
 
-vi.mock('@/components/shared/loading-skeleton', () => ({
+vi.mock('@/shared/components/loading-skeleton', () => ({
   SkeletonCard: () => <div data-testid="skeleton-card" />,
 }));
 
-vi.mock('@/lib/motion-tokens', () => ({
+vi.mock('@/shared/lib/motion-tokens', () => ({
   spring: { snappy: { type: 'spring', stiffness: 400, damping: 25 } },
   duration: { fast: 0.15, base: 0.25, slow: 0.4, slower: 0.6 },
   easing: { default: [0.4, 0, 0.2, 1], pop: [0.32, 0.72, 0, 1] },
@@ -103,17 +103,17 @@ vi.mock('@/lib/motion-tokens', () => ({
   pageVariants: {},
 }));
 
-vi.mock('@/components/shared/motion-page', () => ({
+vi.mock('@/shared/components/motion-page', () => ({
   MotionPage: ({ children }: any) => <div data-testid="motion-page">{children}</div>,
   MotionReveal: ({ children }: any) => <div>{children}</div>,
   MotionStagger: ({ children, className }: any) => <div className={className}>{children}</div>,
 }));
 
-vi.mock('@/components/shared/spotlight-card', () => ({
+vi.mock('@/shared/components/spotlight-card', () => ({
   SpotlightCard: ({ children }: any) => <div>{children}</div>,
 }));
 
-vi.mock('@/components/shared/kpi-card', () => ({
+vi.mock('@/shared/components/kpi-card', () => ({
   KpiCard: ({ label, value }: any) => (
     <div data-testid="kpi-card">
       <span>{label}</span>
@@ -122,7 +122,7 @@ vi.mock('@/components/shared/kpi-card', () => ({
   ),
 }));
 
-vi.mock('@/components/shared/data-table', () => ({
+vi.mock('@/shared/components/data-table', () => ({
   DataTable: ({ columns, data, searchPlaceholder }: any) => (
     <div data-testid="data-table">
       <input placeholder={searchPlaceholder} />

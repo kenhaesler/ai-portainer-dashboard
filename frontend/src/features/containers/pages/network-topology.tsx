@@ -1,18 +1,18 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { useContainers, type Container } from '@/hooks/use-containers';
-import { useNetworks, type Network } from '@/hooks/use-networks';
-import { useEndpoints } from '@/hooks/use-endpoints';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useNetworkRates } from '@/hooks/use-metrics';
-import { TopologyGraph } from '@/components/network/topology-graph';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { formatDate } from '@/lib/utils';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
+import { useNetworks, type Network } from '@/features/containers/hooks/use-networks';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { useNetworkRates } from '@/features/observability/hooks/use-metrics';
+import { TopologyGraph } from '@/features/containers/components/network/topology-graph';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { formatDate } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 
 type SelectedNode =

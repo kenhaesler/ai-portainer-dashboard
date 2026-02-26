@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw } from 'lucide-react';
-import { ThemedSelect } from '@/components/shared/themed-select';
+import { ThemedSelect } from '@/shared/components/themed-select';
 import {
   useCreateWebhook,
   useDeleteWebhook,
@@ -11,8 +11,8 @@ import {
   useWebhooks,
   streamDashboardEvents,
   type Webhook,
-} from '@/hooks/use-webhooks';
-import { formatDate } from '@/lib/utils';
+} from '@/features/core/hooks/use-webhooks';
+import { formatDate } from '@/shared/lib/utils';
 
 interface FormState {
   name: string;

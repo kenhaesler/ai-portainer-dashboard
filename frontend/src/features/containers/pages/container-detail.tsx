@@ -2,15 +2,15 @@ import { useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { useContainerDetail } from '@/hooks/use-container-detail';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { useForceRefresh } from '@/hooks/use-force-refresh';
-import { FavoriteButton } from '@/components/shared/favorite-button';
-import { ContainerOverview } from '@/components/container/container-overview';
-import { ContainerLogsViewer } from '@/components/container/container-logs-viewer';
-import { ContainerMetricsViewer } from '@/components/container/container-metrics-viewer';
-import { useEndpoints, useEndpointCapabilities } from '@/hooks/use-endpoints';
+import { useContainerDetail } from '@/features/containers/hooks/use-container-detail';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
+import { FavoriteButton } from '@/shared/components/favorite-button';
+import { ContainerOverview } from '@/features/containers/components/container/container-overview';
+import { ContainerLogsViewer } from '@/features/containers/components/container/container-logs-viewer';
+import { ContainerMetricsViewer } from '@/features/containers/components/container/container-metrics-viewer';
+import { useEndpoints, useEndpointCapabilities } from '@/features/containers/hooks/use-endpoints';
 
 const TIME_RANGES = [
   { value: '15m', label: '15 min' },

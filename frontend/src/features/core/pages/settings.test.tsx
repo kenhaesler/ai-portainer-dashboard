@@ -8,7 +8,7 @@ const mockPost = vi.fn();
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: (...args: unknown[]) => mockGet(...args),
     post: (...args: unknown[]) => mockPost(...args),
@@ -270,7 +270,7 @@ describe('Settings tab structure', () => {
   });
 
   it('exports LLM_SETTING_KEYS from tab-ai-llm', async () => {
-    const { LLM_SETTING_KEYS } = await import('@/components/settings/tab-ai-llm');
+    const { LLM_SETTING_KEYS } = await import('@/features/core/components/settings/tab-ai-llm');
 
     expect(Array.isArray(LLM_SETTING_KEYS)).toBe(true);
     expect(LLM_SETTING_KEYS.length).toBeGreaterThan(0);

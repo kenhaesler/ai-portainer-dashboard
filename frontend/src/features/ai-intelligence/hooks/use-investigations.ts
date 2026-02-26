@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 
 export type InvestigationStatus = 'pending' | 'gathering' | 'analyzing' | 'complete' | 'failed';

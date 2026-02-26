@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Pause, Play, RefreshCw, ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { type RefreshInterval } from '@/hooks/use-auto-refresh';
+import { cn } from '@/shared/lib/utils';
+import { type RefreshInterval } from '@/shared/hooks/use-auto-refresh';
 
 const INTERVAL_OPTIONS: { label: string; value: RefreshInterval }[] = [
   { label: '15s', value: 15 },

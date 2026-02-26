@@ -19,9 +19,9 @@ import {
   DEFAULT_LOGIN_ICON,
   type Theme,
 } from '@/stores/theme-store';
-import { ICON_SETS } from '@/components/icons/icon-sets';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { cn } from '@/lib/utils';
+import { ICON_SETS } from '@/shared/components/icons/icon-sets';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { cn } from '@/shared/lib/utils';
 import { toast } from 'sonner';
 import { useCallback } from 'react';
 

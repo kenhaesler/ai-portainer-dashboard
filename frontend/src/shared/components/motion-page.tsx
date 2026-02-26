@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
-import { cn } from '@/lib/utils';
-import { pageVariants, transition, easing, duration } from '@/lib/motion-tokens';
+import { cn } from '@/shared/lib/utils';
+import { pageVariants, transition, easing, duration } from '@/shared/lib/motion-tokens';
 
 // Module-level set tracking visited paths — persists across renders but
 // resets on full page reload (which is fine: users expect entrance animation

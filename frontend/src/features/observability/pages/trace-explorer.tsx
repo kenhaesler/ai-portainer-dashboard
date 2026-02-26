@@ -11,15 +11,15 @@ import {
   Layers,
   Timer,
 } from 'lucide-react';
-import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/hooks/use-traces';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { ServiceMap } from '@/components/charts/service-map';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { cn, formatDate } from '@/lib/utils';
-import { ThemedSelect } from '@/components/shared/themed-select';
+import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/features/observability/hooks/use-traces';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { ServiceMap } from '@/shared/components/charts/service-map';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { cn, formatDate } from '@/shared/lib/utils';
+import { ThemedSelect } from '@/shared/components/themed-select';
 
 function formatDuration(ms: number): string {
   if (ms < 1) return '<1ms';

@@ -11,7 +11,7 @@ vi.mock('@/providers/auth-provider', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-vi.mock('@/hooks/use-users', () => ({
+vi.mock('@/features/core/hooks/use-users', () => ({
   useUsers: () => ({
     data: [
       {

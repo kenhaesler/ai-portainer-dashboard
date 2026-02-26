@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { api } from '@/shared/lib/api';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 
 export interface DashboardKpis {
   endpoints: number;

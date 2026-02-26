@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 
 const stateColors: Record<string, string> = {
   running: 'bg-emerald-500 border-emerald-600',

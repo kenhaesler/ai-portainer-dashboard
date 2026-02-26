@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { api } from '@/lib/api';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import type { DashboardSummary } from '@/hooks/use-dashboard';
-import type { DashboardResources } from '@/hooks/use-dashboard-resources';
-import type { Endpoint } from '@/hooks/use-endpoints';
-import type { KpiSnapshot } from '@/hooks/use-kpi-history';
+import { api } from '@/shared/lib/api';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import type { DashboardSummary } from '@/features/core/hooks/use-dashboard';
+import type { DashboardResources } from '@/features/core/hooks/use-dashboard-resources';
+import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
+import type { KpiSnapshot } from '@/features/observability/hooks/use-kpi-history';
 
 export interface DashboardFull {
   summary: DashboardSummary;

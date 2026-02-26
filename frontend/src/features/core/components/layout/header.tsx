@@ -3,9 +3,9 @@ import { Sun, Moon, Search, LogOut, User, Keyboard } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { useState, useRef, useEffect } from 'react';
-import { ConnectionOrb } from '@/components/shared/connection-orb';
+import { ConnectionOrb } from '@/shared/components/connection-orb';
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',

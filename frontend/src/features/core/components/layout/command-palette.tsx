@@ -33,12 +33,12 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useUiStore } from '@/stores/ui-store';
-import { cn } from '@/lib/utils';
-import { useGlobalSearch } from '@/hooks/use-global-search';
-import { useEndpoints } from '@/hooks/use-endpoints';
-import { useStacks } from '@/hooks/use-stacks';
+import { cn } from '@/shared/lib/utils';
+import { useGlobalSearch } from '@/shared/hooks/use-global-search';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useSearch } from '@/providers/search-provider';
-import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
+import { useNlQuery, type NlQueryResult } from '@/features/ai-intelligence/hooks/use-nl-query';
 import { Search } from 'lucide-react';
 
 interface PageEntry {

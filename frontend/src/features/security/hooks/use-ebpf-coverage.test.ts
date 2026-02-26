@@ -10,7 +10,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
 }));
 
-vi.mock('@/hooks/use-page-visibility', () => ({
+vi.mock('@/shared/hooks/use-page-visibility', () => ({
   usePageVisibility: (...args: unknown[]) => mockUsePageVisibility(...args),
 }));
 

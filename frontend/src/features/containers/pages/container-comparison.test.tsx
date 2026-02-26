@@ -5,14 +5,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { createElement } from 'react';
 import ContainerComparison from './container-comparison';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
     request: vi.fn(),
   },
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({
     interval: 30,
     setInterval: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock('recharts', () => ({
     createElement('div', null, children),
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 const mockApi = vi.mocked(api);
 
 const mockContainers = [

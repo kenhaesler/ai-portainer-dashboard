@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { DienststellenOverview, parseStackName } from './reports';
-import type { Container } from '@/hooks/use-containers';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
   return {

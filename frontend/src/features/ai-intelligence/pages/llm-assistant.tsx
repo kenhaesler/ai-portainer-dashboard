@@ -1,21 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
-import { ContextBanner, type ContextBannerData } from '@/components/shared/context-banner';
+import { ContextBanner, type ContextBannerData } from '@/shared/components/context-banner';
 import ReactMarkdown from 'react-markdown';
-import { ThemedSelect } from '@/components/shared/themed-select';
+import { ThemedSelect } from '@/shared/components/themed-select';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
+import { useLlmChat, type ToolCallEvent } from '@/features/ai-intelligence/hooks/use-llm-chat';
 import { useSockets } from '@/providers/socket-provider';
-import { useLlmModels } from '@/hooks/use-llm-models';
-import { getModelUseCase } from '@/components/settings/model-use-cases';
-import { useMcpServers } from '@/hooks/use-mcp';
-import { usePromptProfiles, useSwitchProfile } from '@/hooks/use-prompt-profiles';
+import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
+import { getModelUseCase } from '@/features/core/components/settings/model-use-cases';
+import { useMcpServers } from '@/features/ai-intelligence/hooks/use-mcp';
+import { usePromptProfiles, useSwitchProfile } from '@/features/ai-intelligence/hooks/use-prompt-profiles';
 import { useAuth } from '@/providers/auth-provider';
-import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
-import { ShimmerText } from '@/components/shared/shimmer-text';
+import { LlmFeedbackButtons } from '@/shared/components/llm-feedback-buttons';
+import { ShimmerText } from '@/shared/components/shimmer-text';
 import { toast } from 'sonner';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -50,7 +50,7 @@ const FALLBACK_SUGGESTIONS: Suggestion[] = [
   { label: 'Network topology', description: 'Describe container network connections', prompt: 'Describe the network topology and which containers can communicate' },
 ];
 
-function useSuggestions(mcpServers?: import('@/hooks/use-mcp').McpServer[]): Suggestion[] {
+function useSuggestions(mcpServers?: import('@/features/ai-intelligence/hooks/use-mcp').McpServer[]): Suggestion[] {
   const hasKaliMcp = mcpServers?.some(s => s.name.toLowerCase().includes('kali') && s.connected);
   const mcpPart = hasKaliMcp ? MCP_SUGGESTIONS : FALLBACK_SUGGESTIONS;
   return [...INFRA_SUGGESTIONS, ...mcpPart];

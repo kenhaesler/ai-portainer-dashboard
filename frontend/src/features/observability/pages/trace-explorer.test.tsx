@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 0, setInterval: vi.fn() }),
 }));
 
-vi.mock('@/components/charts/service-map', () => ({
+vi.mock('@/shared/components/charts/service-map', () => ({
   ServiceMap: () => <div>mock-service-map</div>,
 }));
 
-vi.mock('@/components/shared/themed-select', () => ({
+vi.mock('@/shared/components/themed-select', () => ({
   ThemedSelect: ({ value, options, onValueChange, className }: {
     value: string;
     options: Array<{ value: string; label: string }>;
@@ -29,7 +29,7 @@ const mockUseTrace = vi.fn();
 const mockUseServiceMap = vi.fn();
 const mockUseTraceSummary = vi.fn();
 
-vi.mock('@/hooks/use-traces', () => ({
+vi.mock('@/features/observability/hooks/use-traces', () => ({
   useTraces: (...args: unknown[]) => mockUseTraces(...args),
   useTrace: (...args: unknown[]) => mockUseTrace(...args),
   useServiceMap: (...args: unknown[]) => mockUseServiceMap(...args),

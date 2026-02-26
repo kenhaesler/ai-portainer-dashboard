@@ -22,14 +22,14 @@ import {
   useApproveAction,
   useRejectAction,
   useExecuteAction,
-} from '@/hooks/use-remediation';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
+} from '@/features/operations/hooks/use-remediation';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
 import { useSockets } from '@/providers/socket-provider';
-import { cn, formatDate } from '@/lib/utils';
+import { cn, formatDate } from '@/shared/lib/utils';
 
 type ActionStatus = 'all' | 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
 

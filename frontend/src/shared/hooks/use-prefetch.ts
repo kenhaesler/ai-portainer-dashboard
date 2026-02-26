@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 /**
  * Prefetch common data on hover/focus of navigation links to eliminate

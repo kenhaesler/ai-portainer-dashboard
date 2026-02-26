@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMetricsNetworkContext } from './metrics-network-context';
-import type { Container } from '@/hooks/use-containers';
-import type { Network } from '@/hooks/use-networks';
+import type { Container } from '@/features/containers/hooks/use-containers';
+import type { Network } from '@/features/containers/hooks/use-networks';
 
 function makeContainer(overrides: Partial<Container> & { id: string; name: string }): Container {
   return {

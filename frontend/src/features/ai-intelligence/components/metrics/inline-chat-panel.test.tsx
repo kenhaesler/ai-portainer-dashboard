@@ -7,7 +7,7 @@ const mockSendMessage = vi.fn();
 const mockCancelGeneration = vi.fn();
 const mockClearHistory = vi.fn();
 
-vi.mock('@/hooks/use-llm-chat', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-chat', () => ({
   useLlmChat: vi.fn().mockReturnValue({
     messages: [],
     isStreaming: false,
@@ -19,7 +19,7 @@ vi.mock('@/hooks/use-llm-chat', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-llm-feedback', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-feedback', () => ({
   useSubmitFeedback: () => ({
     mutate: vi.fn(),
     isPending: false,
@@ -188,7 +188,7 @@ describe('InlineChatPanel', () => {
   });
 
   it('renders messages from chat hook', async () => {
-    const { useLlmChat } = await import('@/hooks/use-llm-chat');
+    const { useLlmChat } = await import('@/features/ai-intelligence/hooks/use-llm-chat');
     vi.mocked(useLlmChat).mockReturnValue({
       messages: [
         { id: '1', role: 'user', content: 'Hello', timestamp: new Date().toISOString() },
@@ -213,7 +213,7 @@ describe('InlineChatPanel', () => {
   });
 
   it('shows stop button during streaming', async () => {
-    const { useLlmChat } = await import('@/hooks/use-llm-chat');
+    const { useLlmChat } = await import('@/features/ai-intelligence/hooks/use-llm-chat');
     vi.mocked(useLlmChat).mockReturnValue({
       messages: [],
       isStreaming: true,

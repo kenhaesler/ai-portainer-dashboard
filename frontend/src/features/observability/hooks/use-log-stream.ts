@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { detectLevel, lintLogLine, type ParsedLogEntry } from '@/lib/log-viewer';
+import { detectLevel, lintLogLine, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const AUTH_TOKEN_KEY = 'auth_token';

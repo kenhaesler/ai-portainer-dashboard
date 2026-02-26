@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { ElasticsearchSettingsSection } from './settings';
+import { ElasticsearchSettingsSection } from '@/features/core/pages/settings';
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: (...args: unknown[]) => mockGet(...args),
     post: (...args: unknown[]) => mockPost(...args),

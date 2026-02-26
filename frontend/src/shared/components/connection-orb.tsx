@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSockets } from '@/providers/socket-provider';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 
 type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';

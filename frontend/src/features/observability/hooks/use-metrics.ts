@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 import { useUiStore } from '@/stores/ui-store';
-import { usePageVisibility } from '@/hooks/use-page-visibility';
+import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
 
 interface MetricDataPoint {
   timestamp: string;

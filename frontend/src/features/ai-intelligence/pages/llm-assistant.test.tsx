@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
 // Mock modules before importing component
-vi.mock('@/hooks/use-llm-chat', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-chat', () => ({
   useLlmChat: vi.fn().mockReturnValue({
     messages: [],
     isStreaming: false,
@@ -17,7 +17,7 @@ vi.mock('@/hooks/use-llm-chat', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-llm-models', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
   useLlmModels: vi.fn().mockReturnValue({
     data: {
       models: [
@@ -29,7 +29,7 @@ vi.mock('@/hooks/use-llm-models', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-mcp', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-mcp', () => ({
   useMcpServers: vi.fn().mockReturnValue({ data: undefined }),
 }));
 
@@ -38,7 +38,7 @@ vi.mock('@/providers/socket-provider', () => ({
   useSockets: () => ({ llmSocket: mockLlmSocket }),
 }));
 
-vi.mock('@/hooks/use-llm-feedback', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-feedback', () => ({
   useSubmitFeedback: () => ({
     mutate: vi.fn(),
     isPending: false,
@@ -57,7 +57,7 @@ vi.mock('@/providers/auth-provider', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-prompt-profiles', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-prompt-profiles', () => ({
   usePromptProfiles: vi.fn().mockReturnValue({ data: undefined }),
   useSwitchProfile: vi.fn().mockReturnValue({
     mutateAsync: vi.fn(),
@@ -74,10 +74,10 @@ vi.mock('sonner', () => ({
 }));
 
 import LlmAssistantPage from './llm-assistant';
-import { useLlmChat } from '@/hooks/use-llm-chat';
-import { useLlmModels } from '@/hooks/use-llm-models';
+import { useLlmChat } from '@/features/ai-intelligence/hooks/use-llm-chat';
+import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { useAuth } from '@/providers/auth-provider';
-import { usePromptProfiles, useSwitchProfile } from '@/hooks/use-prompt-profiles';
+import { usePromptProfiles, useSwitchProfile } from '@/features/ai-intelligence/hooks/use-prompt-profiles';
 import { toast } from 'sonner';
 
 function renderPage(initialEntry: string = '/assistant', state?: Record<string, unknown>) {

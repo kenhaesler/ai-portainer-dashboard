@@ -17,8 +17,8 @@ import {
   useCreatePortainerBackup,
   useDeletePortainerBackup,
   downloadPortainerBackup,
-} from '@/hooks/use-portainer-backups';
-import { formatBytes } from '@/lib/utils';
+} from '@/features/core/hooks/use-portainer-backups';
+import { formatBytes } from '@/shared/lib/utils';
 import { toast } from 'sonner';
 
 export function InfrastructureTab({ editedValues, originalValues, onChange, isSaving }: SettingsTabProps) {

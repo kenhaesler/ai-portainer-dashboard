@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import {
   useContainers,
   usePaginatedContainers,

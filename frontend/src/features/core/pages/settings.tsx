@@ -13,28 +13,28 @@ import {
   Settings2,
   Shield,
 } from 'lucide-react';
-import { useSettings, useUpdateSetting } from '@/hooks/use-settings';
+import { useSettings, useUpdateSetting } from '@/features/core/hooks/use-settings';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 
-import { DEFAULT_SETTINGS, SETTING_CATEGORY_BY_KEY } from '@/components/settings/shared';
-import { GeneralTab, getRedisSystemInfo } from '@/components/settings/tab-general';
-import { SecurityTab } from '@/components/settings/tab-security';
-import { AiLlmTab, LlmSettingsSection, LLM_SETTING_KEYS } from '@/components/settings/tab-ai-llm';
-import { MonitoringTab } from '@/components/settings/tab-monitoring';
-import { IntegrationsTab } from '@/components/settings/tab-integrations';
-import { InfrastructureTab } from '@/components/settings/tab-infrastructure';
-import { AppearanceTab } from '@/components/settings/tab-appearance';
+import { DEFAULT_SETTINGS, SETTING_CATEGORY_BY_KEY } from '@/features/core/components/settings/shared';
+import { GeneralTab, getRedisSystemInfo } from '@/features/core/components/settings/tab-general';
+import { SecurityTab } from '@/features/core/components/settings/tab-security';
+import { AiLlmTab, LlmSettingsSection, LLM_SETTING_KEYS } from '@/features/core/components/settings/tab-ai-llm';
+import { MonitoringTab } from '@/features/core/components/settings/tab-monitoring';
+import { IntegrationsTab } from '@/features/core/components/settings/tab-integrations';
+import { InfrastructureTab } from '@/features/core/components/settings/tab-infrastructure';
+import { AppearanceTab } from '@/features/core/components/settings/tab-appearance';
 
 // Re-export for tests and other consumers
 export { LlmSettingsSection, getRedisSystemInfo };
-export { AiPromptsTab } from '@/components/settings/tab-ai-llm';
-export { ElasticsearchSettingsSection, HarborSettingsSection } from '@/components/settings/tab-integrations';
-export { SecurityAuditSettingsSection } from '@/components/settings/tab-security';
-export { NotificationHistoryPanel, NotificationTestButtons } from '@/components/settings/tab-monitoring';
+export { AiPromptsTab } from '@/features/core/components/settings/tab-ai-llm';
+export { ElasticsearchSettingsSection, HarborSettingsSection } from '@/features/core/components/settings/tab-integrations';
+export { SecurityAuditSettingsSection } from '@/features/core/components/settings/tab-security';
+export { NotificationHistoryPanel, NotificationTestButtons } from '@/features/core/components/settings/tab-monitoring';
 
 // ─── Tab definitions ─────────────────────────────────────────────────
 

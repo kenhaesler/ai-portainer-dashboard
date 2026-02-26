@@ -22,7 +22,7 @@ beforeAll(() => {
 
 // --- mocks ---
 
-vi.mock('@/hooks/use-monitoring', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-monitoring', () => ({
   useMonitoring: vi.fn().mockReturnValue({
     insights: [],
     isLoading: false,
@@ -38,32 +38,32 @@ vi.mock('@/hooks/use-monitoring', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-investigations', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-investigations', () => ({
   useInvestigations: vi.fn().mockReturnValue({
     getInvestigationForInsight: vi.fn().mockReturnValue(undefined),
   }),
   safeParseJson: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('@/hooks/use-incidents', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-incidents', () => ({
   useIncidents: vi.fn().mockReturnValue({ data: null }),
   useResolveIncident: vi.fn().mockReturnValue({ mutate: vi.fn() }),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: vi.fn().mockReturnValue({ interval: 0, setInterval: vi.fn() }),
 }));
 
-vi.mock('@/hooks/use-correlated-anomalies', () => ({
+vi.mock('@/features/observability/hooks/use-correlated-anomalies', () => ({
   useCorrelatedAnomalies: vi.fn().mockReturnValue({
     data: undefined,
     isLoading: false,
   }),
 }));
 
-import { useMonitoring } from '@/hooks/use-monitoring';
-import { useIncidents } from '@/hooks/use-incidents';
-import { useCorrelatedAnomalies } from '@/hooks/use-correlated-anomalies';
+import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
+import { useIncidents } from '@/features/ai-intelligence/hooks/use-incidents';
+import { useCorrelatedAnomalies } from '@/features/observability/hooks/use-correlated-anomalies';
 import AiMonitorPage from './ai-monitor';
 
 function renderPage() {

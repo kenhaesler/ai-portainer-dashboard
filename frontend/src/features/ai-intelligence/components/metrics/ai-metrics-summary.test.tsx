@@ -3,11 +3,11 @@ import { render, screen } from '@testing-library/react';
 import { AiMetricsSummary } from './ai-metrics-summary';
 
 // Mock the hook
-vi.mock('@/hooks/use-ai-metrics-summary', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-ai-metrics-summary', () => ({
   useAiMetricsSummary: vi.fn(),
 }));
 
-import { useAiMetricsSummary } from '@/hooks/use-ai-metrics-summary';
+import { useAiMetricsSummary } from '@/features/ai-intelligence/hooks/use-ai-metrics-summary';
 const mockUseAiMetricsSummary = vi.mocked(useAiMetricsSummary);
 
 describe('AiMetricsSummary', () => {

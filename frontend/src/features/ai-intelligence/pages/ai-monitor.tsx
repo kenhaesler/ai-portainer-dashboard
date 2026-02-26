@@ -1,14 +1,14 @@
 import { useState, useMemo } from 'react';
-import { useMonitoring } from '@/hooks/use-monitoring';
-import { useInvestigations, safeParseJson } from '@/hooks/use-investigations';
-import type { Investigation, RecommendedAction } from '@/hooks/use-investigations';
-import { useIncidents, useResolveIncident, type Incident } from '@/hooks/use-incidents';
-import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/hooks/use-correlated-anomalies';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { cn, formatDate } from '@/lib/utils';
+import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
+import { useInvestigations, safeParseJson } from '@/features/ai-intelligence/hooks/use-investigations';
+import type { Investigation, RecommendedAction } from '@/features/ai-intelligence/hooks/use-investigations';
+import { useIncidents, useResolveIncident, type Incident } from '@/features/ai-intelligence/hooks/use-incidents';
+import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { cn, formatDate } from '@/shared/lib/utils';
 import {
   AlertTriangle,
   Info,
@@ -32,7 +32,7 @@ import {
   TrendingUp,
   FileText,
 } from 'lucide-react';
-import { getModelUseCase } from '@/components/settings/model-use-cases';
+import { getModelUseCase } from '@/features/core/components/settings/model-use-cases';
 
 type Severity = 'critical' | 'warning' | 'info';
 

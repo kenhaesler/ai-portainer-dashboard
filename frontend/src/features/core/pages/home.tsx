@@ -1,27 +1,27 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
-import { useDashboardFull } from '@/hooks/use-dashboard-full';
-import { useFavoriteContainers } from '@/hooks/use-containers';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useKpiHistory } from '@/hooks/use-kpi-history';
-import { KpiCard } from '@/components/shared/kpi-card';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { useForceRefresh } from '@/hooks/use-force-refresh';
-import { FavoriteButton } from '@/components/shared/favorite-button';
+import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
+import { useFavoriteContainers } from '@/features/containers/hooks/use-containers';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { useKpiHistory } from '@/features/observability/hooks/use-kpi-history';
+import { KpiCard } from '@/shared/components/kpi-card';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
+import { FavoriteButton } from '@/shared/components/favorite-button';
 import { useFavoritesStore } from '@/stores/favorites-store';
-import { MotionPage, MotionReveal, MotionStagger } from '@/components/shared/motion-page';
-import { TiltCard } from '@/components/shared/tilt-card';
-import { SpotlightCard } from '@/components/shared/spotlight-card';
+import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/motion-page';
+import { TiltCard } from '@/shared/components/tilt-card';
+import { SpotlightCard } from '@/shared/components/spotlight-card';
 
 // Lazy-loaded chart components — lets KPI cards render first
-const EndpointHealthOctagons = lazy(() => import('@/components/charts/endpoint-health-octagons').then(m => ({ default: m.EndpointHealthOctagons })));
-const WorkloadTopBar = lazy(() => import('@/components/charts/workload-top-bar').then(m => ({ default: m.WorkloadTopBar })));
-const FleetSummaryCard = lazy(() => import('@/components/charts/fleet-summary-card').then(m => ({ default: m.FleetSummaryCard })));
-const ResourceOverviewCard = lazy(() => import('@/components/charts/resource-overview-card').then(m => ({ default: m.ResourceOverviewCard })));
+const EndpointHealthOctagons = lazy(() => import('@/shared/components/charts/endpoint-health-octagons').then(m => ({ default: m.EndpointHealthOctagons })));
+const WorkloadTopBar = lazy(() => import('@/shared/components/charts/workload-top-bar').then(m => ({ default: m.WorkloadTopBar })));
+const FleetSummaryCard = lazy(() => import('@/shared/components/charts/fleet-summary-card').then(m => ({ default: m.FleetSummaryCard })));
+const ResourceOverviewCard = lazy(() => import('@/shared/components/charts/resource-overview-card').then(m => ({ default: m.ResourceOverviewCard })));
 
 function ChartSkeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg bg-muted/50 ${className ?? 'h-[200px]'}`} />;

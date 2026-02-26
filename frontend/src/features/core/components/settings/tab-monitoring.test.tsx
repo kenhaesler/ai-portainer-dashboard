@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NotificationTestButtons } from './tab-monitoring';
 
 // Mock the api module
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     post: vi.fn(),
   },
@@ -17,7 +17,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
 
 describe('NotificationTestButtons', () => {

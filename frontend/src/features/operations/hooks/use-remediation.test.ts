@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useRemediationActions } from './use-remediation';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
     post: vi.fn(),
@@ -18,7 +18,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 const mockApi = vi.mocked(api);
 

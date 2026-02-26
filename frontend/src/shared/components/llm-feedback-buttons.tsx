@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ThumbsUp, ThumbsDown, Send, X } from 'lucide-react';
-import { useSubmitFeedback } from '@/hooks/use-llm-feedback';
-import { cn } from '@/lib/utils';
+import { useSubmitFeedback } from '@/features/ai-intelligence/hooks/use-llm-feedback';
+import { cn } from '@/shared/lib/utils';
 
 interface LlmFeedbackButtonsProps {
   /** The LLM feature that generated this output */

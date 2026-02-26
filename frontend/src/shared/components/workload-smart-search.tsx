@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Sparkles, Loader2, ArrowRight, AlertCircle, X, Filter } from 'lucide-react';
-import { useNlQuery, type NlQueryResult } from '@/hooks/use-nl-query';
-import { cn } from '@/lib/utils';
-import type { Container } from '@/hooks/use-containers';
-import { filterContainers } from '@/lib/workload-search-filter';
+import { useNlQuery, type NlQueryResult } from '@/features/ai-intelligence/hooks/use-nl-query';
+import { cn } from '@/shared/lib/utils';
+import type { Container } from '@/features/containers/hooks/use-containers';
+import { filterContainers } from '@/features/containers/lib/workload-search-filter';
 
 const FILTER_CHIPS = [
   { label: 'state:running' },

@@ -4,13 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useGlobalSearch } from './use-global-search';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 const mockApi = vi.mocked(api);
 
 function createWrapper() {

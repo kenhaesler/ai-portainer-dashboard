@@ -1,5 +1,5 @@
-import type { Container } from '@/hooks/use-containers';
-import { resolveContainerStackName } from '@/lib/container-stack-grouping';
+import type { Container } from '@/features/containers/hooks/use-containers';
+import { resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 
 export interface SearchToken {
   field?: 'name' | 'image' | 'state' | 'status' | 'stack' | 'endpoint' | 'port' | 'label';

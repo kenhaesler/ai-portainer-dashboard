@@ -3,13 +3,13 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { McpServerRow } from './tab-ai-llm';
-import type { McpServer } from '@/hooks/use-mcp';
+import type { McpServer } from '@/features/ai-intelligence/hooks/use-mcp';
 
 // Mock the hooks
 const mockMutate = vi.fn();
 const mockUpdateMutate = vi.fn();
 
-vi.mock('@/hooks/use-mcp', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-mcp', () => ({
   useConnectMcpServer: () => ({ mutate: vi.fn(), isPending: false }),
   useDisconnectMcpServer: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteMcpServer: () => ({ mutate: vi.fn(), isPending: false }),

@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react';
-import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/hooks/use-correlations';
-import { cn } from '@/lib/utils';
+import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/features/observability/hooks/use-correlations';
+import { cn } from '@/shared/lib/utils';
 
 interface CorrelationInsightsPanelProps {
   llmAvailable: boolean;

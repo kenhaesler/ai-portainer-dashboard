@@ -3,9 +3,9 @@ import { Bot, Send, X, User, AlertCircle, Wrench, CheckCircle2, XCircle, Loader2
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { useLlmChat, type ToolCallEvent } from '@/hooks/use-llm-chat';
-import { LlmFeedbackButtons } from '@/components/shared/llm-feedback-buttons';
-import { cn } from '@/lib/utils';
+import { useLlmChat, type ToolCallEvent } from '@/features/ai-intelligence/hooks/use-llm-chat';
+import { LlmFeedbackButtons } from '@/shared/components/llm-feedback-buttons';
+import { cn } from '@/shared/lib/utils';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   query_containers: 'Querying containers',

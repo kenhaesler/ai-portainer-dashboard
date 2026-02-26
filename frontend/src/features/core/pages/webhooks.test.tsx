@@ -7,7 +7,7 @@ const mockDelete = vi.fn();
 const mockTest = vi.fn();
 const mockRefetch = vi.fn();
 
-vi.mock('@/hooks/use-webhooks', () => ({
+vi.mock('@/features/core/hooks/use-webhooks', () => ({
   useWebhooks: () => ({
     data: [
       {

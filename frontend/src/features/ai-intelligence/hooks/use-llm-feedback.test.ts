@@ -7,7 +7,7 @@ const mockApiGet = vi.fn();
 const mockApiPost = vi.fn();
 const mockApiPut = vi.fn();
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: (...args: unknown[]) => mockApiGet(...args),
     post: (...args: unknown[]) => mockApiPost(...args),

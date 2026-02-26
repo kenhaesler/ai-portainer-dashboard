@@ -13,7 +13,7 @@ const mockGenerateMutate = vi.fn();
 const mockSuggestions = vi.fn();
 const mockUpdateStatusMutate = vi.fn();
 
-vi.mock('@/hooks/use-llm-feedback', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-feedback', () => ({
   useFeedbackStats: () => ({
     data: mockFeedbackStats(),
     isLoading: false,
@@ -55,7 +55,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('@/lib/utils', () => ({
+vi.mock('@/shared/lib/utils', () => ({
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
   formatDate: (d: string) => d,
 }));

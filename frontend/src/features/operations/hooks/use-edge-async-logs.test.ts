@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useEdgeAsyncLogs } from './use-edge-async-logs';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     post: vi.fn(),
     get: vi.fn(),
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 const mockApi = vi.mocked(api);
 

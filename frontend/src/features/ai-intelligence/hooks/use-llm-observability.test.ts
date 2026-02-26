@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/llm/stats')) {
@@ -22,7 +22,7 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { useLlmStats, useLlmTraces } from './use-llm-observability';
 
 function createWrapper() {

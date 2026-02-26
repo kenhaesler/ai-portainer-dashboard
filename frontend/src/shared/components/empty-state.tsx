@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { Inbox, Search, AlertCircle, FileQuestion } from 'lucide-react';
 
 type EmptyStateVariant = 'default' | 'search' | 'error' | 'no-data';

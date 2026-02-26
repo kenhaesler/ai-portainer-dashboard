@@ -1,7 +1,7 @@
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
-import { spring } from '@/lib/motion-tokens';
-import { cn } from '@/lib/utils';
+import { spring } from '@/shared/lib/motion-tokens';
+import { cn } from '@/shared/lib/utils';
 
 interface ExpandableRowProps {
   /** Whether the row is currently expanded */

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
-import { usePageVisibility } from '@/hooks/use-page-visibility';
+import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
 
 export interface CoverageRecord {
   endpoint_id: number;

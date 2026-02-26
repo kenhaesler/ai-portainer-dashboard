@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn().mockResolvedValue({
       size: 0, l1Size: 0, l2Size: 0, hits: 0, misses: 0, hitRate: '0%', backend: 'memory-only', entries: [],
@@ -13,7 +13,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 let mockIsVisible = true;
-vi.mock('@/hooks/use-page-visibility', () => ({
+vi.mock('@/shared/hooks/use-page-visibility', () => ({
   usePageVisibility: () => mockIsVisible,
 }));
 
@@ -45,7 +45,7 @@ describe('useCacheStats', () => {
   });
 
   it('fetches cache stats from the correct endpoint', async () => {
-    const { api } = await import('@/lib/api');
+    const { api } = await import('@/shared/lib/api');
     renderHook(() => useCacheStats(), { wrapper: createWrapper() });
     await vi.waitFor(() => {
       expect(api.get).toHaveBeenCalledWith('/api/admin/cache/stats');

@@ -12,7 +12,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQueries: (args: unknown) => mockUseQueries(args),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
     put: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('@/stores/ui-store', () => ({
   useUiStore: (selector: (state: { potatoMode: boolean }) => boolean) => mockUseUiStore(selector),
 }));
 
-vi.mock('@/hooks/use-page-visibility', () => ({
+vi.mock('@/shared/hooks/use-page-visibility', () => ({
   usePageVisibility: () => mockUsePageVisibility(),
 }));
 
@@ -35,23 +35,23 @@ const mockUseLogStream = vi.fn(() => ({
   reset: vi.fn(),
 }));
 
-vi.mock('@/hooks/use-log-stream', () => ({
+vi.mock('@/features/observability/hooks/use-log-stream', () => ({
   useLogStream: (...args: unknown[]) => mockUseLogStream(...args),
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({
     data: [{ id: 1, name: 'Local Docker' }],
   }),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: () => ({
     data: [{ id: 'c1', name: 'api', endpointId: 1, state: 'running', labels: {} }],
   }),
 }));
 
-vi.mock('@/components/shared/container-multi-select', () => ({
+vi.mock('@/shared/components/container-multi-select', () => ({
   ContainerMultiSelect: ({ onChange }: { onChange: (ids: string[]) => void }) => (
     <button type="button" onClick={() => onChange(['c1'])}>
       Select Container

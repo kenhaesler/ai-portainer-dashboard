@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import type { Container } from '@/hooks/use-containers';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
 vi.mock('framer-motion', () => ({
   motion: {

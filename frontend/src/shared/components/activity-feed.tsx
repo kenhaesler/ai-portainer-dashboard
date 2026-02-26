@@ -4,7 +4,7 @@ import { ChevronUp, ChevronDown, AlertCircle, CheckCircle, Info, AlertTriangle, 
 import { useActivityFeedStore, type ActivityEvent } from '@/stores/activity-feed-store';
 import { useSockets } from '@/providers/socket-provider';
 import { useThemeStore } from '@/stores/theme-store';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 
 const severityIcons = {
   success: CheckCircle,

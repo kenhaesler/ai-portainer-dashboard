@@ -7,7 +7,7 @@ const mockMutateAsync = vi.fn();
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: (...args: unknown[]) => mockApiGet(...args),
     post: (...args: unknown[]) => mockPost(...args),
@@ -24,7 +24,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('@/hooks/use-settings', () => ({
+vi.mock('@/features/core/hooks/use-settings', () => ({
   useSettings: () => ({ data: [], isLoading: false }),
   useUpdateSetting: () => ({
     mutateAsync: (...args: unknown[]) => mockMutateAsync(...args),
@@ -35,7 +35,7 @@ vi.mock('@/hooks/use-settings', () => ({
 }));
 
 const mockSwitchProfileAsync = vi.fn();
-vi.mock('@/hooks/use-prompt-profiles', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-prompt-profiles', () => ({
   usePromptProfiles: () => ({
     data: {
       profiles: [
@@ -57,7 +57,7 @@ vi.mock('@/hooks/use-prompt-profiles', () => ({
 }));
 
 const mockTestPromptMutate = vi.fn();
-vi.mock('@/hooks/use-llm-models', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
   useLlmModels: () => ({
     data: {
       models: [

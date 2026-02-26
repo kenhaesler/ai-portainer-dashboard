@@ -1,6 +1,6 @@
 import { useRef, useCallback } from 'react';
 import { motion, useMotionValue, useSpring, useReducedMotion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 
 interface TiltCardProps {

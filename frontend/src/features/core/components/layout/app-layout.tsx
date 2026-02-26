@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
 import { useAuth } from '@/providers/auth-provider';
-import { Sidebar } from '@/components/layout/sidebar';
-import { Header } from '@/components/layout/header';
-import { MobileBottomNav } from '@/components/layout/mobile-bottom-nav';
-import { CommandPalette } from '@/components/layout/command-palette';
-import { ActivityFeed } from '@/components/shared/activity-feed';
-import { KeyboardShortcutsOverlay } from '@/components/shared/keyboard-shortcuts-overlay';
-import { DashboardBackground } from '@/components/layout/dashboard-background';
+import { Sidebar } from '@/features/core/components/layout/sidebar';
+import { Header } from '@/features/core/components/layout/header';
+import { MobileBottomNav } from '@/features/core/components/layout/mobile-bottom-nav';
+import { CommandPalette } from '@/features/core/components/layout/command-palette';
+import { ActivityFeed } from '@/shared/components/activity-feed';
+import { KeyboardShortcutsOverlay } from '@/shared/components/keyboard-shortcuts-overlay';
+import { DashboardBackground } from '@/features/core/components/layout/dashboard-background';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore, themeOptions } from '@/stores/theme-store';
-import { cn } from '@/lib/utils';
-import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
-import { useEntrancePlayed } from '@/hooks/use-entrance-played';
-import { useKeyChord } from '@/hooks/use-key-chord';
-import type { ChordBinding } from '@/hooks/use-key-chord';
+import { cn } from '@/shared/lib/utils';
+import { useKeyboardShortcut } from '@/shared/hooks/use-keyboard-shortcut';
+import { useEntrancePlayed } from '@/shared/hooks/use-entrance-played';
+import { useKeyChord } from '@/shared/hooks/use-key-chord';
+import type { ChordBinding } from '@/shared/hooks/use-key-chord';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
 /**

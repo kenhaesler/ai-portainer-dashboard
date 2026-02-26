@@ -13,7 +13,7 @@ import {
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { ArrowUpDown, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react';
 
 const ROW_HEIGHT = 48;

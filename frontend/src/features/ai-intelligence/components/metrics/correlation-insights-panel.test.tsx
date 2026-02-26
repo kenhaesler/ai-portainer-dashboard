@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockUseCorrelations = vi.fn();
 const mockUseCorrelationInsights = vi.fn();
 
-vi.mock('@/hooks/use-correlations', () => ({
+vi.mock('@/features/observability/hooks/use-correlations', () => ({
   useCorrelations: (...args: unknown[]) => mockUseCorrelations(...args),
   useCorrelationInsights: (...args: unknown[]) => mockUseCorrelationInsights(...args),
 }));

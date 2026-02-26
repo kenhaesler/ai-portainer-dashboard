@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api } from '@/lib/api';
-import { useAuth } from '@/hooks/use-auth';
+import { api } from '@/shared/lib/api';
+import { useAuth } from '@/features/core/hooks/use-auth';
 
 export default function AuthCallbackPage() {
   const [searchParams] = useSearchParams();

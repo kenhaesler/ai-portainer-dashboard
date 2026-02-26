@@ -1,5 +1,5 @@
 import { Loader2, RefreshCw, Settings2 } from 'lucide-react';
-import { useCacheStats, useCacheClear } from '@/hooks/use-cache-admin';
+import { useCacheStats, useCacheClear } from '@/features/core/hooks/use-cache-admin';
 
 export interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';

@@ -32,8 +32,8 @@ import {
   type FeedbackStats,
   type LlmFeedback,
   type PromptSuggestion,
-} from '@/hooks/use-llm-feedback';
-import { cn, formatDate } from '@/lib/utils';
+} from '@/features/ai-intelligence/hooks/use-llm-feedback';
+import { cn, formatDate } from '@/shared/lib/utils';
 
 // ── Feature label map ───────────────────────────────────────────────
 

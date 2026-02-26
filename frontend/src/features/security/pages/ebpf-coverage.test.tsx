@@ -12,7 +12,7 @@ const mockEnableMutate = vi.fn();
 const mockRemoveMutate = vi.fn();
 const mockDeleteStaleMutate = vi.fn();
 
-vi.mock('@/hooks/use-ebpf-coverage', () => ({
+vi.mock('@/features/security/hooks/use-ebpf-coverage', () => ({
   useEbpfCoverage: vi.fn(() => ({
     data: {
       coverage: [
@@ -131,7 +131,7 @@ vi.mock('@/hooks/use-ebpf-coverage', () => ({
   })),
 }));
 
-vi.mock('@/components/shared/loading-skeleton', () => ({
+vi.mock('@/shared/components/loading-skeleton', () => ({
   SkeletonCard: ({ className }: { className?: string }) => (
     <div data-testid="skeleton" className={className} />
   ),

@@ -4,7 +4,7 @@ import { resolve } from 'path';
 
 describe('PWA configuration', () => {
   const viteConfig = readFileSync(
-    resolve(__dirname, '../../vite.config.ts'),
+    resolve(__dirname, '../../../vite.config.ts'),
     'utf-8',
   );
 

@@ -11,13 +11,13 @@ import {
   AlertCircle,
   ExternalLink
 } from 'lucide-react';
-import { useContainers, type Container } from '@/hooks/use-containers';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { useForceRefresh } from '@/hooks/use-force-refresh';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
 
 interface HealthStats {
   total: number;

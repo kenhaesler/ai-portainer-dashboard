@@ -18,24 +18,24 @@ import {
   Minus,
   Timer,
 } from 'lucide-react';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { useEndpoints } from '@/hooks/use-endpoints';
-import { useContainers } from '@/hooks/use-containers';
-import { useStacks } from '@/hooks/use-stacks';
-import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations } from '@/hooks/use-metrics';
-import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/hooks/use-forecasts';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
-import { AnomalySparkline } from '@/components/charts/anomaly-sparkline';
-import { NetworkTrafficTooltip } from '@/components/charts/network-traffic-tooltip';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { InlineChatPanel } from '@/components/metrics/inline-chat-panel';
-import { useLlmModels } from '@/hooks/use-llm-models';
-import { cn } from '@/lib/utils';
-import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
-import { decimateTimeSeries } from '@/lib/metrics-decimation';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useContainers } from '@/features/containers/hooks/use-containers';
+import { useStacks } from '@/features/containers/hooks/use-stacks';
+import { useContainerMetrics, useAnomalies, useNetworkRates, useAnomalyExplanations } from '@/features/observability/hooks/use-metrics';
+import { useContainerForecast, useForecasts, useAiForecastNarrative, type CapacityForecast } from '@/features/observability/hooks/use-forecasts';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
+import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
+import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { InlineChatPanel } from '@/features/ai-intelligence/components/metrics/inline-chat-panel';
+import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
+import { cn } from '@/shared/lib/utils';
+import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
+import { decimateTimeSeries } from '@/features/observability/lib/metrics-decimation';
 import {
   BarChart,
   Bar,
@@ -49,7 +49,7 @@ import {
   Legend,
   ReferenceLine,
 } from 'recharts';
-import { formatDate } from '@/lib/utils';
+import { formatDate } from '@/shared/lib/utils';
 
 const TIME_RANGES = [
   { value: '15m', label: '15 min' },
@@ -67,10 +67,10 @@ const METRIC_TYPES = [
 ];
 
 const LazyAiMetricsSummary = lazy(() =>
-  import('@/components/metrics/ai-metrics-summary').then((module) => ({ default: module.AiMetricsSummary })),
+  import('@/features/ai-intelligence/components/metrics/ai-metrics-summary').then((module) => ({ default: module.AiMetricsSummary })),
 );
 const LazyCorrelationInsightsPanel = lazy(() =>
-  import('@/components/metrics/correlation-insights-panel').then((module) => ({ default: module.CorrelationInsightsPanel })),
+  import('@/features/ai-intelligence/components/metrics/correlation-insights-panel').then((module) => ({ default: module.CorrelationInsightsPanel })),
 );
 const DEFAULT_MAX_POINTS = 240;
 

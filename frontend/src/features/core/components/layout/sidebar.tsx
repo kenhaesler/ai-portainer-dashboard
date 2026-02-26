@@ -25,13 +25,13 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { SidebarLogo } from '@/components/icons/sidebar-logo';
+import { SidebarLogo } from '@/shared/components/icons/sidebar-logo';
 import { useUiStore } from '@/stores/ui-store';
 import { useThemeStore } from '@/stores/theme-store';
-import { useRemediationActions } from '@/hooks/use-remediation';
-import { useHarborEnabled } from '@/hooks/use-harbor-vulnerabilities';
-import { usePrefetch } from '@/hooks/use-prefetch';
-import { cn } from '@/lib/utils';
+import { useRemediationActions } from '@/features/operations/hooks/use-remediation';
+import { useHarborEnabled } from '@/features/security/hooks/use-harbor-vulnerabilities';
+import { usePrefetch } from '@/shared/hooks/use-prefetch';
+import { cn } from '@/shared/lib/utils';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 interface NavItem {

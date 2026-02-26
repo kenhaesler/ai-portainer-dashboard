@@ -1,6 +1,6 @@
-import { NO_STACK_LABEL, resolveContainerStackName } from '@/lib/container-stack-grouping';
-import type { Container } from '@/hooks/use-containers';
-import type { Network } from '@/hooks/use-networks';
+import { NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
+import type { Container } from '@/features/containers/hooks/use-containers';
+import type { Network } from '@/features/containers/hooks/use-networks';
 
 export type MetricsNetworkScope = 'container' | 'stack' | 'endpoint';
 

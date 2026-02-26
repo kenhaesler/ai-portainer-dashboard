@@ -17,8 +17,8 @@ import {
   useElkLayout,
   type ElkLayoutNode,
   type ElkLayoutEdge,
-} from '@/hooks/use-elk-layout';
-import { useForceSimulation } from '@/hooks/use-force-simulation';
+} from '@/features/containers/hooks/use-elk-layout';
+import { useForceSimulation } from '@/features/containers/hooks/use-force-simulation';
 import { useUiStore } from '@/stores/ui-store';
 import { TopologyLegend } from './topology-legend';
 

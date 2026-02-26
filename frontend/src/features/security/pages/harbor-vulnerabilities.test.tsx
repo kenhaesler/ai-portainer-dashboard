@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import HarborVulnerabilitiesPage from './harbor-vulnerabilities';
 
-vi.mock('@/hooks/use-harbor-vulnerabilities', () => ({
+vi.mock('@/features/security/hooks/use-harbor-vulnerabilities', () => ({
   useHarborStatus: vi.fn(() => ({
     data: {
       configured: true,
@@ -141,7 +141,7 @@ describe('HarborVulnerabilitiesPage', () => {
 
 describe('HarborVulnerabilitiesPage (not configured)', () => {
   it('shows configuration message when Harbor is not set up', async () => {
-    const mod = await import('@/hooks/use-harbor-vulnerabilities');
+    const mod = await import('@/features/security/hooks/use-harbor-vulnerabilities');
     vi.mocked(mod.useHarborStatus).mockReturnValueOnce({
       data: { configured: false, connected: false, lastSync: null },
       isLoading: false,

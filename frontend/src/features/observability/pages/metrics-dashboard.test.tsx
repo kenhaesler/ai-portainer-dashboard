@@ -7,11 +7,11 @@ const mockUseForecasts = vi.fn();
 const mockUseNetworkRates = vi.fn();
 
 // Mock all hooks
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn().mockReturnValue({ data: [{ id: 1, name: 'local' }], isLoading: false }),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: vi.fn().mockReturnValue({
     data: [
       {
@@ -73,7 +73,7 @@ vi.mock('@/hooks/use-containers', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-stacks', () => ({
+vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: vi.fn().mockReturnValue({
     data: [
       { id: 1, name: 'alpha', endpointId: 1, type: 1, status: 'active', envCount: 0 },
@@ -82,7 +82,7 @@ vi.mock('@/hooks/use-stacks', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-metrics', () => ({
+vi.mock('@/features/observability/hooks/use-metrics', () => ({
   useContainerMetrics: vi.fn().mockReturnValue({ data: null, isLoading: false, isError: false }),
   useAnomalies: vi.fn().mockReturnValue({ data: null }),
   useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
@@ -91,13 +91,13 @@ vi.mock('@/hooks/use-metrics', () => ({
 
 const mockUseAiForecastNarrative = vi.fn();
 const mockUseContainerForecast = vi.fn();
-vi.mock('@/hooks/use-forecasts', () => ({
+vi.mock('@/features/observability/hooks/use-forecasts', () => ({
   useContainerForecast: (...args: unknown[]) => mockUseContainerForecast(...args),
   useForecasts: (...args: unknown[]) => mockUseForecasts(...args),
   useAiForecastNarrative: (...args: unknown[]) => mockUseAiForecastNarrative(...args),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: vi.fn().mockReturnValue({ interval: 0, setInterval: vi.fn() }),
 }));
 
@@ -119,29 +119,29 @@ vi.mock('recharts', () => ({
   ReferenceDot: () => null,
 }));
 
-vi.mock('@/components/charts/metrics-line-chart', () => ({
+vi.mock('@/shared/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: () => <div data-testid="metrics-chart" />,
 }));
 
-vi.mock('@/components/charts/anomaly-sparkline', () => ({
+vi.mock('@/shared/components/charts/anomaly-sparkline', () => ({
   AnomalySparkline: () => <div data-testid="sparkline" />,
 }));
 
-vi.mock('@/components/metrics/ai-metrics-summary', () => ({
+vi.mock('@/features/ai-intelligence/components/metrics/ai-metrics-summary', () => ({
   AiMetricsSummary: () => <div data-testid="ai-metrics-summary" />,
 }));
 
 const mockUseLlmModels = vi.fn();
-vi.mock('@/hooks/use-llm-models', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-models', () => ({
   useLlmModels: (...args: unknown[]) => mockUseLlmModels(...args),
 }));
 
-vi.mock('@/components/metrics/inline-chat-panel', () => ({
+vi.mock('@/features/ai-intelligence/components/metrics/inline-chat-panel', () => ({
   InlineChatPanel: ({ open }: { open: boolean }) =>
     open ? <div data-testid="inline-chat-panel">Chat Panel</div> : null,
 }));
 
-vi.mock('@/components/metrics/correlation-insights-panel', () => ({
+vi.mock('@/features/ai-intelligence/components/metrics/correlation-insights-panel', () => ({
   CorrelationInsightsPanel: () => <div data-testid="correlation-insights-panel" />,
 }));
 

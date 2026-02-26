@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Plus, Trash2, Users } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 
 interface MappingRow {
   group: string;

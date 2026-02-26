@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useForceRefresh } from './use-force-refresh';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     request: vi.fn(),
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 const mockApi = vi.mocked(api);
 

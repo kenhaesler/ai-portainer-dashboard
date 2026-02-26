@@ -20,21 +20,21 @@ import {
 import {
   useUtilizationReport,
   useTrendsReport,
-} from '@/hooks/use-reports';
-import type { ContainerReport } from '@/hooks/use-reports';
-import { useEndpoints } from '@/hooks/use-endpoints';
-import { useContainers } from '@/hooks/use-containers';
-import type { Container } from '@/hooks/use-containers';
-import { MetricsLineChart } from '@/components/charts/metrics-line-chart';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { cn } from '@/lib/utils';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { exportToCsv } from '@/lib/csv-export';
+} from '@/features/observability/hooks/use-reports';
+import type { ContainerReport } from '@/features/observability/hooks/use-reports';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useContainers } from '@/features/containers/hooks/use-containers';
+import type { Container } from '@/features/containers/hooks/use-containers';
+import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { cn } from '@/shared/lib/utils';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { exportToCsv } from '@/shared/lib/csv-export';
 import {
   MANAGEMENT_PDF_THEMES,
   exportManagementPdf,
   type ManagementPdfTheme,
-} from '@/lib/management-pdf-export';
+} from '@/features/observability/lib/management-pdf-export';
 
 const TIME_RANGES = [
   { value: '24h', label: '24 Hours' },

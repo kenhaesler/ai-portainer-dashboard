@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { isValidElement } from 'react';
 import { MetricsLineChart } from './metrics-line-chart';
-import type { AnomalyExplanation } from '@/hooks/use-metrics';
+import type { AnomalyExplanation } from '@/features/observability/hooks/use-metrics';
 
 // Mock Recharts — renders children and data attributes for testing
 vi.mock('recharts', () => {

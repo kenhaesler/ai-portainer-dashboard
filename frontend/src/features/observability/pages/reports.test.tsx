@@ -112,10 +112,10 @@ const reportState = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/csv-export', () => ({
+vi.mock('@/shared/lib/csv-export', () => ({
   exportToCsv: (...args: unknown[]) => mockExportToCsv(...args),
 }));
-vi.mock('@/lib/management-pdf-export', () => ({
+vi.mock('@/features/observability/lib/management-pdf-export', () => ({
   exportManagementPdf: (...args: unknown[]) => mockExportManagementPdf(...args),
   MANAGEMENT_PDF_THEMES: [
     { value: 'ocean', label: 'Ocean Blue' },
@@ -126,7 +126,7 @@ vi.mock('@/lib/management-pdf-export', () => ({
 }));
 
 // Mock hooks
-vi.mock('@/hooks/use-reports', () => ({
+vi.mock('@/features/observability/hooks/use-reports', () => ({
   useUtilizationReport: vi.fn((timeRange: string, _endpointId?: number, _containerId?: string, excludeInfrastructure?: boolean) => {
     const source = reportState.byRange[timeRange as keyof typeof reportState.byRange];
     const shouldExclude = excludeInfrastructure ?? true;
@@ -177,14 +177,14 @@ vi.mock('@/hooks/use-reports', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn(() => ({
     data: [{ id: 1, name: 'local' }],
     isLoading: false,
   })),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: vi.fn(() => ({
     data: [
       {
@@ -221,11 +221,11 @@ vi.mock('@/hooks/use-containers', () => ({
 }));
 
 // Mock chart component
-vi.mock('@/components/charts/metrics-line-chart', () => ({
+vi.mock('@/shared/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: () => <div data-testid="metrics-line-chart" />,
 }));
 
-vi.mock('@/components/shared/loading-skeleton', () => ({
+vi.mock('@/shared/components/loading-skeleton', () => ({
   SkeletonCard: ({ className }: { className?: string }) => (
     <div data-testid="skeleton" className={className} />
   ),

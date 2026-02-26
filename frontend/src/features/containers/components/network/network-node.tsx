@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 
 export function NetworkNode({ data }: NodeProps) {
   const label = (data as any).label || 'Unknown';

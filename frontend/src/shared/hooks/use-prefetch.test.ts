@@ -8,7 +8,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ prefetchQuery: mockPrefetchQuery }),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: { get: vi.fn(() => Promise.resolve([])) },
 }));
 

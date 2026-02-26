@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn().mockReturnValue({
     data: [{ id: 1, name: 'local' }],
   }),
@@ -12,7 +12,7 @@ vi.mock('@/hooks/use-endpoints', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: vi.fn().mockReturnValue({
     data: [
       {
@@ -43,7 +43,7 @@ vi.mock('@/hooks/use-containers', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-stacks', () => ({
+vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: vi.fn().mockReturnValue({
     data: [
       { id: 1, name: 'alpha', endpointId: 1, type: 1, status: 'active', envCount: 0 },
@@ -52,7 +52,7 @@ vi.mock('@/hooks/use-stacks', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-pcap', () => ({
+vi.mock('@/features/security/hooks/use-pcap', () => ({
   useCaptures: vi.fn().mockReturnValue({
     data: { captures: [] },
     refetch: vi.fn(),
@@ -77,7 +77,7 @@ vi.mock('@/hooks/use-pcap', () => ({
   downloadCapture: vi.fn(),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     getToken: vi.fn().mockReturnValue(null),
   },

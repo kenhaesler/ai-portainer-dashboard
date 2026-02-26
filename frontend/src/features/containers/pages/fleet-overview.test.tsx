@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import InfrastructurePage from './infrastructure';
+import InfrastructurePage from './fleet-overview';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
@@ -10,19 +10,19 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: vi.fn(),
 }));
 
-vi.mock('@/hooks/use-stacks', () => ({
+vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: vi.fn(),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
 }));
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
     request: vi.fn().mockResolvedValue({}),
@@ -34,10 +34,10 @@ vi.mock('sonner', () => ({
 }));
 
 import { toast } from 'sonner';
-import { useEndpoints } from '@/hooks/use-endpoints';
-import { useStacks } from '@/hooks/use-stacks';
-import type { Endpoint } from '@/hooks/use-endpoints';
-import type { Stack } from '@/hooks/use-stacks';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useStacks } from '@/features/containers/hooks/use-stacks';
+import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
+import type { Stack } from '@/features/containers/hooks/use-stacks';
 import { useUiStore } from '@/stores/ui-store';
 
 const mockUseEndpoints = vi.mocked(useEndpoints);

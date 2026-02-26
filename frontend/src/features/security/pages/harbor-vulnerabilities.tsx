@@ -3,14 +3,14 @@ import {
   Shield, ShieldAlert, ShieldCheck, Search, RefreshCw,
   ExternalLink, AlertTriangle, CheckCircle2, Package, Bug,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { ThemedSelect } from '@/components/shared/themed-select';
+import { cn } from '@/shared/lib/utils';
+import { ThemedSelect } from '@/shared/components/themed-select';
 import {
   useHarborStatus,
   useHarborVulnerabilities,
   useTriggerHarborSync,
   type VulnerabilityRecord,
-} from '@/hooks/use-harbor-vulnerabilities';
+} from '@/features/security/hooks/use-harbor-vulnerabilities';
 
 const severityOptions = [
   { value: 'all', label: 'All Severities' },

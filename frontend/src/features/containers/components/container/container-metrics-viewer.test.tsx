@@ -5,12 +5,12 @@ import type { ReactNode } from 'react';
 const mockUseContainerMetrics = vi.fn();
 const mockUseNetworkRates = vi.fn();
 
-vi.mock('@/hooks/use-metrics', () => ({
+vi.mock('@/features/observability/hooks/use-metrics', () => ({
   useContainerMetrics: (...args: unknown[]) => mockUseContainerMetrics(...args),
   useNetworkRates: (...args: unknown[]) => mockUseNetworkRates(...args),
 }));
 
-vi.mock('@/components/charts/metrics-line-chart', () => ({
+vi.mock('@/shared/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: ({ label }: { label: string }) => <div data-testid={`metrics-chart-${label.toLowerCase()}`} />,
 }));
 

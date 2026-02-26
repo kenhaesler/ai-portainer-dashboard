@@ -65,16 +65,16 @@ const mockTraces = [
 ];
 
 // Mock hooks
-vi.mock('@/hooks/use-llm-observability', () => ({
+vi.mock('@/features/ai-intelligence/hooks/use-llm-observability', () => ({
   useLlmTraces: vi.fn().mockReturnValue({ data: [], isLoading: false, refetch: vi.fn() }),
   useLlmStats: vi.fn().mockReturnValue({ data: null, isLoading: false, refetch: vi.fn() }),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: vi.fn().mockReturnValue({ interval: 0, setInterval: vi.fn() }),
 }));
 
-import { useLlmTraces, useLlmStats } from '@/hooks/use-llm-observability';
+import { useLlmTraces, useLlmStats } from '@/features/ai-intelligence/hooks/use-llm-observability';
 import LlmObservabilityPage from './llm-observability';
 
 function renderPage() {

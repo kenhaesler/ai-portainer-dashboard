@@ -20,13 +20,13 @@ import {
   Terminal,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { AutoRefreshToggle } from '@/components/shared/auto-refresh-toggle';
-import { RefreshButton } from '@/components/shared/refresh-button';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { cn, formatDate } from '@/lib/utils';
-import { ThemedSelect } from '@/components/shared/themed-select';
+import { api } from '@/shared/lib/api';
+import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/refresh-button';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { cn, formatDate } from '@/shared/lib/utils';
+import { ThemedSelect } from '@/shared/components/themed-select';
 
 // Log levels with colors
 const LOG_LEVELS = [

@@ -35,7 +35,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
-import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/hooks/use-llm-models';
+import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/features/ai-intelligence/hooks/use-llm-models';
 import {
   useMcpServers,
   useCreateMcpServer,
@@ -45,7 +45,7 @@ import {
   useDisconnectMcpServer,
   useMcpServerTools,
   type McpServer,
-} from '@/hooks/use-mcp';
+} from '@/features/ai-intelligence/hooks/use-mcp';
 import {
   usePromptProfiles,
   useCreateProfile,
@@ -60,17 +60,17 @@ import {
   type PromptProfileFeatureConfig,
   type PromptExportData,
   type ImportPreviewResponse,
-} from '@/hooks/use-prompt-profiles';
-import { useUpdateSetting, useDeleteSetting } from '@/hooks/use-settings';
-import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/hooks/use-prompt-versions';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { cn, formatBytes } from '@/lib/utils';
-import { api } from '@/lib/api';
+} from '@/features/ai-intelligence/hooks/use-prompt-profiles';
+import { useUpdateSetting, useDeleteSetting } from '@/features/core/hooks/use-settings';
+import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/features/ai-intelligence/hooks/use-prompt-versions';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { cn, formatBytes } from '@/shared/lib/utils';
+import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import type { LlmModel, LlmTestPromptResponse } from '@/hooks/use-llm-models';
+import type { LlmModel, LlmTestPromptResponse } from '@/features/ai-intelligence/hooks/use-llm-models';
 
-const LazyAiFeedbackPanel = lazy(() => import('@/pages/settings-ai-feedback').then((m) => ({ default: m.AiFeedbackPanel })));
+const LazyAiFeedbackPanel = lazy(() => import('@/features/core/pages/settings-ai-feedback').then((m) => ({ default: m.AiFeedbackPanel })));
 import { getModelUseCase, MODEL_USE_CASE_TABLE } from './model-use-cases';
 
 /** Keys that belong to LLM configuration (excluded from parent auto-save). */

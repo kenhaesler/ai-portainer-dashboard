@@ -12,17 +12,17 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-vi.mock('@/lib/csv-export', () => ({
+vi.mock('@/shared/lib/csv-export', () => ({
   exportToCsv: (...args: unknown[]) => mockExportToCsv(...args),
 }));
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({
     data: [{ id: 1, name: 'local' }],
   }),
 }));
 
-vi.mock('@/hooks/use-stacks', () => ({
+vi.mock('@/features/containers/hooks/use-stacks', () => ({
   useStacks: () => ({
     data: [
       { id: 10, name: 'workers', endpointId: 1, type: 2, status: 'active', envCount: 0 },
@@ -31,7 +31,7 @@ vi.mock('@/hooks/use-stacks', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-containers', () => ({
+vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: () => ({
     data: [
       {
@@ -82,21 +82,21 @@ vi.mock('@/hooks/use-containers', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({
     interval: 30,
     setInterval: vi.fn(),
   }),
 }));
 
-vi.mock('@/hooks/use-force-refresh', () => ({
+vi.mock('@/shared/hooks/use-force-refresh', () => ({
   useForceRefresh: () => ({
     forceRefresh: vi.fn(),
     isForceRefreshing: false,
   }),
 }));
 
-vi.mock('@/components/shared/themed-select', () => ({
+vi.mock('@/shared/components/themed-select', () => ({
   ThemedSelect: ({ id, value, options }: { id?: string; value: string; options: Array<{ value: string; label: string }> }) => (
     <div data-testid={id} data-value={value}>
       {options.map((option) => (
@@ -108,7 +108,7 @@ vi.mock('@/components/shared/themed-select', () => ({
 
 let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
 
-vi.mock('@/components/shared/data-table', () => ({
+vi.mock('@/shared/components/data-table', () => ({
   DataTable: ({
     data,
     enableRowSelection,
@@ -139,27 +139,27 @@ vi.mock('@/components/shared/data-table', () => ({
   },
 }));
 
-vi.mock('@/components/shared/status-badge', () => ({
+vi.mock('@/shared/components/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
 }));
 
-vi.mock('@/components/shared/auto-refresh-toggle', () => ({
+vi.mock('@/shared/components/auto-refresh-toggle', () => ({
   AutoRefreshToggle: () => <div>Auto Refresh</div>,
 }));
 
-vi.mock('@/components/shared/refresh-button', () => ({
+vi.mock('@/shared/components/refresh-button', () => ({
   RefreshButton: () => <button type="button">Refresh</button>,
 }));
 
-vi.mock('@/components/shared/favorite-button', () => ({
+vi.mock('@/shared/components/favorite-button', () => ({
   FavoriteButton: () => <button type="button">Favorite</button>,
 }));
 
-vi.mock('@/components/shared/loading-skeleton', () => ({
+vi.mock('@/shared/components/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('@/components/shared/selection-action-bar', () => ({
+vi.mock('@/shared/components/selection-action-bar', () => ({
   SelectionActionBar: ({
     selectedCount,
     visible,
@@ -179,7 +179,7 @@ vi.mock('@/components/shared/selection-action-bar', () => ({
     ) : null,
 }));
 
-vi.mock('@/lib/motion-tokens', () => ({
+vi.mock('@/shared/lib/motion-tokens', () => ({
   transition: { fast: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
 }));
 
@@ -193,7 +193,7 @@ vi.mock('framer-motion', () => ({
 
 let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
 
-vi.mock('@/components/shared/workload-smart-search', () => ({
+vi.mock('@/shared/components/workload-smart-search', () => ({
   WorkloadSmartSearch: ({ onFiltered, totalCount }: { onFiltered: (c: unknown[]) => void; totalCount: number }) => {
     mockOnFiltered = onFiltered;
     return <div data-testid="workload-smart-search" data-total={totalCount} />;
@@ -202,7 +202,7 @@ vi.mock('@/components/shared/workload-smart-search', () => ({
 
 let mockOnStateFilterChange: ((state: string | undefined) => void) | undefined;
 
-vi.mock('@/components/workload/workload-status-summary', () => ({
+vi.mock('@/features/containers/components/workload/workload-status-summary', () => ({
   WorkloadStatusSummary: ({ containers, activeStateFilter, onStateFilterChange }: { containers: unknown[]; activeStateFilter: string | undefined; onStateFilterChange: (s: string | undefined) => void }) => {
     mockOnStateFilterChange = onStateFilterChange;
     return <div data-testid="workload-status-summary" data-count={containers.length} data-active={activeStateFilter ?? ''} />;

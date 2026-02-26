@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 
 interface SpotlightCardProps {

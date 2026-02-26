@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import type { Container } from '@/hooks/use-containers';
-import { cn } from '@/lib/utils';
+import type { Container } from '@/features/containers/hooks/use-containers';
+import { cn } from '@/shared/lib/utils';
 
 const STATE_ORDER = ['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'] as const;
 

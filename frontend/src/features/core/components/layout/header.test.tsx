@@ -40,7 +40,7 @@ vi.mock('@/stores/ui-store', () => ({
     }),
 }));
 
-vi.mock('@/components/shared/connection-orb', () => ({
+vi.mock('@/shared/components/connection-orb', () => ({
   ConnectionOrb: () => <div data-testid="connection-orb" />,
 }));
 

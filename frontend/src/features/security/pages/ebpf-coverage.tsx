@@ -23,11 +23,11 @@ import {
   useEnableBeyla,
   useRemoveBeyla,
   useDeleteStaleCoverage,
-} from '@/hooks/use-ebpf-coverage';
-import type { CoverageRecord } from '@/hooks/use-ebpf-coverage';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
-import { formatDate } from '@/lib/utils';
+} from '@/features/security/hooks/use-ebpf-coverage';
+import type { CoverageRecord } from '@/features/security/hooks/use-ebpf-coverage';
+import { StatusBadge } from '@/shared/components/status-badge';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { formatDate } from '@/shared/lib/utils';
 
 /** Human-readable labels for coverage statuses */
 const STATUS_LABELS: Record<string, string> = {

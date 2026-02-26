@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/shared/lib/utils';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useCountUp } from '@/hooks/use-count-up';
-import { KpiSparkline } from '@/components/charts/kpi-sparkline';
+import { useCountUp } from '@/shared/hooks/use-count-up';
+import { KpiSparkline } from '@/shared/components/charts/kpi-sparkline';
 import { useUiStore } from '@/stores/ui-store';
-import { SpotlightCard } from '@/components/shared/spotlight-card';
-import { spring, duration } from '@/lib/motion-tokens';
+import { SpotlightCard } from '@/shared/components/spotlight-card';
+import { spring, duration } from '@/shared/lib/motion-tokens';
 
 interface KpiCardProps {
   label: string;

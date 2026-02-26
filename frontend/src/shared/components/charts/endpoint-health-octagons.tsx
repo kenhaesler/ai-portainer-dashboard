@@ -1,8 +1,8 @@
 import { memo, useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { cn } from '@/lib/utils';
-import { duration, easing } from '@/lib/motion-tokens';
+import { cn } from '@/shared/lib/utils';
+import { duration, easing } from '@/shared/lib/motion-tokens';
 
 export interface EndpointHealthOctagonsProps {
   endpoints: Array<{

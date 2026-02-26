@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 
 type CacheResource = 'endpoints' | 'containers' | 'images' | 'networks' | 'stacks';
 

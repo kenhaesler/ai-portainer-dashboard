@@ -1,5 +1,5 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { formatBytes } from '@/lib/utils';
+import { formatBytes } from '@/shared/lib/utils';
 
 interface ImageData {
   name: string;

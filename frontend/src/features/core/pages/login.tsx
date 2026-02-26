@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from
 import { Navigate, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
-import { useOIDCStatus } from "@/hooks/use-oidc";
-import { LoginLogo } from "@/components/icons/login-logo";
+import { useAuth } from "@/features/core/hooks/use-auth";
+import { useOIDCStatus } from "@/features/core/hooks/use-oidc";
+import { LoginLogo } from "@/shared/components/icons/login-logo";
 import { useUiStore } from "@/stores/ui-store";
-import { PostLoginLoading } from "@/components/shared/post-login-loading";
+import { PostLoginLoading } from "@/shared/components/post-login-loading";
 import { AnimatePresence } from "framer-motion";
-import { api } from "@/lib/api";
+import { api } from "@/shared/lib/api";
 
 const PARTICLES = [
   { left: "8%", delay: "0s", duration: "12s", size: "7px" },

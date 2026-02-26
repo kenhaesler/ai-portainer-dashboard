@@ -1,6 +1,6 @@
 import { Timer, TimerOff } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { type RefreshInterval } from '@/hooks/use-auto-refresh';
+import { cn } from '@/shared/lib/utils';
+import { type RefreshInterval } from '@/shared/hooks/use-auto-refresh';
 
 const INTERVALS: { label: string; value: RefreshInterval }[] = [
   { label: 'Off', value: 0 },

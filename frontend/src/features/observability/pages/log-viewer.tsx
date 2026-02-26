@@ -2,16 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Download, WrapText, Activity, ArrowDown, Radio } from 'lucide-react';
-import { useEndpoints } from '@/hooks/use-endpoints';
-import { useContainers } from '@/hooks/use-containers';
-import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { ContainerMultiSelect } from '@/components/shared/container-multi-select';
-import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/lib/log-viewer';
-import { ThemedSelect } from '@/components/shared/themed-select';
+import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
+import { useContainers } from '@/features/containers/hooks/use-containers';
+import { api } from '@/shared/lib/api';
+import { cn } from '@/shared/lib/utils';
+import { ContainerMultiSelect } from '@/shared/components/container-multi-select';
+import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
+import { ThemedSelect } from '@/shared/components/themed-select';
 import { useUiStore } from '@/stores/ui-store';
-import { usePageVisibility } from '@/hooks/use-page-visibility';
-import { useLogStream } from '@/hooks/use-log-stream';
+import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
+import { useLogStream } from '@/features/observability/hooks/use-log-stream';
 
 const FALLBACK_POLL_INTERVAL_MS = 5000;
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;

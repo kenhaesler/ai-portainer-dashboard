@@ -12,10 +12,10 @@ import {
   Wifi,
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, REDACTED_SECRET, type SettingsTabProps } from './shared';
-import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { cn } from '@/shared/lib/utils';
+import { api } from '@/shared/lib/api';
 
-const LazyWebhooksPanel = lazy(() => import('@/pages/webhooks').then((m) => ({ default: m.WebhooksPanel })));
+const LazyWebhooksPanel = lazy(() => import('@/features/core/pages/webhooks').then((m) => ({ default: m.WebhooksPanel })));
 
 export function IntegrationsTab({ editedValues, originalValues, onChange, isSaving }: SettingsTabProps) {
   return (

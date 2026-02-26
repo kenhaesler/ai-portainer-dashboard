@@ -14,7 +14,7 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('@/hooks/use-remediation', () => ({
+vi.mock('@/features/operations/hooks/use-remediation', () => ({
   useRemediationActions: () => ({
     data: [{
       id: 'action-1',
@@ -50,7 +50,7 @@ vi.mock('@/hooks/use-remediation', () => ({
   useExecuteAction: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
 }));
 
-vi.mock('@/hooks/use-auto-refresh', () => ({
+vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
 }));
 

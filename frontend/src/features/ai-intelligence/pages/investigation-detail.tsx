@@ -5,8 +5,8 @@ import {
   useInvestigationByInsightId,
   useInvestigationDetail,
   type RecommendedAction,
-} from '@/hooks/use-investigations';
-import { formatDate } from '@/lib/utils';
+} from '@/features/ai-intelligence/hooks/use-investigations';
+import { formatDate } from '@/shared/lib/utils';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {

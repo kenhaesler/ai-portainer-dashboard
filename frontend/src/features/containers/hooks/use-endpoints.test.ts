@@ -3,13 +3,13 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 
-vi.mock('@/lib/api', () => ({
+vi.mock('@/shared/lib/api', () => ({
   api: {
     get: vi.fn(),
   },
 }));
 
-import { api } from '@/lib/api';
+import { api } from '@/shared/lib/api';
 import { useEndpointCapabilities, type Endpoint, type EdgeCapabilities } from './use-endpoints';
 
 const mockApi = vi.mocked(api);

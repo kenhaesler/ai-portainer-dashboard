@@ -1,5 +1,5 @@
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
-import { formatBytes } from '@/lib/utils';
+import { formatBytes } from '@/shared/lib/utils';
 
 interface ImageData {
   [key: string]: unknown;

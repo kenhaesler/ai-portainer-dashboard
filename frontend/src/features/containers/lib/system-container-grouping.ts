@@ -1,4 +1,4 @@
-import type { Container } from '@/hooks/use-containers';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
 export type ContainerGroup = 'system' | 'workload';
 

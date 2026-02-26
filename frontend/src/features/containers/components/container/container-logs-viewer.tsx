@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Play, RotateCcw, CheckCircle2, Zap } from 'lucide-react';
-import { useContainerLogs, type ContainerLogsError } from '@/hooks/use-container-logs';
-import { useEdgeAsyncLogs } from '@/hooks/use-edge-async-logs';
-import { useStreamingLogs, type StreamStatus } from '@/hooks/use-streaming-logs';
-import { ThemedSelect } from '@/components/shared/themed-select';
-import { SkeletonCard } from '@/components/shared/loading-skeleton';
+import { useContainerLogs, type ContainerLogsError } from '@/features/containers/hooks/use-container-logs';
+import { useEdgeAsyncLogs } from '@/features/operations/hooks/use-edge-async-logs';
+import { useStreamingLogs, type StreamStatus } from '@/features/observability/hooks/use-streaming-logs';
+import { ThemedSelect } from '@/shared/components/themed-select';
+import { SkeletonCard } from '@/shared/components/loading-skeleton';
 
 export type TailCount = 100 | 500 | 1000 | -1;
 

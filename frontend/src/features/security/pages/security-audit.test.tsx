@@ -33,11 +33,11 @@ const mockEntries = [
   },
 ];
 
-vi.mock('@/hooks/use-endpoints', () => ({
+vi.mock('@/features/containers/hooks/use-endpoints', () => ({
   useEndpoints: () => ({ data: [{ id: 1, name: 'prod' }] }),
 }));
 
-vi.mock('@/hooks/use-security-audit', () => ({
+vi.mock('@/features/security/hooks/use-security-audit', () => ({
   useSecurityAudit: () => ({
     data: { entries: mockEntries },
     isLoading: false,
