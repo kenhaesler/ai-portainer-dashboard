@@ -62,7 +62,7 @@
   "types": "./dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && cp -r src/db/postgres-migrations dist/db/ && cp -r src/db/timescale-migrations dist/db/",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/db && cp -r src/db/postgres-migrations dist/db/ && cp -r src/db/timescale-migrations dist/db/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

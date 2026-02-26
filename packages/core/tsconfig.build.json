@@ -7,7 +7,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "incremental": true,
-    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo"
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "exclude": ["**/*.test.ts", "**/__tests__/**", "node_modules", "dist"]
 }
