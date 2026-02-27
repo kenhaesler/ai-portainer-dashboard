@@ -8,6 +8,7 @@ import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup } from '../services/backup-service.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { FilenameParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { safePath, PathTraversalError } from '@dashboard/core/utils/safe-path.js';
 
 const log = createChildLogger('backup-route');
 
@@ -17,15 +18,19 @@ function getBackupDir() {
   return dir;
 }
 
+/**
+ * Resolve a user-supplied filename to an absolute path inside the backup directory.
+ * Returns null if the filename would escape the backup directory (CWE-22).
+ */
 function resolveBackupFilePath(backupDir: string, filename: string): string | null {
-  const resolvedBackupDir = path.resolve(backupDir);
-  const filePath = path.resolve(backupDir, filename);
-
-  if (!filePath.startsWith(`${resolvedBackupDir}${path.sep}`)) {
-    return null;
+  try {
+    return safePath(backupDir, filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      return null;
+    }
+    throw err;
   }
-
-  return filePath;
 }
 
 export async function backupRoutes(fastify: FastifyInstance) {
