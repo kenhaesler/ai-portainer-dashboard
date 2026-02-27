@@ -11,15 +11,16 @@
     "packages/infrastructure",
     "packages/security",
     "packages/observability",
-    "packages/operations"
+    "packages/operations",
+    "packages/ai-intelligence"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w backend && npm run build -w frontend",
+    "build": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w backend && npm run build -w frontend",
     "lint": "npm run lint:bash && npm run lint -w backend && npm run lint -w frontend",
     "lint:bash": "bash scripts/lint-bash.sh",
-    "typecheck": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run typecheck -w backend && npm run typecheck -w frontend",
-    "test": "npm run test -w @dashboard/contracts && npm run test -w @dashboard/core && npm run test -w @dashboard/infrastructure && npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/operations && npm run test -w backend && npm run test -w frontend",
+    "typecheck": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run typecheck -w backend && npm run typecheck -w frontend",
+    "test": "npm run test -w @dashboard/contracts && npm run test -w @dashboard/core && npm run test -w @dashboard/infrastructure && npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/operations && npm run test -w @dashboard/ai && npm run test -w backend && npm run test -w frontend",
     "loadtest:build": "docker compose -f docker/docker-compose.loadtest.yml build",
     "loadtest:rest": "docker compose -f docker/docker-compose.loadtest.yml run --rm rest",
     "loadtest:socketio": "docker compose -f docker/docker-compose.loadtest.yml run --rm socketio",

@@ -33,3 +33,23 @@ export const AnomalyDetectionSchema = z.object({
 
 export type Metric = z.infer<typeof MetricSchema>;
 export type AnomalyDetection = z.infer<typeof AnomalyDetectionSchema>;
+
+/** Result of a moving average calculation over a container metric window. */
+export interface MovingAverageResult {
+  mean: number;
+  std_dev: number;
+  sample_count: number;
+}
+
+/** Capacity forecast for a container metric. */
+export interface CapacityForecast {
+  containerId: string;
+  containerName: string;
+  metricType: string;
+  currentValue: number;
+  trend: 'increasing' | 'decreasing' | 'stable';
+  slope: number;
+  r_squared: number;
+  timeToThreshold: number | null;
+  confidence: 'high' | 'medium' | 'low';
+}

@@ -113,7 +113,7 @@ jobs:
         run: npm ci
 
       - name: Build workspace packages
-        run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations
+        run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
 
       - name: Run backend tests
         run: npm run test -w backend -- --coverage

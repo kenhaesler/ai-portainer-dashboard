@@ -147,20 +147,46 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
   })),
 }));
 
-vi.mock('../modules/ai-intelligence/services/prompt-store.js', () => ({
-  getEffectivePrompt: vi.fn(() => 'You are a dashboard query interpreter.'),
-  PROMPT_FEATURES: ['command_palette', 'monitoring_analysis', 'anomaly_explanation', 'incident_summary', 'forecast_narrative', 'correlation_insight'],
-  DEFAULT_PROMPTS: {},
-  estimateTokens: vi.fn(() => 100),
-}));
-
-vi.mock('../modules/ai-intelligence/services/llm-trace-store.js', async () =>
-  (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
-);
-
-vi.mock('../modules/ai-intelligence/services/prompt-test-fixtures.js', () => ({
-  PROMPT_TEST_FIXTURES: [],
-}));
+vi.mock('@dashboard/ai', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  const { createLlmTraceStoreMock } = await import('../test-utils/mock-llm.js');
+  return {
+    ...orig,
+    // prompt-store overrides
+    getEffectivePrompt: vi.fn(() => 'You are a dashboard query interpreter.'),
+    PROMPT_FEATURES: ['command_palette', 'monitoring_analysis', 'anomaly_explanation', 'incident_summary', 'forecast_narrative', 'correlation_insight'],
+    DEFAULT_PROMPTS: {},
+    estimateTokens: vi.fn(() => 100),
+    // llm-trace-store overrides (prevent DB writes in tests)
+    ...createLlmTraceStoreMock(),
+    // prompt-test-fixtures
+    PROMPT_TEST_FIXTURES: [],
+    // mcp-manager overrides
+    connectServer: vi.fn().mockResolvedValue(undefined),
+    disconnectServer: vi.fn().mockResolvedValue(undefined),
+    getConnectedServers: vi.fn(() => []),
+    getServerTools: vi.fn(() => []),
+    isConnected: vi.fn(() => false),
+    // prompt-profile-store overrides
+    getAllProfiles: vi.fn(() => []),
+    getProfileById: vi.fn(() => null),
+    createProfile: vi.fn(() => ({ id: '1' })),
+    updateProfile: vi.fn(() => null),
+    deleteProfile: vi.fn(),
+    duplicateProfile: vi.fn(() => ({ id: '2' })),
+    getActiveProfileId: vi.fn(() => null),
+    switchProfile: vi.fn(),
+    // investigation-store overrides
+    getInvestigations: vi.fn(() => []),
+    getInvestigation: vi.fn(() => null),
+    getInvestigationByInsightId: vi.fn(() => null),
+    // incident-store overrides
+    getIncidents: vi.fn(() => []),
+    getIncident: vi.fn(() => null),
+    resolveIncident: vi.fn(),
+    getIncidentCount: vi.fn(() => 0),
+  };
+});
 
 vi.mock('@dashboard/security', () => ({
   // security-audit
@@ -263,47 +289,14 @@ vi.mock('@dashboard/observability', async (importOriginal) => {
   };
 });
 
-// Passthrough mock: keeps real implementations but makes the module writable for vi.spyOn
-vi.mock('../modules/ai-intelligence/services/llm-client.js', async (importOriginal) => await importOriginal());
-
 // metric-correlator mocked inside @dashboard/observability mock above
 
 // ebpf-coverage, image-staleness, pcap-service, pcap-analysis-service mocks
 // are consolidated into vi.mock('@dashboard/security', ...) above
 
-vi.mock('../modules/ai-intelligence/services/mcp-manager.js', () => ({
-  connectServer: vi.fn().mockResolvedValue(undefined),
-  disconnectServer: vi.fn().mockResolvedValue(undefined),
-  getConnectedServers: vi.fn(() => []),
-  getServerTools: vi.fn(() => []),
-  isConnected: vi.fn(() => false),
-}));
-
-vi.mock('../modules/ai-intelligence/services/prompt-profile-store.js', () => ({
-  getAllProfiles: vi.fn(() => []),
-  getProfileById: vi.fn(() => null),
-  createProfile: vi.fn(() => ({ id: '1' })),
-  updateProfile: vi.fn(() => null),
-  deleteProfile: vi.fn(),
-  duplicateProfile: vi.fn(() => ({ id: '2' })),
-  getActiveProfileId: vi.fn(() => null),
-  switchProfile: vi.fn(),
-}));
-
 // portainer-backup mocked inside @dashboard/operations mock above
 
-vi.mock('../modules/ai-intelligence/services/investigation-store.js', () => ({
-  getInvestigations: vi.fn(() => []),
-  getInvestigation: vi.fn(() => null),
-  getInvestigationByInsightId: vi.fn(() => null),
-}));
-
-vi.mock('../modules/ai-intelligence/services/incident-store.js', () => ({
-  getIncidents: vi.fn(() => []),
-  getIncident: vi.fn(() => null),
-  resolveIncident: vi.fn(),
-  getIncidentCount: vi.fn(() => 0),
-}));
+// @dashboard/ai services (prompt-store, llm-trace-store, etc.) mocked above via vi.mock('@dashboard/ai', ...)
 
 vi.mock('@dashboard/infrastructure/services/elasticsearch-config.js', () => ({
   getElasticsearchConfig: vi.fn(() => null),
@@ -330,7 +323,18 @@ import { endpointsRoutes } from './endpoints.js';
 import { containersRoutes } from './containers.js';
 import { containerLogsRoutes } from './container-logs.js';
 import { stacksRoutes } from './stacks.js';
-import { monitoringRoutes } from '../modules/ai-intelligence/routes/monitoring.js';
+import {
+  monitoringRoutes,
+  investigationRoutes,
+  incidentsRoutes,
+  llmRoutes,
+  llmObservabilityRoutes,
+  correlationRoutes,
+  mcpRoutes,
+  promptProfileRoutes,
+  type MonitoringRoutesOpts,
+  type CorrelationRoutesOpts,
+} from '@dashboard/ai';
 import {
   remediationRoutes,
   backupRoutes,
@@ -342,18 +346,11 @@ import {
 import { settingsRoutes } from './settings.js';
 import { imagesRoutes } from './images.js';
 import { networksRoutes } from './networks.js';
-import { investigationRoutes } from '../modules/ai-intelligence/routes/investigations.js';
 import { searchRoutes } from './search.js';
 import { cacheAdminRoutes } from './cache-admin.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import type { LLMInterface } from '@dashboard/contracts';
 import { userRoutes } from './users.js';
-import { incidentsRoutes } from '../modules/ai-intelligence/routes/incidents.js';
-import { llmRoutes } from '../modules/ai-intelligence/routes/llm.js';
-import { llmObservabilityRoutes } from '../modules/ai-intelligence/routes/llm-observability.js';
-import { correlationRoutes } from '../modules/ai-intelligence/routes/correlations.js';
-import { mcpRoutes } from '../modules/ai-intelligence/routes/mcp.js';
-import { promptProfileRoutes } from '../modules/ai-intelligence/routes/prompt-profiles.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 
@@ -415,7 +412,14 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(containersRoutes);
   await app.register(containerLogsRoutes);
   await app.register(stacksRoutes);
-  await app.register(monitoringRoutes);
+  const monitoringOpts: MonitoringRoutesOpts = {
+    getSecurityAudit: vi.fn().mockResolvedValue([]),
+    getSecurityAuditIgnoreList: vi.fn().mockResolvedValue([]),
+    setSecurityAuditIgnoreList: vi.fn().mockResolvedValue([]),
+    defaultSecurityAuditIgnorePatterns: [],
+    securityAuditIgnoreKey: 'security_audit_ignore',
+  };
+  await app.register(monitoringRoutes, monitoringOpts);
   await app.register(observabilityRoutes);
   await app.register(remediationRoutes);
   await app.register(backupRoutes);
@@ -435,7 +439,12 @@ async function buildFullApp(): Promise<{ app: FastifyInstance; registeredRoutes:
   await app.register(incidentsRoutes);
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
-  await app.register(correlationRoutes);
+  const correlationOpts: CorrelationRoutesOpts = {
+    detectCorrelatedAnomalies: vi.fn().mockResolvedValue([]),
+    findCorrelatedContainers: vi.fn().mockResolvedValue([]),
+    isUndefinedTableError: vi.fn(() => false),
+  };
+  await app.register(correlationRoutes, correlationOpts);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(edgeJobsRoutes);
