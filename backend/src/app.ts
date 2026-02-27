@@ -34,6 +34,8 @@ import {
   notificationRoutes,
   webhookRoutes,
   initRemediationDeps,
+  suggestAction,
+  notifyInsight,
 } from '@dashboard/operations';
 import {
   monitoringRoutes,
@@ -50,12 +52,42 @@ import {
   buildInfrastructureContext,
   getEffectivePrompt,
   getPromptGuardNearMissTotal,
-} from './modules/ai-intelligence/index.js';
+  createMonitoringService,
+  initInvestigationDeps,
+} from '@dashboard/ai';
+import type { MonitoringDeps } from '@dashboard/ai';
 import { infrastructureRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 import type { LLMInterface, MetricsInterface } from '@dashboard/contracts';
-import { getLatestMetrics, getMetrics } from '@dashboard/observability';
+import {
+  getLatestMetrics,
+  getMetrics,
+  getLatestMetricsBatch,
+  getMovingAverage,
+  getCapacityForecasts,
+  generateForecast,
+  findSimilarInsights,
+} from '@dashboard/observability';
+import {
+  scanContainer,
+  getSecurityAudit,
+  getSecurityAuditIgnoreList,
+  setSecurityAuditIgnoreList,
+  DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
+  SECURITY_AUDIT_IGNORE_KEY,
+} from '@dashboard/security';
+import {
+  detectCorrelatedAnomalies,
+  findCorrelatedContainers,
+  isUndefinedTableError,
+} from '@dashboard/observability';
+import {
+  getContainerLogsWithRetry,
+  isEdgeAsync,
+  getEdgeAsyncContainerLogs,
+} from '@dashboard/infrastructure';
+import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -74,6 +106,13 @@ function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; a
   }
   return {};
 }
+
+/** Shared infrastructure logs adapter (injected into ai-intelligence's llm-tools). */
+export const infraLogsAdapter: InfrastructureLogsInterface = {
+  getContainerLogsWithRetry,
+  isEdgeAsync,
+  getEdgeAsyncContainerLogs,
+};
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -117,15 +156,27 @@ export async function buildApp() {
   };
 
   // Metrics adapter — wires observability services to the MetricsInterface contract
-  // Note: MetricsInterface.getMetrics has (endpointId, containerId, metricType, from, to)
-  // but observability.getMetrics has (containerId, metricType, from, to) — endpointId unused
   const metricsAdapter: MetricsInterface = {
     getLatestMetrics,
     getMetrics: async (_endpointId, containerId, metricType, from, to) =>
       getMetrics(containerId, metricType, from.toISOString(), to.toISOString()),
     detectAnomalies: async () => [],  // stub — not needed in Phase 3
+    getLatestMetricsBatch,
+    getMovingAverage,
+    getCapacityForecasts,
+    generateForecast,
+    findSimilarInsights,
   };
+
   initRemediationDeps(llmAdapter, metricsAdapter);
+
+  // Initialize investigation service deps (breaks ai → observability import)
+  // Note: InvestigationMetricsDeps.getMetrics uses 4-param string signature (no endpointId, ISO strings)
+  initInvestigationDeps({
+    getMetrics: (containerId, metricType, from, to) => getMetrics(containerId, metricType, from, to),
+    getMovingAverage,
+    generateForecast,
+  });
 
   // Routes
   await app.register(healthRoutes);
@@ -136,7 +187,13 @@ export async function buildApp() {
   await app.register(containersRoutes);
   await app.register(containerLogsRoutes);
   await app.register(stacksRoutes);
-  await app.register(monitoringRoutes);
+  await app.register(monitoringRoutes, {
+    getSecurityAudit,
+    getSecurityAuditIgnoreList,
+    setSecurityAuditIgnoreList,
+    defaultSecurityAuditIgnorePatterns: DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
+    securityAuditIgnoreKey: SECURITY_AUDIT_IGNORE_KEY,
+  });
   await app.register(remediationRoutes);
   await app.register(backupRoutes);
   await app.register(portainerBackupRoutes);
@@ -153,7 +210,11 @@ export async function buildApp() {
   await app.register(incidentsRoutes);
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
-  await app.register(correlationRoutes);
+  await app.register(correlationRoutes, {
+    detectCorrelatedAnomalies,
+    findCorrelatedContainers,
+    isUndefinedTableError,
+  });
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(llmFeedbackRoutes);
@@ -165,4 +226,25 @@ export async function buildApp() {
   await app.register(staticPlugin);
 
   return app;
+}
+
+/** Build the monitoring service with all cross-domain deps wired via DI. */
+export function buildMonitoringService() {
+  const monitoringDeps: MonitoringDeps = {
+    scanner: { scanContainer },
+    metrics: {
+      getLatestMetrics,
+      getMetrics: async (_endpointId, containerId, metricType, from, to) =>
+        getMetrics(containerId, metricType, from.toISOString(), to.toISOString()),
+      detectAnomalies: async () => [],
+      getLatestMetricsBatch,
+      getMovingAverage,
+      getCapacityForecasts,
+      generateForecast,
+      findSimilarInsights,
+    },
+    notifications: { notifyInsight },
+    operations: { suggestAction },
+  };
+  return createMonitoringService(monitoringDeps);
 }

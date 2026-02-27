@@ -3,9 +3,11 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { getTestDb, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
 import type { AppDb } from '@dashboard/core/db/app-db.js';
-import { monitoringRoutes } from '../../ai-intelligence/routes/monitoring.js';
+import { monitoringRoutes, type MonitoringRoutesOpts } from '@dashboard/ai';
 
-let testDb: AppDb;
+// vi.hoisted: declares testDb before vi.mock factories run (prevents TDZ when
+// @dashboard/ai barrel eagerly loads services that call getDbForDomain at module level)
+const { dbRef } = vi.hoisted(() => ({ dbRef: { current: undefined as AppDb | undefined } }));
 
 const mockGetSecurityAudit = vi.fn();
 const mockGetSecurityAuditIgnoreList = vi.fn();
@@ -20,12 +22,18 @@ vi.mock('@dashboard/security', () => ({
   setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
 }));
 
-// Kept: app-db-router mock — tests control database routing
+// Kept: app-db-router mock — uses dbRef to avoid TDZ with hoisted vi.mock
 vi.mock('@dashboard/core/db/app-db-router.js', () => ({
-  getDbForDomain: () => testDb,
+  getDbForDomain: () => dbRef.current,
 }));
 
-beforeAll(async () => { testDb = await getTestDb(); });
+// Needed: audit-logger calls getDbForDomain at module load time (via @dashboard/ai barrel)
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({
+  writeAuditLog: vi.fn(),
+}));
+
+let testDb: AppDb;
+beforeAll(async () => { testDb = await getTestDb(); dbRef.current = testDb; });
 afterAll(async () => { await closeTestDb(); });
 
 describe('security audit routes', () => {
@@ -47,7 +55,14 @@ describe('security audit routes', () => {
     app.addHook('preHandler', async (request) => {
       request.user = { sub: 'u1', username: 'admin', sessionId: 's1', role: 'admin' as const };
     });
-    await app.register(monitoringRoutes);
+    const monitoringOpts: MonitoringRoutesOpts = {
+      getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
+      getSecurityAuditIgnoreList: (...args: unknown[]) => mockGetSecurityAuditIgnoreList(...args),
+      setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
+      defaultSecurityAuditIgnorePatterns: ['portainer', 'traefik'],
+      securityAuditIgnoreKey: 'security_audit_ignore_list',
+    };
+    await app.register(monitoringRoutes, monitoringOpts);
     await app.ready();
   });
 

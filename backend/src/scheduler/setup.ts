@@ -6,7 +6,7 @@ import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/p
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
 import { getSetting, getEffectiveHarborConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
-import { runMonitoringCycle, startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '../modules/ai-intelligence/index.js';
+import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
@@ -227,12 +227,14 @@ async function runKpiSnapshotCollection(): Promise<void> {
   }
 }
 
-async function runMonitoringWithErrorHandling(): Promise<void> {
-  try {
-    await runMonitoringCycle();
-  } catch (err) {
-    log.error({ err }, 'Monitoring cycle failed');
-  }
+function makeMonitoringRunner(runMonitoringCycle: () => Promise<void>): () => Promise<void> {
+  return async () => {
+    try {
+      await runMonitoringCycle();
+    } catch (err) {
+      log.error({ err }, 'Monitoring cycle failed');
+    }
+  };
 }
 
 export async function runImageStalenessCheck(): Promise<void> {
@@ -424,7 +426,7 @@ async function warmCache(): Promise<void> {
   }
 }
 
-export async function startScheduler(): Promise<void> {
+export async function startScheduler(runMonitoringCycle: () => Promise<void>): Promise<void> {
   const config = getConfig();
 
   // Wait for Portainer to be ready before starting background tasks
@@ -457,6 +459,7 @@ export async function startScheduler(): Promise<void> {
 
   if (config.MONITORING_ENABLED) {
     const monitoringIntervalMs = config.MONITORING_INTERVAL_MINUTES * 60 * 1000;
+    const runMonitoringWithErrorHandling = makeMonitoringRunner(runMonitoringCycle);
     log.info(
       { intervalMinutes: config.MONITORING_INTERVAL_MINUTES },
       'Starting monitoring scheduler',

@@ -39,12 +39,6 @@ vi.mock('@dashboard/observability', async (importOriginal) => {
 
 const insertMetricsMock = vi.fn().mockResolvedValue(undefined);
 
-// Kept: monitoring-service mock — tests don't exercise monitoring
-vi.mock('../modules/ai-intelligence/services/monitoring-service.js', () => ({
-  runMonitoringCycle: vi.fn(),
-  startCooldownSweep: vi.fn(),
-  stopCooldownSweep: vi.fn(),
-}));
 // pcap-service mock consolidated into @dashboard/security above
 // Kept: portainer-backup mock
 vi.mock('@dashboard/operations', async (importOriginal) => {
@@ -78,8 +72,10 @@ vi.mock('@dashboard/core/services/session-store.js', () => ({
 }));
 
 const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
-// Kept: insights-store mock — tests control insights cleanup (now in modules/ai-intelligence)
-vi.mock('../modules/ai-intelligence/services/insights-store.js', () => ({
+// Kept: @dashboard/ai mock — tests control insights cleanup and cooldown sweep
+vi.mock('@dashboard/ai', () => ({
+  startCooldownSweep: vi.fn(),
+  stopCooldownSweep: vi.fn(),
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
 }));
 

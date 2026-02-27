@@ -11,10 +11,7 @@ import {
   PreferencesUpdateBodySchema,
 } from '@dashboard/core/models/api-schemas.js';
 import { getUserDefaultLandingPage, setUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
-// eslint-disable-next-line boundaries/entry-point -- consuming specific prompt services, not using full barrel to avoid eager route loading
-import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '../modules/ai-intelligence/services/prompt-store.js';
-// eslint-disable-next-line boundaries/entry-point -- consuming specific prompt version services, not using full barrel to avoid eager route loading
-import { createPromptVersion, getPromptHistory, getPromptVersionById } from '../modules/ai-intelligence/services/prompt-version-store.js';
+import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt, createPromptVersion, getPromptHistory, getPromptVersionById } from '@dashboard/ai';
 
 const SENSITIVE_KEYS = new Set([
   'notifications.smtp_password',

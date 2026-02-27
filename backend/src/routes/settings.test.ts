@@ -34,30 +34,29 @@ vi.mock('@dashboard/core/services/audit-logger.js', () => ({
   writeAuditLog: vi.fn(),
 }));
 
-vi.mock('../modules/ai-intelligence/services/prompt-store.js', () => {
+const mockCreatePromptVersion = vi.fn().mockResolvedValue({ id: 1, version: 1 });
+const mockGetPromptHistory = vi.fn().mockResolvedValue([]);
+const mockGetPromptVersionById = vi.fn().mockResolvedValue(null);
+
+vi.mock('@dashboard/ai', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
   const defaults: Record<string, string> = {
     chat_assistant: 'You are a helpful assistant.',
     anomaly_explainer: 'You are an anomaly explainer.',
   };
   return {
+    ...orig,
     PROMPT_FEATURES: [
       { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
       { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },
     ],
     DEFAULT_PROMPTS: defaults,
     getEffectivePrompt: (feature: string) => defaults[feature] ?? '',
+    createPromptVersion: (...args: unknown[]) => mockCreatePromptVersion(...args),
+    getPromptHistory: (...args: unknown[]) => mockGetPromptHistory(...args),
+    getPromptVersionById: (...args: unknown[]) => mockGetPromptVersionById(...args),
   };
 });
-
-const mockCreatePromptVersion = vi.fn().mockResolvedValue({ id: 1, version: 1 });
-const mockGetPromptHistory = vi.fn().mockResolvedValue([]);
-const mockGetPromptVersionById = vi.fn().mockResolvedValue(null);
-
-vi.mock('../modules/ai-intelligence/services/prompt-version-store.js', () => ({
-  createPromptVersion: (...args: unknown[]) => mockCreatePromptVersion(...args),
-  getPromptHistory: (...args: unknown[]) => mockGetPromptHistory(...args),
-  getPromptVersionById: (...args: unknown[]) => mockGetPromptVersionById(...args),
-}));
 
 describe('settings preference routes', () => {
   let app: FastifyInstance;
