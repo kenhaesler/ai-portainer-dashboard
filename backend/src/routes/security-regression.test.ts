@@ -1430,8 +1430,9 @@ describe('No Global TLS Override', () => {
 
   it('should scope TLS bypass to LLM connections only via undici Agent', async () => {
     // Verify the LLM service creates a per-connection agent rather than
-    // modifying the global TLS setting
-    const indexPath = path.resolve(process.cwd(), 'src', 'index.ts');
+    // modifying the global TLS setting.
+    // The entry point moved to @dashboard/server — check it there.
+    const indexPath = path.resolve(process.cwd(), '..', 'packages', 'server', 'src', 'index.ts');
     const content = readFileSync(indexPath, 'utf8');
     expect(content).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });

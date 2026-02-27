@@ -90,7 +90,7 @@ import {
   runMetricsCollection,
   isMetricsCycleRunning,
   _resetMetricsMutex,
-} from './setup.js';
+} from '../scheduler.js';
 
 // ---------------------------------------------------------------------------
 // Spy references — assigned in global beforeEach

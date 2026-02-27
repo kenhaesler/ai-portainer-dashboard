@@ -10,22 +10,24 @@ import compressPlugin from '@dashboard/core/plugins/compress.js';
 import securityHeadersPlugin from '@dashboard/core/plugins/security-headers.js';
 import cacheControlPlugin from '@dashboard/core/plugins/cache-control.js';
 import staticPlugin from '@dashboard/core/plugins/static.js';
-import { healthRoutes } from './routes/health.js';
-import { authRoutes } from './routes/auth.js';
-import { oidcRoutes } from './routes/oidc.js';
-import { dashboardRoutes } from './routes/dashboard.js';
-import { endpointsRoutes } from './routes/endpoints.js';
-import { containersRoutes } from './routes/containers.js';
-import { containerLogsRoutes } from './routes/container-logs.js';
-import { stacksRoutes } from './routes/stacks.js';
 
-import { settingsRoutes } from './routes/settings.js';
-import { imagesRoutes } from './routes/images.js';
-import { networksRoutes } from './routes/networks.js';
+// Routes hosted in `backend` (not yet extracted to domain packages)
+import { healthRoutes } from 'backend/routes/health.js';
+import { authRoutes } from 'backend/routes/auth.js';
+import { oidcRoutes } from 'backend/routes/oidc.js';
+import { dashboardRoutes } from 'backend/routes/dashboard.js';
+import { endpointsRoutes } from 'backend/routes/endpoints.js';
+import { containersRoutes } from 'backend/routes/containers.js';
+import { containerLogsRoutes } from 'backend/routes/container-logs.js';
+import { stacksRoutes } from 'backend/routes/stacks.js';
+import { settingsRoutes } from 'backend/routes/settings.js';
+import { imagesRoutes } from 'backend/routes/images.js';
+import { networksRoutes } from 'backend/routes/networks.js';
+import { searchRoutes } from 'backend/routes/search.js';
+import { cacheAdminRoutes } from 'backend/routes/cache-admin.js';
+import { userRoutes } from 'backend/routes/users.js';
 
-import { searchRoutes } from './routes/search.js';
-import { cacheAdminRoutes } from './routes/cache-admin.js';
-import { userRoutes } from './routes/users.js';
+// Routes from domain packages
 import {
   remediationRoutes,
   backupRoutes,
@@ -34,8 +36,6 @@ import {
   notificationRoutes,
   webhookRoutes,
   initRemediationDeps,
-  suggestAction,
-  notifyInsight,
 } from '@dashboard/operations';
 import {
   monitoringRoutes,
@@ -47,47 +47,30 @@ import {
   llmFeedbackRoutes,
   mcpRoutes,
   promptProfileRoutes,
-  isOllamaAvailable,
-  chatStream,
-  buildInfrastructureContext,
-  getEffectivePrompt,
   getPromptGuardNearMissTotal,
-  createMonitoringService,
   initInvestigationDeps,
 } from '@dashboard/ai';
-import type { MonitoringDeps } from '@dashboard/ai';
 import { infrastructureRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
-import type { LLMInterface, MetricsInterface } from '@dashboard/contracts';
+
 import {
-  getLatestMetrics,
+  detectCorrelatedAnomalies,
+  findCorrelatedContainers,
+  isUndefinedTableError,
   getMetrics,
-  getLatestMetricsBatch,
   getMovingAverage,
-  getCapacityForecasts,
   generateForecast,
-  findSimilarInsights,
 } from '@dashboard/observability';
 import {
-  scanContainer,
   getSecurityAudit,
   getSecurityAuditIgnoreList,
   setSecurityAuditIgnoreList,
   DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS,
   SECURITY_AUDIT_IGNORE_KEY,
 } from '@dashboard/security';
-import {
-  detectCorrelatedAnomalies,
-  findCorrelatedContainers,
-  isUndefinedTableError,
-} from '@dashboard/observability';
-import {
-  getContainerLogsWithRetry,
-  isEdgeAsync,
-  getEdgeAsyncContainerLogs,
-} from '@dashboard/infrastructure';
-import type { InfrastructureLogsInterface } from '@dashboard/contracts';
+
+import { buildLlmAdapter, buildMetricsAdapter } from './wiring.js';
 
 function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; allowHTTP1: true } } | Record<string, never> {
   const enabled = process.env.HTTP2_ENABLED === 'true';
@@ -106,13 +89,6 @@ function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; a
   }
   return {};
 }
-
-/** Shared infrastructure logs adapter (injected into ai-intelligence's llm-tools). */
-export const infraLogsAdapter: InfrastructureLogsInterface = {
-  getContainerLogsWithRetry,
-  isEdgeAsync,
-  getEdgeAsyncContainerLogs,
-};
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -146,27 +122,9 @@ export async function buildApp() {
   await app.register(authPlugin);
   await app.register(socketIoPlugin);
 
-  // LLM adapter — wires ai-intelligence services to the LLMInterface contract
-  // Defined once and reused for all packages that need LLM access (security, observability, etc.)
-  const llmAdapter: LLMInterface = {
-    isAvailable: isOllamaAvailable,
-    chatStream,
-    buildInfrastructureContext,
-    getEffectivePrompt,
-  };
-
-  // Metrics adapter — wires observability services to the MetricsInterface contract
-  const metricsAdapter: MetricsInterface = {
-    getLatestMetrics,
-    getMetrics: async (_endpointId, containerId, metricType, from, to) =>
-      getMetrics(containerId, metricType, from.toISOString(), to.toISOString()),
-    detectAnomalies: async () => [],  // stub — not needed in Phase 3
-    getLatestMetricsBatch,
-    getMovingAverage,
-    getCapacityForecasts,
-    generateForecast,
-    findSimilarInsights,
-  };
+  // Build shared adapters for DI
+  const llmAdapter = buildLlmAdapter();
+  const metricsAdapter = buildMetricsAdapter();
 
   initRemediationDeps(llmAdapter, metricsAdapter);
 
@@ -178,7 +136,7 @@ export async function buildApp() {
     generateForecast,
   });
 
-  // Routes
+  // Routes — backend (not yet domain-extracted)
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(oidcRoutes);
@@ -187,6 +145,14 @@ export async function buildApp() {
   await app.register(containersRoutes);
   await app.register(containerLogsRoutes);
   await app.register(stacksRoutes);
+  await app.register(settingsRoutes);
+  await app.register(imagesRoutes);
+  await app.register(networksRoutes);
+  await app.register(searchRoutes);
+  await app.register(cacheAdminRoutes);
+  await app.register(userRoutes);
+
+  // Routes — domain packages
   await app.register(monitoringRoutes, {
     getSecurityAudit,
     getSecurityAuditIgnoreList,
@@ -197,16 +163,10 @@ export async function buildApp() {
   await app.register(remediationRoutes);
   await app.register(backupRoutes);
   await app.register(portainerBackupRoutes);
-  await app.register(settingsRoutes);
   await app.register(logsRoutes);
-  await app.register(imagesRoutes);
-  await app.register(networksRoutes);
   await app.register(investigationRoutes);
-  await app.register(searchRoutes);
   await app.register(notificationRoutes);
-  await app.register(cacheAdminRoutes);
   await app.register(webhookRoutes);
-  await app.register(userRoutes);
   await app.register(incidentsRoutes);
   await app.register(llmRoutes);
   await app.register(llmObservabilityRoutes);
@@ -226,25 +186,4 @@ export async function buildApp() {
   await app.register(staticPlugin);
 
   return app;
-}
-
-/** Build the monitoring service with all cross-domain deps wired via DI. */
-export function buildMonitoringService() {
-  const monitoringDeps: MonitoringDeps = {
-    scanner: { scanContainer },
-    metrics: {
-      getLatestMetrics,
-      getMetrics: async (_endpointId, containerId, metricType, from, to) =>
-        getMetrics(containerId, metricType, from.toISOString(), to.toISOString()),
-      detectAnomalies: async () => [],
-      getLatestMetricsBatch,
-      getMovingAverage,
-      getCapacityForecasts,
-      generateForecast,
-      findSimilarInsights,
-    },
-    notifications: { notifyInsight },
-    operations: { suggestAction },
-  };
-  return createMonitoringService(monitoringDeps);
 }
