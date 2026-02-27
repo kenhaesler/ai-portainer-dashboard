@@ -29,11 +29,6 @@ export default tseslint.config(
       },
       'boundaries/elements': [
         { type: 'core', pattern: 'src/core/**', mode: 'folder' },
-        { type: 'ai-intelligence', pattern: 'src/modules/ai-intelligence/**', mode: 'folder' },
-        { type: 'observability', pattern: 'src/modules/observability/**', mode: 'folder' },
-        { type: 'security', pattern: 'src/modules/security/**', mode: 'folder' },
-        { type: 'operations', pattern: 'src/modules/operations/**', mode: 'folder' },
-        { type: 'infrastructure', pattern: 'src/modules/infrastructure/**', mode: 'folder' },
         { type: 'scheduler', pattern: 'src/scheduler/**', mode: 'folder' },
         { type: 'app', pattern: 'src/app.ts', mode: 'file' },
         { type: 'routes', pattern: 'src/routes/**', mode: 'folder' },
@@ -49,36 +44,12 @@ export default tseslint.config(
           rules: [
             // Everything can import from core
             { from: '*', allow: ['core'] },
-            // Within same module
-            { from: 'ai-intelligence', allow: ['ai-intelligence'] },
-            { from: 'observability', allow: ['observability'] },
-            { from: 'security', allow: ['security'] },
-            { from: 'operations', allow: ['operations'] },
-            { from: 'infrastructure', allow: ['infrastructure'] },
+            // Within same element type
             { from: 'scheduler', allow: ['scheduler'] },
-            // app.ts / routes / sockets can import from any module
+            // app.ts / routes / sockets can import from each other
             {
               from: ['app', 'routes', 'sockets'],
-              allow: [
-                'ai-intelligence',
-                'observability',
-                'security',
-                'operations',
-                'infrastructure',
-                'routes',
-                'sockets',
-              ],
-            },
-            // scheduler can import from any module
-            {
-              from: 'scheduler',
-              allow: [
-                'ai-intelligence',
-                'observability',
-                'security',
-                'operations',
-                'infrastructure',
-              ],
+              allow: ['routes', 'sockets'],
             },
           ],
         },
@@ -88,12 +59,7 @@ export default tseslint.config(
         {
           default: 'disallow',
           rules: [
-            // All domain modules: only allow index.* (barrel)
-            {
-              target: ['ai-intelligence', 'observability', 'security', 'operations', 'infrastructure'],
-              allow: 'index.*',
-            },
-            // core and routes: allow any file (fine-grained imports OK)
+            // core, routes, sockets: allow any file (fine-grained imports OK)
             { target: 'core', allow: '**' },
             { target: 'routes', allow: '**' },
             { target: 'sockets', allow: '**' },

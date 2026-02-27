@@ -1,42 +1,32 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { getTestDb, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
-import type { AppDb } from '@dashboard/core/db/app-db.js';
-import { monitoringRoutes, type MonitoringRoutesOpts } from '@dashboard/ai';
-
-// vi.hoisted: declares testDb before vi.mock factories run (prevents TDZ when
-// @dashboard/ai barrel eagerly loads services that call getDbForDomain at module level)
-const { dbRef } = vi.hoisted(() => ({ dbRef: { current: undefined as AppDb | undefined } }));
+import { monitoringRoutes, type MonitoringRoutesOpts } from '../routes/monitoring.js';
 
 const mockGetSecurityAudit = vi.fn();
 const mockGetSecurityAuditIgnoreList = vi.fn();
 const mockSetSecurityAuditIgnoreList = vi.fn();
 
-// Kept: security-audit mock — no Portainer API in CI
-vi.mock('@dashboard/security', () => ({
-  SECURITY_AUDIT_IGNORE_KEY: 'security_audit_ignore_list',
-  DEFAULT_SECURITY_AUDIT_IGNORE_PATTERNS: ['portainer', 'traefik'],
-  getSecurityAudit: (...args: unknown[]) => mockGetSecurityAudit(...args),
-  getSecurityAuditIgnoreList: (...args: unknown[]) => mockGetSecurityAuditIgnoreList(...args),
-  setSecurityAuditIgnoreList: (...args: unknown[]) => mockSetSecurityAuditIgnoreList(...args),
-}));
+const mockQuery = vi.fn().mockResolvedValue([]);
+const mockQueryOne = vi.fn().mockResolvedValue({ count: 0 });
+const mockExecute = vi.fn().mockResolvedValue({ changes: 1 });
 
-// Kept: app-db-router mock — uses dbRef to avoid TDZ with hoisted vi.mock
+// Kept: app-db-router mock — monitoringRoutes calls getDbForDomain at registration time
 vi.mock('@dashboard/core/db/app-db-router.js', () => ({
-  getDbForDomain: () => dbRef.current,
+  getDbForDomain: () => ({
+    query: (...args: unknown[]) => mockQuery(...args),
+    queryOne: (...args: unknown[]) => mockQueryOne(...args),
+    execute: (...args: unknown[]) => mockExecute(...args),
+    transaction: vi.fn(async (fn: (db: Record<string, unknown>) => Promise<unknown>) => fn({
+      query: (...a: unknown[]) => mockQuery(...a),
+      queryOne: (...a: unknown[]) => mockQueryOne(...a),
+      execute: (...a: unknown[]) => mockExecute(...a),
+    })),
+    healthCheck: vi.fn(async () => true),
+  }),
 }));
 
-// Needed: audit-logger calls getDbForDomain at module load time (via @dashboard/ai barrel)
-vi.mock('@dashboard/core/services/audit-logger.js', () => ({
-  writeAuditLog: vi.fn(),
-}));
-
-let testDb: AppDb;
-beforeAll(async () => { testDb = await getTestDb(); dbRef.current = testDb; });
-afterAll(async () => { await closeTestDb(); });
-
-describe('security audit routes', () => {
+describe('security audit routes (via monitoringRoutes DI)', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
@@ -64,6 +54,10 @@ describe('security audit routes', () => {
     };
     await app.register(monitoringRoutes, monitoringOpts);
     await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
   });
 
   beforeEach(() => {
