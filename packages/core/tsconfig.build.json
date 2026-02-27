@@ -1,13 +1,16 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "composite": true,
     "noEmit": false,
     "outDir": "./dist",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "incremental": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
+  "references": [
+    { "path": "../contracts/tsconfig.build.json" }
+  ],
   "exclude": ["**/*.test.ts", "**/__tests__/**", "node_modules", "dist"]
 }

@@ -6,6 +6,7 @@
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": "src",
+    "composite": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -14,12 +15,19 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "incremental": true,
-    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
+  "references": [
+    { "path": "../packages/contracts/tsconfig.build.json" },
+    { "path": "../packages/core/tsconfig.build.json" },
+    { "path": "../packages/infrastructure/tsconfig.build.json" },
+    { "path": "../packages/security/tsconfig.build.json" },
+    { "path": "../packages/observability/tsconfig.build.json" },
+    { "path": "../packages/operations/tsconfig.build.json" }
+  ],
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]
 }

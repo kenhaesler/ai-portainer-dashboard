@@ -18,9 +18,11 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w @dashboard/server\" \"npm run dev -w frontend\"",
     "build": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w backend && npm run build -w @dashboard/server && npm run build -w frontend",
+    "build:tsc": "tsc --build tsconfig.build.json",
+    "build:watch": "tsc --build tsconfig.build.json --watch",
     "lint": "npm run lint:bash && npm run lint -w backend && npm run lint -w frontend",
     "lint:bash": "bash scripts/lint-bash.sh",
-    "typecheck": "npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w backend && npm run typecheck -w @dashboard/server && npm run typecheck -w backend && npm run typecheck -w frontend",
+    "typecheck": "tsc --build tsconfig.build.json && npm run typecheck -w frontend",
     "test": "npm run test -w @dashboard/contracts && npm run test -w @dashboard/core && npm run test -w @dashboard/infrastructure && npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/operations && npm run test -w @dashboard/ai && npm run test -w backend && npm run test -w @dashboard/server && npm run test -w frontend",
     "loadtest:build": "docker compose -f docker/docker-compose.loadtest.yml build",
     "loadtest:rest": "docker compose -f docker/docker-compose.loadtest.yml run --rm rest",
