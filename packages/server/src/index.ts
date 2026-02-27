@@ -1,18 +1,12 @@
-import { buildApp, buildMonitoringService, infraLogsAdapter } from './app.js';
+import { buildApp } from './app.js';
+import { buildMonitoringService, infraLogsAdapter } from './wiring.js';
+import { setupSockets } from './socket-setup.js';
+import { startScheduler, stopScheduler } from './scheduler.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { getMetricsDb, closeMetricsDb, closeReportsDb } from '@dashboard/core/db/timescale.js';
 import { getAppDb, closeAppDb } from '@dashboard/core/db/postgres.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { setupLlmNamespace, setupMonitoringNamespace } from '@dashboard/ai';
-import { setupRemediationNamespace } from '@dashboard/operations';
-import { startScheduler, stopScheduler } from './scheduler/setup.js';
-import {
-  setMonitoringNamespace,
-  setInvestigationNamespace,
-  ensureModel,
-  autoConnectAll,
-  disconnectAll,
-} from '@dashboard/ai';
+import { ensureModel, autoConnectAll, disconnectAll } from '@dashboard/ai';
 
 const log = createChildLogger('server');
 
@@ -33,13 +27,7 @@ async function main() {
   const monitoringService = buildMonitoringService();
 
   // Setup Socket.IO namespaces (pass infraLogsAdapter for container log tool execution)
-  setupLlmNamespace(app.ioNamespaces.llm, infraLogsAdapter);
-  setupMonitoringNamespace(app.ioNamespaces.monitoring);
-  setupRemediationNamespace(app.ioNamespaces.remediation);
-
-  // Register monitoring namespace for real-time insight broadcasting
-  setMonitoringNamespace(app.ioNamespaces.monitoring);
-  setInvestigationNamespace(app.ioNamespaces.monitoring);
+  setupSockets(app.ioNamespaces, infraLogsAdapter);
 
   // Start background schedulers (pass monitoring cycle from the DI-wired service)
   await startScheduler(monitoringService.runMonitoringCycle);

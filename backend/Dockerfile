@@ -15,7 +15,8 @@ COPY packages/security/package.json ./packages/security/
 COPY packages/observability/package.json ./packages/observability/
 COPY packages/operations/package.json ./packages/operations/
 COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai
+COPY packages/server/package.json ./packages/server/
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/server
 COPY packages/contracts/ ./packages/contracts/
 COPY packages/core/ ./packages/core/
 COPY packages/infrastructure/ ./packages/infrastructure/
@@ -27,6 +28,8 @@ RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core &&
 COPY backend/tsconfig.json ./backend/
 COPY backend/src/ backend/src/
 RUN npm run build -w backend
+COPY packages/server/ ./packages/server/
+RUN npm run build -w @dashboard/server
 
 # Separate stage to build production dependencies with native bindings
 FROM dhi.io/node:24-alpine3.23-dev AS prod-deps
@@ -44,7 +47,8 @@ COPY packages/security/package.json ./packages/security/
 COPY packages/observability/package.json ./packages/observability/
 COPY packages/operations/package.json ./packages/operations/
 COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai --omit=dev
+COPY packages/server/package.json ./packages/server/
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/server --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -88,9 +92,11 @@ COPY --chown=node:node --from=builder /app/packages/operations/dist/ ./node_modu
 COPY --chown=node:node --from=builder /app/packages/operations/package.json ./node_modules/@dashboard/operations/package.json
 COPY --chown=node:node --from=builder /app/packages/ai-intelligence/dist/ ./node_modules/@dashboard/ai/dist/
 COPY --chown=node:node --from=builder /app/packages/ai-intelligence/package.json ./node_modules/@dashboard/ai/package.json
-COPY --chown=node:node --from=builder /app/backend/dist/ dist/
-COPY --chown=node:node --from=builder /app/packages/core/src/db/postgres-migrations/ dist/core/db/postgres-migrations/
-COPY --chown=node:node --from=builder /app/packages/core/src/db/timescale-migrations/ dist/core/db/timescale-migrations/
+# backend routes (used by @dashboard/server at runtime via 'backend' workspace dep)
+COPY --chown=node:node --from=builder /app/backend/dist/ ./node_modules/backend/dist/
+COPY --chown=node:node --from=builder /app/backend/package.json ./node_modules/backend/package.json
+# @dashboard/server is the application entry point
+COPY --chown=node:node --from=builder /app/packages/server/dist/ dist/
 
 USER node
 
