@@ -172,16 +172,17 @@ jobs:
         # Use npm run build (not tsc --build) so @dashboard/core also copies SQL migrations
         run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
 
-      - name: Run workspace package tests
+      - name: Run workspace package tests (parallel)
         run: >
-          npm run test -w @dashboard/contracts &&
-          npm run test -w @dashboard/core &&
-          npm run test -w @dashboard/infrastructure &&
-          npm run test -w @dashboard/security &&
-          npm run test -w @dashboard/observability &&
-          npm run test -w @dashboard/operations &&
-          npm run test -w @dashboard/ai &&
-          npm run test -w @dashboard/server
+          npx concurrently --kill-others-on-fail --names contracts,core,infra,security,obs,ops,ai,server
+          "npm run test -w @dashboard/contracts"
+          "npm run test -w @dashboard/core"
+          "npm run test -w @dashboard/infrastructure"
+          "npm run test -w @dashboard/security"
+          "npm run test -w @dashboard/observability"
+          "npm run test -w @dashboard/operations"
+          "npm run test -w @dashboard/ai"
+          "npm run test -w @dashboard/server"
         env:
           POSTGRES_TEST_URL: postgresql://app_user:changeme-postgres-app@localhost:5433/portainer_dashboard_test
           REDIS_URL: redis://localhost:6379

@@ -1,24 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import type { Insight, Severity } from '@dashboard/contracts';
 import { api } from '@/shared/lib/api';
 import { useSockets } from '@/providers/socket-provider';
 
-type Severity = 'critical' | 'warning' | 'info';
-
-export interface Insight {
-  id: string;
-  endpoint_id: number | null;
-  endpoint_name: string | null;
-  container_id: string | null;
-  container_name: string | null;
-  severity: Severity;
-  category: string;
-  title: string;
-  description: string;
-  suggested_action: string | null;
-  is_acknowledged: number;
-  created_at: string;
-}
+export type { Insight, Severity };
 
 interface AcknowledgeResponse {
   success: boolean;
