@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts/tsconfig.build.json" },
+    { "path": "packages/core/tsconfig.build.json" },
+    { "path": "packages/infrastructure/tsconfig.build.json" },
+    { "path": "packages/security/tsconfig.build.json" },
+    { "path": "packages/observability/tsconfig.build.json" },
+    { "path": "packages/operations/tsconfig.build.json" },
+    { "path": "packages/ai-intelligence/tsconfig.build.json" },
+    { "path": "packages/server/tsconfig.build.json" },
+    { "path": "backend/tsconfig.build.json" }
+  ]
+}

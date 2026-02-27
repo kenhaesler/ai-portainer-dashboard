@@ -1,24 +1,13 @@
 {
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "outDir": "dist",
-    "rootDir": "src",
     "composite": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
+    "noEmit": false,
+    "outDir": "./dist",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "references": [
     { "path": "../packages/contracts/tsconfig.build.json" },
@@ -29,6 +18,5 @@
     { "path": "../packages/operations/tsconfig.build.json" },
     { "path": "../packages/ai-intelligence/tsconfig.build.json" }
   ],
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": ["**/*.test.ts", "**/__tests__/**", "node_modules", "dist"]
 }

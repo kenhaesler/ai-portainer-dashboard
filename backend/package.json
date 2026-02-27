@@ -21,7 +21,7 @@
   },
   "scripts": {
     "dev": "tsx watch ../packages/server/src/index.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "lint": "eslint --max-warnings=0 src/",
     "typecheck": "tsc --noEmit",
@@ -54,6 +54,7 @@
     "undici": "^7.22.0",
     "uuid": "^13.0.0",
     "zod": "^4.3.6",
+    "@dashboard/ai": "*",
     "@dashboard/contracts": "*",
     "@dashboard/core": "*",
     "@dashboard/infrastructure": "*",
