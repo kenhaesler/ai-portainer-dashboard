@@ -26,6 +26,7 @@ COPY packages/operations/ ./packages/operations/
 COPY packages/ai-intelligence/ ./packages/ai-intelligence/
 RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
 COPY backend/tsconfig.json ./backend/
+COPY backend/tsconfig.build.json ./backend/
 COPY backend/src/ backend/src/
 RUN npm run build -w backend
 COPY packages/server/ ./packages/server/
