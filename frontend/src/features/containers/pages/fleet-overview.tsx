@@ -15,6 +15,7 @@ import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/refresh-button';
 import { SkeletonCard } from '@/shared/components/loading-skeleton';
 import { ThemedSelect } from '@/shared/components/themed-select';
+import { FilterChipBar, type FilterChip } from '@/shared/components/filter-chip-bar';
 import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
@@ -467,6 +468,71 @@ export default function InfrastructurePage() {
 
   // Whether any stack filter is active (for showing "filtered" state)
   const hasActiveStackFilter = stackStatusFilter !== ALL_FILTER || stackEndpointFilterParam !== ALL_FILTER;
+  const hasActiveEndpointFilter = endpointStatusFilter !== ALL_FILTER || endpointTypeFilter !== ALL_FILTER;
+
+  // Active filter chip arrays for each section
+  const activeEndpointFilters = useMemo<FilterChip[]>(() => {
+    const chips: FilterChip[] = [];
+    if (endpointStatusFilter !== ALL_FILTER) {
+      chips.push({
+        key: 'endpointStatus',
+        label: 'Status',
+        value: endpointStatusFilter.charAt(0).toUpperCase() + endpointStatusFilter.slice(1),
+      });
+    }
+    if (endpointTypeFilter !== ALL_FILTER) {
+      chips.push({
+        key: 'endpointType',
+        label: 'Type',
+        value: getEndpointTypeLabel(Number(endpointTypeFilter)),
+      });
+    }
+    return chips;
+  }, [endpointStatusFilter, endpointTypeFilter]);
+
+  const activeStackFilters = useMemo<FilterChip[]>(() => {
+    const chips: FilterChip[] = [];
+    if (stackStatusFilter !== ALL_FILTER) {
+      chips.push({
+        key: 'stackStatus',
+        label: 'Status',
+        value: stackStatusFilter.charAt(0).toUpperCase() + stackStatusFilter.slice(1),
+      });
+    }
+    if (stackEndpointFilterParam !== ALL_FILTER) {
+      const epName = endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`;
+      chips.push({
+        key: 'stackEndpoint',
+        label: 'Endpoint',
+        value: epName,
+      });
+    }
+    return chips;
+  }, [stackStatusFilter, stackEndpointFilterParam, endpoints]);
+
+  const handleRemoveEndpointFilter = useCallback((key: string) => {
+    if (key === 'endpointStatus') {
+      setEndpointStatusFilter(ALL_FILTER);
+    } else if (key === 'endpointType') {
+      setEndpointTypeFilter(ALL_FILTER);
+    }
+  }, [setEndpointStatusFilter, setEndpointTypeFilter]);
+
+  const handleClearAllEndpointFilters = useCallback(() => {
+    setFleetFilters(ALL_FILTER, ALL_FILTER, stackStatusFilter, stackEndpointFilterParam);
+  }, [setFleetFilters, stackStatusFilter, stackEndpointFilterParam]);
+
+  const handleRemoveStackFilter = useCallback((key: string) => {
+    if (key === 'stackStatus') {
+      setStackStatusFilter(ALL_FILTER);
+    } else if (key === 'stackEndpoint') {
+      setStackEndpointFilter(ALL_FILTER);
+    }
+  }, [setStackStatusFilter, setStackEndpointFilter]);
+
+  const handleClearAllStackFilters = useCallback(() => {
+    setFleetFilters(endpointStatusFilter, endpointTypeFilter, ALL_FILTER, ALL_FILTER);
+  }, [setFleetFilters, endpointStatusFilter, endpointTypeFilter]);
 
   const endpointColumns: ColumnDef<Endpoint, unknown>[] = useMemo(() => [
     {
@@ -761,6 +827,15 @@ export default function InfrastructurePage() {
           )}
         </div>
 
+        {/* Endpoint filter chips */}
+        {!isLoading && hasActiveEndpointFilter && (
+          <FilterChipBar
+            filters={activeEndpointFilters}
+            onRemove={handleRemoveEndpointFilter}
+            onClearAll={handleClearAllEndpointFilters}
+          />
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -909,6 +984,15 @@ export default function InfrastructurePage() {
             </div>
           )}
         </div>
+
+        {/* Stack filter chips */}
+        {!isLoading && hasActiveStackFilter && (
+          <FilterChipBar
+            filters={activeStackFilters}
+            onRemove={handleRemoveStackFilter}
+            onClearAll={handleClearAllStackFilters}
+          />
+        )}
 
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

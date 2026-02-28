@@ -815,3 +815,179 @@ describe('InfrastructurePage — forceRefresh error toast', () => {
     });
   });
 });
+
+describe('InfrastructurePage — endpoint filter chips', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('does not render endpoint filter chip bar when no filters active', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'ep2', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPage();
+
+    expect(screen.queryByTestId('filter-chip-bar')).not.toBeInTheDocument();
+  });
+
+  it('shows endpoint status chip when status filter is active', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'down-ep', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=up');
+
+    expect(screen.getByTestId('filter-chip-endpointStatus')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-endpointStatus')).toHaveTextContent('Status:');
+    expect(screen.getByTestId('filter-chip-endpointStatus')).toHaveTextContent('Up');
+  });
+
+  it('shows endpoint type chip when type filter is active', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'docker-ep', type: 1 }),
+      makeEndpoint({ id: 2, name: 'agent-ep', type: 2 }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointType=2');
+
+    expect(screen.getByTestId('filter-chip-endpointType')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-endpointType')).toHaveTextContent('Type:');
+    expect(screen.getByTestId('filter-chip-endpointType')).toHaveTextContent('Agent');
+  });
+
+  it('shows "Clear all" when both endpoint filters are active', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'docker-up', type: 1, status: 'up' }),
+      makeEndpoint({ id: 2, name: 'agent-down', type: 2, status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=up&endpointType=1');
+
+    expect(screen.getByTestId('filter-chip-endpointStatus')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-endpointType')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-clear-all')).toBeInTheDocument();
+  });
+
+  it('removes endpoint status chip when X is clicked', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'down-ep', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=up');
+
+    // Chip visible initially
+    expect(screen.getByTestId('filter-chip-endpointStatus')).toBeInTheDocument();
+
+    // Click remove
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Status filter' }));
+
+    // Chip should be gone, both endpoints visible
+    expect(screen.queryByTestId('filter-chip-endpointStatus')).not.toBeInTheDocument();
+    expect(screen.getByText('up-ep')).toBeInTheDocument();
+    expect(screen.getByText('down-ep')).toBeInTheDocument();
+  });
+});
+
+describe('InfrastructurePage — stack filter chips', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('does not render stack filter chip bar when no stack filters active', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', status: 'active', endpointId: 1 }),
+    ]);
+
+    renderPage();
+
+    // No filter chip bars should be present
+    expect(screen.queryByTestId('filter-chip-bar')).not.toBeInTheDocument();
+  });
+
+  it('shows stack status chip when stack status filter is active', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 'active-s', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 1 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?stackStatus=active');
+
+    const chipBars = screen.getAllByTestId('filter-chip-bar');
+    expect(chipBars.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId('filter-chip-stackStatus')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-stackStatus')).toHaveTextContent('Active');
+  });
+
+  it('shows stack endpoint chip when endpoint filter is active via "View stacks"', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', stackCount: 1 }),
+      makeEndpoint({ id: 2, name: 'ep2', stackCount: 1 }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'stack-ep1', endpointId: 1 }),
+      makeStack({ id: 2, name: 'stack-ep2', endpointId: 2 }),
+    ]);
+
+    renderPage();
+
+    // Click "View stacks" on first endpoint
+    const viewButtons = screen.getAllByTestId('view-stacks-link');
+    fireEvent.click(viewButtons[0]);
+
+    // Stack filter chip bar should appear with endpoint chip
+    expect(screen.getByTestId('filter-chip-stackEndpoint')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-stackEndpoint')).toHaveTextContent('Endpoint:');
+    expect(screen.getByTestId('filter-chip-stackEndpoint')).toHaveTextContent('ep1');
+  });
+
+  it('shows "Clear all" in stack section when both stack filters active', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1' }),
+      makeEndpoint({ id: 2, name: 'ep2' }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'active-s', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 2 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?stackStatus=active&stackEndpoint=1');
+
+    expect(screen.getByTestId('filter-chip-stackStatus')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-stackEndpoint')).toBeInTheDocument();
+    expect(screen.getByTestId('filter-chip-clear-all')).toBeInTheDocument();
+  });
+
+  it('removes stack status chip when X is clicked', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 'active-s', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 1 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?stackStatus=active');
+
+    expect(screen.getByTestId('filter-chip-stackStatus')).toBeInTheDocument();
+    expect(screen.queryByText('inactive-s')).not.toBeInTheDocument();
+
+    // Remove the chip
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Status filter' }));
+
+    // Both stacks should now be visible
+    expect(screen.queryByTestId('filter-chip-stackStatus')).not.toBeInTheDocument();
+    expect(screen.getByText('active-s')).toBeInTheDocument();
+    expect(screen.getByText('inactive-s')).toBeInTheDocument();
+  });
+});
