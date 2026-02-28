@@ -669,7 +669,7 @@ describe('InfrastructurePage — endpoint dropdown filters', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=up');
+    renderPageWithInitialParams('/infrastructure?endpointStatus=up');
 
     expect(screen.getByText('up-ep')).toBeInTheDocument();
     expect(screen.queryByText('down-ep')).not.toBeInTheDocument();
@@ -684,7 +684,7 @@ describe('InfrastructurePage — endpoint dropdown filters', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointType=2');
+    renderPageWithInitialParams('/infrastructure?endpointType=2');
 
     expect(screen.getByText('agent-ep')).toBeInTheDocument();
     expect(screen.queryByText('docker-ep')).not.toBeInTheDocument();
@@ -709,7 +709,7 @@ describe('InfrastructurePage — endpoint dropdown filters', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=down');
+    renderPageWithInitialParams('/infrastructure?endpointStatus=down');
 
     expect(screen.getByText('No endpoints match filters')).toBeInTheDocument();
   });
@@ -722,7 +722,7 @@ describe('InfrastructurePage — endpoint dropdown filters', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=up');
+    renderPageWithInitialParams('/infrastructure?endpointStatus=up');
 
     expect(screen.getByTestId('fleet-filtered-count')).toHaveTextContent('2 of 3 endpoints');
   });
@@ -932,7 +932,7 @@ describe('InfrastructurePage — endpoint filter chips', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=up');
+    renderPageWithInitialParams('/infrastructure?endpointStatus=up');
 
     expect(screen.getByTestId('filter-chip-endpointStatus')).toBeInTheDocument();
     expect(screen.getByTestId('filter-chip-endpointStatus')).toHaveTextContent('Status:');
@@ -946,7 +946,7 @@ describe('InfrastructurePage — endpoint filter chips', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointType=2');
+    renderPageWithInitialParams('/infrastructure?endpointType=2');
 
     expect(screen.getByTestId('filter-chip-endpointType')).toBeInTheDocument();
     expect(screen.getByTestId('filter-chip-endpointType')).toHaveTextContent('Type:');
@@ -960,7 +960,7 @@ describe('InfrastructurePage — endpoint filter chips', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=up&endpointType=1');
+    renderPageWithInitialParams('/infrastructure?endpointStatus=up&endpointType=1');
 
     expect(screen.getByTestId('filter-chip-endpointStatus')).toBeInTheDocument();
     expect(screen.getByTestId('filter-chip-endpointType')).toBeInTheDocument();
@@ -974,7 +974,7 @@ describe('InfrastructurePage — endpoint filter chips', () => {
     ]);
     mockStacks([]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=up');
+    renderPageWithInitialParams('/infrastructure?endpointStatus=up');
 
     // Chip visible initially
     expect(screen.getByTestId('filter-chip-endpointStatus')).toBeInTheDocument();
