@@ -15,10 +15,12 @@ import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { FilterChipBar, type FilterChip } from '@/shared/components/ui/filter-chip-bar';
 import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { FleetStatusSummary } from '@/features/containers/components/fleet/fleet-status-summary';
 import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
 
@@ -275,6 +277,19 @@ export default function InfrastructurePage() {
     setFleetFilters(endpointStatusFilter, endpointTypeFilter, stackStatusFilter, v);
   }, [setFleetFilters, endpointStatusFilter, endpointTypeFilter, stackStatusFilter]);
 
+  // Summary-bar pill handlers: translate undefined ↔ ALL_FILTER for URL params
+  const handleEndpointStatusPillChange = useCallback((status: string | undefined) => {
+    setEndpointStatusFilter(status ?? ALL_FILTER);
+  }, [setEndpointStatusFilter]);
+
+  const handleStackStatusPillChange = useCallback((status: string | undefined) => {
+    setStackStatusFilter(status ?? ALL_FILTER);
+  }, [setStackStatusFilter]);
+
+  // Derive pill-style filter value (undefined = no filter) from URL params
+  const activeEndpointStatusPill = endpointStatusFilter !== ALL_FILTER ? endpointStatusFilter : undefined;
+  const activeStackStatusPill = stackStatusFilter !== ALL_FILTER ? stackStatusFilter : undefined;
+
   // Fleet view mode (reuses existing 'fleet' key for preference persistence)
   const storedFleetViewMode = useUiStore((s) => s.pageViewModes['fleet']);
   const fleetViewMode = storedFleetViewMode ?? 'grid';
@@ -453,12 +468,6 @@ export default function InfrastructurePage() {
     return options;
   }, [stacksWithEndpoints, endpoints]);
 
-  // Summary bar counts (from unfiltered data)
-  const endpointUpCount = endpoints?.filter(ep => ep.status === 'up').length ?? 0;
-  const endpointDownCount = endpoints?.filter(ep => ep.status === 'down').length ?? 0;
-  const stackActiveCount = stacksWithEndpoints.filter(s => s.status === 'active').length;
-  const stackInactiveCount = stacksWithEndpoints.filter(s => s.status === 'inactive').length;
-
   // Fleet grid pagination (on filtered data)
   const gridPageCount = Math.ceil(filteredEndpoints.length / FLEET_GRID_PAGE_SIZE);
   const paginatedEndpoints = useMemo(() => {
@@ -481,6 +490,71 @@ export default function InfrastructurePage() {
 
   // Whether any stack filter is active (for showing "filtered" state)
   const hasActiveStackFilter = stackStatusFilter !== ALL_FILTER || stackEndpointFilterParam !== ALL_FILTER;
+  const hasActiveEndpointFilter = endpointStatusFilter !== ALL_FILTER || endpointTypeFilter !== ALL_FILTER;
+
+  // Active filter chip arrays for each section
+  const activeEndpointFilters = useMemo<FilterChip[]>(() => {
+    const chips: FilterChip[] = [];
+    if (endpointStatusFilter !== ALL_FILTER) {
+      chips.push({
+        key: 'endpointStatus',
+        label: 'Status',
+        value: endpointStatusFilter.charAt(0).toUpperCase() + endpointStatusFilter.slice(1),
+      });
+    }
+    if (endpointTypeFilter !== ALL_FILTER) {
+      chips.push({
+        key: 'endpointType',
+        label: 'Type',
+        value: getEndpointTypeLabel(Number(endpointTypeFilter)),
+      });
+    }
+    return chips;
+  }, [endpointStatusFilter, endpointTypeFilter]);
+
+  const activeStackFilters = useMemo<FilterChip[]>(() => {
+    const chips: FilterChip[] = [];
+    if (stackStatusFilter !== ALL_FILTER) {
+      chips.push({
+        key: 'stackStatus',
+        label: 'Status',
+        value: stackStatusFilter.charAt(0).toUpperCase() + stackStatusFilter.slice(1),
+      });
+    }
+    if (stackEndpointFilterParam !== ALL_FILTER) {
+      const epName = endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`;
+      chips.push({
+        key: 'stackEndpoint',
+        label: 'Endpoint',
+        value: epName,
+      });
+    }
+    return chips;
+  }, [stackStatusFilter, stackEndpointFilterParam, endpoints]);
+
+  const handleRemoveEndpointFilter = useCallback((key: string) => {
+    if (key === 'endpointStatus') {
+      setEndpointStatusFilter(ALL_FILTER);
+    } else if (key === 'endpointType') {
+      setEndpointTypeFilter(ALL_FILTER);
+    }
+  }, [setEndpointStatusFilter, setEndpointTypeFilter]);
+
+  const handleClearAllEndpointFilters = useCallback(() => {
+    setFleetFilters(ALL_FILTER, ALL_FILTER, stackStatusFilter, stackEndpointFilterParam);
+  }, [setFleetFilters, stackStatusFilter, stackEndpointFilterParam]);
+
+  const handleRemoveStackFilter = useCallback((key: string) => {
+    if (key === 'stackStatus') {
+      setStackStatusFilter(ALL_FILTER);
+    } else if (key === 'stackEndpoint') {
+      setStackEndpointFilter(ALL_FILTER);
+    }
+  }, [setStackStatusFilter, setStackEndpointFilter]);
+
+  const handleClearAllStackFilters = useCallback(() => {
+    setFleetFilters(endpointStatusFilter, endpointTypeFilter, ALL_FILTER, ALL_FILTER);
+  }, [setFleetFilters, endpointStatusFilter, endpointTypeFilter]);
 
   const endpointColumns: ColumnDef<Endpoint, unknown>[] = useMemo(() => [
     {
@@ -646,49 +720,17 @@ export default function InfrastructurePage() {
         </div>
       </div>
 
-      {/* Shared summary bar */}
+      {/* Interactive status summary bar */}
       {!isLoading && (
         <SpotlightCard>
-        <div
-          className="flex flex-wrap items-center gap-6 rounded-lg border bg-card px-6 py-4 shadow-sm text-sm"
-          data-testid="summary-bar"
-        >
-          <div className="flex items-center gap-3">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground" data-testid="endpoint-total">
-              {endpoints?.length ?? 0} endpoint{(endpoints?.length ?? 0) !== 1 ? 's' : ''}
-            </span>
-            <span className="flex items-center gap-1" data-testid="endpoint-up">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              {endpointUpCount} up
-            </span>
-            {endpointDownCount > 0 && (
-              <span className="flex items-center gap-1 text-red-600 dark:text-red-400" data-testid="endpoint-down">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
-                {endpointDownCount} down
-              </span>
-            )}
-          </div>
-
-          <div className="h-4 w-px bg-border" />
-
-          <div className="flex items-center gap-3">
-            <Layers className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground" data-testid="stack-total">
-              {stacksWithEndpoints.length} stack{stacksWithEndpoints.length !== 1 ? 's' : ''}
-            </span>
-            <span className="flex items-center gap-1" data-testid="stack-active">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              {stackActiveCount} active
-            </span>
-            {stackInactiveCount > 0 && (
-              <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400" data-testid="stack-inactive">
-                <span className="h-2 w-2 rounded-full bg-gray-500" />
-                {stackInactiveCount} inactive
-              </span>
-            )}
-          </div>
-        </div>
+          <FleetStatusSummary
+            endpoints={endpoints ?? []}
+            stacks={stacksWithEndpoints}
+            activeEndpointStatusFilter={activeEndpointStatusPill}
+            onEndpointStatusChange={handleEndpointStatusPillChange}
+            activeStackStatusFilter={activeStackStatusPill}
+            onStackStatusChange={handleStackStatusPillChange}
+          />
         </SpotlightCard>
       )}
 
@@ -774,6 +816,15 @@ export default function InfrastructurePage() {
             </div>
           )}
         </div>
+
+        {/* Endpoint filter chips */}
+        {!isLoading && hasActiveEndpointFilter && (
+          <FilterChipBar
+            filters={activeEndpointFilters}
+            onRemove={handleRemoveEndpointFilter}
+            onClearAll={handleClearAllEndpointFilters}
+          />
+        )}
 
         {/* Endpoint search */}
         {!isLoading && endpoints && endpoints.length > 0 && (
@@ -944,6 +995,15 @@ export default function InfrastructurePage() {
             </div>
           )}
         </div>
+
+        {/* Stack filter chips */}
+        {!isLoading && hasActiveStackFilter && (
+          <FilterChipBar
+            filters={activeStackFilters}
+            onRemove={handleRemoveStackFilter}
+            onClearAll={handleClearAllStackFilters}
+          />
+        )}
 
         {/* Stack search */}
         {!isLoading && dropdownFilteredStacks.length > 0 && (
