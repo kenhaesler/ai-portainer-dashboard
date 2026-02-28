@@ -54,6 +54,8 @@ export function getLlmDispatcher(): Agent | undefined {
   const config = getConfig();
   const ca = getCustomCaCert();
   if (!config.LLM_VERIFY_SSL) {
+    log.warn('TLS certificate verification disabled for LLM connections (LLM_VERIFY_SSL=false) — not recommended for production');
+    // nosemgrep: bypass-tls-verification — intentional: admin-configurable SSL verification bypass
     llmDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
     return llmDispatcher;
   }

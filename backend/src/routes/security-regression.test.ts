@@ -1436,4 +1436,60 @@ describe('No Global TLS Override', () => {
     const content = readFileSync(indexPath, 'utf8');
     expect(content).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });
+
+  it('should default all VERIFY_SSL env vars to true in the env schema (CWE-295)', () => {
+    // The env schema defines defaults for TLS verification env vars.
+    // All must default to 'true' (transformed to boolean true) so that
+    // TLS verification is enabled unless explicitly opted out.
+    // Read the source directly to guard against default changes.
+    const schemaPath = path.resolve(process.cwd(), '..', 'packages', 'core', 'src', 'config', 'env.schema.ts');
+    const schemaSource = readFileSync(schemaPath, 'utf8');
+
+    // Each VERIFY_SSL field must have .default('true')
+    const verifySslFields = ['PORTAINER_VERIFY_SSL', 'LLM_VERIFY_SSL', 'HARBOR_VERIFY_SSL'];
+    for (const field of verifySslFields) {
+      // Match the field definition and verify it defaults to 'true'
+      const fieldRegex = new RegExp(`${field}:\\s*z\\.string\\(\\)\\.default\\(['"]true['"]\\)`);
+      expect(schemaSource).toMatch(fieldRegex);
+    }
+  });
+
+  it('should never create insecure dispatchers at module load time (CWE-295)', () => {
+    // Guard against eagerly-created Agents with rejectUnauthorized: false
+    // at module scope. TLS-bypassing dispatchers must be lazily initialized
+    // and gated behind env var checks.
+    const filesToCheck = [
+      path.resolve(process.cwd(), '..', 'packages', 'core', 'src', 'portainer', 'portainer-client.ts'),
+      path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'services', 'llm-client.ts'),
+      path.resolve(process.cwd(), '..', 'packages', 'operations', 'src', 'services', 'portainer-backup.ts'),
+      path.resolve(process.cwd(), '..', 'packages', 'operations', 'src', 'routes', 'logs.ts'),
+      path.resolve(process.cwd(), '..', 'packages', 'infrastructure', 'src', 'services', 'elasticsearch-log-forwarder.ts'),
+    ];
+
+    for (const filePath of filesToCheck) {
+      const content = readFileSync(filePath, 'utf8');
+      // Match module-level `new Agent({ connect: { rejectUnauthorized: false } })` that is NOT
+      // inside a function body. A simple heuristic: lines containing both `new Agent` and
+      // `rejectUnauthorized: false` that are NOT preceded by `function` on the same or prior line.
+      const lines = content.split('\n');
+      let insideFunctionBody = false;
+      let braceDepth = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Track function entry via simple heuristic
+        if (/\bfunction\b/.test(line)) insideFunctionBody = true;
+        for (const ch of line) {
+          if (ch === '{') braceDepth++;
+          if (ch === '}') braceDepth--;
+        }
+        if (braceDepth === 0) insideFunctionBody = false;
+
+        if (line.includes('new Agent') && !insideFunctionBody) {
+          // This line creates an Agent outside of a function — it must NOT disable TLS
+          expect(line).not.toContain('rejectUnauthorized: false');
+        }
+      }
+    }
+  });
 });
