@@ -4,6 +4,7 @@ import path from 'path';
 import { promisify } from 'util';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { safePath, PathTraversalError } from '@dashboard/core/utils/safe-path.js';
 
 const execFileAsync = promisify(execFile);
 const log = createChildLogger('backup-service');
@@ -69,12 +70,16 @@ export function listBackups(): BackupInfo[] {
 
 export function getBackupPath(filename: string): string {
   const backupsDir = getBackupsDir();
-  const filePath = path.join(backupsDir, filename);
 
-  // Security: ensure the resolved path is within backups directory
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(backupsDir))) {
-    throw new Error('Invalid backup filename: path traversal detected');
+  // CWE-22 fix: replaces ad-hoc startsWith check (which lacked path.sep suffix)
+  let resolved: string;
+  try {
+    resolved = safePath(backupsDir, filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      throw new Error('Invalid backup filename: path traversal detected');
+    }
+    throw err;
   }
 
   if (!fs.existsSync(resolved)) {

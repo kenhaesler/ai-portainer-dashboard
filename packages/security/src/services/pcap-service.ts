@@ -3,6 +3,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { safePath, PathTraversalError } from '@dashboard/core/utils/safe-path.js';
 import {
   createContainer,
   startContainer,
@@ -302,10 +303,10 @@ async function downloadAndProcessCapture(
       return;
     }
 
-    // Write to storage
+    // CWE-22 fix: validate filename stays inside storage directory
     const storageDir = getStorageDir();
     const filename = `capture_${captureId}.pcap`;
-    const filePath = path.join(storageDir, filename);
+    const filePath = safePath(storageDir, filename);
     fs.writeFileSync(filePath, pcapData);
 
     await updateCaptureStatus(captureId, 'complete', {
@@ -331,7 +332,7 @@ async function stopCaptureInternal(
   sidecarId: string,
 ): Promise<void> {
   try {
-    // Stop the sidecar container (sends SIGTERM → tcpdump flushes pcap)
+    // Stop the sidecar container (sends SIGTERM -> tcpdump flushes pcap)
     await stopContainer(endpointId, sidecarId);
 
     // Wait a moment for graceful shutdown
@@ -409,16 +410,20 @@ export async function deleteCaptureById(id: string): Promise<void> {
     throw new Error('Cannot delete an active capture. Stop it first.');
   }
 
-  // Delete file if exists
+  // CWE-22 fix: validate capture_file from DB stays inside storage directory
   if (capture.capture_file) {
     try {
       const storageDir = getStorageDir();
-      const filePath = path.join(storageDir, capture.capture_file);
+      const filePath = safePath(storageDir, capture.capture_file);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
     } catch (err) {
-      log.warn({ captureId: id, err }, 'Failed to delete capture file');
+      if (err instanceof PathTraversalError) {
+        log.warn({ captureId: id, captureFile: capture.capture_file }, 'Path traversal in capture_file from DB, skipping file deletion');
+      } else {
+        log.warn({ captureId: id, err }, 'Failed to delete capture file');
+      }
     }
   }
 
@@ -429,14 +434,18 @@ export async function getCaptureFilePath(id: string): Promise<string | null> {
   const capture = await getCapture(id);
   if (!capture || !capture.capture_file) return null;
 
-  const config = getConfig();
-  const storageDir = path.resolve(config.PCAP_STORAGE_DIR);
-  const filePath = path.resolve(path.join(storageDir, capture.capture_file));
+  const storageDir = getStorageDir();
 
-  // Path traversal check
-  if (!filePath.startsWith(storageDir)) {
-    log.warn({ captureId: id, filePath, storageDir }, 'Path traversal attempt detected');
-    return null;
+  // CWE-22 fix: replaces ad-hoc startsWith check (which lacked path.sep suffix)
+  let filePath: string;
+  try {
+    filePath = safePath(storageDir, capture.capture_file);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      log.warn({ captureId: id }, 'Path traversal attempt detected in capture_file');
+      return null;
+    }
+    throw err;
   }
 
   if (!fs.existsSync(filePath)) return null;
@@ -448,7 +457,7 @@ export async function cleanupOldCaptures(): Promise<void> {
   const config = getConfig();
   const storageDir = getStorageDir();
 
-  // Get captures that will be cleaned — query the files before deleting DB records
+  // Get captures that will be cleaned -- query the files before deleting DB records
   const [completeCaptures, failedCaptures, succeededCaptures] = await Promise.all([
     getCaptures({ status: 'complete' }),
     getCaptures({ status: 'failed' }),
@@ -464,16 +473,20 @@ export async function cleanupOldCaptures(): Promise<void> {
       return createdAt < cutoff;
     });
 
-  // Delete files
+  // CWE-22 fix: validate capture_file from DB stays inside storage directory
   for (const capture of oldCaptures) {
     if (capture.capture_file) {
       try {
-        const filePath = path.join(storageDir, capture.capture_file);
+        const filePath = safePath(storageDir, capture.capture_file);
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
       } catch (err) {
-        log.warn({ file: capture.capture_file, err }, 'Failed to delete old capture file');
+        if (err instanceof PathTraversalError) {
+          log.warn({ file: capture.capture_file }, 'Path traversal in capture_file from DB, skipping cleanup');
+        } else {
+          log.warn({ file: capture.capture_file, err }, 'Failed to delete old capture file');
+        }
       }
     }
   }

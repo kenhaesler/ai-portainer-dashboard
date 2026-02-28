@@ -3,6 +3,7 @@ import path from 'path';
 import { Agent } from 'undici';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { safePath, PathTraversalError } from '@dashboard/core/utils/safe-path.js';
 
 const log = createChildLogger('portainer-backup');
 
@@ -11,6 +12,7 @@ function getDispatcher(): Agent | undefined {
   const config = getConfig();
   if (config.PORTAINER_VERIFY_SSL) return undefined;
   if (!unsafeDispatcher) {
+    // nosemgrep: bypass-tls-verification — intentional: admin-configurable SSL verification bypass
     unsafeDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   }
   return unsafeDispatcher;
@@ -76,8 +78,9 @@ export async function createPortainerBackup(password?: string): Promise<{ filena
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // CWE-22 fix: validate filename from Content-Disposition stays inside backups dir
     const backupsDir = getBackupsDir();
-    const destPath = path.join(backupsDir, filename);
+    const destPath = safePath(backupsDir, filename);
     fs.writeFileSync(destPath, buffer);
 
     log.info({ filename, size: buffer.length }, 'Portainer backup created');
@@ -97,7 +100,8 @@ export function listPortainerBackups(): PortainerBackupInfo[] {
     .reverse();
 
   return files.map((filename) => {
-    const filePath = path.join(backupsDir, filename);
+    // Defense-in-depth: filenames from readdirSync are trusted but validate anyway
+    const filePath = safePath(backupsDir, filename);
     const stat = fs.statSync(filePath);
     return {
       filename,
@@ -109,12 +113,16 @@ export function listPortainerBackups(): PortainerBackupInfo[] {
 
 export function getPortainerBackupPath(filename: string): string {
   const backupsDir = getBackupsDir();
-  const filePath = path.join(backupsDir, filename);
 
-  // Security: ensure the resolved path is within backups directory
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(backupsDir))) {
-    throw new Error('Invalid backup filename: path traversal detected');
+  // CWE-22 fix: replaces ad-hoc startsWith check (which lacked path.sep suffix)
+  let resolved: string;
+  try {
+    resolved = safePath(backupsDir, filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      throw new Error('Invalid backup filename: path traversal detected');
+    }
+    throw err;
   }
 
   if (!fs.existsSync(resolved)) {
@@ -138,8 +146,9 @@ export function cleanupOldPortainerBackups(maxCount: number): number {
   let deleted = 0;
   for (const backup of toDelete) {
     try {
+      // Defense-in-depth: validate even though filenames came from readdirSync
       const backupsDir = getBackupsDir();
-      const filePath = path.join(backupsDir, backup.filename);
+      const filePath = safePath(backupsDir, backup.filename);
       fs.unlinkSync(filePath);
       deleted++;
       log.info({ filename: backup.filename }, 'Old Portainer backup cleaned up');
