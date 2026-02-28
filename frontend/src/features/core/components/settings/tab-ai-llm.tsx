@@ -63,7 +63,7 @@ import {
 } from '@/features/ai-intelligence/hooks/use-prompt-profiles';
 import { useUpdateSetting, useDeleteSetting } from '@/features/core/hooks/use-settings';
 import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/features/ai-intelligence/hooks/use-prompt-versions';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { cn, formatBytes } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';

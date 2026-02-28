@@ -14,12 +14,12 @@ import {
 import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/features/observability/hooks/use-traces';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { ServiceMap } from '@/shared/components/charts/service-map';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 
 function formatDuration(ms: number): string {
   if (ms < 1) return '<1ms';

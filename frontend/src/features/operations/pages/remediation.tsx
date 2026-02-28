@@ -24,10 +24,10 @@ import {
   useExecuteAction,
 } from '@/features/operations/hooks/use-remediation';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { useSockets } from '@/providers/socket-provider';
 import { cn, formatDate } from '@/shared/lib/utils';
 

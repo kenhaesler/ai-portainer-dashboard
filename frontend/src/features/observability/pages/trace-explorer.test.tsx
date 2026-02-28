@@ -9,7 +9,7 @@ vi.mock('@/shared/components/charts/service-map', () => ({
   ServiceMap: () => <div>mock-service-map</div>,
 }));
 
-vi.mock('@/shared/components/themed-select', () => ({
+vi.mock('@/shared/components/ui/themed-select', () => ({
   ThemedSelect: ({ value, options, onValueChange, className }: {
     value: string;
     options: Array<{ value: string; label: string }>;

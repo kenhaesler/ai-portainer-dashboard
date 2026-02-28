@@ -225,7 +225,7 @@ vi.mock('@/shared/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: () => <div data-testid="metrics-line-chart" />,
 }));
 
-vi.mock('@/shared/components/loading-skeleton', () => ({
+vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
   SkeletonCard: ({ className }: { className?: string }) => (
     <div data-testid="skeleton" className={className} />
   ),

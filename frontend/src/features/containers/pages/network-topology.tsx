@@ -1,17 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useNetworks, type Network } from '@/features/containers/hooks/use-networks';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useNetworkRates } from '@/features/observability/hooks/use-metrics';
 import { TopologyGraph } from '@/features/containers/components/network/topology-graph';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
-import { StatusBadge } from '@/shared/components/status-badge';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { formatDate } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
 

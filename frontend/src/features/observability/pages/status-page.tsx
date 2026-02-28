@@ -11,7 +11,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { MotionStagger, MotionReveal } from '@/shared/components/motion-page';
+import { MotionStagger, MotionReveal } from '@/shared/components/layout/motion-page';
 
 interface UptimeBucket {
   date: string;

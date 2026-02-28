@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
-import { ContextBanner, type ContextBannerData } from '@/shared/components/context-banner';
+import { ContextBanner, type ContextBannerData } from '@/shared/components/layout/context-banner';
 import ReactMarkdown from 'react-markdown';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
@@ -14,8 +14,8 @@ import { getModelUseCase } from '@/features/core/components/settings/model-use-c
 import { useMcpServers } from '@/features/ai-intelligence/hooks/use-mcp';
 import { usePromptProfiles, useSwitchProfile } from '@/features/ai-intelligence/hooks/use-prompt-profiles';
 import { useAuth } from '@/providers/auth-provider';
-import { LlmFeedbackButtons } from '@/shared/components/llm-feedback-buttons';
-import { ShimmerText } from '@/shared/components/shimmer-text';
+import { LlmFeedbackButtons } from '@/shared/components/data-display/llm-feedback-buttons';
+import { ShimmerText } from '@/shared/components/feedback/shimmer-text';
 import { toast } from 'sonner';
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {

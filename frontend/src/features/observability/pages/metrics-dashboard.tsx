@@ -18,7 +18,7 @@ import {
   Minus,
   Timer,
 } from 'lucide-react';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
@@ -28,9 +28,9 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
 import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { InlineChatPanel } from '@/features/ai-intelligence/components/metrics/inline-chat-panel';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { cn } from '@/shared/lib/utils';

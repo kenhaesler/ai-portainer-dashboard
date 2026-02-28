@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, ShieldAlert } from 'lucide-react';
 import { useSecurityAudit } from '@/features/security/hooks/use-security-audit';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { cn } from '@/shared/lib/utils';
 
 const severityOptions = [

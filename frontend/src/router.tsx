@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/features/core/components/layout/app-layout';
-import { RouteErrorBoundary } from '@/shared/components/route-error-boundary';
-import { ChunkLoadErrorBoundary } from '@/shared/components/chunk-load-error-boundary';
+import { RouteErrorBoundary } from '@/shared/components/feedback/route-error-boundary';
+import { ChunkLoadErrorBoundary } from '@/shared/components/feedback/chunk-load-error-boundary';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('@/features/core/pages/login'));

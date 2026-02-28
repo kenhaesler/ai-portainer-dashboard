@@ -16,8 +16,8 @@ import {
   Info,
   Loader2,
 } from 'lucide-react';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { RefreshButton } from '@/shared/components/refresh-button';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useEndpoints, useEndpointCapabilities } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
@@ -34,7 +34,7 @@ import {
 } from '@/features/security/hooks/use-pcap';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 
 function formatBytes(bytes: number): string {

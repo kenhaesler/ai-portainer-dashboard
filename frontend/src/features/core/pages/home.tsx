@@ -5,17 +5,17 @@ import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
 import { useFavoriteContainers } from '@/features/containers/hooks/use-containers';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useKpiHistory } from '@/features/observability/hooks/use-kpi-history';
-import { KpiCard } from '@/shared/components/kpi-card';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
+import { KpiCard } from '@/shared/components/data-display/kpi-card';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
-import { FavoriteButton } from '@/shared/components/favorite-button';
+import { FavoriteButton } from '@/shared/components/ui/favorite-button';
 import { useFavoritesStore } from '@/stores/favorites-store';
-import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/motion-page';
-import { TiltCard } from '@/shared/components/tilt-card';
-import { SpotlightCard } from '@/shared/components/spotlight-card';
+import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/layout/motion-page';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 // Lazy-loaded chart components — lets KPI cards render first
 const EndpointHealthOctagons = lazy(() => import('@/shared/components/charts/endpoint-health-octagons').then(m => ({ default: m.EndpointHealthOctagons })));

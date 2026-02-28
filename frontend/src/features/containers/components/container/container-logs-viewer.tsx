@@ -4,8 +4,8 @@ import { Download, ScrollText, Clock, Search, AlertTriangle, Radio, WifiOff, Pla
 import { useContainerLogs, type ContainerLogsError } from '@/features/containers/hooks/use-container-logs';
 import { useEdgeAsyncLogs } from '@/features/operations/hooks/use-edge-async-logs';
 import { useStreamingLogs, type StreamStatus } from '@/features/observability/hooks/use-streaming-logs';
-import { ThemedSelect } from '@/shared/components/themed-select';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 
 export type TailCount = 100 | 500 | 1000 | -1;
 

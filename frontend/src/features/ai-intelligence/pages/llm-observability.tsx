@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useLlmTraces, useLlmStats, type LlmTrace } from '@/features/ai-intelligence/hooks/use-llm-observability';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { KpiCard } from '@/shared/components/kpi-card';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { KpiCard } from '@/shared/components/data-display/kpi-card';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import {
   Activity,

@@ -9,7 +9,7 @@ import {
   Send,
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { cn } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';

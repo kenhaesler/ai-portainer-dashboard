@@ -26,9 +26,9 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { Container } from '@/features/containers/hooks/use-containers';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn } from '@/shared/lib/utils';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import {
   MANAGEMENT_PDF_THEMES,

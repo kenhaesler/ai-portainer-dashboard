@@ -131,7 +131,7 @@ vi.mock('@/features/security/hooks/use-ebpf-coverage', () => ({
   })),
 }));
 
-vi.mock('@/shared/components/loading-skeleton', () => ({
+vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
   SkeletonCard: ({ className }: { className?: string }) => (
     <div data-testid="skeleton" className={className} />
   ),

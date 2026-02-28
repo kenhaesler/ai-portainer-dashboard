@@ -6,7 +6,7 @@ import { useAuth } from "@/features/core/hooks/use-auth";
 import { useOIDCStatus } from "@/features/core/hooks/use-oidc";
 import { LoginLogo } from "@/shared/components/icons/login-logo";
 import { useUiStore } from "@/stores/ui-store";
-import { PostLoginLoading } from "@/shared/components/post-login-loading";
+import { PostLoginLoading } from "@/shared/components/layout/post-login-loading";
 import { AnimatePresence } from "framer-motion";
 import { api } from "@/shared/lib/api";
 
