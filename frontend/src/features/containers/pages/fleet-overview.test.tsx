@@ -450,7 +450,7 @@ describe('InfrastructurePage — stack section', () => {
     renderPage();
 
     expect(screen.getByText('web-stack')).toBeInTheDocument();
-    expect(screen.getByText('ID: 5')).toBeInTheDocument();
+    expect(screen.getByText('(ID: 5)')).toBeInTheDocument();
     expect(screen.queryByText('Discovered')).not.toBeInTheDocument();
   });
 
