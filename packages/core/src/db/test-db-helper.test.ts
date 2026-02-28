@@ -7,34 +7,51 @@
  * Because the env vars are evaluated at module scope, each test uses
  * vi.resetModules() + a fresh dynamic import so the module re-evaluates
  * process.env on each load.
+ *
+ * We use vi.mock('pg') instead of vi.spyOn because vi.spyOn only modifies
+ * the pg object in the test's own import — after vi.resetModules(), the
+ * dynamically imported test-db-helper.js gets a fresh pg without the spy.
+ * vi.mock persists across module resets at the resolution level.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import pg from 'pg';
+import type pg from 'pg';
+
+// Track Pool constructor calls across module resets
+let poolConstructorCalls: unknown[][] = [];
+
+vi.mock('pg', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pg')>();
+
+  // Use a regular function (not arrow) so it works with `new`
+  function MockPool(this: unknown, ...args: unknown[]) {
+    poolConstructorCalls.push(args);
+    return {
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+      connect: vi.fn(),
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  return {
+    ...actual,
+    default: {
+      ...actual.default,
+      Pool: MockPool,
+    },
+  };
+});
 
 // Snapshot of original env so we can restore after each test
 const originalEnv = { ...process.env };
 
-// We spy on pg.Pool to capture the connectionString passed to it
-// without actually connecting to a database.
-let poolSpy: ReturnType<typeof vi.spyOn>;
-
 beforeEach(() => {
   vi.resetModules();
-  // Spy on pg.Pool constructor to capture the options
-  poolSpy = vi.spyOn(pg, 'Pool').mockImplementation(
-    () =>
-      ({
-        query: vi.fn().mockResolvedValue({ rows: [] }),
-        connect: vi.fn(),
-        end: vi.fn().mockResolvedValue(undefined),
-      }) as unknown as pg.Pool,
-  );
+  poolConstructorCalls = [];
 });
 
 afterEach(() => {
   // Restore environment
   process.env = { ...originalEnv };
-  vi.restoreAllMocks();
 });
 
 /**
@@ -57,8 +74,8 @@ async function getConnectionString(envOverrides: Record<string, string | undefin
   await mod.getTestPool();
 
   // Extract connectionString from the Pool constructor call
-  expect(poolSpy).toHaveBeenCalledTimes(1);
-  const opts = poolSpy.mock.calls[0][0] as pg.PoolConfig;
+  expect(poolConstructorCalls).toHaveLength(1);
+  const opts = poolConstructorCalls[0][0] as pg.PoolConfig;
   return opts.connectionString!;
 }
 
