@@ -503,7 +503,7 @@ describe('InfrastructurePage — cross-section filter', () => {
 
     fireEvent.click(screen.getByTestId('view-stacks-link'));
 
-    expect(screen.getByText('No stacks for this endpoint')).toBeInTheDocument();
+    expect(screen.getByText('The selected endpoint has no Docker Stacks or Compose projects')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show all stacks' })).toBeInTheDocument();
   });
 
@@ -514,13 +514,242 @@ describe('InfrastructurePage — cross-section filter', () => {
     renderPage();
 
     fireEvent.click(screen.getByTestId('view-stacks-link'));
-    expect(screen.getByText('No stacks for this endpoint')).toBeInTheDocument();
+    expect(screen.getByText('The selected endpoint has no Docker Stacks or Compose projects')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show all stacks' }));
 
     // Back to normal empty state
     expect(screen.getByText('No stacks or compose projects detected')).toBeInTheDocument();
     expect(screen.queryByTestId('clear-stack-filter')).not.toBeInTheDocument();
+  });
+});
+
+function renderPageWithInitialParams(initialPath: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <InfrastructurePage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe('InfrastructurePage — endpoint dropdown filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('shows endpoint status filter when both up and down endpoints exist', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'ep2', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPage();
+
+    // The status filter label should be visible
+    expect(screen.getByText('Status')).toBeInTheDocument();
+  });
+
+  it('does not show endpoint status filter when all endpoints have same status', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'ep2', status: 'up' }),
+    ]);
+    mockStacks([]);
+
+    renderPage();
+
+    // No "Status" label for endpoint filter since only 2 options (All + Up)
+    const labels = screen.queryAllByText('Status');
+    expect(labels).toHaveLength(0);
+  });
+
+  it('filters endpoints by status via URL param', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'down-ep', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=up');
+
+    expect(screen.getByText('up-ep')).toBeInTheDocument();
+    expect(screen.queryByText('down-ep')).not.toBeInTheDocument();
+    expect(screen.getByTestId('fleet-filtered-count')).toHaveTextContent('1 of 2');
+  });
+
+  it('filters endpoints by type via URL param when multiple types exist', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'docker-ep', type: 1 }),
+      makeEndpoint({ id: 2, name: 'agent-ep', type: 2 }),
+      makeEndpoint({ id: 3, name: 'docker-ep-2', type: 1 }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointType=2');
+
+    expect(screen.getByText('agent-ep')).toBeInTheDocument();
+    expect(screen.queryByText('docker-ep')).not.toBeInTheDocument();
+    expect(screen.getByTestId('fleet-filtered-count')).toHaveTextContent('1 of 3');
+  });
+
+  it('does not show environment type filter when all endpoints have same type', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', type: 1 }),
+      makeEndpoint({ id: 2, name: 'ep2', type: 1 }),
+    ]);
+    mockStacks([]);
+
+    renderPage();
+
+    expect(screen.queryByText('Type')).not.toBeInTheDocument();
+  });
+
+  it('shows empty state when endpoint filters eliminate all results', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=down');
+
+    expect(screen.getByText('No endpoints match filters')).toBeInTheDocument();
+  });
+
+  it('shows filtered count with "of" when filter is active', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'ep2', status: 'up' }),
+      makeEndpoint({ id: 3, name: 'ep3', status: 'down' }),
+    ]);
+    mockStacks([]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=up');
+
+    expect(screen.getByTestId('fleet-filtered-count')).toHaveTextContent('2 of 3 endpoints');
+  });
+});
+
+describe('InfrastructurePage — stack dropdown filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useUiStore.setState({ pageViewModes: {} });
+  });
+
+  it('shows stack status filter when both active and inactive stacks exist', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', status: 'inactive', endpointId: 1 }),
+    ]);
+
+    renderPage();
+
+    // Should have "Status" label in the stacks section
+    const labels = screen.getAllByText('Status');
+    expect(labels.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('filters stacks by status via URL param', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 'active-stack', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 'inactive-stack', status: 'inactive', endpointId: 1 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?stackStatus=active');
+
+    expect(screen.getByText('active-stack')).toBeInTheDocument();
+    expect(screen.queryByText('inactive-stack')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stacks-filtered-count')).toHaveTextContent('1 of 2');
+  });
+
+  it('filters stacks by endpoint via URL param', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1' }),
+      makeEndpoint({ id: 2, name: 'ep2' }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'stack-ep1', endpointId: 1 }),
+      makeStack({ id: 2, name: 'stack-ep2', endpointId: 2 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?stackEndpoint=1');
+
+    // Stack cards: only stack-ep1 visible, stack-ep2 filtered out
+    expect(screen.getByText('stack-ep1')).toBeInTheDocument();
+    // The stack card name "stack-ep2" should not appear (stack card is filtered out)
+    expect(screen.queryByRole('button', { name: /stack-ep2/ })).not.toBeInTheDocument();
+  });
+
+  it('shows stack endpoint filter only when stacks span multiple endpoints', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1' }),
+      makeEndpoint({ id: 2, name: 'ep2' }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', endpointId: 2 }),
+    ]);
+
+    renderPage();
+
+    // Should have the endpoint filter dropdown (label + select trigger)
+    const filterLabel = screen.getByText('Endpoint', { selector: 'label' });
+    expect(filterLabel).toBeInTheDocument();
+  });
+
+  it('does not show stack endpoint filter when all stacks belong to one endpoint', () => {
+    mockEndpoints([makeEndpoint({ id: 1, name: 'ep1' })]);
+    mockStacks([
+      makeStack({ id: 1, name: 's1', endpointId: 1 }),
+      makeStack({ id: 2, name: 's2', endpointId: 1 }),
+    ]);
+
+    renderPage();
+
+    expect(screen.queryByText('Endpoint', { selector: 'label' })).not.toBeInTheDocument();
+  });
+
+  it('shows "Show all stacks" button when stack filters yield no results', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'ep1' }),
+      makeEndpoint({ id: 2, name: 'ep2' }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'stack-ep1', endpointId: 1 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?stackEndpoint=2');
+
+    expect(screen.getByText('No stacks match filters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show all stacks' })).toBeInTheDocument();
+  });
+
+  it('applies combined endpoint and stack filters from URL params', () => {
+    mockEndpoints([
+      makeEndpoint({ id: 1, name: 'up-ep', status: 'up' }),
+      makeEndpoint({ id: 2, name: 'down-ep', status: 'down' }),
+    ]);
+    mockStacks([
+      makeStack({ id: 1, name: 'active-s', status: 'active', endpointId: 1 }),
+      makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 2 }),
+    ]);
+
+    renderPageWithInitialParams('/fleet?endpointStatus=up&stackStatus=inactive');
+
+    // Endpoints section: only "up" endpoints visible as cards
+    expect(screen.getByTestId('fleet-filtered-count')).toHaveTextContent('1 of 2');
+    // Stacks section: only inactive stacks visible
+    expect(screen.getByTestId('stacks-filtered-count')).toHaveTextContent('1 of 2');
+    expect(screen.getByText('inactive-s')).toBeInTheDocument();
+    expect(screen.queryByText('active-s')).not.toBeInTheDocument();
   });
 });
 
