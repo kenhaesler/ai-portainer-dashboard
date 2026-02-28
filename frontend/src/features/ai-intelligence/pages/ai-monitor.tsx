@@ -5,9 +5,9 @@ import type { Investigation, RecommendedAction } from '@/features/ai-intelligenc
 import { useIncidents, useResolveIncident, type Incident } from '@/features/ai-intelligence/hooks/use-incidents';
 import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import {
   AlertTriangle,

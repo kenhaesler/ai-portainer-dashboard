@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ICON_SET_MAP } from './icons/icon-sets';
+import { ICON_SET_MAP } from '../icons/icon-sets';
 
 interface PostLoginLoadingProps {
   onComplete?: () => void;

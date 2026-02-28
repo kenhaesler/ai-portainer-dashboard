@@ -51,7 +51,7 @@ vi.mock('@/features/containers/hooks/use-containers', () => ({
   }),
 }));
 
-vi.mock('@/shared/components/container-multi-select', () => ({
+vi.mock('@/shared/components/forms/container-multi-select', () => ({
   ContainerMultiSelect: ({ onChange }: { onChange: (ids: string[]) => void }) => (
     <button type="button" onClick={() => onChange(['c1'])}>
       Select Container

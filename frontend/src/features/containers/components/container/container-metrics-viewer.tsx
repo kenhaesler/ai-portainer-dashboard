@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Cpu, HardDrive, Network } from 'lucide-react';
 import { useContainerMetrics, useNetworkRates } from '@/features/observability/hooks/use-metrics';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
 import {

@@ -1,6 +1,6 @@
 import { Box, Server, HardDrive, Clock, Activity, RotateCw, Network, Tag } from 'lucide-react';
 import { type Container } from '@/features/containers/hooks/use-containers';
-import { StatusBadge } from '@/shared/components/status-badge';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { formatDate } from '@/shared/lib/utils';
 
 function formatUptime(createdTimestamp: number): string {

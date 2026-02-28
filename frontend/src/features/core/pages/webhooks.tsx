@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw } from 'lucide-react';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import {
   useCreateWebhook,
   useDeleteWebhook,

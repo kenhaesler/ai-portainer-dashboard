@@ -16,7 +16,7 @@ import {
 import { useSettings, useUpdateSetting } from '@/features/core/hooks/use-settings';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 

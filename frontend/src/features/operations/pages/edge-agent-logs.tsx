@@ -22,11 +22,11 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 
 // Log levels with colors
 const LOG_LEVELS = [

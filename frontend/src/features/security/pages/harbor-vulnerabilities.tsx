@@ -4,7 +4,7 @@ import {
   ExternalLink, AlertTriangle, CheckCircle2, Package, Bug,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import {
   useHarborStatus,
   useHarborVulnerabilities,

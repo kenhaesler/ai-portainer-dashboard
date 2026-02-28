@@ -79,19 +79,19 @@ vi.mock('@/shared/components/charts/image-sunburst', () => ({
   ImageSunburst: () => <div data-testid="image-sunburst" />,
 }));
 
-vi.mock('@/shared/components/themed-select', () => ({
+vi.mock('@/shared/components/ui/themed-select', () => ({
   ThemedSelect: () => <div data-testid="themed-select" />,
 }));
 
-vi.mock('@/shared/components/auto-refresh-toggle', () => ({
+vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
   AutoRefreshToggle: () => <div data-testid="auto-refresh-toggle" />,
 }));
 
-vi.mock('@/shared/components/refresh-button', () => ({
+vi.mock('@/shared/components/ui/refresh-button', () => ({
   RefreshButton: () => <button type="button">Refresh</button>,
 }));
 
-vi.mock('@/shared/components/loading-skeleton', () => ({
+vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
   SkeletonCard: () => <div data-testid="skeleton-card" />,
 }));
 
@@ -103,17 +103,17 @@ vi.mock('@/shared/lib/motion-tokens', () => ({
   pageVariants: {},
 }));
 
-vi.mock('@/shared/components/motion-page', () => ({
+vi.mock('@/shared/components/layout/motion-page', () => ({
   MotionPage: ({ children }: any) => <div data-testid="motion-page">{children}</div>,
   MotionReveal: ({ children }: any) => <div>{children}</div>,
   MotionStagger: ({ children, className }: any) => <div className={className}>{children}</div>,
 }));
 
-vi.mock('@/shared/components/spotlight-card', () => ({
+vi.mock('@/shared/components/data-display/spotlight-card', () => ({
   SpotlightCard: ({ children }: any) => <div>{children}</div>,
 }));
 
-vi.mock('@/shared/components/kpi-card', () => ({
+vi.mock('@/shared/components/data-display/kpi-card', () => ({
   KpiCard: ({ label, value }: any) => (
     <div data-testid="kpi-card">
       <span>{label}</span>
@@ -122,7 +122,7 @@ vi.mock('@/shared/components/kpi-card', () => ({
   ),
 }));
 
-vi.mock('@/shared/components/data-table', () => ({
+vi.mock('@/shared/components/tables/data-table', () => ({
   DataTable: ({ columns, data, searchPlaceholder }: any) => (
     <div data-testid="data-table">
       <input placeholder={searchPlaceholder} />

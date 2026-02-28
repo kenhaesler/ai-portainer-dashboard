@@ -1,5 +1,5 @@
 import type { Container } from '@/features/containers/hooks/use-containers';
-import type { SelectOptionGroup } from '@/shared/components/themed-select';
+import type { SelectOptionGroup } from '@/shared/components/ui/themed-select';
 
 export const NO_STACK_LABEL = 'No Stack';
 

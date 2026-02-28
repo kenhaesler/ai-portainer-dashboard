@@ -76,30 +76,30 @@ vi.mock('@/shared/components/charts/fleet-summary-card', () => ({
 vi.mock('@/shared/components/charts/resource-overview-card', () => ({
   ResourceOverviewCard: () => <div data-testid="mock-resource">Resource</div>,
 }));
-vi.mock('@/shared/components/kpi-card', () => ({
+vi.mock('@/shared/components/data-display/kpi-card', () => ({
   KpiCard: ({ label }: { label: string }) => <div data-testid="mock-kpi">{label}</div>,
 }));
-vi.mock('@/shared/components/tilt-card', () => ({
+vi.mock('@/shared/components/data-display/tilt-card', () => ({
   TiltCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/shared/components/spotlight-card', () => ({
+vi.mock('@/shared/components/data-display/spotlight-card', () => ({
   SpotlightCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/shared/components/motion-page', () => ({
+vi.mock('@/shared/components/layout/motion-page', () => ({
   MotionPage: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   MotionReveal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   MotionStagger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('@/shared/components/auto-refresh-toggle', () => ({
+vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
   AutoRefreshToggle: () => <div data-testid="mock-auto-refresh" />,
 }));
-vi.mock('@/shared/components/refresh-button', () => ({
+vi.mock('@/shared/components/ui/refresh-button', () => ({
   RefreshButton: () => <button data-testid="mock-refresh" />,
 }));
-vi.mock('@/shared/components/status-badge', () => ({
+vi.mock('@/shared/components/feedback/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
 }));
-vi.mock('@/shared/components/favorite-button', () => ({
+vi.mock('@/shared/components/ui/favorite-button', () => ({
   FavoriteButton: () => <button data-testid="mock-fav" />,
 }));
 vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({

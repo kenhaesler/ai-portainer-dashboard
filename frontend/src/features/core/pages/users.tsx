@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
-import { ThemedSelect } from '@/shared/components/themed-select';
+import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRole } from '@/features/core/hooks/use-users';
 import { cn, formatDate } from '@/shared/lib/utils';
 

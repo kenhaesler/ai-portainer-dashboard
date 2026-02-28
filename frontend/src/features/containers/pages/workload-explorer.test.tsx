@@ -96,7 +96,7 @@ vi.mock('@/shared/hooks/use-force-refresh', () => ({
   }),
 }));
 
-vi.mock('@/shared/components/themed-select', () => ({
+vi.mock('@/shared/components/ui/themed-select', () => ({
   ThemedSelect: ({ id, value, options }: { id?: string; value: string; options: Array<{ value: string; label: string }> }) => (
     <div data-testid={id} data-value={value}>
       {options.map((option) => (
@@ -108,7 +108,7 @@ vi.mock('@/shared/components/themed-select', () => ({
 
 let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
 
-vi.mock('@/shared/components/data-table', () => ({
+vi.mock('@/shared/components/tables/data-table', () => ({
   DataTable: ({
     data,
     enableRowSelection,
@@ -139,27 +139,27 @@ vi.mock('@/shared/components/data-table', () => ({
   },
 }));
 
-vi.mock('@/shared/components/status-badge', () => ({
+vi.mock('@/shared/components/feedback/status-badge', () => ({
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
 }));
 
-vi.mock('@/shared/components/auto-refresh-toggle', () => ({
+vi.mock('@/shared/components/ui/auto-refresh-toggle', () => ({
   AutoRefreshToggle: () => <div>Auto Refresh</div>,
 }));
 
-vi.mock('@/shared/components/refresh-button', () => ({
+vi.mock('@/shared/components/ui/refresh-button', () => ({
   RefreshButton: () => <button type="button">Refresh</button>,
 }));
 
-vi.mock('@/shared/components/favorite-button', () => ({
+vi.mock('@/shared/components/ui/favorite-button', () => ({
   FavoriteButton: () => <button type="button">Favorite</button>,
 }));
 
-vi.mock('@/shared/components/loading-skeleton', () => ({
+vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
   SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('@/shared/components/selection-action-bar', () => ({
+vi.mock('@/shared/components/layout/selection-action-bar', () => ({
   SelectionActionBar: ({
     selectedCount,
     visible,
@@ -193,7 +193,7 @@ vi.mock('framer-motion', () => ({
 
 let mockOnFiltered: ((containers: unknown[]) => void) | undefined;
 
-vi.mock('@/shared/components/workload-smart-search', () => ({
+vi.mock('@/shared/components/forms/workload-smart-search', () => ({
   WorkloadSmartSearch: ({ onFiltered, totalCount }: { onFiltered: (c: unknown[]) => void; totalCount: number }) => {
     mockOnFiltered = onFiltered;
     return <div data-testid="workload-smart-search" data-total={totalCount} />;

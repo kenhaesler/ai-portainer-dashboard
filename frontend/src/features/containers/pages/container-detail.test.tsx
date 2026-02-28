@@ -42,11 +42,11 @@ vi.mock('@/shared/hooks/use-force-refresh', () => ({
   }),
 }));
 
-vi.mock('@/shared/components/favorite-button', () => ({
+vi.mock('@/shared/components/ui/favorite-button', () => ({
   FavoriteButton: () => <button type="button">Favorite</button>,
 }));
 
-vi.mock('@/shared/components/refresh-button', () => ({
+vi.mock('@/shared/components/ui/refresh-button', () => ({
   RefreshButton: () => <button type="button" data-testid="refresh-button">Refresh</button>,
 }));
 

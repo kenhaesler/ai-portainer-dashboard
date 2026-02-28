@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useCountUp } from '@/shared/hooks/use-count-up';
 import { KpiSparkline } from '@/shared/components/charts/kpi-sparkline';
 import { useUiStore } from '@/stores/ui-store';
-import { SpotlightCard } from '@/shared/components/spotlight-card';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { spring, duration } from '@/shared/lib/motion-tokens';
 
 interface KpiCardProps {

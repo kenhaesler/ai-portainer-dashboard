@@ -25,8 +25,8 @@ import {
   useDeleteStaleCoverage,
 } from '@/features/security/hooks/use-ebpf-coverage';
 import type { CoverageRecord } from '@/features/security/hooks/use-ebpf-coverage';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { formatDate } from '@/shared/lib/utils';
 
 /** Human-readable labels for coverage statuses */

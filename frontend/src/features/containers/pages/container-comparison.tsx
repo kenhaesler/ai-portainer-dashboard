@@ -13,8 +13,8 @@ import { Plus, X, GitCompareArrows, BarChart3, Info, Clock } from 'lucide-react'
 import { useContainers, Container } from '@/features/containers/hooks/use-containers';
 import { useComparisonMetrics, ComparisonTarget } from '@/features/containers/hooks/use-container-comparison';
 import { formatDate, cn } from '@/shared/lib/utils';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 

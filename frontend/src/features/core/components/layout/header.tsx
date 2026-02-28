@@ -5,7 +5,7 @@ import { useThemeStore } from '@/stores/theme-store';
 import { useUiStore } from '@/stores/ui-store';
 import { cn } from '@/shared/lib/utils';
 import { useState, useRef, useEffect } from 'react';
-import { ConnectionOrb } from '@/shared/components/connection-orb';
+import { ConnectionOrb } from '@/shared/components/ui/connection-orb';
 
 const routeLabels: Record<string, string> = {
   '/': 'Home',

@@ -13,11 +13,11 @@ import {
 } from 'lucide-react';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { StatusBadge } from '@/shared/components/status-badge';
-import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
-import { RefreshButton } from '@/shared/components/refresh-button';
+import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
+import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
-import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 
 interface HealthStats {
   total: number;
