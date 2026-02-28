@@ -61,10 +61,10 @@ export function buildMetricsAdapter(): MetricsInterface {
 }
 
 /** Build the monitoring service with all cross-domain deps wired via DI. */
-export function buildMonitoringService() {
+export function buildMonitoringService(metricsAdapter?: MetricsInterface) {
   const monitoringDeps: MonitoringDeps = {
     scanner: { scanContainer },
-    metrics: buildMetricsAdapter(),
+    metrics: metricsAdapter ?? buildMetricsAdapter(),
     notifications: { notifyInsight },
     operations: { suggestAction },
   };

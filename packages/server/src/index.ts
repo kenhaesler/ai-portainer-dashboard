@@ -17,14 +17,14 @@ process.on('unhandledRejection', (reason) => {
 
 async function main() {
   const config = getConfig();
-  const app = await buildApp();
+  const { app, metricsAdapter } = await buildApp();
 
   // Initialize databases (runs migrations)
   await getAppDb();
   await getMetricsDb();
 
-  // Build monitoring service with DI wiring
-  const monitoringService = buildMonitoringService();
+  // Build monitoring service with DI wiring (reuse the shared metricsAdapter from app.ts)
+  const monitoringService = buildMonitoringService(metricsAdapter);
 
   // Setup Socket.IO namespaces (pass infraLogsAdapter for container log tool execution)
   setupSockets(app.ioNamespaces, infraLogsAdapter);
