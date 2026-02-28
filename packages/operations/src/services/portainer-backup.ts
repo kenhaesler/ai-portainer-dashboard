@@ -12,6 +12,7 @@ function getDispatcher(): Agent | undefined {
   const config = getConfig();
   if (config.PORTAINER_VERIFY_SSL) return undefined;
   if (!unsafeDispatcher) {
+    log.warn('TLS certificate verification disabled for Portainer backup (PORTAINER_VERIFY_SSL=false) — not recommended for production');
     // nosemgrep: bypass-tls-verification — intentional: admin-configurable SSL verification bypass
     unsafeDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   }

@@ -14,9 +14,16 @@ const MAX_RETRY_ATTEMPTS = 3;
 
 const TS_PREFIX_RE = /^(\d{4}-\d{2}-\d{2}T[^\s]+)\s(.*)$/;
 
-const insecureElasticDispatcher = new Agent({
-  connect: { rejectUnauthorized: false },
-});
+/** Lazily initialized insecure dispatcher — only created when TLS verification is explicitly disabled */
+let insecureElasticDispatcher: Agent | undefined;
+function getInsecureElasticDispatcher(): Agent {
+  if (!insecureElasticDispatcher) {
+    log.warn('TLS certificate verification disabled for Elasticsearch log forwarding (verifySsl=false) — not recommended for production');
+    // nosemgrep: bypass-tls-verification — intentional: admin-configurable SSL verification bypass
+    insecureElasticDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  }
+  return insecureElasticDispatcher;
+}
 
 const checkpoints = new Map<string, number>();
 
@@ -104,7 +111,7 @@ async function indexBatch(esConfig: ElasticsearchConfig, docs: ContainerLogDoc[]
   };
   if (esConfig.apiKey) headers.Authorization = `ApiKey ${esConfig.apiKey}`;
 
-  const dispatcher = esConfig.verifySsl ? undefined : insecureElasticDispatcher;
+  const dispatcher = esConfig.verifySsl ? undefined : getInsecureElasticDispatcher();
 
   let attempt = 0;
   while (attempt < MAX_RETRY_ATTEMPTS) {

@@ -54,6 +54,7 @@ function getDispatcher(): Agent | undefined {
   const ca = getCustomCaCert();
   const connectOptions: Record<string, unknown> = {};
   if (!config.PORTAINER_VERIFY_SSL) {
+    log.warn('TLS certificate verification disabled for Portainer API (PORTAINER_VERIFY_SSL=false) — not recommended for production');
     connectOptions.rejectUnauthorized = false;
   } else if (ca) {
     connectOptions.ca = ca;

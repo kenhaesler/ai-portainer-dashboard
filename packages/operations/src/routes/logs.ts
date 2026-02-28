@@ -9,7 +9,16 @@ import { getElasticsearchConfig } from '@dashboard/infrastructure';
 
 const log = createChildLogger('logs-route');
 
-const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+/** Lazily initialized insecure dispatcher — only created when TLS verification is explicitly disabled */
+let insecureDispatcher: Agent | undefined;
+function getInsecureDispatcher(): Agent {
+  if (!insecureDispatcher) {
+    log.warn('TLS certificate verification disabled for Elasticsearch connection (verifySsl=false) — not recommended for production');
+    // nosemgrep: bypass-tls-verification — intentional: admin-configurable SSL verification bypass
+    insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+  }
+  return insecureDispatcher;
+}
 
 export async function logsRoutes(fastify: FastifyInstance) {
   // Get Elasticsearch configuration status
@@ -94,7 +103,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
         headers,
         body: JSON.stringify(esQuery),
         signal: controller.signal,
-        dispatcher: esConfig.verifySsl ? undefined : insecureDispatcher,
+        dispatcher: esConfig.verifySsl ? undefined : getInsecureDispatcher(),
       } as RequestInit);
       clearTimeout(timeout);
 
@@ -148,7 +157,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
         method: 'GET',
         headers,
         signal: controller.signal,
-        dispatcher: verifySsl ? undefined : insecureDispatcher,
+        dispatcher: verifySsl ? undefined : getInsecureDispatcher(),
       } as RequestInit);
       clearTimeout(timeout);
 
