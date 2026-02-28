@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
 
 export type UserRole = 'viewer' | 'operator' | 'admin';
 
@@ -27,10 +28,7 @@ export interface UpdateUserInput {
 const usersKey = ['users'] as const;
 
 export function useUsers() {
-  return useQuery<UserRecord[]>({
-    queryKey: usersKey,
-    queryFn: () => api.get<UserRecord[]>('/api/users'),
-  });
+  return useResource<UserRecord[]>(usersKey, '/api/users');
 }
 
 export function useCreateUser() {

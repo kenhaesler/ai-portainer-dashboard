@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
+import * as Tabs from '@radix-ui/react-tabs';
 import {
   Server, Layers, LayoutGrid, List, AlertTriangle, Boxes, Activity, Clock,
   ChevronLeft, ChevronRight, Search, ArrowRight, X,
@@ -27,6 +28,16 @@ import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/feature
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
 const ALL_FILTER = '__all__';
+
+type InfraTab = 'fleet' | 'stacks';
+const VALID_TABS: InfraTab[] = ['fleet', 'stacks'];
+const TAB_TRIGGER_CLASS =
+  'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary';
+
+function resolveTab(raw: string | null): InfraTab {
+  if (raw && VALID_TABS.includes(raw as InfraTab)) return raw as InfraTab;
+  return 'fleet';
+}
 
 function formatRelativeTime(ms: number | null | undefined): string {
   if (ms == null) return 'N/A';
@@ -100,30 +111,30 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs">
           {endpoint.isEdge ? (
-            <span className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+            <span className="rounded bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
               Edge Agent {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
             </span>
           ) : (
-            <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground">
+            <span className="rounded bg-gray-100 px-2 py-0.5 font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
               {getEndpointTypeLabel(endpoint.type)}
             </span>
           )}
           {endpoint.isEdge && endpoint.agentVersion && (
-            <span className="text-muted-foreground">v{endpoint.agentVersion}</span>
+            <span className="text-xs text-muted-foreground">v{endpoint.agentVersion}</span>
           )}
         </div>
         <StatusBadge status={endpoint.status} />
       </div>
 
       {/* Row 3: Inline stats */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
-          <Boxes className="h-3.5 w-3.5" />
+          <Boxes className="h-3 w-3" />
           {endpoint.totalContainers} containers ({endpoint.containersRunning} running)
         </span>
-        <span>{endpoint.stackCount} stacks</span>
+        <span>{endpoint.stackCount} stack{endpoint.stackCount !== 1 ? 's' : ''}</span>
         <span className="flex items-center gap-1">
-          <Activity className="h-3.5 w-3.5" />
+          <Activity className="h-3 w-3" />
           {endpoint.totalCpu} CPU
         </span>
         <span>{memoryGB} GB</span>
@@ -142,6 +153,7 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
         </div>
       )}
 
+      {/* View stacks link */}
       {onViewStacks && endpoint.stackCount > 0 && (
         <button
           onClick={(e) => { e.stopPropagation(); onViewStacks(); }}
@@ -172,14 +184,14 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
 
       {/* Row 2: Stack type tag + Status badge */}
       <div className="mt-1.5 flex items-center justify-between gap-2">
-        <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+        <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
           {getStackType(stack.type)}
         </span>
         <StatusBadge status={stack.status} />
       </div>
 
       {/* Row 3: Inline stats */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>{stack.endpointName}</span>
         <span>{isInferred ? `${stack.containerCount ?? 0} containers` : `${stack.envCount} env vars`}</span>
       </div>
@@ -191,6 +203,24 @@ export default function InfrastructurePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const setPageViewMode = useUiStore((s) => s.setPageViewMode);
+
+  // --- URL-driven tab state ---
+  const activeTab = resolveTab(searchParams.get('tab'));
+
+  const handleTabChange = useCallback((newTab: string) => {
+    const resolved = resolveTab(newTab);
+    const params: Record<string, string> = { tab: resolved };
+    // Preserve existing filter params when switching tabs
+    const endpointStatus = searchParams.get('endpointStatus');
+    const endpointType = searchParams.get('endpointType');
+    const stackStatus = searchParams.get('stackStatus');
+    const stackEndpoint = searchParams.get('stackEndpoint');
+    if (endpointStatus) params.endpointStatus = endpointStatus;
+    if (endpointType) params.endpointType = endpointType;
+    if (stackStatus) params.stackStatus = stackStatus;
+    if (stackEndpoint) params.stackEndpoint = stackEndpoint;
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // --- URL-persisted filter state ---
   const endpointStatusFilter = searchParams.get('endpointStatus') ?? ALL_FILTER;
@@ -204,13 +234,15 @@ export default function InfrastructurePage() {
     sStatus: string,
     sEndpoint: string,
   ) => {
+    const currentTab = searchParams.get('tab');
     const params: Record<string, string> = {};
+    if (currentTab) params.tab = currentTab;
     if (epStatus !== ALL_FILTER) params.endpointStatus = epStatus;
     if (epType !== ALL_FILTER) params.endpointType = epType;
     if (sStatus !== ALL_FILTER) params.stackStatus = sStatus;
     if (sEndpoint !== ALL_FILTER) params.stackEndpoint = sEndpoint;
-    setSearchParams(params);
-  }, [setSearchParams]);
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const setEndpointStatusFilter = useCallback((v: string) => {
     setFleetFilters(v, endpointTypeFilter, stackStatusFilter, stackEndpointFilterParam);
@@ -280,15 +312,15 @@ export default function InfrastructurePage() {
   // Shared auto-refresh preference
   const { interval, setInterval } = useAutoRefresh(30);
 
-  // Cross-section filter: "View stacks" link sets stackEndpoint URL param
-  const stacksSectionRef = useRef<HTMLElement>(null);
-
+  // Cross-section filter: "View stacks" link sets stackEndpoint filter AND switches to stacks tab
   const handleViewStacks = useCallback((endpointId: number) => {
-    setStackEndpointFilter(String(endpointId));
-    setTimeout(() => {
-      stacksSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
-  }, [setStackEndpointFilter]);
+    const params: Record<string, string> = { tab: 'stacks', stackEndpoint: String(endpointId) };
+    // Preserve current endpoint filters
+    if (endpointStatusFilter !== ALL_FILTER) params.endpointStatus = endpointStatusFilter;
+    if (endpointTypeFilter !== ALL_FILTER) params.endpointType = endpointTypeFilter;
+    if (stackStatusFilter !== ALL_FILTER) params.stackStatus = stackStatusFilter;
+    setSearchParams(params, { replace: true });
+  }, [setSearchParams, endpointStatusFilter, endpointTypeFilter, stackStatusFilter]);
 
   // Combined force refresh — invalidates both caches then refetches, surfaces partial failures
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
@@ -700,13 +732,23 @@ export default function InfrastructurePage() {
         </div>
       )}
 
-      {/* Fleet Overview section */}
+      {/* Tabbed sections */}
+      <Tabs.Root value={activeTab} onValueChange={handleTabChange}>
+        <Tabs.List className="flex gap-1 border-b" aria-label="Infrastructure sections">
+          <Tabs.Trigger value="fleet" className={TAB_TRIGGER_CLASS} data-testid="tab-fleet">
+            <Server className="h-4 w-4" />
+            Fleet Overview
+          </Tabs.Trigger>
+          <Tabs.Trigger value="stacks" className={TAB_TRIGGER_CLASS} data-testid="tab-stacks">
+            <Layers className="h-4 w-4" />
+            Stack Overview
+          </Tabs.Trigger>
+        </Tabs.List>
+
+        <Tabs.Content value="fleet" className="mt-4">
       <section aria-labelledby="fleet-heading" className="space-y-4">
-        <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Server className="h-5 w-5 text-muted-foreground" />
-            <h2 id="fleet-heading" className="text-xl font-semibold">Fleet Overview</h2>
-          </div>
+        <h2 id="fleet-heading" className="sr-only">Fleet Overview</h2>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           {!isLoading && endpoints && (
             <div className="flex flex-wrap items-center gap-3">
               {/* Endpoint status filter */}
@@ -865,13 +907,13 @@ export default function InfrastructurePage() {
           </SpotlightCard>
         ) : null}
       </section>
+        </Tabs.Content>
 
-      {/* Stack Overview section */}
-      <section ref={stacksSectionRef} aria-labelledby="stacks-heading" className="space-y-4">
-        <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs.Content value="stacks" className="mt-4">
+      <section aria-labelledby="stacks-heading" className="space-y-4">
+        <h2 id="stacks-heading" className="sr-only">Stack Overview</h2>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-muted-foreground" />
-            <h2 id="stacks-heading" className="text-xl font-semibold">Stack Overview</h2>
             {stackEndpointFilterParam !== ALL_FILTER && (
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                 {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
@@ -1034,6 +1076,8 @@ export default function InfrastructurePage() {
           </SpotlightCard>
         )}
       </section>
+        </Tabs.Content>
+      </Tabs.Root>
     </div>
   );
 }
