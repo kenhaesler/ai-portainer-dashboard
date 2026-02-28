@@ -130,11 +130,16 @@ export function toLocalTimestamp(ts: string | null): string {
   return date.toLocaleString();
 }
 
-export function buildRegex(pattern: string): RegExp | null {
-  if (!pattern.trim()) return null;
-  try {
-    return new RegExp(pattern, 'gi');
-  } catch {
-    return null;
-  }
+/**
+ * Build a case-insensitive substring matcher from a user-supplied search
+ * pattern.  Returns `null` when the pattern is blank.
+ *
+ * Uses `String.includes()` instead of `new RegExp()` to avoid
+ * Regular Expression Denial-of-Service (ReDoS / CWE-1333).
+ */
+export function buildSearchMatcher(pattern: string): ((text: string) => boolean) | null {
+  const trimmed = pattern.trim();
+  if (!trimmed) return null;
+  const needle = trimmed.toLowerCase();
+  return (text: string) => text.toLowerCase().includes(needle);
 }

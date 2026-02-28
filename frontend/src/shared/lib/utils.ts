@@ -58,3 +58,14 @@ export function formatRelativeAge(timestampSeconds: number): string {
 export function truncate(str: string, length: number): string {
   return str.length > length ? `${str.slice(0, length)}...` : str;
 }
+
+/**
+ * Escape special regex characters in a string so it can be safely used
+ * inside `new RegExp()` without risk of ReDoS (CWE-1333).
+ *
+ * All characters that have special meaning in a regular expression are
+ * prefixed with a backslash, turning the input into a literal match.
+ */
+export function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
