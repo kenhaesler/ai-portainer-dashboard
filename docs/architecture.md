@@ -398,13 +398,13 @@ Backend tests use a **real PostgreSQL test database** instead of mocks or in-mem
 
 - **Database**: `portainer_dashboard_test` on port **5433** (mapped from container port 5432)
 - **Initialization**: `docker/init-test-db.sh` creates the test database when the `postgres-app` container starts
-- **Test Utilities**: `backend/src/db/test-db-helper.ts` provides:
+- **Test Utilities**: `packages/core/src/db/test-db-helper.ts` provides:
   - `getTestDb()` — Returns a PostgreSQL pool connected to the test database
   - `getTestPool()` — Returns the raw `pg.Pool` for advanced usage
   - `truncateTestTables()` — Clears all tables between tests
   - `closeTestDb()` — Closes the test pool connection
-- **Migrations**: Production migrations from `backend/src/db/postgres-migrations/` are automatically applied to the test database
-- **Configuration**: Set `POSTGRES_TEST_URL` environment variable to override the default connection string (default: `postgresql://postgres:postgres@localhost:5433/portainer_dashboard_test`)
+- **Migrations**: Production migrations from `packages/core/src/db/postgres-migrations/` are automatically applied to the test database
+- **Configuration**: Set `POSTGRES_TEST_URL` to override the full connection string, or set individual vars (`POSTGRES_TEST_USER`, `POSTGRES_TEST_PASSWORD`, `POSTGRES_TEST_HOST`, `POSTGRES_TEST_PORT`, `POSTGRES_TEST_DB`). Password falls back to `POSTGRES_APP_PASSWORD`, then a safe local-dev default.
 - **CI Support**: GitHub Actions workflow includes a `postgres-test` service container for running tests in CI
 
 **Running Tests**:
