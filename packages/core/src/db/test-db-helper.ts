@@ -24,7 +24,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 pg.types.setTypeParser(1184, (val: string) => new Date(val).toISOString()); // timestamptz
 pg.types.setTypeParser(1114, (val: string) => new Date(val + 'Z').toISOString()); // timestamp
 
-const DEFAULT_URL = 'postgresql://app_user:changeme-postgres-app@localhost:5433/portainer_dashboard_test';
+// Build connection URL from individual env vars (safe defaults for local dev).
+// POSTGRES_TEST_URL still takes full precedence (see ensurePool below).
+const PGUSER = process.env.POSTGRES_TEST_USER ?? 'app_user';
+const PGPASSWORD = process.env.POSTGRES_TEST_PASSWORD ?? process.env.POSTGRES_APP_PASSWORD ?? 'changeme-postgres-app';
+const PGHOST = process.env.POSTGRES_TEST_HOST ?? 'localhost';
+const PGPORT = process.env.POSTGRES_TEST_PORT ?? '5433';
+const PGDATABASE = process.env.POSTGRES_TEST_DB ?? 'portainer_dashboard_test';
+
+const DEFAULT_URL = `postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}`;
 
 let pool: pg.Pool | null = null;
 let adapter: PostgresAdapter | null = null;
