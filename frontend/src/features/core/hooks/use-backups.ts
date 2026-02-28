@@ -1,5 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface BackupFile {
   filename: string;
@@ -21,10 +23,8 @@ interface BackupMutationResponse {
 const backupQueryKey = ['backup', 'files'] as const;
 
 export function useBackups() {
-  return useQuery<BackupListResponse>({
-    queryKey: backupQueryKey,
-    queryFn: () => api.get<BackupListResponse>('/api/backup'),
-    staleTime: 60 * 1000,
+  return useResource<BackupListResponse>(backupQueryKey, '/api/backup', {
+    staleTime: STALE_TIMES.SHORT,
   });
 }
 

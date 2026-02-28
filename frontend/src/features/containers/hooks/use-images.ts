@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface DockerImage {
   id: string;
@@ -18,15 +18,11 @@ interface UseImagesOptions {
 }
 
 export function useImages(endpointId?: number, options?: UseImagesOptions) {
-  return useQuery<DockerImage[]>({
-    queryKey: ['images', endpointId],
-    queryFn: async () => {
-      const path = endpointId
-        ? `/api/images?endpointId=${endpointId}`
-        : '/api/images';
-      return api.get<DockerImage[]>(path);
-    },
-    staleTime: 5 * 60 * 1000,
+  const path = endpointId
+    ? `/api/images?endpointId=${endpointId}`
+    : '/api/images';
+  return useResource<DockerImage[]>(['images', endpointId], path, {
+    staleTime: STALE_TIMES.LONG,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     refetchInterval: options?.refetchInterval ?? false,
