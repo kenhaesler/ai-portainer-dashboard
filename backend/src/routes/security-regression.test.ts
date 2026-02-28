@@ -1459,6 +1459,9 @@ describe('No Global TLS Override', () => {
     // at module scope. TLS-bypassing dispatchers must be lazily initialized
     // and gated behind env var checks.
     const filesToCheck = [
+      path.resolve(process.cwd(), '..', 'packages', 'core', 'src', 'portainer', 'portainer-client.ts'),
+      path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'services', 'llm-client.ts'),
+      path.resolve(process.cwd(), '..', 'packages', 'operations', 'src', 'services', 'portainer-backup.ts'),
       path.resolve(process.cwd(), '..', 'packages', 'operations', 'src', 'routes', 'logs.ts'),
       path.resolve(process.cwd(), '..', 'packages', 'infrastructure', 'src', 'services', 'elasticsearch-log-forwarder.ts'),
     ];
