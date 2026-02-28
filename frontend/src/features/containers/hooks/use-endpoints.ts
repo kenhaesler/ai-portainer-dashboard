@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface EdgeCapabilities {
   exec: boolean;
@@ -32,10 +32,8 @@ export interface Endpoint {
 }
 
 export function useEndpoints() {
-  return useQuery<Endpoint[]>({
-    queryKey: ['endpoints'],
-    queryFn: () => api.get<Endpoint[]>('/api/endpoints'),
-    staleTime: 60 * 1000,
+  return useResource<Endpoint[]>(['endpoints'], '/api/endpoints', {
+    staleTime: STALE_TIMES.SHORT,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });

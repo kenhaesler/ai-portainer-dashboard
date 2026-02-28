@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface Webhook {
   id: string;
@@ -63,18 +65,15 @@ interface WebhookTestResponse {
 const webhooksKey = ['webhooks'] as const;
 
 export function useWebhooks() {
-  return useQuery<Webhook[]>({
-    queryKey: webhooksKey,
-    queryFn: () => api.get<Webhook[]>('/api/webhooks'),
-  });
+  return useResource<Webhook[]>(webhooksKey, '/api/webhooks');
 }
 
 export function useWebhookEventTypes() {
-  return useQuery<WebhookEventType[]>({
-    queryKey: ['webhooks', 'event-types'],
-    queryFn: () => api.get<WebhookEventType[]>('/api/webhooks/event-types'),
-    staleTime: 5 * 60 * 1000,
-  });
+  return useResource<WebhookEventType[]>(
+    ['webhooks', 'event-types'],
+    '/api/webhooks/event-types',
+    { staleTime: STALE_TIMES.LONG },
+  );
 }
 
 export function useWebhookDeliveries(webhookId: string | null, limit: number = 20) {

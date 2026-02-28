@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
 
 export interface SecurityAuditEntry {
   containerId: string;
@@ -51,10 +52,10 @@ export function useSecurityAudit(endpointId?: number) {
 }
 
 export function useSecurityIgnoreList() {
-  return useQuery<SecurityIgnoreListResponse>({
-    queryKey: ['security-ignore-list'],
-    queryFn: () => api.get<SecurityIgnoreListResponse>('/api/security/ignore-list'),
-  });
+  return useResource<SecurityIgnoreListResponse>(
+    ['security-ignore-list'],
+    '/api/security/ignore-list',
+  );
 }
 
 export function useUpdateSecurityIgnoreList() {
