@@ -9,7 +9,11 @@ ARG VITE_BUILD_NUMBER=""
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/
-RUN --mount=type=cache,target=/root/.npm npm ci -w frontend
+COPY packages/contracts/package.json ./packages/contracts/
+RUN --mount=type=cache,target=/root/.npm npm ci -w frontend -w @dashboard/contracts
+# Build @dashboard/contracts so frontend can resolve its type declarations
+COPY packages/contracts/ ./packages/contracts/
+RUN npm run build -w @dashboard/contracts
 COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json frontend/tsconfig.node.json frontend/components.json ./frontend/
 COPY frontend/public/ frontend/public/
 COPY frontend/src/ frontend/src/
@@ -35,9 +39,9 @@ COPY frontend/nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 8080
 
-# DHI nginx runs as nginx user by default — no USER directive needed
 # DHI nginx entrypoint is already [nginx], so CMD provides only the arguments
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD ["/usr/bin/wget", "--spider", "--quiet", "http://127.0.0.1:8080/"]
 
+USER nginx
 CMD ["-g", "daemon off;"]
