@@ -75,12 +75,18 @@ COPY --from=tools /usr/lib/libssl* /usr/lib/
 COPY --from=tools --chown=node:node /opt/app/data /app/data
 
 WORKDIR /app
-COPY --chown=node:node --from=builder /app/backend/package.json ./
+# Use @dashboard/server package.json as the root — if backend/package.json were used here,
+# Node ESM would treat /app/ as the "backend" package and self-referencing imports like
+# `import 'backend/routes/health.js'` from dist/app.js would resolve to /app/dist/routes/health.js
+# (via the exports map) instead of /app/node_modules/backend/dist/routes/health.js.
+COPY --chown=node:node --from=builder /app/packages/server/package.json ./
 # Copy production node_modules (hoisted to root by npm workspaces)
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 # Merge any backend-workspace-local packages not hoisted to root (e.g. fastify-type-provider-zod)
 COPY --chown=node:node --from=prod-deps /app/backend/node_modules ./node_modules
 # Copy built workspace packages so backend can resolve them at runtime
+COPY --chown=node:node --from=builder /app/packages/contracts/dist/ ./node_modules/@dashboard/contracts/dist/
+COPY --chown=node:node --from=builder /app/packages/contracts/package.json ./node_modules/@dashboard/contracts/package.json
 COPY --chown=node:node --from=builder /app/packages/core/dist/ ./node_modules/@dashboard/core/dist/
 COPY --chown=node:node --from=builder /app/packages/core/package.json ./node_modules/@dashboard/core/package.json
 COPY --chown=node:node --from=builder /app/packages/infrastructure/dist/ ./node_modules/@dashboard/infrastructure/dist/
