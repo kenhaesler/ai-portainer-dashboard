@@ -25,14 +25,13 @@ REQUEST_TIMEOUT = 30
 
 # Input validation limits
 MAX_KEYWORD_LENGTH = 256
+MAX_CVE_ID_LENGTH = 30
 CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 mcp = FastMCP(
     "nvd-mcp",
     stateless_http=True,
     json_response=True,
-    host=HOST,
-    port=PORT,
 )
 
 
@@ -157,7 +156,9 @@ async def get_cve(cve_id: str) -> str:
     Args:
         cve_id: The CVE identifier, e.g. "CVE-2024-1234"
     """
-    cve_id = cve_id.strip().upper()
+    cve_id = CONTROL_CHAR_RE.sub("", cve_id.strip()).upper()
+    if len(cve_id) > MAX_CVE_ID_LENGTH:
+        return json.dumps({"error": "CVE ID too long"})
     if not cve_id.startswith("CVE-"):
         return json.dumps({"error": "Invalid CVE ID format. Expected CVE-YYYY-NNNNN"})
 

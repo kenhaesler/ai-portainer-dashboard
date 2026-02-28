@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from server import (
+    MAX_CVE_ID_LENGTH,
     HOST,
     BearerTokenMiddleware,
     _format_cve,
@@ -254,6 +255,25 @@ class TestGetCve:
 
         assert result["id"] == "CVE-2024-1234"
         mock_query.assert_awaited_once_with({"cveId": "CVE-2024-1234"})
+
+    @pytest.mark.asyncio
+    async def test_cve_id_control_chars_stripped(self):
+        """Control characters in CVE ID should be stripped before querying."""
+        resp = _mock_response(200, {"vulnerabilities": [_make_vuln(cve_id="CVE-2024-1234")]})
+
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp) as mock_query:
+            result = json.loads(await get_cve("CVE-2024-\x001234"))
+
+        assert result["id"] == "CVE-2024-1234"
+        mock_query.assert_awaited_once_with({"cveId": "CVE-2024-1234"})
+
+    @pytest.mark.asyncio
+    async def test_cve_id_too_long_rejected(self):
+        """CVE ID exceeding MAX_CVE_ID_LENGTH should be rejected."""
+        long_id = "CVE-" + "1" * (MAX_CVE_ID_LENGTH + 1)
+        result = json.loads(await get_cve(long_id))
+        assert "error" in result
+        assert "too long" in result["error"].lower()
 
 
 # --- search_cves tool tests ---
