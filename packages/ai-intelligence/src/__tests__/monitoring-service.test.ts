@@ -118,6 +118,7 @@ vi.mock('../services/incident-correlator.js', () => ({
 }));
 
 const { createMonitoringService, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('../services/monitoring-service.js');
+import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
@@ -308,6 +309,62 @@ describe('monitoring-service', () => {
 
       const batch = mockInsertInsights.mock.calls[0][0] as unknown[];
       expect(batch.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe('event bus emission', () => {
+    it('emits anomaly.detected for anomaly insights', async () => {
+      mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
+      mockGetContainers.mockResolvedValue([
+        { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
+      ]);
+      mockDetectAnomalyAdaptive.mockReturnValue({
+        is_anomalous: true, z_score: 3.5, current_value: 95.0, mean: 40.0, method: 'adaptive',
+      });
+
+      await runMonitoringCycle();
+
+      const emitMock = vi.mocked(eventBus.emit);
+      const anomalyCalls = emitMock.mock.calls.filter(([type]) => type === 'anomaly.detected');
+      expect(anomalyCalls.length).toBeGreaterThan(0);
+      expect(anomalyCalls[0][1]).toMatchObject({
+        insightId: expect.any(String),
+        severity: expect.any(String),
+        category: 'anomaly',
+        containerId: 'c1',
+      });
+    });
+
+    it('emits insight.created for non-anomaly insights (predictive)', async () => {
+      mockGetCapacityForecasts.mockReturnValue([
+        {
+          containerId: 'c1', containerName: 'web-app', metricType: 'cpu',
+          currentValue: 80, trend: 'increasing', slope: 2.0, r_squared: 0.85,
+          forecast: [], timeToThreshold: 3, confidence: 'high',
+        },
+      ]);
+
+      await runMonitoringCycle();
+
+      const emitMock = vi.mocked(eventBus.emit);
+      const insightCalls = emitMock.mock.calls.filter(([type]) => type === 'insight.created');
+      expect(insightCalls.length).toBeGreaterThan(0);
+      expect(insightCalls[0][1]).toMatchObject({
+        insightId: expect.any(String),
+        category: 'predictive',
+      });
+    });
+
+    it('does not emit events when no insights are generated', async () => {
+      mockGetEndpoints.mockResolvedValue([]);
+
+      await runMonitoringCycle();
+
+      const emitMock = vi.mocked(eventBus.emit);
+      const relevantCalls = emitMock.mock.calls.filter(
+        ([type]) => type === 'anomaly.detected' || type === 'insight.created',
+      );
+      expect(relevantCalls).toHaveLength(0);
     });
   });
 

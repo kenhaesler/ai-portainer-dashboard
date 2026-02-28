@@ -185,5 +185,5 @@ export async function buildApp() {
   // Static files (production only)
   await app.register(staticPlugin);
 
-  return app;
+  return { app, metricsAdapter };
 }
