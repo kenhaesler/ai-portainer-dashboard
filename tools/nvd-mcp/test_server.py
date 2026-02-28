@@ -5,7 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from server import _format_cve, get_cve, search_cves
+from server import (
+    HOST,
+    BearerTokenMiddleware,
+    _format_cve,
+    _sanitize_keyword,
+    get_cve,
+    search_cves,
+)
 
 
 # --- _format_cve unit tests ---
@@ -90,6 +97,114 @@ class TestFormatCve:
         assert result["description"] == "Vulnerability"
 
 
+# --- Default host binding tests ---
+
+
+class TestDefaultConfig:
+    def test_default_host_is_localhost(self):
+        """Default host must be 127.0.0.1 (not 0.0.0.0) to avoid exposing on all interfaces."""
+        assert HOST == "127.0.0.1"
+
+
+# --- _sanitize_keyword tests ---
+
+
+class TestSanitizeKeyword:
+    def test_strips_whitespace(self):
+        assert _sanitize_keyword("  log4j  ") == "log4j"
+
+    def test_removes_control_characters(self):
+        assert _sanitize_keyword("log4j\x00\x01\x1f") == "log4j"
+
+    def test_removes_high_control_characters(self):
+        assert _sanitize_keyword("test\x7f\x80\x9f") == "test"
+
+    def test_truncates_long_keywords(self):
+        long_keyword = "a" * 500
+        result = _sanitize_keyword(long_keyword)
+        assert len(result) == 256
+
+    def test_preserves_valid_keyword(self):
+        assert _sanitize_keyword("apache log4j") == "apache log4j"
+
+    def test_empty_after_sanitization(self):
+        assert _sanitize_keyword("\x00\x01\x02") == ""
+
+
+# --- BearerTokenMiddleware tests ---
+
+
+class TestBearerTokenMiddleware:
+    @pytest.mark.asyncio
+    async def test_no_token_configured_passes_through(self):
+        """When MCP_AUTH_TOKEN is empty, all requests pass through."""
+        middleware = BearerTokenMiddleware(app=None)
+        request = MagicMock()
+        call_next = AsyncMock(return_value=MagicMock(status_code=200))
+
+        with patch("server.MCP_AUTH_TOKEN", ""):
+            result = await middleware.dispatch(request, call_next)
+
+        call_next.assert_awaited_once_with(request)
+        assert result.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_missing_auth_header_returns_401(self):
+        """Missing Authorization header should return 401."""
+        middleware = BearerTokenMiddleware(app=None)
+        request = MagicMock()
+        request.headers = {}
+        call_next = AsyncMock()
+
+        with patch("server.MCP_AUTH_TOKEN", "secret-token"):
+            result = await middleware.dispatch(request, call_next)
+
+        assert result.status_code == 401
+        call_next.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_wrong_auth_scheme_returns_401(self):
+        """Non-Bearer auth scheme should return 401."""
+        middleware = BearerTokenMiddleware(app=None)
+        request = MagicMock()
+        request.headers = {"Authorization": "Token not-a-bearer-scheme"}
+        call_next = AsyncMock()
+
+        with patch("server.MCP_AUTH_TOKEN", "secret-token"):
+            result = await middleware.dispatch(request, call_next)
+
+        assert result.status_code == 401
+        call_next.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_returns_403(self):
+        """Wrong bearer token should return 403."""
+        middleware = BearerTokenMiddleware(app=None)
+        request = MagicMock()
+        request.headers = {"Authorization": "Bearer wrong-token"}
+        call_next = AsyncMock()
+
+        with patch("server.MCP_AUTH_TOKEN", "secret-token"):
+            result = await middleware.dispatch(request, call_next)
+
+        assert result.status_code == 403
+        call_next.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_valid_token_passes_through(self):
+        """Correct bearer token should pass request through."""
+        middleware = BearerTokenMiddleware(app=None)
+        request = MagicMock()
+        request.headers = {"Authorization": "Bearer correct-token"}
+        call_next = AsyncMock(return_value=MagicMock(status_code=200))
+
+        with patch("server.MCP_AUTH_TOKEN", "correct-token"):
+            result = await middleware.dispatch(request, call_next)
+
+        call_next.assert_awaited_once_with(request)
+        assert result.status_code == 200
+
+
 # --- get_cve tool tests ---
 
 
@@ -104,13 +219,7 @@ class TestGetCve:
     async def test_successful_lookup(self):
         resp = _mock_response(200, {"vulnerabilities": [_make_vuln(cve_id="CVE-2024-1234")]})
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp):
             result = json.loads(await get_cve("CVE-2024-1234"))
 
         assert result["id"] == "CVE-2024-1234"
@@ -120,13 +229,7 @@ class TestGetCve:
     async def test_cve_not_found(self):
         resp = _mock_response(200, {"vulnerabilities": []})
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp):
             result = json.loads(await get_cve("CVE-2099-0001"))
 
         assert "error" in result
@@ -136,13 +239,7 @@ class TestGetCve:
     async def test_rate_limited(self):
         resp = _mock_response(403)
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp):
             result = json.loads(await get_cve("CVE-2024-1234"))
 
         assert "Rate limited" in result["error"]
@@ -152,16 +249,11 @@ class TestGetCve:
         """Lowercase/whitespace input should be normalized."""
         resp = _mock_response(200, {"vulnerabilities": [_make_vuln(cve_id="CVE-2024-1234")]})
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp) as mock_query:
             result = json.loads(await get_cve("  cve-2024-1234  "))
 
         assert result["id"] == "CVE-2024-1234"
+        mock_query.assert_awaited_once_with({"cveId": "CVE-2024-1234"})
 
 
 # --- search_cves tool tests ---
@@ -172,13 +264,7 @@ class TestSearchCves:
     async def test_successful_search(self):
         resp = _mock_response(200, {"totalResults": 1, "vulnerabilities": [_make_vuln()]})
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp):
             result = json.loads(await search_cves("log4j"))
 
         assert result["totalResults"] == 1
@@ -188,30 +274,36 @@ class TestSearchCves:
     async def test_clamps_results(self):
         resp = _mock_response(200, {"totalResults": 0, "vulnerabilities": []})
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp) as mock_query:
             await search_cves("test", results=100)
 
         # Should clamp to 50
-        call_kwargs = mock_client_instance.get.call_args
-        assert call_kwargs[1]["params"]["resultsPerPage"] == 50
+        call_args = mock_query.call_args
+        assert call_args[0][0]["resultsPerPage"] == 50
 
     @pytest.mark.asyncio
     async def test_rate_limited(self):
         resp = _mock_response(403)
 
-        mock_client_instance = AsyncMock()
-        mock_client_instance.get.return_value = resp
-
-        with patch("server.httpx.AsyncClient") as mock_cls:
-            mock_cls.return_value.__aenter__.return_value = mock_client_instance
-            mock_cls.return_value.__aexit__.return_value = False
-
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp):
             result = json.loads(await search_cves("nginx"))
 
         assert "Rate limited" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_empty_keyword_rejected(self):
+        """Keyword that is empty after sanitization should return error."""
+        result = json.loads(await search_cves("\x00\x01\x02"))
+        assert "error" in result
+        assert "empty" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_keyword_sanitization_applied(self):
+        """Control characters should be stripped from keyword before querying."""
+        resp = _mock_response(200, {"totalResults": 0, "vulnerabilities": []})
+
+        with patch("server._nvd_query", new_callable=AsyncMock, return_value=resp) as mock_query:
+            await search_cves("log4j\x00\x01injection")
+
+        call_args = mock_query.call_args
+        assert call_args[0][0]["keywordSearch"] == "log4jinjection"
