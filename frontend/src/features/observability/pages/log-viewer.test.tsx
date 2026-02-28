@@ -71,7 +71,7 @@ describe('LogViewerPage', () => {
   it('renders page shell and controls', () => {
     render(<LogViewerPage />);
     expect(screen.getByText('Log Viewer')).toBeInTheDocument();
-    expect(screen.getByText('Regex Search')).toBeInTheDocument();
+    expect(screen.getByText('Search')).toBeInTheDocument();
     expect(screen.getByText('Live Tail ON')).toBeInTheDocument();
     expect(screen.getByText('Select one or more containers to view aggregated logs.')).toBeInTheDocument();
   });
