@@ -1,32 +1,100 @@
 """NVD MCP Server — National Vulnerability Database CVE lookups."""
 
+import asyncio
 import json
 import os
+import re
+import secrets
+import sys
 
 import httpx
+import uvicorn
 from mcp.server.fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
-HOST = os.getenv("MCP_HOST", "0.0.0.0")
+# --- Configuration ---
+
+MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")
+HOST = os.getenv("MCP_HOST", "127.0.0.1")
 PORT = int(os.getenv("MCP_PORT", "8000"))
 NVD_API_KEY = os.getenv("NVD_API_KEY", "")
 NVD_BASE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 REQUEST_TIMEOUT = 30
 
+# Input validation limits
+MAX_KEYWORD_LENGTH = 256
+MAX_CVE_ID_LENGTH = 30
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
 mcp = FastMCP(
     "nvd-mcp",
     stateless_http=True,
     json_response=True,
-    host=HOST,
-    port=PORT,
 )
 
 
-def _headers() -> dict[str, str]:
-    """Build request headers, including API key if available."""
+# --- Auth middleware ---
+
+
+class BearerTokenMiddleware(BaseHTTPMiddleware):
+    """Validate Authorization: Bearer <token> on every request when MCP_AUTH_TOKEN is set."""
+
+    async def dispatch(self, request: Request, call_next):
+        if not MCP_AUTH_TOKEN:
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(
+                {"error": "Missing or malformed Authorization header"},
+                status_code=401,
+            )
+
+        provided_token = auth_header[len("Bearer "):]
+        if not secrets.compare_digest(provided_token, MCP_AUTH_TOKEN):
+            return JSONResponse(
+                {"error": "Invalid bearer token"},
+                status_code=403,
+            )
+
+        return await call_next(request)
+
+
+# --- Input validation helpers ---
+
+
+def _sanitize_keyword(keyword: str) -> str:
+    """Sanitize keyword input: strip whitespace, remove control characters, enforce length."""
+    keyword = keyword.strip()
+    keyword = CONTROL_CHAR_RE.sub("", keyword)
+    keyword = keyword[:MAX_KEYWORD_LENGTH]
+    return keyword
+
+
+# --- NVD API client (hardcoded destination — credentials never sent to user-controlled URLs) ---
+
+
+async def _nvd_query(params: dict[str, object]) -> httpx.Response:
+    """Send an authenticated GET request to the NVD API.
+
+    The destination URL is hardcoded to NVD_BASE_URL so that the NVD_API_KEY
+    credential is never sent to a user-controlled endpoint.
+    Callers pass only query-string *params*; the URL and headers are internal.
+
+    nosemgrep: python.mcp.mcp-auth-passthrough-taint.mcp-auth-passthrough-taint
+    """
     headers: dict[str, str] = {"Accept": "application/json"}
     if NVD_API_KEY:
         headers["apiKey"] = NVD_API_KEY
-    return headers
+
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        return await client.get(  # nosemgrep: python.mcp.mcp-auth-passthrough-taint.mcp-auth-passthrough-taint
+            NVD_BASE_URL,
+            params=params,
+            headers=headers,
+        )
 
 
 def _format_cve(vuln: dict) -> dict:
@@ -88,16 +156,13 @@ async def get_cve(cve_id: str) -> str:
     Args:
         cve_id: The CVE identifier, e.g. "CVE-2024-1234"
     """
-    cve_id = cve_id.strip().upper()
+    cve_id = CONTROL_CHAR_RE.sub("", cve_id.strip()).upper()
+    if len(cve_id) > MAX_CVE_ID_LENGTH:
+        return json.dumps({"error": "CVE ID too long"})
     if not cve_id.startswith("CVE-"):
         return json.dumps({"error": "Invalid CVE ID format. Expected CVE-YYYY-NNNNN"})
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            NVD_BASE_URL,
-            params={"cveId": cve_id},
-            headers=_headers(),
-        )
+    resp = await _nvd_query({"cveId": cve_id})
 
     if resp.status_code == 403:
         return json.dumps({"error": "Rate limited by NVD API. Set NVD_API_KEY for higher limits (50 req/30s)."})
@@ -120,17 +185,13 @@ async def search_cves(keyword: str, results: int = 10) -> str:
         keyword: Search term (e.g. "apache log4j", "nginx buffer overflow")
         results: Maximum number of results to return (1-50, default 10)
     """
+    keyword = _sanitize_keyword(keyword)
+    if not keyword:
+        return json.dumps({"error": "Keyword must not be empty after sanitization"})
+
     results = max(1, min(results, 50))
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        resp = await client.get(
-            NVD_BASE_URL,
-            params={
-                "keywordSearch": keyword.strip(),
-                "resultsPerPage": results,
-            },
-            headers=_headers(),
-        )
+    resp = await _nvd_query({"keywordSearch": keyword, "resultsPerPage": results})
 
     if resp.status_code == 403:
         return json.dumps({"error": "Rate limited by NVD API. Set NVD_API_KEY for higher limits (50 req/30s)."})
@@ -152,4 +213,16 @@ async def search_cves(keyword: str, results: int = 10) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    if not MCP_AUTH_TOKEN:
+        print(
+            "WARNING: MCP_AUTH_TOKEN not set. Server is running without authentication.",
+            file=sys.stderr,
+        )
+
+    # Build the Starlette app from FastMCP, then wrap with auth middleware
+    app = mcp.streamable_http_app()
+    app.add_middleware(BearerTokenMiddleware)
+
+    config = uvicorn.Config(app, host=HOST, port=PORT)
+    server = uvicorn.Server(config)
+    asyncio.run(server.serve())
