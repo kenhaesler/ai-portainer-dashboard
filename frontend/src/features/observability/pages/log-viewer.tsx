@@ -336,7 +336,7 @@ export default function LogViewerPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Log Viewer</h1>
-        <p className="text-muted-foreground">Live tail, regex search, level filtering, and multi-container aggregation.</p>
+        <p className="text-muted-foreground">Live tail, search, level filtering, and multi-container aggregation.</p>
       </div>
 
       <section className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
@@ -355,13 +355,13 @@ export default function LogViewerPage() {
           </label>
 
           <label className="text-sm lg:col-span-2">
-            <span className="mb-1 block text-muted-foreground">Regex Search</span>
+            <span className="mb-1 block text-muted-foreground">Search</span>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
                 className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="/error|timeout/i"
+                placeholder="error"
                 value={searchPattern}
                 onChange={(e) => setSearchPattern(e.target.value)}
               />
