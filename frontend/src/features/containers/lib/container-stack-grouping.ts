@@ -18,18 +18,23 @@ function getStackName(container: Pick<Container, 'labels'>): string | null {
 }
 
 function inferStackFromServiceName(containerName: string, serviceName: string): string | null {
-  const escapedServiceName = serviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  const composeDashPattern = new RegExp(`^(.*)-${escapedServiceName}-\\d+$`);
-  const composeDashMatch = containerName.match(composeDashPattern);
-  if (composeDashMatch?.[1]) {
-    return composeDashMatch[1];
+  // Docker Compose: <stack>-<service>-<replica-index>
+  // Match containerName ending with "-<serviceName>-<digits>"
+  const composeSuffix = `-${serviceName}-`;
+  const composeIdx = containerName.indexOf(composeSuffix);
+  if (composeIdx > 0) {
+    const afterService = containerName.slice(composeIdx + composeSuffix.length);
+    if (/^\d+$/.test(afterService)) {
+      return containerName.slice(0, composeIdx);
+    }
   }
 
-  const swarmUnderscorePattern = new RegExp(`^(.*)_${escapedServiceName}\\.`);
-  const swarmUnderscoreMatch = containerName.match(swarmUnderscorePattern);
-  if (swarmUnderscoreMatch?.[1]) {
-    return swarmUnderscoreMatch[1];
+  // Swarm: <stack>_<service>.<replica>.<taskId>
+  // Match containerName containing "_<serviceName>."
+  const swarmSuffix = `_${serviceName}.`;
+  const swarmIdx = containerName.indexOf(swarmSuffix);
+  if (swarmIdx > 0) {
+    return containerName.slice(0, swarmIdx);
   }
 
   return null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatBytes, formatDuration, formatRelativeAge, truncate, cn } from './utils';
+import { escapeRegExp, formatBytes, formatDuration, formatRelativeAge, truncate, cn } from './utils';
 
 describe('formatBytes', () => {
   it('should return "0 B" for 0 bytes', () => {
@@ -143,6 +143,41 @@ describe('formatRelativeAge', () => {
   it('should handle future timestamps', () => {
     const future = Math.floor(Date.now() / 1000) + 3600;
     expect(formatRelativeAge(future)).toBe('Future');
+  });
+});
+
+describe('escapeRegExp', () => {
+  it('escapes all regex metacharacters', () => {
+    expect(escapeRegExp('.*+?^${}()|[]\\')).toBe('\\.\\*\\+\\?\\^\\$\\{\\}\\(\\)\\|\\[\\]\\\\');
+  });
+
+  it('returns plain strings unchanged', () => {
+    expect(escapeRegExp('hello world')).toBe('hello world');
+    expect(escapeRegExp('error')).toBe('error');
+    expect(escapeRegExp('')).toBe('');
+  });
+
+  it('escapes dots in file names', () => {
+    expect(escapeRegExp('file.log')).toBe('file\\.log');
+  });
+
+  it('escapes brackets', () => {
+    expect(escapeRegExp('[error]')).toBe('\\[error\\]');
+  });
+
+  it('escapes pipes', () => {
+    expect(escapeRegExp('error|timeout')).toBe('error\\|timeout');
+  });
+
+  it('escapes parentheses in ReDoS patterns', () => {
+    expect(escapeRegExp('(a+)+b')).toBe('\\(a\\+\\)\\+b');
+  });
+
+  it('produces safe literal regex match when used with RegExp constructor', () => {
+    const input = 'file.log';
+    const re = new RegExp(escapeRegExp(input));
+    expect(re.test('file.log')).toBe(true);
+    expect(re.test('filexlog')).toBe(false);
   });
 });
 

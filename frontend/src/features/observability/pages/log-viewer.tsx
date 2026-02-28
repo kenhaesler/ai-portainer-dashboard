@@ -7,7 +7,7 @@ import { useContainers } from '@/features/containers/hooks/use-containers';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { ContainerMultiSelect } from '@/shared/components/container-multi-select';
-import { buildRegex, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
+import { buildSearchMatcher, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 import { ThemedSelect } from '@/shared/components/themed-select';
 import { useUiStore } from '@/stores/ui-store';
 import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
@@ -28,25 +28,29 @@ interface LogsResponse {
   logs: string;
 }
 
-function highlightLine(line: string, regex: RegExp | null): ReactNode {
-  if (!regex) return line;
-  const matches = [...line.matchAll(regex)];
-  if (matches.length === 0) return line;
+function highlightLine(line: string, needle: string | null): ReactNode {
+  if (!needle) return line;
+  const lowerLine = line.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const needleLen = lowerNeedle.length;
 
+  // Find all case-insensitive occurrences via indexOf (no regex needed).
   const parts: ReactNode[] = [];
   let cursor = 0;
-  matches.forEach((match, idx) => {
-    if (match.index === undefined) return;
-    const start = match.index;
-    const end = start + match[0].length;
-    if (start > cursor) parts.push(line.slice(cursor, start));
+  let idx = 0;
+  let pos = lowerLine.indexOf(lowerNeedle);
+  while (pos !== -1) {
+    if (pos > cursor) parts.push(line.slice(cursor, pos));
     parts.push(
-      <mark key={`${start}-${idx}`} className="bg-yellow-300/40 text-yellow-100">
-        {line.slice(start, end)}
+      <mark key={`${pos}-${idx}`} className="bg-yellow-300/40 text-yellow-100">
+        {line.slice(pos, pos + needleLen)}
       </mark>
     );
-    cursor = end;
-  });
+    cursor = pos + needleLen;
+    idx++;
+    pos = lowerLine.indexOf(lowerNeedle, cursor);
+  }
+  if (cursor === 0) return line; // no matches
   if (cursor < line.length) parts.push(line.slice(cursor));
   return parts;
 }
@@ -84,8 +88,8 @@ function colorizeLogMessage(message: string): ReactNode[] {
   return parts;
 }
 
-function renderLogMessage(message: string, regex: RegExp | null): ReactNode {
-  if (regex) return highlightLine(message, regex);
+function renderLogMessage(message: string, searchNeedle: string | null): ReactNode {
+  if (searchNeedle) return highlightLine(message, searchNeedle);
   return colorizeLogMessage(message);
 }
 
@@ -98,7 +102,7 @@ function VirtualizedLogView({
   autoScroll,
   setAutoScroll,
   lineWrap,
-  regex,
+  searchNeedle,
 }: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   filteredEntries: ParsedLogEntry[];
@@ -106,7 +110,7 @@ function VirtualizedLogView({
   autoScroll: boolean;
   setAutoScroll: (v: boolean) => void;
   lineWrap: boolean;
-  regex: RegExp | null;
+  searchNeedle: string | null;
 }) {
   const virtualizer = useVirtualizer({
     count: filteredEntries.length,
@@ -181,7 +185,7 @@ function VirtualizedLogView({
                   <span className={entry.level === 'error' ? 'text-red-400' : entry.level === 'warn' ? 'text-amber-400' : entry.level === 'debug' ? 'text-sky-300' : 'text-emerald-300'}>
                     {entry.level.toUpperCase()}
                   </span>
-                  <span>{renderLogMessage(entry.message, regex)}</span>
+                  <span>{renderLogMessage(entry.message, searchNeedle)}</span>
                 </div>
               );
             })}
@@ -258,7 +262,11 @@ export default function LogViewerPage() {
     })),
   });
 
-  const regex = useMemo(() => buildRegex(searchPattern), [searchPattern]);
+  const matcher = useMemo(() => buildSearchMatcher(searchPattern), [searchPattern]);
+  const searchNeedle = useMemo(() => {
+    const trimmed = searchPattern.trim();
+    return trimmed || null;
+  }, [searchPattern]);
 
   const mergedEntries = useMemo(() => {
     // Base entries from the initial/polled fetch
@@ -279,15 +287,15 @@ export default function LogViewerPage() {
   const filteredEntries = useMemo(() => {
     return mergedEntries.filter((entry) => {
       if (level !== 'all' && entry.level !== level) return false;
-      if (!regex) return true;
-      return entry.raw.match(regex) !== null;
+      if (!matcher) return true;
+      return matcher(entry.raw);
     });
-  }, [mergedEntries, level, regex]);
+  }, [mergedEntries, level, matcher]);
 
-  const regexMatches = useMemo(() => {
-    if (!regex) return 0;
-    return filteredEntries.reduce((count, entry) => count + (entry.raw.match(regex)?.length || 0), 0);
-  }, [filteredEntries, regex]);
+  const searchMatches = useMemo(() => {
+    if (!matcher) return 0;
+    return filteredEntries.reduce((count, entry) => count + (matcher(entry.raw) ? 1 : 0), 0);
+  }, [filteredEntries, matcher]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -328,7 +336,7 @@ export default function LogViewerPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Log Viewer</h1>
-        <p className="text-muted-foreground">Live tail, regex search, level filtering, and multi-container aggregation.</p>
+        <p className="text-muted-foreground">Live tail, search, level filtering, and multi-container aggregation.</p>
       </div>
 
       <section className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
@@ -347,13 +355,13 @@ export default function LogViewerPage() {
           </label>
 
           <label className="text-sm lg:col-span-2">
-            <span className="mb-1 block text-muted-foreground">Regex Search</span>
+            <span className="mb-1 block text-muted-foreground">Search</span>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={searchInputRef}
                 className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="/error|timeout/i"
+                placeholder="error"
                 value={searchPattern}
                 onChange={(e) => setSearchPattern(e.target.value)}
               />
@@ -430,7 +438,7 @@ export default function LogViewerPage() {
         </div>
 
         <div className="mt-2 text-xs text-muted-foreground">
-          {filteredEntries.length} lines | {regexMatches} regex matches
+          {filteredEntries.length} lines | {searchMatches} search matches
         </div>
       </section>
 
@@ -441,7 +449,7 @@ export default function LogViewerPage() {
         autoScroll={autoScroll}
         setAutoScroll={setAutoScroll}
         lineWrap={lineWrap}
-        regex={regex}
+        searchNeedle={searchNeedle}
       />
     </div>
   );
