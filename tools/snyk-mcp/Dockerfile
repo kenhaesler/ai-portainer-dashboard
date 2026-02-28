@@ -30,5 +30,8 @@ ENV SNYK_TOKEN=""
 WORKDIR /app
 COPY server.py .
 
+RUN useradd -r -s /bin/false -d /nonexistent appuser
+
 EXPOSE 8000
+USER appuser
 CMD ["python3", "server.py"]

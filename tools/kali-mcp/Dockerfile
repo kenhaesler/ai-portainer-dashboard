@@ -65,6 +65,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY server.py /app/server.py
 
+RUN useradd -r -s /bin/false -d /nonexistent appuser
+
 EXPOSE 8000
+USER appuser
 ENTRYPOINT ["tini", "--"]
 CMD ["python", "/app/server.py"]

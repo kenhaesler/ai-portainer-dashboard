@@ -1493,3 +1493,108 @@ describe('No Global TLS Override', () => {
     }
   });
 });
+
+// =====================================================================
+//  12. DOCKER NON-ROOT USER ENFORCEMENT (CWE-250)
+// =====================================================================
+describe('Docker Non-Root User Enforcement', () => {
+  const toolDockerfiles = [
+    'tools/kali-mcp/Dockerfile',
+    'tools/snyk-mcp/Dockerfile',
+    'tools/grype-mcp/Dockerfile',
+    'tools/nvd-mcp/Dockerfile',
+  ];
+
+  it.each(toolDockerfiles)('%s should contain a USER directive to avoid running as root', (dockerfilePath) => {
+    const file = path.resolve(process.cwd(), '..', dockerfilePath);
+    const content = readFileSync(file, 'utf8');
+
+    // USER directive must appear in the runtime stage (after the last FROM)
+    // and must specify a non-root user before CMD/ENTRYPOINT.
+    expect(content).toMatch(/^USER\s+(?!root)\S+/m);
+  });
+
+  it.each(toolDockerfiles)('%s should create a dedicated non-root user', (dockerfilePath) => {
+    const file = path.resolve(process.cwd(), '..', dockerfilePath);
+    const content = readFileSync(file, 'utf8');
+
+    // Verify the Dockerfile creates a system user (useradd for Debian, adduser for Alpine)
+    expect(content).toMatch(/useradd|adduser/);
+  });
+});
+
+// =====================================================================
+//  13. NGINX SECURITY HEADER CONSISTENCY (CWE-16)
+// =====================================================================
+describe('Nginx Security Header Consistency', () => {
+  it('should not define add_header at the server block level in nginx.conf', () => {
+    const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx.conf');
+    const content = readFileSync(file, 'utf8');
+
+    // Extract the server block content (between "server {" and the closing "}")
+    const serverMatch = content.match(/server\s*\{([\s\S]*)\}/);
+    expect(serverMatch).not.toBeNull();
+    const serverBlock = serverMatch![1];
+
+    // Find lines that are at the server level (not inside a location block).
+    // Server-level add_header directives get silently dropped when any
+    // location block defines its own add_header.
+    const lines = serverBlock.split('\n');
+    let locationDepth = 0;
+    const serverLevelAddHeaders: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('location ') || trimmed.startsWith('location\t')) {
+        locationDepth++;
+      }
+      if (trimmed === '}') {
+        if (locationDepth > 0) locationDepth--;
+      }
+      if (locationDepth === 0 && trimmed.startsWith('add_header ')) {
+        serverLevelAddHeaders.push(trimmed);
+      }
+    }
+
+    expect(serverLevelAddHeaders).toEqual([]);
+  });
+
+  it('should include security headers snippet in every location block', () => {
+    const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx.conf');
+    const content = readFileSync(file, 'utf8');
+
+    // Every location block should include the security headers snippet
+    const locationBlocks = content.match(/location\s+[^{]+\{[^}]+\}/g) ?? [];
+    expect(locationBlocks.length).toBeGreaterThan(0);
+
+    for (const block of locationBlocks) {
+      expect(block).toContain('include /etc/nginx/security-headers.conf');
+    }
+  });
+
+  it('should define all required security headers in the snippet file', () => {
+    const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx-security-headers.conf');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toContain('X-Frame-Options');
+    expect(content).toContain('X-Content-Type-Options');
+    expect(content).toContain('X-XSS-Protection');
+    expect(content).toContain('Referrer-Policy');
+    expect(content).toContain('Content-Security-Policy');
+  });
+
+  it('should use a map to restrict WebSocket upgrade values against H2C smuggling', () => {
+    const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx.conf');
+    const content = readFileSync(file, 'utf8');
+
+    // The map should only allow "websocket" upgrades
+    expect(content).toMatch(/map\s+\$http_upgrade\s+\$connection_upgrade/);
+    expect(content).toContain('websocket upgrade');
+
+    // The Socket.IO proxy should use the map variable, not a hardcoded "upgrade"
+    const socketBlock = content.match(/location\s+\/socket\.io\/\s*\{[\s\S]*?\}/);
+    expect(socketBlock).not.toBeNull();
+    expect(socketBlock![0]).toContain('Connection $connection_upgrade');
+    expect(socketBlock![0]).not.toContain('Connection "upgrade"');
+  });
+});
