@@ -1,18 +1,18 @@
 # Core Kernel (packages/core/)
 
 Shared foundation — all domain modules depend on core.
-**core/ MUST NOT import from**: `routes/`, `services/` (non-core), `sockets/`, `scheduler/`
+**core/ MUST NOT import from**: domain packages, `routes/`, `sockets/`, `scheduler/`
 
 ## Sub-modules
 
 - **config/**: Env schema (Zod), validated config singleton
 - **db/**: PostgreSQL pools, adapter, migrations, test helpers
-- **utils/**: Logger (pino), crypto (JWT/bcrypt), log sanitizer, network security
-- **models/**: Zod schemas + TypeScript interfaces (auth, portainer, metrics, tracing, etc.)
-- **plugins/**: Fastify plugins (auth, CORS, rate-limit, tracing, compression, Socket.IO, etc.)
-- **portainer/**: API client, Redis cache, normalizers, circuit breaker
+- **utils/**: Logger (pino), crypto (JWT/bcrypt), log sanitizer, PII scrubber, network security, safe paths
+- **models/**: Zod schemas + TypeScript interfaces (auth, portainer, metrics, tracing, settings, etc.)
+- **plugins/**: Fastify plugins (auth, CORS, rate-limit, tracing, compression, Socket.IO, Swagger, security headers, cache control, static)
+- **portainer/**: API client, Redis cache, normalizers (standard + edge), circuit breaker
 - **tracing/**: Distributed tracing context, span storage, OTLP export/transform
-- **services/**: Auth stores (session, user), settings, audit logger, event bus, OIDC
+- **services/**: Auth stores (session, user), settings, audit logger, typed event bus, OIDC
 
 ## Security-Critical Files
 
@@ -25,20 +25,26 @@ Shared foundation — all domain modules depend on core.
 ## Dependency Direction
 
 ```
-routes/ ────────→ modules/*/ ──→ core/
-services/ ──────→ core/
-modules/infrastructure/ → core/ (no cross-module deps)
-modules/observability/ → core/ (+ cross-domain: services/llm-client, services/prompt-store, services/prompt-guard)
-modules/security/ → core/ + modules/infrastructure/ (+ cross-domain: services/llm-client, services/prompt-store)
-sockets/ ───────→ core/
-scheduler/ ─────→ modules/*/ ──→ core/
-core/ ──────────→ (npm packages only, never imports from above)
+@dashboard/server  (composition root — wires everything)
+       ↓
+@dashboard/ai, @dashboard/observability, @dashboard/operations,
+@dashboard/security, @dashboard/infrastructure
+       ↓
+@dashboard/core  (kernel)
+       ↓
+@dashboard/contracts  (interfaces + schemas)
+       ↓
+(npm packages only)
 ```
 
-## Domain Modules (`modules/<domain>/`)
+- `@dashboard/ai` imports ONLY core + contracts (never other domains)
+- Cross-domain deps resolved via DI in `@dashboard/server/src/wiring.ts`
+- Routes NOT re-exported from barrel (import directly from `routes/index.js`)
 
-Each module has: `services/`, `routes/`, `models/`, `__tests__/`, and a barrel `index.ts`.
-- External consumers import ONLY from the barrel (`modules/security/index.ts`, `modules/infrastructure/index.ts`, `modules/observability/index.ts`)
-- Routes are NOT re-exported from barrel (import directly from `routes/index.js`)
+## Domain Packages (`packages/<domain>/`)
+
+Each package has: `services/`, `routes/`, optionally `models/`, `sockets/`, `__tests__/`, and a barrel `index.ts`.
+- External consumers import ONLY from the barrel (`@dashboard/<domain>`)
+- Routes are NOT re-exported from barrel (import directly from `routes/index.js` to avoid TDZ issues)
 - Internal module imports use relative paths between siblings
-- Cross-module imports allowed in Phase 2 (e.g., security → infrastructure)
+- Cross-domain imports allowed via Phase 3 exceptions (documented in each module's CLAUDE.md)

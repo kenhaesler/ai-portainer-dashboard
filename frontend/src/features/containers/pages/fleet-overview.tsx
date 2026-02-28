@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
   Server, Layers, LayoutGrid, List, AlertTriangle, Boxes, Activity, Clock,
@@ -14,6 +14,7 @@ import { StatusBadge } from '@/shared/components/status-badge';
 import { AutoRefreshToggle } from '@/shared/components/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/refresh-button';
 import { SkeletonCard } from '@/shared/components/loading-skeleton';
+import { ThemedSelect } from '@/shared/components/themed-select';
 import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
@@ -23,6 +24,7 @@ import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/feature
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
+const ALL_FILTER = '__all__';
 
 function formatRelativeTime(ms: number | null | undefined): string {
   if (ms == null) return 'N/A';
@@ -47,6 +49,19 @@ function getStackType(type: number): string {
     case 1: return 'Swarm';
     case 2: return 'Compose';
     case 3: return 'Kubernetes';
+    default: return `Type ${type}`;
+  }
+}
+
+function getEndpointTypeLabel(type: number): string {
+  switch (type) {
+    case 1: return 'Docker';
+    case 2: return 'Agent';
+    case 3: return 'Azure ACI';
+    case 4: return 'Edge Agent';
+    case 5: return 'Kubernetes';
+    case 6: return 'Edge Agent (Kubernetes)';
+    case 7: return 'Edge Agent (Async)';
     default: return `Type ${type}`;
   }
 }
@@ -221,7 +236,44 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
 
 export default function InfrastructurePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const setPageViewMode = useUiStore((s) => s.setPageViewMode);
+
+  // --- URL-persisted filter state ---
+  const endpointStatusFilter = searchParams.get('endpointStatus') ?? ALL_FILTER;
+  const endpointTypeFilter = searchParams.get('endpointType') ?? ALL_FILTER;
+  const stackStatusFilter = searchParams.get('stackStatus') ?? ALL_FILTER;
+  const stackEndpointFilterParam = searchParams.get('stackEndpoint') ?? ALL_FILTER;
+
+  const setFleetFilters = useCallback((
+    epStatus: string,
+    epType: string,
+    sStatus: string,
+    sEndpoint: string,
+  ) => {
+    const params: Record<string, string> = {};
+    if (epStatus !== ALL_FILTER) params.endpointStatus = epStatus;
+    if (epType !== ALL_FILTER) params.endpointType = epType;
+    if (sStatus !== ALL_FILTER) params.stackStatus = sStatus;
+    if (sEndpoint !== ALL_FILTER) params.stackEndpoint = sEndpoint;
+    setSearchParams(params);
+  }, [setSearchParams]);
+
+  const setEndpointStatusFilter = useCallback((v: string) => {
+    setFleetFilters(v, endpointTypeFilter, stackStatusFilter, stackEndpointFilterParam);
+  }, [setFleetFilters, endpointTypeFilter, stackStatusFilter, stackEndpointFilterParam]);
+
+  const setEndpointTypeFilter = useCallback((v: string) => {
+    setFleetFilters(endpointStatusFilter, v, stackStatusFilter, stackEndpointFilterParam);
+  }, [setFleetFilters, endpointStatusFilter, stackStatusFilter, stackEndpointFilterParam]);
+
+  const setStackStatusFilter = useCallback((v: string) => {
+    setFleetFilters(endpointStatusFilter, endpointTypeFilter, v, stackEndpointFilterParam);
+  }, [setFleetFilters, endpointStatusFilter, endpointTypeFilter, stackEndpointFilterParam]);
+
+  const setStackEndpointFilter = useCallback((v: string) => {
+    setFleetFilters(endpointStatusFilter, endpointTypeFilter, stackStatusFilter, v);
+  }, [setFleetFilters, endpointStatusFilter, endpointTypeFilter, stackStatusFilter]);
 
   // Fleet view mode (reuses existing 'fleet' key for preference persistence)
   const storedFleetViewMode = useUiStore((s) => s.pageViewModes['fleet']);
@@ -262,16 +314,15 @@ export default function InfrastructurePage() {
   // Shared auto-refresh preference
   const { interval, setInterval } = useAutoRefresh(30);
 
-  // Cross-section filter: endpoint ID selected from fleet → filters stacks section
-  const [stackEndpointFilter, setStackEndpointFilter] = useState<number | null>(null);
+  // Cross-section filter: "View stacks" link sets stackEndpoint URL param
   const stacksSectionRef = useRef<HTMLElement>(null);
 
   const handleViewStacks = useCallback((endpointId: number) => {
-    setStackEndpointFilter(endpointId);
+    setStackEndpointFilter(String(endpointId));
     setTimeout(() => {
       stacksSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 50);
-  }, []);
+  }, [setStackEndpointFilter]);
 
   // Combined force refresh — invalidates both caches then refetches, surfaces partial failures
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
@@ -307,10 +358,41 @@ export default function InfrastructurePage() {
     }
   }, [endpoints, storedFleetViewMode, setPageViewMode]);
 
-  // Reset grid page when endpoint list changes
-  useEffect(() => {
-    setGridPage(1);
-  }, [endpoints?.length]);
+  // --- Endpoint filtering (dropdown filters, then smart search) ---
+  const dropdownFilteredEndpoints = useMemo(() => {
+    if (!endpoints) return [];
+    return endpoints.filter(ep => {
+      if (endpointStatusFilter !== ALL_FILTER && ep.status !== endpointStatusFilter) return false;
+      if (endpointTypeFilter !== ALL_FILTER && String(ep.type) !== endpointTypeFilter) return false;
+      return true;
+    });
+  }, [endpoints, endpointStatusFilter, endpointTypeFilter]);
+
+  // Dynamic filter options for endpoints (computed from unfiltered data, with counts)
+  const endpointStatusOptions = useMemo(() => {
+    if (!endpoints) return [];
+    const upCount = endpoints.filter(ep => ep.status === 'up').length;
+    const downCount = endpoints.filter(ep => ep.status === 'down').length;
+    const options = [{ value: ALL_FILTER, label: `All statuses (${endpoints.length})` }];
+    if (upCount > 0) options.push({ value: 'up', label: `Up (${upCount})` });
+    if (downCount > 0) options.push({ value: 'down', label: `Down (${downCount})` });
+    return options;
+  }, [endpoints]);
+
+  const endpointTypeOptions = useMemo(() => {
+    if (!endpoints) return [];
+    const typeCounts = new Map<number, number>();
+    for (const ep of endpoints) {
+      typeCounts.set(ep.type, (typeCounts.get(ep.type) ?? 0) + 1);
+    }
+    // Only show environment type filter if there are multiple types
+    if (typeCounts.size <= 1) return [];
+    const options = [{ value: ALL_FILTER, label: `All types (${endpoints.length})` }];
+    for (const [type, count] of [...typeCounts.entries()].sort((a, b) => a[0] - b[0])) {
+      options.push({ value: String(type), label: `${getEndpointTypeLabel(type)} (${count})` });
+    }
+    return options;
+  }, [endpoints]);
 
   // Enrich stacks with endpoint names using the shared endpoints data
   const stacksWithEndpoints = useMemo<StackWithEndpoint[]>(() => {
@@ -321,32 +403,63 @@ export default function InfrastructurePage() {
     }));
   }, [stacks, endpoints]);
 
-  // Search-filtered endpoints
+  // Search-filtered endpoints (dropdown filters applied upstream, then smart search)
   const filteredEndpoints = useMemo(
-    () => endpoints ? filterEndpoints(endpoints, endpointSearchQuery) : [],
-    [endpoints, endpointSearchQuery],
+    () => dropdownFilteredEndpoints ? filterEndpoints(dropdownFilteredEndpoints, endpointSearchQuery) : [],
+    [dropdownFilteredEndpoints, endpointSearchQuery],
   );
 
-  // Stacks filtered by the cross-section endpoint selection (null = show all), then by search
-  const endpointFilteredStacks = useMemo(
-    () => stackEndpointFilter !== null
-      ? stacksWithEndpoints.filter(s => s.endpointId === stackEndpointFilter)
-      : stacksWithEndpoints,
-    [stacksWithEndpoints, stackEndpointFilter],
+  // Reset grid page when filtered endpoint list changes
+  useEffect(() => {
+    setGridPage(1);
+  }, [filteredEndpoints.length]);
+
+  // --- Stack filtering (dropdown filters, then smart search) ---
+  const dropdownFilteredStacks = useMemo(() => {
+    return stacksWithEndpoints.filter(s => {
+      if (stackStatusFilter !== ALL_FILTER && s.status !== stackStatusFilter) return false;
+      if (stackEndpointFilterParam !== ALL_FILTER && String(s.endpointId) !== stackEndpointFilterParam) return false;
+      return true;
+    });
+  }, [stacksWithEndpoints, stackStatusFilter, stackEndpointFilterParam]);
+
+  const filteredStacks = useMemo(
+    () => filterStacks(dropdownFilteredStacks, stackSearchQuery),
+    [dropdownFilteredStacks, stackSearchQuery],
   );
 
-  const displayedStacks = useMemo(
-    () => filterStacks(endpointFilteredStacks, stackSearchQuery),
-    [endpointFilteredStacks, stackSearchQuery],
-  );
+  // Dynamic filter options for stacks
+  const stackStatusOptions = useMemo(() => {
+    if (stacksWithEndpoints.length === 0) return [];
+    const activeCount = stacksWithEndpoints.filter(s => s.status === 'active').length;
+    const inactiveCount = stacksWithEndpoints.filter(s => s.status === 'inactive').length;
+    const options = [{ value: ALL_FILTER, label: `All statuses (${stacksWithEndpoints.length})` }];
+    if (activeCount > 0) options.push({ value: 'active', label: `Active (${activeCount})` });
+    if (inactiveCount > 0) options.push({ value: 'inactive', label: `Inactive (${inactiveCount})` });
+    return options;
+  }, [stacksWithEndpoints]);
 
-  // Summary bar counts
+  const stackEndpointOptions = useMemo(() => {
+    if (stacksWithEndpoints.length === 0 || !endpoints) return [];
+    // Only endpoints that actually have stacks
+    const endpointIds = new Set(stacksWithEndpoints.map(s => s.endpointId));
+    if (endpointIds.size <= 1) return [];
+    const options = [{ value: ALL_FILTER, label: `All endpoints (${stacksWithEndpoints.length})` }];
+    for (const epId of [...endpointIds].sort((a, b) => a - b)) {
+      const epName = endpoints.find(ep => ep.id === epId)?.name ?? `Endpoint ${epId}`;
+      const count = stacksWithEndpoints.filter(s => s.endpointId === epId).length;
+      options.push({ value: String(epId), label: `${epName} (${count})` });
+    }
+    return options;
+  }, [stacksWithEndpoints, endpoints]);
+
+  // Summary bar counts (from unfiltered data)
   const endpointUpCount = endpoints?.filter(ep => ep.status === 'up').length ?? 0;
   const endpointDownCount = endpoints?.filter(ep => ep.status === 'down').length ?? 0;
   const stackActiveCount = stacksWithEndpoints.filter(s => s.status === 'active').length;
   const stackInactiveCount = stacksWithEndpoints.filter(s => s.status === 'inactive').length;
 
-  // Fleet grid pagination (uses filtered endpoints)
+  // Fleet grid pagination (on filtered data)
   const gridPageCount = Math.ceil(filteredEndpoints.length / FLEET_GRID_PAGE_SIZE);
   const paginatedEndpoints = useMemo(() => {
     const start = (gridPage - 1) * FLEET_GRID_PAGE_SIZE;
@@ -365,6 +478,9 @@ export default function InfrastructurePage() {
   const handleStackClick = (stack: StackWithEndpoint) => {
     navigate(`/workloads?endpoint=${stack.endpointId}&stack=${encodeURIComponent(stack.name)}`);
   };
+
+  // Whether any stack filter is active (for showing "filtered" state)
+  const hasActiveStackFilter = stackStatusFilter !== ALL_FILTER || stackEndpointFilterParam !== ALL_FILTER;
 
   const endpointColumns: ColumnDef<Endpoint, unknown>[] = useMemo(() => [
     {
@@ -593,15 +709,41 @@ export default function InfrastructurePage() {
 
       {/* Fleet Overview section */}
       <section aria-labelledby="fleet-heading" className="space-y-4">
-        <div className="flex items-center justify-between border-b pb-2">
+        <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Server className="h-5 w-5 text-muted-foreground" />
             <h2 id="fleet-heading" className="text-xl font-semibold">Fleet Overview</h2>
           </div>
           {!isLoading && endpoints && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">
-                {endpoints.length} endpoint{endpoints.length !== 1 ? 's' : ''}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Endpoint status filter */}
+              {endpointStatusOptions.length > 2 && (
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="endpoint-status-filter" className="text-xs text-muted-foreground">Status</label>
+                  <ThemedSelect
+                    id="endpoint-status-filter"
+                    value={endpointStatusFilter}
+                    onValueChange={setEndpointStatusFilter}
+                    options={endpointStatusOptions}
+                    className="w-[150px]"
+                  />
+                </div>
+              )}
+              {/* Endpoint type filter (only if multiple types) */}
+              {endpointTypeOptions.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="endpoint-type-filter" className="text-xs text-muted-foreground">Type</label>
+                  <ThemedSelect
+                    id="endpoint-type-filter"
+                    value={endpointTypeFilter}
+                    onValueChange={setEndpointTypeFilter}
+                    options={endpointTypeOptions}
+                    className="w-[170px]"
+                  />
+                </div>
+              )}
+              <span className="text-sm text-muted-foreground" data-testid="fleet-filtered-count">
+                {filteredEndpoints.length}{filteredEndpoints.length !== (endpoints?.length ?? 0) ? ` of ${endpoints?.length}` : ''} endpoint{filteredEndpoints.length !== 1 ? 's' : ''}
               </span>
               <div className="flex items-center rounded-lg border p-1">
                 <button
@@ -650,7 +792,15 @@ export default function InfrastructurePage() {
               <SkeletonCard key={i} className="h-[220px]" />
             ))}
           </div>
-        ) : endpoints && fleetViewMode === 'grid' ? (
+        ) : filteredEndpoints.length === 0 && endpoints && endpoints.length > 0 ? (
+          <div className="rounded-lg border bg-card p-8 text-center">
+            <Server className="mx-auto h-10 w-10 text-muted-foreground" />
+            <p className="mt-4 font-medium">No endpoints match filters</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Adjust your filters to see endpoints
+            </p>
+          </div>
+        ) : fleetViewMode === 'grid' ? (
           <>
             {paginatedEndpoints.length === 0 && endpointSearchQuery ? (
               <div className="rounded-lg border bg-card p-8 text-center">
@@ -698,7 +848,7 @@ export default function InfrastructurePage() {
               </div>
             )}
           </>
-        ) : endpoints && fleetViewMode === 'table' ? (
+        ) : fleetViewMode === 'table' ? (
           <SpotlightCard>
           <div className="rounded-lg border bg-card p-6 shadow-sm">
             <DataTable
@@ -716,15 +866,15 @@ export default function InfrastructurePage() {
 
       {/* Stack Overview section */}
       <section ref={stacksSectionRef} aria-labelledby="stacks-heading" className="space-y-4">
-        <div className="flex items-center justify-between border-b pb-2">
+        <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Layers className="h-5 w-5 text-muted-foreground" />
             <h2 id="stacks-heading" className="text-xl font-semibold">Stack Overview</h2>
-            {stackEndpointFilter !== null && (
+            {stackEndpointFilterParam !== ALL_FILTER && (
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                {endpoints?.find(ep => ep.id === stackEndpointFilter)?.name ?? `Endpoint ${stackEndpointFilter}`}
+                {endpoints?.find(ep => ep.id === Number(stackEndpointFilterParam))?.name ?? `Endpoint ${stackEndpointFilterParam}`}
                 <button
-                  onClick={() => setStackEndpointFilter(null)}
+                  onClick={() => setStackEndpointFilter(ALL_FILTER)}
                   className="ml-0.5 rounded-full hover:bg-primary/20"
                   aria-label="Clear endpoint filter"
                   data-testid="clear-stack-filter"
@@ -735,9 +885,35 @@ export default function InfrastructurePage() {
             )}
           </div>
           {!isLoading && stacksWithEndpoints.length > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">
-                {displayedStacks.length}{stackEndpointFilter !== null ? ` of ${stacksWithEndpoints.length}` : ''} stack{displayedStacks.length !== 1 ? 's' : ''}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Stack status filter */}
+              {stackStatusOptions.length > 2 && (
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="stack-status-filter" className="text-xs text-muted-foreground">Status</label>
+                  <ThemedSelect
+                    id="stack-status-filter"
+                    value={stackStatusFilter}
+                    onValueChange={setStackStatusFilter}
+                    options={stackStatusOptions}
+                    className="w-[160px]"
+                  />
+                </div>
+              )}
+              {/* Stack endpoint filter (only if multiple endpoints have stacks) */}
+              {stackEndpointOptions.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="stack-endpoint-filter" className="text-xs text-muted-foreground">Endpoint</label>
+                  <ThemedSelect
+                    id="stack-endpoint-filter"
+                    value={stackEndpointFilterParam}
+                    onValueChange={setStackEndpointFilter}
+                    options={stackEndpointOptions}
+                    className="w-[180px]"
+                  />
+                </div>
+              )}
+              <span className="text-sm text-muted-foreground" data-testid="stacks-filtered-count">
+                {filteredStacks.length}{hasActiveStackFilter ? ` of ${stacksWithEndpoints.length}` : ''} stack{filteredStacks.length !== 1 ? 's' : ''}
               </span>
               <div className="flex items-center rounded-lg border p-1">
                 <button
@@ -770,11 +946,11 @@ export default function InfrastructurePage() {
         </div>
 
         {/* Stack search */}
-        {!isLoading && endpointFilteredStacks.length > 0 && (
+        {!isLoading && dropdownFilteredStacks.length > 0 && (
           <FleetSearch
             onSearch={setStackSearchQuery}
-            totalCount={endpointFilteredStacks.length}
-            filteredCount={displayedStacks.length}
+            totalCount={dropdownFilteredStacks.length}
+            filteredCount={filteredStacks.length}
             placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
             label="Search stacks"
           />
@@ -786,7 +962,7 @@ export default function InfrastructurePage() {
               <SkeletonCard key={i} className="h-[240px]" />
             ))}
           </div>
-        ) : displayedStacks.length === 0 ? (
+        ) : filteredStacks.length === 0 ? (
           <div className="rounded-lg border bg-card p-8 text-center">
             <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
             {stackSearchQuery ? (
@@ -796,14 +972,18 @@ export default function InfrastructurePage() {
                   Try a different query or clear the search
                 </p>
               </>
-            ) : stackEndpointFilter !== null ? (
+            ) : hasActiveStackFilter ? (
               <>
-                <p className="mt-4 font-medium">No stacks for this endpoint</p>
+                <p className="mt-4 font-medium">No stacks match filters</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  The selected endpoint has no Docker Stacks or Compose projects
+                  {stackEndpointFilterParam !== ALL_FILTER
+                    ? 'The selected endpoint has no Docker Stacks or Compose projects'
+                    : 'Adjust your filters to see stacks'}
                 </p>
                 <button
-                  onClick={() => setStackEndpointFilter(null)}
+                  onClick={() => {
+                    setFleetFilters(endpointStatusFilter, endpointTypeFilter, ALL_FILTER, ALL_FILTER);
+                  }}
                   className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
                 >
                   Show all stacks
@@ -820,7 +1000,7 @@ export default function InfrastructurePage() {
           </div>
         ) : stacksViewMode === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {displayedStacks.map((stack) => (
+            {filteredStacks.map((stack) => (
               <StackCard
                 key={stack.id}
                 stack={stack}
@@ -833,7 +1013,7 @@ export default function InfrastructurePage() {
           <div className="rounded-lg border bg-card p-6 shadow-sm">
             <DataTable
               columns={stackColumns}
-              data={displayedStacks}
+              data={filteredStacks}
               searchKey="name"
               searchPlaceholder="Search stacks..."
               pageSize={15}
