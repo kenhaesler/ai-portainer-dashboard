@@ -42,43 +42,64 @@ async function ensurePool(): Promise<pg.Pool> {
   return pool;
 }
 
+// Advisory lock ID for serializing migrations across parallel test processes.
+// Arbitrary constant — must be consistent across all callers.
+const MIGRATION_LOCK_ID = 839217;
+
 async function runMigrations(db: pg.Pool): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS _app_migrations (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+  // Acquire an advisory lock so parallel test processes (e.g. CI running
+  // @dashboard/observability, @dashboard/security, etc. concurrently against
+  // the same PostgreSQL instance) don't race on CREATE INDEX IF NOT EXISTS
+  // which can fail with duplicate key errors on pg_class catalog tables.
+  const client = await db.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
 
-  const migrationsDir = path.join(__dirname, 'postgres-migrations');
-  const files = fs.readdirSync(migrationsDir)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS _app_migrations (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
 
-  const { rows } = await db.query('SELECT name FROM _app_migrations');
-  const applied = new Set(rows.map((row: { name: string }) => row.name));
+    const migrationsDir = path.join(__dirname, 'postgres-migrations');
+    const files = fs.readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
 
-  for (const file of files) {
-    if (applied.has(file)) continue;
+    const { rows } = await client.query('SELECT name FROM _app_migrations');
+    const applied = new Set(rows.map((row: { name: string }) => row.name));
 
-    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+    for (const file of files) {
+      if (applied.has(file)) continue;
 
-    const statements = sql
-      .split(/;\s*\n/)
-      .map((s) => s.trim())
-      .filter((s) =>
-        s.split('\n').some((line) => {
-          const t = line.trim();
-          return t.length > 0 && !t.startsWith('--');
-        }),
-      );
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
 
-    for (const stmt of statements) {
-      await db.query(stmt.endsWith(';') ? stmt : stmt + ';');
+      const statements = sql
+        .split(/;\s*\n/)
+        .map((s) => s.trim())
+        .filter((s) =>
+          s.split('\n').some((line) => {
+            const t = line.trim();
+            return t.length > 0 && !t.startsWith('--');
+          }),
+        );
+
+      for (const stmt of statements) {
+        await client.query(stmt.endsWith(';') ? stmt : stmt + ';');
+      }
+
+      await client.query('INSERT INTO _app_migrations (name) VALUES ($1)', [file]);
     }
 
-    await db.query('INSERT INTO _app_migrations (name) VALUES ($1)', [file]);
+    await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
+  } catch (err) {
+    // Release the lock even on failure
+    await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
