@@ -19,6 +19,7 @@ import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/spotlight-card';
+import { FleetStatusSummary } from '@/features/containers/components/fleet/fleet-status-summary';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
@@ -277,6 +278,19 @@ export default function InfrastructurePage() {
     setFleetFilters(endpointStatusFilter, endpointTypeFilter, stackStatusFilter, v);
   }, [setFleetFilters, endpointStatusFilter, endpointTypeFilter, stackStatusFilter]);
 
+  // Summary-bar pill handlers: translate undefined ↔ ALL_FILTER for URL params
+  const handleEndpointStatusPillChange = useCallback((status: string | undefined) => {
+    setEndpointStatusFilter(status ?? ALL_FILTER);
+  }, [setEndpointStatusFilter]);
+
+  const handleStackStatusPillChange = useCallback((status: string | undefined) => {
+    setStackStatusFilter(status ?? ALL_FILTER);
+  }, [setStackStatusFilter]);
+
+  // Derive pill-style filter value (undefined = no filter) from URL params
+  const activeEndpointStatusPill = endpointStatusFilter !== ALL_FILTER ? endpointStatusFilter : undefined;
+  const activeStackStatusPill = stackStatusFilter !== ALL_FILTER ? stackStatusFilter : undefined;
+
   // Fleet view mode (reuses existing 'fleet' key for preference persistence)
   const storedFleetViewMode = useUiStore((s) => s.pageViewModes['fleet']);
   const fleetViewMode = storedFleetViewMode ?? 'grid';
@@ -443,12 +457,6 @@ export default function InfrastructurePage() {
     }
     return options;
   }, [stacksWithEndpoints, endpoints]);
-
-  // Summary bar counts (from unfiltered data)
-  const endpointUpCount = endpoints?.filter(ep => ep.status === 'up').length ?? 0;
-  const endpointDownCount = endpoints?.filter(ep => ep.status === 'down').length ?? 0;
-  const stackActiveCount = stacksWithEndpoints.filter(s => s.status === 'active').length;
-  const stackInactiveCount = stacksWithEndpoints.filter(s => s.status === 'inactive').length;
 
   // Fleet grid pagination (on filtered data)
   const gridPageCount = Math.ceil(filteredEndpoints.length / FLEET_GRID_PAGE_SIZE);
@@ -632,49 +640,17 @@ export default function InfrastructurePage() {
         </div>
       </div>
 
-      {/* Shared summary bar */}
+      {/* Interactive status summary bar */}
       {!isLoading && (
         <SpotlightCard>
-        <div
-          className="flex flex-wrap items-center gap-6 rounded-lg border bg-card px-6 py-4 shadow-sm text-sm"
-          data-testid="summary-bar"
-        >
-          <div className="flex items-center gap-3">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground" data-testid="endpoint-total">
-              {endpoints?.length ?? 0} endpoint{(endpoints?.length ?? 0) !== 1 ? 's' : ''}
-            </span>
-            <span className="flex items-center gap-1" data-testid="endpoint-up">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              {endpointUpCount} up
-            </span>
-            {endpointDownCount > 0 && (
-              <span className="flex items-center gap-1 text-red-600 dark:text-red-400" data-testid="endpoint-down">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
-                {endpointDownCount} down
-              </span>
-            )}
-          </div>
-
-          <div className="h-4 w-px bg-border" />
-
-          <div className="flex items-center gap-3">
-            <Layers className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground" data-testid="stack-total">
-              {stacksWithEndpoints.length} stack{stacksWithEndpoints.length !== 1 ? 's' : ''}
-            </span>
-            <span className="flex items-center gap-1" data-testid="stack-active">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              {stackActiveCount} active
-            </span>
-            {stackInactiveCount > 0 && (
-              <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400" data-testid="stack-inactive">
-                <span className="h-2 w-2 rounded-full bg-gray-500" />
-                {stackInactiveCount} inactive
-              </span>
-            )}
-          </div>
-        </div>
+          <FleetStatusSummary
+            endpoints={endpoints ?? []}
+            stacks={stacksWithEndpoints}
+            activeEndpointStatusFilter={activeEndpointStatusPill}
+            onEndpointStatusChange={handleEndpointStatusPillChange}
+            activeStackStatusFilter={activeStackStatusPill}
+            onStackStatusChange={handleStackStatusPillChange}
+          />
         </SpotlightCard>
       )}
 
