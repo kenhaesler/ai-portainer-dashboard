@@ -141,4 +141,17 @@ describe('test-db-helper env var construction', () => {
       'postgresql://custom_user:custom_pass@db.internal:5555/custom_test_db',
     );
   });
+
+  it('URL-encodes special characters in user and password', async () => {
+    const url = await getConnectionString({
+      POSTGRES_TEST_URL: undefined,
+      POSTGRES_TEST_USER: 'user@domain',
+      POSTGRES_TEST_PASSWORD: 'p@ss:word/test#1',
+    });
+
+    // @ : / # in credentials must be percent-encoded
+    expect(url).toBe(
+      'postgresql://user%40domain:p%40ss%3Aword%2Ftest%231@localhost:5433/portainer_dashboard_test',
+    );
+  });
 });

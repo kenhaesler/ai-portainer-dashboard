@@ -32,7 +32,8 @@ const PGHOST = process.env.POSTGRES_TEST_HOST ?? 'localhost';
 const PGPORT = process.env.POSTGRES_TEST_PORT ?? '5433';
 const PGDATABASE = process.env.POSTGRES_TEST_DB ?? 'portainer_dashboard_test';
 
-const DEFAULT_URL = `postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}`;
+// URL-encode user and password so special characters (@, :, /, %, #) don't break the URI.
+const DEFAULT_URL = `postgresql://${encodeURIComponent(PGUSER)}:${encodeURIComponent(PGPASSWORD)}@${PGHOST}:${PGPORT}/${PGDATABASE}`;
 
 let pool: pg.Pool | null = null;
 let adapter: PostgresAdapter | null = null;
