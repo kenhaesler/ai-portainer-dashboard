@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEndpoints, type Endpoint } from '@/features/containers/hooks/use-endpoints';
-import { useStacks, type Stack } from '@/features/containers/hooks/use-stacks';
+import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { DataTable } from '@/shared/components/data-table';
 import { StatusBadge } from '@/shared/components/status-badge';
@@ -19,6 +19,8 @@ import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/spotlight-card';
+import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
+import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
@@ -171,10 +173,6 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
   );
 }
 
-interface StackWithEndpoint extends Stack {
-  endpointName: string;
-}
-
 function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () => void }) {
   const isInferred = stack.source === 'compose-label';
 
@@ -287,6 +285,10 @@ export default function InfrastructurePage() {
   const stacksViewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
   const setStacksViewMode = (mode: 'grid' | 'table') => setPageViewMode('stacks', mode);
 
+  // Search state
+  const [endpointSearchQuery, setEndpointSearchQuery] = useState('');
+  const [stackSearchQuery, setStackSearchQuery] = useState('');
+
   // Shared data — single hook call each, no duplicate requests
   const {
     data: endpoints,
@@ -366,8 +368,6 @@ export default function InfrastructurePage() {
     });
   }, [endpoints, endpointStatusFilter, endpointTypeFilter]);
 
-  const filteredEndpoints = dropdownFilteredEndpoints;
-
   // Dynamic filter options for endpoints (computed from unfiltered data, with counts)
   const endpointStatusOptions = useMemo(() => {
     if (!endpoints) return [];
@@ -394,11 +394,6 @@ export default function InfrastructurePage() {
     return options;
   }, [endpoints]);
 
-  // Reset grid page when filtered endpoint list changes
-  useEffect(() => {
-    setGridPage(1);
-  }, [filteredEndpoints.length]);
-
   // Enrich stacks with endpoint names using the shared endpoints data
   const stacksWithEndpoints = useMemo<StackWithEndpoint[]>(() => {
     if (!stacks || !endpoints) return [];
@@ -407,6 +402,17 @@ export default function InfrastructurePage() {
       endpointName: endpoints.find(ep => ep.id === stack.endpointId)?.name || `Endpoint ${stack.endpointId}`,
     }));
   }, [stacks, endpoints]);
+
+  // Search-filtered endpoints (dropdown filters applied upstream, then smart search)
+  const filteredEndpoints = useMemo(
+    () => dropdownFilteredEndpoints ? filterEndpoints(dropdownFilteredEndpoints, endpointSearchQuery) : [],
+    [dropdownFilteredEndpoints, endpointSearchQuery],
+  );
+
+  // Reset grid page when filtered endpoint list changes
+  useEffect(() => {
+    setGridPage(1);
+  }, [filteredEndpoints.length]);
 
   // --- Stack filtering (dropdown filters, then smart search) ---
   const dropdownFilteredStacks = useMemo(() => {
@@ -417,7 +423,10 @@ export default function InfrastructurePage() {
     });
   }, [stacksWithEndpoints, stackStatusFilter, stackEndpointFilterParam]);
 
-  const filteredStacks = dropdownFilteredStacks;
+  const filteredStacks = useMemo(
+    () => filterStacks(dropdownFilteredStacks, stackSearchQuery),
+    [dropdownFilteredStacks, stackSearchQuery],
+  );
 
   // Dynamic filter options for stacks
   const stackStatusOptions = useMemo(() => {
@@ -456,6 +465,11 @@ export default function InfrastructurePage() {
     const start = (gridPage - 1) * FLEET_GRID_PAGE_SIZE;
     return filteredEndpoints.slice(start, start + FLEET_GRID_PAGE_SIZE);
   }, [filteredEndpoints, gridPage]);
+
+  const handleEndpointSearch = useCallback((query: string) => {
+    setEndpointSearchQuery(query);
+    setGridPage(1);
+  }, []);
 
   const handleEndpointClick = (endpointId: number) => {
     navigate(`/workloads?endpoint=${endpointId}`);
@@ -761,6 +775,17 @@ export default function InfrastructurePage() {
           )}
         </div>
 
+        {/* Endpoint search */}
+        {!isLoading && endpoints && endpoints.length > 0 && (
+          <FleetSearch
+            onSearch={handleEndpointSearch}
+            totalCount={endpoints.length}
+            filteredCount={filteredEndpoints.length}
+            placeholder="Search endpoints... (name:prod status:up type:edge)"
+            label="Search endpoints"
+          />
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -777,16 +802,26 @@ export default function InfrastructurePage() {
           </div>
         ) : fleetViewMode === 'grid' ? (
           <>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {paginatedEndpoints.map((endpoint) => (
-                <EndpointCard
-                  key={endpoint.id}
-                  endpoint={endpoint}
-                  onClick={() => handleEndpointClick(endpoint.id)}
-                  onViewStacks={() => handleViewStacks(endpoint.id)}
-                />
-              ))}
-            </div>
+            {paginatedEndpoints.length === 0 && endpointSearchQuery ? (
+              <div className="rounded-lg border bg-card p-8 text-center">
+                <Search className="mx-auto h-10 w-10 text-muted-foreground" />
+                <p className="mt-4 font-medium">No endpoints match your search</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try a different query or clear the search
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {paginatedEndpoints.map((endpoint) => (
+                  <EndpointCard
+                    key={endpoint.id}
+                    endpoint={endpoint}
+                    onClick={() => handleEndpointClick(endpoint.id)}
+                    onViewStacks={() => handleViewStacks(endpoint.id)}
+                  />
+                ))}
+              </div>
+            )}
             {gridPageCount > 1 && (
               <div className="flex items-center justify-between" data-testid="grid-pagination">
                 <p className="text-sm text-muted-foreground">
@@ -910,6 +945,17 @@ export default function InfrastructurePage() {
           )}
         </div>
 
+        {/* Stack search */}
+        {!isLoading && dropdownFilteredStacks.length > 0 && (
+          <FleetSearch
+            onSearch={setStackSearchQuery}
+            totalCount={dropdownFilteredStacks.length}
+            filteredCount={filteredStacks.length}
+            placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
+            label="Search stacks"
+          />
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -919,7 +965,14 @@ export default function InfrastructurePage() {
         ) : filteredStacks.length === 0 ? (
           <div className="rounded-lg border bg-card p-8 text-center">
             <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
-            {hasActiveStackFilter ? (
+            {stackSearchQuery ? (
+              <>
+                <p className="mt-4 font-medium">No stacks match your search</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try a different query or clear the search
+                </p>
+              </>
+            ) : hasActiveStackFilter ? (
               <>
                 <p className="mt-4 font-medium">No stacks match filters</p>
                 <p className="mt-1 text-sm text-muted-foreground">
