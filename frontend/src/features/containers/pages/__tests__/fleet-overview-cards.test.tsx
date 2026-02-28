@@ -105,13 +105,13 @@ function mockStacks(stacks: Stack[], extra = {}) {
   } as any);
 }
 
-function renderPage() {
+function renderPage({ initialRoute = '/infrastructure' }: { initialRoute?: string } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialRoute]}>
         <InfrastructurePage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -266,7 +266,7 @@ describe('StackCard — compact 3-row layout', () => {
     mockEndpoints([makeEndpoint({ id: 1, name: 'local-env' })]);
     mockStacks([makeStack({ id: 5, name: 'web-stack', endpointId: 1 })]);
 
-    renderPage();
+    renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     expect(screen.getByText('web-stack')).toBeInTheDocument();
     expect(screen.getByText('ID: 5')).toBeInTheDocument();
@@ -276,13 +276,13 @@ describe('StackCard — compact 3-row layout', () => {
     mockEndpoints([makeEndpoint({ id: 1, name: 'local-env' })]);
     mockStacks([makeStack({ type: 2, status: 'active', endpointId: 1 })]);
 
-    renderPage();
+    renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     // Type tag for Compose (type 2)
     expect(screen.getByText('Compose')).toBeInTheDocument();
   });
 
-  it('renders metadata on row 3 (endpoint name, env vars, created date)', () => {
+  it('renders metadata on row 3 (endpoint name, env vars)', () => {
     mockEndpoints([makeEndpoint({ id: 1, name: 'prod-env' })]);
     mockStacks([
       makeStack({
@@ -293,17 +293,14 @@ describe('StackCard — compact 3-row layout', () => {
       }),
     ]);
 
-    renderPage();
+    renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     // Endpoint name in metadata row
     const mentions = screen.getAllByText('prod-env');
-    expect(mentions.length).toBeGreaterThanOrEqual(2); // fleet card + stack metadata
+    expect(mentions.length).toBeGreaterThanOrEqual(1);
 
     // Env vars count
     expect(screen.getByText('3 env vars')).toBeInTheDocument();
-
-    // Created date
-    expect(screen.getByText(/Created/)).toBeInTheDocument();
   });
 
   it('shows Discovered badge instead of ID for inferred stacks', () => {
@@ -319,7 +316,7 @@ describe('StackCard — compact 3-row layout', () => {
       }),
     ]);
 
-    renderPage();
+    renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     expect(screen.getByText('compose-app')).toBeInTheDocument();
     expect(screen.getByText('Discovered')).toBeInTheDocument();
@@ -333,7 +330,7 @@ describe('StackCard — compact 3-row layout', () => {
       makeStack({ id: 5, name: 'normal-stack', source: 'portainer', endpointId: 1 }),
     ]);
 
-    renderPage();
+    renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     expect(screen.getByText('ID: 5')).toBeInTheDocument();
     expect(screen.queryByText('Discovered')).not.toBeInTheDocument();
