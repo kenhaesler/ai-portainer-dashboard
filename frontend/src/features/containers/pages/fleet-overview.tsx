@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEndpoints, type Endpoint } from '@/features/containers/hooks/use-endpoints';
-import { useStacks, type Stack } from '@/features/containers/hooks/use-stacks';
+import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { DataTable } from '@/shared/components/data-table';
 import { StatusBadge } from '@/shared/components/status-badge';
@@ -18,6 +18,8 @@ import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/spotlight-card';
+import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
+import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
@@ -156,10 +158,6 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
   );
 }
 
-interface StackWithEndpoint extends Stack {
-  endpointName: string;
-}
-
 function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () => void }) {
   const isInferred = stack.source === 'compose-label';
 
@@ -234,6 +232,10 @@ export default function InfrastructurePage() {
   // Stacks view mode
   const stacksViewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
   const setStacksViewMode = (mode: 'grid' | 'table') => setPageViewMode('stacks', mode);
+
+  // Search state
+  const [endpointSearchQuery, setEndpointSearchQuery] = useState('');
+  const [stackSearchQuery, setStackSearchQuery] = useState('');
 
   // Shared data — single hook call each, no duplicate requests
   const {
@@ -319,12 +321,23 @@ export default function InfrastructurePage() {
     }));
   }, [stacks, endpoints]);
 
-  // Stacks filtered by the cross-section endpoint selection (null = show all)
-  const displayedStacks = useMemo(
+  // Search-filtered endpoints
+  const filteredEndpoints = useMemo(
+    () => endpoints ? filterEndpoints(endpoints, endpointSearchQuery) : [],
+    [endpoints, endpointSearchQuery],
+  );
+
+  // Stacks filtered by the cross-section endpoint selection (null = show all), then by search
+  const endpointFilteredStacks = useMemo(
     () => stackEndpointFilter !== null
       ? stacksWithEndpoints.filter(s => s.endpointId === stackEndpointFilter)
       : stacksWithEndpoints,
     [stacksWithEndpoints, stackEndpointFilter],
+  );
+
+  const displayedStacks = useMemo(
+    () => filterStacks(endpointFilteredStacks, stackSearchQuery),
+    [endpointFilteredStacks, stackSearchQuery],
   );
 
   // Summary bar counts
@@ -333,13 +346,17 @@ export default function InfrastructurePage() {
   const stackActiveCount = stacksWithEndpoints.filter(s => s.status === 'active').length;
   const stackInactiveCount = stacksWithEndpoints.filter(s => s.status === 'inactive').length;
 
-  // Fleet grid pagination
-  const gridPageCount = endpoints ? Math.ceil(endpoints.length / FLEET_GRID_PAGE_SIZE) : 0;
+  // Fleet grid pagination (uses filtered endpoints)
+  const gridPageCount = Math.ceil(filteredEndpoints.length / FLEET_GRID_PAGE_SIZE);
   const paginatedEndpoints = useMemo(() => {
-    if (!endpoints) return [];
     const start = (gridPage - 1) * FLEET_GRID_PAGE_SIZE;
-    return endpoints.slice(start, start + FLEET_GRID_PAGE_SIZE);
-  }, [endpoints, gridPage]);
+    return filteredEndpoints.slice(start, start + FLEET_GRID_PAGE_SIZE);
+  }, [filteredEndpoints, gridPage]);
+
+  const handleEndpointSearch = useCallback((query: string) => {
+    setEndpointSearchQuery(query);
+    setGridPage(1);
+  }, []);
 
   const handleEndpointClick = (endpointId: number) => {
     navigate(`/workloads?endpoint=${endpointId}`);
@@ -616,6 +633,17 @@ export default function InfrastructurePage() {
           )}
         </div>
 
+        {/* Endpoint search */}
+        {!isLoading && endpoints && endpoints.length > 0 && (
+          <FleetSearch
+            onSearch={handleEndpointSearch}
+            totalCount={endpoints.length}
+            filteredCount={filteredEndpoints.length}
+            placeholder="Search endpoints... (name:prod status:up type:edge)"
+            label="Search endpoints"
+          />
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -624,20 +652,30 @@ export default function InfrastructurePage() {
           </div>
         ) : endpoints && fleetViewMode === 'grid' ? (
           <>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {paginatedEndpoints.map((endpoint) => (
-                <EndpointCard
-                  key={endpoint.id}
-                  endpoint={endpoint}
-                  onClick={() => handleEndpointClick(endpoint.id)}
-                  onViewStacks={() => handleViewStacks(endpoint.id)}
-                />
-              ))}
-            </div>
+            {paginatedEndpoints.length === 0 && endpointSearchQuery ? (
+              <div className="rounded-lg border bg-card p-8 text-center">
+                <Search className="mx-auto h-10 w-10 text-muted-foreground" />
+                <p className="mt-4 font-medium">No endpoints match your search</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try a different query or clear the search
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {paginatedEndpoints.map((endpoint) => (
+                  <EndpointCard
+                    key={endpoint.id}
+                    endpoint={endpoint}
+                    onClick={() => handleEndpointClick(endpoint.id)}
+                    onViewStacks={() => handleViewStacks(endpoint.id)}
+                  />
+                ))}
+              </div>
+            )}
             {gridPageCount > 1 && (
               <div className="flex items-center justify-between" data-testid="grid-pagination">
                 <p className="text-sm text-muted-foreground">
-                  Page {gridPage} of {gridPageCount} ({endpoints.length} endpoints)
+                  Page {gridPage} of {gridPageCount} ({filteredEndpoints.length} endpoints)
                 </p>
                 <div className="flex items-center gap-2">
                   <button
@@ -665,7 +703,7 @@ export default function InfrastructurePage() {
           <div className="rounded-lg border bg-card p-6 shadow-sm">
             <DataTable
               columns={endpointColumns}
-              data={endpoints}
+              data={filteredEndpoints}
               searchKey="name"
               searchPlaceholder="Search endpoints..."
               pageSize={15}
@@ -731,6 +769,17 @@ export default function InfrastructurePage() {
           )}
         </div>
 
+        {/* Stack search */}
+        {!isLoading && endpointFilteredStacks.length > 0 && (
+          <FleetSearch
+            onSearch={setStackSearchQuery}
+            totalCount={endpointFilteredStacks.length}
+            filteredCount={displayedStacks.length}
+            placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
+            label="Search stacks"
+          />
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -740,7 +789,14 @@ export default function InfrastructurePage() {
         ) : displayedStacks.length === 0 ? (
           <div className="rounded-lg border bg-card p-8 text-center">
             <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
-            {stackEndpointFilter !== null ? (
+            {stackSearchQuery ? (
+              <>
+                <p className="mt-4 font-medium">No stacks match your search</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Try a different query or clear the search
+                </p>
+              </>
+            ) : stackEndpointFilter !== null ? (
               <>
                 <p className="mt-4 font-medium">No stacks for this endpoint</p>
                 <p className="mt-1 text-sm text-muted-foreground">
