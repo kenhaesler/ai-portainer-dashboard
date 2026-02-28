@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface Stack {
   id: number;
@@ -15,9 +15,7 @@ export interface Stack {
 }
 
 export function useStacks() {
-  return useQuery<Stack[]>({
-    queryKey: ['stacks'],
-    queryFn: () => api.get<Stack[]>('/api/stacks'),
-    staleTime: 5 * 60 * 1000,
+  return useResource<Stack[]>(['stacks'], '/api/stacks', {
+    staleTime: STALE_TIMES.LONG,
   });
 }

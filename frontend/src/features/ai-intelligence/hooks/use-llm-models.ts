@@ -1,5 +1,7 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface LlmModel {
   name: string;
@@ -25,13 +27,11 @@ export interface LlmTestConnectionResponse {
 }
 
 export function useLlmModels(host?: string) {
-  const url = host
+  const path = host
     ? `/api/llm/models?host=${encodeURIComponent(host)}`
     : '/api/llm/models';
-  return useQuery<LlmModelsResponse>({
-    queryKey: ['llm-models', host],
-    queryFn: () => api.get<LlmModelsResponse>(url),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+  return useResource<LlmModelsResponse>(['llm-models', host], path, {
+    staleTime: STALE_TIMES.LONG,
     retry: 1,
   });
 }

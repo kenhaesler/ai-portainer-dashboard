@@ -131,10 +131,10 @@ describe('InfrastructurePage — page structure', () => {
     expect(screen.getByRole('heading', { name: 'Infrastructure' })).toBeInTheDocument();
   });
 
-  it('renders Fleet Overview and Stack Overview section headings', () => {
+  it('renders Fleet Overview and Stack Overview tabs', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: 'Fleet Overview' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Stack Overview' })).toBeInTheDocument();
+    expect(screen.getByTestId('tab-fleet')).toBeInTheDocument();
+    expect(screen.getByTestId('tab-stacks')).toBeInTheDocument();
   });
 });
 
@@ -265,7 +265,7 @@ describe('InfrastructurePage — interactive summary bar', () => {
       makeStack({ id: 2, name: 'inactive-stack', status: 'inactive', endpointId: 1 }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     // Both visible initially
     expect(screen.getByText('active-stack')).toBeInTheDocument();
@@ -436,7 +436,7 @@ describe('InfrastructurePage — stack section', () => {
       makeStack({ id: -12345, name: 'my-compose-app', source: 'compose-label', containerCount: 3, envCount: 0 }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     expect(screen.getByText('my-compose-app')).toBeInTheDocument();
     expect(screen.getByText('Discovered')).toBeInTheDocument();
@@ -447,7 +447,7 @@ describe('InfrastructurePage — stack section', () => {
       makeStack({ id: 5, name: 'web-stack', source: 'portainer', envCount: 3 }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     expect(screen.getByText('web-stack')).toBeInTheDocument();
     expect(screen.getByText('(ID: 5)')).toBeInTheDocument();
@@ -457,7 +457,7 @@ describe('InfrastructurePage — stack section', () => {
   it('shows empty state when no stacks exist', () => {
     mockStacks([]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     expect(screen.getByText('No stacks or compose projects detected')).toBeInTheDocument();
   });
@@ -467,7 +467,7 @@ describe('InfrastructurePage — stack section', () => {
       makeStack({ id: 10, name: 'my-stack', endpointId: 1 }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     const card = screen.getByRole('button', { name: /my-stack/ });
     fireEvent.click(card);
@@ -482,7 +482,7 @@ describe('InfrastructurePage — stack section', () => {
       makeStack({ id: 2, name: 'beta-stack' }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     // DataTable search input should be present (one for fleet which is empty, one for stacks)
     const searchInputs = screen.getAllByTestId('data-table-search');
@@ -503,9 +503,8 @@ describe('InfrastructurePage — shared data hooks', () => {
 
     renderPage();
 
-    // Endpoint name appears in fleet card AND as stack endpoint label (shared data)
-    const mentions = screen.getAllByText('shared-ep');
-    expect(mentions.length).toBeGreaterThanOrEqual(2);
+    // Endpoint name appears in fleet card (stack tab not visible by default, but data is shared)
+    expect(screen.getByText('shared-ep')).toBeInTheDocument();
     // useEndpoints and useStacks each called exactly once (no duplicate requests)
     expect(mockUseEndpoints).toHaveBeenCalledTimes(1);
     expect(mockUseStacks).toHaveBeenCalledTimes(1);
@@ -537,7 +536,7 @@ describe('InfrastructurePage — cross-section filter', () => {
     expect(screen.queryByTestId('view-stacks-link')).not.toBeInTheDocument();
   });
 
-  it('clicking "View stacks" filters the stacks section to that endpoint', () => {
+  it('clicking "View stacks" switches to stacks tab and filters to that endpoint', () => {
     mockEndpoints([
       makeEndpoint({ id: 1, name: 'ep1', stackCount: 1 }),
       makeEndpoint({ id: 2, name: 'ep2', stackCount: 1 }),
@@ -549,15 +548,11 @@ describe('InfrastructurePage — cross-section filter', () => {
 
     renderPage();
 
-    // Both stacks visible initially
-    expect(screen.getByText('stack-for-ep1')).toBeInTheDocument();
-    expect(screen.getByText('stack-for-ep2')).toBeInTheDocument();
-
-    // Click "View stacks" on the first endpoint (ep1)
+    // Click "View stacks" on the first endpoint (ep1) — switches to stacks tab
     const viewButtons = screen.getAllByTestId('view-stacks-link');
     fireEvent.click(viewButtons[0]);
 
-    // Only ep1's stack is shown
+    // Now on stacks tab — only ep1's stack is shown
     expect(screen.getByText('stack-for-ep1')).toBeInTheDocument();
     expect(screen.queryByText('stack-for-ep2')).not.toBeInTheDocument();
 
@@ -746,7 +741,7 @@ describe('InfrastructurePage — stack dropdown filters', () => {
       makeStack({ id: 2, name: 's2', status: 'inactive', endpointId: 1 }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     // Should have "Status" label in the stacks section
     const labels = screen.getAllByText('Status');
@@ -760,7 +755,7 @@ describe('InfrastructurePage — stack dropdown filters', () => {
       makeStack({ id: 2, name: 'inactive-stack', status: 'inactive', endpointId: 1 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?stackStatus=active');
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackStatus=active');
 
     expect(screen.getByText('active-stack')).toBeInTheDocument();
     expect(screen.queryByText('inactive-stack')).not.toBeInTheDocument();
@@ -777,7 +772,7 @@ describe('InfrastructurePage — stack dropdown filters', () => {
       makeStack({ id: 2, name: 'stack-ep2', endpointId: 2 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?stackEndpoint=1');
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackEndpoint=1');
 
     // Stack cards: only stack-ep1 visible, stack-ep2 filtered out
     expect(screen.getByText('stack-ep1')).toBeInTheDocument();
@@ -795,7 +790,7 @@ describe('InfrastructurePage — stack dropdown filters', () => {
       makeStack({ id: 2, name: 's2', endpointId: 2 }),
     ]);
 
-    renderPage();
+    renderPageWithInitialParams('/infrastructure?tab=stacks');
 
     // Should have the endpoint filter dropdown (label + select trigger)
     const filterLabel = screen.getByText('Endpoint', { selector: 'label' });
@@ -823,7 +818,7 @@ describe('InfrastructurePage — stack dropdown filters', () => {
       makeStack({ id: 1, name: 'stack-ep1', endpointId: 1 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?stackEndpoint=2');
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackEndpoint=2');
 
     expect(screen.getByText('No stacks match filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show all stacks' })).toBeInTheDocument();
@@ -839,10 +834,9 @@ describe('InfrastructurePage — stack dropdown filters', () => {
       makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 2 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?endpointStatus=up&stackStatus=inactive');
+    // Render on stacks tab with both endpoint and stack filters in URL
+    renderPageWithInitialParams('/infrastructure?tab=stacks&endpointStatus=up&stackStatus=inactive');
 
-    // Endpoints section: only "up" endpoints visible as cards
-    expect(screen.getByTestId('fleet-filtered-count')).toHaveTextContent('1 of 2');
     // Stacks section: only inactive stacks visible
     expect(screen.getByTestId('stacks-filtered-count')).toHaveTextContent('1 of 2');
     expect(screen.getByText('inactive-s')).toBeInTheDocument();
@@ -1020,7 +1014,7 @@ describe('InfrastructurePage — stack filter chips', () => {
       makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 1 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?stackStatus=active');
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackStatus=active');
 
     const chipBars = screen.getAllByTestId('filter-chip-bar');
     expect(chipBars.length).toBeGreaterThanOrEqual(1);
@@ -1060,7 +1054,7 @@ describe('InfrastructurePage — stack filter chips', () => {
       makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 2 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?stackStatus=active&stackEndpoint=1');
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackStatus=active&stackEndpoint=1');
 
     expect(screen.getByTestId('filter-chip-stackStatus')).toBeInTheDocument();
     expect(screen.getByTestId('filter-chip-stackEndpoint')).toBeInTheDocument();
@@ -1074,7 +1068,7 @@ describe('InfrastructurePage — stack filter chips', () => {
       makeStack({ id: 2, name: 'inactive-s', status: 'inactive', endpointId: 1 }),
     ]);
 
-    renderPageWithInitialParams('/fleet?stackStatus=active');
+    renderPageWithInitialParams('/infrastructure?tab=stacks&stackStatus=active');
 
     expect(screen.getByTestId('filter-chip-stackStatus')).toBeInTheDocument();
     expect(screen.queryByText('inactive-s')).not.toBeInTheDocument();

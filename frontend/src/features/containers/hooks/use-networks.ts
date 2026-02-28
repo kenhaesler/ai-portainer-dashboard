@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/shared/lib/api';
+import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface Network {
   id: string;
@@ -14,15 +14,11 @@ export interface Network {
 }
 
 export function useNetworks(endpointId?: number) {
-  return useQuery<Network[]>({
-    queryKey: ['networks', endpointId],
-    queryFn: async () => {
-      const path = endpointId
-        ? `/api/networks?endpointId=${endpointId}`
-        : '/api/networks';
-      return api.get<Network[]>(path);
-    },
-    staleTime: 5 * 60 * 1000,
+  const path = endpointId
+    ? `/api/networks?endpointId=${endpointId}`
+    : '/api/networks';
+  return useResource<Network[]>(['networks', endpointId], path, {
+    staleTime: STALE_TIMES.LONG,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
