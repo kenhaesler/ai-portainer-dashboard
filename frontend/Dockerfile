@@ -36,6 +36,9 @@ COPY --from=tools /usr/lib/libunistring* /usr/lib/
 
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
+COPY frontend/nginx-security-headers.conf /etc/nginx/security-headers.conf
+COPY frontend/nginx-cache-nocache.conf /etc/nginx/cache-nocache.conf
+COPY frontend/nginx-cache-immutable.conf /etc/nginx/cache-immutable.conf
 
 EXPOSE 8080
 
