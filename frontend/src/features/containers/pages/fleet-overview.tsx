@@ -88,83 +88,68 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-lg border bg-card p-6 shadow-sm text-left transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
+      className="w-full rounded-lg border bg-card p-4 shadow-sm text-left transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className={cn(
-            'rounded-lg p-2',
-            endpoint.status === 'up'
-              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          )}>
-            <Server className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-semibold">{endpoint.name}</h3>
-            <p className="text-xs text-muted-foreground">ID: {endpoint.id}</p>
-          </div>
+      {/* Row 1: Name + ID */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <h3 className="font-semibold truncate">{endpoint.name}</h3>
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0">ID: {endpoint.id}</span>
+      </div>
+
+      {/* Row 2: Type tag + Status badge */}
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {endpoint.isEdge ? (
+            <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+              Edge Agent {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
+            </span>
+          ) : (
+            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              {getEndpointTypeLabel(endpoint.type)}
+            </span>
+          )}
+          {endpoint.isEdge && endpoint.agentVersion && (
+            <span className="text-xs text-muted-foreground">v{endpoint.agentVersion}</span>
+          )}
         </div>
         <StatusBadge status={endpoint.status} />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-xs text-muted-foreground">Containers</p>
-          <div className="mt-1 flex items-center gap-2">
-            <Boxes className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{endpoint.totalContainers}</span>
-            <span className="text-xs text-muted-foreground">
-              ({endpoint.containersRunning} running)
-            </span>
-          </div>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Stacks</p>
-          <p className="mt-1 font-medium">{endpoint.stackCount}</p>
-        </div>
+      {/* Row 3: Stats */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Boxes className="h-3 w-3" />
+          {endpoint.totalContainers} containers ({endpoint.containersRunning} running)
+        </span>
+        <span>{endpoint.stackCount} stack{endpoint.stackCount !== 1 ? 's' : ''}</span>
+        <span className="flex items-center gap-1">
+          <Activity className="h-3 w-3" />
+          {endpoint.totalCpu} CPU
+        </span>
+        <span>{memoryGB} GB</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-xs text-muted-foreground">CPU Cores</p>
-          <div className="mt-1 flex items-center gap-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{endpoint.totalCpu}</span>
-          </div>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Memory</p>
-          <p className="mt-1 font-medium">{memoryGB} GB</p>
-        </div>
-      </div>
-
+      {/* Edge-specific: check-in + snapshot age */}
       {endpoint.isEdge && (
-        <div className="mt-4 space-y-1.5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-              Edge Agent {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
-            </span>
-            {endpoint.agentVersion && <span>v{endpoint.agentVersion}</span>}
-          </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1 text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              Check-in: {formatRelativeTime(endpoint.lastCheckIn ? Date.now() - endpoint.lastCheckIn * 1000 : null)}
-            </span>
-            <span className={cn('flex items-center gap-1', getSnapshotAgeColor(endpoint.snapshotAge))}>
-              Snapshot: {formatRelativeTime(endpoint.snapshotAge)}
-            </span>
-          </div>
+        <div className="mt-1.5 flex items-center gap-3 text-xs">
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            Check-in: {formatRelativeTime(endpoint.lastCheckIn ? Date.now() - endpoint.lastCheckIn * 1000 : null)}
+          </span>
+          <span className={cn('flex items-center gap-1', getSnapshotAgeColor(endpoint.snapshotAge))}>
+            Snapshot: {formatRelativeTime(endpoint.snapshotAge)}
+          </span>
         </div>
       )}
 
-      <p className="mt-4 truncate text-xs text-muted-foreground">{endpoint.url}</p>
-
+      {/* View stacks link */}
       {onViewStacks && endpoint.stackCount > 0 && (
         <button
           onClick={(e) => { e.stopPropagation(); onViewStacks(); }}
-          className="mt-3 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
           data-testid="view-stacks-link"
         >
           View {endpoint.stackCount} stack{endpoint.stackCount !== 1 ? 's' : ''}
@@ -181,56 +166,30 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-lg border bg-card p-6 shadow-sm text-left transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
+      className="w-full rounded-lg border bg-card p-4 shadow-sm text-left transition-colors hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring"
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className={cn(
-            'rounded-lg p-2',
-            stack.status === 'active'
-              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
-          )}>
-            <Layers className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-semibold">{stack.name}</h3>
-            {isInferred ? <DiscoveredBadge /> : <p className="text-xs text-muted-foreground">ID: {stack.id}</p>}
-          </div>
+      {/* Row 1: Name + ID/Discovered */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <h3 className="font-semibold truncate">{stack.name}</h3>
         </div>
+        {isInferred ? <DiscoveredBadge /> : <span className="text-xs text-muted-foreground shrink-0">ID: {stack.id}</span>}
+      </div>
+
+      {/* Row 2: Type tag + Status badge */}
+      <div className="mt-2 flex items-center justify-between">
+        <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          {getStackType(stack.type)}
+        </span>
         <StatusBadge status={stack.status} />
       </div>
 
-      <div className="mt-4 space-y-2">
-        <div>
-          <p className="text-xs text-muted-foreground">Endpoint</p>
-          <p className="mt-1 font-medium text-sm">
-            {stack.endpointName}
-            <span className="ml-2 text-xs text-muted-foreground">(ID: {stack.endpointId})</span>
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Type</p>
-            <p className="mt-1 text-sm font-medium">{getStackType(stack.type)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">{isInferred ? 'Containers' : 'Env Vars'}</p>
-            <p className="mt-1 text-sm font-medium">{isInferred ? stack.containerCount ?? 0 : stack.envCount}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Created</p>
-            <p className="mt-1 text-sm">{formatDate(stack.createdAt)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Updated</p>
-            <p className="mt-1 text-sm">{formatDate(stack.updatedAt)}</p>
-          </div>
-        </div>
+      {/* Row 3: Metadata */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>{stack.endpointName}</span>
+        <span>{isInferred ? `${stack.containerCount ?? 0} containers` : `${stack.envCount} env vars`}</span>
+        <span>Created {formatDate(stack.createdAt)}</span>
       </div>
     </button>
   );
@@ -840,7 +799,7 @@ export default function InfrastructurePage() {
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="h-[220px]" />
+              <SkeletonCard key={i} className="h-[140px]" />
             ))}
           </div>
         ) : filteredEndpoints.length === 0 && endpoints && endpoints.length > 0 ? (
@@ -1019,7 +978,7 @@ export default function InfrastructurePage() {
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="h-[240px]" />
+              <SkeletonCard key={i} className="h-[140px]" />
             ))}
           </div>
         ) : filteredStacks.length === 0 ? (
