@@ -19,8 +19,6 @@ import { useUiStore } from '@/stores/ui-store';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/spotlight-card';
-import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
-import { filterEndpoints, filterStacks } from '@/features/containers/lib/fleet-search-filter';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
@@ -289,10 +287,6 @@ export default function InfrastructurePage() {
   const stacksViewMode = useUiStore((s) => s.pageViewModes['stacks'] ?? 'grid');
   const setStacksViewMode = (mode: 'grid' | 'table') => setPageViewMode('stacks', mode);
 
-  // Smart search queries (applied on top of dropdown filters)
-  const [endpointSearchQuery, setEndpointSearchQuery] = useState('');
-  const [stackSearchQuery, setStackSearchQuery] = useState('');
-
   // Shared data — single hook call each, no duplicate requests
   const {
     data: endpoints,
@@ -372,10 +366,7 @@ export default function InfrastructurePage() {
     });
   }, [endpoints, endpointStatusFilter, endpointTypeFilter]);
 
-  const filteredEndpoints = useMemo(
-    () => filterEndpoints(dropdownFilteredEndpoints, endpointSearchQuery),
-    [dropdownFilteredEndpoints, endpointSearchQuery],
-  );
+  const filteredEndpoints = dropdownFilteredEndpoints;
 
   // Dynamic filter options for endpoints (computed from unfiltered data, with counts)
   const endpointStatusOptions = useMemo(() => {
@@ -426,10 +417,7 @@ export default function InfrastructurePage() {
     });
   }, [stacksWithEndpoints, stackStatusFilter, stackEndpointFilterParam]);
 
-  const filteredStacks = useMemo(
-    () => filterStacks(dropdownFilteredStacks, stackSearchQuery),
-    [dropdownFilteredStacks, stackSearchQuery],
-  );
+  const filteredStacks = dropdownFilteredStacks;
 
   // Dynamic filter options for stacks
   const stackStatusOptions = useMemo(() => {
@@ -468,12 +456,6 @@ export default function InfrastructurePage() {
     const start = (gridPage - 1) * FLEET_GRID_PAGE_SIZE;
     return filteredEndpoints.slice(start, start + FLEET_GRID_PAGE_SIZE);
   }, [filteredEndpoints, gridPage]);
-
-  // Reset grid page when search changes
-  const handleEndpointSearch = useCallback((query: string) => {
-    setEndpointSearchQuery(query);
-    setGridPage(1);
-  }, []);
 
   const handleEndpointClick = (endpointId: number) => {
     navigate(`/workloads?endpoint=${endpointId}`);
@@ -779,16 +761,6 @@ export default function InfrastructurePage() {
           )}
         </div>
 
-        {!isLoading && endpoints && (
-          <FleetSearch
-            onSearch={handleEndpointSearch}
-            totalCount={dropdownFilteredEndpoints.length}
-            filteredCount={filteredEndpoints.length}
-            placeholder="Search endpoints... (name:prod status:up url:docker type:edge)"
-            label="Search endpoints"
-          />
-        )}
-
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -798,13 +770,9 @@ export default function InfrastructurePage() {
         ) : filteredEndpoints.length === 0 && endpoints && endpoints.length > 0 ? (
           <div className="rounded-lg border bg-card p-8 text-center">
             <Server className="mx-auto h-10 w-10 text-muted-foreground" />
-            <p className="mt-4 font-medium">
-              {endpointSearchQuery ? 'No endpoints matching your search' : 'No endpoints match filters'}
-            </p>
+            <p className="mt-4 font-medium">No endpoints match filters</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {endpointSearchQuery
-                ? 'Try adjusting your search query or use field:value syntax (e.g. name:prod)'
-                : 'Adjust your filters to see endpoints'}
+              Adjust your filters to see endpoints
             </p>
           </div>
         ) : fleetViewMode === 'grid' ? (
@@ -942,16 +910,6 @@ export default function InfrastructurePage() {
           )}
         </div>
 
-        {!isLoading && stacksWithEndpoints.length > 0 && (
-          <FleetSearch
-            onSearch={setStackSearchQuery}
-            totalCount={dropdownFilteredStacks.length}
-            filteredCount={filteredStacks.length}
-            placeholder="Search stacks... (name:traefik status:active endpoint:prod)"
-            label="Search stacks"
-          />
-        )}
-
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -961,14 +919,7 @@ export default function InfrastructurePage() {
         ) : filteredStacks.length === 0 ? (
           <div className="rounded-lg border bg-card p-8 text-center">
             <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
-            {stackSearchQuery ? (
-              <>
-                <p className="mt-4 font-medium">No stacks matching your search</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try adjusting your search query or use field:value syntax (e.g. name:traefik)
-                </p>
-              </>
-            ) : hasActiveStackFilter ? (
+            {hasActiveStackFilter ? (
               <>
                 <p className="mt-4 font-medium">No stacks match filters</p>
                 <p className="mt-1 text-sm text-muted-foreground">
