@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { type ColumnDef } from '@tanstack/react-table';
 import {
-  Server, Layers, LayoutGrid, List, AlertTriangle, Boxes, Activity, Clock,
+  Server, Layers, LayoutGrid, List, AlertTriangle,
   ChevronLeft, ChevronRight, Search, ArrowRight, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -104,7 +104,7 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
               Edge Agent {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
             </span>
           ) : (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground">
               {getEndpointTypeLabel(endpoint.type)}
             </span>
           )}
