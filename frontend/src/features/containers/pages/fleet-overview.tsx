@@ -103,22 +103,19 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
     >
       {/* Row 1: Name + ID */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <h3 className="font-semibold truncate">{endpoint.name}</h3>
-        </div>
-        <span className="text-xs text-muted-foreground shrink-0">ID: {endpoint.id}</span>
+        <h3 className="truncate font-semibold">{endpoint.name}</h3>
+        <span className="shrink-0 text-xs text-muted-foreground">ID: {endpoint.id}</span>
       </div>
 
-      {/* Row 2: Type tag + Status badge */}
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      {/* Row 2: Agent type tag + Status badge */}
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs">
           {endpoint.isEdge ? (
-            <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+            <span className="rounded bg-blue-100 px-2 py-0.5 font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
               Edge Agent {endpoint.edgeMode === 'async' ? 'Async' : 'Standard'}
             </span>
           ) : (
-            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <span className="rounded bg-gray-100 px-2 py-0.5 font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
               {getEndpointTypeLabel(endpoint.type)}
             </span>
           )}
@@ -129,7 +126,7 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
         <StatusBadge status={endpoint.status} />
       </div>
 
-      {/* Row 3: Stats */}
+      {/* Row 3: Inline stats */}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <Boxes className="h-3 w-3" />
@@ -143,7 +140,7 @@ function EndpointCard({ endpoint, onClick, onViewStacks }: { endpoint: Endpoint;
         <span>{memoryGB} GB</span>
       </div>
 
-      {/* Edge-specific: check-in + snapshot age */}
+      {/* Edge metadata (compact) */}
       {endpoint.isEdge && (
         <div className="mt-1.5 flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1 text-muted-foreground">
@@ -181,26 +178,22 @@ function StackCard({ stack, onClick }: { stack: StackWithEndpoint; onClick: () =
     >
       {/* Row 1: Name + ID/Discovered */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <h3 className="font-semibold truncate">{stack.name}</h3>
-        </div>
-        {isInferred ? <DiscoveredBadge /> : <span className="text-xs text-muted-foreground shrink-0">ID: {stack.id}</span>}
+        <h3 className="truncate font-semibold">{stack.name}</h3>
+        {isInferred ? <DiscoveredBadge /> : <span className="shrink-0 text-xs text-muted-foreground">ID: {stack.id}</span>}
       </div>
 
-      {/* Row 2: Type tag + Status badge */}
-      <div className="mt-2 flex items-center justify-between">
+      {/* Row 2: Stack type tag + Status badge */}
+      <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
           {getStackType(stack.type)}
         </span>
         <StatusBadge status={stack.status} />
       </div>
 
-      {/* Row 3: Metadata */}
+      {/* Row 3: Inline stats */}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>{stack.endpointName}</span>
         <span>{isInferred ? `${stack.containerCount ?? 0} containers` : `${stack.envCount} env vars`}</span>
-        <span>Created {formatDate(stack.createdAt)}</span>
       </div>
     </button>
   );
@@ -840,7 +833,7 @@ export default function InfrastructurePage() {
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="h-[140px]" />
+              <SkeletonCard key={i} className="h-[120px]" />
             ))}
           </div>
         ) : filteredEndpoints.length === 0 && endpoints && endpoints.length > 0 ? (
@@ -1019,7 +1012,7 @@ export default function InfrastructurePage() {
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="h-[140px]" />
+              <SkeletonCard key={i} className="h-[100px]" />
             ))}
           </div>
         ) : filteredStacks.length === 0 ? (
