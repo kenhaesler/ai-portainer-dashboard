@@ -132,7 +132,7 @@ describe('EndpointCard — compact 3-row layout', () => {
     renderPage();
 
     expect(screen.getByText('prod-server')).toBeInTheDocument();
-    expect(screen.getByText('ID: 42')).toBeInTheDocument();
+    expect(screen.getByText('(ID: 42)')).toBeInTheDocument();
   });
 
   it('renders type tag and status badge on row 2 for non-edge endpoint', () => {
@@ -157,8 +157,8 @@ describe('EndpointCard — compact 3-row layout', () => {
 
     renderPage();
 
-    // Stats row: containers with running count
-    expect(screen.getByText(/5 containers/)).toBeInTheDocument();
+    // Stats row: total containers and running count
+    expect(screen.getByText('5')).toBeInTheDocument();
     expect(screen.getByText(/3 running/)).toBeInTheDocument();
     // Stacks count
     expect(screen.getByText('2 stacks')).toBeInTheDocument();
@@ -269,7 +269,7 @@ describe('StackCard — compact 3-row layout', () => {
     renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     expect(screen.getByText('web-stack')).toBeInTheDocument();
-    expect(screen.getByText('ID: 5')).toBeInTheDocument();
+    expect(screen.getByText('(ID: 5)')).toBeInTheDocument();
   });
 
   it('renders type tag and status badge on row 2', () => {
@@ -296,8 +296,7 @@ describe('StackCard — compact 3-row layout', () => {
     renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
     // Endpoint name in metadata row
-    const mentions = screen.getAllByText('prod-env');
-    expect(mentions.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/prod-env/)).toBeInTheDocument();
 
     // Env vars count
     expect(screen.getByText('3 env vars')).toBeInTheDocument();
@@ -332,7 +331,7 @@ describe('StackCard — compact 3-row layout', () => {
 
     renderPage({ initialRoute: '/infrastructure?tab=stacks' });
 
-    expect(screen.getByText('ID: 5')).toBeInTheDocument();
+    expect(screen.getByText('(ID: 5)')).toBeInTheDocument();
     expect(screen.queryByText('Discovered')).not.toBeInTheDocument();
   });
 });
