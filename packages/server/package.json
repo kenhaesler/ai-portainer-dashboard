@@ -28,7 +28,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "@types/node": "^25.3.0",
+    "@types/node": "^25.3.3",
     "@vitest/coverage-v8": "^4.0.18",
     "pino-pretty": "^13.0.0",
     "redis": "^5.11.0",
