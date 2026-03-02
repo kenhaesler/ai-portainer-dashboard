@@ -17,7 +17,8 @@
     "./routes/search.js": { "import": "./dist/routes/search.js", "types": "./dist/routes/search.d.ts" },
     "./routes/settings.js": { "import": "./dist/routes/settings.js", "types": "./dist/routes/settings.d.ts" },
     "./routes/stacks.js": { "import": "./dist/routes/stacks.js", "types": "./dist/routes/stacks.d.ts" },
-    "./routes/users.js": { "import": "./dist/routes/users.js", "types": "./dist/routes/users.d.ts" }
+    "./routes/users.js": { "import": "./dist/routes/users.js", "types": "./dist/routes/users.d.ts" },
+    "./routes/kubernetes.js": { "import": "./dist/routes/kubernetes.js", "types": "./dist/routes/kubernetes.d.ts" }
   },
   "scripts": {
     "dev": "tsx watch ../packages/server/src/index.ts",

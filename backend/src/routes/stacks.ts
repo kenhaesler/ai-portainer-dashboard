@@ -9,6 +9,7 @@ import {
   type NormalizedStack,
 } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { StackIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('route:stacks');
@@ -35,7 +36,8 @@ export async function stacksRoutes(fastify: FastifyInstance) {
       return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
     }
 
-    const upEndpoints = endpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
+    // Only Docker endpoints have stacks/compose — K8s uses Helm charts (not yet supported)
+    const upEndpoints = endpoints.filter((ep) => isDockerEndpoint(ep.Type) && normalizeEndpoint(ep).status === 'up');
     const seen = new Set<number>();
     const results: NormalizedStack[] = [];
     const errors: string[] = [];

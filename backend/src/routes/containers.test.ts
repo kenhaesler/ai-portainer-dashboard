@@ -34,6 +34,7 @@ function buildApp() {
 const fakeEndpoint = (id: number, name: string, status = 1) => ({
   Id: id,
   Name: name,
+  Type: 1, // Docker local
   Status: status,
   Snapshots: [],
 });

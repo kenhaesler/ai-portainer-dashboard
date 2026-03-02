@@ -4,6 +4,7 @@ import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint, normalizeStack } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { supportsLiveFeatures } from '@dashboard/infrastructure';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { SearchQuerySchema } from '@dashboard/core/models/api-schemas.js';
 
@@ -89,10 +90,10 @@ async function searchContainerLogs(
     () => portainer.getEndpoints(),
   );
 
-  // Fetch containers from all endpoints in parallel
+  // Fetch containers from Docker endpoints only — K8s pods are searched separately
   const upEndpoints = endpoints
     .map(normalizeEndpoint)
-    .filter((ep) => ep.status === 'up');
+    .filter((ep) => ep.status === 'up' && isDockerEndpoint(ep.type));
 
   const containerResults = await Promise.allSettled(
     upEndpoints.map(async (ep) => {
@@ -216,9 +217,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
       () => portainer.getEndpoints(),
     );
 
-    const upEndpoints = endpoints.map(normalizeEndpoint).filter((ep) => ep.status === 'up');
+    const upEndpoints = endpoints.map(normalizeEndpoint).filter((ep) => ep.status === 'up' && isDockerEndpoint(ep.type));
 
-    // Fetch containers, images, and stacks in parallel across all endpoints
+    // Fetch containers, images, and stacks in parallel across all Docker endpoints
     const [endpointResults, stacksRaw] = await Promise.all([
       Promise.allSettled(
         upEndpoints.map(async (ep) => {

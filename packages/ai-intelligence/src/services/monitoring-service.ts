@@ -6,6 +6,7 @@ import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
 import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
@@ -148,6 +149,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
       // Skip endpoints with open or degraded circuit breakers — #694/#695/#759
       let skippedCb = 0;
       const activeEndpoints = rawEndpoints.filter((ep) => {
+        // Skip K8s endpoints — monitoring only applies to Docker containers
+        if (!isDockerEndpoint(ep.Type)) return false;
         if (isCircuitOpen(ep.Id) || isEndpointDegraded(ep.Id)) {
           skippedCb++;
           return false;

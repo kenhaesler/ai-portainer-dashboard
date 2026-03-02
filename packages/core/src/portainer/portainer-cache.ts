@@ -650,6 +650,11 @@ export const TTL = {
   IMAGES: 600,       // 10 minutes
   NETWORKS: 600,     // 10 minutes
   STATS: 60,         // 1 minute
+  // Kubernetes resources
+  K8S_PODS: 300,         // 5 minutes — pods change frequently
+  K8S_DEPLOYMENTS: 300,  // 5 minutes
+  K8S_SERVICES: 600,     // 10 minutes — services are relatively stable
+  K8S_NAMESPACES: 900,   // 15 minutes — namespaces rarely change
 } as const;
 
 export function getCacheKey(resource: string, ...args: (string | number)[]): string {

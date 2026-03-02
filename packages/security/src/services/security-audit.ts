@@ -1,6 +1,6 @@
 import { getEndpoints, getContainers, getContainerHostConfig } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import type { Container } from '@dashboard/core/models/portainer.js';
+import { type Container, isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getSetting, setSetting } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
@@ -127,7 +127,7 @@ async function computeSecurityAudit(endpointId?: number): Promise<SecurityAuditE
 
   const entries: SecurityAuditEntry[] = [];
 
-  for (const endpoint of scopedEndpoints) {
+  for (const endpoint of scopedEndpoints.filter((ep) => isDockerEndpoint(ep.Type))) {
     let containers: Awaited<ReturnType<typeof getContainers>>;
     try {
       containers = await cachedFetch(

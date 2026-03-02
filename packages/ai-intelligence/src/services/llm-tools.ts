@@ -1,6 +1,7 @@
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { getMetricsDb } from '@dashboard/core/db/timescale.js';
 import { getTraces, getTrace, getTraceSummary } from '@dashboard/core/tracing/trace-store.js';
@@ -263,6 +264,7 @@ async function findContainerByName(
 
   const nameLower = name.toLowerCase();
   for (const ep of endpoints) {
+    if (!isDockerEndpoint(ep.Type)) continue;
     const norm = normalizeEndpoint(ep);
     if (norm.status !== 'up') continue;
     try {
@@ -296,6 +298,7 @@ async function executeQueryContainers(
 
     const allContainers = [];
     for (const ep of endpoints) {
+      if (!isDockerEndpoint(ep.Type)) continue;
       const norm = normalizeEndpoint(ep);
       if (norm.status !== 'up') continue;
       try {

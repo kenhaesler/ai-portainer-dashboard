@@ -4,6 +4,7 @@ import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeContainer, normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { ContainerParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('route:containers');
@@ -28,9 +29,11 @@ async function fetchAllContainers(endpointIdFilter?: number) {
     () => portainer.getEndpoints(),
   );
 
+  // Only target Docker endpoints — K8s endpoints use separate /api/kubernetes/ routes
+  const dockerEndpoints = endpoints.filter((e) => isDockerEndpoint(e.Type));
   const targetEndpoints = endpointIdFilter
-    ? endpoints.filter((e) => e.Id === endpointIdFilter)
-    : endpoints;
+    ? dockerEndpoints.filter((e) => e.Id === endpointIdFilter)
+    : dockerEndpoints;
 
   const results: ReturnType<typeof normalizeContainer>[] = [];
   const errors: string[] = [];

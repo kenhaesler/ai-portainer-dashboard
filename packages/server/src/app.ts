@@ -26,6 +26,7 @@ import { networksRoutes } from 'backend/routes/networks.js';
 import { searchRoutes } from 'backend/routes/search.js';
 import { cacheAdminRoutes } from 'backend/routes/cache-admin.js';
 import { userRoutes } from 'backend/routes/users.js';
+import { kubernetesRoutes } from 'backend/routes/kubernetes.js';
 
 // Routes from domain packages
 import {
@@ -151,6 +152,7 @@ export async function buildApp() {
   await app.register(searchRoutes);
   await app.register(cacheAdminRoutes);
   await app.register(userRoutes);
+  await app.register(kubernetesRoutes);
 
   // Routes — domain packages
   await app.register(monitoringRoutes, {
