@@ -1,4 +1,5 @@
-import type { Endpoint, Container, Stack, Network } from '../models/portainer.js';
+import type { Endpoint, Container, Stack, Network, K8sPod, K8sDeployment, K8sService, K8sNamespace } from '../models/portainer.js';
+import { isKubernetesEndpoint } from '../models/portainer.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('normalizers');
@@ -257,3 +258,201 @@ export function normalizeNetwork(
     containers: Object.keys(n.Containers || {}),
   };
 }
+
+// ── Kubernetes Normalizers ─────────────────────────────────────────────────
+
+export type K8sPodState = 'running' | 'pending' | 'succeeded' | 'failed' | 'unknown';
+
+export interface NormalizedPod {
+  id: string;
+  name: string;
+  namespace: string;
+  images: string[];
+  state: K8sPodState;
+  status: string;
+  restarts: number;
+  created: number;
+  nodeName?: string;
+  podIP?: string;
+  endpointId: number;
+  endpointName: string;
+  labels: Record<string, string>;
+  containers: Array<{ name: string; image?: string; ready: boolean; restartCount: number }>;
+  resourceType: 'pod';
+}
+
+export interface NormalizedDeployment {
+  id: string;
+  name: string;
+  namespace: string;
+  images: string[];
+  replicas: number;
+  readyReplicas: number;
+  availableReplicas: number;
+  updatedReplicas: number;
+  created: number;
+  endpointId: number;
+  endpointName: string;
+  labels: Record<string, string>;
+  resourceType: 'deployment';
+}
+
+export interface NormalizedService {
+  id: string;
+  name: string;
+  namespace: string;
+  serviceType: string;
+  clusterIP?: string;
+  ports: Array<{ name?: string; port: number; targetPort?: string | number; protocol: string; nodePort?: number }>;
+  created: number;
+  endpointId: number;
+  endpointName: string;
+  labels: Record<string, string>;
+  resourceType: 'service';
+}
+
+export interface NormalizedNamespace {
+  id: string;
+  name: string;
+  status: string;
+  created: number;
+  labels: Record<string, string>;
+  endpointId: number;
+  endpointName: string;
+  resourceType: 'namespace';
+}
+
+function parseK8sTimestamp(ts?: string): number {
+  if (!ts) return 0;
+  const ms = Date.parse(ts);
+  return isNaN(ms) ? 0 : Math.floor(ms / 1000);
+}
+
+function mapPodPhase(phase?: string): K8sPodState {
+  switch (phase?.toLowerCase()) {
+    case 'running': return 'running';
+    case 'pending': return 'pending';
+    case 'succeeded': return 'succeeded';
+    case 'failed': return 'failed';
+    default: return 'unknown';
+  }
+}
+
+/** Build a human-readable status string for a pod (e.g. "Running", "CrashLoopBackOff"). */
+function buildPodStatusString(pod: K8sPod): string {
+  const phase = pod.status?.phase ?? 'Unknown';
+  // Check container statuses for more specific reasons
+  for (const cs of pod.status?.containerStatuses ?? []) {
+    const waiting = cs.state?.['waiting'] as { reason?: string } | undefined;
+    if (waiting?.reason) return waiting.reason;
+    const terminated = cs.state?.['terminated'] as { reason?: string } | undefined;
+    if (terminated?.reason) return terminated.reason;
+  }
+  return phase;
+}
+
+export function normalizePod(
+  pod: K8sPod,
+  endpointId: number,
+  endpointName: string,
+): NormalizedPod {
+  const restarts = (pod.status?.containerStatuses ?? [])
+    .reduce((sum, cs) => sum + (cs.restartCount ?? 0), 0);
+
+  return {
+    id: pod.metadata.uid ?? `${pod.metadata.namespace}/${pod.metadata.name}`,
+    name: pod.metadata.name,
+    namespace: pod.metadata.namespace ?? 'default',
+    images: pod.spec.containers.map((c) => c.image ?? '').filter(Boolean),
+    state: mapPodPhase(pod.status?.phase),
+    status: buildPodStatusString(pod),
+    restarts,
+    created: parseK8sTimestamp(pod.metadata.creationTimestamp),
+    nodeName: pod.spec.nodeName,
+    podIP: pod.status?.podIP,
+    endpointId,
+    endpointName,
+    labels: pod.metadata.labels ?? {},
+    containers: pod.spec.containers.map((specC) => {
+      const statusC = (pod.status?.containerStatuses ?? []).find((s) => s.name === specC.name);
+      return {
+        name: specC.name,
+        image: specC.image,
+        ready: statusC?.ready ?? false,
+        restartCount: statusC?.restartCount ?? 0,
+      };
+    }),
+    resourceType: 'pod',
+  };
+}
+
+export function normalizeDeployment(
+  dep: K8sDeployment,
+  endpointId: number,
+  endpointName: string,
+): NormalizedDeployment {
+  const images = (dep.spec.template?.spec?.containers ?? [])
+    .map((c) => c.image ?? '').filter(Boolean);
+
+  return {
+    id: dep.metadata.uid ?? `${dep.metadata.namespace}/${dep.metadata.name}`,
+    name: dep.metadata.name,
+    namespace: dep.metadata.namespace ?? 'default',
+    images,
+    replicas: dep.spec.replicas ?? 1,
+    readyReplicas: dep.status?.readyReplicas ?? 0,
+    availableReplicas: dep.status?.availableReplicas ?? 0,
+    updatedReplicas: dep.status?.updatedReplicas ?? 0,
+    created: parseK8sTimestamp(dep.metadata.creationTimestamp),
+    endpointId,
+    endpointName,
+    labels: dep.metadata.labels ?? {},
+    resourceType: 'deployment',
+  };
+}
+
+export function normalizeService(
+  svc: K8sService,
+  endpointId: number,
+  endpointName: string,
+): NormalizedService {
+  return {
+    id: svc.metadata.uid ?? `${svc.metadata.namespace}/${svc.metadata.name}`,
+    name: svc.metadata.name,
+    namespace: svc.metadata.namespace ?? 'default',
+    serviceType: svc.spec.type ?? 'ClusterIP',
+    clusterIP: svc.spec.clusterIP,
+    ports: (svc.spec.ports ?? []).map((p) => ({
+      name: p.name,
+      port: p.port,
+      targetPort: p.targetPort,
+      protocol: p.protocol ?? 'TCP',
+      nodePort: p.nodePort,
+    })),
+    created: parseK8sTimestamp(svc.metadata.creationTimestamp),
+    endpointId,
+    endpointName,
+    labels: svc.metadata.labels ?? {},
+    resourceType: 'service',
+  };
+}
+
+export function normalizeNamespace(
+  ns: K8sNamespace,
+  endpointId: number,
+  endpointName: string,
+): NormalizedNamespace {
+  return {
+    id: ns.metadata.uid ?? ns.metadata.name,
+    name: ns.metadata.name,
+    status: ns.status?.phase ?? 'Active',
+    created: parseK8sTimestamp(ns.metadata.creationTimestamp),
+    labels: ns.metadata.labels ?? {},
+    endpointId,
+    endpointName,
+    resourceType: 'namespace',
+  };
+}
+
+/** Re-export for convenience */
+export { isKubernetesEndpoint } from '../models/portainer.js';

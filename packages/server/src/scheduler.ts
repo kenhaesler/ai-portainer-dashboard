@@ -2,6 +2,7 @@ import pLimit from 'p-limit';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '@dashboard/core/portainer/index.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
 import { getSetting, getEffectiveHarborConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
@@ -137,12 +138,13 @@ export async function runMetricsCollection(): Promise<void> {
       () => getEndpoints(),
     );
 
-    // Skip Edge Async endpoints — they lack persistent tunnels for live stats
-    // Also skip endpoints whose circuit breaker is degraded (#694/#695)
+    // Skip Kubernetes endpoints (types 5/6/7) — metrics collection uses Docker API.
+    // Skip Edge Async endpoints — they lack persistent tunnels for live stats.
+    // Also skip endpoints whose circuit breaker is degraded (#694/#695).
     const normalized = endpoints.map(normalizeEndpoint);
     const liveCapableEndpoints = endpoints.filter((_ep, i) => {
       const n = normalized[i];
-      return n.capabilities.liveStats && !isEndpointDegraded(_ep.Id);
+      return isDockerEndpoint(_ep.Type) && n.capabilities.liveStats && !isEndpointDegraded(_ep.Id);
     });
 
     if (liveCapableEndpoints.length < endpoints.length) {
@@ -410,9 +412,10 @@ async function warmCache(): Promise<void> {
       TTL.ENDPOINTS,
       () => getEndpoints(),
     );
-    // Pre-fetch containers for all endpoints in parallel
+    // Pre-fetch containers for Docker endpoints only (K8s endpoints use different API)
+    const dockerEndpoints = endpoints.filter((ep) => isDockerEndpoint(ep.Type));
     await Promise.allSettled(
-      endpoints.map((ep) =>
+      dockerEndpoints.map((ep) =>
         cachedFetch(
           getCacheKey('containers', ep.Id),
           TTL.CONTAINERS,
@@ -420,7 +423,7 @@ async function warmCache(): Promise<void> {
         ),
       ),
     );
-    log.info({ endpoints: endpoints.length }, 'Cache warmed successfully');
+    log.info({ endpoints: endpoints.length, dockerEndpoints: dockerEndpoints.length }, 'Cache warmed successfully');
   } catch (err) {
     log.warn({ err }, 'Cache warming failed — first requests will be slower');
   }

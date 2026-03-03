@@ -11,8 +11,11 @@ import {
   EndpointArraySchema, ContainerArraySchema, StackArraySchema,
   NetworkArraySchema, ImageArraySchema,
   EdgeJobSchema, EdgeJobArraySchema, EdgeJobTaskArraySchema,
+  K8sPodListSchema, K8sDeploymentListSchema, K8sServiceListSchema, K8sNamespaceListSchema,
+  isKubernetesEndpoint, isDockerEndpoint,
   type Endpoint, type Container, type Stack,
   type ContainerStats, type Network, type DockerImage, type EdgeJob, type EdgeJobTask,
+  type K8sPod, type K8sDeployment, type K8sService, type K8sNamespace,
 } from '../models/portainer.js';
 
 const log = createChildLogger('portainer-client');
@@ -101,13 +104,13 @@ interface BreakerEntry {
   lastUsed: number;
 }
 const breakers = new Map<string, BreakerEntry>();
-const ENDPOINT_PATH_RE = /\/api\/endpoints\/(\d+)\//;
+const ENDPOINT_PATH_RE = /(?:\/api\/endpoints\/(\d+)\/|\/kubernetes\/(\d+)\/)/;
 const BREAKER_PRUNE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 const BREAKER_MAX_IDLE_MS = 60 * 60 * 1000; // 1 hour
 
 function extractBreakerKey(path: string): string {
   const match = path.match(ENDPOINT_PATH_RE);
-  return match ? `endpoint-${match[1]}` : 'global';
+  return match ? `endpoint-${match[1] || match[2]}` : 'global';
 }
 
 function getBreaker(path: string): CircuitBreaker {
@@ -834,4 +837,90 @@ export async function getEdgeJobTaskLogs(jobId: number, taskId: string): Promise
     throw new PortainerError(errorBody || `Edge job task logs fetch failed: ${res.status}`, classifyError(res.status), res.status);
   }
   return await res.text();
+}
+
+// Re-export endpoint type helpers for convenience
+export { isKubernetesEndpoint, isDockerEndpoint } from '../models/portainer.js';
+
+// ── Kubernetes API ─────────────────────────────────────────────────────────
+
+/** Fetch all pods from a Kubernetes endpoint via Portainer's K8s API proxy. */
+export async function getPods(endpointId: number, namespace?: string): Promise<K8sPod[]> {
+  const path = namespace
+    ? `/api/endpoints/${endpointId}/kubernetes/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`
+    : `/api/endpoints/${endpointId}/kubernetes/api/v1/pods`;
+  const raw = await portainerFetch<unknown>(path, { timeout: 30000 });
+  return K8sPodListSchema.parse(raw).items;
+}
+
+/** Fetch all deployments from a Kubernetes endpoint. */
+export async function getDeployments(endpointId: number, namespace?: string): Promise<K8sDeployment[]> {
+  const path = namespace
+    ? `/api/endpoints/${endpointId}/kubernetes/apis/apps/v1/namespaces/${encodeURIComponent(namespace)}/deployments`
+    : `/api/endpoints/${endpointId}/kubernetes/apis/apps/v1/deployments`;
+  const raw = await portainerFetch<unknown>(path, { timeout: 30000 });
+  return K8sDeploymentListSchema.parse(raw).items;
+}
+
+/** Fetch all services from a Kubernetes endpoint. */
+export async function getServices(endpointId: number, namespace?: string): Promise<K8sService[]> {
+  const path = namespace
+    ? `/api/endpoints/${endpointId}/kubernetes/api/v1/namespaces/${encodeURIComponent(namespace)}/services`
+    : `/api/endpoints/${endpointId}/kubernetes/api/v1/services`;
+  const raw = await portainerFetch<unknown>(path, { timeout: 30000 });
+  return K8sServiceListSchema.parse(raw).items;
+}
+
+/** Fetch all namespaces from a Kubernetes endpoint. */
+export async function getNamespaces(endpointId: number): Promise<K8sNamespace[]> {
+  const raw = await portainerFetch<unknown>(
+    `/api/endpoints/${endpointId}/kubernetes/api/v1/namespaces`,
+    { timeout: 30000 },
+  );
+  return K8sNamespaceListSchema.parse(raw).items;
+}
+
+/** Fetch logs for a specific pod from a Kubernetes endpoint (read-only). */
+export async function getPodLogs(
+  endpointId: number,
+  namespace: string,
+  podName: string,
+  options: { tail?: number; sinceSeconds?: number; timestamps?: boolean; container?: string } = {},
+): Promise<string> {
+  const params = new URLSearchParams({
+    tailLines: String(options.tail || 100),
+    timestamps: String(options.timestamps ?? true),
+  });
+  if (options.sinceSeconds) params.set('sinceSeconds', String(options.sinceSeconds));
+  if (options.container) params.set('container', options.container);
+
+  const path = `/api/endpoints/${endpointId}/kubernetes/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(podName)}/log?${params}`;
+  const url = buildApiUrl(path);
+  const headers = buildApiHeaders();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await undiciFetch(url, {
+      headers,
+      dispatcher: getDispatcher(),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errorBody = await readErrorBody(res);
+      throw new PortainerError(
+        errorBody || `Pod log fetch failed: ${res.status}`,
+        classifyError(res.status),
+        res.status,
+      );
+    }
+    return await res.text();
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof PortainerError) throw err;
+    const msg = err instanceof Error ? err.message : 'Network error';
+    throw new PortainerError(msg, 'network');
+  }
 }

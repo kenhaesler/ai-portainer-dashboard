@@ -7,6 +7,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
@@ -33,7 +34,7 @@ async function getInfrastructureSummary(): Promise<string> {
     const normalized = endpoints.map(normalizeEndpoint);
 
     const allContainers = [];
-    for (const ep of normalized.filter(e => e.status === 'up').slice(0, 10)) {
+    for (const ep of normalized.filter(e => e.status === 'up' && isDockerEndpoint(e.type)).slice(0, 10)) {
       try {
         const containers = await cachedFetch(
           getCacheKey('containers', ep.id),

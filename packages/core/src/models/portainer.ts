@@ -178,3 +178,150 @@ export type Network = z.infer<typeof NetworkSchema>;
 export type DockerImage = z.infer<typeof ImageSchema>;
 export type EdgeJob = z.infer<typeof EdgeJobSchema>;
 export type EdgeJobTask = z.infer<typeof EdgeJobTaskSchema>;
+
+// ── Kubernetes Resource Schemas ──────────────────────────────────────────────
+
+/** Portainer endpoint type constants */
+export const DOCKER_ENDPOINT_TYPES = new Set([1, 2, 4]); // Docker, Agent, Edge Docker
+export const KUBERNETES_ENDPOINT_TYPES = new Set([5, 6, 7]); // K8s Local, Agent, Edge
+
+/** Check whether a Portainer endpoint type is Kubernetes. */
+export function isKubernetesEndpoint(type: number): boolean {
+  return KUBERNETES_ENDPOINT_TYPES.has(type);
+}
+
+/** Check whether a Portainer endpoint type is Docker. */
+export function isDockerEndpoint(type: number): boolean {
+  return DOCKER_ENDPOINT_TYPES.has(type);
+}
+
+// Kubernetes Pod (raw K8s API response shape)
+export const K8sObjectMetaSchema = z.object({
+  name: z.string(),
+  namespace: z.string().optional(),
+  uid: z.string().optional(),
+  creationTimestamp: z.string().optional(),
+  labels: z.record(z.string(), z.string()).optional().default({}),
+  annotations: z.record(z.string(), z.string()).optional().default({}),
+  ownerReferences: z.array(z.object({
+    kind: z.string(),
+    name: z.string(),
+    uid: z.string().optional(),
+  })).optional().default([]),
+}).passthrough();
+
+export const K8sContainerStatusSchema = z.object({
+  name: z.string(),
+  ready: z.boolean().optional(),
+  restartCount: z.number().optional().default(0),
+  state: z.record(z.string(), z.unknown()).optional().default({}),
+  image: z.string().optional(),
+  imageID: z.string().optional(),
+}).passthrough();
+
+export const K8sPodSchema = z.object({
+  metadata: K8sObjectMetaSchema,
+  spec: z.object({
+    nodeName: z.string().optional(),
+    containers: z.array(z.object({
+      name: z.string(),
+      image: z.string().optional(),
+      ports: z.array(z.object({
+        containerPort: z.number().optional(),
+        protocol: z.string().optional(),
+        name: z.string().optional(),
+      })).optional().default([]),
+      resources: z.object({
+        requests: z.record(z.string(), z.string()).optional(),
+        limits: z.record(z.string(), z.string()).optional(),
+      }).optional(),
+    })).optional().default([]),
+    restartPolicy: z.string().optional(),
+  }).passthrough(),
+  status: z.object({
+    phase: z.string().optional(),
+    conditions: z.array(z.object({
+      type: z.string(),
+      status: z.string(),
+    })).optional().default([]),
+    containerStatuses: z.array(K8sContainerStatusSchema).optional().default([]),
+    startTime: z.string().optional(),
+    hostIP: z.string().optional(),
+    podIP: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+export const K8sDeploymentSchema = z.object({
+  metadata: K8sObjectMetaSchema,
+  spec: z.object({
+    replicas: z.number().optional().default(1),
+    selector: z.object({
+      matchLabels: z.record(z.string(), z.string()).optional(),
+    }).optional(),
+    template: z.object({
+      spec: z.object({
+        containers: z.array(z.object({
+          name: z.string(),
+          image: z.string().optional(),
+        })).optional().default([]),
+      }).passthrough().optional(),
+    }).passthrough().optional(),
+  }).passthrough(),
+  status: z.object({
+    replicas: z.number().optional().default(0),
+    readyReplicas: z.number().optional().default(0),
+    availableReplicas: z.number().optional().default(0),
+    unavailableReplicas: z.number().optional().default(0),
+    updatedReplicas: z.number().optional().default(0),
+  }).passthrough().optional(),
+}).passthrough();
+
+export const K8sServiceSchema = z.object({
+  metadata: K8sObjectMetaSchema,
+  spec: z.object({
+    type: z.string().optional().default('ClusterIP'),
+    clusterIP: z.string().optional(),
+    ports: z.array(z.object({
+      name: z.string().optional(),
+      port: z.number(),
+      targetPort: z.union([z.number(), z.string()]).optional(),
+      protocol: z.string().optional().default('TCP'),
+      nodePort: z.number().optional(),
+    })).optional().default([]),
+    selector: z.record(z.string(), z.string()).optional(),
+    externalIPs: z.array(z.string()).optional().default([]),
+    loadBalancerIP: z.string().optional(),
+  }).passthrough(),
+  status: z.object({
+    loadBalancer: z.object({
+      ingress: z.array(z.object({
+        ip: z.string().optional(),
+        hostname: z.string().optional(),
+      })).optional().default([]),
+    }).optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+export const K8sNamespaceSchema = z.object({
+  metadata: K8sObjectMetaSchema,
+  status: z.object({
+    phase: z.string().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
+// K8s list response wrapper
+export const K8sListSchema = <T extends z.ZodTypeAny>(itemSchema: T) => z.object({
+  kind: z.string().optional(),
+  apiVersion: z.string().optional(),
+  items: z.array(itemSchema),
+}).passthrough();
+
+export const K8sPodListSchema = K8sListSchema(K8sPodSchema);
+export const K8sDeploymentListSchema = K8sListSchema(K8sDeploymentSchema);
+export const K8sServiceListSchema = K8sListSchema(K8sServiceSchema);
+export const K8sNamespaceListSchema = K8sListSchema(K8sNamespaceSchema);
+
+export type K8sPod = z.infer<typeof K8sPodSchema>;
+export type K8sDeployment = z.infer<typeof K8sDeploymentSchema>;
+export type K8sService = z.infer<typeof K8sServiceSchema>;
+export type K8sNamespace = z.infer<typeof K8sNamespaceSchema>;

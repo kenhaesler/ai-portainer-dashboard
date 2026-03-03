@@ -5,6 +5,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import {
   Server, Layers, LayoutGrid, List, AlertTriangle,
   ChevronLeft, ChevronRight, Search, ArrowRight, X,
+  Box,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEndpoints, type Endpoint } from '@/features/containers/hooks/use-endpoints';
@@ -24,13 +25,14 @@ import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { FleetStatusSummary } from '@/features/containers/components/fleet/fleet-status-summary';
 import { FleetSearch } from '@/features/containers/components/fleet/fleet-search';
 import { filterEndpoints, filterStacks, type StackWithEndpoint } from '@/features/containers/lib/fleet-search-filter';
+import { useK8sPods, useK8sDeployments, useK8sServices, useK8sNamespaces, type K8sPod, type K8sDeployment, type K8sService } from '@/features/kubernetes/hooks/use-kubernetes';
 
 const FLEET_GRID_PAGE_SIZE = 30;
 const AUTO_TABLE_THRESHOLD = 100;
 const ALL_FILTER = '__all__';
 
-type InfraTab = 'fleet' | 'stacks';
-const VALID_TABS: InfraTab[] = ['fleet', 'stacks'];
+type InfraTab = 'fleet' | 'stacks' | 'kubernetes';
+const VALID_TABS: InfraTab[] = ['fleet', 'stacks', 'kubernetes'];
 const TAB_TRIGGER_CLASS =
   'flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary';
 
@@ -304,6 +306,25 @@ export default function InfrastructurePage() {
     refetch: refetchStacks,
     isFetching: stacksFetching,
   } = useStacks();
+
+  // Kubernetes data
+  const {
+    data: k8sPods,
+    isLoading: k8sPodsLoading,
+    refetch: refetchK8sPods,
+    isFetching: k8sPodsFetching,
+  } = useK8sPods();
+  const {
+    data: k8sDeployments,
+    isLoading: k8sDeploymentsLoading,
+  } = useK8sDeployments();
+  const {
+    data: k8sServices,
+    isLoading: k8sServicesLoading,
+  } = useK8sServices();
+  const {
+    data: k8sNamespaces,
+  } = useK8sNamespaces();
 
   const isLoading = endpointsLoading || stacksLoading;
   const isFetching = endpointsFetching || stacksFetching;
@@ -677,6 +698,118 @@ export default function InfrastructurePage() {
     },
   ], []);
 
+  // ── Kubernetes column definitions ───────────────────────────────────────────
+  const k8sPodColumns: ColumnDef<K8sPod, unknown>[] = useMemo(() => [
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <div>
+          <span className="font-medium">{row.original.name}</span>
+          <span className="ml-2 text-xs text-muted-foreground">{row.original.namespace}</span>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'state',
+      header: 'State',
+      cell: ({ row }) => <StatusBadge status={row.original.state === 'running' ? 'healthy' : row.original.state === 'pending' ? 'warning' : row.original.state === 'failed' ? 'error' : row.original.state} />,
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{getValue<string>()}</span>,
+    },
+    {
+      id: 'ready',
+      header: 'Ready',
+      cell: ({ row }) => `${row.original.containers.filter((c) => c.ready).length}/${row.original.containers.length}`,
+    },
+    {
+      accessorKey: 'restarts',
+      header: 'Restarts',
+    },
+    {
+      accessorKey: 'nodeName',
+      header: 'Node',
+      cell: ({ getValue }) => <span className="text-xs">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'endpointName',
+      header: 'Cluster',
+      cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{getValue<string>()}</span>,
+    },
+  ], []);
+
+  const k8sDeploymentColumns: ColumnDef<K8sDeployment, unknown>[] = useMemo(() => [
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <div>
+          <span className="font-medium">{row.original.name}</span>
+          <span className="ml-2 text-xs text-muted-foreground">{row.original.namespace}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'ready',
+      header: 'Ready',
+      cell: ({ row }) => `${row.original.readyReplicas ?? 0}/${row.original.replicas}`,
+    },
+    {
+      id: 'upToDate',
+      header: 'Up-to-date',
+      cell: ({ row }) => row.original.updatedReplicas ?? 0,
+    },
+    {
+      id: 'available',
+      header: 'Available',
+      cell: ({ row }) => row.original.availableReplicas ?? 0,
+    },
+    {
+      accessorKey: 'endpointName',
+      header: 'Cluster',
+      cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{getValue<string>()}</span>,
+    },
+  ], []);
+
+  const k8sServiceColumns: ColumnDef<K8sService, unknown>[] = useMemo(() => [
+    {
+      accessorKey: 'name',
+      header: 'Name',
+      cell: ({ row }) => (
+        <div>
+          <span className="font-medium">{row.original.name}</span>
+          <span className="ml-2 text-xs text-muted-foreground">{row.original.namespace}</span>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'serviceType',
+      header: 'Type',
+    },
+    {
+      accessorKey: 'clusterIP',
+      header: 'Cluster IP',
+      cell: ({ getValue }) => <span className="text-xs font-mono">{getValue<string>()}</span>,
+    },
+    {
+      id: 'ports',
+      header: 'Ports',
+      cell: ({ row }) => (
+        <span className="text-xs font-mono">
+          {row.original.ports.map((p) => `${p.port}/${p.protocol}`).join(', ')}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'endpointName',
+      header: 'Cluster',
+      cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{getValue<string>()}</span>,
+    },
+  ], []);
+
   const hasError = endpointsError || stacksError;
   const errorMessage = endpointsError
     ? (endpointErrorObj instanceof Error ? endpointErrorObj.message : 'Failed to load endpoints')
@@ -741,6 +874,15 @@ export default function InfrastructurePage() {
           <Tabs.Trigger value="stacks" className={TAB_TRIGGER_CLASS} data-testid="tab-stacks">
             <Layers className="h-4 w-4" />
             Stack Overview
+          </Tabs.Trigger>
+          <Tabs.Trigger value="kubernetes" className={TAB_TRIGGER_CLASS} data-testid="tab-kubernetes">
+            <Box className="h-4 w-4" />
+            Kubernetes
+            {k8sPods && k8sPods.length > 0 && (
+              <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary">
+                {k8sPods.length}
+              </span>
+            )}
           </Tabs.Trigger>
         </Tabs.List>
 
@@ -1070,6 +1212,89 @@ export default function InfrastructurePage() {
               searchPlaceholder="Search stacks..."
               pageSize={15}
               onRowClick={handleStackClick}
+            />
+          </div>
+          </SpotlightCard>
+        )}
+      </section>
+        </Tabs.Content>
+
+        <Tabs.Content value="kubernetes" className="mt-4">
+      <section aria-labelledby="k8s-heading" className="space-y-4">
+        <h2 id="k8s-heading" className="sr-only">Kubernetes Resources</h2>
+
+        {/* K8s summary bar */}
+        <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3 shadow-sm text-sm">
+          <span className="font-medium">Kubernetes</span>
+          <span className="text-muted-foreground">
+            {k8sPods?.length ?? 0} pods
+          </span>
+          <span className="text-muted-foreground">
+            {k8sDeployments?.length ?? 0} deployments
+          </span>
+          <span className="text-muted-foreground">
+            {k8sServices?.length ?? 0} services
+          </span>
+          <span className="text-muted-foreground">
+            {k8sNamespaces?.length ?? 0} namespaces
+          </span>
+          <div className="ml-auto">
+            <RefreshButton
+              onClick={() => refetchK8sPods()}
+              isLoading={k8sPodsFetching}
+            />
+          </div>
+        </div>
+
+        {/* Pods table */}
+        {k8sPodsLoading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        ) : (
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <h3 className="mb-4 text-sm font-semibold">Pods</h3>
+            <DataTable
+              columns={k8sPodColumns}
+              data={k8sPods ?? []}
+              searchKey="name"
+              searchPlaceholder="Search pods..."
+              pageSize={15}
+            />
+          </div>
+          </SpotlightCard>
+        )}
+
+        {/* Deployments table */}
+        {!k8sDeploymentsLoading && k8sDeployments && k8sDeployments.length > 0 && (
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <h3 className="mb-4 text-sm font-semibold">Deployments</h3>
+            <DataTable
+              columns={k8sDeploymentColumns}
+              data={k8sDeployments}
+              searchKey="name"
+              searchPlaceholder="Search deployments..."
+              pageSize={15}
+            />
+          </div>
+          </SpotlightCard>
+        )}
+
+        {/* Services table */}
+        {!k8sServicesLoading && k8sServices && k8sServices.length > 0 && (
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <h3 className="mb-4 text-sm font-semibold">Services</h3>
+            <DataTable
+              columns={k8sServiceColumns}
+              data={k8sServices}
+              searchKey="name"
+              searchPlaceholder="Search services..."
+              pageSize={15}
             />
           </div>
           </SpotlightCard>

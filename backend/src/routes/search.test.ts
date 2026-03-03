@@ -23,7 +23,7 @@ let mockGetContainerLogs: any;
 
 function seedPortainerMocks() {
   mockGetEndpoints.mockResolvedValue([
-    { Id: 1, Name: 'prod', Status: 1 },
+    { Id: 1, Name: 'prod', Type: 1, Status: 1 },
   ] as any);
 
   mockGetContainers.mockResolvedValue([
@@ -149,8 +149,8 @@ describe('Search Routes', () => {
   it('fetches containers and images in parallel across multiple endpoints', async () => {
     // Two endpoints — verify containers and images are fetched for both
     mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod', Status: 1 },
-      { Id: 2, Name: 'staging', Status: 1 },
+      { Id: 1, Name: 'prod', Type: 1, Status: 1 },
+      { Id: 2, Name: 'staging', Type: 1, Status: 1 },
     ] as any);
 
     mockGetContainers.mockResolvedValue([
@@ -187,8 +187,8 @@ describe('Search Routes', () => {
 
   it('returns partial results when one endpoint fails', async () => {
     mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod', Status: 1 },
-      { Id: 2, Name: 'broken', Status: 1 },
+      { Id: 1, Name: 'prod', Type: 1, Status: 1 },
+      { Id: 2, Name: 'broken', Type: 1, Status: 1 },
     ] as any);
 
     mockGetContainers

@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getKpiHistory, getLatestMetricsBatch } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '@dashboard/security';
@@ -140,12 +141,14 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     const normalized = endpoints.map(normalizeEndpoint);
     const upEndpoints = normalized.filter((e) => e.status === 'up');
+    // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
+    const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));
 
-    // Get all containers from all up endpoints
+    // Get all containers from all up Docker endpoints
     const allContainers: Array<{ container: any; endpointId: number; endpointName: string }> = [];
     const resourceErrors: string[] = [];
     const settled = await Promise.allSettled(
-      upEndpoints.map((ep) =>
+      upDockerEndpoints.map((ep) =>
         cachedFetchSWR(
           getCacheKey('containers', ep.id),
           TTL.CONTAINERS,
@@ -337,13 +340,15 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
 
     const normalized = rawEndpoints.map(normalizeEndpoint);
     const upEndpoints = normalized.filter((e) => e.status === 'up');
+    // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
+    const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));
 
     // Fetch all containers + build resources (timed as a single block)
     const resourcesTiming = await timed('resources', async () => {
       const allNormalizedContainers: Array<{ container: any; endpointId: number; endpointName: string }> = [];
       const errors: string[] = [];
       const settled = await Promise.allSettled(
-        upEndpoints.map((ep) =>
+        upDockerEndpoints.map((ep) =>
           cachedFetchSWR(
             getCacheKey('containers', ep.id),
             TTL.CONTAINERS,
@@ -362,7 +367,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
             endpointName: ep.name,
           })));
         } else {
-          const ep = upEndpoints[i];
+          const ep = upDockerEndpoints[i];
           const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
           log.warn({ endpointId: ep.id, endpointName: ep.name, err: result.reason }, 'Failed to fetch containers for endpoint');
           errors.push(`${ep.name}: ${msg}`);

@@ -3,6 +3,7 @@ import { withSpan } from '@dashboard/core/tracing/trace-context.js';
 import * as harbor from './harbor-client.js';
 import * as store from './harbor-vulnerability-store.js';
 import { getEndpoints, getContainers } from '@dashboard/core/portainer/portainer-client.js';
+import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { parseImageRef } from './image-staleness.js';
 import type { VulnerabilityInsert } from './harbor-vulnerability-store.js';
@@ -32,7 +33,7 @@ async function collectRunningImages(): Promise<RunningImage[]> {
 
   const images: RunningImage[] = [];
 
-  for (const ep of endpoints) {
+  for (const ep of endpoints.filter((e) => isDockerEndpoint(e.Type))) {
     try {
       const containers = await cachedFetchSWR(
         getCacheKey('containers', ep.Id),
