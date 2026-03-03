@@ -47,7 +47,7 @@ describe('security-audit service', () => {
       (_key: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
     );
 
-    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([{ Id: 1, Name: 'prod' }] as any);
+    mockGetEndpoints = vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([{ Id: 1, Name: 'prod', Type: 1 }] as any);
     // List endpoint returns sparse HostConfig (only NetworkMode in practice)
     mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([
       {
@@ -177,8 +177,8 @@ describe('security-audit service', () => {
   it('skips endpoint and continues when circuit breaker is open', async () => {
     // Two endpoints: endpoint 1 has open circuit breaker, endpoint 2 works fine
     mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod' },
-      { Id: 2, Name: 'staging' },
+      { Id: 1, Name: 'prod', Type: 1 },
+      { Id: 2, Name: 'staging', Type: 1 },
     ]);
 
     // mockCachedFetch: endpoint 1 containers fetch throws CircuitBreakerOpenError,
@@ -212,8 +212,8 @@ describe('security-audit service', () => {
 
   it('skips endpoint and continues when containers fetch fails with non-CB error', async () => {
     mockGetEndpoints.mockResolvedValue([
-      { Id: 1, Name: 'prod' },
-      { Id: 2, Name: 'staging' },
+      { Id: 1, Name: 'prod', Type: 1 },
+      { Id: 2, Name: 'staging', Type: 1 },
     ]);
 
     mockCachedFetch.mockImplementation((key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
