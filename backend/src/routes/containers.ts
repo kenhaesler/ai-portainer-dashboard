@@ -94,9 +94,11 @@ export async function containersRoutes(fastify: FastifyInstance) {
       });
     }
 
+    // Only target Docker endpoints — K8s endpoints use separate /api/kubernetes/ routes
+    const dockerEndpoints = endpoints.filter((e) => isDockerEndpoint(e.Type));
     const targetEndpoints = endpointId
-      ? endpoints.filter((e) => e.Id === endpointId)
-      : endpoints;
+      ? dockerEndpoints.filter((e) => e.Id === endpointId)
+      : dockerEndpoints;
 
     const allContainers: ReturnType<typeof normalizeContainer>[] = [];
     const errors: string[] = [];

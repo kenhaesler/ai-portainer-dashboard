@@ -240,7 +240,7 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       },
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { endpointId, namespace, podName } = request.params as {
       endpointId: number;
       namespace: string;
@@ -253,13 +253,19 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       container?: string;
     };
 
-    const logs = await portainer.getPodLogs(endpointId, namespace, podName, {
-      tail,
-      sinceSeconds,
-      timestamps,
-      container,
-    });
-    return { logs };
+    try {
+      const logs = await portainer.getPodLogs(endpointId, namespace, podName, {
+        tail,
+        sinceSeconds,
+        timestamps,
+        container,
+      });
+      return { logs };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, endpointId, namespace, podName }, 'Failed to fetch pod logs');
+      return reply.code(502).send({ error: 'Unable to fetch pod logs from Portainer', details: msg });
+    }
   });
 
   // ── Summary (for dashboard KPIs) ──────────────────────────────────────────

@@ -43,7 +43,7 @@ export interface K8sService {
   name: string;
   namespace: string;
   serviceType: string;
-  clusterIP: string;
+  clusterIP?: string;
   ports: Array<{
     name?: string;
     port: number;

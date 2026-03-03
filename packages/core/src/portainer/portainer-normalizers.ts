@@ -289,6 +289,7 @@ export interface NormalizedDeployment {
   replicas: number;
   readyReplicas: number;
   availableReplicas: number;
+  updatedReplicas: number;
   created: number;
   endpointId: number;
   endpointName: string;
@@ -401,6 +402,7 @@ export function normalizeDeployment(
     replicas: dep.spec.replicas ?? 1,
     readyReplicas: dep.status?.readyReplicas ?? 0,
     availableReplicas: dep.status?.availableReplicas ?? 0,
+    updatedReplicas: dep.status?.updatedReplicas ?? 0,
     created: parseK8sTimestamp(dep.metadata.creationTimestamp),
     endpointId,
     endpointName,
