@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 import { toast } from 'sonner';
 
 interface RemediationAction {
@@ -26,10 +27,8 @@ export function useRemediationActions(status?: string) {
     // This query is mounted in multiple places (sidebar + remediation page).
     // Prevent retry/focus bursts that can trigger transient 429 responses.
     retry: false,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: 10_000,
+    staleTime: STALE_TIMES.DEFAULT,
   });
 }
 

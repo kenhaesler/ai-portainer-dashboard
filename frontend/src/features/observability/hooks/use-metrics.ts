@@ -74,8 +74,6 @@ export function useContainerMetrics(
       );
     },
     enabled: Boolean(endpointId) && Boolean(containerId),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
     // Poll faster while empty so first data appears sooner; back off once data is flowing.
     refetchInterval: (query) => {
       const points = query.state.data?.data?.length ?? 0;
@@ -92,8 +90,6 @@ export function useAnomalies() {
   return useQuery<Anomaly[]>({
     queryKey: ['metrics', 'anomalies'],
     queryFn: () => api.get<Anomaly[]>('/api/metrics/anomalies'),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 }
 

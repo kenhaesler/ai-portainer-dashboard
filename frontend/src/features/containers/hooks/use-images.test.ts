@@ -71,7 +71,7 @@ describe('useImages', () => {
 
     const query = queryClient.getQueryCache().findAll({ queryKey: ['images', undefined] })[0];
     expect(query).toBeDefined();
-    // The query should have fetched (refetchOnMount: 'always')
+    // The query should have fetched on mount
     expect(query?.state.fetchStatus === 'fetching' || query?.state.status === 'success' || query?.state.status === 'error').toBe(true);
   });
 

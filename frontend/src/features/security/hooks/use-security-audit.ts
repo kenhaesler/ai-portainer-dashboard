@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useResource } from '@/shared/hooks/use-resource';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface SecurityAuditEntry {
   containerId: string;
@@ -45,9 +46,7 @@ export function useSecurityAudit(endpointId?: number) {
       endpointId
         ? api.get<SecurityAuditResponse>(`/api/security/audit/${endpointId}`)
         : api.get<SecurityAuditResponse>('/api/security/audit'),
-    staleTime: 120 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.MEDIUM,
   });
 }
 

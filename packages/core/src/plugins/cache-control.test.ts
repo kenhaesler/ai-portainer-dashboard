@@ -28,12 +28,12 @@ describe('cache-control plugin', () => {
     const app = await buildTestApp();
 
     const cases = [
-      { url: '/api/endpoints', expected: 'private, max-age=60' },
-      { url: '/api/containers', expected: 'private, max-age=30' },
-      { url: '/api/images', expected: 'private, max-age=120' },
-      { url: '/api/networks', expected: 'private, max-age=120' },
-      { url: '/api/stacks', expected: 'private, max-age=60' },
-      { url: '/api/dashboard/summary', expected: 'private, max-age=30' },
+      { url: '/api/endpoints', expected: 'private, max-age=60, stale-while-revalidate=120' },
+      { url: '/api/containers', expected: 'private, max-age=30, stale-while-revalidate=60' },
+      { url: '/api/images', expected: 'private, max-age=300, stale-while-revalidate=600' },
+      { url: '/api/networks', expected: 'private, max-age=300, stale-while-revalidate=600' },
+      { url: '/api/stacks', expected: 'private, max-age=300, stale-while-revalidate=600' },
+      { url: '/api/dashboard/summary', expected: 'private, max-age=30, stale-while-revalidate=60' },
     ];
 
     for (const { url, expected } of cases) {

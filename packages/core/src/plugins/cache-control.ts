@@ -14,15 +14,22 @@ interface CacheRule {
   prefix: string;
   /** max-age in seconds */
   maxAge: number;
+  /** stale-while-revalidate in seconds (optional) */
+  swr?: number;
 }
 
 const CACHE_RULES: CacheRule[] = [
-  { prefix: '/api/endpoints', maxAge: 60 },
-  { prefix: '/api/containers', maxAge: 30 },
-  { prefix: '/api/images', maxAge: 120 },
-  { prefix: '/api/networks', maxAge: 120 },
-  { prefix: '/api/stacks', maxAge: 60 },
-  { prefix: '/api/dashboard/summary', maxAge: 30 },
+  { prefix: '/api/dashboard/full', maxAge: 30, swr: 60 },
+  { prefix: '/api/dashboard/summary', maxAge: 30, swr: 60 },
+  { prefix: '/api/dashboard/kpi-history', maxAge: 120, swr: 300 },
+  { prefix: '/api/endpoints', maxAge: 60, swr: 120 },
+  { prefix: '/api/containers', maxAge: 30, swr: 60 },
+  { prefix: '/api/images', maxAge: 300, swr: 600 },
+  { prefix: '/api/networks', maxAge: 300, swr: 600 },
+  { prefix: '/api/stacks', maxAge: 300, swr: 600 },
+  { prefix: '/api/security/audit', maxAge: 120, swr: 300 },
+  { prefix: '/api/monitoring/insights', maxAge: 60, swr: 120 },
+  { prefix: '/api/metrics', maxAge: 30, swr: 60 },
 ];
 
 /** Routes that must never be cached */
@@ -55,7 +62,8 @@ async function cacheControlPlugin(fastify: FastifyInstance) {
     // Apply cache rules
     for (const rule of CACHE_RULES) {
       if (url.startsWith(rule.prefix)) {
-        reply.header('Cache-Control', `private, max-age=${rule.maxAge}`);
+        const swr = rule.swr ? `, stale-while-revalidate=${rule.swr}` : '';
+        reply.header('Cache-Control', `private, max-age=${rule.maxAge}${swr}`);
         return payload;
       }
     }

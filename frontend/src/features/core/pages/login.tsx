@@ -71,23 +71,27 @@ export default function LoginPage() {
       const { defaultLandingPage } = await login(username, password);
       setSubmitState("success");
       
+      // Always prefetch dashboard data after login, regardless of motion preference
+      const prefetchPromise = queryClient.prefetchQuery({
+        queryKey: ['dashboard', 'full', 8],
+        queryFn: () => api.get('/api/dashboard/full?topN=8&kpiHistoryHours=24'),
+        staleTime: 2 * 60 * 1000,
+      });
+
       if (reducedMotion) {
-        window.setTimeout(() => {
-          navigate(defaultLandingPage || "/", { replace: true });
-        }, 0);
+        // Wait for data (up to 3s) then navigate — no animation but data is ready
+        const maxTimer = new Promise<void>((resolve) =>
+          window.setTimeout(resolve, 3000),
+        );
+        Promise.race([prefetchPromise, maxTimer]).then(() =>
+          navigate(defaultLandingPage || "/", { replace: true }),
+        );
       } else {
         // Show the high-quality loading screen immediately
         setShowPostLoginLoading(true);
 
-        // Prefetch dashboard data in parallel while the loading screen is visible,
-        // so the home page renders instantly on arrival with no loading states.
-        // Single unified request fetches dashboard + KPI history together
-        const prefetchPromise = queryClient.prefetchQuery({
-          queryKey: ['dashboard', 'full', 8],
-          queryFn: () => api.get('/api/dashboard/full?topN=8&kpiHistoryHours=24'),
-          staleTime: 60 * 1000,
-        });
-
+        // Prefetch was already started above — reuse the promise.
+        // Show the loading screen for at least 1s, at most 5s.
         const minTimer = new Promise<void>((resolve) =>
           window.setTimeout(resolve, 1000),
         );

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { Insight, Severity } from '@dashboard/contracts';
 import { api } from '@/shared/lib/api';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 import { useSockets } from '@/providers/socket-provider';
 
 export type { Insight, Severity };
@@ -27,9 +28,7 @@ export function useMonitoring() {
   const historyQuery = useQuery<{ insights: Insight[]; total: number }>({
     queryKey: ['monitoring', 'insights'],
     queryFn: () => api.get<{ insights: Insight[]; total: number }>('/api/monitoring/insights'),
-    staleTime: 60_000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
   });
 
   useEffect(() => {

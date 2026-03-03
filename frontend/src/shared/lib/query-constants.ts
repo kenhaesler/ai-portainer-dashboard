@@ -1,10 +1,10 @@
 export const STALE_TIMES = {
-  /** 30s — dashboard data (matches QueryProvider default) */
-  DEFAULT: 30_000,
-  /** 1min — endpoints, backups */
-  SHORT: 60_000,
-  /** 2min — security audits */
-  MEDIUM: 120_000,
+  /** 2min — dashboard data (matches QueryProvider default) */
+  DEFAULT: 2 * 60_000,
+  /** 2min — endpoints, backups */
+  SHORT: 2 * 60_000,
+  /** 5min — security audits */
+  MEDIUM: 5 * 60_000,
   /** 5min — images, stacks, models */
-  LONG: 300_000,
+  LONG: 5 * 60_000,
 } as const;

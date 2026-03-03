@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 import type { DashboardSummary } from '@/features/core/hooks/use-dashboard';
 import type { DashboardResources } from '@/features/core/hooks/use-dashboard-resources';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
@@ -40,9 +41,7 @@ export function useDashboardFull(topN: number = 10) {
     queryKey: ['dashboard', 'full', topN],
     queryFn: () => api.get<DashboardFull>(`/api/dashboard/full?topN=${topN}&kpiHistoryHours=24`),
     enabled: hasToken,
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
     refetchInterval: enabled ? interval * 1000 : false,
   });
 

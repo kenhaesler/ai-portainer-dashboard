@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface LlmTrace {
   id: number;
@@ -94,9 +95,7 @@ export function useLlmTraces(limit: number = 50) {
   return useQuery<LlmTrace[]>({
     queryKey: ['llm-traces', limit],
     queryFn: async () => normalizeLlmTraces(await api.get<unknown>(`/api/llm/traces?limit=${limit}`)),
-    staleTime: 30 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.DEFAULT,
   });
 }
 
@@ -104,8 +103,6 @@ export function useLlmStats(hours: number = 24) {
   return useQuery<LlmStats>({
     queryKey: ['llm-stats', hours],
     queryFn: async () => normalizeLlmStats(await api.get<unknown>(`/api/llm/stats?hours=${hours}`)),
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
   });
 }

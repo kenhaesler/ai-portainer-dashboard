@@ -28,11 +28,10 @@ describe('useDashboard', () => {
     expect(options.enabled).toBe(true);
   });
 
-  it('forces refetch on mount to recover when navigating back to home', () => {
+  it('uses auto-refresh interval for refetchInterval', () => {
     useDashboard();
 
     const options = mockUseQuery.mock.calls[0][0];
-    expect(options.refetchOnMount).toBe('always');
     expect(options.refetchInterval).toBe(30_000);
   });
 });
