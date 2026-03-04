@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vites
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
-import { settingsRoutes } from './settings.js';
+import { settingsRoutes } from '@dashboard/foundation';
 
 const mockQueryOneUserDefaultLandingPage = vi.fn();
 const mockSetUserDefaultLandingPage = vi.fn();

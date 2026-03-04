@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { userRoutes } from './users.js';
+import { userRoutes } from '@dashboard/foundation';
 
 // Kept: user-store mock — no PostgreSQL in CI
 vi.mock('@dashboard/core/services/user-store.js', () => ({

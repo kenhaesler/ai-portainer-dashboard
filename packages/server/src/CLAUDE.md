@@ -29,6 +29,6 @@ Adapters are passed to domain routes/services via `Fastify.register()` options o
 ## Key Rules
 
 - **All cross-domain imports belong in `wiring.ts`** — never add domain package imports to `app.ts` or other files (except route imports for registration)
-- Route registration order: backend foundational routes first, then domain package routes
+- Route registration order: `@dashboard/foundation` routes first, then domain package routes
 - `initRemediationDeps()` and `initInvestigationDeps()` must be called before route registration
 - Scheduler starts after server is listening (called from `index.ts`)

@@ -3,7 +3,7 @@ import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import rateLimitPlugin from '@dashboard/core/plugins/rate-limit.js';
-import { authRoutes } from './auth.js';
+import { authRoutes } from '@dashboard/foundation';
 
 const mockSignJwt = vi.fn();
 const mockCreateSession = vi.fn();
