@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface DashboardKpis {
   endpoints: number;
@@ -78,9 +79,7 @@ export function useDashboard() {
     queryKey: ['dashboard', 'summary'],
     queryFn: () => api.get<DashboardSummary>('/api/dashboard/summary'),
     enabled: hasToken,
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
     refetchInterval: enabled ? interval * 1000 : false,
   });
 }

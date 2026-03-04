@@ -34,8 +34,6 @@ export interface Endpoint {
 export function useEndpoints() {
   return useResource<Endpoint[]>(['endpoints'], '/api/endpoints', {
     staleTime: STALE_TIMES.SHORT,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 }
 

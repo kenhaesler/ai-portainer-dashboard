@@ -19,7 +19,7 @@ describe('QueryProvider', () => {
 
     const defaults = JSON.parse(getByTestId('defaults').textContent ?? '{}');
 
-    expect(defaults.queries.staleTime).toBe(30_000);
+    expect(defaults.queries.staleTime).toBe(2 * 60_000);
     expect(defaults.queries.gcTime).toBe(600_000);
     expect(defaults.queries.retry).toBe(2);
     expect(defaults.queries.refetchOnWindowFocus).toBe(false);

@@ -145,7 +145,7 @@ describe('LoginPage', () => {
     expect(mockPrefetchQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         queryKey: ['dashboard', 'full', 8],
-        staleTime: 60_000,
+        staleTime: 2 * 60_000,
       }),
     );
 

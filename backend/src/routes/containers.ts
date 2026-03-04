@@ -209,12 +209,52 @@ export async function containersRoutes(fastify: FastifyInstance) {
       return [];
     }
 
-    // Parse composite IDs into a lookup set
-    const requested = new Set(pairs);
+    // Parse composite IDs into per-endpoint groups for targeted fetching
+    const byEndpoint = new Map<number, string[]>();
+    for (const pair of pairs) {
+      const colonIndex = pair.indexOf(':');
+      if (colonIndex === -1) continue;
+      const epId = Number(pair.slice(0, colonIndex));
+      const cId = pair.slice(colonIndex + 1);
+      if (Number.isNaN(epId) || !cId) continue;
+      const list = byEndpoint.get(epId) ?? [];
+      list.push(cId);
+      byEndpoint.set(epId, list);
+    }
+
+    if (byEndpoint.size === 0) {
+      return [];
+    }
 
     try {
-      const { results } = await fetchAllContainers();
-      return results.filter((c) => requested.has(`${c.endpointId}:${c.id}`));
+      // Fetch endpoints for name resolution (cached)
+      const endpoints = await cachedFetchSWR(
+        getCacheKey('endpoints'),
+        TTL.ENDPOINTS,
+        () => portainer.getEndpoints(),
+      );
+      const endpointMap = new Map(endpoints.map((ep) => [ep.Id, ep]));
+
+      // Fetch only the specific containers we need, in parallel per endpoint
+      const settled = await Promise.allSettled(
+        [...byEndpoint.entries()].map(async ([epId, containerIds]) => {
+          const ep = endpointMap.get(epId);
+          if (!ep) return [];
+          const containers = await Promise.allSettled(
+            containerIds.map((cId) =>
+              portainer.getContainer(epId, cId)
+                .then((c) => normalizeContainer(c, ep.Id, ep.Name))
+            ),
+          );
+          return containers
+            .filter((r): r is PromiseFulfilledResult<ReturnType<typeof normalizeContainer>> => r.status === 'fulfilled')
+            .map((r) => r.value);
+        }),
+      );
+
+      return settled
+        .filter((r): r is PromiseFulfilledResult<ReturnType<typeof normalizeContainer>[]> => r.status === 'fulfilled')
+        .flatMap((r) => r.value);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch favorite containers');

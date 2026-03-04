@@ -114,8 +114,6 @@ export function useTraces(options?: TracesOptions) {
       '/api/traces',
       { params: options as Record<string, string | number | boolean | undefined> }
     ),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 }
 
@@ -134,8 +132,6 @@ export function useServiceMap(options?: TracesOptions) {
       '/api/traces/service-map',
       { params: options as Record<string, string | number | boolean | undefined> }
     ),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 }
 
@@ -146,7 +142,5 @@ export function useTraceSummary(options?: Omit<TracesOptions, 'limit'>) {
       '/api/traces/summary',
       { params: options as Record<string, string | number | boolean | undefined> }
     ),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 }

@@ -23,8 +23,6 @@ export function useImages(endpointId?: number, options?: UseImagesOptions) {
     : '/api/images';
   return useResource<DockerImage[]>(['images', endpointId], path, {
     staleTime: STALE_TIMES.LONG,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
     refetchInterval: options?.refetchInterval ?? false,
   });
 }

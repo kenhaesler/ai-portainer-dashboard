@@ -39,8 +39,6 @@ export function useEbpfCoverage() {
   return useQuery<{ coverage: CoverageRecord[] }>({
     queryKey: ['ebpf', 'coverage'],
     queryFn: () => api.get('/api/ebpf/coverage'),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
     refetchInterval: isPageVisible ? 120_000 : false,
   });
 }
@@ -51,8 +49,6 @@ export function useEbpfCoverageSummary() {
   return useQuery<CoverageSummary>({
     queryKey: ['ebpf', 'coverage', 'summary'],
     queryFn: () => api.get('/api/ebpf/coverage/summary'),
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
     refetchInterval: isPageVisible ? 120_000 : false,
   });
 }

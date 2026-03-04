@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface CorrelatedAnomaly {
   containerId: string;
@@ -23,9 +24,7 @@ export function useCorrelatedAnomalies(windowSize: number = 30, minScore: number
       api.get<CorrelatedAnomaly[]>(
         `/api/anomalies/correlated?windowSize=${windowSize}&minScore=${minScore}`,
       ),
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
     retry: 1,
   });
 }

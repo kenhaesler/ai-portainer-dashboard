@@ -257,17 +257,17 @@ export function AppLayout() {
                 variants={{
                   initial: (currentDirection: number) => ({
                     opacity: 0,
-                    x: currentDirection > 0 ? 24 : -24,
+                    x: currentDirection > 0 ? 16 : -16,
                   }),
                   animate: {
                     opacity: 1,
                     x: 0,
-                    transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
+                    transition: { duration: 0.12, ease: [0.32, 0.72, 0, 1] },
                   },
                   exit: (currentDirection: number) => ({
                     opacity: 0,
-                    x: currentDirection > 0 ? -18 : 18,
-                    transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
+                    x: currentDirection > 0 ? -12 : 12,
+                    transition: { duration: 0.1, ease: [0.32, 0.72, 0, 1] },
                   }),
                 }}
               >

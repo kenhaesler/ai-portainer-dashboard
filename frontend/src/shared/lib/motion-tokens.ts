@@ -7,10 +7,10 @@
 
 /* ── Durations (seconds) ── */
 export const duration = {
-  fast: 0.15,
-  base: 0.25,
-  slow: 0.4,
-  slower: 0.6,
+  fast: 0.1,
+  base: 0.15,
+  slow: 0.2,
+  slower: 0.35,
 } as const;
 
 /* ── Easing curves (cubic-bezier arrays) ── */

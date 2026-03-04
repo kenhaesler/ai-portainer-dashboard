@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface Container {
   id: string;
@@ -69,9 +70,7 @@ export function useContainers(params?: UseContainersParams) {
       const response = await api.get<Container[] | PartialContainersResponse>(path);
       return normalizeContainersResponse(response);
     },
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
   });
 }
 
@@ -99,9 +98,7 @@ export function usePaginatedContainers(params: {
 
       return api.get<PaginatedContainers>(`/api/containers?${searchParams.toString()}`);
     },
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
   });
 }
 
@@ -113,8 +110,7 @@ export function useFavoriteContainers(ids: string[]) {
       const qs = `ids=${ids.map(encodeURIComponent).join(',')}`;
       return api.get<Container[]>(`/api/containers/favorites?${qs}`);
     },
-    staleTime: 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
     enabled: ids.length > 0,
   });
 }
@@ -123,7 +119,6 @@ export function useContainerCount() {
   return useQuery<{ count: number }>({
     queryKey: ['containers', 'count'],
     queryFn: () => api.get<{ count: number }>('/api/containers/count'),
-    staleTime: 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
   });
 }

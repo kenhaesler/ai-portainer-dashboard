@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { STALE_TIMES } from '@/shared/lib/query-constants';
 
 export interface StackResourceUsage {
   name: string;
@@ -38,9 +39,7 @@ export function useDashboardResources(topN: number = 10) {
     queryKey: ['dashboard', 'resources', topN],
     queryFn: () => api.get<DashboardResources>(`/api/dashboard/resources?topN=${topN}`),
     enabled: hasToken,
-    staleTime: 60 * 1000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: STALE_TIMES.SHORT,
     refetchInterval: enabled ? interval * 1000 : false,
   });
 }

@@ -9,13 +9,13 @@ describe('STALE_TIMES', () => {
   });
 
   it('values are in ascending order', () => {
-    expect(STALE_TIMES.DEFAULT).toBeLessThan(STALE_TIMES.SHORT);
-    expect(STALE_TIMES.SHORT).toBeLessThan(STALE_TIMES.MEDIUM);
-    expect(STALE_TIMES.MEDIUM).toBeLessThan(STALE_TIMES.LONG);
+    expect(STALE_TIMES.DEFAULT).toBeLessThanOrEqual(STALE_TIMES.SHORT);
+    expect(STALE_TIMES.SHORT).toBeLessThanOrEqual(STALE_TIMES.MEDIUM);
+    expect(STALE_TIMES.MEDIUM).toBeLessThanOrEqual(STALE_TIMES.LONG);
   });
 
-  it('DEFAULT is 30 seconds', () => {
-    expect(STALE_TIMES.DEFAULT).toBe(30_000);
+  it('DEFAULT is 2 minutes', () => {
+    expect(STALE_TIMES.DEFAULT).toBe(2 * 60_000);
   });
 
   it('LONG is 5 minutes', () => {

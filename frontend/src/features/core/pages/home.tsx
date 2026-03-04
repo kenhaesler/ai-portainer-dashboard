@@ -4,7 +4,6 @@ import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } 
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
 import { useFavoriteContainers } from '@/features/containers/hooks/use-containers';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { useKpiHistory } from '@/features/observability/hooks/use-kpi-history';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
@@ -39,7 +38,8 @@ export default function HomePage() {
   const { interval, setInterval } = useAutoRefresh(30);
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
-  const { data: kpiHistory } = useKpiHistory(24);
+  // KPI history is included in the unified /api/dashboard/full response — no separate call needed
+  const kpiHistory = fullData?.kpiHistory;
 
   const endpointChartData = useMemo(() => {
     if (!endpoints) return [];

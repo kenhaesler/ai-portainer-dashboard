@@ -19,7 +19,5 @@ export function useNetworks(endpointId?: number) {
     : '/api/networks';
   return useResource<Network[]>(['networks', endpointId], path, {
     staleTime: STALE_TIMES.LONG,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 }

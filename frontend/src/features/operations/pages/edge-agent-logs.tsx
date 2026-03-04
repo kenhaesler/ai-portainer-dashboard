@@ -259,8 +259,6 @@ export default function EdgeAgentLogsPage() {
       return api.get<LogsResponse>('/api/logs/search', { params });
     },
     retry: false, // Don't retry on 503 (not configured)
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
   });
 
   // Treat both isLoading and isPending-without-data as "loading" to avoid
