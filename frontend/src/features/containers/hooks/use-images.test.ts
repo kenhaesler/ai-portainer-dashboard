@@ -58,7 +58,7 @@ describe('useImages', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/api/images?endpointId=1');
   });
 
-  it('sets refetchOnMount to always', () => {
+  it('fetches on mount', () => {
     mockApi.get.mockResolvedValue([]);
 
     const queryClient = new QueryClient({

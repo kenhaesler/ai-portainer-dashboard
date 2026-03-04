@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { STALE_TIMES } from '@/shared/lib/query-constants';
+import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
 import { toast } from 'sonner';
 
 interface RemediationAction {
@@ -18,6 +19,8 @@ interface RemediationAction {
 }
 
 export function useRemediationActions(status?: string) {
+  const isPageVisible = usePageVisibility();
+
   return useQuery<RemediationAction[]>({
     queryKey: ['remediation', 'actions', status],
     queryFn: () => {
@@ -29,6 +32,8 @@ export function useRemediationActions(status?: string) {
     retry: false,
     refetchOnReconnect: false,
     staleTime: STALE_TIMES.DEFAULT,
+    // Poll for new pending actions so badge counts stay fresh
+    refetchInterval: isPageVisible ? 30_000 : false,
   });
 }
 
