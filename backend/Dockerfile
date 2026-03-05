@@ -15,8 +15,9 @@ COPY packages/security/package.json ./packages/security/
 COPY packages/observability/package.json ./packages/observability/
 COPY packages/operations/package.json ./packages/operations/
 COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
+COPY packages/foundation/package.json ./packages/foundation/
 COPY packages/server/package.json ./packages/server/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/server
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server
 COPY packages/contracts/ ./packages/contracts/
 COPY packages/core/ ./packages/core/
 COPY packages/infrastructure/ ./packages/infrastructure/
@@ -25,6 +26,8 @@ COPY packages/observability/ ./packages/observability/
 COPY packages/operations/ ./packages/operations/
 COPY packages/ai-intelligence/ ./packages/ai-intelligence/
 RUN npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
+COPY packages/foundation/ ./packages/foundation/
+RUN npm run build -w @dashboard/foundation
 COPY backend/tsconfig.json ./backend/
 COPY backend/tsconfig.build.json ./backend/
 COPY backend/src/ backend/src/
@@ -48,8 +51,9 @@ COPY packages/security/package.json ./packages/security/
 COPY packages/observability/package.json ./packages/observability/
 COPY packages/operations/package.json ./packages/operations/
 COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
+COPY packages/foundation/package.json ./packages/foundation/
 COPY packages/server/package.json ./packages/server/
-RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/server --omit=dev
+RUN --mount=type=cache,target=/root/.npm npm ci -w backend -w @dashboard/contracts -w @dashboard/core -w @dashboard/infrastructure -w @dashboard/security -w @dashboard/observability -w @dashboard/operations -w @dashboard/ai -w @dashboard/foundation -w @dashboard/server --omit=dev
 
 # Utility stage — install runtime tools and prepare filesystem
 FROM dhi.io/node:24-alpine3.23-dev AS tools
@@ -99,9 +103,9 @@ COPY --chown=node:node --from=builder /app/packages/operations/dist/ ./node_modu
 COPY --chown=node:node --from=builder /app/packages/operations/package.json ./node_modules/@dashboard/operations/package.json
 COPY --chown=node:node --from=builder /app/packages/ai-intelligence/dist/ ./node_modules/@dashboard/ai/dist/
 COPY --chown=node:node --from=builder /app/packages/ai-intelligence/package.json ./node_modules/@dashboard/ai/package.json
-# backend routes (used by @dashboard/server at runtime via 'backend' workspace dep)
-COPY --chown=node:node --from=builder /app/backend/dist/ ./node_modules/backend/dist/
-COPY --chown=node:node --from=builder /app/backend/package.json ./node_modules/backend/package.json
+# @dashboard/foundation routes (extracted from backend, used by @dashboard/server)
+COPY --chown=node:node --from=builder /app/packages/foundation/dist/ ./node_modules/@dashboard/foundation/dist/
+COPY --chown=node:node --from=builder /app/packages/foundation/package.json ./node_modules/@dashboard/foundation/package.json
 # @dashboard/server is the application entry point
 COPY --chown=node:node --from=builder /app/packages/server/dist/ dist/
 

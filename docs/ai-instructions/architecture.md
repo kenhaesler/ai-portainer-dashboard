@@ -4,7 +4,7 @@ Detailed directory structure and responsibilities for the AI Portainer Dashboard
 
 ## Monorepo Structure
 
-npm workspaces monorepo with 8 backend packages under `packages/` and a React frontend under `frontend/`.
+npm workspaces monorepo with 9 backend packages under `packages/` and a React frontend under `frontend/`.
 
 ```
 packages/
@@ -15,10 +15,11 @@ packages/
 ├── operations/      @dashboard/operations      Remediation, backup, webhooks, notifications
 ├── security/        @dashboard/security        Scanning, PCAP, Harbor, eBPF
 ├── infrastructure/  @dashboard/infrastructure  Edge agents, Docker logs, ELK
+├── foundation/      @dashboard/foundation      Foundational routes (auth, containers, settings, etc.)
 └── server/          @dashboard/server          App assembly, DI wiring, scheduler
 
 backend/src/
-├── routes/          14 foundational routes (auth, dashboard, containers, settings, etc.)
+├── routes/          Tests for foundational routes (source now in @dashboard/foundation)
 └── test/            Shared test utilities
 
 frontend/src/
@@ -39,6 +40,8 @@ frontend/src/
 @dashboard/security, @dashboard/operations
        ↑
 @dashboard/ai         (imports ONLY core + contracts — never other domains)
+       ↑
+@dashboard/foundation (foundational routes — imports core, contracts, ai, observability, security)
        ↑
 @dashboard/server     (composition root — wires all packages via DI)
 ```
@@ -115,9 +118,9 @@ Cross-domain communication is resolved via dependency injection in `packages/ser
 | `socket-setup.ts` | Socket.IO namespace initialization |
 | `index.ts` | Entry point — DB init, server start, graceful shutdown |
 
-## Backend Routes (`backend/src/routes/`)
+### @dashboard/foundation — Foundational Routes
 
-14 foundational routes not yet extracted to domain packages:
+15 cross-domain routes tightly coupled to the Portainer API and core services, extracted from `backend/src/routes/`:
 
 | Route | Purpose |
 |-------|---------|
@@ -135,6 +138,7 @@ Cross-domain communication is resolved via dependency injection in `packages/ser
 | `search.ts` | Cross-resource search |
 | `users.ts` | User management |
 | `cache-admin.ts` | Redis cache admin |
+| `kubernetes.ts` | Kubernetes endpoint support |
 
 ## Frontend (`frontend/src/`) — React 19, TypeScript, Vite, Tailwind CSS v4
 
