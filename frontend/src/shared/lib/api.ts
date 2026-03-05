@@ -1,3 +1,5 @@
+import { ApiError } from './api-error';
+
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const AUTH_TOKEN_KEY = 'auth_token';
 
@@ -87,16 +89,18 @@ class ApiClient {
       clearTimeout(timeout);
     }
 
+    const requestId = headers.get('X-Request-ID') ?? undefined;
+
     if (response.status === 401) {
       this.token = null;
       window.dispatchEvent(new CustomEvent('auth:expired'));
-      throw new Error('Session expired');
+      throw new ApiError(401, 'Session expired', requestId);
     }
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       const fallback = describeHttpError(response.status);
-      throw new Error(body.error || fallback);
+      throw new ApiError(response.status, body.error || fallback, requestId);
     }
 
     return response.json();
