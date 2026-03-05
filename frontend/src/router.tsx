@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '@/features/core/components/layout/app-layout';
 import { RouteErrorBoundary } from '@/shared/components/feedback/route-error-boundary';
 import { ChunkLoadErrorBoundary } from '@/shared/components/feedback/chunk-load-error-boundary';
+import { ProtectedRoute } from '@/shared/components/feedback/protected-route';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('@/features/core/pages/login'));
@@ -97,8 +98,8 @@ export const router = createBrowserRouter([
       { path: 'users', element: <Navigate to="/settings?tab=users" replace /> },
       { path: 'investigations/:id', element: <LazyPage><InvestigationDetail /></LazyPage> },
       { path: 'investigations/insight/:insightId', element: <LazyPage><InvestigationDetail /></LazyPage> },
-      { path: 'backups', element: <LazyPage><Backups /></LazyPage> },
-      { path: 'settings', element: <LazyPage><Settings /></LazyPage> },
+      { path: 'backups', element: <ProtectedRoute requiredRole="admin"><LazyPage><Backups /></LazyPage></ProtectedRoute> },
+      { path: 'settings', element: <ProtectedRoute requiredRole="admin"><LazyPage><Settings /></LazyPage></ProtectedRoute> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace />, errorElement: <RouteErrorBoundary /> },
