@@ -113,7 +113,7 @@ jobs:
         run: npm ci
 
       - name: Build workspace packages
-        run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
+        run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w @dashboard/foundation
 
       - name: Run backend tests
         run: npm run test -w backend -- --coverage
@@ -170,11 +170,11 @@ jobs:
 
       - name: Build workspace packages
         # Use npm run build (not tsc --build) so @dashboard/core also copies SQL migrations
-        run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai
+        run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w @dashboard/foundation
 
       - name: Run workspace package tests (parallel)
         run: >
-          npx concurrently --kill-others-on-fail --names contracts,core,infra,security,obs,ops,ai,server
+          npx concurrently --kill-others-on-fail --names contracts,core,infra,security,obs,ops,ai,foundation,server
           "npm run test -w @dashboard/contracts"
           "npm run test -w @dashboard/core"
           "npm run test -w @dashboard/infrastructure"
@@ -182,6 +182,7 @@ jobs:
           "npm run test -w @dashboard/observability"
           "npm run test -w @dashboard/operations"
           "npm run test -w @dashboard/ai"
+          "npm run test -w @dashboard/foundation"
           "npm run test -w @dashboard/server"
         env:
           POSTGRES_TEST_URL: postgresql://app_user:changeme-postgres-app@localhost:5433/portainer_dashboard_test

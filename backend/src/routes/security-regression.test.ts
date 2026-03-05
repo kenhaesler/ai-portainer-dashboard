@@ -315,14 +315,22 @@ vi.mock('ollama', async () =>
 // ─── Route Imports ──────────────────────────────────────────────────────
 import authPlugin from '@dashboard/core/plugins/auth.js';
 import rateLimitPlugin from '@dashboard/core/plugins/rate-limit.js';
-import { healthRoutes } from './health.js';
-import { authRoutes } from './auth.js';
-import { oidcRoutes } from './oidc.js';
-import { dashboardRoutes } from './dashboard.js';
-import { endpointsRoutes } from './endpoints.js';
-import { containersRoutes } from './containers.js';
-import { containerLogsRoutes } from './container-logs.js';
-import { stacksRoutes } from './stacks.js';
+import {
+  healthRoutes,
+  authRoutes,
+  oidcRoutes,
+  dashboardRoutes,
+  endpointsRoutes,
+  containersRoutes,
+  containerLogsRoutes,
+  stacksRoutes,
+  settingsRoutes,
+  imagesRoutes,
+  networksRoutes,
+  searchRoutes,
+  cacheAdminRoutes,
+  userRoutes,
+} from '@dashboard/foundation';
 import {
   monitoringRoutes,
   investigationRoutes,
@@ -343,14 +351,8 @@ import {
   notificationRoutes,
   webhookRoutes,
 } from '@dashboard/operations';
-import { settingsRoutes } from './settings.js';
-import { imagesRoutes } from './images.js';
-import { networksRoutes } from './networks.js';
-import { searchRoutes } from './search.js';
-import { cacheAdminRoutes } from './cache-admin.js';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import type { LLMInterface } from '@dashboard/contracts';
-import { userRoutes } from './users.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { observabilityRoutes } from '@dashboard/observability/routes/index.js';
 

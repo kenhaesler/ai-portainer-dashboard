@@ -27,7 +27,8 @@
     { "path": "../packages/security/tsconfig.build.json" },
     { "path": "../packages/observability/tsconfig.build.json" },
     { "path": "../packages/operations/tsconfig.build.json" },
-    { "path": "../packages/ai-intelligence/tsconfig.build.json" }
+    { "path": "../packages/ai-intelligence/tsconfig.build.json" },
+    { "path": "../packages/foundation/tsconfig.build.json" }
   ],
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]

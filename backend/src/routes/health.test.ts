@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import Fastify, { FastifyInstance } from 'fastify';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { healthRoutes } from './health.js';
+import { healthRoutes } from '@dashboard/foundation';
 
 // Kept: timescale mock — no TimescaleDB in CI
 vi.mock('@dashboard/core/db/timescale.js', () => ({ isMetricsDbHealthy: vi.fn(), isMetricsDbReady: vi.fn() }));

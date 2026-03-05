@@ -11,22 +11,24 @@ import securityHeadersPlugin from '@dashboard/core/plugins/security-headers.js';
 import cacheControlPlugin from '@dashboard/core/plugins/cache-control.js';
 import staticPlugin from '@dashboard/core/plugins/static.js';
 
-// Routes hosted in `backend` (not yet extracted to domain packages)
-import { healthRoutes } from 'backend/routes/health.js';
-import { authRoutes } from 'backend/routes/auth.js';
-import { oidcRoutes } from 'backend/routes/oidc.js';
-import { dashboardRoutes } from 'backend/routes/dashboard.js';
-import { endpointsRoutes } from 'backend/routes/endpoints.js';
-import { containersRoutes } from 'backend/routes/containers.js';
-import { containerLogsRoutes } from 'backend/routes/container-logs.js';
-import { stacksRoutes } from 'backend/routes/stacks.js';
-import { settingsRoutes } from 'backend/routes/settings.js';
-import { imagesRoutes } from 'backend/routes/images.js';
-import { networksRoutes } from 'backend/routes/networks.js';
-import { searchRoutes } from 'backend/routes/search.js';
-import { cacheAdminRoutes } from 'backend/routes/cache-admin.js';
-import { userRoutes } from 'backend/routes/users.js';
-import { kubernetesRoutes } from 'backend/routes/kubernetes.js';
+// Foundational routes (cross-domain, Portainer API glue)
+import {
+  healthRoutes,
+  authRoutes,
+  oidcRoutes,
+  dashboardRoutes,
+  endpointsRoutes,
+  containersRoutes,
+  containerLogsRoutes,
+  stacksRoutes,
+  settingsRoutes,
+  imagesRoutes,
+  networksRoutes,
+  searchRoutes,
+  cacheAdminRoutes,
+  userRoutes,
+  kubernetesRoutes,
+} from '@dashboard/foundation';
 
 // Routes from domain packages
 import {
@@ -137,7 +139,7 @@ export async function buildApp() {
     generateForecast,
   });
 
-  // Routes — backend (not yet domain-extracted)
+  // Routes — foundational (cross-domain, @dashboard/foundation)
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(oidcRoutes);

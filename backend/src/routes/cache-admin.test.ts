@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vites
 import { testAdminOnly } from '../test-utils/rbac-test-helper.js';
 import Fastify, { FastifyInstance } from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
-import { cacheAdminRoutes } from './cache-admin.js';
+import { cacheAdminRoutes } from '@dashboard/foundation';
 
 // Kept: audit-logger mock — avoids side effects from real audit log writes
 vi.mock('@dashboard/core/services/audit-logger.js', () => ({
