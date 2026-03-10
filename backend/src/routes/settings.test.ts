@@ -256,6 +256,7 @@ describe('settings security', () => {
   });
 
   testAdminOnly(() => secApp, (r) => { currentRole = r; }, 'GET', '/api/settings');
+  testAdminOnly(() => secApp, (r) => { currentRole = r; }, 'GET', '/api/settings/audit-log');
 
   it('redacts sensitive values for admin on GET /api/settings', async () => {
     mockQuery.mockResolvedValueOnce([
