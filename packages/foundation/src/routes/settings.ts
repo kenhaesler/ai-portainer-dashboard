@@ -229,7 +229,7 @@ export async function settingsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: AuditLogQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { action, userId, limit = 100, offset = 0, cursor } = request.query as {
       action?: string;
