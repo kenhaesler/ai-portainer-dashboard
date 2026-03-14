@@ -6,6 +6,7 @@ import '@fastify/swagger';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { LogsSearchQuerySchema, LogsTestBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { getElasticsearchConfig } from '@dashboard/infrastructure';
+import { validateOutboundWebhookUrl } from '@dashboard/core/utils/network-security.js';
 
 const log = createChildLogger('logs-route');
 
@@ -68,7 +69,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
 
     try {
       const must: unknown[] = [];
-      if (query) must.push({ query_string: { query } });
+      if (query) must.push({ query_string: { query, fields: ['message', 'log.level', 'host.name', '@timestamp'], allow_leading_wildcard: false, max_determinized_states: 10000 } });
       if (hostname) must.push({ match: { 'host.name': hostname } });
       if (level) must.push({ match: { 'log.level': level } });
 
@@ -138,9 +139,16 @@ export async function logsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       body: LogsTestBodySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { endpoint, apiKey, verifySsl = true } = request.body as { endpoint: string; apiKey?: string; verifySsl?: boolean };
+
+    try {
+      validateOutboundWebhookUrl(endpoint);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid endpoint URL';
+      return reply.code(400).send({ error: msg });
+    }
 
     try {
       const controller = new AbortController();

@@ -182,14 +182,14 @@ export const MetricsResponseSchema = z.object({
 });
 
 export const AnomaliesQuerySchema = z.object({
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
 });
 
 // ─── Monitoring schemas ─────────────────────────────────────────────
 export const InsightsQuerySchema = z.object({
   severity: z.enum(['critical', 'warning', 'info']).optional(),
   acknowledged: z.coerce.boolean().optional(),
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
   offset: z.coerce.number().default(0),
   cursor: z.string().optional(),
 });
@@ -201,7 +201,7 @@ export const InsightIdParamsSchema = z.object({
 // ─── Remediation schemas ────────────────────────────────────────────
 export const RemediationQuerySchema = z.object({
   status: z.string().optional(),
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
   offset: z.coerce.number().default(0),
 });
 
@@ -262,7 +262,7 @@ export const TracesQuerySchema = z.object({
   telemetrySdkVersion: z.string().optional(),
   otelScopeName: z.string().optional(),
   otelScopeVersion: z.string().optional(),
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
 });
 
 export const TraceIdParamsSchema = z.object({
@@ -307,23 +307,23 @@ export const PreferencesUpdateBodySchema = z.object({
 export const AuditLogQuerySchema = z.object({
   action: z.string().optional(),
   userId: z.string().optional(),
-  limit: z.coerce.number().default(100),
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
   offset: z.coerce.number().default(0),
   cursor: z.string().optional(),
 });
 
 // ─── Logs schemas ───────────────────────────────────────────────────
 export const LogsSearchQuerySchema = z.object({
-  query: z.string().optional(),
+  query: z.string().max(500).optional(),
   hostname: z.string().optional(),
   level: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-  limit: z.coerce.number().default(100),
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
 export const LogsTestBodySchema = z.object({
-  endpoint: z.string(),
+  endpoint: z.string().url(),
   apiKey: z.string().optional(),
   verifySsl: z.coerce.boolean().optional().default(true),
 });
@@ -342,7 +342,7 @@ export const NormalizedImageSchema = z.object({
 
 // ─── Container Logs schemas ─────────────────────────────────────────
 export const ContainerLogsQuerySchema = z.object({
-  tail: z.coerce.number().default(100),
+  tail: z.coerce.number().int().min(1).max(10000).default(100),
   since: z.coerce.number().optional(),
   until: z.coerce.number().optional(),
   timestamps: QueryBooleanSchema.default(true),
@@ -371,7 +371,7 @@ export const DashboardKpisSchema = z.object({
 export const InvestigationsQuerySchema = z.object({
   status: z.enum(['pending', 'gathering', 'analyzing', 'complete', 'failed']).optional(),
   container_id: z.string().optional(),
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
   offset: z.coerce.number().default(0),
 });
 
@@ -386,7 +386,7 @@ export const InsightIdParamsForInvestigationSchema = z.object({
 // ─── Search schemas ─────────────────────────────────────────────────
 export const SearchQuerySchema = z.object({
   query: z.string().optional(),
-  limit: z.coerce.number().default(8),
+  limit: z.coerce.number().int().min(1).max(100).default(8),
   logLimit: z.coerce.number().default(8),
   includeLogs: QueryBooleanSchema.optional().default(false),
 });
@@ -394,7 +394,7 @@ export const SearchQuerySchema = z.object({
 // ─── Notification schemas ───────────────────────────────────────────
 export const NotificationHistoryQuerySchema = z.object({
   channel: z.enum(['teams', 'email', 'discord', 'telegram']).optional(),
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
   offset: z.coerce.number().default(0),
 });
 
@@ -448,7 +448,7 @@ export const WebhookUpdateBodySchema = z.object({
 });
 
 export const WebhookDeliveriesQuerySchema = z.object({
-  limit: z.coerce.number().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
   offset: z.coerce.number().default(0),
 });
 
@@ -475,7 +475,7 @@ export const LlmTestPromptBodySchema = z.object({
 });
 
 export const LlmTracesQuerySchema = z.object({
-  limit: z.coerce.number().optional().default(50),
+  limit: z.coerce.number().int().min(1).max(1000).optional().default(50),
 });
 
 export const LlmStatsQuerySchema = z.object({
