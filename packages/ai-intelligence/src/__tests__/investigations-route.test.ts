@@ -97,12 +97,12 @@ describe('Investigation Routes', () => {
 
       await app.inject({
         method: 'GET',
-        url: '/api/investigations?status=completed',
+        url: '/api/investigations?status=complete',
         headers: { authorization: 'Bearer test' },
       });
 
       expect(mockGetInvestigations).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'completed' }),
+        expect.objectContaining({ status: 'complete' }),
       );
     });
 
