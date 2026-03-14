@@ -486,7 +486,7 @@ export const LlmStatsQuerySchema = z.object({
 export const ReportsQuerySchema = z.object({
   timeRange: z.enum(['24h', '7d', '30d']).optional(),
   endpointId: z.coerce.number().optional(),
-  containerId: z.string().optional(),
+  containerId: z.string().max(128).optional(),
   includeInfrastructure: QueryBooleanSchema.optional(),
   excludeInfrastructure: QueryBooleanSchema.optional(),
 });
