@@ -69,7 +69,7 @@ export async function logsRoutes(fastify: FastifyInstance) {
 
     try {
       const must: unknown[] = [];
-      if (query) must.push({ query_string: { query, fields: ['message', 'log.level', 'host.name', '@timestamp'], allow_leading_wildcard: false, max_determinized_states: 10000 } });
+      if (query) must.push({ query_string: { query, fields: ['message', 'log.level', 'host.name'], allow_leading_wildcard: false, max_determinized_states: 1000 } });
       if (hostname) must.push({ match: { 'host.name': hostname } });
       if (level) must.push({ match: { 'log.level': level } });
 
