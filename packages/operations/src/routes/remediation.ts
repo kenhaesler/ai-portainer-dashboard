@@ -113,20 +113,20 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     const { reason } = (request.body as { reason?: string }) || {};
     const db = getDbForDomain('actions');
 
-    const action = await db.queryOne<any>('SELECT * FROM actions WHERE id = ?', [id]);
-    if (!action) return reply.code(404).send({ error: 'Action not found' });
-    if (action.status !== 'pending') {
+    const rejectResult = await db.execute(`
+      UPDATE actions SET status = 'rejected', rejected_by = ?, rejected_at = NOW(), rejection_reason = ?
+      WHERE id = ? AND status = 'pending'
+    `, [request.user?.username, reason || null, id]);
+
+    if (rejectResult.changes === 0) {
+      const existing = await db.queryOne<{ status: string } | null>('SELECT status FROM actions WHERE id = ?', [id]);
+      if (!existing) return reply.code(404).send({ error: 'Action not found' });
       return reply.code(409).send({
-        error: `Action is already ${action.status}. Refresh to see latest status.`,
+        error: `Action is already ${existing.status}. Refresh to see latest status.`,
         actionId: id,
-        currentStatus: action.status,
+        currentStatus: existing.status,
       });
     }
-
-    await db.execute(`
-      UPDATE actions SET status = 'rejected', rejected_by = ?, rejected_at = NOW(), rejection_reason = ?
-      WHERE id = ?
-    `, [request.user?.username, reason || null, id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
