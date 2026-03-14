@@ -27,7 +27,7 @@ let mockRemediationAction: Record<string, unknown> | undefined;
 vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: vi.fn(() => ({
     queryOne: vi.fn(async (sql: string) => {
-      if (sql.includes('SELECT * FROM actions WHERE id = ?')) {
+      if (sql.includes('FROM actions WHERE id = ?')) {
         return mockRemediationAction;
       }
       if (sql.includes('SELECT COUNT(*)')) {
@@ -38,10 +38,12 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
     query: vi.fn(async () => []),
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes('UPDATE actions') && sql.includes("status = 'executing'")) {
-        if (mockRemediationAction) {
+        // Real DB: WHERE id = ? AND status = 'approved'
+        if (mockRemediationAction && mockRemediationAction.status === 'approved') {
           mockRemediationAction = { ...mockRemediationAction, status: 'executing' };
+          return { changes: 1 };
         }
-        return { changes: 1 };
+        return { changes: 0 };
       }
       if (sql.includes('UPDATE actions') && sql.includes("status = 'completed'")) {
         if (mockRemediationAction) {
@@ -66,10 +68,12 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
         return { changes: 1 };
       }
       if (sql.includes('UPDATE actions') && sql.includes("status = 'approved'")) {
-        if (mockRemediationAction) {
+        // Real DB: WHERE id = ? AND status = 'pending'
+        if (mockRemediationAction && mockRemediationAction.status === 'pending') {
           mockRemediationAction = { ...mockRemediationAction, status: 'approved' };
+          return { changes: 1 };
         }
-        return { changes: 1 };
+        return { changes: 0 };
       }
       return { changes: 0 };
     }),

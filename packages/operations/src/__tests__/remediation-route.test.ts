@@ -33,7 +33,7 @@ let mockStartContainer: any;
 vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => ({
     queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('SELECT * FROM actions WHERE id = ?')) {
+      if (sql.includes('FROM actions WHERE id = ?')) {
         return state.action;
       }
       if (sql.includes('SELECT COUNT(*)')) {
@@ -43,12 +43,27 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
     }),
     query: vi.fn(async () => []),
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes("status = 'approved'")) {
-        state.action = { ...state.action, status: 'approved' };
+      if (sql.includes("status = 'executing'")) {
+        // Execute: real DB uses WHERE status = 'approved'
+        if (state.action && state.action.status === 'approved') {
+          state.action = { ...state.action, status: 'executing' };
+          return { changes: 1 };
+        }
+        return { changes: 0 };
+      } else if (sql.includes("SET status = 'approved'")) {
+        // Approve: real DB uses WHERE status = 'pending'
+        if (state.action && state.action.status === 'pending') {
+          state.action = { ...state.action, status: 'approved' };
+          return { changes: 1 };
+        }
+        return { changes: 0 };
       } else if (sql.includes("status = 'rejected'")) {
-        state.action = { ...state.action, status: 'rejected' };
-      } else if (sql.includes("status = 'executing'")) {
-        state.action = { ...state.action, status: 'executing' };
+        // Reject: real DB uses WHERE status = 'pending'
+        if (state.action && state.action.status === 'pending') {
+          state.action = { ...state.action, status: 'rejected' };
+          return { changes: 1 };
+        }
+        return { changes: 0 };
       } else if (sql.includes("status = 'completed'")) {
         state.action = {
           ...state.action,
@@ -56,6 +71,7 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
           execution_result: params[0],
           execution_duration_ms: params[1],
         };
+        return { changes: 1 };
       } else if (sql.includes("status = 'failed'")) {
         state.action = {
           ...state.action,
@@ -63,8 +79,9 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
           execution_result: params[0],
           execution_duration_ms: params[1],
         };
+        return { changes: 1 };
       }
-      return { changes: 1 };
+      return { changes: 0 };
     }),
   }),
 }));
