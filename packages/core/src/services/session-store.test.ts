@@ -25,12 +25,14 @@ vi.mock('../db/app-db-router.js', () => {
         const expiresAt = params[0];
         const lastActive = params[1];
         const id = params[2] as string;
+        const nowParam = params[3] as string;
         const existing = sessionStore.get(id);
-        if (existing && existing.is_valid === 1) {
+        if (existing && existing.is_valid === 1 && (existing.expires_at as string) > nowParam) {
           existing.expires_at = expiresAt;
           existing.last_active = lastActive;
+          return { changes: 1 };
         }
-        return { changes: existing ? 1 : 0 };
+        return { changes: 0 };
       }
       if (sql.includes('UPDATE sessions SET is_valid = 0')) {
         const id = params[0] as string;
@@ -179,6 +181,53 @@ describe('session-store expiration semantics', () => {
 
     const session = await getSession('boundary-session');
     expect(session).toBeUndefined();
+  });
+
+  it('refreshSession returns undefined for an expired but valid session', async () => {
+    // Insert an already-expired session (is_valid = true but expires_at in the past)
+    sessionStore.set('expired-but-valid', {
+      id: 'expired-but-valid',
+      user_id: 'user-10',
+      username: 'dave',
+      created_at: '2026-02-07T09:00:00.000Z',
+      expires_at: '2026-02-07T09:30:00.000Z',
+      last_active: '2026-02-07T09:15:00.000Z',
+      is_valid: 1,
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-07T10:00:00.000Z'));
+
+    const result = await refreshSession('expired-but-valid');
+    expect(result).toBeUndefined();
+
+    // Verify the session was NOT updated (expires_at should remain unchanged)
+    const stored = sessionStore.get('expired-but-valid');
+    expect(stored?.expires_at).toBe('2026-02-07T09:30:00.000Z');
+  });
+
+  it('refreshSession succeeds for a valid non-expired session', async () => {
+    // Insert a valid, non-expired session
+    sessionStore.set('valid-session', {
+      id: 'valid-session',
+      user_id: 'user-11',
+      username: 'eve',
+      created_at: '2026-02-07T09:00:00.000Z',
+      expires_at: '2026-02-07T11:00:00.000Z',
+      last_active: '2026-02-07T09:15:00.000Z',
+      is_valid: 1,
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-07T10:00:00.000Z'));
+
+    const result = await refreshSession('valid-session');
+    expect(result).toBeDefined();
+    expect(result?.id).toBe('valid-session');
+    // expires_at should be updated to ~1 hour from now
+    expect(new Date(result!.expires_at).getTime()).toBeGreaterThan(
+      new Date('2026-02-07T10:00:00.000Z').getTime()
+    );
   });
 
   it('cleans expired and invalid sessions while preserving active ones', async () => {
