@@ -4,6 +4,7 @@ import { QueryProvider } from '@/providers/query-provider';
 import { AuthProvider } from '@/providers/auth-provider';
 import { useDashboard } from '@/features/core/hooks/use-dashboard';
 import { api } from '@/shared/lib/api';
+import { AUTH_TOKEN_KEY } from '@/shared/lib/auth-constants';
 
 function createJwtWithFutureExpiry(): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -62,7 +63,7 @@ describe('useDashboard auth gating', () => {
   });
 
   it('fetches dashboard data immediately when a valid stored token exists', async () => {
-    window.localStorage.setItem('auth_token', createJwtWithFutureExpiry());
+    window.localStorage.setItem(AUTH_TOKEN_KEY, createJwtWithFutureExpiry());
     window.localStorage.setItem('auth_username', 'admin');
     window.localStorage.setItem('auth_role', 'admin');
 

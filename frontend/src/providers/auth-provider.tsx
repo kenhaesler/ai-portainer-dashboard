@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { api } from '@/shared/lib/api';
-
-const AUTH_TOKEN_KEY = 'auth_token';
+import { AUTH_TOKEN_KEY } from '@/shared/lib/auth-constants';
 const AUTH_USERNAME_KEY = 'auth_username';
 const AUTH_ROLE_KEY = 'auth_role';
 
@@ -31,7 +30,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-function isTokenValid(token: string | null): token is string {
+export function isTokenValid(token: string | null): token is string {
   if (!token) return false;
   const payload = decodeJwtPayload(token);
   if (!payload) return false;
