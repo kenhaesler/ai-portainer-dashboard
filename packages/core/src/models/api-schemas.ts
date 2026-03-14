@@ -387,7 +387,7 @@ export const InsightIdParamsForInvestigationSchema = z.object({
 export const SearchQuerySchema = z.object({
   query: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(8),
-  logLimit: z.coerce.number().default(8),
+  logLimit: z.coerce.number().int().min(1).max(100).default(8),
   includeLogs: QueryBooleanSchema.optional().default(false),
 });
 
