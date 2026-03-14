@@ -36,9 +36,10 @@ vi.mock('../services/harbor-vulnerability-store.js', () => ({
 
 // Kept: harbor-sync mock — runs background jobs
 const mockRunFullSync = vi.fn();
+const mockGetIsSyncing = vi.fn();
 vi.mock('../services/harbor-sync.js', () => ({
   runFullSync: (...args: unknown[]) => mockRunFullSync(...args),
-  getIsSyncing: vi.fn().mockReturnValue(false),
+  getIsSyncing: (...args: unknown[]) => mockGetIsSyncing(...args),
 }));
 
 // Kept: settings-store mock — reads from DB
@@ -88,6 +89,7 @@ describe('Harbor Vulnerability Routes', () => {
     vi.clearAllMocks();
     currentRole = 'admin';
     mockIsHarborConfiguredAsync.mockResolvedValue(true);
+    mockGetIsSyncing.mockReturnValue(false);
     mockGetVulnerabilitySummary.mockResolvedValue({ critical: 0, high: 0, medium: 0, low: 0, total: 0 });
     mockGetVulnerabilities.mockResolvedValue([]);
     mockGetExceptions.mockResolvedValue([]);
@@ -246,6 +248,22 @@ describe('Harbor Vulnerability Routes', () => {
       });
 
       expect(response.statusCode).toBe(503);
+    });
+
+    it('returns 409 when a sync is already in progress', async () => {
+      mockGetIsSyncing.mockReturnValue(true);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/harbor/sync',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      const body = JSON.parse(response.body);
+      expect(body.error).toContain('already in progress');
+      // Should NOT have called runFullSync
+      expect(mockRunFullSync).not.toHaveBeenCalled();
     });
 
     testAdminOnly(

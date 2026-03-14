@@ -44,7 +44,7 @@ vi.mock('../services/image-staleness.js', () => ({
   }),
 }));
 
-import { runFullSync } from '../services/harbor-sync.js';
+import { runFullSync, getIsSyncing } from '../services/harbor-sync.js';
 import * as harborClient from '../services/harbor-client.js';
 import * as store from '../services/harbor-vulnerability-store.js';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
@@ -298,6 +298,67 @@ describe('harbor-sync', () => {
       const result = await runFullSync();
       expect(result.vulnerabilitiesSynced).toBe(342);
       expect(harborClient.listVulnerabilities).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('concurrency guard (#975)', () => {
+    it('rejects concurrent calls — second caller returns early with error', async () => {
+      // Make listVulnerabilities hang until we resolve it, so the first sync stays "in progress"
+      let resolveFirst!: (value: unknown) => void;
+      const firstCallPromise = new Promise((resolve) => { resolveFirst = resolve; });
+
+      vi.mocked(harborClient.listVulnerabilities).mockImplementationOnce(
+        () => firstCallPromise as any,
+      );
+
+      // Start the first sync (it will block on listVulnerabilities)
+      const first = runFullSync();
+
+      // Allow microtasks to settle so the guard is set
+      await vi.waitFor(() => expect(getIsSyncing()).toBe(true));
+
+      // Second call should return immediately with "already in progress"
+      const second = await runFullSync();
+      expect(second.error).toBe('Sync already in progress');
+      expect(second.vulnerabilitiesSynced).toBe(0);
+      expect(second.durationMs).toBe(0);
+
+      // Unblock the first sync
+      resolveFirst({ items: [], total: 0 });
+      const firstResult = await first;
+      expect(firstResult.error).toBeUndefined();
+    });
+
+    it('clears the guard after a successful sync', async () => {
+      vi.mocked(harborClient.listVulnerabilities).mockResolvedValueOnce({
+        items: [],
+        total: 0,
+      });
+
+      expect(getIsSyncing()).toBe(false);
+      await runFullSync();
+      expect(getIsSyncing()).toBe(false);
+    });
+
+    it('clears the guard after a failed sync', async () => {
+      vi.mocked(harborClient.listVulnerabilities).mockRejectedValueOnce(
+        new Error('Network failure'),
+      );
+
+      expect(getIsSyncing()).toBe(false);
+      const result = await runFullSync();
+      expect(result.error).toContain('Network failure');
+      // Guard must be cleared so subsequent syncs can proceed
+      expect(getIsSyncing()).toBe(false);
+    });
+
+    it('clears the guard when Harbor is not configured', async () => {
+      vi.mocked(harborClient.isHarborConfiguredAsync).mockResolvedValueOnce(false);
+
+      expect(getIsSyncing()).toBe(false);
+      await runFullSync();
+      // Guard must be cleared even when the sync bails out early
+      expect(getIsSyncing()).toBe(false);
     });
   });
 });
