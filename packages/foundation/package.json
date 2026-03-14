@@ -29,7 +29,7 @@
     "@dashboard/ai": "*",
     "@dashboard/observability": "*",
     "@dashboard/security": "*",
-    "fastify": "^5.8.1",
+    "fastify": "^5.8.2",
     "fastify-type-provider-zod": "^6.1.0",
     "p-limit": "^7.3.0",
     "zod": "^4.3.6"
