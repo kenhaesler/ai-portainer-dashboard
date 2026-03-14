@@ -31,7 +31,7 @@ const sampleInvestigation = {
   endpoint_id: 1,
   container_id: 'abc123',
   container_name: 'web',
-  status: 'completed' as const,
+  status: 'complete' as const,
   created_at: '2026-01-01T00:00:00.000Z',
   insight_title: 'High CPU usage',
   insight_severity: 'critical',
@@ -148,7 +148,7 @@ describe('Investigation Routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.id).toBe('inv-001');
-      expect(body.status).toBe('completed');
+      expect(body.status).toBe('complete');
     });
 
     it('returns 404 when investigation not found', async () => {

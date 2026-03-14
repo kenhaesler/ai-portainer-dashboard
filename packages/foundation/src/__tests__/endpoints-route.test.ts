@@ -5,10 +5,17 @@ import { endpointsRoutes } from '../routes/endpoints.js';
 
 // Passthrough mock: keeps real normalizer logic but makes the module writable for spying
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
-vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
+// Cache mock: bypass caching so each test gets a fresh fetch (prevents cross-test contamination)
+vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => {
+  const real = await importOriginal() as typeof import('@dashboard/core/portainer/portainer-cache.js');
+  return {
+    ...real,
+    cachedFetch: <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
+    cachedFetchSWR: <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
+  };
+});
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
-import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 
 const fakeEndpoint = (id: number, name: string, type = 1, status = 1) => ({
   Id: id,
