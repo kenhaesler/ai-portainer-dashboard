@@ -218,7 +218,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       summary: 'Get capability security audit for all endpoints',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (_request, reply) => {
     try {
       const entries = await opts.getSecurityAudit();
@@ -236,7 +236,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       summary: 'Get capability security audit for one endpoint',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { endpointId } = request.params as { endpointId: string };
     const parsedEndpointId = Number(endpointId);
@@ -256,7 +256,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       summary: 'Get security audit ignore list',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (_request, reply) => {
     try {
       return {

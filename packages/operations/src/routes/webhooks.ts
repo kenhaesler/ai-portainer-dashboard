@@ -49,7 +49,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       summary: 'List all configured webhooks',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
     const webhooks = await listWebhooks();
     return webhooks.map(sanitizeWebhook);
@@ -97,7 +97,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       params: WebhookIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const webhook = await getWebhookById(id);
@@ -170,7 +170,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       params: WebhookIdParamsSchema,
       querystring: WebhookDeliveriesQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { limit = 50, offset = 0 } = request.query as { limit?: number; offset?: number };
@@ -247,7 +247,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       summary: 'Server-Sent Events stream of dashboard events',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -282,7 +282,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       summary: 'List available webhook event types',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async () => {
     return VALID_EVENT_TYPES.map((type) => ({
       type,

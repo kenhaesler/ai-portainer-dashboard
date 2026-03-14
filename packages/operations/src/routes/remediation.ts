@@ -17,7 +17,7 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: RemediationQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { status, limit = 50, offset = 0 } = request.query as {
       status?: string;
@@ -65,20 +65,20 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const db = getDbForDomain('actions');
 
-    const action = await db.queryOne<any>('SELECT * FROM actions WHERE id = ?', [id]);
-    if (!action) return reply.code(404).send({ error: 'Action not found' });
-    if (action.status !== 'pending') {
+    const result = await db.execute(`
+      UPDATE actions SET status = 'approved', approved_by = ?, approved_at = NOW()
+      WHERE id = ? AND status = 'pending'
+    `, [request.user?.username, id]);
+
+    if (result.changes === 0) {
+      const existing = await db.queryOne<{ status: string } | null>('SELECT status FROM actions WHERE id = ?', [id]);
+      if (!existing) return reply.code(404).send({ error: 'Action not found' });
       return reply.code(409).send({
-        error: `Action is already ${action.status}. Refresh to see latest status.`,
+        error: `Action is already ${existing.status}. Refresh to see latest status.`,
         actionId: id,
-        currentStatus: action.status,
+        currentStatus: existing.status,
       });
     }
-
-    await db.execute(`
-      UPDATE actions SET status = 'approved', approved_by = ?, approved_at = NOW()
-      WHERE id = ?
-    `, [request.user?.username, id]);
 
     writeAuditLog({
       user_id: request.user?.sub,
@@ -160,6 +160,21 @@ export async function remediationRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const db = getDbForDomain('actions');
 
+    const execResult = await db.execute(`
+      UPDATE actions SET status = 'executing', executed_at = NOW()
+      WHERE id = ? AND status = 'approved'
+    `, [id]);
+
+    if (execResult.changes === 0) {
+      const existing = await db.queryOne<{ id: string; status: string; action_type: string; endpoint_id: number; container_id: string } | null>('SELECT id, status, action_type, endpoint_id, container_id FROM actions WHERE id = ?', [id]);
+      if (!existing) return reply.code(404).send({ error: 'Action not found' });
+      return reply.code(409).send({
+        error: `Action must be approved before execution. Current status: ${existing.status}.`,
+        actionId: id,
+        currentStatus: existing.status,
+      });
+    }
+
     const action = await db.queryOne<{
       id: string;
       status: string;
@@ -167,25 +182,9 @@ export async function remediationRoutes(fastify: FastifyInstance) {
       endpoint_id: number;
       container_id: string;
     }>('SELECT * FROM actions WHERE id = ?', [id]);
+    if (!action) return reply.code(404).send({ error: 'Action not found after update' });
 
-    if (!action) return reply.code(404).send({ error: 'Action not found' });
-    if (action.status !== 'approved') {
-      return reply.code(409).send({
-        error: `Action must be approved before execution. Current status: ${action.status}.`,
-        actionId: id,
-        currentStatus: action.status,
-      });
-    }
-
-    await db.execute(`
-      UPDATE actions SET status = 'executing', executed_at = NOW()
-      WHERE id = ?
-    `, [id]);
-
-    const executing = await db.queryOne<Record<string, unknown>>('SELECT * FROM actions WHERE id = ?', [id]);
-    if (executing) {
-      broadcastActionUpdate(executing);
-    }
+    broadcastActionUpdate(action as unknown as Record<string, unknown>);
 
     const startedAt = Date.now();
     try {

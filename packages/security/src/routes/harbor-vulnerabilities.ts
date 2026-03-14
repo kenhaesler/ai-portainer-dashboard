@@ -204,7 +204,7 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
         activeOnly: z.coerce.boolean().default(true),
       }),
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { activeOnly } = request.query as { activeOnly: boolean };
     return vulnStore.getExceptions(activeOnly);

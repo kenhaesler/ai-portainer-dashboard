@@ -15,7 +15,7 @@ export async function notificationRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: NotificationHistoryQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { channel, limit = 50, offset = 0 } = request.query as {
       channel?: string;
