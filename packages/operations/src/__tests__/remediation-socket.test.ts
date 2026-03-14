@@ -36,9 +36,10 @@ import {
 
 interface MockSocket {
   id: string;
-  data: { user: { sub: string } };
+  data: { user: { sub: string; role: string } };
   on: ReturnType<typeof vi.fn>;
   emit: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
 }
 
 function createMockSocket(): {
@@ -48,11 +49,12 @@ function createMockSocket(): {
   const handlers = new Map<string, (...args: any[]) => any>();
   const socket: MockSocket = {
     id: 'test-socket-1',
-    data: { user: { sub: 'test-user' } },
+    data: { user: { sub: 'test-user', role: 'admin' } },
     on: vi.fn((event: string, handler: (...args: any[]) => any) => {
       handlers.set(event, handler);
     }),
     emit: vi.fn(),
+    disconnect: vi.fn(),
   };
   return { socket, handlers };
 }
@@ -79,6 +81,22 @@ function createMockNamespace() {
 describe('setupRemediationNamespace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('admin role enforcement', () => {
+    it('disconnects non-admin sockets with an error', () => {
+      const { ns } = createMockNamespace();
+      const { socket } = createMockSocket();
+      socket.data.user.role = 'viewer';
+
+      setupRemediationNamespace(ns);
+      ns.emit('connection', socket);
+
+      expect(socket.emit).toHaveBeenCalledWith('error', { message: 'Admin role required' });
+      expect(socket.disconnect).toHaveBeenCalled();
+      // Should not register any event handlers
+      expect(socket.on).not.toHaveBeenCalled();
+    });
   });
 
   describe('actions:list', () => {

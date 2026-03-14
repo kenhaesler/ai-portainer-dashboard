@@ -8,7 +8,7 @@ import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import * as harborClient from '../services/harbor-client.js';
 import { getEffectiveHarborConfig } from '@dashboard/core/services/settings-store.js';
 import * as vulnStore from '../services/harbor-vulnerability-store.js';
-import { runFullSync } from '../services/harbor-sync.js';
+import { runFullSync, getIsSyncing } from '../services/harbor-sync.js';
 
 const log = createChildLogger('route:harbor-vulnerabilities');
 
@@ -170,6 +170,10 @@ export async function harborVulnerabilityRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     if (!await harborClient.isHarborConfiguredAsync()) {
       return reply.code(503).send({ error: 'Harbor is not configured' });
+    }
+
+    if (getIsSyncing()) {
+      return reply.code(409).send({ error: 'Sync already in progress' });
     }
 
     writeAuditLog({
