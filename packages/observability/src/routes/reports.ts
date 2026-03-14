@@ -32,8 +32,9 @@ function isStatementTimeoutError(err: unknown): boolean {
 // accuracy. 5-minute TTL gives a meaningful perf win without stale UX.
 // ---------------------------------------------------------------------------
 const REPORT_CACHE_TTL_MS = 5 * 60 * 1_000;
+const REPORT_CACHE_MAX_ENTRIES = 500;
 
-interface CacheEntry { payload: unknown; expiresAt: number }
+interface CacheEntry { payload: unknown; expiresAt: number; timestamp: number }
 const reportCache = new Map<string, CacheEntry>();
 
 function getCachedReport<T>(key: string): T | null {
@@ -47,12 +48,26 @@ function getCachedReport<T>(key: string): T | null {
 }
 
 function setCachedReport(key: string, payload: unknown): void {
-  reportCache.set(key, { payload, expiresAt: Date.now() + REPORT_CACHE_TTL_MS });
+  if (reportCache.size >= REPORT_CACHE_MAX_ENTRIES) {
+    let oldestKey: string | undefined;
+    let oldestTs = Infinity;
+    for (const [k, v] of reportCache) {
+      if (v.timestamp < oldestTs) { oldestTs = v.timestamp; oldestKey = k; }
+    }
+    if (oldestKey !== undefined) reportCache.delete(oldestKey);
+  }
+  const now = Date.now();
+  reportCache.set(key, { payload, expiresAt: now + REPORT_CACHE_TTL_MS, timestamp: now });
 }
 
 /** Clear the report cache (for testing) */
 export function clearReportCache(): void {
   reportCache.clear();
+}
+
+/** Returns current cache size (for testing) */
+export function getReportCacheSize(): number {
+  return reportCache.size;
 }
 
 // ---------------------------------------------------------------------------

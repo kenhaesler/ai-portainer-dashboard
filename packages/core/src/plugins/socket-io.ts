@@ -13,6 +13,7 @@ interface SocketUser {
   sub: string;
   username: string;
   sessionId: string;
+  role?: string;
 }
 
 export async function authenticateSocketToken(token: unknown): Promise<SocketUser | null> {
@@ -38,6 +39,7 @@ export async function authenticateSocketToken(token: unknown): Promise<SocketUse
     sub: payload.sub,
     username: payload.username,
     sessionId: payload.sessionId,
+    role: payload.role,
   };
 }
 
@@ -143,6 +145,14 @@ async function socketIoPlugin(fastify: FastifyInstance) {
       next();
     });
   }
+
+  // Remediation namespace requires admin role
+  remediationNamespace.use((socket, next) => {
+    if (socket.data.user?.role !== 'admin') {
+      return next(new Error('Admin role required'));
+    }
+    next();
+  });
 
   fastify.decorate('io', io);
   fastify.decorate('ioNamespaces', {

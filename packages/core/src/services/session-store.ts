@@ -60,8 +60,8 @@ export async function refreshSession(sessionId: string): Promise<Session | undef
 
   await db.execute(`
     UPDATE sessions SET expires_at = ?, last_active = ?
-    WHERE id = ? AND is_valid = true
-  `, [expiresAt, now, sessionId]);
+    WHERE id = ? AND is_valid = true AND expires_at > ?
+  `, [expiresAt, now, sessionId, now]);
 
   return getSession(sessionId);
 }

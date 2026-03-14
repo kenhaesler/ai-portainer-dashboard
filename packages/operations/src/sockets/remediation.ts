@@ -9,6 +9,15 @@ export function setupRemediationNamespace(ns: Namespace) {
   remediationNamespace = ns;
   ns.on('connection', (socket) => {
     const userId = socket.data.user?.sub || 'unknown';
+
+    // Defence-in-depth: enforce admin role at the handler level as well
+    if (socket.data.user?.role !== 'admin') {
+      log.warn({ userId }, 'Remediation socket connection rejected: admin role required');
+      socket.emit('error', { message: 'Admin role required' });
+      socket.disconnect();
+      return;
+    }
+
     log.info({ userId }, 'Remediation client connected');
 
     // Send pending actions on connect

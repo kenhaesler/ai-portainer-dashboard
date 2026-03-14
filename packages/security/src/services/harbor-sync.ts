@@ -95,8 +95,20 @@ export interface SyncResult {
   error?: string;
 }
 
+let isSyncing = false;
+
+/** Returns true if a Harbor sync is currently in progress */
+export function getIsSyncing(): boolean {
+  return isSyncing;
+}
+
 /** Run a full vulnerability sync from Harbor → local DB with Portainer correlation */
 export async function runFullSync(): Promise<SyncResult> {
+  if (isSyncing) {
+    log.warn('Harbor sync already in progress — skipping duplicate run');
+    return { vulnerabilitiesSynced: 0, inUseMatched: 0, durationMs: 0, error: 'Sync already in progress' };
+  }
+  isSyncing = true;
   return withSpan('harbor-sync.full', 'harbor-sync', 'internal', async () => {
     const startTime = Date.now();
     const syncId = await store.createSyncStatus('full');
@@ -194,6 +206,8 @@ export async function runFullSync(): Promise<SyncResult> {
 
       log.error({ err, durationMs }, 'Harbor vulnerability sync failed');
       return { vulnerabilitiesSynced: 0, inUseMatched: 0, durationMs, error: msg };
+    } finally {
+      isSyncing = false;
     }
   });
 }

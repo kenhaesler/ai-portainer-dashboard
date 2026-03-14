@@ -120,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setToken(null);
     setUsername(null);
+    setRole('viewer');
     clearStoredAuth();
     api.setToken(null);
   }, []);
