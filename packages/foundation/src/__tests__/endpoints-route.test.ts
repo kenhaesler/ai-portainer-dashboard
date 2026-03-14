@@ -48,11 +48,8 @@ describe('Endpoints Routes', () => {
     await app.close();
   });
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.restoreAllMocks();
-    // Clear the in-memory cache between tests to prevent cross-test leakage
-    // (cachedFetch stores results in the HybridCache singleton)
-    await portainerCache.cache.clear();
   });
 
   describe('GET /api/endpoints', () => {
