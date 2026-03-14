@@ -78,13 +78,9 @@ export async function containersRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { page, pageSize, search, state, endpointId } = request.query as z.infer<typeof ContainerListQuerySchema>;
 
-    let endpoints;
+    let fetched: Awaited<ReturnType<typeof fetchAllContainers>>;
     try {
-      endpoints = await cachedFetchSWR(
-        getCacheKey('endpoints'),
-        TTL.ENDPOINTS,
-        () => portainer.getEndpoints(),
-      );
+      fetched = await fetchAllContainers(endpointId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');
@@ -94,37 +90,9 @@ export async function containersRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Only target Docker endpoints — K8s endpoints use separate /api/kubernetes/ routes
-    const dockerEndpoints = endpoints.filter((e) => isDockerEndpoint(e.Type));
-    const targetEndpoints = endpointId
-      ? dockerEndpoints.filter((e) => e.Id === endpointId)
-      : dockerEndpoints;
-
-    const allContainers: ReturnType<typeof normalizeContainer>[] = [];
-    const errors: string[] = [];
-    const upEndpoints = targetEndpoints.filter((ep) => normalizeEndpoint(ep).status === 'up');
-    const settled = await Promise.allSettled(
-      upEndpoints.map((ep) =>
-        cachedFetchSWR(
-          getCacheKey('containers', ep.Id),
-          TTL.CONTAINERS,
-          () => portainer.getContainers(ep.Id),
-        ).then((containers) => ({ ep, containers })),
-      ),
-    );
-    for (let i = 0; i < settled.length; i++) {
-      const result = settled[i];
-      if (result.status === 'fulfilled') {
-        const { ep, containers } = result.value;
-        allContainers.push(...containers.map((c) => normalizeContainer(c, ep.Id, ep.Name)));
-      } else {
-        const ep = upEndpoints[i];
-        const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
-        log.warn({ endpointId: ep.Id, endpointName: ep.Name, err: result.reason }, 'Failed to fetch containers for endpoint');
-        errors.push(`${ep.Name}: ${msg}`);
-      }
-    }
-
+    // errors contains endpoint-name-prefixed strings (e.g. "staging: Connection refused")
+    // used in the response's failedEndpoints field (API contract: string array of names)
+    const { results: allContainers, errors, upEndpoints } = fetched;
     const partial = errors.length > 0;
 
     if (upEndpoints.length > 0 && allContainers.length === 0 && errors.length > 0) {
