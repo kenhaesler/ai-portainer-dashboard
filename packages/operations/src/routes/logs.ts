@@ -143,11 +143,9 @@ export async function logsRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { endpoint, apiKey, verifySsl = true } = request.body as { endpoint: string; apiKey?: string; verifySsl?: boolean };
 
-    try {
-      validateOutboundWebhookUrl(endpoint);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Invalid endpoint URL';
-      return reply.code(400).send({ error: msg });
+    const urlError = validateOutboundWebhookUrl(endpoint);
+    if (urlError) {
+      return reply.code(400).send({ error: urlError });
     }
 
     try {
