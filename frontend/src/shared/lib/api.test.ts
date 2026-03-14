@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { api } from './api';
+import { AUTH_TOKEN_KEY } from './auth-constants';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -14,7 +15,7 @@ describe('ApiClient', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     api.setToken(null);
-    window.localStorage.removeItem('auth_token');
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
   });
 
   afterEach(() => {
@@ -151,7 +152,7 @@ describe('ApiClient', () => {
 
   describe('authentication', () => {
     it('should hydrate token from localStorage on client initialization', async () => {
-      window.localStorage.setItem('auth_token', 'persisted-token');
+      window.localStorage.setItem(AUTH_TOKEN_KEY, 'persisted-token');
       vi.resetModules();
       const { api: freshApi } = await import('./api');
 

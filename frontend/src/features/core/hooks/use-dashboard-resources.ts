@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { STALE_TIMES } from '@/shared/lib/query-constants';
+import { hasAuthToken } from '@/shared/lib/auth-constants';
 
 export interface StackResourceUsage {
   name: string;
@@ -17,18 +18,6 @@ export interface DashboardResources {
   fleetCpuPercent: number;
   fleetMemoryPercent: number;
   topStacks: StackResourceUsage[];
-}
-
-function hasAuthToken(): boolean {
-  const apiToken = typeof (api as { getToken?: () => string | null }).getToken === 'function'
-    ? api.getToken()
-    : null;
-  if (apiToken) return true;
-  try {
-    return !!window.localStorage.getItem('auth_token');
-  } catch {
-    return false;
-  }
 }
 
 export function useDashboardResources(topN: number = 10) {

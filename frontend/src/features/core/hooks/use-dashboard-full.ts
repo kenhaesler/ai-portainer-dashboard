@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { STALE_TIMES } from '@/shared/lib/query-constants';
+import { hasAuthToken } from '@/shared/lib/auth-constants';
 import type { DashboardSummary } from '@/features/core/hooks/use-dashboard';
 import type { DashboardResources } from '@/features/core/hooks/use-dashboard-resources';
 import type { Endpoint } from '@/features/containers/hooks/use-endpoints';
@@ -13,18 +14,6 @@ export interface DashboardFull {
   resources: DashboardResources;
   endpoints: Endpoint[];
   kpiHistory?: KpiSnapshot[];
-}
-
-function hasAuthToken(): boolean {
-  const apiToken = typeof (api as { getToken?: () => string | null }).getToken === 'function'
-    ? api.getToken()
-    : null;
-  if (apiToken) return true;
-  try {
-    return !!window.localStorage.getItem('auth_token');
-  } catch {
-    return false;
-  }
 }
 
 /**
