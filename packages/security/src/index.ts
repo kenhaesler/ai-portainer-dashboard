@@ -19,7 +19,7 @@ export {
 export type { SecurityAuditEntry } from './services/security-audit.js';
 
 // Harbor
-export { runFullSync as runHarborSync } from './services/harbor-sync.js';
+export { runFullSync as runHarborSync, getIsSyncing as isHarborSyncRunning } from './services/harbor-sync.js';
 export { isHarborConfigured, isHarborConfiguredAsync } from './services/harbor-client.js';
 export { cleanupOldVulnerabilities } from './services/harbor-vulnerability-store.js';
 

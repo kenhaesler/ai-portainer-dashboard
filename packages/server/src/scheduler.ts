@@ -9,7 +9,7 @@ import { getSetting, getEffectiveHarborConfig, cleanExpiredSessions } from '@das
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '@dashboard/observability';
-import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
+import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
 
@@ -538,6 +538,8 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
           if (!cfg.enabled || !(await isHarborConfiguredAsync())) return;
           const syncIntervalMs = cfg.syncIntervalMinutes * 60 * 1000;
           if (Date.now() - lastHarborSyncAt < syncIntervalMs) return;
+          // Skip silently if a sync is already in progress (e.g. triggered via POST /api/harbor/sync)
+          if (isHarborSyncRunning()) return;
           lastHarborSyncAt = Date.now();
           const result = await runHarborSync();
           if (result.error) {
@@ -556,6 +558,7 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
         try {
           const cfg = await getEffectiveHarborConfig();
           if (!cfg.enabled || !(await isHarborConfiguredAsync())) return;
+          if (isHarborSyncRunning()) return;
           log.info({ intervalMinutes: cfg.syncIntervalMinutes }, 'Starting Harbor vulnerability sync scheduler');
           lastHarborSyncAt = Date.now();
           await runHarborSync();
