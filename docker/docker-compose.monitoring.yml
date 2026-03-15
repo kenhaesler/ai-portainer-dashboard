@@ -19,7 +19,7 @@ services:
       - PROMETHEUS_BEARER_TOKEN=${PROMETHEUS_BEARER_TOKEN:?PROMETHEUS_BEARER_TOKEN is required}
 
   prometheus:
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.10.0
     restart: unless-stopped
     # Write bearer token to a file so prometheus.yml can use credentials_file
     entrypoint:
@@ -52,7 +52,7 @@ services:
           memory: 128M
 
   grafana:
-    image: grafana/grafana-oss:11.4.0
+    image: grafana/grafana:12.4.1
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
