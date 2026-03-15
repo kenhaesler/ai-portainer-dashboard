@@ -421,6 +421,44 @@ docker compose -f docker/docker-compose.dev.yml up -d postgres-app
 
 **Important**: Backend tests use `fileParallelism: false` in vitest config because tests share database tables. This ensures tests run sequentially to avoid conflicts.
 
+### Monitoring Stack (Optional)
+
+An optional Prometheus + Grafana overlay for scraping and visualizing the backend's `/metrics` endpoint.
+
+**Bundled sidecar** (for users without existing monitoring):
+```bash
+# Production with monitoring
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.yml up -d
+
+# Development with monitoring
+docker compose -f docker/docker-compose.dev.yml -f docker/docker-compose.monitoring.yml up -d
+```
+
+Required environment variables:
+- `PROMETHEUS_BEARER_TOKEN` — shared secret the backend checks on `/metrics` (min 16 chars in production)
+- `GRAFANA_ADMIN_PASSWORD` — Grafana admin login password
+- `GRAFANA_HOST_PORT` — host port for Grafana (default: `3001`, bound to `127.0.0.1` only)
+
+The overlay enables `PROMETHEUS_METRICS_ENABLED=true` on the backend automatically and provisions:
+- **Prometheus** (internal-only, no host port) scraping `backend:3051/metrics` every 30 s
+- **Grafana** with a pre-built dashboard covering all 12+ application metrics (container states, anomalies, insights, remediation, prompt guard, process health)
+
+**External stack** (for users with existing Prometheus/Grafana/Mimir/VictoriaMetrics):
+
+Add this snippet to your existing Prometheus scrape config:
+```yaml
+scrape_configs:
+  - job_name: "ai-portainer-dashboard"
+    metrics_path: "/metrics"
+    authorization:
+      type: Bearer
+      credentials: "<your-PROMETHEUS_BEARER_TOKEN>"
+    static_configs:
+      - targets: ["<backend-host>:3051"]
+```
+
+Then import `docker/grafana/dashboards/ai-portainer-dashboard.json` into your Grafana via **Dashboards > Import** (the JSON includes `__inputs` for portable datasource selection).
+
 ---
 
 ## Project Structure
