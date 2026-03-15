@@ -2,10 +2,11 @@
 -- These settings move from env vars to the Settings UI as the primary source of truth.
 
 -- Category A: Webhook settings (already have UI, but may not have DB seeds)
+-- Keys match the frontend Settings UI (webhooks.* prefix)
 INSERT INTO settings (key, value, category, updated_at) VALUES
-  ('notifications.webhooks_enabled', 'false', 'webhooks', NOW()),
-  ('notifications.webhooks_max_retries', '5', 'webhooks', NOW()),
-  ('notifications.webhooks_retry_interval_seconds', '60', 'webhooks', NOW())
+  ('webhooks.enabled', 'false', 'webhooks', NOW()),
+  ('webhooks.max_retries', '5', 'webhooks', NOW()),
+  ('webhooks.retry_interval', '60', 'webhooks', NOW())
 ON CONFLICT (key) DO NOTHING;
 
 -- Category B: AI Tuning — Anomaly Detection

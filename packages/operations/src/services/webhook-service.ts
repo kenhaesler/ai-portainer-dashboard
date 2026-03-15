@@ -128,8 +128,8 @@ export async function createDelivery(webhookId: string, event: WebhookEvent): Pr
   const id = crypto.randomUUID();
   const payload = JSON.stringify(event);
 
-  const maxRetriesSetting = await getSetting('notifications.webhooks_max_retries');
-  const maxRetries = maxRetriesSetting ? parseInt(maxRetriesSetting.value, 10) || 5 : 5;
+  const maxRetriesSetting = await getSetting('webhooks.max_retries');
+  const maxRetries = maxRetriesSetting?.value ? parseInt(maxRetriesSetting.value, 10) : 5;
 
   await db().execute(`
     INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, status, attempt, max_attempts)

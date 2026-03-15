@@ -138,7 +138,9 @@ export async function getEffectiveMonitoringConfig(): Promise<MonitoringConfig> 
   const str = (key: string, fallback: string): string => m.get(key) || fallback;
   const num = (key: string, fallback: number): number => {
     const v = m.get(key);
-    return v ? (parseFloat(v) || fallback) : fallback;
+    if (v === undefined || v === '') return fallback;
+    const parsed = parseFloat(v);
+    return Number.isNaN(parsed) ? fallback : parsed;
   };
   const bool = (key: string, fallback: boolean): boolean => {
     const v = m.get(key);

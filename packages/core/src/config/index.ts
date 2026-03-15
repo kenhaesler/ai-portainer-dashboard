@@ -196,7 +196,7 @@ const DEPRECATED_ENV_VARS: Record<string, string> = {
   INVESTIGATION_MIN_SEVERITY: 'Settings → AI & LLM → Advanced AI Tuning',
   AI_ANALYSIS_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
   MAX_INSIGHTS_PER_CYCLE: 'Settings → AI & LLM → Advanced AI Tuning',
-  INSIGHTS_RETENTION_DAYS: 'Settings → AI & LLM → Advanced AI Tuning',
+  INSIGHTS_RETENTION_DAYS: 'Settings → Infrastructure → Metrics Retention',
 };
 
 let deprecationWarned = false;
