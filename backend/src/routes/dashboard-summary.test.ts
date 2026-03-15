@@ -86,13 +86,22 @@ describe('Dashboard Summary Route', () => {
 
     const callOrder: string[] = [];
 
-    // Track when each mock is invoked (before it resolves)
+    // getSecurityAudit is kicked off but won't resolve until the next microtask.
+    // getEndpoints adds artificial latency so the handler must await it.
+    // If security audit were started *after* awaiting endpoints, we'd see
+    // 'getEndpoints:resolved' before 'getSecurityAudit:start' — the assertion
+    // below catches that ordering violation.
     mockGetEndpoints.mockImplementation(() => {
       callOrder.push('getEndpoints:start');
-      return Promise.resolve([{
-        Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
-        Snapshots: [{ RunningContainerCount: 1, StoppedContainerCount: 0, HealthyContainerCount: 1, UnhealthyContainerCount: 0, StackCount: 0, TotalCPU: 0, TotalMemory: 0 }],
-      }]);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          callOrder.push('getEndpoints:resolved');
+          resolve([{
+            Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
+            Snapshots: [{ RunningContainerCount: 1, StoppedContainerCount: 0, HealthyContainerCount: 1, UnhealthyContainerCount: 0, StackCount: 0, TotalCPU: 0, TotalMemory: 0 }],
+          }]);
+        }, 10);
+      });
     });
     mockGetSecurityAudit.mockImplementation(() => {
       callOrder.push('getSecurityAudit:start');
@@ -102,12 +111,13 @@ describe('Dashboard Summary Route', () => {
     const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
 
     expect(res.statusCode).toBe(200);
-    // Security audit should be initiated before endpoint fetch completes
-    expect(callOrder).toContain('getSecurityAudit:start');
-    expect(callOrder).toContain('getEndpoints:start');
-    // Both should be called (concurrently)
-    expect(mockGetSecurityAudit).toHaveBeenCalledTimes(1);
-    expect(mockGetEndpoints).toHaveBeenCalledTimes(1);
+    // Security audit must be initiated before the endpoint fetch resolves,
+    // proving they run concurrently rather than sequentially.
+    const auditIdx = callOrder.indexOf('getSecurityAudit:start');
+    const endpointsResolvedIdx = callOrder.indexOf('getEndpoints:resolved');
+    expect(auditIdx).toBeGreaterThanOrEqual(0);
+    expect(endpointsResolvedIdx).toBeGreaterThanOrEqual(0);
+    expect(auditIdx).toBeLessThan(endpointsResolvedIdx);
 
     await app.close();
   });
