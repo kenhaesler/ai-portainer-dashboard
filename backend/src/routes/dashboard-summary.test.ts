@@ -76,6 +76,65 @@ describe('Dashboard Summary Route', () => {
     await app.close();
   });
 
+  it('runs security audit concurrently with endpoint fetch (#375)', async () => {
+    const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    await app.register(dashboardRoutes);
+    await app.ready();
+
+    const callOrder: string[] = [];
+
+    // Track when each mock is invoked (before it resolves)
+    mockGetEndpoints.mockImplementation(() => {
+      callOrder.push('getEndpoints:start');
+      return Promise.resolve([{
+        Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
+        Snapshots: [{ RunningContainerCount: 1, StoppedContainerCount: 0, HealthyContainerCount: 1, UnhealthyContainerCount: 0, StackCount: 0, TotalCPU: 0, TotalMemory: 0 }],
+      }]);
+    });
+    mockGetSecurityAudit.mockImplementation(() => {
+      callOrder.push('getSecurityAudit:start');
+      return Promise.resolve([]);
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+
+    expect(res.statusCode).toBe(200);
+    // Security audit should be initiated before endpoint fetch completes
+    expect(callOrder).toContain('getSecurityAudit:start');
+    expect(callOrder).toContain('getEndpoints:start');
+    // Both should be called (concurrently)
+    expect(mockGetSecurityAudit).toHaveBeenCalledTimes(1);
+    expect(mockGetEndpoints).toHaveBeenCalledTimes(1);
+
+    await app.close();
+  });
+
+  it('returns fallback security data when audit fails (#375)', async () => {
+    const app = Fastify();
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    await app.register(dashboardRoutes);
+    await app.ready();
+
+    mockGetEndpoints.mockResolvedValue([{
+      Id: 1, Name: 'ep-1', Type: 1, URL: 'http://ep-1', Status: 1,
+      Snapshots: [{ RunningContainerCount: 1, StoppedContainerCount: 0, HealthyContainerCount: 1, UnhealthyContainerCount: 0, StackCount: 0, TotalCPU: 0, TotalMemory: 0 }],
+    }]);
+    mockGetSecurityAudit.mockRejectedValue(new Error('DB unavailable'));
+
+    const res = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.security).toEqual({ totalAudited: 0, flagged: 0, ignored: 0 });
+
+    await app.close();
+  });
+
   it('returns 502 when endpoint list cannot be fetched', async () => {
     const app = Fastify();
     app.setValidatorCompiler(validatorCompiler);

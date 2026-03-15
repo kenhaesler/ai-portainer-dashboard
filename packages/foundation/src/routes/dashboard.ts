@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod/v4';
+import pLimit from 'p-limit';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
@@ -7,6 +8,9 @@ import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getKpiHistory, getLatestMetricsBatch } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '@dashboard/security';
+
+/** Cap concurrent Portainer API calls to avoid overwhelming the upstream server. */
+const portainerLimit = pLimit(5);
 
 const log = createChildLogger('route:dashboard');
 
@@ -27,6 +31,12 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
+    // Start security audit immediately — it doesn't depend on endpoints.
+    const securityPromise = getSecurityAudit().catch((err) => {
+      log.warn({ err }, 'Failed to fetch security audit summary');
+      return null;
+    });
+
     let endpoints;
     try {
       endpoints = await cachedFetchSWR(
@@ -70,13 +80,11 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       },
     );
 
-    let security = { totalAudited: 0, flagged: 0, ignored: 0 };
-    try {
-      const auditEntries = await getSecurityAudit();
-      security = buildSecurityAuditSummary(auditEntries);
-    } catch (err) {
-      log.warn({ err }, 'Failed to fetch security audit summary');
-    }
+    // Await security audit that was started in parallel with endpoint fetch.
+    const auditEntries = await securityPromise;
+    const security = auditEntries
+      ? buildSecurityAuditSummary(auditEntries)
+      : { totalAudited: 0, flagged: 0, ignored: 0 };
 
     return {
       kpis: totals,
@@ -144,16 +152,18 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
     const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));
 
-    // Get all containers from all up Docker endpoints
+    // Get all containers from all up Docker endpoints (concurrency-capped)
     const allContainers: Array<{ container: any; endpointId: number; endpointName: string }> = [];
     const resourceErrors: string[] = [];
     const settled = await Promise.allSettled(
       upDockerEndpoints.map((ep) =>
-        cachedFetchSWR(
-          getCacheKey('containers', ep.id),
-          TTL.CONTAINERS,
-          () => portainer.getContainers(ep.id),
-        ).then((containers) => ({ ep, containers })),
+        portainerLimit(() =>
+          cachedFetchSWR(
+            getCacheKey('containers', ep.id),
+            TTL.CONTAINERS,
+            () => portainer.getContainers(ep.id),
+          ).then((containers) => ({ ep, containers })),
+        ),
       ),
     );
 
@@ -349,11 +359,13 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
       const errors: string[] = [];
       const settled = await Promise.allSettled(
         upDockerEndpoints.map((ep) =>
-          cachedFetchSWR(
-            getCacheKey('containers', ep.id),
-            TTL.CONTAINERS,
-            () => portainer.getContainers(ep.id),
-          ).then((containers) => ({ ep, containers })),
+          portainerLimit(() =>
+            cachedFetchSWR(
+              getCacheKey('containers', ep.id),
+              TTL.CONTAINERS,
+              () => portainer.getContainers(ep.id),
+            ).then((containers) => ({ ep, containers })),
+          ),
         ),
       );
 
