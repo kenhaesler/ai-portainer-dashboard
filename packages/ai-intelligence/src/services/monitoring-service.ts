@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
+import type { MonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getEndpoints, getContainers, isEndpointDegraded, isCircuitOpen } from '@dashboard/core/portainer/portainer-client.js';
 import { CircuitBreakerOpenError } from '@dashboard/core/portainer/circuit-breaker.js';
@@ -293,7 +295,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
       }
 
       // 4. Run anomaly detection on recent metrics (batched)
-      const config = getConfig();
+      // Fetch AI tuning config from Settings DB (single batch query, env var fallback).
+      const monCfg = await getEffectiveMonitoringConfig();
       const anomalyInsights: InsightInsert[] = [];
 
       // Build batch items for all running containers × metric types
@@ -322,7 +325,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
       // Run batch anomaly detection
       const batchResults = await detectAnomaliesBatch(
         batchItems,
-        config.ANOMALY_DETECTION_METHOD,
+        monCfg.anomalyDetectionMethod,
         deps.metrics.getMovingAverage,
       );
 
@@ -334,11 +337,11 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
         // Cooldown check: skip if this container+metric was recently flagged
         const cooldownKey = key;
-        const cooldownMs = config.ANOMALY_COOLDOWN_MINUTES * 60_000;
+        const cooldownMs = monCfg.anomalyCooldownMinutes * 60_000;
         const lastAlerted = anomalyCooldowns.get(cooldownKey);
         if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) {
           log.debug(
-            { containerId: item.containerId, metricType: item.metricType, cooldownMinutes: config.ANOMALY_COOLDOWN_MINUTES },
+            { containerId: item.containerId, metricType: item.metricType, cooldownMinutes: monCfg.anomalyCooldownMinutes },
             'Anomaly suppressed by cooldown',
           );
           continue;
@@ -367,7 +370,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
       // 4.05. Threshold-based detection — flag values above ANOMALY_THRESHOLD_PCT.
       // This catches high values that z-score misses (e.g. container consistently at 100%).
-      if (config.ANOMALY_HARD_THRESHOLD_ENABLED !== false) {
+      if (monCfg.anomalyHardThresholdEnabled !== false) {
         for (const container of runningContainers) {
           const containerName =
             container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
@@ -376,7 +379,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
             const metric = metricsFromDb.find(
               (m) => m.container_id === container.raw.Id && m.metric_type === metricType,
             );
-            if (!metric || metric.value <= config.ANOMALY_THRESHOLD_PCT) continue;
+            if (!metric || metric.value <= monCfg.anomalyThresholdPct) continue;
 
             // Skip if already flagged by statistical detection
             if (anomalyInsights.some(
@@ -385,7 +388,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
             // Cooldown check
             const cooldownKey = `${container.raw.Id}:${metricType}:threshold`;
-            const cooldownMs = config.ANOMALY_COOLDOWN_MINUTES * 60_000;
+            const cooldownMs = monCfg.anomalyCooldownMinutes * 60_000;
             const lastAlerted = anomalyCooldowns.get(cooldownKey);
             if (cooldownMs > 0 && lastAlerted && Date.now() - lastAlerted < cooldownMs) continue;
             anomalyCooldowns.set(cooldownKey, Date.now());
@@ -401,7 +404,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
               title: `High ${metricType} usage on "${containerName}"`,
               description:
                 `Current ${metricType}: ${metric.value.toFixed(1)}% ` +
-                `(threshold: ${config.ANOMALY_THRESHOLD_PCT}%). ` +
+                `(threshold: ${monCfg.anomalyThresholdPct}%). ` +
                 `Value exceeds the configured warning threshold.`,
               suggested_action: metricType === 'memory'
                 ? 'Check for memory leaks or increase memory limit'
@@ -412,7 +415,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
       }
 
       // 4.1. Isolation Forest anomaly detection — multivariate ML-based detection
-      if (config.ISOLATION_FOREST_ENABLED) {
+      if (monCfg.isolationForestEnabled) {
         for (const container of runningContainers) {
           const containerName =
             container.raw.Names?.[0]?.replace(/^\//, '') || container.raw.Id.slice(0, 12);
@@ -471,14 +474,14 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
       // 4.5. Predictive alerting — proactive resource exhaustion warnings
       const predictiveInsights: InsightInsert[] = [];
-      if (config.PREDICTIVE_ALERTING_ENABLED) {
+      if (monCfg.predictiveAlertingEnabled) {
         try {
           const forecasts = await deps.metrics.getCapacityForecasts(20);
           for (const forecast of forecasts) {
             if (
               forecast.trend === 'increasing' &&
               forecast.timeToThreshold != null &&
-              forecast.timeToThreshold <= config.PREDICTIVE_ALERT_THRESHOLD_HOURS &&
+              forecast.timeToThreshold <= monCfg.predictiveAlertThresholdHours &&
               forecast.confidence !== 'low'
             ) {
               const severity: 'critical' | 'warning' | 'info' =
@@ -514,13 +517,13 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
       // 4.75. Anomaly explanations — LLM explains anomalies in plain English
       const ollamaAvailable = await isOllamaAvailable();
-      if (config.ANOMALY_EXPLANATION_ENABLED && ollamaAvailable && anomalyInsights.length > 0) {
+      if (monCfg.anomalyExplanationEnabled && ollamaAvailable && anomalyInsights.length > 0) {
         try {
           const anomalyData = anomalyInsights.map((ins) => ({
             insight: ins,
             description: ins.description,
           }));
-          const explanations = await explainAnomalies(anomalyData, config.ANOMALY_EXPLANATION_MAX_PER_CYCLE);
+          const explanations = await explainAnomalies(anomalyData, monCfg.anomalyExplanationMaxPerCycle);
           for (const [insightId, explanation] of explanations) {
             const insight = anomalyInsights.find((i) => i.id === insightId);
             if (insight) {
@@ -537,7 +540,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
       // 4.8. NLP Log Analysis — LLM analyzes container logs for error patterns
       const logAnalysisInsights: InsightInsert[] = [];
-      if (config.NLP_LOG_ANALYSIS_ENABLED && ollamaAvailable && runningContainers.length > 0) {
+      if (monCfg.nlpLogAnalysisEnabled && ollamaAvailable && runningContainers.length > 0) {
         try {
           const containersForLogAnalysis = runningContainers.map((c) => ({
             endpointId: c.endpointId,
@@ -546,8 +549,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
           }));
           const logResults = await analyzeLogsForContainers(
             containersForLogAnalysis,
-            config.NLP_LOG_ANALYSIS_MAX_PER_CYCLE,
-            config.NLP_LOG_ANALYSIS_TAIL_LINES,
+            monCfg.nlpLogAnalysisMaxPerCycle,
+            monCfg.nlpLogAnalysisTailLines,
           );
           for (const result of logResults) {
             const container = runningContainers.find((c) => c.raw.Id === result.containerId);
@@ -591,7 +594,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
       }));
 
       // 6. Attempt AI analysis (fire-and-forget, gated by AI_ANALYSIS_ENABLED)
-      if (config.AI_ANALYSIS_ENABLED && ollamaAvailable) {
+      if (monCfg.aiAnalysisEnabled && ollamaAvailable) {
         // Fire-and-forget: AI analysis inserts its own insight when complete
         (async () => {
           try {
@@ -632,7 +635,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
             log.warn({ err }, 'AI analysis failed (async), using rule-based analysis only');
           }
         })();
-      } else if (!config.AI_ANALYSIS_ENABLED) {
+      } else if (!monCfg.aiAnalysisEnabled) {
         log.debug('AI analysis disabled via AI_ANALYSIS_ENABLED');
       } else {
         log.info('Ollama unavailable, using rule-based analysis only');
@@ -642,12 +645,12 @@ export function createMonitoringService(deps: MonitoringDeps) {
       let allInsights = [...anomalyInsights, ...predictiveInsights, ...logAnalysisInsights, ...securityInsights];
 
       // Cap at MAX_INSIGHTS_PER_CYCLE to prevent unbounded growth
-      if (allInsights.length > config.MAX_INSIGHTS_PER_CYCLE) {
+      if (allInsights.length > monCfg.maxInsightsPerCycle) {
         log.warn(
-          { total: allInsights.length, cap: config.MAX_INSIGHTS_PER_CYCLE },
+          { total: allInsights.length, cap: monCfg.maxInsightsPerCycle },
           'Insight count exceeds MAX_INSIGHTS_PER_CYCLE, truncating',
         );
-        allInsights = allInsights.slice(0, config.MAX_INSIGHTS_PER_CYCLE);
+        allInsights = allInsights.slice(0, monCfg.maxInsightsPerCycle);
       }
 
       // Batch insert all insights in a single transaction

@@ -23,6 +23,40 @@ const defaultConfig = {
   AI_ANALYSIS_ENABLED: false, // disabled by default in tests to avoid async side-effects
 };
 
+// MonitoringConfig shape used by getEffectiveMonitoringConfig mock (matches defaultConfig values)
+const defaultMonitoringConfig = {
+  aiAnalysisEnabled: false,
+  maxInsightsPerCycle: 500,
+  logAnalysisConcurrency: 3,
+  maxLlmHistoryMessages: 50,
+  anomalyDetectionMethod: 'adaptive' as const,
+  anomalyZscoreThreshold: 3.5,
+  anomalyMovingAverageWindow: 20,
+  anomalyMinSamples: 10,
+  anomalyCooldownMinutes: 0,
+  anomalyThresholdPct: 80,
+  anomalyHardThresholdEnabled: true,
+  bollingerBandsEnabled: true,
+  predictiveAlertingEnabled: true,
+  predictiveAlertThresholdHours: 24,
+  anomalyExplanationEnabled: true,
+  anomalyExplanationMaxPerCycle: 5,
+  isolationForestEnabled: false,
+  isolationForestRetrainHours: 6,
+  nlpLogAnalysisEnabled: false,
+  nlpLogAnalysisMaxPerCycle: 3,
+  nlpLogAnalysisTailLines: 100,
+  smartGroupingEnabled: true,
+  smartGroupingSimilarityThreshold: 0.3,
+  incidentSummaryEnabled: true,
+  investigationEnabled: true,
+  investigationCooldownMinutes: 30,
+  investigationMaxConcurrent: 2,
+  investigationLogTailLines: 50,
+  investigationMetricsWindowMinutes: 60,
+  investigationMinSeverity: 'warning' as const,
+};
+
 // Kept mocks — internal services the monitoring cycle depends on
 
 // Real portainer-normalizers used (pure function, no external deps)
@@ -112,13 +146,57 @@ vi.mock('@dashboard/core/services/typed-event-bus.js', () => ({
   eventBus: { emit: vi.fn(), on: vi.fn(() => vi.fn()), onAny: vi.fn(() => vi.fn()), emitAsync: vi.fn() },
 }));
 
+// Mock getEffectiveMonitoringConfig to avoid hitting the real DB in CI.
+// Values must be inlined (not reference defaultConfig) because vi.mock is hoisted.
+vi.mock('@dashboard/core/services/settings-store.js', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getEffectiveMonitoringConfig: vi.fn().mockResolvedValue({
+      aiAnalysisEnabled: false,
+      maxInsightsPerCycle: 500,
+      logAnalysisConcurrency: 3,
+      maxLlmHistoryMessages: 50,
+      anomalyDetectionMethod: 'adaptive',
+      anomalyZscoreThreshold: 3.5,
+      anomalyMovingAverageWindow: 20,
+      anomalyMinSamples: 10,
+      anomalyCooldownMinutes: 0,
+      anomalyThresholdPct: 80,
+      anomalyHardThresholdEnabled: true,
+      bollingerBandsEnabled: true,
+      predictiveAlertingEnabled: true,
+      predictiveAlertThresholdHours: 24,
+      anomalyExplanationEnabled: true,
+      anomalyExplanationMaxPerCycle: 5,
+      isolationForestEnabled: false,
+      isolationForestRetrainHours: 6,
+      nlpLogAnalysisEnabled: false,
+      nlpLogAnalysisMaxPerCycle: 3,
+      nlpLogAnalysisTailLines: 100,
+      smartGroupingEnabled: true,
+      smartGroupingSimilarityThreshold: 0.3,
+      incidentSummaryEnabled: true,
+      investigationEnabled: true,
+      investigationCooldownMinutes: 30,
+      investigationMaxConcurrent: 2,
+      investigationLogTailLines: 50,
+      investigationMetricsWindowMinutes: 60,
+      investigationMinSeverity: 'warning',
+    }),
+  };
+});
+
 const mockCorrelateInsights = vi.fn().mockResolvedValue({ incidentsCreated: 0, insightsGrouped: 0 });
 vi.mock('../services/incident-correlator.js', () => ({
   correlateInsights: (...args: unknown[]) => mockCorrelateInsights(...args),
 }));
 
 const { createMonitoringService, setMonitoringNamespace, sweepExpiredCooldowns, resetAnomalyCooldowns, startCooldownSweep, stopCooldownSweep, resetPreviousCycleStats } = await import('../services/monitoring-service.js');
+import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
+
+const mockGetEffectiveMonitoringConfig = vi.mocked(getEffectiveMonitoringConfig);
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';
 import { cache } from '@dashboard/core/portainer/portainer-cache.js';
@@ -294,6 +372,9 @@ describe('monitoring-service', () => {
         MAX_INSIGHTS_PER_CYCLE: 2,
         ANOMALY_COOLDOWN_MINUTES: 0,
       });
+      mockGetEffectiveMonitoringConfig.mockResolvedValueOnce(
+        { ...defaultMonitoringConfig, maxInsightsPerCycle: 2, anomalyCooldownMinutes: 0 },
+      );
 
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
@@ -459,6 +540,9 @@ describe('monitoring-service', () => {
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,
       });
+      mockGetEffectiveMonitoringConfig.mockResolvedValueOnce(
+        { ...defaultMonitoringConfig, predictiveAlertingEnabled: false, anomalyExplanationEnabled: false },
+      );
 
       mockGetCapacityForecasts.mockReturnValue([
         {
@@ -537,6 +621,9 @@ describe('monitoring-service', () => {
       setConfigForTest({
         ANOMALY_EXPLANATION_ENABLED: false,
       });
+      mockGetEffectiveMonitoringConfig.mockResolvedValueOnce(
+        { ...defaultMonitoringConfig, anomalyExplanationEnabled: false },
+      );
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },
@@ -577,6 +664,9 @@ describe('monitoring-service', () => {
         PREDICTIVE_ALERTING_ENABLED: false,
         ANOMALY_EXPLANATION_ENABLED: false,
       });
+      mockGetEffectiveMonitoringConfig.mockResolvedValueOnce(
+        { ...defaultMonitoringConfig, anomalyHardThresholdEnabled: false, predictiveAlertingEnabled: false, anomalyExplanationEnabled: false },
+      );
       mockGetEndpoints.mockResolvedValue([{ Id: 1, Name: 'local', Status: 1, Type: 1, URL: 'tcp://localhost' }]);
       mockGetContainers.mockResolvedValue([
         { Id: 'c1', Names: ['/web-app'], State: 'running', Image: 'node:18' },

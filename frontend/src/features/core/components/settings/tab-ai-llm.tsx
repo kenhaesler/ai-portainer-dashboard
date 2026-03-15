@@ -34,7 +34,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
+import { SettingsSection, SettingRow, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
 import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/features/ai-intelligence/hooks/use-llm-models';
 import {
   useMcpServers,
@@ -190,6 +190,16 @@ export function AiLlmTab({
         <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
           <LazyAiFeedbackPanel />
         </Suspense>
+      )}
+
+      {/* Advanced AI Tuning — Category B env vars moved to Settings DB (#993) */}
+      {role === 'admin' && (
+        <AdvancedAiTuningSection
+          editedValues={editedValues}
+          originalValues={originalValues}
+          onChange={onChange}
+          isSaving={isSaving}
+        />
       )}
     </div>
   );
@@ -2149,6 +2159,46 @@ export function AiPromptsTab({
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Collapsible section for AI tuning knobs (Category B env vars moved to Settings DB). */
+function AdvancedAiTuningSection({ editedValues, originalValues, onChange, isSaving }: SettingsTabProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+          <Wrench className="h-4 w-4" />
+          <span className="font-medium">Advanced AI Tuning</span>
+          <span className="text-xs text-muted-foreground">Anomaly detection, investigation, and ML parameters</span>
+        </div>
+      </button>
+      {expanded && (
+        <div className="border-t border-border px-4">
+          {DEFAULT_SETTINGS.aiTuning.map((setting) => (
+            <SettingRow
+              key={setting.key}
+              setting={setting}
+              value={editedValues[setting.key] ?? setting.defaultValue}
+              onChange={(value) => onChange(setting.key, value)}
+              hasChanges={editedValues[setting.key] !== originalValues[setting.key]}
+              disabled={isSaving}
+            />
+          ))}
         </div>
       )}
     </div>

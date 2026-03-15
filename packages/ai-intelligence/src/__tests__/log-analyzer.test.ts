@@ -5,6 +5,17 @@ vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockResolvedValue('You are a test assistant.'),
 }));
 
+// Mock getEffectiveMonitoringConfig to avoid DB access in CI
+vi.mock('@dashboard/core/services/settings-store.js', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getEffectiveMonitoringConfig: vi.fn().mockResolvedValue({
+      logAnalysisConcurrency: 3,
+    }),
+  };
+});
+
 import { analyzeContainerLogs, analyzeLogsForContainers } from '../services/log-analyzer.js';
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
 import * as portainerCache from '@dashboard/core/portainer/portainer-cache.js';

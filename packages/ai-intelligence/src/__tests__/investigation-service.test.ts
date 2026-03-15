@@ -21,6 +21,22 @@ vi.mock('../services/investigation-store.js', () => ({
   getRecentInvestigationForContainer: (...args: unknown[]) => mockGetRecentInvestigationForContainer(...args),
 }));
 
+// Mock getEffectiveMonitoringConfig to avoid DB access in CI
+vi.mock('@dashboard/core/services/settings-store.js', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getEffectiveMonitoringConfig: vi.fn().mockResolvedValue({
+      investigationEnabled: true,
+      investigationCooldownMinutes: 30,
+      investigationMaxConcurrent: 2,
+      investigationLogTailLines: 50,
+      investigationMetricsWindowMinutes: 60,
+      investigationMinSeverity: 'warning',
+    }),
+  };
+});
+
 // Import after mocks are set up
 const { parseInvestigationResponse, buildInvestigationPrompt, triggerInvestigation, initInvestigationDeps } =
   await import('../services/investigation-service.js');

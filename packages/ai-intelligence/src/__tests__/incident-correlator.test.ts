@@ -11,6 +11,19 @@ vi.mock('../services/incident-store.js', () => ({
   getActiveIncidentForContainer: vi.fn(() => Promise.resolve(undefined)),
 }));
 
+// Mock getEffectiveMonitoringConfig to avoid DB access in CI
+vi.mock('@dashboard/core/services/settings-store.js', async (importOriginal) => {
+  const orig = await importOriginal() as Record<string, unknown>;
+  return {
+    ...orig,
+    getEffectiveMonitoringConfig: vi.fn().mockResolvedValue({
+      smartGroupingEnabled: true,
+      smartGroupingSimilarityThreshold: 0.3,
+      incidentSummaryEnabled: false,
+    }),
+  };
+});
+
 // DI pattern — findSimilarInsights is passed as optional 3rd param to correlateInsights;
 // not passing it defaults to no smart grouping (same as SMART_GROUPING_ENABLED: false).
 

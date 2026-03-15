@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { getConfig } from '@dashboard/core/config/index.js';
+import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { isOllamaAvailable } from './llm-client.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import {
@@ -82,12 +82,12 @@ export async function correlateInsights(
   const grouped = groupByCorrelation(anomalyInsights, correlationWindowMinutes);
 
   // Semantic grouping pass: group ungrouped singles by text similarity
-  const config = getConfig();
-  if (config.SMART_GROUPING_ENABLED && findSimilarInsights) {
+  const monCfg = await getEffectiveMonitoringConfig();
+  if (monCfg.smartGroupingEnabled && findSimilarInsights) {
     const ungroupedSingles = grouped.filter((g) => g.insights.length === 1);
     if (ungroupedSingles.length >= 2) {
       const ungroupedInsights = ungroupedSingles.map((g) => g.insights[0]);
-      const semanticGroups = findSimilarInsights(ungroupedInsights, config.SMART_GROUPING_SIMILARITY_THRESHOLD);
+      const semanticGroups = findSimilarInsights(ungroupedInsights, monCfg.smartGroupingSimilarityThreshold);
 
       for (const semanticGroup of semanticGroups) {
         // Remove the individual entries from grouped
@@ -116,7 +116,7 @@ export async function correlateInsights(
   }
 
   // LLM summary enrichment for multi-insight groups
-  const ollamaAvailable = config.INCIDENT_SUMMARY_ENABLED ? await isOllamaAvailable() : false;
+  const ollamaAvailable = monCfg.incidentSummaryEnabled ? await isOllamaAvailable() : false;
   if (ollamaAvailable) {
     for (const group of grouped) {
       if (group.insights.length >= 2) {
