@@ -1,5 +1,6 @@
 import pLimit from 'p-limit';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { getContainerLogs } from '@dashboard/core/portainer/portainer-client.js';
@@ -97,7 +98,6 @@ export async function analyzeLogsForContainers(
   }
 
   const toAnalyze = ordered.slice(0, maxContainers);
-  const { getEffectiveMonitoringConfig } = await import('@dashboard/core/services/settings-store.js');
   const monCfg = await getEffectiveMonitoringConfig();
   const limit = pLimit(monCfg.logAnalysisConcurrency);
 
