@@ -9,7 +9,13 @@ import { getKpiHistory, getLatestMetricsBatch } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { buildSecurityAuditSummary, getSecurityAudit } from '@dashboard/security';
 
-/** Cap concurrent Portainer API calls to avoid overwhelming the upstream server. */
+/**
+ * Cap concurrent Portainer API calls per dashboard request to 5.
+ * The portainer-client has its own higher process-wide limit (default 30),
+ * but dashboard routes fan out across many endpoints simultaneously —
+ * this tighter cap prevents a single heavy page-load from saturating the
+ * shared pool and starving other routes (containers, stacks, etc.).
+ */
 const portainerLimit = pLimit(5);
 
 const log = createChildLogger('route:dashboard');
@@ -177,7 +183,7 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
           endpointName: ep.name,
         })));
       } else {
-        const ep = upEndpoints[i];
+        const ep = upDockerEndpoints[i];
         const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error';
         log.warn({ endpointId: ep.id, endpointName: ep.name, err: result.reason }, 'Failed to fetch containers for endpoint');
         resourceErrors.push(`${ep.name}: ${msg}`);
