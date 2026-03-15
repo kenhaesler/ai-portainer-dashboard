@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { eventBus } from '@dashboard/core/services/typed-event-bus.js';
+import { getSetting } from '@dashboard/core/services/settings-store.js';
 import { toWebhookEvent, type WebhookEvent } from '@dashboard/contracts';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
 
@@ -127,10 +128,13 @@ export async function createDelivery(webhookId: string, event: WebhookEvent): Pr
   const id = crypto.randomUUID();
   const payload = JSON.stringify(event);
 
+  const maxRetriesSetting = await getSetting('notifications.webhooks_max_retries');
+  const maxRetries = maxRetriesSetting ? parseInt(maxRetriesSetting.value, 10) || 5 : 5;
+
   await db().execute(`
     INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, status, attempt, max_attempts)
-    VALUES (?, ?, ?, ?, 'pending', 0, 5)
-  `, [id, webhookId, event.type, payload]);
+    VALUES (?, ?, ?, ?, 'pending', 0, ?)
+  `, [id, webhookId, event.type, payload, maxRetries]);
 
   return id;
 }

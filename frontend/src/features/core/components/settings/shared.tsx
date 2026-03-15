@@ -82,6 +82,54 @@ export const DEFAULT_SETTINGS = {
     { key: 'mcp.tool_timeout', label: 'Tool Timeout', description: 'Maximum execution time for MCP tool calls (seconds)', type: 'number', defaultValue: '60', min: 1, max: 600 },
     { key: 'llm.max_tool_iterations', label: 'Max Tool Iterations', description: 'Maximum number of tool call rounds the LLM can perform per message (higher = more complex tasks)', type: 'number', defaultValue: '3', min: 1, max: 20 },
   ],
+  aiTuning: [
+    // Anomaly Detection
+    { key: 'ai_tuning.anomaly_detection_method', label: 'Detection Method', description: 'Algorithm for statistical anomaly detection (zscore, bollinger, adaptive)', type: 'string', defaultValue: 'adaptive' },
+    { key: 'ai_tuning.anomaly_zscore_threshold', label: 'Z-Score Threshold', description: 'Standard deviations from the mean to trigger an anomaly alert', type: 'number', defaultValue: '3.5', min: 0.5, max: 10, step: 0.1 },
+    { key: 'ai_tuning.anomaly_moving_average_window', label: 'Moving Average Window', description: 'Number of data points for the rolling average baseline', type: 'number', defaultValue: '20', min: 5, max: 200 },
+    { key: 'ai_tuning.anomaly_min_samples', label: 'Min Samples', description: 'Minimum data points required before anomaly detection activates', type: 'number', defaultValue: '10', min: 3, max: 100 },
+    { key: 'ai_tuning.anomaly_cooldown_minutes', label: 'Alert Cooldown (min)', description: 'Minutes to suppress repeated alerts for the same container+metric', type: 'number', defaultValue: '30', min: 0, max: 1440 },
+    { key: 'ai_tuning.anomaly_threshold_pct', label: 'Hard Threshold %', description: 'Absolute usage percentage that always triggers a warning', type: 'number', defaultValue: '85', min: 50, max: 100 },
+    { key: 'ai_tuning.anomaly_hard_threshold_enabled', label: 'Hard Threshold Enabled', description: 'Flag values above the hard threshold regardless of statistical detection', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.bollinger_bands_enabled', label: 'Bollinger Bands', description: 'Enable Bollinger Bands for low-variance workload detection', type: 'boolean', defaultValue: 'true' },
+    // Predictive Alerting
+    { key: 'ai_tuning.predictive_alerting_enabled', label: 'Predictive Alerting', description: 'Proactively warn about resource exhaustion trends', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.predictive_alert_threshold_hours', label: 'Prediction Horizon (hours)', description: 'Alert when resource exhaustion is predicted within this timeframe', type: 'number', defaultValue: '24', min: 1, max: 168 },
+    // Anomaly Explanation
+    { key: 'ai_tuning.anomaly_explanation_enabled', label: 'LLM Anomaly Explanations', description: 'Use LLM to generate plain-English explanations of anomalies', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.anomaly_explanation_max_per_cycle', label: 'Max Explanations / Cycle', description: 'Maximum number of anomalies explained by LLM per monitoring cycle', type: 'number', defaultValue: '5', min: 1, max: 50 },
+    // Isolation Forest
+    { key: 'ai_tuning.isolation_forest_enabled', label: 'Isolation Forest ML', description: 'Enable multivariate ML-based anomaly detection', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.isolation_forest_retrain_hours', label: 'Retrain Interval (hours)', description: 'Hours between Isolation Forest model retraining', type: 'number', defaultValue: '6', min: 1, max: 168 },
+    // NLP Log Analysis
+    { key: 'ai_tuning.nlp_log_analysis_enabled', label: 'NLP Log Analysis', description: 'LLM-powered container log error pattern detection', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.nlp_log_analysis_max_per_cycle', label: 'Max Containers / Cycle', description: 'Maximum containers to analyze logs for per cycle', type: 'number', defaultValue: '3', min: 1, max: 20 },
+    { key: 'ai_tuning.nlp_log_analysis_tail_lines', label: 'Log Tail Lines', description: 'Number of recent log lines to send to the LLM', type: 'number', defaultValue: '100', min: 10, max: 500 },
+    // Smart Grouping
+    { key: 'ai_tuning.smart_grouping_enabled', label: 'Smart Alert Grouping', description: 'Group semantically similar anomalies into incidents', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.smart_grouping_similarity_threshold', label: 'Similarity Threshold', description: 'Text similarity threshold for grouping (0-1, lower = more aggressive)', type: 'number', defaultValue: '0.3', min: 0.1, max: 1.0, step: 0.05 },
+    { key: 'ai_tuning.incident_summary_enabled', label: 'LLM Incident Summaries', description: 'Generate LLM-powered summaries for correlated incidents', type: 'boolean', defaultValue: 'true' },
+    // Investigation
+    { key: 'ai_tuning.investigation_enabled', label: 'Root Cause Investigation', description: 'Auto-trigger LLM-powered root cause analysis for anomalies', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.investigation_cooldown_minutes', label: 'Investigation Cooldown (min)', description: 'Minimum minutes between investigations for the same container', type: 'number', defaultValue: '20', min: 1, max: 1440 },
+    { key: 'ai_tuning.investigation_max_concurrent', label: 'Max Concurrent', description: 'Maximum investigations running simultaneously', type: 'number', defaultValue: '2', min: 1, max: 10 },
+    { key: 'ai_tuning.investigation_log_tail_lines', label: 'Evidence Log Lines', description: 'Log lines collected as evidence for investigations', type: 'number', defaultValue: '50', min: 10, max: 500 },
+    { key: 'ai_tuning.investigation_metrics_window_minutes', label: 'Metrics Window (min)', description: 'Time window for metrics evidence collection', type: 'number', defaultValue: '60', min: 5, max: 1440 },
+    { key: 'ai_tuning.investigation_min_severity', label: 'Min Severity', description: 'Minimum insight severity to trigger investigation (critical, warning, info)', type: 'string', defaultValue: 'warning' },
+    // General AI
+    { key: 'ai_tuning.ai_analysis_enabled', label: 'AI Infrastructure Analysis', description: 'Fire-and-forget LLM analysis each monitoring cycle', type: 'boolean', defaultValue: 'true' },
+    { key: 'ai_tuning.max_insights_per_cycle', label: 'Max Insights / Cycle', description: 'Cap on total insights generated per monitoring cycle', type: 'number', defaultValue: '500', min: 1, max: 10000 },
+    { key: 'ai_tuning.log_analysis_concurrency', label: 'Log Analysis Concurrency', description: 'Parallel container log analysis tasks', type: 'number', defaultValue: '3', min: 1, max: 20 },
+    { key: 'ai_tuning.insights_retention_days', label: 'Insights Retention (days)', description: 'How long to keep generated insights', type: 'number', defaultValue: '7', min: 1, max: 365 },
+  ],
+  metricsRetention: [
+    { key: 'infrastructure.metrics_retention_days', label: 'Metrics Retention (days)', description: 'Default retention period for container metrics', type: 'number', defaultValue: '7', min: 1, max: 365 },
+    { key: 'infrastructure.metrics_raw_retention_days', label: 'Raw Metrics Retention (days)', description: 'Retention for raw per-minute metrics', type: 'number', defaultValue: '7', min: 1, max: 90 },
+    { key: 'infrastructure.metrics_rollup_5min_retention_days', label: '5min Rollup Retention (days)', description: 'Retention for 5-minute aggregated metrics', type: 'number', defaultValue: '30', min: 1, max: 365 },
+    { key: 'infrastructure.metrics_rollup_1hour_retention_days', label: '1h Rollup Retention (days)', description: 'Retention for hourly aggregated metrics', type: 'number', defaultValue: '90', min: 1, max: 730 },
+    { key: 'infrastructure.metrics_rollup_1day_retention_days', label: '1d Rollup Retention (days)', description: 'Retention for daily aggregated metrics', type: 'number', defaultValue: '365', min: 1, max: 1825 },
+    { key: 'infrastructure.insights_retention_days', label: 'Insights Retention (days)', description: 'How long to keep AI-generated insights', type: 'number', defaultValue: '7', min: 1, max: 365 },
+  ],
   portainerBackup: [
     { key: 'portainer_backup.enabled', label: 'Enable Scheduled Backups', description: 'Automatically back up Portainer server configuration on a schedule', type: 'boolean', defaultValue: 'false' },
     { key: 'portainer_backup.interval_hours', label: 'Backup Interval (hours)', description: 'Hours between automated Portainer backups', type: 'number', defaultValue: '24', min: 1, max: 168 },

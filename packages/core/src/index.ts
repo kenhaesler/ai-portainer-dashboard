@@ -30,7 +30,8 @@ export { normalizeEndpoint, normalizeContainer, normalizeStack, normalizeNetwork
 export { CircuitBreaker } from './portainer/circuit-breaker.js';
 
 // Core Services
-export { getSetting, setSetting, getSettings, getEffectiveLlmConfig } from './services/settings-store.js';
+export { getSetting, setSetting, getSettings, getEffectiveLlmConfig, getEffectiveMonitoringConfig } from './services/settings-store.js';
+export type { MonitoringConfig } from './services/settings-store.js';
 export { createSession, getSession, invalidateSession, refreshSession } from './services/session-store.js';
 export { getUserById, getUserByUsername, authenticateUser, hasMinRole } from './services/user-store.js';
 export { writeAuditLog, getAuditLogs } from './services/audit-logger.js';

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Namespace } from 'socket.io';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getContainerLogs, getContainers } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
@@ -231,7 +232,7 @@ async function gatherEvidence(insight: Insight): Promise<{
   forecasts?: CapacityForecast[];
   evidenceSummary: EvidenceSummary;
 }> {
-  const config = getConfig();
+  const monCfg = await getEffectiveMonitoringConfig();
   const evidence: {
     logs?: string;
     metrics?: MetricSnapshot[];
@@ -250,7 +251,7 @@ async function gatherEvidence(insight: Insight): Promise<{
           const rawLogs = await getContainerLogs(
             insight.endpoint_id!,
             insight.container_id!,
-            { tail: config.INVESTIGATION_LOG_TAIL_LINES, timestamps: true },
+            { tail: monCfg.investigationLogTailLines, timestamps: true },
           );
           // Cap at 5KB
           evidence.logs = rawLogs.slice(0, 5120);
@@ -269,7 +270,7 @@ async function gatherEvidence(insight: Insight): Promise<{
       (async () => {
         try {
           const deps = requireMetricsDeps();
-          const metricsWindow = config.INVESTIGATION_METRICS_WINDOW_MINUTES;
+          const metricsWindow = monCfg.investigationMetricsWindowMinutes;
           const now = new Date();
           const from = new Date(now.getTime() - metricsWindow * 60 * 1000);
           const snapshots: MetricSnapshot[] = [];
@@ -456,10 +457,10 @@ async function broadcastInvestigationComplete(investigationId: string): Promise<
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 
 export async function triggerInvestigation(insight: Insight): Promise<void> {
-  const config = getConfig();
+  const monCfg = await getEffectiveMonitoringConfig();
 
   // Guard: feature flag
-  if (!config.INVESTIGATION_ENABLED) {
+  if (!monCfg.investigationEnabled) {
     log.debug('Investigation disabled by configuration');
     return;
   }
@@ -471,7 +472,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   }
 
   // Guard: severity threshold (#697) — skip low-severity insights
-  const minSeverity = (config as Record<string, unknown>).INVESTIGATION_MIN_SEVERITY as string ?? 'warning';
+  const minSeverity = monCfg.investigationMinSeverity;
   const insightOrder = SEVERITY_ORDER[insight.severity] ?? 2;
   const minOrder = SEVERITY_ORDER[minSeverity] ?? 1;
   if (insightOrder > minOrder) {
@@ -483,9 +484,9 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   }
 
   // Guard: concurrency limit
-  if (activeInvestigations >= config.INVESTIGATION_MAX_CONCURRENT) {
+  if (activeInvestigations >= monCfg.investigationMaxConcurrent) {
     log.debug(
-      { activeInvestigations, max: config.INVESTIGATION_MAX_CONCURRENT },
+      { activeInvestigations, max: monCfg.investigationMaxConcurrent },
       'Skipping investigation: concurrency limit reached',
     );
     return;
@@ -493,7 +494,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
 
   // Guard: in-memory cooldown
   const lastRun = cooldownMap.get(insight.container_id);
-  const cooldownMs = config.INVESTIGATION_COOLDOWN_MINUTES * 60 * 1000;
+  const cooldownMs = monCfg.investigationCooldownMinutes * 60 * 1000;
   if (lastRun && Date.now() - lastRun < cooldownMs) {
     log.debug(
       { containerId: insight.container_id },
@@ -505,7 +506,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   // Guard: DB cooldown (for durability across restarts)
   const recent = await getRecentInvestigationForContainer(
     insight.container_id,
-    config.INVESTIGATION_COOLDOWN_MINUTES,
+    monCfg.investigationCooldownMinutes,
   );
   if (recent) {
     log.debug(

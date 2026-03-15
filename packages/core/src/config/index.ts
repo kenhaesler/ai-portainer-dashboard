@@ -146,6 +146,75 @@ function validateServicePasswords(data: EnvConfig): void {
   }
 }
 
+// Category A + B env vars that are now configurable via Settings UI.
+// During the deprecation window, they still work as fallbacks but log a warning.
+const DEPRECATED_ENV_VARS: Record<string, string> = {
+  // Category A: already have Settings UI
+  TEAMS_WEBHOOK_URL: 'Settings → Monitoring → Notifications',
+  TEAMS_NOTIFICATIONS_ENABLED: 'Settings → Monitoring → Notifications',
+  DISCORD_WEBHOOK_URL: 'Settings → Monitoring → Notifications',
+  DISCORD_NOTIFICATIONS_ENABLED: 'Settings → Monitoring → Notifications',
+  TELEGRAM_BOT_TOKEN: 'Settings → Monitoring → Notifications',
+  TELEGRAM_CHAT_ID: 'Settings → Monitoring → Notifications',
+  TELEGRAM_NOTIFICATIONS_ENABLED: 'Settings → Monitoring → Notifications',
+  SMTP_PORT: 'Settings → Monitoring → Notifications',
+  SMTP_SECURE: 'Settings → Monitoring → Notifications',
+  SMTP_USER: 'Settings → Monitoring → Notifications',
+  SMTP_PASSWORD: 'Settings → Monitoring → Notifications',
+  SMTP_FROM: 'Settings → Monitoring → Notifications',
+  EMAIL_NOTIFICATIONS_ENABLED: 'Settings → Monitoring → Notifications',
+  EMAIL_RECIPIENTS: 'Settings → Monitoring → Notifications',
+  WEBHOOKS_ENABLED: 'Settings → Integrations → Webhooks',
+  WEBHOOKS_MAX_RETRIES: 'Settings → Integrations → Webhooks',
+  WEBHOOKS_RETRY_INTERVAL_SECONDS: 'Settings → Integrations → Webhooks',
+  // Category B: AI tuning (now in Settings → AI & LLM → Advanced)
+  ANOMALY_ZSCORE_THRESHOLD: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_MOVING_AVERAGE_WINDOW: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_MIN_SAMPLES: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_DETECTION_METHOD: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_COOLDOWN_MINUTES: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_THRESHOLD_PCT: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_HARD_THRESHOLD_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  BOLLINGER_BANDS_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  PREDICTIVE_ALERTING_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  PREDICTIVE_ALERT_THRESHOLD_HOURS: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_EXPLANATION_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  ANOMALY_EXPLANATION_MAX_PER_CYCLE: 'Settings → AI & LLM → Advanced AI Tuning',
+  ISOLATION_FOREST_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  ISOLATION_FOREST_RETRAIN_HOURS: 'Settings → AI & LLM → Advanced AI Tuning',
+  NLP_LOG_ANALYSIS_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  NLP_LOG_ANALYSIS_MAX_PER_CYCLE: 'Settings → AI & LLM → Advanced AI Tuning',
+  NLP_LOG_ANALYSIS_TAIL_LINES: 'Settings → AI & LLM → Advanced AI Tuning',
+  SMART_GROUPING_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  SMART_GROUPING_SIMILARITY_THRESHOLD: 'Settings → AI & LLM → Advanced AI Tuning',
+  INCIDENT_SUMMARY_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  INVESTIGATION_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  INVESTIGATION_COOLDOWN_MINUTES: 'Settings → AI & LLM → Advanced AI Tuning',
+  INVESTIGATION_MAX_CONCURRENT: 'Settings → AI & LLM → Advanced AI Tuning',
+  INVESTIGATION_LOG_TAIL_LINES: 'Settings → AI & LLM → Advanced AI Tuning',
+  INVESTIGATION_METRICS_WINDOW_MINUTES: 'Settings → AI & LLM → Advanced AI Tuning',
+  INVESTIGATION_MIN_SEVERITY: 'Settings → AI & LLM → Advanced AI Tuning',
+  AI_ANALYSIS_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
+  MAX_INSIGHTS_PER_CYCLE: 'Settings → AI & LLM → Advanced AI Tuning',
+  INSIGHTS_RETENTION_DAYS: 'Settings → AI & LLM → Advanced AI Tuning',
+};
+
+let deprecationWarned = false;
+
+function warnDeprecatedEnvVars(): void {
+  if (deprecationWarned) return;
+  deprecationWarned = true;
+
+  for (const [envVar, uiLocation] of Object.entries(DEPRECATED_ENV_VARS)) {
+    if (process.env[envVar] !== undefined) {
+      console.warn(
+        `[DEPRECATED] Env var ${envVar} is now configurable via ${uiLocation} and will be removed in a future release. ` +
+        `Migrate to the Settings UI and remove it from your .env file.`,
+      );
+    }
+  }
+}
+
 export function getConfig(): EnvConfig {
   if (!config) {
     const result = envSchema.safeParse(process.env);
@@ -160,6 +229,7 @@ export function getConfig(): EnvConfig {
     validateDashboardCredentials(result.data.DASHBOARD_USERNAME, result.data.DASHBOARD_PASSWORD);
     validateServicePasswords(result.data);
     validatePrometheusToken(result.data);
+    warnDeprecatedEnvVars();
     config = result.data;
   }
   return config;
