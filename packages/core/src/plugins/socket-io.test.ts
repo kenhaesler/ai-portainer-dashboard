@@ -93,6 +93,122 @@ describe('socket-io plugin', () => {
     const user = await authenticateSocketToken('token');
     expect(user).toEqual({ sub: 'u1', username: 'test', sessionId: 's1' });
   });
+
+  it('authenticateSocketToken includes role from JWT payload', async () => {
+    mockVerifyJwt.mockResolvedValue({ sub: 'u1', username: 'test', sessionId: 's1', role: 'admin' });
+    const user = await authenticateSocketToken('token');
+    expect(user).toEqual({ sub: 'u1', username: 'test', sessionId: 's1', role: 'admin' });
+  });
+});
+
+// =====================================================================
+//  Remediation namespace – admin role enforcement (issue #977)
+// =====================================================================
+describe('remediation namespace admin role middleware', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockGetSession.mockReturnValue({
+      id: 's1',
+      user_id: 'u1',
+      username: 'test',
+      created_at: '2026-02-07T10:00:00.000Z',
+      expires_at: '2026-02-07T11:00:00.000Z',
+      last_active: '2026-02-07T10:30:00.000Z',
+      is_valid: 1,
+    });
+    app = Fastify();
+    await app.register(socketIoPlugin);
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('should have a dedicated admin role middleware on the remediation namespace', () => {
+    // The remediation namespace should have more middleware than llm/monitoring
+    // because it has the shared auth middleware PLUS the admin role middleware.
+    const remediationNs = app.ioNamespaces.remediation;
+    const llmNs = app.ioNamespaces.llm;
+
+    // Access the internal middleware stack (_fns is Socket.IO's internal array
+    // of middleware functions registered via .use())
+    const remFns = (remediationNs as unknown as { _fns: unknown[] })._fns;
+    const llmFns = (llmNs as unknown as { _fns: unknown[] })._fns;
+
+    // Remediation should have 1 more middleware (admin role check) than llm
+    expect(remFns.length).toBe(llmFns.length + 1);
+  });
+
+  it('should reject non-admin users from the remediation namespace via middleware', async () => {
+    const remediationNs = app.ioNamespaces.remediation;
+    const middlewares = (remediationNs as unknown as { _fns: Array<(socket: unknown, next: (err?: Error) => void) => void> })._fns;
+
+    // The last middleware is the admin role check
+    const adminMiddleware = middlewares[middlewares.length - 1];
+
+    // Simulate a socket with a non-admin user (viewer role)
+    const fakeSocket = {
+      data: { user: { sub: 'u1', username: 'test', sessionId: 's1', role: 'viewer' } },
+      handshake: { auth: { token: 'valid-token' } },
+    };
+
+    const next = vi.fn();
+    adminMiddleware(fakeSocket, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Admin role required',
+    }));
+  });
+
+  it('should reject users with no role from the remediation namespace', async () => {
+    const remediationNs = app.ioNamespaces.remediation;
+    const middlewares = (remediationNs as unknown as { _fns: Array<(socket: unknown, next: (err?: Error) => void) => void> })._fns;
+    const adminMiddleware = middlewares[middlewares.length - 1];
+
+    const fakeSocket = {
+      data: { user: { sub: 'u1', username: 'test', sessionId: 's1' } },
+      handshake: { auth: { token: 'valid-token' } },
+    };
+
+    const next = vi.fn();
+    adminMiddleware(fakeSocket, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Admin role required',
+    }));
+  });
+
+  it('should allow admin users to connect to the remediation namespace', async () => {
+    const remediationNs = app.ioNamespaces.remediation;
+    const middlewares = (remediationNs as unknown as { _fns: Array<(socket: unknown, next: (err?: Error) => void) => void> })._fns;
+    const adminMiddleware = middlewares[middlewares.length - 1];
+
+    const fakeSocket = {
+      data: { user: { sub: 'u1', username: 'test', sessionId: 's1', role: 'admin' } },
+      handshake: { auth: { token: 'valid-token' } },
+    };
+
+    const next = vi.fn();
+    adminMiddleware(fakeSocket, next);
+
+    // next() called with no arguments means success
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('should NOT have admin role middleware on llm or monitoring namespaces', () => {
+    const llmNs = app.ioNamespaces.llm;
+    const monitoringNs = app.ioNamespaces.monitoring;
+
+    // llm and monitoring should only have the shared auth middleware (1 function)
+    const llmFns = (llmNs as unknown as { _fns: unknown[] })._fns;
+    const monitoringFns = (monitoringNs as unknown as { _fns: unknown[] })._fns;
+
+    expect(llmFns.length).toBe(1);
+    expect(monitoringFns.length).toBe(1);
+  });
 });
 
 describe('verifyTransportRequest (Engine.IO allowRequest)', () => {

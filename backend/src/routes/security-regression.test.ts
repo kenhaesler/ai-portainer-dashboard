@@ -1604,3 +1604,53 @@ describe('Nginx Security Header Consistency', () => {
     expect(socketBlock![0]).not.toContain('Connection "upgrade"');
   });
 });
+
+// =====================================================================
+//  14. REMEDIATION WEBSOCKET NAMESPACE ADMIN ROLE (issue #977, CWE-862)
+// =====================================================================
+describe('Remediation WebSocket namespace admin role enforcement', () => {
+  it('socket-io plugin must apply admin role middleware to the /remediation namespace', () => {
+    // Source-code guard: verify the socket-io plugin enforces admin role
+    // on the remediation namespace via a dedicated middleware (.use()).
+    const file = path.resolve(process.cwd(), '..', 'packages', 'core', 'src', 'plugins', 'socket-io.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // Must contain a .use() middleware that checks for admin role
+    // specifically on the remediationNamespace (not in the shared loop)
+    expect(content).toMatch(/remediationNamespace\.use\(/);
+    expect(content).toMatch(/role.*!==.*['"]admin['"]/);
+    expect(content).toContain('Admin role required');
+  });
+
+  it('remediation socket handler must have defence-in-depth admin role check', () => {
+    // Source-code guard: the remediation socket connection handler must also
+    // verify admin role as a second layer of defence.
+    const file = path.resolve(process.cwd(), '..', 'packages', 'operations', 'src', 'sockets', 'remediation.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // Handler-level admin check must exist
+    expect(content).toMatch(/role.*!==.*['"]admin['"]/);
+    expect(content).toContain('Admin role required');
+    expect(content).toContain('disconnect');
+  });
+
+  it('remediation namespace must NOT be in the shared auth-only middleware loop', () => {
+    // Ensure the remediation namespace is handled separately from
+    // llm/monitoring so it can have its own admin-role middleware.
+    // The shared loop should only contain llm and monitoring namespaces,
+    // OR the remediation namespace must have an additional admin middleware
+    // beyond the shared auth.
+    const file = path.resolve(process.cwd(), '..', 'packages', 'core', 'src', 'plugins', 'socket-io.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // The file must have a remediationNamespace.use() that is separate from
+    // the shared for-loop. This regex checks for it outside the loop.
+    const sharedLoopMatch = content.match(/for\s*\(.*\[.*\]\)\s*\{[\s\S]*?\}/);
+    expect(sharedLoopMatch).not.toBeNull();
+
+    // The admin middleware must appear AFTER the shared loop
+    const sharedLoopEnd = content.indexOf(sharedLoopMatch![0]) + sharedLoopMatch![0].length;
+    const adminMiddlewareIdx = content.indexOf('remediationNamespace.use(');
+    expect(adminMiddlewareIdx).toBeGreaterThan(sharedLoopEnd);
+  });
+});
