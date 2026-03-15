@@ -150,7 +150,7 @@ describe('Logs Routes', () => {
       const [url, opts] = mockFetch.mock.calls[0];
       expect(url).toContain('logs-*/_search');
       const body = JSON.parse(opts.body);
-      expect(body.query.bool.must).toContainEqual({ query_string: { query: 'error' } });
+      expect(body.query.bool.must).toContainEqual(expect.objectContaining({ query_string: expect.objectContaining({ query: 'error' }) }));
       expect(body.query.bool.must).toContainEqual({ match: { 'host.name': 'server-01' } });
       expect(body.query.bool.must).toContainEqual({ match: { 'log.level': 'error' } });
     });

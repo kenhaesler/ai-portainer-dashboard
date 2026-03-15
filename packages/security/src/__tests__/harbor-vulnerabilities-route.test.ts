@@ -38,6 +38,7 @@ vi.mock('../services/harbor-vulnerability-store.js', () => ({
 const mockRunFullSync = vi.fn();
 vi.mock('../services/harbor-sync.js', () => ({
   runFullSync: (...args: unknown[]) => mockRunFullSync(...args),
+  getIsSyncing: vi.fn().mockReturnValue(false),
 }));
 
 // Kept: settings-store mock — reads from DB
