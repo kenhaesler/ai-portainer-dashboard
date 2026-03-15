@@ -71,6 +71,40 @@ describe('session-store integration (real PostgreSQL)', () => {
     expect(retrieved).toBeUndefined(); // Invalid sessions are not returned
   });
 
+  it('refreshSession returns undefined for an expired but valid session', async () => {
+    const pool = await getTestPool();
+
+    // Insert an expired session directly (is_valid = true, but expires_at in the past)
+    await pool.query(`
+      INSERT INTO sessions (id, user_id, username, created_at, expires_at, last_active, is_valid)
+      VALUES ('expired-refresh-test', 'user-expired', 'dave',
+              NOW() - INTERVAL '2 hours',
+              NOW() - INTERVAL '1 hour',
+              NOW() - INTERVAL '90 minutes',
+              true)
+    `);
+
+    const result = await refreshSession('expired-refresh-test');
+    expect(result).toBeUndefined();
+
+    // Verify expires_at was NOT updated in the database
+    const { rows } = await pool.query('SELECT expires_at FROM sessions WHERE id = $1', ['expired-refresh-test']);
+    expect(rows).toHaveLength(1);
+    // The expires_at should still be in the past (not refreshed)
+    expect(new Date(rows[0].expires_at).getTime()).toBeLessThan(Date.now());
+  });
+
+  it('refreshSession succeeds for a valid non-expired session', async () => {
+    const session = await createSession('user-fresh', 'frank');
+
+    const result = await refreshSession(session.id);
+    expect(result).toBeDefined();
+    expect(result?.id).toBe(session.id);
+    expect(new Date(result!.expires_at).getTime()).toBeGreaterThanOrEqual(
+      new Date(session.expires_at).getTime()
+    );
+  });
+
   it('cleans expired sessions', async () => {
     const pool = await getTestPool();
 
