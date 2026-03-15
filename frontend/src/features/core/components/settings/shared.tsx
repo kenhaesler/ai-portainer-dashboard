@@ -120,7 +120,6 @@ export const DEFAULT_SETTINGS = {
     { key: 'ai_tuning.ai_analysis_enabled', label: 'AI Infrastructure Analysis', description: 'Fire-and-forget LLM analysis each monitoring cycle', type: 'boolean', defaultValue: 'true' },
     { key: 'ai_tuning.max_insights_per_cycle', label: 'Max Insights / Cycle', description: 'Cap on total insights generated per monitoring cycle', type: 'number', defaultValue: '500', min: 1, max: 10000 },
     { key: 'ai_tuning.log_analysis_concurrency', label: 'Log Analysis Concurrency', description: 'Parallel container log analysis tasks', type: 'number', defaultValue: '3', min: 1, max: 20 },
-    { key: 'ai_tuning.insights_retention_days', label: 'Insights Retention (days)', description: 'How long to keep generated insights', type: 'number', defaultValue: '7', min: 1, max: 365 },
   ],
   metricsRetention: [
     { key: 'infrastructure.metrics_retention_days', label: 'Metrics Retention (days)', description: 'Default retention period for container metrics', type: 'number', defaultValue: '7', min: 1, max: 365 },

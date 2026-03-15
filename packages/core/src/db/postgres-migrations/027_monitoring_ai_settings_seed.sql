@@ -63,21 +63,16 @@ INSERT INTO settings (key, value, category, updated_at) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- Category B: AI Tuning — General AI
+-- Note: insights_retention_days lives in the infrastructure category (below), not here.
 INSERT INTO settings (key, value, category, updated_at) VALUES
   ('ai_tuning.ai_analysis_enabled', 'true', 'ai_tuning', NOW()),
   ('ai_tuning.max_insights_per_cycle', '500', 'ai_tuning', NOW()),
   ('ai_tuning.log_analysis_concurrency', '3', 'ai_tuning', NOW()),
-  ('ai_tuning.max_llm_history_messages', '50', 'ai_tuning', NOW()),
-  ('ai_tuning.insights_retention_days', '7', 'ai_tuning', NOW())
+  ('ai_tuning.max_llm_history_messages', '50', 'ai_tuning', NOW())
 ON CONFLICT (key) DO NOTHING;
 
--- Category B: AI Tuning — LLM Safety
-INSERT INTO settings (key, value, category, updated_at) VALUES
-  ('ai_tuning.llm_prompt_guard_strict', 'true', 'ai_tuning', NOW()),
-  ('ai_tuning.ai_search_model', 'llama3.2:latest', 'ai_tuning', NOW()),
-  ('ai_tuning.llm_verify_ssl', 'true', 'ai_tuning', NOW()),
-  ('ai_tuning.llm_request_timeout', '120000', 'ai_tuning', NOW())
-ON CONFLICT (key) DO NOTHING;
+-- LLM_PROMPT_GUARD_STRICT, LLM_VERIFY_SSL, LLM_REQUEST_TIMEOUT, AI_SEARCH_MODEL
+-- are Category C (security/performance knobs) — they stay env-only.
 
 -- Metrics retention (infrastructure category)
 INSERT INTO settings (key, value, category, updated_at) VALUES

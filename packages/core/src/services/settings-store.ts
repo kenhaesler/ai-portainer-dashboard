@@ -86,7 +86,6 @@ export interface MonitoringConfig {
   maxInsightsPerCycle: number;
   logAnalysisConcurrency: number;
   maxLlmHistoryMessages: number;
-  insightsRetentionDays: number;
   // Anomaly detection
   anomalyDetectionMethod: 'zscore' | 'bollinger' | 'adaptive';
   anomalyZscoreThreshold: number;
@@ -152,7 +151,6 @@ export async function getEffectiveMonitoringConfig(): Promise<MonitoringConfig> 
     maxInsightsPerCycle: num('ai_tuning.max_insights_per_cycle', envCfg.MAX_INSIGHTS_PER_CYCLE),
     logAnalysisConcurrency: num('ai_tuning.log_analysis_concurrency', envCfg.LOG_ANALYSIS_CONCURRENCY),
     maxLlmHistoryMessages: num('ai_tuning.max_llm_history_messages', envCfg.MAX_LLM_HISTORY_MESSAGES),
-    insightsRetentionDays: num('ai_tuning.insights_retention_days', envCfg.INSIGHTS_RETENTION_DAYS),
 
     anomalyDetectionMethod: str('ai_tuning.anomaly_detection_method', envCfg.ANOMALY_DETECTION_METHOD) as MonitoringConfig['anomalyDetectionMethod'],
     anomalyZscoreThreshold: num('ai_tuning.anomaly_zscore_threshold', envCfg.ANOMALY_ZSCORE_THRESHOLD),

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Archive,
+  BarChart3,
   Clock,
   Database,
   Download,
@@ -50,6 +51,19 @@ export function InfrastructureTab({ editedValues, originalValues, onChange, isSa
         disabled={isSaving}
         status={editedValues['portainer_backup.enabled'] === 'true' ? 'configured' : 'not-configured'}
         statusLabel={editedValues['portainer_backup.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
+      />
+
+      {/* Metrics Retention — moved from env vars to Settings DB (#993) */}
+      <SettingsSection
+        title="Metrics Retention"
+        icon={<BarChart3 className="h-5 w-5" />}
+        category="metricsRetention"
+        settings={DEFAULT_SETTINGS.metricsRetention}
+        values={editedValues}
+        originalValues={originalValues}
+        onChange={onChange}
+        disabled={isSaving}
+        status="configured"
       />
 
       {/* Backup Management */}
