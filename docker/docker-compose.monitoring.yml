@@ -1,0 +1,86 @@
+# Monitoring overlay — adds Prometheus + Grafana to scrape the backend /metrics endpoint.
+#
+# Usage (production):
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.yml up -d
+#
+# Usage (development):
+#   docker compose -f docker/docker-compose.dev.yml -f docker/docker-compose.monitoring.yml up -d
+#
+# Required env vars (set in .env or export):
+#   PROMETHEUS_BEARER_TOKEN  — shared secret the backend checks on /metrics
+#   GRAFANA_ADMIN_PASSWORD   — Grafana admin login password
+#
+# Prometheus is internal-only (no host port). Access Grafana at http://127.0.0.1:<GRAFANA_HOST_PORT>.
+services:
+  # Override: enable the metrics endpoint on the existing backend service
+  backend:
+    environment:
+      - PROMETHEUS_METRICS_ENABLED=true
+      - PROMETHEUS_BEARER_TOKEN=${PROMETHEUS_BEARER_TOKEN:?PROMETHEUS_BEARER_TOKEN is required}
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    restart: unless-stopped
+    # Write bearer token to a file so prometheus.yml can use credentials_file
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '%s' "$$PROMETHEUS_BEARER_TOKEN" > /run/secrets/bearer-token
+        exec /bin/prometheus "$$@"
+      - --
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    environment:
+      PROMETHEUS_BEARER_TOKEN: ${PROMETHEUS_BEARER_TOKEN:?PROMETHEUS_BEARER_TOKEN is required}
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # No host port — Prometheus is reachable only within dashboard-net (by Grafana).
+    networks:
+      - dashboard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  grafana:
+    image: grafana/grafana:12.4.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # Localhost-only — do NOT expose publicly (infrastructure isolation policy)
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - dashboard-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 128M
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  dashboard-net:
+    driver: bridge
