@@ -53,11 +53,11 @@ export default function InvestigationDetailPage() {
           <p className="font-medium text-destructive">Failed to load investigation</p>
           <p className="mt-1 text-sm text-muted-foreground">{message}</p>
           <Link
-            to="/ai-monitor"
+            to="/health"
             className="mt-4 inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to AI Monitor
+            Back to Health & Monitoring
           </Link>
         </div>
       </div>
@@ -86,7 +86,7 @@ export default function InvestigationDetailPage() {
         <div className="flex items-center gap-2">
           <StatusBadge status={investigation.status} />
           <Link
-            to="/ai-monitor"
+            to="/health"
             className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
           >
             <ArrowLeft className="h-4 w-4" />

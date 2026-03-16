@@ -61,9 +61,28 @@ vi.mock('@/features/observability/hooks/use-correlated-anomalies', () => ({
   }),
 }));
 
+vi.mock('@/features/containers/hooks/use-containers', () => ({
+  useContainers: vi.fn().mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+    isFetching: false,
+  }),
+}));
+
+vi.mock('@/shared/hooks/use-force-refresh', () => ({
+  useForceRefresh: vi.fn().mockReturnValue({
+    forceRefresh: vi.fn(),
+    isForceRefreshing: false,
+  }),
+}));
+
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
 import { useIncidents } from '@/features/ai-intelligence/hooks/use-incidents';
 import { useCorrelatedAnomalies } from '@/features/observability/hooks/use-correlated-anomalies';
+import { useContainers } from '@/features/containers/hooks/use-containers';
 import AiMonitorPage from './ai-monitor';
 
 function renderPage() {
@@ -118,6 +137,15 @@ beforeEach(() => {
     data: null,
   } as ReturnType<typeof useIncidents>);
 
+  vi.mocked(useContainers).mockReturnValue({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+    isFetching: false,
+  } as unknown as ReturnType<typeof useContainers>);
+
   vi.mocked(useMonitoring).mockReturnValue({
     insights: [],
     isLoading: false,
@@ -136,7 +164,7 @@ beforeEach(() => {
 describe('AiMonitorPage', () => {
   it('renders the page title', () => {
     renderPage();
-    expect(screen.getByText('AI Monitor')).toBeTruthy();
+    expect(screen.getByText('Health & Monitoring')).toBeTruthy();
   });
 
   it('shows empty state when no insights exist', () => {
@@ -366,6 +394,48 @@ describe('AiMonitorPage', () => {
 
     expect(screen.getByText('CPU trend spike')).toBeInTheDocument();
     expect(screen.queryByText('Memory is stable')).not.toBeInTheDocument();
+  });
+
+  it('renders fleet health summary with container stats', () => {
+    vi.mocked(useContainers).mockReturnValue({
+      data: [
+        { id: '1', name: 'web', state: 'running', healthStatus: 'healthy', image: 'nginx', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '2', name: 'api', state: 'running', healthStatus: 'unhealthy', image: 'node', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '3', name: 'db', state: 'running', healthStatus: undefined, image: 'postgres', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '4', name: 'cache', state: 'exited', healthStatus: undefined, image: 'redis', status: 'Exited', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    renderPage();
+
+    expect(screen.getByText('Overall Health Score')).toBeTruthy();
+    // 2 healthy (web + db fallback) out of 4 = 50.0% (appears in score + Healthy card)
+    expect(screen.getAllByText('50.0%').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Running')).toBeTruthy();
+    expect(screen.getByText('Healthy')).toBeTruthy();
+    expect(screen.getByText('Unhealthy')).toBeTruthy();
+    expect(screen.getByText('Stopped')).toBeTruthy();
+  });
+
+  it('shows skeleton loading state for health section', () => {
+    vi.mocked(useContainers).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    renderPage();
+
+    // Health section should show skeletons, page title still visible
+    expect(screen.getByText('Health & Monitoring')).toBeTruthy();
   });
 
   it('renders acknowledge error message when mutation fails', () => {

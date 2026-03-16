@@ -16,7 +16,7 @@ test.describe('Sidebar Navigation', () => {
   test('navigates to major pages via sidebar links', async ({ page }) => {
     const routes = [
       { label: /workload explorer/i, urlPattern: /\/workloads/ },
-      { label: /container health/i, urlPattern: /\/health/ },
+      { label: /health & monitoring/i, urlPattern: /\/health/ },
       { label: /metrics dashboard/i, urlPattern: /\/metrics/ },
       { label: /settings/i, urlPattern: /\/settings/ },
     ];
