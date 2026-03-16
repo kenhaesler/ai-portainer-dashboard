@@ -30,11 +30,7 @@ export default defineConfig({
     'import.meta.env.VITE_BUILD_NUMBER': JSON.stringify(appBuildNumber),
   },
   plugins: [
-    react({
-      babel: {
-        plugins: ['babel-plugin-react-compiler'],
-      },
-    }),
+    react(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -118,11 +114,19 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'query-vendor': ['@tanstack/react-query'],
-          'chart-vendor': ['recharts'],
-          'ui-vendor': ['framer-motion'],
+        manualChunks(id) {
+          if (['react', 'react-dom', 'react-router-dom'].some(pkg => id.includes(`/node_modules/${pkg}/`))) {
+            return 'react-vendor';
+          }
+          if (id.includes('/node_modules/@tanstack/react-query/')) {
+            return 'query-vendor';
+          }
+          if (id.includes('/node_modules/recharts/')) {
+            return 'chart-vendor';
+          }
+          if (id.includes('/node_modules/framer-motion/')) {
+            return 'ui-vendor';
+          }
         },
         chunkFileNames: 'chunks/[name]-[hash].js',
         entryFileNames: 'entries/[name]-[hash].js',
