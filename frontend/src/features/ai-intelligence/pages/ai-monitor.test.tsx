@@ -193,7 +193,7 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Correlated Anomalies')).toBeTruthy();
+    expect(screen.getByText('Anomalies & Health Issues')).toBeTruthy();
     expect(screen.getByText('web-server')).toBeTruthy();
     expect(screen.getByText('Resource Exhaustion')).toBeTruthy();
     expect(screen.getByText('4.08')).toBeTruthy();
@@ -209,7 +209,7 @@ describe('AiMonitorPage', () => {
     } as ReturnType<typeof useCorrelatedAnomalies>);
 
     renderPage();
-    expect(screen.queryByText('Correlated Anomalies')).toBeNull();
+    expect(screen.queryByText('Anomalies & Health Issues')).toBeNull();
   });
 
   it('renders IncidentCard with colored correlation type badge', () => {
@@ -418,8 +418,8 @@ describe('AiMonitorPage', () => {
     expect(screen.getAllByText('50.0%').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('Healthy')).toBeTruthy();
-    expect(screen.getByText('Unhealthy')).toBeTruthy();
-    expect(screen.getByText('Stopped')).toBeTruthy();
+    expect(screen.getAllByText('Unhealthy').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Stopped').length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows skeleton loading state for health section', () => {
@@ -436,6 +436,54 @@ describe('AiMonitorPage', () => {
 
     // Health section should show skeletons, page title still visible
     expect(screen.getByText('Health & Monitoring')).toBeTruthy();
+  });
+
+  it('renders 0% percentages when fleet is empty (no division-by-zero)', () => {
+    vi.mocked(useContainers).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    renderPage();
+
+    // Health score and all stat card percentages should be "0.0%", never NaN
+    const allPcts = screen.getAllByText('0.0%');
+    expect(allPcts.length).toBeGreaterThanOrEqual(1);
+    allPcts.forEach((el) => expect(el.textContent).not.toContain('NaN'));
+  });
+
+  it('surfaces unhealthy and stopped containers in the Anomalies & Health Issues section', () => {
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+      data: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCorrelatedAnomalies>);
+    vi.mocked(useContainers).mockReturnValue({
+      data: [
+        { id: '1', name: 'sick-api', state: 'running', healthStatus: 'unhealthy', image: 'node:20', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '2', name: 'crashed-worker', state: 'exited', healthStatus: undefined, image: 'python:3', status: 'Exited', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+        { id: '3', name: 'healthy-web', state: 'running', healthStatus: 'healthy', image: 'nginx', status: 'Up', endpointId: 1, endpointName: 'local', ports: [], created: 0, networks: [], labels: {} },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as unknown as ReturnType<typeof useContainers>);
+
+    renderPage();
+
+    expect(screen.getByText('Anomalies & Health Issues')).toBeTruthy();
+    // Both problematic containers appear; healthy one does not
+    expect(screen.getByText('sick-api')).toBeTruthy();
+    expect(screen.getByText('crashed-worker')).toBeTruthy();
+    expect(screen.queryByText('healthy-web')).toBeNull();
+    // Correct badges (also appear in stats grid, so use getAllByText)
+    expect(screen.getAllByText('Unhealthy').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Stopped').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders acknowledge error message when mutation fails', () => {

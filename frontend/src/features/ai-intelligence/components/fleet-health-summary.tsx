@@ -131,28 +131,28 @@ export function FleetHealthSummary({ stats, healthPercentage, isLoading }: {
           icon={Activity}
           label="Running"
           value={stats.running}
-          percentage={(stats.running / stats.total) * 100}
+          percentage={stats.total > 0 ? (stats.running / stats.total) * 100 : 0}
           variant="success"
         />
         <HealthStatCard
           icon={CheckCircle2}
           label="Healthy"
           value={stats.healthy}
-          percentage={(stats.healthy / stats.total) * 100}
+          percentage={stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0}
           variant="success"
         />
         <HealthStatCard
           icon={AlertTriangle}
           label="Unhealthy"
           value={stats.unhealthy}
-          percentage={(stats.unhealthy / stats.total) * 100}
+          percentage={stats.total > 0 ? (stats.unhealthy / stats.total) * 100 : 0}
           variant="danger"
         />
         <HealthStatCard
           icon={Pause}
           label="Stopped"
           value={stats.stopped}
-          percentage={(stats.stopped / stats.total) * 100}
+          percentage={stats.total > 0 ? (stats.stopped / stats.total) * 100 : 0}
           variant="warning"
         />
       </div>

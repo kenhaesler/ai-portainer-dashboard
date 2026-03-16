@@ -293,6 +293,46 @@ function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
   );
 }
 
+function HealthIssueCard({ container }: { container: { name: string; image: string; state: string; healthStatus?: string } }) {
+  const isUnhealthy = container.healthStatus === 'unhealthy';
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-card p-4 transition-all',
+        isUnhealthy
+          ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
+          : 'border-orange-500/40 bg-orange-50/30 dark:bg-orange-900/10',
+      )}
+      data-testid="health-issue-card"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="font-mono text-sm font-medium truncate">{container.name}</span>
+        </div>
+        {isUnhealthy ? (
+          <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+        ) : (
+          <AlertCircle className="h-5 w-5 text-orange-500 flex-shrink-0" />
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        <span className={cn(
+          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+          isUnhealthy
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        )}>
+          {isUnhealthy ? 'Unhealthy' : 'Stopped'}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground font-mono truncate" title={container.image}>
+        {container.image}
+      </p>
+    </div>
+  );
+}
+
 function InvestigationStatusBadge({ status }: { status: Investigation['status'] }) {
   const config = {
     pending: { label: 'Pending', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300', spinning: false },
@@ -793,6 +833,14 @@ export default function AiMonitorPage() {
     return (healthStats.healthy / healthStats.total) * 100;
   }, [healthStats]);
 
+  // Containers with a simple health issue (unhealthy or stopped) — surfaced in Correlated Anomalies (AC-4)
+  const healthIssues = useMemo(() => {
+    if (!containers) return [];
+    return containers.filter(
+      (c) => c.healthStatus === 'unhealthy' || c.state === 'exited',
+    );
+  }, [containers]);
+
   // Filter insights by severity
   const filteredInsights = useMemo(() => {
     const bySeverity = severityFilter === 'all'
@@ -1024,16 +1072,16 @@ export default function AiMonitorPage() {
         </button>
       </div>
 
-      {/* Correlated Anomalies */}
-      {(correlatedLoading || (correlatedAnomalies && correlatedAnomalies.length > 0)) && (
+      {/* Correlated Anomalies + Health Issues (AC-4) */}
+      {(correlatedLoading || (correlatedAnomalies && correlatedAnomalies.length > 0) || healthIssues.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Activity className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             <h2 className="text-lg font-semibold">
-              Correlated Anomalies
-              {correlatedAnomalies && correlatedAnomalies.length > 0 && (
+              Anomalies &amp; Health Issues
+              {!correlatedLoading && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({correlatedAnomalies.length})
+                  ({(correlatedAnomalies?.length ?? 0) + healthIssues.length})
                 </span>
               )}
             </h2>
@@ -1045,8 +1093,11 @@ export default function AiMonitorPage() {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {correlatedAnomalies!.map((anomaly) => (
+              {(correlatedAnomalies ?? []).map((anomaly) => (
                 <CorrelatedAnomalyCard key={anomaly.containerId} anomaly={anomaly} />
+              ))}
+              {healthIssues.map((container) => (
+                <HealthIssueCard key={container.name} container={container} />
               ))}
             </div>
           )}
