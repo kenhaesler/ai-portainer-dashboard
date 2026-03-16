@@ -84,15 +84,16 @@ function buildCapabilities(edgeMode: 'standard' | 'async' | null): EdgeCapabilit
 }
 
 /**
- * Determine Edge endpoint status using a cache-aware heartbeat check.
+ * Determine Edge endpoint status using a heartbeat check with a small jitter buffer.
  *
  * For Edge Agent Standard, Portainer's API `Status` field represents the
  * **tunnel state** (usually 2 = closed), NOT the agent's connectivity.
  * Portainer's own UI uses `LastCheckInDate` to show the green dot.
  *
- * We use the heartbeat with a generous threshold: the Portainer heartbeat
- * window PLUS the cache TTL (15 min). This ensures that an endpoint which
- * was "up" when cached won't drift to "down" before the cache expires.
+ * We apply the Portainer heartbeat formula plus a 30-second jitter buffer
+ * (one L1 cache cycle) to tolerate minor clock skew and poll latency.
+ * The previous 900-second (full Redis cache TTL) buffer masked real outages
+ * for up to 16 minutes and has been removed (issue #1006).
  */
 function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
   // If Portainer explicitly says up, trust it
@@ -104,9 +105,9 @@ function determineEdgeStatus(ep: Endpoint): 'up' | 'down' {
   const interval = ep.EdgeCheckinInterval ?? 5;
   // Portainer's heartbeat formula: (interval * 2) + 20, minimum 60s
   const heartbeatThreshold = Math.max((interval * 2) + 20, 60);
-  // Add cache TTL so the status doesn't drift to "down" while cached
-  const CACHE_TTL_SECONDS = 900;
-  const generousThreshold = heartbeatThreshold + CACHE_TTL_SECONDS;
+  // Add a small jitter buffer (one L1 cache cycle) to tolerate clock skew
+  const JITTER_SECONDS = 30;
+  const generousThreshold = heartbeatThreshold + JITTER_SECONDS;
 
   const elapsed = Math.floor(Date.now() / 1000) - lastCheckIn;
   return elapsed <= generousThreshold ? 'up' : 'down';
@@ -116,7 +117,7 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   const isEdge = !!ep.EdgeID;
   // Non-Edge: trust Portainer's Status field directly.
   // Edge: Status=2 means "tunnel closed" (normal for Edge Standard),
-  // so we use a cache-aware heartbeat check instead (see issue #489).
+  // so we use a heartbeat + jitter check instead (see issues #489, #1006).
   const status: 'up' | 'down' = isEdge
     ? determineEdgeStatus(ep)
     : (ep.Status === 1 ? 'up' : 'down');

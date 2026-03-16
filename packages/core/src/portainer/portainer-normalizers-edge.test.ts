@@ -183,7 +183,7 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
     expect(result.agentVersion).toBe('2.19.0');
   });
 
-  describe('Edge status detection (cache-aware heartbeat)', () => {
+  describe('Edge status detection (heartbeat + jitter)', () => {
     it('marks Edge endpoint as "up" when Portainer Status=1', () => {
       const ep = makeEndpoint({
         Type: 4,
@@ -205,19 +205,43 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
       expect(normalizeEndpoint(ep).status).toBe('up');
     });
 
-    it('keeps Edge endpoint "up" even at cache expiry (15 min after check-in)', () => {
+    it('marks Edge endpoint as "up" when check-in is within jitter threshold', () => {
       const ep = makeEndpoint({
         Type: 4,
         EdgeID: 'edge-3',
         Status: 2,
-        LastCheckInDate: Math.floor(Date.now() / 1000) - 900, // 15 min ago (cache TTL)
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 85, // 85s ago
         EdgeCheckinInterval: 5,
       });
-      // Threshold = max((5*2)+20, 60) + 900 = 960s. 900 < 960 → still up
+      // Threshold = max((5*2)+20, 60) + 30 = 90s. 85 <= 90 → up
       expect(normalizeEndpoint(ep).status).toBe('up');
     });
 
-    it('marks Edge endpoint as "down" when check-in exceeds cache-aware threshold', () => {
+    it('marks Edge endpoint as "down" at exact threshold boundary (91s)', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-3b',
+        Status: 2,
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 91, // 91s ago
+        EdgeCheckinInterval: 5,
+      });
+      // Threshold = max((5*2)+20, 60) + 30 = 90s. 91 > 90 → down
+      expect(normalizeEndpoint(ep).status).toBe('down');
+    });
+
+    it('marks Edge endpoint as "down" when check-in is 900s ago (regression: was "up" before #1006)', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-3c',
+        Status: 2,
+        LastCheckInDate: Math.floor(Date.now() / 1000) - 900, // 15 min ago
+        EdgeCheckinInterval: 5,
+      });
+      // Threshold = max((5*2)+20, 60) + 30 = 90s. 900 > 90 → down (issue #1006)
+      expect(normalizeEndpoint(ep).status).toBe('down');
+    });
+
+    it('marks Edge endpoint as "down" when check-in exceeds heartbeat + jitter threshold', () => {
       const ep = makeEndpoint({
         Type: 4,
         EdgeID: 'edge-4',
@@ -225,7 +249,7 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
         LastCheckInDate: Math.floor(Date.now() / 1000) - 1200, // 20 min ago
         EdgeCheckinInterval: 5,
       });
-      // Threshold = max((5*2)+20, 60) + 900 = 960s. 1200 > 960 → down
+      // Threshold = max((5*2)+20, 60) + 30 = 90s. 1200 > 90 → down
       expect(normalizeEndpoint(ep).status).toBe('down');
     });
 
