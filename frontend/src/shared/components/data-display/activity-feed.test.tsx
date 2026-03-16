@@ -131,7 +131,7 @@ describe('ActivityFeed', () => {
     expect(state.events[0].type).toBe('insight');
     expect(state.events[0].severity).toBe('warning');
     expect(state.events[0].message).toBe('High CPU usage (web-app)');
-    expect(state.events[0].link).toBe('/ai-monitor');
+    expect(state.events[0].link).toBe('/health');
   });
 
   it('should add connection event on connect/disconnect', () => {

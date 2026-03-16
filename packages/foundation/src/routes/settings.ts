@@ -31,7 +31,7 @@ const LANDING_PAGE_OPTIONS = new Set([
   '/',
   '/workloads',
   '/fleet',
-  '/ai-monitor',
+  '/health',
   '/metrics',
   '/remediation',
   '/assistant',

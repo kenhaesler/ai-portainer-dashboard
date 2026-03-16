@@ -64,7 +64,7 @@ export function ActivityFeed() {
         message: insight.container_name
           ? `${insight.title} (${insight.container_name})`
           : insight.title,
-        link: '/ai-monitor',
+        link: '/health',
       });
     };
 

@@ -85,7 +85,7 @@ describe('settings preference routes', () => {
   });
 
   it('gets current user landing page preference', async () => {
-    mockQueryOneUserDefaultLandingPage.mockReturnValue('/ai-monitor');
+    mockQueryOneUserDefaultLandingPage.mockReturnValue('/health');
 
     const response = await app.inject({
       method: 'GET',
@@ -94,7 +94,7 @@ describe('settings preference routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ defaultLandingPage: '/ai-monitor' });
+    expect(response.json()).toEqual({ defaultLandingPage: '/health' });
     expect(mockQueryOneUserDefaultLandingPage).toHaveBeenCalledWith('u1');
   });
 

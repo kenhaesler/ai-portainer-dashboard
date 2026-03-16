@@ -169,6 +169,15 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
   };
 }
 
+/** Extract Docker health check status from the Status string (e.g. "Up 2 hours (healthy)"). */
+function parseHealthStatus(status: string | undefined): string | undefined {
+  if (!status) return undefined;
+  if (status.includes('(healthy)')) return 'healthy';
+  if (status.includes('(unhealthy)')) return 'unhealthy';
+  if (status.includes('(health:')) return 'starting';
+  return undefined;
+}
+
 export function normalizeContainer(
   c: Container,
   endpointId: number,
@@ -205,7 +214,7 @@ export function normalizeContainer(
         .map(([k, v]: [string, any]) => [k, v.IPAddress as string]),
     ),
     labels: c.Labels || {},
-    healthStatus: c.Labels?.['com.docker.compose.service'],
+    healthStatus: parseHealthStatus(c.Status),
   };
 }
 

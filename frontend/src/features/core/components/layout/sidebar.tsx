@@ -8,7 +8,6 @@ import {
   GitCompareArrows,
   PackageOpen,
   Network,
-  Brain,
   BarChart3,
   Shield,
   ShieldAlert,
@@ -64,7 +63,7 @@ const navigation: NavGroup[] = [
   {
     title: 'Containers',
     items: [
-      { label: 'Container Health', to: '/health', icon: HeartPulse },
+      { label: 'Health & Monitoring', to: '/health', icon: HeartPulse },
       { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
       { label: 'Image Footprint', to: '/images', icon: PackageOpen },
       { label: 'Network Topology', to: '/topology', icon: Network },
@@ -74,7 +73,6 @@ const navigation: NavGroup[] = [
     title: 'Intelligence',
     items: [
       { label: 'Metrics Dashboard', to: '/metrics', icon: BarChart3 },
-      { label: 'Monitor', to: '/ai-monitor', icon: Brain },
       { label: 'Trace Explorer', to: '/traces', icon: GitBranch },
       { label: 'eBPF Coverage', to: '/ebpf-coverage', icon: Bug },
       { label: 'LLM Assistant', to: '/assistant', icon: MessageSquare },
