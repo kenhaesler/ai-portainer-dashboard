@@ -103,10 +103,10 @@ describe('ActivityFeedStore', () => {
       type: 'insight',
       severity: 'error',
       message: 'Critical anomaly',
-      link: '/ai-monitor',
+      link: '/health',
     });
 
     const state = useActivityFeedStore.getState();
-    expect(state.events[0].link).toBe('/ai-monitor');
+    expect(state.events[0].link).toBe('/health');
   });
 });

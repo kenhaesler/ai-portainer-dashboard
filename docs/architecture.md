@@ -131,9 +131,9 @@ graph LR
             direction LR
             P1["Home<br/>Infrastructure"]
             P2["Workload Explorer<br/>Container Detail"]
-            P3["Container Detail<br/>Container Health"]
+            P3["Container Detail<br/>Health &amp; Monitoring"]
             P4["Container Comparison<br/>Image Footprint"]
-            P5["Network Topology<br/>AI Monitor"]
+            P5["Network Topology<br/>Metrics Dashboard"]
             P6["Metrics Dashboard<br/>Remediation"]
             P7["Trace Explorer<br/>LLM Assistant"]
             P8["LLM Observability<br/>Edge Logs"]

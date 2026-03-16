@@ -132,8 +132,8 @@ Default credentials: `admin` / `changeme123`
 | Section | Pages | Description |
 |---------|-------|-------------|
 | **Overview** | Home, Workload Explorer, Fleet Overview, Stack Overview | High-level infrastructure visibility |
-| **Containers** | Container Health, Image Footprint, Network Topology | Container-level inspection and analysis |
-| **Intelligence** | AI Monitor, Metrics Dashboard, Remediation, Trace Explorer, LLM Assistant | AI-powered monitoring and interaction |
+| **Containers** | Health & Monitoring, Image Footprint, Network Topology | Container-level health, inspection, and analysis |
+| **Intelligence** | Metrics Dashboard, Remediation, Trace Explorer, LLM Assistant | AI-powered monitoring and interaction |
 | **Operations** | Edge Agent Logs, Packet Capture, Settings | Operational tools and configuration |
 
 ### UI Features

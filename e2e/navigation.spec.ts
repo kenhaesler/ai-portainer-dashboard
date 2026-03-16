@@ -66,6 +66,11 @@ test.describe('Sidebar Navigation', () => {
     await expect(breadcrumb).toContainText('Settings');
   });
 
+  test('/ai-monitor redirects to /health', async ({ page }) => {
+    await page.goto('/ai-monitor');
+    await expect(page).toHaveURL(/\/health/);
+  });
+
   test('unknown routes redirect to home', async ({ page }) => {
     // The router has a catch-all `*` that redirects to `/`
     await page.goto('/this-route-does-not-exist');
