@@ -109,4 +109,29 @@ describe('normalizeContainer', () => {
     expect(normalizeContainer(makeContainer({ State: 'dead' }), 1, 'local').state).toBe('dead');
     expect(normalizeContainer(makeContainer({ State: 'created' }), 1, 'local').state).toBe('unknown');
   });
+
+  it('parses healthStatus "healthy" from Status string', () => {
+    const result = normalizeContainer(makeContainer({ Status: 'Up 2 hours (healthy)' }), 1, 'local');
+    expect(result.healthStatus).toBe('healthy');
+  });
+
+  it('parses healthStatus "unhealthy" from Status string', () => {
+    const result = normalizeContainer(makeContainer({ Status: 'Up 10 minutes (unhealthy)' }), 1, 'local');
+    expect(result.healthStatus).toBe('unhealthy');
+  });
+
+  it('parses healthStatus "starting" from Status string', () => {
+    const result = normalizeContainer(makeContainer({ Status: 'Up 5 minutes (health: starting)' }), 1, 'local');
+    expect(result.healthStatus).toBe('starting');
+  });
+
+  it('returns undefined healthStatus when no health check configured', () => {
+    const result = normalizeContainer(makeContainer({ Status: 'Up 1 hour' }), 1, 'local');
+    expect(result.healthStatus).toBeUndefined();
+  });
+
+  it('returns undefined healthStatus when Status is empty', () => {
+    const result = normalizeContainer(makeContainer({ Status: '' }), 1, 'local');
+    expect(result.healthStatus).toBeUndefined();
+  });
 });

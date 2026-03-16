@@ -258,7 +258,7 @@ describe('llm-tools', () => {
           {
             "tool": "navigate_to",
             "arguments": {
-              "page": "ai-monitor"
+              "page": "health"
             }
           }
         ]
@@ -266,7 +266,7 @@ describe('llm-tools', () => {
       const result = parseToolCalls(input);
       expect(result).toHaveLength(1);
       expect(result![0].tool).toBe('navigate_to');
-      expect(result![0].arguments).toEqual({ page: 'ai-monitor' });
+      expect(result![0].arguments).toEqual({ page: 'health' });
     });
 
     it('should recognize MCP-prefixed tool names', () => {

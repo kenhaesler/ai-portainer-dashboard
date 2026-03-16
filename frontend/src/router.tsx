@@ -11,7 +11,7 @@ const AuthCallback = lazy(() => import('@/features/core/pages/auth-callback'));
 const Home = lazy(() => import('@/features/core/pages/home'));
 const WorkloadExplorer = lazy(() => import('@/features/containers/pages/workload-explorer'));
 const Infrastructure = lazy(() => import('@/features/containers/pages/fleet-overview'));
-const ContainerHealth = lazy(() => import('@/features/containers/pages/container-health'));
+// ContainerHealth merged into AiMonitor — see issue #1004
 const ImageFootprint = lazy(() => import('@/features/containers/pages/image-footprint'));
 const NetworkTopology = lazy(() => import('@/features/containers/pages/network-topology'));
 const AiMonitor = lazy(() => import('@/features/ai-intelligence/pages/ai-monitor'));
@@ -77,11 +77,11 @@ export const router = createBrowserRouter([
       { path: 'fleet', element: <Navigate to="/infrastructure?tab=fleet" replace /> },
       { path: 'stacks', element: <Navigate to="/infrastructure?tab=stacks" replace /> },
       { path: 'containers/:endpointId/:containerId', element: <LazyPage><ContainerDetail /></LazyPage> },
-      { path: 'health', element: <LazyPage><ContainerHealth /></LazyPage> },
+      { path: 'health', element: <LazyPage><AiMonitor /></LazyPage> },
       { path: 'comparison', element: <LazyPage><ContainerComparison /></LazyPage> },
       { path: 'images', element: <LazyPage><ImageFootprint /></LazyPage> },
       { path: 'topology', element: <LazyPage><NetworkTopology /></LazyPage> },
-      { path: 'ai-monitor', element: <LazyPage><AiMonitor /></LazyPage> },
+      { path: 'ai-monitor', element: <Navigate to="/health" replace /> },
       { path: 'metrics', element: <LazyPage><MetricsDashboard /></LazyPage> },
       { path: 'remediation', element: <LazyPage><Remediation /></LazyPage> },
       { path: 'traces', element: <LazyPage><TraceExplorer /></LazyPage> },

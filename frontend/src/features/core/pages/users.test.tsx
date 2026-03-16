@@ -26,7 +26,7 @@ vi.mock('@/features/core/hooks/use-users', () => ({
         id: 'u2',
         username: 'ops-bot',
         role: 'operator',
-        default_landing_page: '/ai-monitor',
+        default_landing_page: '/health',
         created_at: '2026-02-06T10:01:00.000Z',
         updated_at: '2026-02-06T10:01:00.000Z',
       },

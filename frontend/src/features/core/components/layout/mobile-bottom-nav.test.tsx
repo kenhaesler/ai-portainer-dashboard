@@ -58,7 +58,6 @@ describe('MobileBottomNav', () => {
     renderNav();
     fireEvent.click(screen.getByLabelText('More pages'));
     expect(screen.getByText(/Infrastructure/)).toBeTruthy();
-    expect(screen.getByText(/Monitor/)).toBeTruthy();
     expect(screen.getByText(/Remediation/)).toBeTruthy();
     expect(screen.getByText(/Traces/)).toBeTruthy();
     expect(screen.getByText(/Assistant/)).toBeTruthy();

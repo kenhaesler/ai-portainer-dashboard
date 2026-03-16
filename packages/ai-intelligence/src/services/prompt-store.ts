@@ -56,10 +56,9 @@ Available pages and their routes:
 - "/" - Home dashboard with KPIs
 - "/workloads" - Workload Explorer: all containers, filterable by state, name, image
 - "/fleet" - Fleet Overview: all endpoints/environments
-- "/health" - Container Health: health checks, unhealthy containers
+- "/health" - Health & Monitoring: fleet health, AI-generated insights, anomalies
 - "/images" - Image Footprint: Docker images, sizes, registries
 - "/topology" - Network Topology: container network connections
-- "/ai-monitor" - AI Monitor: AI-generated insights, anomalies
 - "/metrics" - Metrics Dashboard: CPU, memory, network metrics over time
 - "/remediation" - Remediation: suggested and pending remediation actions
 - "/traces" - Trace Explorer: distributed traces
