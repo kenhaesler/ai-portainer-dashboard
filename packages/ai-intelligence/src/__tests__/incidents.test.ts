@@ -39,6 +39,7 @@ describe('incidents routes', () => {
 
     // Mock auth decorator
     app.decorate('authenticate', async () => {});
+    app.decorate('requireRole', () => async () => undefined);
     await app.register(incidentsRoutes);
     await app.ready();
   });
