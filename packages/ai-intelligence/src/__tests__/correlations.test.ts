@@ -13,6 +13,7 @@ import {
   MAX_INSIGHTS_CACHE,
   buildCorrelationPrompt,
   parseInsightsResponse,
+  _sweepExpiredEntries,
 } from '../routes/correlations.js';
 import type { CorrelationPair } from '../routes/correlations.js';
 
@@ -445,5 +446,86 @@ SUMMARY: The stack has two notable correlations worth monitoring.`;
     expect(insights).toHaveLength(2);
     expect(insights[0].narrative).toBeNull();
     expect(insights[1].narrative).toBeNull();
+  });
+});
+
+describe('Periodic TTL sweep', () => {
+  beforeEach(() => {
+    clearCorrelationsCache();
+    clearInsightsCache();
+  });
+
+  it('removes expired correlations cache entries', () => {
+    // Insert an entry that is already expired (expiresAt in the past)
+    setCachedCorrelations('fresh-key', { data: 'fresh' });
+    // Manually poke an expired entry into the cache via the setter,
+    // then advance the expiry by overwriting the map entry directly.
+    // Since the cache is not directly accessible, we insert normally
+    // and then run the sweep with a mocked Date.now() in the future.
+    setCachedCorrelations('old-key', { data: 'old' });
+    expect(getCorrelationsCacheSize()).toBe(2);
+
+    // Advance time past the 5-min TTL (correlations TTL = 5 min)
+    const realNow = Date.now;
+    Date.now = () => realNow() + 6 * 60 * 1_000; // 6 minutes in the future
+    try {
+      _sweepExpiredEntries();
+      expect(getCorrelationsCacheSize()).toBe(0);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('removes expired insights cache entries', () => {
+    setCachedInsights('insight-1', [], 'summary');
+    setCachedInsights('insight-2', [], null);
+    expect(getInsightsCacheSize()).toBe(2);
+
+    // Advance time past the 15-min TTL (insights TTL = 15 min)
+    const realNow = Date.now;
+    Date.now = () => realNow() + 16 * 60 * 1_000;
+    try {
+      _sweepExpiredEntries();
+      expect(getInsightsCacheSize()).toBe(0);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('keeps entries that have not yet expired', () => {
+    setCachedCorrelations('still-valid', { data: 'ok' });
+    setCachedInsights('still-valid-insight', [], 'test');
+
+    // Run sweep at current time — entries just inserted should survive
+    _sweepExpiredEntries();
+
+    expect(getCorrelationsCacheSize()).toBe(1);
+    expect(getInsightsCacheSize()).toBe(1);
+  });
+
+  it('only removes expired entries, leaving valid ones untouched', () => {
+    // Insert two correlations entries
+    setCachedCorrelations('will-expire', { data: 'bye' });
+    setCachedCorrelations('wont-expire', { data: 'stay' });
+    expect(getCorrelationsCacheSize()).toBe(2);
+
+    // Move time forward 3 minutes (within the 5-min correlations TTL)
+    const realNow = Date.now;
+    const threeMinLater = realNow() + 3 * 60 * 1_000;
+    Date.now = () => threeMinLater;
+
+    // Insert a fresh entry at the "new" time
+    setCachedCorrelations('inserted-later', { data: 'new' });
+    expect(getCorrelationsCacheSize()).toBe(3);
+
+    // Jump to 6 minutes from original time — the first two entries expire,
+    // but 'inserted-later' was created at +3min so it expires at +8min.
+    Date.now = () => realNow() + 6 * 60 * 1_000;
+    try {
+      _sweepExpiredEntries();
+      expect(getCorrelationsCacheSize()).toBe(1);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });

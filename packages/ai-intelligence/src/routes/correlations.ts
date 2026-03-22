@@ -102,6 +102,38 @@ export function getCorrelationsCacheSize(): number {
   return correlationsCache.size;
 }
 
+// ---------------------------------------------------------------------------
+// Periodic TTL sweep — removes expired-but-unread entries so they don't waste
+// memory up to the FIFO cap.  Runs every 5 minutes.  The timer is unref()'d
+// so it never prevents Node from exiting gracefully.
+// ---------------------------------------------------------------------------
+const SWEEP_INTERVAL_MS = 5 * 60 * 1_000;
+
+function sweepExpiredEntries(): void {
+  const now = Date.now();
+  for (const [key, entry] of correlationsCache) {
+    if (entry.expiresAt <= now) {
+      correlationsCache.delete(key);
+    }
+  }
+  for (const [key, entry] of insightsCache) {
+    if (entry.expiresAt <= now) {
+      insightsCache.delete(key);
+    }
+  }
+}
+
+const _sweepTimer = setInterval(sweepExpiredEntries, SWEEP_INTERVAL_MS);
+_sweepTimer.unref();
+
+/** Stop the periodic TTL sweep (for testing / clean shutdown) */
+export function stopCacheSweep(): void {
+  clearInterval(_sweepTimer);
+}
+
+/** @internal Exported for testing only */
+export { sweepExpiredEntries as _sweepExpiredEntries };
+
 // Simple in-memory cache for LLM insights (15 min TTL)
 const INSIGHTS_TTL = 15 * 60 * 1000;
 export const MAX_INSIGHTS_CACHE = 500;

@@ -40,6 +40,33 @@ export function getNarrativeCacheSize(): number {
   return narrativeCache.size;
 }
 
+// ---------------------------------------------------------------------------
+// Periodic TTL sweep — removes expired-but-unread entries so they don't waste
+// memory up to the FIFO cap.  Runs every 5 minutes.  The timer is unref()'d
+// so it never prevents Node from exiting gracefully.
+// ---------------------------------------------------------------------------
+const SWEEP_INTERVAL_MS = 5 * 60 * 1_000;
+
+function sweepExpiredEntries(): void {
+  const now = Date.now();
+  for (const [key, entry] of narrativeCache) {
+    if (entry.expiresAt <= now) {
+      narrativeCache.delete(key);
+    }
+  }
+}
+
+const _sweepTimer = setInterval(sweepExpiredEntries, SWEEP_INTERVAL_MS);
+_sweepTimer.unref();
+
+/** Stop the periodic TTL sweep (for testing / clean shutdown) */
+export function stopCacheSweep(): void {
+  clearInterval(_sweepTimer);
+}
+
+/** @internal Exported for testing only */
+export { sweepExpiredEntries as _sweepExpiredEntries };
+
 /** @internal Exported for testing only */
 export function setCachedNarrative(key: string, narrative: string): void {
   if (narrativeCache.size >= MAX_NARRATIVE_CACHE) {
