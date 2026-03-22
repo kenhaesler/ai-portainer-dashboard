@@ -65,7 +65,6 @@ import { WebhooksPanel } from './webhooks';
 describe('WebhooksPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
   });
 
   it('renders webhook list, delivery monitor, and add button', () => {
@@ -97,10 +96,19 @@ describe('WebhooksPanel', () => {
     render(<WebhooksPanel />);
 
     fireEvent.click(screen.getByRole('button', { name: /test/i }));
-    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
 
     await waitFor(() => {
       expect(mockTest).toHaveBeenCalledWith('wh-1');
+    });
+
+    // Click Delete button to open the confirm dialog, then confirm
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Delete Webhook')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
       expect(mockDelete).toHaveBeenCalledWith('wh-1');
     });
   });

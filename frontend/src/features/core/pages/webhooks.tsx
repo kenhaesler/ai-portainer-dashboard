@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import {
   useCreateWebhook,
   useDeleteWebhook,
@@ -64,6 +65,7 @@ export function WebhooksPanel() {
   const [formError, setFormError] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<Array<{ type: string; timestamp: string }>>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const deliveriesQuery = useWebhookDeliveries(selectedWebhookId, 20);
 
@@ -158,12 +160,17 @@ export function WebhooksPanel() {
     });
   };
 
-  const confirmDelete = async (id: string) => {
-    if (!window.confirm('Delete this webhook configuration?')) return;
-    await deleteWebhook.mutateAsync(id);
-    if (selectedWebhookId === id) {
+  const confirmDelete = (id: string) => {
+    setDeleteTargetId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
+    await deleteWebhook.mutateAsync(deleteTargetId);
+    if (selectedWebhookId === deleteTargetId) {
       setSelectedWebhookId(null);
     }
+    setDeleteTargetId(null);
   };
 
   return (
@@ -429,6 +436,16 @@ export function WebhooksPanel() {
           </div>
         </section>
       </div>
+
+      <ConfirmDialog
+        open={deleteTargetId !== null}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={() => setDeleteTargetId(null)}
+        title="Delete Webhook"
+        description="Delete this webhook configuration?"
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

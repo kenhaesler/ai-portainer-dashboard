@@ -45,7 +45,6 @@ describe('UsersPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
     mockUseAuth.mockReturnValue({ role: 'admin' });
   });
 
@@ -165,11 +164,25 @@ describe('UsersPanel', () => {
       return;
     }
 
+    // Click Deactivate, then confirm via modal dialog
     fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
-    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(screen.getByText('Deactivate User')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
 
     await waitFor(() => {
       expect(mockUpdateUser).toHaveBeenCalledWith({ id: 'u1', payload: { role: 'viewer' } });
+    });
+
+    // Click Delete, then confirm via modal dialog
+    fireEvent.click(within(adminRow).getByRole('button', { name: /Delete/ }));
+    await waitFor(() => {
+      expect(screen.getByText('Delete User')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
       expect(mockDeleteUser).toHaveBeenCalledWith('u1');
     });
   });

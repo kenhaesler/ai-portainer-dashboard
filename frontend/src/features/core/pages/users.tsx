@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, ShieldAlert, UserPlus, Users as UsersIcon, Trash2, UserCog } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRole } from '@/features/core/hooks/use-users';
 import { cn, formatDate } from '@/shared/lib/utils';
 
@@ -30,6 +31,10 @@ export function UsersPanel() {
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
   const [search, setSearch] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'deactivate' | 'delete';
+    userId: string;
+  } | null>(null);
   const formSectionRef = useRef<HTMLElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -95,22 +100,22 @@ export function UsersPanel() {
     });
   };
 
-  const deactivateUser = async (userId: string) => {
-    if (!window.confirm('Deactivate this account by changing role to Viewer?')) return;
-    try {
-      await updateUser.mutateAsync({ id: userId, payload: { role: 'viewer' } });
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to deactivate user');
-    }
+  const deactivateUser = (userId: string) => {
+    setConfirmAction({ type: 'deactivate', userId });
   };
 
-  const removeUser = async (userId: string) => {
-    if (!window.confirm('Delete this account permanently?')) return;
-    try {
-      await deleteUser.mutateAsync(userId);
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete user');
+  const removeUser = (userId: string) => {
+    setConfirmAction({ type: 'delete', userId });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    if (confirmAction.type === 'deactivate') {
+      await updateUser.mutateAsync({ id: confirmAction.userId, payload: { role: 'viewer' } });
+    } else {
+      await deleteUser.mutateAsync(confirmAction.userId);
     }
+    setConfirmAction(null);
   };
 
   if (role !== 'admin') {
@@ -285,6 +290,20 @@ export function UsersPanel() {
           </div>
         </section>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        onConfirm={() => void handleConfirmAction()}
+        onCancel={() => setConfirmAction(null)}
+        title={confirmAction?.type === 'deactivate' ? 'Deactivate User' : 'Delete User'}
+        description={
+          confirmAction?.type === 'deactivate'
+            ? 'Deactivate this account by changing role to Viewer?'
+            : 'Delete this account permanently?'
+        }
+        confirmLabel={confirmAction?.type === 'deactivate' ? 'Deactivate' : 'Delete'}
+        variant={confirmAction?.type === 'deactivate' ? 'warning' : 'danger'}
+      />
     </div>
   );
 }
