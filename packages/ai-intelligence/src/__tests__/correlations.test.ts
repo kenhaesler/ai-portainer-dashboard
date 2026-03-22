@@ -1,7 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
-import { correlationRoutes, clearInsightsCache, clearCorrelationsCache, buildCorrelationPrompt, parseInsightsResponse } from '../routes/correlations.js';
+import {
+  correlationRoutes,
+  clearInsightsCache,
+  clearCorrelationsCache,
+  getCorrelationsCacheSize,
+  getInsightsCacheSize,
+  setCachedCorrelations,
+  setCachedInsights,
+  MAX_CORRELATIONS_CACHE,
+  MAX_INSIGHTS_CACHE,
+  buildCorrelationPrompt,
+  parseInsightsResponse,
+} from '../routes/correlations.js';
 import type { CorrelationPair } from '../routes/correlations.js';
 
 const mockDetectCorrelated = vi.fn();
@@ -323,6 +335,63 @@ describe('Correlation Routes', () => {
         expect.objectContaining({ query: expect.any(Function) }),
       );
     });
+  });
+});
+
+describe('Correlations cache max-size cap', () => {
+  it('keeps cache size at or below MAX_CORRELATIONS_CACHE after overflow inserts', () => {
+    clearCorrelationsCache();
+    const insertCount = MAX_CORRELATIONS_CACHE + 100;
+    for (let i = 0; i < insertCount; i++) {
+      setCachedCorrelations(`key-${i}`, { data: i });
+    }
+    expect(getCorrelationsCacheSize()).toBeLessThanOrEqual(MAX_CORRELATIONS_CACHE);
+  });
+
+  it('evicts the oldest entry when cache exceeds max size', () => {
+    clearCorrelationsCache();
+    for (let i = 0; i < MAX_CORRELATIONS_CACHE; i++) {
+      setCachedCorrelations(`fill-${i}`, { data: i });
+    }
+    expect(getCorrelationsCacheSize()).toBe(MAX_CORRELATIONS_CACHE);
+
+    // Insert one more — should evict the oldest and stay at max
+    setCachedCorrelations('overflow-key', { data: 'new' });
+    expect(getCorrelationsCacheSize()).toBe(MAX_CORRELATIONS_CACHE);
+  });
+
+  it('still returns cached entries within TTL', () => {
+    clearCorrelationsCache();
+    setCachedCorrelations('recent-key', { value: 42 });
+    expect(getCorrelationsCacheSize()).toBe(1);
+  });
+});
+
+describe('Insights cache max-size cap', () => {
+  it('keeps cache size at or below MAX_INSIGHTS_CACHE after overflow inserts', () => {
+    clearInsightsCache();
+    const insertCount = MAX_INSIGHTS_CACHE + 100;
+    for (let i = 0; i < insertCount; i++) {
+      setCachedInsights(`key-${i}`, [], null);
+    }
+    expect(getInsightsCacheSize()).toBeLessThanOrEqual(MAX_INSIGHTS_CACHE);
+  });
+
+  it('evicts the oldest entry when cache exceeds max size', () => {
+    clearInsightsCache();
+    for (let i = 0; i < MAX_INSIGHTS_CACHE; i++) {
+      setCachedInsights(`fill-${i}`, [], null);
+    }
+    expect(getInsightsCacheSize()).toBe(MAX_INSIGHTS_CACHE);
+
+    setCachedInsights('overflow-key', [], 'summary');
+    expect(getInsightsCacheSize()).toBe(MAX_INSIGHTS_CACHE);
+  });
+
+  it('still returns cached entries within TTL', () => {
+    clearInsightsCache();
+    setCachedInsights('recent-key', [], 'test');
+    expect(getInsightsCacheSize()).toBe(1);
   });
 });
 

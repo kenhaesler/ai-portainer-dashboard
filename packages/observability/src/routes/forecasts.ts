@@ -27,11 +27,26 @@ const NarrativeQuerySchema = z.object({
 
 // Simple in-memory cache for narratives (5 min TTL)
 const NARRATIVE_TTL = 5 * 60 * 1000;
+export const MAX_NARRATIVE_CACHE = 200;
 const narrativeCache = new Map<string, { narrative: string; expiresAt: number }>();
 
 /** Clear the narrative cache (for testing) */
 export function clearNarrativeCache() {
   narrativeCache.clear();
+}
+
+/** Returns current narrative cache size (for testing) */
+export function getNarrativeCacheSize(): number {
+  return narrativeCache.size;
+}
+
+/** @internal Exported for testing only */
+export function setCachedNarrative(key: string, narrative: string): void {
+  if (narrativeCache.size >= MAX_NARRATIVE_CACHE) {
+    const firstKey = narrativeCache.keys().next().value;
+    if (firstKey) narrativeCache.delete(firstKey);
+  }
+  narrativeCache.set(key, { narrative, expiresAt: Date.now() + NARRATIVE_TTL });
 }
 
 export function buildForecastPrompt(forecast: {
@@ -152,7 +167,7 @@ export async function forecastRoutes(fastify: FastifyInstance, opts: { llm?: LLM
       );
 
       const trimmed = narrative.trim();
-      narrativeCache.set(cacheKey, { narrative: trimmed, expiresAt: Date.now() + NARRATIVE_TTL });
+      setCachedNarrative(cacheKey, trimmed);
       return { narrative: trimmed };
     } catch (err) {
       log.warn({ err, containerId, metricType }, 'Failed to generate forecast narrative');

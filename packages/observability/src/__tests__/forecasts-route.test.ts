@@ -2,7 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import type { LLMInterface } from '@dashboard/contracts';
-import { forecastRoutes, buildForecastPrompt, clearNarrativeCache } from '../routes/forecasts.js';
+import {
+  forecastRoutes,
+  buildForecastPrompt,
+  clearNarrativeCache,
+  getNarrativeCacheSize,
+  setCachedNarrative,
+  MAX_NARRATIVE_CACHE,
+} from '../routes/forecasts.js';
 
 const mockGetCapacityForecasts = vi.fn();
 const mockGenerateForecast = vi.fn();
@@ -261,5 +268,34 @@ describe('buildForecastPrompt', () => {
 
     expect(prompt).toContain('not predicted to breach 90%');
     expect(prompt).not.toContain('~null');
+  });
+});
+
+describe('Narrative cache max-size cap', () => {
+  it('keeps cache size at or below MAX_NARRATIVE_CACHE after overflow inserts', () => {
+    clearNarrativeCache();
+    const insertCount = MAX_NARRATIVE_CACHE + 100;
+    for (let i = 0; i < insertCount; i++) {
+      setCachedNarrative(`key-${i}`, `narrative-${i}`);
+    }
+    expect(getNarrativeCacheSize()).toBeLessThanOrEqual(MAX_NARRATIVE_CACHE);
+  });
+
+  it('evicts the oldest entry when cache exceeds max size', () => {
+    clearNarrativeCache();
+    for (let i = 0; i < MAX_NARRATIVE_CACHE; i++) {
+      setCachedNarrative(`fill-${i}`, `narrative-${i}`);
+    }
+    expect(getNarrativeCacheSize()).toBe(MAX_NARRATIVE_CACHE);
+
+    // Insert one more — should evict the oldest and stay at max
+    setCachedNarrative('overflow-key', 'new narrative');
+    expect(getNarrativeCacheSize()).toBe(MAX_NARRATIVE_CACHE);
+  });
+
+  it('still returns cached entries within TTL', () => {
+    clearNarrativeCache();
+    setCachedNarrative('recent-key', 'test narrative');
+    expect(getNarrativeCacheSize()).toBe(1);
   });
 });
