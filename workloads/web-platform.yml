@@ -94,7 +94,7 @@ services:
 
   # Grafana Beyla — eBPF auto-instrumentation for all HTTP services in this stack
   beyla:
-    image: grafana/beyla:latest
+    image: grafana/beyla:1.8
     container_name: web-platform-beyla
     # privileged is required for eBPF — Beyla needs CAP_SYS_ADMIN + kernel tracing
     # access that cannot be granted via cap_add alone (bpf(), perf_event_open(), kprobes).
@@ -119,8 +119,8 @@ services:
       - /tmp:size=10M
       - /run:size=10M
     volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup
-      - /sys/kernel/security:/sys/kernel/security
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /sys/kernel/security:/sys/kernel/security:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:6060/metrics || exit 1"]
       interval: 30s
