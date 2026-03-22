@@ -13,7 +13,7 @@
 #   app-frontend-net — web-platform <-> issue-simulators (net-chatter)
 #   app-backend-net  — data-services <-> workers <-> web-platform (gateway)
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -23,10 +23,18 @@ COMPOSE_DIR="$PROJECT_DIR/workloads"
 STACK_NAMES=("data-services" "web-platform" "workers" "staging-dev" "issue-simulators")
 EXTERNAL_NETWORKS=("app-frontend-net" "app-backend-net")
 
-# Load environment variables
+# Load environment variables (safe: handles spaces, quotes, and special chars)
 if [ -f "$PROJECT_DIR/.env" ]; then
-  # shellcheck disable=SC2046
-  export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs)
+  while IFS='=' read -r key value; do
+    # Skip comments and empty lines
+    [[ -z "$key" || "$key" =~ ^# ]] && continue
+    # Remove surrounding quotes from value
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+    export "$key=$value"
+  done < "$PROJECT_DIR/.env"
 fi
 
 PORTAINER_URL="${PORTAINER_API_URL:-http://localhost:9000}"
