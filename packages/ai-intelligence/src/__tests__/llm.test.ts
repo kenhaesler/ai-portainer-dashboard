@@ -535,6 +535,80 @@ describe('LLM Routes', () => {
     });
   });
 
+  describe('POST /api/llm/query rate limit config', () => {
+    it('has per-user rate limit config with preHandler hook', async () => {
+      const capturedRoutes: Array<{ method: string | string[]; url: string; config?: any }> = [];
+
+      const testApp = Fastify();
+      testApp.setValidatorCompiler(validatorCompiler);
+      testApp.decorate('authenticate', async () => undefined);
+      testApp.decorate('requireRole', () => async () => undefined);
+
+      testApp.addHook('onRoute', (routeOptions) => {
+        capturedRoutes.push({
+          method: routeOptions.method,
+          url: routeOptions.url,
+          config: routeOptions.config,
+        });
+      });
+
+      await testApp.register(llmRoutes);
+      await testApp.ready();
+
+      const queryRoute = capturedRoutes.find(
+        (r) => r.url === '/api/llm/query' &&
+          (Array.isArray(r.method) ? r.method.includes('POST') : r.method === 'POST'),
+      );
+
+      expect(queryRoute).toBeDefined();
+      expect(queryRoute!.config).toBeDefined();
+      expect(queryRoute!.config.rateLimit).toBeDefined();
+      expect(queryRoute!.config.rateLimit.max).toBe(20);
+      expect(queryRoute!.config.rateLimit.timeWindow).toBe('1 minute');
+      expect(queryRoute!.config.rateLimit.hook).toBe('preHandler');
+      expect(typeof queryRoute!.config.rateLimit.keyGenerator).toBe('function');
+
+      await testApp.close();
+    });
+
+    it('keyGenerator returns user sub when authenticated', async () => {
+      const capturedRoutes: Array<{ method: string | string[]; url: string; config?: any }> = [];
+
+      const testApp = Fastify();
+      testApp.setValidatorCompiler(validatorCompiler);
+      testApp.decorate('authenticate', async () => undefined);
+      testApp.decorate('requireRole', () => async () => undefined);
+
+      testApp.addHook('onRoute', (routeOptions) => {
+        capturedRoutes.push({
+          method: routeOptions.method,
+          url: routeOptions.url,
+          config: routeOptions.config,
+        });
+      });
+
+      await testApp.register(llmRoutes);
+      await testApp.ready();
+
+      const queryRoute = capturedRoutes.find(
+        (r) => r.url === '/api/llm/query' &&
+          (Array.isArray(r.method) ? r.method.includes('POST') : r.method === 'POST'),
+      );
+
+      const keyGen = queryRoute!.config.rateLimit.keyGenerator;
+
+      // With authenticated user
+      const mockAuthRequest = { user: { sub: 'user-123' }, ip: '10.0.0.1' } as any;
+      expect(keyGen(mockAuthRequest)).toBe('user-123');
+
+      // Without user (fallback to IP)
+      const mockAnonRequest = { ip: '10.0.0.2' } as any;
+      expect(keyGen(mockAnonRequest)).toBe('10.0.0.2');
+
+      await testApp.close();
+    });
+  });
+
   describe('POST /api/llm/test-prompt', () => {
     it('returns success with response when LLM succeeds', async () => {
       mockChat.mockResolvedValue({
