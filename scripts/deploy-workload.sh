@@ -27,7 +27,7 @@ EXTERNAL_NETWORKS=("app-frontend-net" "app-backend-net")
 if [ -f "$PROJECT_DIR/.env" ]; then
   while IFS='=' read -r key value; do
     # Skip comments and empty lines
-    [[ -z "$key" || "$key" =~ ^# ]] && continue
+    [[ -z "$key" || "$key" =~ ^[[:space:]]*(#|$) ]] && continue
     # Remove surrounding quotes from value
     value="${value%\"}"
     value="${value#\"}"
@@ -38,7 +38,7 @@ if [ -f "$PROJECT_DIR/.env" ]; then
 fi
 
 PORTAINER_URL="${PORTAINER_API_URL:-http://localhost:9000}"
-API_KEY="${PORTAINER_API_KEY}"
+API_KEY="${PORTAINER_API_KEY:-}"
 
 if [ -z "$API_KEY" ]; then
   echo "Error: PORTAINER_API_KEY not set in .env file"
