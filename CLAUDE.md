@@ -27,6 +27,7 @@ npm test                   # All tests
 npm run test -w backend    # Backend only
 npm run test -w frontend   # Frontend only
 # Single file: cd backend && npx vitest run src/path/file.test.ts
+# Package test: cd packages/core && npx vitest run src/path/file.test.ts
 # Backend tests use real PostgreSQL (POSTGRES_TEST_URL env var, default: localhost:5433)
 # E2E: npx playwright test (requires running backend + frontend)
 # Docker: docker compose -f docker/docker-compose.dev.yml up -d
@@ -42,7 +43,7 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 - OIDC/SSO via `openid-client` v6 with PKCE. Rate limiting on login (`LOGIN_RATE_LIMIT`).
 - Auth decorator: `fastify.authenticate` on all protected routes.
 - **Prompt injection guard** (`packages/ai-intelligence/src/services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
-- Security regression tests: `backend/src/routes/security-regression.test.ts` (72 tests — auth sweep, prompt injection, false positives, rate limiting).
+- Security regression tests: `backend/src/routes/security-regression.test.ts` (68 tests — auth sweep, prompt injection, false positives, rate limiting).
 - For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
 ## Security First (Mandatory)

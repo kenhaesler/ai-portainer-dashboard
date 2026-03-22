@@ -32,7 +32,7 @@ Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radi
 
 ## Dashboard Background (Animated)
 
-17 modes: `none`, `gradient-mesh`, `gradient-mesh-particles`, 9 mesh variants (Aurora, Ocean, Sunset, Nebula, Emerald, Glacier, Emberstorm, Noctis, Cotton Candy, Chaos), and 4 retro variants (70s, Arcade, Terminal, Vaporwave). Configured in Settings > Appearance.
+17 modes: `none`, `gradient-mesh`, `gradient-mesh-particles`, 10 mesh variants (Aurora, Ocean, Sunset, Nebula, Emerald, Glacier, Emberstorm, Noctis, Cotton Candy, Chaos), and 4 retro variants (70s, Arcade, Terminal, Vaporwave). Configured in Settings > Appearance.
 
 **Key files:**
 - `frontend/src/components/layout/dashboard-background.tsx` — `fixed inset-0 z-0` gradient mesh + particles
