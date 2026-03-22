@@ -78,6 +78,20 @@ export async function getEffectiveHarborConfig() {
   return { enabled, apiUrl, robotName, robotSecret, verifySsl, syncIntervalMinutes };
 }
 
+// ── Monitoring scheduler config ──────────────────────────────────────────────
+
+/**
+ * Read monitoring scheduler config from the Settings DB, falling back to env vars.
+ * Called on each 1-minute tick so that Settings UI changes take effect without a restart.
+ */
+export async function getEffectiveMonitoringSchedulerConfig() {
+  const cfg = getConfig();
+  const enabledSetting = await getSetting('monitoring.enabled');
+  const enabled = enabledSetting ? enabledSetting.value === 'true' : cfg.MONITORING_ENABLED;
+  const intervalMinutes = parseInt((await getSetting('monitoring.scheduler_interval_minutes'))?.value || '', 10) || cfg.MONITORING_INTERVAL_MINUTES;
+  return { enabled, intervalMinutes };
+}
+
 // ── Monitoring / AI Tuning config ────────────────────────────────────────────
 
 export interface MonitoringConfig {

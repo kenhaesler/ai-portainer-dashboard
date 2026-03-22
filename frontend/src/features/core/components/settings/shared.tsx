@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = {
     { key: 'monitoring.polling_interval', label: 'Polling Interval', description: 'How often to fetch container metrics (seconds)', type: 'number', defaultValue: '30', min: 5, max: 300 },
     { key: 'monitoring.metric_retention_days', label: 'Metric Retention', description: 'How long to keep historical metrics (days)', type: 'number', defaultValue: '7', min: 1, max: 90 },
     { key: 'monitoring.enabled', label: 'Enable Monitoring', description: 'Enable background container monitoring', type: 'boolean', defaultValue: 'true' },
+    { key: 'monitoring.scheduler_interval_minutes', label: 'Scheduler Interval', description: 'How often the monitoring scheduler runs (minutes). Changes apply without restart.', type: 'number', defaultValue: '5', min: 1, max: 60 },
   ],
   anomaly: [
     { key: 'anomaly.cpu_threshold', label: 'CPU Threshold', description: 'CPU usage percentage to trigger anomaly alert', type: 'number', defaultValue: '85', min: 50, max: 100 },
