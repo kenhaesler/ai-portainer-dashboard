@@ -107,7 +107,6 @@ vi.mock('@/shared/components/ui/themed-select', () => ({
 }));
 
 let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mockColumns: any[] | undefined;
 
 vi.mock('@/shared/components/tables/data-table', () => ({
@@ -120,7 +119,6 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     selectedRowIds,
     onRowClick,
   }: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     columns?: any[];
     data: Array<{ name: string }>;
     enableRowSelection?: boolean;
