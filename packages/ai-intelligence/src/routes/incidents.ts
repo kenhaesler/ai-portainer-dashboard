@@ -78,7 +78,7 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
       summary: 'Resolve an incident',
       security: [{ bearerAuth: [] }],
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const incident = await getIncident(id);
