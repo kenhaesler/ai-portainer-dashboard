@@ -222,14 +222,14 @@ jobs:
       matrix:
         tool: [grype-mcp, snyk-mcp, nvd-mcp]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install dependencies
         working-directory: tools/${{ matrix.tool }}
         run: |
-          pip install -r requirements.txt 2>/dev/null || true
+          [ -f requirements.txt ] && pip install -r requirements.txt
           pip install pytest pytest-asyncio mcp
       - name: Run tests
         working-directory: tools/${{ matrix.tool }}
