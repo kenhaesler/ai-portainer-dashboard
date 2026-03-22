@@ -66,7 +66,8 @@ All containers: ${containerList}`;
 }
 
 export async function llmRoutes(fastify: FastifyInstance) {
-  const llmRateMax = (getConfig() as Record<string, unknown>).LLM_RATE_LIMIT_PER_MINUTE as number | undefined;
+  // Cast needed: Zod v4 type inference drops this property from the large EnvConfig union
+  const llmRateMax = (getConfig() as Record<string, unknown>).LLM_RATE_LIMIT_PER_MINUTE as number;
 
   // Natural language query endpoint
   fastify.post<{ Body: { query: string } }>('/api/llm/query', {
@@ -83,8 +84,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         timeWindow: '1 minute',
         hook: 'preHandler',
         keyGenerator: (request: FastifyRequest) => {
-          const user = (request as any).user;
-          return user?.sub || request.ip;
+          return request.user?.sub ?? request.ip;
         },
       },
     },
