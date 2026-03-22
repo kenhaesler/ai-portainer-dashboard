@@ -105,7 +105,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://host.docker.internal:443/api/traces/otlp"
       OTEL_EXPORTER_OTLP_PROTOCOL: "http/json"
       OTEL_METRICS_EXPORTER: "none"
-      OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=ebpf-trace-key-change-me"
+      OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=${TRACES_INGESTION_API_KEY:?TRACES_INGESTION_API_KEY must be set}"
       BEYLA_TRACE_PRINTER: "disabled"
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup
