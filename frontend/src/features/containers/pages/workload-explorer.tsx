@@ -380,7 +380,7 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-  ], [navigate, knownStackNames]);
+  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState]);
 
   if (isError) {
     return (

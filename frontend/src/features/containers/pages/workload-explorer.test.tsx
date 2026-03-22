@@ -107,9 +107,12 @@ vi.mock('@/shared/components/ui/themed-select', () => ({
 }));
 
 let mockOnSelectionChange: ((rows: Array<{ id: string; name: string; endpointId: number }>) => void) | undefined;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockColumns: any[] | undefined;
 
 vi.mock('@/shared/components/tables/data-table', () => ({
   DataTable: ({
+    columns,
     data,
     enableRowSelection,
     maxSelection,
@@ -117,6 +120,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     selectedRowIds,
     onRowClick,
   }: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    columns?: any[];
     data: Array<{ name: string }>;
     enableRowSelection?: boolean;
     maxSelection?: number;
@@ -125,6 +130,7 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
   }) => {
     mockOnSelectionChange = onSelectionChange;
+    mockColumns = columns;
     return (
       <div
         data-testid="workloads-table"
@@ -220,6 +226,7 @@ describe('WorkloadExplorerPage', () => {
     mockOnFiltered = undefined;
     mockOnSelectionChange = undefined;
     mockOnStateFilterChange = undefined;
+    mockColumns = undefined;
   });
 
   it('renders stack and group dropdowns with options', () => {
@@ -464,5 +471,56 @@ describe('WorkloadExplorerPage', () => {
     // Verify DataTable receives empty selectedRowIds to clear internal checkboxes
     const table = screen.getByTestId('workloads-table');
     expect(table).toHaveAttribute('data-selected-row-ids', '{}');
+  });
+
+  it('preserves endpoint, group, and state filters when clicking a stack column cell (#1031)', () => {
+    // Set up URL with endpoint, group, and state filters active
+    mockQueryString = 'endpoint=1&group=workload&state=running';
+    render(<WorkloadExplorerPage />);
+
+    // Find the stack column definition from the columns passed to DataTable
+    const stackColumn = mockColumns?.find(
+      (col: { id?: string }) => col.id === 'stack'
+    );
+    expect(stackColumn).toBeDefined();
+
+    // Render the stack cell for a container that belongs to a stack
+    const workerContainer = {
+      id: 'c-workers',
+      name: 'workers-api-1',
+      image: 'workers:latest',
+      state: 'running',
+      status: 'Up',
+      endpointId: 1,
+      endpointName: 'local',
+      ports: [],
+      created: 1700000000,
+      labels: { 'com.docker.compose.project': 'workers' },
+      networks: [],
+    };
+
+    // Simulate what TanStack Table does: call the cell renderer
+    const cellResult = stackColumn.cell({
+      row: { original: workerContainer },
+      getValue: () => undefined,
+    });
+
+    // Render the cell so we can click the stack button
+    const { container } = render(cellResult);
+    const stackButton = container.querySelector('button');
+    expect(stackButton).not.toBeNull();
+    fireEvent.click(stackButton!);
+
+    // The critical assertion: setSearchParams should be called with ALL active
+    // filter values preserved, not just the stack. Before the fix, endpoint,
+    // group, and state would be lost due to stale closure.
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    expect(params).toEqual({
+      endpoint: '1',
+      stack: 'workers',
+      group: 'workload',
+      state: 'running',
+    });
   });
 });
