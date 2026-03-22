@@ -1606,7 +1606,32 @@ describe('Nginx Security Header Consistency', () => {
 });
 
 // =====================================================================
-//  14. REMEDIATION WEBSOCKET NAMESPACE ADMIN ROLE (issue #977, CWE-862)
+//  14. LLM OBSERVABILITY ADMIN RBAC (issue #1029, CWE-862)
+// =====================================================================
+describe('LLM Observability Admin RBAC Enforcement', () => {
+  it('GET /api/llm/traces route source must include requireRole admin', () => {
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'routes', 'llm-observability.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // The traces route must have requireRole('admin') in its preHandler
+    const tracesBlock = content.match(/get\s*\(\s*'\/api\/llm\/traces'[\s\S]*?preHandler:\s*\[([^\]]+)\]/);
+    expect(tracesBlock).not.toBeNull();
+    expect(tracesBlock![1]).toContain("requireRole('admin')");
+  });
+
+  it('GET /api/llm/stats route source must include requireRole admin', () => {
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'routes', 'llm-observability.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // The stats route must have requireRole('admin') in its preHandler
+    const statsBlock = content.match(/get\s*\(\s*'\/api\/llm\/stats'[\s\S]*?preHandler:\s*\[([^\]]+)\]/);
+    expect(statsBlock).not.toBeNull();
+    expect(statsBlock![1]).toContain("requireRole('admin')");
+  });
+});
+
+// =====================================================================
+//  15. REMEDIATION WEBSOCKET NAMESPACE ADMIN ROLE (issue #977, CWE-862)
 // =====================================================================
 describe('Remediation WebSocket namespace admin role enforcement', () => {
   it('socket-io plugin must apply admin role middleware to the /remediation namespace', () => {
