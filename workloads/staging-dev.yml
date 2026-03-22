@@ -48,7 +48,7 @@ services:
     restart: unless-stopped
 
   monitoring-prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.10.0
     container_name: monitoring-prometheus
     mem_limit: 512m
     cpus: 1.0
