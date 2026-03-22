@@ -1,4 +1,4 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useCallback } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useState } from 'react';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatBytes } from '@/shared/lib/utils';
 
@@ -55,6 +55,7 @@ export function getLabelStyleForFill(fill: string): LabelStyle {
 /** @internal Exported for testing only */
 export function CustomContent(props: any) {
   const { x, y, width, height, index, name, size, onCellClick } = props;
+  const [focused, setFocused] = useState(false);
 
   // Always render the colored rect — no invisible blank cells
   const fill = COLORS[index % COLORS.length];
@@ -80,6 +81,8 @@ export function CustomContent(props: any) {
     ? `${name}, ${formatBytes(size || 0)}`
     : undefined;
 
+  const inset = 2;
+
   return (
     <g
       role="button"
@@ -87,7 +90,9 @@ export function CustomContent(props: any) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onClick={handleClick}
-      style={{ cursor: 'pointer', outline: 'none' }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{ cursor: 'pointer' }}
       className="treemap-cell"
     >
       <rect
@@ -100,6 +105,22 @@ export function CustomContent(props: any) {
         stroke="rgba(255,255,255,0.3)"
         strokeWidth={1}
       />
+      {/* Visible focus ring for keyboard navigation */}
+      {focused && (
+        <rect
+          data-testid="focus-ring"
+          x={x + inset}
+          y={y + inset}
+          width={Math.max(0, width - inset * 2)}
+          height={Math.max(0, height - inset * 2)}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth={2}
+          rx={2}
+          ry={2}
+          pointerEvents="none"
+        />
+      )}
       {/* Show name label when cell is large enough */}
       {width > 50 && height > 24 && (
         <text

@@ -128,5 +128,37 @@ describe('ImageTreemap', () => {
       const button = screen.getByRole('button');
       expect(button.getAttribute('aria-label')).toBeNull();
     });
+
+    it('shows a visible focus ring when cell receives focus', () => {
+      renderCell();
+      const button = screen.getByRole('button');
+
+      expect(screen.queryByTestId('focus-ring')).not.toBeInTheDocument();
+
+      fireEvent.focus(button);
+      const focusRing = screen.getByTestId('focus-ring');
+      expect(focusRing).toBeInTheDocument();
+      expect(focusRing.getAttribute('stroke')).toBe('#ffffff');
+      expect(focusRing.getAttribute('stroke-width')).toBe('2');
+      expect(focusRing.getAttribute('fill')).toBe('none');
+    });
+
+    it('hides the focus ring when cell loses focus', () => {
+      renderCell();
+      const button = screen.getByRole('button');
+
+      fireEvent.focus(button);
+      expect(screen.getByTestId('focus-ring')).toBeInTheDocument();
+
+      fireEvent.blur(button);
+      expect(screen.queryByTestId('focus-ring')).not.toBeInTheDocument();
+    });
+
+    it('does not suppress the browser focus indicator with outline:none', () => {
+      renderCell();
+      const button = screen.getByRole('button');
+      const style = button.getAttribute('style') || '';
+      expect(style).not.toContain('outline');
+    });
   });
 });
