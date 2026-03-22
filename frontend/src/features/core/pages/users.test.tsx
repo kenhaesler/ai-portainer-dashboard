@@ -173,4 +173,88 @@ describe('UsersPanel', () => {
       expect(mockDeleteUser).toHaveBeenCalledWith('u1');
     });
   });
+
+  it('shows error message when deactivateUser mutation fails', async () => {
+    mockUpdateUser.mockRejectedValueOnce(new Error('Permission denied'));
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Deactivate' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Permission denied')).toBeInTheDocument();
+    });
+  });
+
+  it('shows fallback error message when deactivateUser throws non-Error', async () => {
+    mockUpdateUser.mockRejectedValueOnce('network failure');
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Deactivate' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to deactivate user')).toBeInTheDocument();
+    });
+  });
+
+  it('shows error message when removeUser mutation fails', async () => {
+    mockDeleteUser.mockRejectedValueOnce(new Error('Cannot delete last admin'));
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Delete' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Cannot delete last admin')).toBeInTheDocument();
+    });
+  });
+
+  it('shows fallback error message when removeUser throws non-Error', async () => {
+    mockDeleteUser.mockRejectedValueOnce(42);
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Delete' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to delete user')).toBeInTheDocument();
+    });
+  });
 });

@@ -97,12 +97,20 @@ export function UsersPanel() {
 
   const deactivateUser = async (userId: string) => {
     if (!window.confirm('Deactivate this account by changing role to Viewer?')) return;
-    await updateUser.mutateAsync({ id: userId, payload: { role: 'viewer' } });
+    try {
+      await updateUser.mutateAsync({ id: userId, payload: { role: 'viewer' } });
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to deactivate user');
+    }
   };
 
   const removeUser = async (userId: string) => {
     if (!window.confirm('Delete this account permanently?')) return;
-    await deleteUser.mutateAsync(userId);
+    try {
+      await deleteUser.mutateAsync(userId);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete user');
+    }
   };
 
   if (role !== 'admin') {
