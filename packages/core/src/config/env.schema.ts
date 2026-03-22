@@ -83,6 +83,12 @@ export const envSchema = z.object({
   ANOMALY_EXPLANATION_MAX_PER_CYCLE: z.coerce.number().int().min(1).max(50).default(5),
 
   // Isolation Forest Anomaly Detection
+  // ISOLATION_FOREST_ENABLED and ISOLATION_FOREST_RETRAIN_HOURS are configurable
+  // via Settings UI (ai_tuning.*) and are deprecated as env vars.
+  // ISOLATION_FOREST_TREES, ISOLATION_FOREST_SAMPLE_SIZE, and
+  // ISOLATION_FOREST_CONTAMINATION are intentionally env-only: they control model
+  // structure and changing them at runtime would invalidate cached models without
+  // retraining. A restart ensures models are retrained with the new parameters.
   ISOLATION_FOREST_ENABLED: z.coerce.boolean().default(true),
   ISOLATION_FOREST_TREES: z.coerce.number().int().min(10).max(500).default(100),
   ISOLATION_FOREST_SAMPLE_SIZE: z.coerce.number().int().min(32).max(512).default(256),
@@ -162,6 +168,8 @@ export const envSchema = z.object({
   TELEGRAM_NOTIFICATIONS_ENABLED: z.coerce.boolean().default(false),
 
   // Notifications — Email
+  // SMTP_HOST is intentionally env-only for SSRF protection.
+  // getSafeSmtpHost() blocks private/loopback hosts and ignores DB overrides.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
   SMTP_SECURE: z.coerce.boolean().default(true),

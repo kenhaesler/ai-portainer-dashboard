@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('config validation', () => {
   const originalEnv = { ...process.env };
@@ -331,6 +331,89 @@ describe('config validation', () => {
 
       const { getConfig } = await import('./index.js');
       expect(() => getConfig()).toThrowError(/JWT_PRIVATE_KEY_PATH.*file not found/i);
+    });
+  });
+
+  describe('deprecated env var warnings', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('logs a warning when a deprecated env var is set', async () => {
+      process.env.MONITORING_ENABLED = 'true';
+
+      const { getConfig } = await import('./index.js');
+      getConfig();
+
+      const monitoringWarning = warnSpy.mock.calls.find((call: unknown[]) =>
+        typeof call[0] === 'string' && call[0].includes('MONITORING_ENABLED'),
+      );
+      expect(monitoringWarning).toBeDefined();
+      expect(monitoringWarning![0]).toContain('[DEPRECATED]');
+      expect(monitoringWarning![0]).toContain('Settings');
+    });
+
+    it('logs a warning for MONITORING_INTERVAL_MINUTES when set', async () => {
+      process.env.MONITORING_INTERVAL_MINUTES = '10';
+
+      const { getConfig } = await import('./index.js');
+      getConfig();
+
+      const intervalWarning = warnSpy.mock.calls.find((call: unknown[]) =>
+        typeof call[0] === 'string' && call[0].includes('MONITORING_INTERVAL_MINUTES'),
+      );
+      expect(intervalWarning).toBeDefined();
+      expect(intervalWarning![0]).toContain('[DEPRECATED]');
+    });
+
+    it('does not log warnings for deprecated vars that are not set', async () => {
+      delete process.env.MONITORING_ENABLED;
+      delete process.env.MONITORING_INTERVAL_MINUTES;
+      delete process.env.TEAMS_WEBHOOK_URL;
+
+      const { getConfig } = await import('./index.js');
+      getConfig();
+
+      const deprecatedWarnings = warnSpy.mock.calls.filter((call: unknown[]) =>
+        typeof call[0] === 'string' && call[0].includes('[DEPRECATED]'),
+      );
+      // Should have no warnings for the vars we explicitly deleted.
+      // (Other deprecated vars may be set from the test env, so just check the specific ones.)
+      const monitoringWarnings = deprecatedWarnings.filter((call: unknown[]) =>
+        (call[0] as string).includes('MONITORING_ENABLED') || (call[0] as string).includes('MONITORING_INTERVAL_MINUTES'),
+      );
+      expect(monitoringWarnings).toHaveLength(0);
+    });
+
+    it('includes all expected vars in DEPRECATED_ENV_VARS', async () => {
+      const { DEPRECATED_ENV_VARS } = await import('./index.js');
+
+      // Monitoring vars added in #1043
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('MONITORING_ENABLED');
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('MONITORING_INTERVAL_MINUTES');
+
+      // Existing notification vars
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('TEAMS_WEBHOOK_URL');
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('EMAIL_NOTIFICATIONS_ENABLED');
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('WEBHOOKS_ENABLED');
+
+      // AI tuning vars
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('ANOMALY_ZSCORE_THRESHOLD');
+      expect(DEPRECATED_ENV_VARS).toHaveProperty('ISOLATION_FOREST_ENABLED');
+
+      // SMTP_HOST must NOT be in deprecated list (env-only for SSRF protection)
+      expect(DEPRECATED_ENV_VARS).not.toHaveProperty('SMTP_HOST');
+
+      // Isolation Forest structural params must NOT be deprecated (env-only tuning)
+      expect(DEPRECATED_ENV_VARS).not.toHaveProperty('ISOLATION_FOREST_TREES');
+      expect(DEPRECATED_ENV_VARS).not.toHaveProperty('ISOLATION_FOREST_SAMPLE_SIZE');
+      expect(DEPRECATED_ENV_VARS).not.toHaveProperty('ISOLATION_FOREST_CONTAMINATION');
     });
   });
 });
