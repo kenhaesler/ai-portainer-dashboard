@@ -14,7 +14,7 @@ services:
       dockerfile: ../docker/nvd-mcp/Dockerfile
     restart: unless-stopped
     ports:
-      - "9090:8000"
+      - "127.0.0.1:9090:8000"
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
@@ -33,7 +33,7 @@ services:
       dockerfile: ../docker/grype-mcp/Dockerfile
     restart: unless-stopped
     ports:
-      - "8788:8000"
+      - "127.0.0.1:8788:8000"
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
@@ -51,7 +51,7 @@ services:
       dockerfile: ../docker/snyk-mcp/Dockerfile
     restart: unless-stopped
     ports:
-      - "8789:8000"
+      - "127.0.0.1:8789:8000"
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000

@@ -6,7 +6,7 @@ import subprocess
 
 from mcp.server.fastmcp import FastMCP
 
-HOST = os.getenv("MCP_HOST", "0.0.0.0")
+HOST = os.getenv("MCP_HOST", "127.0.0.1")
 PORT = int(os.getenv("MCP_PORT", "8000"))
 SCAN_TIMEOUT = 120
 
