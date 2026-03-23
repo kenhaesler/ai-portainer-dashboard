@@ -43,7 +43,7 @@ for file in "${FILES[@]}"; do
   while IFS= read -r line; do
     FOUND=$((FOUND + 1))
     echo "ERROR: Hardcoded credential in $(basename "$file"): $line"
-  done < <(grep -inE '(PASSWORD|_PASS|_SECRET|_KEY)\s*[:=]' "$file" \
+  done < <(grep -iE '(PASSWORD|_PASS|_SECRET|_KEY)\s*[:=]' "$file" \
     | grep -v '^\s*#' \
     | grep -vF '${' \
     || true)

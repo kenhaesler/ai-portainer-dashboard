@@ -32,12 +32,12 @@ services:
       redis-server
       --maxmemory 64mb
       --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD:-changeme-redis}
+      --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     labels:
       app.tier: "cache"
       app.env: "production"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-changeme-redis}\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 30s
       timeout: 10s
       retries: 3
