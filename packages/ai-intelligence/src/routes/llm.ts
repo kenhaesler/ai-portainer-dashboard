@@ -1,7 +1,8 @@
 import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
+import '@fastify/rate-limit';
 import '@fastify/swagger';
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomUUID } from 'crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
@@ -65,6 +66,9 @@ All containers: ${containerList}`;
 }
 
 export async function llmRoutes(fastify: FastifyInstance) {
+  // Cast needed: Zod v4 type inference drops this property from the large EnvConfig union
+  const llmRateMax = (getConfig() as Record<string, unknown>).LLM_RATE_LIMIT_PER_MINUTE as number;
+
   // Natural language query endpoint
   fastify.post<{ Body: { query: string } }>('/api/llm/query', {
     schema: {
@@ -74,6 +78,16 @@ export async function llmRoutes(fastify: FastifyInstance) {
       body: LlmQueryBodySchema,
     },
     preHandler: [fastify.authenticate],
+    config: {
+      rateLimit: {
+        max: llmRateMax ?? 20,
+        timeWindow: '1 minute',
+        hook: 'preHandler',
+        keyGenerator: (request: FastifyRequest) => {
+          return request.user?.sub ?? request.ip;
+        },
+      },
+    },
   }, async (request) => {
     const llmConfig = await getEffectiveLlmConfig();
     const config = getConfig();

@@ -236,6 +236,7 @@ export const envSchema = z.object({
   LOGIN_RATE_LIMIT: z.coerce.number().int().min(1).default(
     process.env.NODE_ENV === 'production' ? 5 : 30
   ),
+  LLM_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
