@@ -26,7 +26,6 @@ export function MonitoringTab({ editedValues, originalValues, onChange, isSaving
         values={editedValues}
         originalValues={originalValues}
         onChange={onChange}
-        requiresRestart
         disabled={isSaving}
         status={editedValues['monitoring.enabled'] === 'true' ? 'configured' : 'not-configured'}
         statusLabel={editedValues['monitoring.enabled'] === 'true' ? 'Enabled' : 'Disabled'}
