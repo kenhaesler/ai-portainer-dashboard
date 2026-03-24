@@ -122,7 +122,7 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /sys/kernel/security:/sys/kernel/security:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6060/metrics || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6060/internal/metrics || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
