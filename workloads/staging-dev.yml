@@ -1,5 +1,6 @@
 # Stack: staging-dev — Staging + development environments + monitoring
 # 4 services: staging-web, staging-api, dev-web, monitoring-prometheus
+# Networks: staging-dev-net (default)
 
 services:
   staging-web:
@@ -52,6 +53,8 @@ services:
     container_name: monitoring-prometheus
     mem_limit: 512m
     cpus: 1.0
+    volumes:
+      - prometheus-data:/prometheus
     labels:
       app.tier: "monitoring"
       app.env: "infrastructure"
@@ -61,3 +64,10 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+
+volumes:
+  prometheus-data:
+
+networks:
+  default:
+    name: staging-dev-net
