@@ -1,6 +1,6 @@
 services:
   beyla:
-    image: grafana/beyla:latest
+    image: grafana/beyla:1.8
     container_name: beyla-edge-test
     restart: unless-stopped
     privileged: true

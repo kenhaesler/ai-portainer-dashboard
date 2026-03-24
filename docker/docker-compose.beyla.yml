@@ -12,7 +12,7 @@
 
 services:
   beyla:
-    image: grafana/beyla:latest
+    image: grafana/beyla:1.8
     privileged: true
     pid: "host"
     init: true
@@ -28,8 +28,8 @@ services:
       # Header format: key=value (no spaces, no colon)
       OTEL_EXPORTER_OTLP_HEADERS: "X-API-Key=${TRACES_INGESTION_API_KEY:-}"
     volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup
-      - /sys/kernel/security:/sys/kernel/security
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /sys/kernel/security:/sys/kernel/security:ro
     networks:
       - dashboard-net
     depends_on:
