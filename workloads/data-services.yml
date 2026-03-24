@@ -37,7 +37,7 @@ services:
       app.tier: "cache"
       app.env: "production"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 30s
       timeout: 10s
       retries: 3
