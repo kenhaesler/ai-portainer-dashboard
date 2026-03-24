@@ -8,7 +8,7 @@ AI-powered container monitoring dashboard extending Portainer with real-time ins
 
 ## Mandatory Rules
 
-1. **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.
+1. **Tests required** — Every change needs tests. PRs without tests are blocked by CI. Backend: `backend/src/**/*.test.ts`, Packages: `packages/*/src/**/*.test.ts`, Frontend: `frontend/src/**/*.test.{ts,tsx}`, E2E: `e2e/*.spec.ts`. Both use Vitest; frontend uses jsdom + `@testing-library/react`. Never use `--no-verify`.
 2. **Observer-first** — Do not add container-mutating actions without explicit request. All actions must be gated, auditable, and opt-in.
 3. **Never push to `main` or `dev`** — Branch from `dev` as `feature/<issue#>-<desc>`. PRs go `feature/* → dev → main`.
 4. **Never commit secrets** — No `.env`, API keys, passwords, or credentials.
@@ -27,6 +27,7 @@ npm test                   # All tests
 npm run test -w backend    # Backend only
 npm run test -w frontend   # Frontend only
 # Single file: cd backend && npx vitest run src/path/file.test.ts
+# Package test: cd packages/core && npx vitest run src/path/file.test.ts
 # Backend tests use real PostgreSQL (POSTGRES_TEST_URL env var, default: localhost:5433)
 # E2E: npx playwright test (requires running backend + frontend)
 # Docker: docker compose -f docker/docker-compose.dev.yml up -d
@@ -41,8 +42,8 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 - JWT via `jose` (32+ char secrets). Session store in PostgreSQL — validated server-side per request.
 - OIDC/SSO via `openid-client` v6 with PKCE. Rate limiting on login (`LOGIN_RATE_LIMIT`).
 - Auth decorator: `fastify.authenticate` on all protected routes.
-- **Prompt injection guard** (`services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
-- Security regression tests: `backend/src/routes/security-regression.test.ts` (36 tests — auth sweep, prompt injection, false positives, rate limiting).
+- **Prompt injection guard** (`packages/ai-intelligence/src/services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
+- Security regression tests: `backend/src/routes/security-regression.test.ts` (68 tests — auth sweep, prompt injection, false positives, rate limiting).
 - For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
 ## Security First (Mandatory)
@@ -57,7 +58,7 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 
 ## UI/UX Design
 
-Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 9 themes (light/dark, Apple, Catppuccin family). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`.
+Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 16 themes (Glass Light/Dark, Nordic Frost, Sandstone Dusk, Obsidian Ink, Forest Night, Hyperpop Chaos, 4 Retro, 4 Catppuccin, System). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`.
 
 **Status colors:** Green=healthy, Yellow=warning, Orange=critical, Red=error, Blue=info, Gray=inactive, Purple=AI insight.
 
