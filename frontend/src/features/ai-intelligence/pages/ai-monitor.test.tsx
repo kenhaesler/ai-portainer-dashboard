@@ -414,8 +414,8 @@ describe('AiMonitorPage', () => {
     renderPage();
 
     expect(screen.getByText('Overall Health Score')).toBeTruthy();
-    // 2 healthy (web + db fallback) out of 4 = 50.0% (appears in score + Healthy card)
-    expect(screen.getAllByText('50.0%').length).toBeGreaterThanOrEqual(1);
+    // 1 healthy (web) out of 4 = 25.0% — db has no healthcheck so counts as unknown, not healthy
+    expect(screen.getAllByText('25.0%').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('Healthy')).toBeTruthy();
     expect(screen.getAllByText('Unhealthy').length).toBeGreaterThanOrEqual(1);
