@@ -25,7 +25,7 @@ EXTERNAL_NETWORKS=("app-frontend-net" "app-backend-net")
 
 # Load environment variables (safe: handles spaces, quotes, and special chars)
 if [ -f "$PROJECT_DIR/.env" ]; then
-  while IFS='=' read -r key value; do
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
     # Skip comments and empty lines
     [[ -z "$key" || "$key" =~ ^[[:space:]]*(#|$) ]] && continue
     # Remove surrounding quotes from value
