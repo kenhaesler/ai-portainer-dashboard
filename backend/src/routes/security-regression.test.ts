@@ -1358,9 +1358,11 @@ describe('Rate Limiting Verification', () => {
     llmApp.setSerializerCompiler(serializerCompiler);
 
     await llmApp.register(rateLimitPlugin);
-    await llmApp.register(authPlugin);
 
-    // Bypass auth — we are testing the rate limiter, not auth
+    // Bypass auth — we are testing the rate limiter, not auth.
+    // Do NOT register authPlugin (it adds a real requireRole that would
+    // reject requests). Instead, stub the decorators that llmRoutes expects.
+    llmApp.decorate('authenticate', async () => undefined);
     llmApp.decorate('requireRole', () => async () => undefined);
     llmApp.decorateRequest('user', undefined);
     llmApp.addHook('preHandler', async (request) => {

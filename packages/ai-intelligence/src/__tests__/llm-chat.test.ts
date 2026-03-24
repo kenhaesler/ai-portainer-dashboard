@@ -418,6 +418,8 @@ function baseLlmConfig(overrides: Record<string, any> = {}) {
 describe('setupLlmNamespace — tool iteration limit graceful degradation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear per-user throttle map so tests don't interfere with each other
+    chatThrottleMap.clear();
     // Phase 1 is skipped because collectAllTools returns [] (no native tools)
     mockCollectAllTools.mockReturnValue([]);
     mockRouteToolCalls.mockResolvedValue([]);
