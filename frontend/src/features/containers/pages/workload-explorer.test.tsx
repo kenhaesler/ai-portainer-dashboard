@@ -333,6 +333,25 @@ describe('WorkloadExplorerPage', () => {
     expect(params).toEqual({ endpoint: '1', group: 'workload' });
   });
 
+  it('renders state filter chip when state param is set', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('State:')).toBeInTheDocument();
+    expect(screen.getByText('Running')).toBeInTheDocument();
+  });
+
+  it('removes state filter chip when dismiss button is clicked', () => {
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+
+    const dismissStateButton = screen.getByRole('button', { name: 'Remove State filter' });
+    fireEvent.click(dismissStateButton);
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({ search: 'endpoint=1' });
+  });
+
   it('clears all filters when Clear all is clicked', () => {
     mockQueryString = 'endpoint=1&stack=workers&group=workload';
     render(<WorkloadExplorerPage />);
