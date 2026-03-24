@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Send, X, Trash2, Bot, User, AlertCircle, Copy, Check, Wrench, CheckCircle2, XCircle, Layers, WifiOff, Loader2 } from 'lucide-react';
 import { ContextBanner, type ContextBannerData } from '@/shared/components/layout/context-banner';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import ReactMarkdown from 'react-markdown';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import remarkGfm from 'remark-gfm';
@@ -70,6 +71,7 @@ export default function LlmAssistantPage() {
   const navigate = useNavigate();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [contextBanner, setContextBanner] = useState<ContextBannerData | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -167,9 +169,7 @@ export default function LlmAssistantPage() {
   }, [isStreaming, isSending, sendMessage, selectedModel]);
 
   const handleClear = () => {
-    if (window.confirm('Clear all chat history?')) {
-      clearHistory();
-    }
+    setShowClearConfirm(true);
   };
 
   return (
@@ -388,6 +388,16 @@ export default function LlmAssistantPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showClearConfirm}
+        onConfirm={() => { clearHistory(); setShowClearConfirm(false); }}
+        onCancel={() => setShowClearConfirm(false)}
+        title="Clear Chat History"
+        description="Clear all chat history? This action cannot be undone."
+        confirmLabel="Clear History"
+        variant="danger"
+      />
     </div>
   );
 }
