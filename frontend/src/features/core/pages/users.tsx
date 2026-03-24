@@ -110,10 +110,15 @@ export function UsersPanel() {
 
   const handleConfirmAction = async () => {
     if (!confirmAction) return;
-    if (confirmAction.type === 'deactivate') {
-      await updateUser.mutateAsync({ id: confirmAction.userId, payload: { role: 'viewer' } });
-    } else {
-      await deleteUser.mutateAsync(confirmAction.userId);
+    try {
+      if (confirmAction.type === 'deactivate') {
+        await updateUser.mutateAsync({ id: confirmAction.userId, payload: { role: 'viewer' } });
+      } else {
+        await deleteUser.mutateAsync(confirmAction.userId);
+      }
+    } catch (err) {
+      const fallback = confirmAction.type === 'deactivate' ? 'Failed to deactivate user' : 'Failed to delete user';
+      setErrorMessage(err instanceof Error ? err.message : fallback);
     }
     setConfirmAction(null);
   };

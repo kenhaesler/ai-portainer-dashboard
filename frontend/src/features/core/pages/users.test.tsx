@@ -202,6 +202,9 @@ describe('UsersPanel', () => {
     if (!adminRow) return;
 
     fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+    // Confirm in the dialog
+    const confirmBtn = await screen.findByRole('button', { name: 'Deactivate' });
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(screen.getByText('Permission denied')).toBeInTheDocument();
@@ -223,6 +226,8 @@ describe('UsersPanel', () => {
     if (!adminRow) return;
 
     fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+    const confirmBtn = await screen.findByRole('button', { name: 'Deactivate' });
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(screen.getByText('Failed to deactivate user')).toBeInTheDocument();
@@ -244,6 +249,8 @@ describe('UsersPanel', () => {
     if (!adminRow) return;
 
     fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    const confirmBtn = await screen.findByRole('button', { name: 'Delete' });
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(screen.getByText('Cannot delete last admin')).toBeInTheDocument();
@@ -265,6 +272,8 @@ describe('UsersPanel', () => {
     if (!adminRow) return;
 
     fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    const confirmBtn = await screen.findByRole('button', { name: 'Delete' });
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(screen.getByText('Failed to delete user')).toBeInTheDocument();
