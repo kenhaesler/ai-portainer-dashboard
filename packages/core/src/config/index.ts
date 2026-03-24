@@ -209,9 +209,6 @@ export const DEPRECATED_ENV_VARS: Record<string, string> = {
   AI_ANALYSIS_ENABLED: 'Settings → AI & LLM → Advanced AI Tuning',
   MAX_INSIGHTS_PER_CYCLE: 'Settings → AI & LLM → Advanced AI Tuning',
   INSIGHTS_RETENTION_DAYS: 'Settings → Infrastructure → Metrics Retention',
-  // Category C: Monitoring scheduler (now in Settings → Monitoring)
-  MONITORING_ENABLED: 'Use Settings UI → Monitoring → Enable Monitoring instead',
-  MONITORING_INTERVAL_MINUTES: 'Use Settings UI → Monitoring → Scheduler Interval instead',
 };
 
 let deprecationWarned = false;
