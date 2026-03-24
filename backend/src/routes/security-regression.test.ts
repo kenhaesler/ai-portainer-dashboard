@@ -532,6 +532,7 @@ beforeAll(async () => {
     TRACES_INGESTION_API_KEY: '',
     API_RATE_LIMIT: 1200,
     LOGIN_RATE_LIMIT: 5,
+    LLM_RATE_LIMIT_PER_MINUTE: 20,
     HTTP2_ENABLED: false,
   });
 });
@@ -1349,6 +1350,51 @@ describe('Rate Limiting Verification', () => {
     expect(rateLimitedResponse).not.toBeNull();
     expect(rateLimitedResponse!.headers['retry-after']).toBeDefined();
   });
+
+  it('should return 429 on LLM /api/llm/query when per-user rate limit exceeded', async () => {
+    // Build a dedicated app with rate-limit plugin + LLM routes + low limit
+    const llmApp = Fastify({ logger: false });
+    llmApp.setValidatorCompiler(validatorCompiler);
+    llmApp.setSerializerCompiler(serializerCompiler);
+
+    await llmApp.register(rateLimitPlugin);
+    await llmApp.register(authPlugin);
+
+    // Bypass auth — we are testing the rate limiter, not auth
+    llmApp.decorate('requireRole', () => async () => undefined);
+    llmApp.decorateRequest('user', undefined);
+    llmApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'rate-limit-test-user', username: 'tester', sessionId: 's1', role: 'admin' as const };
+    });
+
+    await llmApp.register(llmRoutes);
+    await llmApp.ready();
+
+    try {
+      // LLM_RATE_LIMIT_PER_MINUTE defaults to 20; fire 21 requests
+      const llmRateLimit = 20;
+      let rateLimitedResponse = null;
+
+      for (let i = 0; i <= llmRateLimit; i++) {
+        const res = await llmApp.inject({
+          method: 'POST',
+          url: '/api/llm/query',
+          payload: { query: 'show running containers' },
+          headers: { 'content-type': 'application/json' },
+        });
+        if (res.statusCode === 429) {
+          rateLimitedResponse = res;
+          break;
+        }
+      }
+
+      expect(rateLimitedResponse).not.toBeNull();
+      expect(rateLimitedResponse!.statusCode).toBe(429);
+      expect(rateLimitedResponse!.headers['retry-after']).toBeDefined();
+    } finally {
+      await llmApp.close();
+    }
+  });
 });
 
 // ─── OIDC Group Mapping Security ──────────────────────────────────────
@@ -1652,5 +1698,39 @@ describe('Remediation WebSocket namespace admin role enforcement', () => {
     const sharedLoopEnd = content.indexOf(sharedLoopMatch![0]) + sharedLoopMatch![0].length;
     const adminMiddlewareIdx = content.indexOf('remediationNamespace.use(');
     expect(adminMiddlewareIdx).toBeGreaterThan(sharedLoopEnd);
+  });
+});
+
+// =====================================================================
+//  15. WEBSOCKET CHAT THROTTLE (per-user rate limiting)
+// =====================================================================
+describe('WebSocket Chat Throttle', () => {
+  it('llm-chat.ts must implement per-user throttle on chat:message handler', () => {
+    // Source-code guard: verify the WebSocket chat handler includes
+    // an in-memory per-user throttle to prevent abuse.
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'sockets', 'llm-chat.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // Must have a throttle map for tracking per-user timestamps
+    expect(content).toContain('chatThrottleMap');
+
+    // Must emit a throttle event when rate is exceeded
+    expect(content).toContain('chat:throttled');
+
+    // Must check elapsed time against the throttle window
+    expect(content).toMatch(/CHAT_THROTTLE_MS/);
+
+    // Must clean up throttle entries on disconnect to prevent memory leaks
+    expect(content).toMatch(/chatThrottleMap\.delete/);
+  });
+
+  it('llm-chat.ts must export throttle constants for testability', () => {
+    // The throttle map and constant should be exported so integration tests
+    // can verify runtime behavior.
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'sockets', 'llm-chat.ts');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toMatch(/export\s+\{[^}]*chatThrottleMap/);
+    expect(content).toMatch(/export\s+\{[^}]*CHAT_THROTTLE_MS/);
   });
 });

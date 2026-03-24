@@ -91,6 +91,8 @@ import {
   formatChatContext,
   setupLlmNamespace,
   ThinkingBlockFilter,
+  chatThrottleMap,
+  CHAT_THROTTLE_MS,
 } from '../sockets/llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
 
@@ -684,5 +686,67 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 
     // The notice should contain the exact configured limit number
     expect(chunks).toContain(`tool call limit (${customLimit})`);
+  });
+});
+
+// ── WebSocket per-user chat throttle tests ──
+
+describe('setupLlmNamespace — per-user chat throttle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatThrottleMap.clear();
+    mockCollectAllTools.mockReturnValue([]);
+    mockRouteToolCalls.mockResolvedValue([]);
+    mockParseToolCalls.mockReturnValue(null);
+  });
+
+  it('rejects rapid-fire messages with chat:throttled event', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        return (async function* () {
+          yield { message: { content: 'Hello!' } };
+        })();
+      }
+      return { message: { content: 'Hello!', tool_calls: [] } };
+    });
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+
+    // First message should succeed
+    await chatHandler!({ text: 'First message' });
+    const firstThrottled = emitted.filter(e => e.event === 'chat:throttled');
+    expect(firstThrottled).toHaveLength(0);
+
+    // Second message immediately should be throttled
+    await chatHandler!({ text: 'Second message immediately' });
+    const throttledEvents = emitted.filter(e => e.event === 'chat:throttled');
+    expect(throttledEvents).toHaveLength(1);
+    expect(throttledEvents[0].args[0].reason).toContain('Too many requests');
+    expect(throttledEvents[0].args[0].retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it('cleans up throttle map on disconnect', () => {
+    const { ns, socketHandlers, connect } = createMockSocketPair();
+    setupLlmNamespace(ns);
+    connect();
+
+    // Simulate setting a throttle entry
+    chatThrottleMap.set('test-user', Date.now());
+    expect(chatThrottleMap.has('test-user')).toBe(true);
+
+    // Trigger disconnect
+    const disconnectHandler = socketHandlers.get('disconnect');
+    disconnectHandler!();
+
+    expect(chatThrottleMap.has('test-user')).toBe(false);
+  });
+
+  it('exports CHAT_THROTTLE_MS as a positive number', () => {
+    expect(CHAT_THROTTLE_MS).toBeGreaterThan(0);
   });
 });
