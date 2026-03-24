@@ -149,7 +149,6 @@ export default function SettingsPage() {
     'notifications.teams_enabled',
     'notifications.teams_webhook_url',
     'notifications.email_enabled',
-    'notifications.smtp_host',
     'notifications.smtp_port',
     'notifications.smtp_user',
     'notifications.smtp_password',
