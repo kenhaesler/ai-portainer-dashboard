@@ -27,7 +27,7 @@
     "@dashboard/contracts": "*",
     "@dashboard/core": "*",
     "@dashboard/infrastructure": "*",
-    "fastify": "^5.8.2",
+    "fastify": "^5.8.4",
     "fastify-type-provider-zod": "^6.1.0",
     "p-limit": "^7.3.0",
     "redis": "^5.11.0",
