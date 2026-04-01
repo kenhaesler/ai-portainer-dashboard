@@ -38,7 +38,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build backend image for smoke test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./backend/Dockerfile
@@ -51,7 +51,7 @@ jobs:
         run: docker run --rm backend-smoke-test:latest tcpdump --version
 
       - name: Build and push backend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./backend/Dockerfile
@@ -94,7 +94,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./frontend/Dockerfile
