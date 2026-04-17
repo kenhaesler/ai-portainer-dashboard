@@ -79,3 +79,39 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 export function useSockets() {
   return useContext(SocketContext);
 }
+
+/**
+ * Tracks the live connection state of a specific socket.
+ *
+ * Reading `socket.connected` directly during render is stale: socket.io
+ * mutates that flag asynchronously and React has no way to know. The
+ * SocketProvider's aggregated `connected` field only re-renders consumers
+ * when the OR-of-all-sockets actually flips, so a single namespace coming
+ * up after another is already connected produces no re-render and the
+ * stale `false` from the first paint persists.
+ */
+export function useSocketConnected(socket: Socket | null): boolean {
+  const [connected, setConnected] = useState(socket?.connected ?? false);
+
+  useEffect(() => {
+    if (!socket) {
+      setConnected(false);
+      return;
+    }
+
+    setConnected(socket.connected);
+
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, [socket]);
+
+  return connected;
+}

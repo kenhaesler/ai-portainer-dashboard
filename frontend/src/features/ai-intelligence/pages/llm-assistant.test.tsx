@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -33,10 +33,44 @@ vi.mock('@/features/ai-intelligence/hooks/use-mcp', () => ({
   useMcpServers: vi.fn().mockReturnValue({ data: undefined }),
 }));
 
-const mockLlmSocket = { connected: true, emit: vi.fn(), on: vi.fn(), off: vi.fn() };
-vi.mock('@/providers/socket-provider', () => ({
-  useSockets: () => ({ llmSocket: mockLlmSocket }),
-}));
+const llmSocketHandlers: Record<string, (...args: unknown[]) => void> = {};
+const mockLlmSocket = {
+  connected: true,
+  emit: vi.fn(),
+  on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+    llmSocketHandlers[event] = handler;
+  }),
+  off: vi.fn((event: string) => {
+    delete llmSocketHandlers[event];
+  }),
+};
+vi.mock('@/providers/socket-provider', async () => {
+  const { useEffect, useState } = await import('react');
+  return {
+    useSockets: () => ({ llmSocket: mockLlmSocket }),
+    // Real implementation against the mocked socket so tests exercise the
+    // event subscription path that fixes the stale "Reconnecting" banner.
+    useSocketConnected: (socket: typeof mockLlmSocket | null) => {
+      const [connected, setConnected] = useState(socket?.connected ?? false);
+      useEffect(() => {
+        if (!socket) {
+          setConnected(false);
+          return;
+        }
+        setConnected(socket.connected);
+        const onConnect = () => setConnected(true);
+        const onDisconnect = () => setConnected(false);
+        socket.on('connect', onConnect);
+        socket.on('disconnect', onDisconnect);
+        return () => {
+          socket.off('connect', onConnect);
+          socket.off('disconnect', onDisconnect);
+        };
+      }, [socket]);
+      return connected;
+    },
+  };
+});
 
 vi.mock('@/features/ai-intelligence/hooks/use-llm-feedback', () => ({
   useSubmitFeedback: () => ({
@@ -639,6 +673,28 @@ describe('Connection status indicator', () => {
 
     // Restore for other tests
     mockLlmSocket.connected = true;
+  });
+
+  // Regression: previously the page read `llmSocket.connected` directly during
+  // render. socket.io mutates that flag asynchronously, so when the LLM socket
+  // connected after the first paint (e.g. after the monitoring socket already
+  // flipped the SocketProvider's aggregated `connected` state to true), the
+  // banner stayed stuck on "Reconnecting to AI service..." even though the
+  // socket was healthy and chat worked. The fix subscribes to the socket's
+  // own `connect` event so the page re-renders on the namespace's transition.
+  it('clears reconnecting banner when socket connects after initial render', async () => {
+    mockLlmSocket.connected = false;
+
+    renderPage();
+    expect(screen.getByText('Reconnecting to AI service...')).toBeTruthy();
+
+    // Simulate socket.io emitting the connect event on this namespace.
+    mockLlmSocket.connected = true;
+    await act(async () => {
+      llmSocketHandlers['connect']?.();
+    });
+
+    expect(screen.queryByText('Reconnecting to AI service...')).toBeNull();
   });
 
   describe('ContextBanner (Discuss with AI navigation)', () => {
