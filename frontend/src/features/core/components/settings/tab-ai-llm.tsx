@@ -256,7 +256,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
     }
 
     const body = customEnabled
-      ? { url: customUrl.trim(), token: customToken || undefined }
+      ? { url: customUrl.trim(), token: customToken || undefined, authType: authType as 'bearer' | 'basic' }
       : { ollamaUrl: ollamaUrl };
     testConnection.mutate(body, {
       onSuccess: (data) => {
@@ -309,9 +309,9 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
             {llmConfigured ? 'Configured' : 'Not configured'}
           </span>
           {hasChanges && (
-            <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+            <div className="flex items-center gap-1.5 text-xs text-blue-500 bg-blue-500/10 px-2 py-1 rounded">
               <RefreshCw className="h-3 w-3" />
-              Requires restart
+              Unsaved changes
             </div>
           )}
         </div>
