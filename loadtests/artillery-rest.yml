@@ -12,7 +12,7 @@
 # Env vars (set by docker/docker-compose.loadtest.yml):
 #   BASE_URL          http://backend:3051
 #   DASHBOARD_USER    admin
-#   DASHBOARD_PASS    changeme123
+#   DASHBOARD_PASS    (see docker-compose.dev.yml for dev credentials)
 
 config:
   target: "{{ $processEnvironment.BASE_URL }}"

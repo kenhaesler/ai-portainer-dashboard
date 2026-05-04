@@ -68,6 +68,7 @@ async function withStatementTimeout<T>(
 // don't require real-time accuracy. 5-minute TTL matches reports cache.
 // ---------------------------------------------------------------------------
 const CORRELATIONS_CACHE_TTL_MS = 5 * 60 * 1_000;
+export const MAX_CORRELATIONS_CACHE = 500;
 
 interface CorrelationsCacheEntry { payload: unknown; expiresAt: number }
 const correlationsCache = new Map<string, CorrelationsCacheEntry>();
@@ -82,7 +83,12 @@ function getCachedCorrelations<T>(key: string): T | null {
   return entry.payload as T;
 }
 
-function setCachedCorrelations(key: string, payload: unknown): void {
+/** @internal Exported for testing only */
+export function setCachedCorrelations(key: string, payload: unknown): void {
+  if (correlationsCache.size >= MAX_CORRELATIONS_CACHE) {
+    const firstKey = correlationsCache.keys().next().value;
+    if (firstKey) correlationsCache.delete(firstKey);
+  }
   correlationsCache.set(key, { payload, expiresAt: Date.now() + CORRELATIONS_CACHE_TTL_MS });
 }
 
@@ -91,13 +97,65 @@ export function clearCorrelationsCache(): void {
   correlationsCache.clear();
 }
 
+/** Returns current correlations cache size (for testing) */
+export function getCorrelationsCacheSize(): number {
+  return correlationsCache.size;
+}
+
+// ---------------------------------------------------------------------------
+// Periodic TTL sweep — removes expired-but-unread entries so they don't waste
+// memory up to the FIFO cap.  Runs every 5 minutes.  The timer is unref()'d
+// so it never prevents Node from exiting gracefully.
+// ---------------------------------------------------------------------------
+const SWEEP_INTERVAL_MS = 5 * 60 * 1_000;
+
+function sweepExpiredEntries(): void {
+  const now = Date.now();
+  for (const [key, entry] of correlationsCache) {
+    if (entry.expiresAt <= now) {
+      correlationsCache.delete(key);
+    }
+  }
+  for (const [key, entry] of insightsCache) {
+    if (entry.expiresAt <= now) {
+      insightsCache.delete(key);
+    }
+  }
+}
+
+const _sweepTimer = setInterval(sweepExpiredEntries, SWEEP_INTERVAL_MS);
+_sweepTimer.unref();
+
+/** Stop the periodic TTL sweep (for testing / clean shutdown) */
+export function stopCacheSweep(): void {
+  clearInterval(_sweepTimer);
+}
+
+/** @internal Exported for testing only */
+export { sweepExpiredEntries as _sweepExpiredEntries };
+
 // Simple in-memory cache for LLM insights (15 min TTL)
 const INSIGHTS_TTL = 15 * 60 * 1000;
+export const MAX_INSIGHTS_CACHE = 500;
 const insightsCache = new Map<string, { insights: CorrelationInsight[]; summary: string | null; expiresAt: number }>();
 
 /** Clear the insights cache (for testing) */
 export function clearInsightsCache() {
   insightsCache.clear();
+}
+
+/** Returns current insights cache size (for testing) */
+export function getInsightsCacheSize(): number {
+  return insightsCache.size;
+}
+
+/** @internal Exported for testing only */
+export function setCachedInsights(key: string, insights: CorrelationInsight[], summary: string | null): void {
+  if (insightsCache.size >= MAX_INSIGHTS_CACHE) {
+    const firstKey = insightsCache.keys().next().value;
+    if (firstKey) insightsCache.delete(firstKey);
+  }
+  insightsCache.set(key, { insights, summary, expiresAt: Date.now() + INSIGHTS_TTL });
 }
 
 export interface CorrelationInsight {
@@ -258,7 +316,7 @@ export async function correlationRoutes(fastify: FastifyInstance, opts: Correlat
       );
 
       const { insights, summary } = parseInsightsResponse(response.trim(), topPairs);
-      insightsCache.set(cacheKey, { insights, summary, expiresAt: Date.now() + INSIGHTS_TTL });
+      setCachedInsights(cacheKey, insights, summary);
       return { insights, summary };
     } catch (err) {
       log.warn({ err }, 'Failed to generate correlation insights');
