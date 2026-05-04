@@ -15,10 +15,13 @@
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@dashboard/contracts": ["../packages/contracts/src/index.ts"]
     }
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "references": [
+    { "path": "./tsconfig.node.json" }
+  ]
 }
