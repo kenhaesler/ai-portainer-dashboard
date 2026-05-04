@@ -1047,6 +1047,26 @@ describe('PCAP Admin RBAC Enforcement', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('denies list-captures for non-admin users (#1020 regression)', async () => {
+    currentRole = 'viewer';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/pcap/captures',
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies get-capture for non-admin users (#1020 regression)', async () => {
+    currentRole = 'operator';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/pcap/captures/c1',
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it('denies stop/analyze/delete for non-admin users', async () => {
     currentRole = 'operator';
 
