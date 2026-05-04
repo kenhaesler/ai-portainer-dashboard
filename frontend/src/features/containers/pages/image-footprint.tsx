@@ -308,19 +308,15 @@ export default function ImageFootprintPage() {
                 <p className="mb-4 text-xs text-muted-foreground">
                   Visualizes relative image sizes. Larger boxes indicate larger images. Click an image to view details.
                 </p>
-                <div onClick={(e) => {
-                  const target = e.target as HTMLElement;
-                  const text = target.closest('g')?.querySelector('text')?.textContent;
-                  if (text) {
-                    const name = text.endsWith('...') ? text.slice(0, -3) : text;
-                    const matchingImage = images.find((img) => img.name.startsWith(name));
+                <ImageTreemap
+                  data={treemapData}
+                  onCellClick={(name) => {
+                    const matchingImage = images.find((img) => img.name === name);
                     if (matchingImage) {
                       setSelectedImage(matchingImage);
                     }
-                  }
-                }}>
-                  <ImageTreemap data={treemapData} />
-                </div>
+                  }}
+                />
               </div>
             </SpotlightCard>
           </MotionReveal>
