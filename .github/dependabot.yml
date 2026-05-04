@@ -12,6 +12,11 @@ updates:
     labels:
       - dependencies
       - javascript
+    ignore:
+      # lucide-react 1.x is a rewrite with renamed/removed icons; major bumps require
+      # manual migration across 75+ frontend files. Allow minor/patch only.
+      - dependency-name: "lucide-react"
+        update-types: ["version-update:semver-major"]
     groups:
       fastify:
         patterns:
