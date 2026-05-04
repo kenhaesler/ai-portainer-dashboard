@@ -17,6 +17,7 @@ export interface LlmModelsResponse {
 interface LlmTestConnectionRequest {
   url?: string;
   token?: string;
+  authType?: 'bearer' | 'basic';
   ollamaUrl?: string;
 }
 

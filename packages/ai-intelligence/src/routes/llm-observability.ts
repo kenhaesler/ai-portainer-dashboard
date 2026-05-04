@@ -13,7 +13,7 @@ export async function llmObservabilityRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: LlmTracesQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { limit } = request.query as { limit: number };
     return getRecentTraces(limit);
@@ -26,7 +26,7 @@ export async function llmObservabilityRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
       querystring: LlmStatsQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const { hours } = request.query as { hours: number };
     return getLlmStats(hours);

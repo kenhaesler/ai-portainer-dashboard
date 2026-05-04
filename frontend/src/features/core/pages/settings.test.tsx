@@ -169,7 +169,7 @@ describe('LlmSettingsSection', () => {
     expect(screen.queryByText('Connection Failed')).not.toBeInTheDocument();
   });
 
-  it('shows requires restart badge when values change', async () => {
+  it('shows unsaved changes badge when values change', async () => {
     const modifiedValues = { ...defaultValues, 'llm.model': 'mistral' };
 
     render(
@@ -177,7 +177,7 @@ describe('LlmSettingsSection', () => {
       { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText('Requires restart')).toBeInTheDocument();
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
   });
 
   it('blocks test connection when custom endpoint is enabled but URL is empty', async () => {
