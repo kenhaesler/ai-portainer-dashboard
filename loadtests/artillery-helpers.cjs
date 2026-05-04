@@ -17,7 +17,10 @@ function doLogin() {
   loginPromise = (async () => {
     const baseUrl = process.env.BASE_URL;
     const username = process.env.DASHBOARD_USER || 'admin';
-    const password = process.env.DASHBOARD_PASS || 'admin';
+    const password = process.env.DASHBOARD_PASS;
+    if (!password) {
+      throw new Error('DASHBOARD_PASS env var required. See docker-compose.dev.yml for the dev password.');
+    }
 
     const res = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',

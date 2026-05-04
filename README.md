@@ -87,7 +87,7 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.monitoring.
 # Grafana: http://127.0.0.1:3001 (admin / $GRAFANA_ADMIN_PASSWORD)
 ```
 
-Requires `PROMETHEUS_BEARER_TOKEN` and `GRAFANA_ADMIN_PASSWORD` in `.env`. See [Monitoring Stack](docs/architecture.md#monitoring-stack-optional) for details and external-stack integration.
+Requires `PROMETHEUS_BEARER_TOKEN` and `GRAFANA_ADMIN_PASSWORD` in `.env`. See [Architecture](docs/ai-instructions/architecture.md) for details and external-stack integration.
 
 Production compose security note:
 - Backend API (`:3051`) is bound to `127.0.0.1` only in `docker/docker-compose.yml`.

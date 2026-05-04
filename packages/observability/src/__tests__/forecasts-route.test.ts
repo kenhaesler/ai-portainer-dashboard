@@ -2,7 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import type { LLMInterface } from '@dashboard/contracts';
-import { forecastRoutes, buildForecastPrompt, clearNarrativeCache } from '../routes/forecasts.js';
+import {
+  forecastRoutes,
+  buildForecastPrompt,
+  clearNarrativeCache,
+  getNarrativeCacheSize,
+  setCachedNarrative,
+  MAX_NARRATIVE_CACHE,
+  _sweepExpiredEntries,
+} from '../routes/forecasts.js';
 
 const mockGetCapacityForecasts = vi.fn();
 const mockGenerateForecast = vi.fn();
@@ -261,5 +269,85 @@ describe('buildForecastPrompt', () => {
 
     expect(prompt).toContain('not predicted to breach 90%');
     expect(prompt).not.toContain('~null');
+  });
+});
+
+describe('Narrative cache max-size cap', () => {
+  it('keeps cache size at or below MAX_NARRATIVE_CACHE after overflow inserts', () => {
+    clearNarrativeCache();
+    const insertCount = MAX_NARRATIVE_CACHE + 100;
+    for (let i = 0; i < insertCount; i++) {
+      setCachedNarrative(`key-${i}`, `narrative-${i}`);
+    }
+    expect(getNarrativeCacheSize()).toBeLessThanOrEqual(MAX_NARRATIVE_CACHE);
+  });
+
+  it('evicts the oldest entry when cache exceeds max size', () => {
+    clearNarrativeCache();
+    for (let i = 0; i < MAX_NARRATIVE_CACHE; i++) {
+      setCachedNarrative(`fill-${i}`, `narrative-${i}`);
+    }
+    expect(getNarrativeCacheSize()).toBe(MAX_NARRATIVE_CACHE);
+
+    // Insert one more — should evict the oldest and stay at max
+    setCachedNarrative('overflow-key', 'new narrative');
+    expect(getNarrativeCacheSize()).toBe(MAX_NARRATIVE_CACHE);
+  });
+
+  it('still returns cached entries within TTL', () => {
+    clearNarrativeCache();
+    setCachedNarrative('recent-key', 'test narrative');
+    expect(getNarrativeCacheSize()).toBe(1);
+  });
+});
+
+describe('Periodic TTL sweep (narrative cache)', () => {
+  beforeEach(() => {
+    clearNarrativeCache();
+  });
+
+  it('removes expired narrative cache entries', () => {
+    setCachedNarrative('narrative-1', 'CPU is rising.');
+    setCachedNarrative('narrative-2', 'Memory is stable.');
+    expect(getNarrativeCacheSize()).toBe(2);
+
+    // Advance time past the 5-min TTL
+    const realNow = Date.now;
+    Date.now = () => realNow() + 6 * 60 * 1_000;
+    try {
+      _sweepExpiredEntries();
+      expect(getNarrativeCacheSize()).toBe(0);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('keeps entries that have not yet expired', () => {
+    setCachedNarrative('still-valid', 'All good.');
+    _sweepExpiredEntries();
+    expect(getNarrativeCacheSize()).toBe(1);
+  });
+
+  it('only removes expired entries, leaving valid ones untouched', () => {
+    setCachedNarrative('will-expire', 'old entry');
+    expect(getNarrativeCacheSize()).toBe(1);
+
+    const realNow = Date.now;
+    const threeMinLater = realNow() + 3 * 60 * 1_000;
+    Date.now = () => threeMinLater;
+
+    // Insert a fresh entry at the "new" time
+    setCachedNarrative('inserted-later', 'new entry');
+    expect(getNarrativeCacheSize()).toBe(2);
+
+    // Jump to 6 minutes from original time — the first entry expires,
+    // but 'inserted-later' was created at +3min so it expires at +8min.
+    Date.now = () => realNow() + 6 * 60 * 1_000;
+    try {
+      _sweepExpiredEntries();
+      expect(getNarrativeCacheSize()).toBe(1);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });
