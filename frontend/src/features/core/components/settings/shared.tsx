@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = {
     { key: 'monitoring.polling_interval', label: 'Polling Interval', description: 'How often to fetch container metrics (seconds)', type: 'number', defaultValue: '30', min: 5, max: 300 },
     { key: 'monitoring.metric_retention_days', label: 'Metric Retention', description: 'How long to keep historical metrics (days)', type: 'number', defaultValue: '7', min: 1, max: 90 },
     { key: 'monitoring.enabled', label: 'Enable Monitoring', description: 'Enable background container monitoring', type: 'boolean', defaultValue: 'true' },
+    { key: 'monitoring.scheduler_interval_minutes', label: 'Scheduler Interval', description: 'How often the monitoring scheduler runs (minutes). Changes apply without restart.', type: 'number', defaultValue: '5', min: 1, max: 60 },
   ],
   anomaly: [
     { key: 'anomaly.cpu_threshold', label: 'CPU Threshold', description: 'CPU usage percentage to trigger anomaly alert', type: 'number', defaultValue: '85', min: 50, max: 100 },
@@ -21,7 +22,8 @@ export const DEFAULT_SETTINGS = {
     { key: 'notifications.teams_enabled', label: 'Enable Teams Notifications', description: 'Send alerts to Microsoft Teams via webhook', type: 'boolean', defaultValue: 'false' },
     { key: 'notifications.teams_webhook_url', label: 'Teams Webhook URL', description: 'Microsoft Teams incoming webhook URL', type: 'password', defaultValue: '' },
     { key: 'notifications.email_enabled', label: 'Enable Email Notifications', description: 'Send alerts via SMTP email', type: 'boolean', defaultValue: 'false' },
-    { key: 'notifications.smtp_host', label: 'SMTP Host', description: 'SMTP server hostname', type: 'string', defaultValue: '' },
+    // SMTP Host is intentionally env-only (SMTP_HOST) for SSRF protection.
+    // The backend ignores DB overrides via getSafeSmtpHost().
     { key: 'notifications.smtp_port', label: 'SMTP Port', description: 'SMTP server port', type: 'number', defaultValue: '587', min: 1, max: 65535 },
     { key: 'notifications.smtp_user', label: 'SMTP Username', description: 'SMTP authentication username', type: 'string', defaultValue: '' },
     { key: 'notifications.smtp_password', label: 'SMTP Password', description: 'SMTP authentication password', type: 'password', defaultValue: '' },

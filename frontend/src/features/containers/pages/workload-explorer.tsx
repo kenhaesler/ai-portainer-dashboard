@@ -159,6 +159,18 @@ export default function WorkloadExplorerPage() {
         onRemove: () => setFilters(selectedEndpoint, selectedStack, undefined, selectedState),
       });
     }
+    if (selectedState) {
+      filters.push({
+        key: 'state',
+        label: 'State',
+        value: selectedState.charAt(0).toUpperCase() + selectedState.slice(1),
+        onRemove: () => {
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete('state');
+          navigate({ search: newParams.toString() });
+        },
+      });
+    }
     return filters;
   }, [selectedEndpoint, selectedStack, selectedGroup, selectedState, endpoints]);
 
@@ -380,7 +392,7 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-  ], [navigate, knownStackNames]);
+  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState]);
 
   if (isError) {
     return (

@@ -532,6 +532,7 @@ beforeAll(async () => {
     TRACES_INGESTION_API_KEY: '',
     API_RATE_LIMIT: 1200,
     LOGIN_RATE_LIMIT: 5,
+    LLM_RATE_LIMIT_PER_MINUTE: 20,
     HTTP2_ENABLED: false,
   });
 });
@@ -1046,6 +1047,26 @@ describe('PCAP Admin RBAC Enforcement', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('denies list-captures for non-admin users (#1020 regression)', async () => {
+    currentRole = 'viewer';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/pcap/captures',
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies get-capture for non-admin users (#1020 regression)', async () => {
+    currentRole = 'operator';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/pcap/captures/c1',
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it('denies stop/analyze/delete for non-admin users', async () => {
     currentRole = 'operator';
 
@@ -1349,6 +1370,53 @@ describe('Rate Limiting Verification', () => {
     expect(rateLimitedResponse).not.toBeNull();
     expect(rateLimitedResponse!.headers['retry-after']).toBeDefined();
   });
+
+  it('should return 429 on LLM /api/llm/query when per-user rate limit exceeded', async () => {
+    // Build a dedicated app with rate-limit plugin + LLM routes + low limit
+    const llmApp = Fastify({ logger: false });
+    llmApp.setValidatorCompiler(validatorCompiler);
+    llmApp.setSerializerCompiler(serializerCompiler);
+
+    await llmApp.register(rateLimitPlugin);
+
+    // Bypass auth — we are testing the rate limiter, not auth.
+    // Do NOT register authPlugin (it adds a real requireRole that would
+    // reject requests). Instead, stub the decorators that llmRoutes expects.
+    llmApp.decorate('authenticate', async () => undefined);
+    llmApp.decorate('requireRole', () => async () => undefined);
+    llmApp.decorateRequest('user', undefined);
+    llmApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'rate-limit-test-user', username: 'tester', sessionId: 's1', role: 'admin' as const };
+    });
+
+    await llmApp.register(llmRoutes);
+    await llmApp.ready();
+
+    try {
+      // LLM_RATE_LIMIT_PER_MINUTE defaults to 20; fire 21 requests
+      const llmRateLimit = 20;
+      let rateLimitedResponse = null;
+
+      for (let i = 0; i <= llmRateLimit; i++) {
+        const res = await llmApp.inject({
+          method: 'POST',
+          url: '/api/llm/query',
+          payload: { query: 'show running containers' },
+          headers: { 'content-type': 'application/json' },
+        });
+        if (res.statusCode === 429) {
+          rateLimitedResponse = res;
+          break;
+        }
+      }
+
+      expect(rateLimitedResponse).not.toBeNull();
+      expect(rateLimitedResponse!.statusCode).toBe(429);
+      expect(rateLimitedResponse!.headers['retry-after']).toBeDefined();
+    } finally {
+      await llmApp.close();
+    }
+  });
 });
 
 // ─── OIDC Group Mapping Security ──────────────────────────────────────
@@ -1606,7 +1674,32 @@ describe('Nginx Security Header Consistency', () => {
 });
 
 // =====================================================================
-//  14. REMEDIATION WEBSOCKET NAMESPACE ADMIN ROLE (issue #977, CWE-862)
+//  14. LLM OBSERVABILITY ADMIN RBAC (issue #1029, CWE-862)
+// =====================================================================
+describe('LLM Observability Admin RBAC Enforcement', () => {
+  it('GET /api/llm/traces route source must include requireRole admin', () => {
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'routes', 'llm-observability.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // The traces route must have requireRole('admin') in its preHandler
+    const tracesBlock = content.match(/get\s*\(\s*'\/api\/llm\/traces'[\s\S]*?preHandler:\s*\[([^\]]+)\]/);
+    expect(tracesBlock).not.toBeNull();
+    expect(tracesBlock![1]).toContain("requireRole('admin')");
+  });
+
+  it('GET /api/llm/stats route source must include requireRole admin', () => {
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'routes', 'llm-observability.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // The stats route must have requireRole('admin') in its preHandler
+    const statsBlock = content.match(/get\s*\(\s*'\/api\/llm\/stats'[\s\S]*?preHandler:\s*\[([^\]]+)\]/);
+    expect(statsBlock).not.toBeNull();
+    expect(statsBlock![1]).toContain("requireRole('admin')");
+  });
+});
+
+// =====================================================================
+//  15. REMEDIATION WEBSOCKET NAMESPACE ADMIN ROLE (issue #977, CWE-862)
 // =====================================================================
 describe('Remediation WebSocket namespace admin role enforcement', () => {
   it('socket-io plugin must apply admin role middleware to the /remediation namespace', () => {
@@ -1652,5 +1745,39 @@ describe('Remediation WebSocket namespace admin role enforcement', () => {
     const sharedLoopEnd = content.indexOf(sharedLoopMatch![0]) + sharedLoopMatch![0].length;
     const adminMiddlewareIdx = content.indexOf('remediationNamespace.use(');
     expect(adminMiddlewareIdx).toBeGreaterThan(sharedLoopEnd);
+  });
+});
+
+// =====================================================================
+//  15. WEBSOCKET CHAT THROTTLE (per-user rate limiting)
+// =====================================================================
+describe('WebSocket Chat Throttle', () => {
+  it('llm-chat.ts must implement per-user throttle on chat:message handler', () => {
+    // Source-code guard: verify the WebSocket chat handler includes
+    // an in-memory per-user throttle to prevent abuse.
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'sockets', 'llm-chat.ts');
+    const content = readFileSync(file, 'utf8');
+
+    // Must have a throttle map for tracking per-user timestamps
+    expect(content).toContain('chatThrottleMap');
+
+    // Must emit a throttle event when rate is exceeded
+    expect(content).toContain('chat:throttled');
+
+    // Must check elapsed time against the throttle window
+    expect(content).toMatch(/CHAT_THROTTLE_MS/);
+
+    // Must clean up throttle entries on disconnect to prevent memory leaks
+    expect(content).toMatch(/chatThrottleMap\.delete/);
+  });
+
+  it('llm-chat.ts must export throttle constants for testability', () => {
+    // The throttle map and constant should be exported so integration tests
+    // can verify runtime behavior.
+    const file = path.resolve(process.cwd(), '..', 'packages', 'ai-intelligence', 'src', 'sockets', 'llm-chat.ts');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toMatch(/export\s+\{[^}]*chatThrottleMap/);
+    expect(content).toMatch(/export\s+\{[^}]*CHAT_THROTTLE_MS/);
   });
 });

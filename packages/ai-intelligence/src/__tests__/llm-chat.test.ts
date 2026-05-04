@@ -91,8 +91,17 @@ import {
   formatChatContext,
   setupLlmNamespace,
   ThinkingBlockFilter,
+  chatThrottleMap,
+  CHAT_THROTTLE_MS,
 } from '../sockets/llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
+import type { InfrastructureLogsInterface } from '@dashboard/contracts';
+
+const mockInfraLogs: InfrastructureLogsInterface = {
+  getContainerLogsWithRetry: vi.fn().mockResolvedValue(''),
+  isEdgeAsync: vi.fn().mockResolvedValue(false),
+  getEdgeAsyncContainerLogs: vi.fn().mockResolvedValue(''),
+};
 
 // ── Pure utility function tests (unchanged) ──
 
@@ -416,6 +425,8 @@ function baseLlmConfig(overrides: Record<string, any> = {}) {
 describe('setupLlmNamespace — tool iteration limit graceful degradation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear per-user throttle map so tests don't interfere with each other
+    chatThrottleMap.clear();
     // Phase 1 is skipped because collectAllTools returns [] (no native tools)
     mockCollectAllTools.mockReturnValue([]);
     mockRouteToolCalls.mockResolvedValue([]);
@@ -436,7 +447,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     });
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns);
+    setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
     const chatHandler = socketHandlers.get('chat:message');
@@ -470,7 +481,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     });
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns);
+    setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
     const chatHandler = socketHandlers.get('chat:message');
@@ -515,7 +526,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     ]);
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns);
+    setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
     const chatHandler = socketHandlers.get('chat:message');
@@ -573,7 +584,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     ]);
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns);
+    setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
     const chatHandler = socketHandlers.get('chat:message');
@@ -620,7 +631,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     mockRouteToolCalls.mockResolvedValue([]);
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns);
+    setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
     const chatHandler = socketHandlers.get('chat:message');
@@ -671,7 +682,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     ]);
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
-    setupLlmNamespace(ns);
+    setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
     const chatHandler = socketHandlers.get('chat:message');
@@ -684,5 +695,67 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 
     // The notice should contain the exact configured limit number
     expect(chunks).toContain(`tool call limit (${customLimit})`);
+  });
+});
+
+// ── WebSocket per-user chat throttle tests ──
+
+describe('setupLlmNamespace — per-user chat throttle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chatThrottleMap.clear();
+    mockCollectAllTools.mockReturnValue([]);
+    mockRouteToolCalls.mockResolvedValue([]);
+    mockParseToolCalls.mockReturnValue(null);
+  });
+
+  it('rejects rapid-fire messages with chat:throttled event', async () => {
+    mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
+    mockOllamaChat.mockImplementation(async (opts: any) => {
+      if (opts.stream) {
+        return (async function* () {
+          yield { message: { content: 'Hello!' } };
+        })();
+      }
+      return { message: { content: 'Hello!', tool_calls: [] } };
+    });
+
+    const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
+    setupLlmNamespace(ns, mockInfraLogs);
+    connect();
+
+    const chatHandler = socketHandlers.get('chat:message');
+
+    // First message should succeed
+    await chatHandler!({ text: 'First message' });
+    const firstThrottled = emitted.filter(e => e.event === 'chat:throttled');
+    expect(firstThrottled).toHaveLength(0);
+
+    // Second message immediately should be throttled
+    await chatHandler!({ text: 'Second message immediately' });
+    const throttledEvents = emitted.filter(e => e.event === 'chat:throttled');
+    expect(throttledEvents).toHaveLength(1);
+    expect(throttledEvents[0].args[0].reason).toContain('Too many requests');
+    expect(throttledEvents[0].args[0].retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it('cleans up throttle map on disconnect', () => {
+    const { ns, socketHandlers, connect } = createMockSocketPair();
+    setupLlmNamespace(ns, mockInfraLogs);
+    connect();
+
+    // Simulate setting a throttle entry
+    chatThrottleMap.set('test-user', Date.now());
+    expect(chatThrottleMap.has('test-user')).toBe(true);
+
+    // Trigger disconnect
+    const disconnectHandler = socketHandlers.get('disconnect');
+    disconnectHandler!();
+
+    expect(chatThrottleMap.has('test-user')).toBe(false);
+  });
+
+  it('exports CHAT_THROTTLE_MS as a positive number', () => {
+    expect(CHAT_THROTTLE_MS).toBeGreaterThan(0);
   });
 });

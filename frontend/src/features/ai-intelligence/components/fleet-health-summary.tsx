@@ -30,7 +30,7 @@ export function calculateHealthStats(containers: Container[]): HealthStats {
 
     if (container.healthStatus === 'unhealthy') stats.unhealthy++;
     else if (container.healthStatus === 'healthy') stats.healthy++;
-    else if (container.state === 'running') stats.healthy++;
+    else if (container.state === 'running') stats.unknown++;
     else stats.unknown++;
   });
 

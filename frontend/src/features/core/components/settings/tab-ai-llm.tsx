@@ -64,6 +64,7 @@ import {
 import { useUpdateSetting, useDeleteSetting } from '@/features/core/hooks/use-settings';
 import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/features/ai-intelligence/hooks/use-prompt-versions';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { cn, formatBytes } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
@@ -255,7 +256,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
     }
 
     const body = customEnabled
-      ? { url: customUrl.trim(), token: customToken || undefined }
+      ? { url: customUrl.trim(), token: customToken || undefined, authType: authType as 'bearer' | 'basic' }
       : { ollamaUrl: ollamaUrl };
     testConnection.mutate(body, {
       onSuccess: (data) => {
@@ -308,9 +309,9 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
             {llmConfigured ? 'Configured' : 'Not configured'}
           </span>
           {hasChanges && (
-            <div className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 px-2 py-1 rounded">
+            <div className="flex items-center gap-1.5 text-xs text-blue-500 bg-blue-500/10 px-2 py-1 rounded">
               <RefreshCw className="h-3 w-3" />
-              Requires restart
+              Unsaved changes
             </div>
           )}
         </div>
@@ -624,6 +625,7 @@ export function McpServerRow({ server }: { server: McpServer }) {
   const deleteMutation = useDeleteMcpServer();
   const updateMutation = useUpdateMcpServer();
   const [showTools, setShowTools] = useState(false);
+  const [showDeleteConfirmMcp, setShowDeleteConfirmMcp] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({
     transport: server.transport,
@@ -710,7 +712,7 @@ export function McpServerRow({ server }: { server: McpServer }) {
             </button>
           )}
           <button
-            onClick={() => { if (confirm(`Delete MCP server "${server.name}"?`)) deleteMutation.mutate(server.id); }}
+            onClick={() => setShowDeleteConfirmMcp(true)}
             disabled={deleteMutation.isPending}
             className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-red-400 transition-colors"
             title="Delete"
@@ -793,6 +795,14 @@ export function McpServerRow({ server }: { server: McpServer }) {
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={showDeleteConfirmMcp}
+        onConfirm={() => { deleteMutation.mutate(server.id); setShowDeleteConfirmMcp(false); }}
+        onCancel={() => setShowDeleteConfirmMcp(false)}
+        title="Delete MCP Server"
+        description={`Delete MCP server "${server.name}"?`}
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

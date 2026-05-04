@@ -19,16 +19,20 @@ Detailed design specifications for the AI Portainer Dashboard. Referenced from C
 
 ## Theme System
 
-9 themes via CSS custom properties in `index.css`:
-- Default light/dark
-- Apple Light/Dark (glassmorphism + gradient mesh backgrounds)
+16 themes via CSS custom properties in `index.css`:
+- Glass Light/Dark (glassmorphism + gradient mesh backgrounds)
+- Nordic Frost, Sandstone Dusk (warm/cool light variants)
+- Obsidian Ink, Forest Night (dark variants)
+- Hyperpop Chaos (maximal neon)
+- Retro 70s/Arcade/Terminal/Vaporwave (retro family)
 - Catppuccin Latte/Frappe/Macchiato/Mocha (warm pastels)
+- System (follows OS preference)
 
 Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radius, spacing tokens. Theme transitions: 300ms on color/background properties.
 
 ## Dashboard Background (Animated)
 
-Three modes: `none`, `gradient-mesh`, `gradient-mesh-particles`. Configured in Settings > Appearance.
+17 modes: `none`, `gradient-mesh`, `gradient-mesh-particles`, 10 mesh variants (Aurora, Ocean, Sunset, Nebula, Emerald, Glacier, Emberstorm, Noctis, Cotton Candy, Chaos), and 4 retro variants (70s, Arcade, Terminal, Vaporwave). Configured in Settings > Appearance.
 
 **Key files:**
 - `frontend/src/components/layout/dashboard-background.tsx` — `fixed inset-0 z-0` gradient mesh + particles

@@ -148,8 +148,20 @@ function validateServicePasswords(data: EnvConfig): void {
 
 // Category A + B env vars that are now configurable via Settings UI.
 // During the deprecation window, they still work as fallbacks but log a warning.
-const DEPRECATED_ENV_VARS: Record<string, string> = {
+//
+// ── Intentionally env-only vars (NOT deprecated) ───────────────────────────────
+// SMTP_HOST          – env-only for SSRF protection; getSafeSmtpHost() blocks
+//                      private/loopback hosts and ignores DB overrides.
+// ISOLATION_FOREST_TREES, ISOLATION_FOREST_SAMPLE_SIZE, ISOLATION_FOREST_CONTAMINATION
+//                    – low-level ML tuning parameters that affect model structure.
+//                      Changing at runtime would invalidate cached models without
+//                      retraining, leading to incorrect anomaly scores. Keep as
+//                      env-only so changes require a deliberate restart.
+// ────────────────────────────────────────────────────────────────────────────────
+export const DEPRECATED_ENV_VARS: Record<string, string> = {
   // Category A: already have Settings UI
+  MONITORING_ENABLED: 'Settings → Monitoring → General (monitoring.enabled)',
+  MONITORING_INTERVAL_MINUTES: 'Settings → Monitoring → General (monitoring.polling_interval)',
   TEAMS_WEBHOOK_URL: 'Settings → Monitoring → Notifications',
   TEAMS_NOTIFICATIONS_ENABLED: 'Settings → Monitoring → Notifications',
   DISCORD_WEBHOOK_URL: 'Settings → Monitoring → Notifications',

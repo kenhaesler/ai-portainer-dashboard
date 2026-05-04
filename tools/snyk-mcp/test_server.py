@@ -6,6 +6,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from server import (
+    HOST,
     snyk_test,
     snyk_code_test,
     snyk_container_test,
@@ -37,6 +38,12 @@ def _mock_run(stdout=SAMPLE_SNYK_OUTPUT, returncode=0, stderr=""):
     result.returncode = returncode
     result.stderr = stderr
     return result
+
+
+class TestDefaultConfig:
+    def test_default_host_is_localhost(self):
+        """Default host must be 127.0.0.1 (not 0.0.0.0) to avoid exposing on all interfaces."""
+        assert HOST == "127.0.0.1"
 
 
 class TestSnykTest:

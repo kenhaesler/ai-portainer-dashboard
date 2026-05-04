@@ -22,7 +22,7 @@ Project-specific security requirements for the AI Portainer Dashboard. Reference
 
 ## LLM Prompt Injection Guard
 
-File: `services/prompt-guard.ts`
+File: `packages/ai-intelligence/src/services/prompt-guard.ts`
 
 3-layer defense:
 1. **Regex patterns** (25+): system prompt extraction, ignore-instructions, role-play attempts
@@ -49,7 +49,7 @@ Configurable: `LLM_PROMPT_GUARD_STRICT` env var.
 
 ## Security Regression Tests
 
-File: `backend/src/routes/security-regression.test.ts` (36 tests)
+File: `backend/src/routes/security-regression.test.ts` (68 tests)
 
 - **Auth sweep**: Dynamically discovers all routes, verifies no `/api/*` returns 2xx without auth
 - **Prompt injection**: 22 vectors (system prompt extraction, ignore-instructions, case variations)

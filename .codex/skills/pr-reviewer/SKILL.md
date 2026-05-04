@@ -38,7 +38,6 @@ source /tmp/pr-review-<PR_NUMBER>.state && cd "$REPO_ROOT"
 
    # Compose overlay to isolate named volumes from user's dev stack
    cat > "$VOLUMES_FILE" <<'VOLEOF'
-   version: "3"
    volumes:
      postgres-app-data:
        name: "PRPREFIX-pg-app"
@@ -93,7 +92,7 @@ source /tmp/pr-review-<PR_NUMBER>.state && cd "$REPO_ROOT"
 
 6. **Checkout the PR branch**: `gh pr checkout $PR_NUMBER`
 
-7. **Install dependencies**: `npm ci 2>&1 | tail -20`
+7. **Install dependencies**: `npm install 2>&1 | tail -20`
 
 ### Phase 2: Static Checks
 

@@ -14,6 +14,8 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
   }),
   getSetting: vi.fn().mockReturnValue(undefined),
 }));
+import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
+const mockGetEffectiveLlmConfig = vi.mocked(getEffectiveLlmConfig);
 
 // Mock llm-trace-store
 vi.mock('../services/llm-trace-store.js', async () =>
@@ -349,6 +351,96 @@ describe('LLM Routes', () => {
       expect(body.action).toBe('error');
     });
 
+    it('uses custom endpoint when customEnabled is true', async () => {
+      mockGetEffectiveLlmConfig.mockReturnValueOnce({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://litellm:4000/v1/chat/completions',
+        customEndpointToken: 'test-token',
+        authType: 'bearer' as const,
+        maxTokens: 20000,
+        maxToolIterations: 5,
+      } as any);
+
+      const responsePayload = { action: 'navigate', page: '/workloads', description: 'View containers' };
+      mockLlmFetch.mockResolvedValueOnce(new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(responsePayload) } }] }),
+        { status: 200 },
+      ));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'show me all containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('navigate');
+      expect(body.page).toBe('/workloads');
+      expect(mockLlmFetch).toHaveBeenCalledWith(
+        'http://litellm:4000/v1/chat/completions',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(mockCreateConfiguredOllamaClient).not.toHaveBeenCalled();
+    });
+
+    it('parses OpenAI-compatible response format from custom endpoint', async () => {
+      mockGetEffectiveLlmConfig.mockReturnValueOnce({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://litellm:4000/v1/chat/completions',
+        customEndpointToken: '',
+        authType: 'bearer' as const,
+        maxTokens: 20000,
+        maxToolIterations: 5,
+      } as any);
+
+      const responsePayload = { action: 'answer', text: 'There are 5 containers', description: 'Count' };
+      mockLlmFetch.mockResolvedValueOnce(new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(responsePayload) } }] }),
+        { status: 200 },
+      ));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'how many containers are running?' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('answer');
+      expect(body.text).toBe('There are 5 containers');
+    });
+
+    it('returns error when custom endpoint request fails', async () => {
+      mockGetEffectiveLlmConfig.mockReturnValueOnce({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://litellm:4000/v1/chat/completions',
+        customEndpointToken: 'test-token',
+        authType: 'bearer' as const,
+        maxTokens: 20000,
+        maxToolIterations: 5,
+      } as any);
+
+      mockLlmFetch.mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'what is happening?' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('error');
+    });
+
     it('records a success trace after successful query', async () => {
       mockChat.mockResolvedValue({
         message: { content: JSON.stringify({ action: 'answer', text: 'hello', description: 'test' }) },
@@ -532,6 +624,80 @@ describe('LLM Routes', () => {
       const body = res.json();
       expect(body.action).toBe('answer');
       expect(body.text).toContain('cannot provide internal system instructions');
+    });
+  });
+
+  describe('POST /api/llm/query rate limit config', () => {
+    it('has per-user rate limit config with preHandler hook', async () => {
+      const capturedRoutes: Array<{ method: string | string[]; url: string; config?: any }> = [];
+
+      const testApp = Fastify();
+      testApp.setValidatorCompiler(validatorCompiler);
+      testApp.decorate('authenticate', async () => undefined);
+      testApp.decorate('requireRole', () => async () => undefined);
+
+      testApp.addHook('onRoute', (routeOptions) => {
+        capturedRoutes.push({
+          method: routeOptions.method,
+          url: routeOptions.url,
+          config: routeOptions.config,
+        });
+      });
+
+      await testApp.register(llmRoutes);
+      await testApp.ready();
+
+      const queryRoute = capturedRoutes.find(
+        (r) => r.url === '/api/llm/query' &&
+          (Array.isArray(r.method) ? r.method.includes('POST') : r.method === 'POST'),
+      );
+
+      expect(queryRoute).toBeDefined();
+      expect(queryRoute!.config).toBeDefined();
+      expect(queryRoute!.config.rateLimit).toBeDefined();
+      expect(queryRoute!.config.rateLimit.max).toBe(20);
+      expect(queryRoute!.config.rateLimit.timeWindow).toBe('1 minute');
+      expect(queryRoute!.config.rateLimit.hook).toBe('preHandler');
+      expect(typeof queryRoute!.config.rateLimit.keyGenerator).toBe('function');
+
+      await testApp.close();
+    });
+
+    it('keyGenerator returns user sub when authenticated', async () => {
+      const capturedRoutes: Array<{ method: string | string[]; url: string; config?: any }> = [];
+
+      const testApp = Fastify();
+      testApp.setValidatorCompiler(validatorCompiler);
+      testApp.decorate('authenticate', async () => undefined);
+      testApp.decorate('requireRole', () => async () => undefined);
+
+      testApp.addHook('onRoute', (routeOptions) => {
+        capturedRoutes.push({
+          method: routeOptions.method,
+          url: routeOptions.url,
+          config: routeOptions.config,
+        });
+      });
+
+      await testApp.register(llmRoutes);
+      await testApp.ready();
+
+      const queryRoute = capturedRoutes.find(
+        (r) => r.url === '/api/llm/query' &&
+          (Array.isArray(r.method) ? r.method.includes('POST') : r.method === 'POST'),
+      );
+
+      const keyGen = queryRoute!.config.rateLimit.keyGenerator;
+
+      // With authenticated user
+      const mockAuthRequest = { user: { sub: 'user-123' }, ip: '10.0.0.1' } as any;
+      expect(keyGen(mockAuthRequest)).toBe('user-123');
+
+      // Without user (fallback to IP)
+      const mockAnonRequest = { ip: '10.0.0.2' } as any;
+      expect(keyGen(mockAnonRequest)).toBe('10.0.0.2');
+
+      await testApp.close();
     });
   });
 

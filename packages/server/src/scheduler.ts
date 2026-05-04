@@ -5,7 +5,7 @@ import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '@das
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
-import { getSetting, getEffectiveHarborConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
+import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '@dashboard/observability';
@@ -460,18 +460,35 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
     runWithTraceContext({ source: 'scheduler' }, runMetricsCollection).catch(() => {});
   }
 
-  if (config.MONITORING_ENABLED) {
-    const monitoringIntervalMs = config.MONITORING_INTERVAL_MINUTES * 60 * 1000;
+  // Monitoring scheduler — re-reads config on each 1-minute tick so changes
+  // to enabled/intervalMinutes in the Settings UI take effect without a restart.
+  {
+    let lastMonitoringRunAt = 0;
     const runMonitoringWithErrorHandling = makeMonitoringRunner(runMonitoringCycle);
-    log.info(
-      { intervalMinutes: config.MONITORING_INTERVAL_MINUTES },
-      'Starting monitoring scheduler',
-    );
     const monitoringInterval = setInterval(
-      () => runWithTraceContext({ source: 'scheduler' }, runMonitoringWithErrorHandling),
-      monitoringIntervalMs,
+      () => runWithTraceContext({ source: 'scheduler' }, async () => {
+        try {
+          const cfg = await getEffectiveMonitoringSchedulerConfig();
+          if (!cfg.enabled) return;
+          const intervalMs = cfg.intervalMinutes * 60 * 1000;
+          if (Date.now() - lastMonitoringRunAt < intervalMs) return;
+          lastMonitoringRunAt = Date.now();
+          log.debug({ intervalMinutes: cfg.intervalMinutes }, 'Running monitoring cycle');
+          await runMonitoringWithErrorHandling();
+        } catch (err) {
+          log.error({ err }, 'Monitoring scheduler tick failed');
+        }
+      }),
+      60_000, // poll every minute; actual cadence controlled by intervalMinutes
     );
     intervals.push(monitoringInterval);
+    // Log once at startup with current config
+    getEffectiveMonitoringSchedulerConfig().then((cfg) => {
+      log.info(
+        { enabled: cfg.enabled, intervalMinutes: cfg.intervalMinutes },
+        'Starting dynamic monitoring scheduler (1-min poll)',
+      );
+    }).catch(() => {});
   }
 
   // Webhook retry processing

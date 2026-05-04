@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from server import scan_image, scan_dir, scan_sbom, db_status, db_update
+from server import HOST, scan_image, scan_dir, scan_sbom, db_status, db_update
 
 
 SAMPLE_GRYPE_OUTPUT = json.dumps({
@@ -33,6 +33,12 @@ def _mock_run(stdout=SAMPLE_GRYPE_OUTPUT, returncode=0, stderr=""):
     result.returncode = returncode
     result.stderr = stderr
     return result
+
+
+class TestDefaultConfig:
+    def test_default_host_is_localhost(self):
+        """Default host must be 127.0.0.1 (not 0.0.0.0) to avoid exposing on all interfaces."""
+        assert HOST == "127.0.0.1"
 
 
 class TestScanImage:
