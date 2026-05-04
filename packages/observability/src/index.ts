@@ -95,6 +95,9 @@ export {
 // Route helpers (exported for testing)
 export {
   clearNarrativeCache,
+  getNarrativeCacheSize,
+  setCachedNarrative,
+  MAX_NARRATIVE_CACHE,
   buildForecastPrompt,
 } from './routes/forecasts.js';
 

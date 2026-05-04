@@ -6,9 +6,9 @@ set -euo pipefail
 
 BASE="${1:-http://localhost:3051}"
 USER="${2:-${DASHBOARD_USERNAME:-admin}}"
-PASS="${3:-${DASHBOARD_PASSWORD:-}}"
+PASSWORD="${3:-${DASHBOARD_PASSWORD:-}}"
 
-if [ -z "$PASS" ]; then
+if [ -z "$PASSWORD" ]; then
   echo "Usage: $0 [base_url] [username] [password]"
   echo "  or set DASHBOARD_USERNAME / DASHBOARD_PASSWORD env vars"
   exit 1
@@ -31,7 +31,7 @@ check() {
 echo "Logging in to $BASE..."
 TOKEN=$(curl -sf -X POST "$BASE/api/auth/login" \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$USER\",\"password\":\"$PASS\"}" | jq -r '.token')
+  -d "{\"username\":\"$USER\",\"password\":\"$PASSWORD\"}" | jq -r '.token')
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
   echo -e "${RED}Login failed${NC}"
@@ -47,7 +47,7 @@ RESP=$(curl -sf -H "$AUTH" "$BASE/api/containers")
 IS_ARRAY=$(echo "$RESP" | jq 'if type == "array" then "true" else "false" end' -r)
 COUNT=$(echo "$RESP" | jq 'length')
 check "Returns array" "$IS_ARRAY"
-check "Has containers ($COUNT)" "$([ "$COUNT" -gt 0 ] && echo true || echo true)"
+check "Has containers ($COUNT)" "$([ "$COUNT" -gt 0 ] && echo true || echo false)"
 
 # ── 2. Paginated response ──
 echo ""
