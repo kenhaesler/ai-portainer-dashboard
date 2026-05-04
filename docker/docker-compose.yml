@@ -277,7 +277,10 @@ services:
     build:
       context: ../tools/kali-mcp
       dockerfile: Dockerfile
+    profiles: ["pentest"]
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     cap_add:
       - NET_RAW
       - NET_ADMIN

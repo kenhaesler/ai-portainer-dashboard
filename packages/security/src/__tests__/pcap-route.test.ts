@@ -235,6 +235,8 @@ describe('PCAP Routes', () => {
         expect.objectContaining({ status: 'complete' }),
       );
     });
+
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/pcap/captures');
   });
 
   describe('GET /api/pcap/captures/:id', () => {
@@ -263,6 +265,8 @@ describe('PCAP Routes', () => {
 
       expect(response.statusCode).toBe(404);
     });
+
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/pcap/captures/c1');
   });
 
   describe('POST /api/pcap/captures/:id/stop', () => {

@@ -81,7 +81,7 @@ export async function pcapRoutes(fastify: FastifyInstance, opts: { llm: LLMInter
       security: [{ bearerAuth: [] }],
       querystring: CaptureListQuerySchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request) => {
     const query = request.query as Record<string, unknown>;
     const parsed = CaptureListQuerySchema.safeParse(query);
@@ -99,7 +99,7 @@ export async function pcapRoutes(fastify: FastifyInstance, opts: { llm: LLMInter
       security: [{ bearerAuth: [] }],
       params: ActionIdParamsSchema,
     },
-    preHandler: [fastify.authenticate],
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const capture = await getCaptureById(id);
