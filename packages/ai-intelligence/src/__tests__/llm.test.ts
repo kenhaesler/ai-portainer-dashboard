@@ -14,6 +14,8 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
   }),
   getSetting: vi.fn().mockReturnValue(undefined),
 }));
+import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
+const mockGetEffectiveLlmConfig = vi.mocked(getEffectiveLlmConfig);
 
 // Mock llm-trace-store
 vi.mock('../services/llm-trace-store.js', async () =>
@@ -337,6 +339,96 @@ describe('LLM Routes', () => {
 
     it('returns error on LLM failure', async () => {
       mockChat.mockRejectedValue(new Error('LLM unavailable'));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'what is happening?' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('error');
+    });
+
+    it('uses custom endpoint when customEnabled is true', async () => {
+      mockGetEffectiveLlmConfig.mockReturnValueOnce({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://litellm:4000/v1/chat/completions',
+        customEndpointToken: 'test-token',
+        authType: 'bearer' as const,
+        maxTokens: 20000,
+        maxToolIterations: 5,
+      } as any);
+
+      const responsePayload = { action: 'navigate', page: '/workloads', description: 'View containers' };
+      mockLlmFetch.mockResolvedValueOnce(new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(responsePayload) } }] }),
+        { status: 200 },
+      ));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'show me all containers' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('navigate');
+      expect(body.page).toBe('/workloads');
+      expect(mockLlmFetch).toHaveBeenCalledWith(
+        'http://litellm:4000/v1/chat/completions',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(mockCreateConfiguredOllamaClient).not.toHaveBeenCalled();
+    });
+
+    it('parses OpenAI-compatible response format from custom endpoint', async () => {
+      mockGetEffectiveLlmConfig.mockReturnValueOnce({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://litellm:4000/v1/chat/completions',
+        customEndpointToken: '',
+        authType: 'bearer' as const,
+        maxTokens: 20000,
+        maxToolIterations: 5,
+      } as any);
+
+      const responsePayload = { action: 'answer', text: 'There are 5 containers', description: 'Count' };
+      mockLlmFetch.mockResolvedValueOnce(new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(responsePayload) } }] }),
+        { status: 200 },
+      ));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/llm/query',
+        payload: { query: 'how many containers are running?' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.action).toBe('answer');
+      expect(body.text).toBe('There are 5 containers');
+    });
+
+    it('returns error when custom endpoint request fails', async () => {
+      mockGetEffectiveLlmConfig.mockReturnValueOnce({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'llama3.2',
+        customEnabled: true,
+        customEndpointUrl: 'http://litellm:4000/v1/chat/completions',
+        customEndpointToken: 'test-token',
+        authType: 'bearer' as const,
+        maxTokens: 20000,
+        maxToolIterations: 5,
+      } as any);
+
+      mockLlmFetch.mockResolvedValueOnce(new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' }));
 
       const res = await app.inject({
         method: 'POST',

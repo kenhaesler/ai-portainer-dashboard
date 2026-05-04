@@ -16,7 +16,7 @@
  * Env vars (with defaults):
  *   BASE_URL          http://localhost:3051
  *   DASHBOARD_USER    admin
- *   DASHBOARD_PASS    admin
+ *   DASHBOARD_PASS    (required — see docker-compose.dev.yml)
  *   SOCKETIO_USERS    10
  */
 
@@ -24,7 +24,11 @@ import { io } from 'socket.io-client';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3051';
 const USERNAME = process.env.DASHBOARD_USER || 'admin';
-const PASSWORD = process.env.DASHBOARD_PASS || 'admin';
+const PASSWORD = process.env.DASHBOARD_PASS;
+if (!PASSWORD) {
+  console.error('Error: DASHBOARD_PASS env var required. See docker-compose.dev.yml for the dev password.');
+  process.exit(1);
+}
 const NUM_USERS = parseInt(process.env.SOCKETIO_USERS || '10', 10);
 const HOLD_DURATION_MS = 30_000;
 
