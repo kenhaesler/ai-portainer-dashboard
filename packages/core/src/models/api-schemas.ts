@@ -464,6 +464,7 @@ export const LlmModelsQuerySchema = z.object({
 export const LlmTestConnectionBodySchema = z.object({
   url: z.string().optional(),
   token: z.string().optional(),
+  authType: z.enum(['bearer', 'basic']).optional(),
   ollamaUrl: z.string().optional(),
 });
 

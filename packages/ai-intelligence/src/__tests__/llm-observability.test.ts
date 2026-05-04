@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
 import { validatorCompiler } from 'fastify-type-provider-zod';
 import { llmObservabilityRoutes } from '../routes/llm-observability.js';
+import { testAdminOnly, type Role } from '@dashboard/core/test-utils/rbac-test-helper.js';
 
 const mockGetRecentTraces = vi.fn();
 const mockGetLlmStats = vi.fn();
@@ -14,14 +15,31 @@ vi.mock('../services/llm-trace-store.js', () => ({
 
 describe('LLM Observability Routes', () => {
   let app: ReturnType<typeof Fastify>;
+  let currentRole: Role = 'admin';
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    currentRole = 'admin';
     app = Fastify();
     app.setValidatorCompiler(validatorCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: Role) => async (request: any, reply: any) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      (request as any).user = { sub: 'u1', username: 'admin', sessionId: 's1', role: currentRole };
+    });
     await app.register(llmObservabilityRoutes);
     await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
   });
 
   it('GET /api/llm/traces returns recent traces', async () => {
@@ -50,5 +68,10 @@ describe('LLM Observability Routes', () => {
     const body = res.json();
     expect(body.totalQueries).toBe(100);
     expect(body.modelBreakdown).toHaveLength(1);
+  });
+
+  describe('RBAC', () => {
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/llm/traces');
+    testAdminOnly(() => app, (r) => { currentRole = r; }, 'GET', '/api/llm/stats');
   });
 });
