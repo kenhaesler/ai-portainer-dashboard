@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { useLlmChat, type ToolCallEvent } from '@/features/ai-intelligence/hooks/use-llm-chat';
-import { useSockets } from '@/providers/socket-provider';
+import { useSockets, useSocketConnected } from '@/providers/socket-provider';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { getModelUseCase } from '@/features/core/components/settings/model-use-cases';
 import { useMcpServers } from '@/features/ai-intelligence/hooks/use-mcp';
@@ -78,6 +78,7 @@ export default function LlmAssistantPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { messages, isStreaming, currentResponse, activeToolCalls, statusMessage, sendMessage, cancelGeneration, clearHistory } = useLlmChat();
   const { llmSocket } = useSockets();
+  const isLlmConnected = useSocketConnected(llmSocket);
   const { data: modelsData } = useLlmModels();
   const { data: mcpServers } = useMcpServers();
   const { role } = useAuth();
@@ -360,7 +361,7 @@ export default function LlmAssistantPage() {
 
           {/* Input Area */}
           <div className="border-t bg-background/80 backdrop-blur-sm p-4">
-            {!llmSocket?.connected && (
+            {!isLlmConnected && (
               <div className="flex items-center gap-2 mb-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
                 <WifiOff className="h-3.5 w-3.5 flex-shrink-0" />
                 <span>Reconnecting to AI service...</span>
@@ -373,12 +374,12 @@ export default function LlmAssistantPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about your infrastructure..."
-                disabled={isStreaming || isSending || !llmSocket?.connected}
+                disabled={isStreaming || isSending || !isLlmConnected}
                 className="flex-1 rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-all"
               />
               <button
                 type="submit"
-                disabled={!input.trim() || isStreaming || isSending || !llmSocket?.connected}
+                disabled={!input.trim() || isStreaming || isSending || !isLlmConnected}
                 className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-blue-500/25 transition-all hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 <Send className="h-4 w-4" />
