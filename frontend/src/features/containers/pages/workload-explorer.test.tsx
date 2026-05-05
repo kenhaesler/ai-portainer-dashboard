@@ -540,4 +540,141 @@ describe('WorkloadExplorerPage', () => {
       state: 'running',
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Issue #1046 — Filter chip render + removal coverage
+  // (locks in regressions for #1031 stale-closure and #1035 state-chip)
+  // -------------------------------------------------------------------------
+
+  it('renders all four filter chips (endpoint, stack, group, state) simultaneously when active (#1046)', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload&state=running';
+    render(<WorkloadExplorerPage />);
+
+    // All four chip labels must render
+    expect(screen.getByText('Endpoint:')).toBeInTheDocument();
+    expect(screen.getByText('Stack:')).toBeInTheDocument();
+    expect(screen.getByText('Group:')).toBeInTheDocument();
+    expect(screen.getByText('State:')).toBeInTheDocument();
+
+    // Each chip should have a corresponding "Remove ... filter" dismiss button
+    expect(
+      screen.getByRole('button', { name: 'Remove Endpoint filter' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove Stack filter' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove Group filter' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove State filter' })
+    ).toBeInTheDocument();
+
+    // With 4 active filters, "Clear all" is also present
+    expect(screen.getByText('Clear all')).toBeInTheDocument();
+  });
+
+  it('renders state filter chip with capitalized value matching #1035 implementation', () => {
+    // #1035 added the state chip; before the fix, the chip never rendered.
+    // The chip value should be the capitalized state name (e.g. "Running").
+    mockQueryString = 'endpoint=1&state=paused';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('State:')).toBeInTheDocument();
+    // Capitalized value (state.charAt(0).toUpperCase() + state.slice(1))
+    expect(screen.getByText('Paused')).toBeInTheDocument();
+    // Removable via dismiss button (regression for the #1035 bug —
+    // before the fix, the chip wasn't rendered at all so couldn't be removed)
+    expect(
+      screen.getByRole('button', { name: 'Remove State filter' })
+    ).toBeInTheDocument();
+  });
+
+  it('removes endpoint filter from URL params when endpoint chip dismiss is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload&state=running';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove Endpoint filter' })
+    );
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    // endpoint is dropped, all other active filters remain
+    expect(params).toEqual({
+      stack: 'workers',
+      group: 'workload',
+      state: 'running',
+    });
+    expect(params).not.toHaveProperty('endpoint');
+  });
+
+  it('removes group filter from URL params when group chip dismiss is clicked', () => {
+    mockQueryString = 'endpoint=1&stack=workers&group=workload&state=running';
+    render(<WorkloadExplorerPage />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove Group filter' })
+    );
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    // group is dropped, all other active filters remain
+    expect(params).toEqual({
+      endpoint: '1',
+      stack: 'workers',
+      state: 'running',
+    });
+    expect(params).not.toHaveProperty('group');
+  });
+
+  it('preserves state filter when clicking a stack column cell with only endpoint+state active (#1031 + #1035)', () => {
+    // Tighter regression: #1035 added state to the URL params, and #1031 fixed
+    // the stale closure in the stack column's onClick handler. This test asserts
+    // that even when only endpoint+state are active (no group), clicking a stack
+    // cell preserves the state param — the case that #1035 introduced and #1031
+    // had to learn about.
+    mockQueryString = 'endpoint=1&state=running';
+    render(<WorkloadExplorerPage />);
+
+    const stackColumn = mockColumns?.find(
+      (col: { id?: string }) => col.id === 'stack'
+    );
+    expect(stackColumn).toBeDefined();
+
+    const workerContainer = {
+      id: 'c-workers',
+      name: 'workers-api-1',
+      image: 'workers:latest',
+      state: 'running',
+      status: 'Up',
+      endpointId: 1,
+      endpointName: 'local',
+      ports: [],
+      created: 1700000000,
+      labels: { 'com.docker.compose.project': 'workers' },
+      networks: [],
+    };
+
+    const cellResult = stackColumn.cell({
+      row: { original: workerContainer },
+      getValue: () => undefined,
+    });
+
+    const { container } = render(cellResult);
+    const stackButton = container.querySelector('button');
+    expect(stackButton).not.toBeNull();
+    fireEvent.click(stackButton!);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const params = mockSetSearchParams.mock.calls[0][0];
+    // Both endpoint and state must be preserved — pre-#1031 the closure
+    // dropped them; pre-#1035 the state chip wouldn't have been visible
+    // even if the state param were preserved.
+    expect(params).toEqual({
+      endpoint: '1',
+      stack: 'workers',
+      state: 'running',
+    });
+  });
 });
