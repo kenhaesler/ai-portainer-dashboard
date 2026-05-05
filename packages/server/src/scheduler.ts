@@ -5,7 +5,7 @@ import { getEndpoints, getContainers, isEndpointDegraded, getImages } from '@das
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/index.js';
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
-import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
+import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
@@ -671,6 +671,26 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
       }
     }).catch(() => {});
   }, 30_000);
+
+  // SSE stream tickets are 30-second TTL and single-use (#1112). Once they
+  // expire or are consumed they have no further value and must be purged
+  // promptly to keep the table small. A 5-minute sweep is the same cadence
+  // used elsewhere for short-lived state.
+  const streamTicketCleanupInterval = setInterval(
+    () => runWithTraceContext({ source: 'scheduler' }, async () => {
+      try {
+        const deleted = await cleanExpiredStreamTickets();
+        if (deleted > 0) {
+          log.debug({ deleted }, 'Expired stream tickets cleaned up');
+        }
+      } catch (err) {
+        log.error({ err }, 'Stream ticket cleanup failed');
+      }
+    }),
+    5 * 60 * 1000,
+  );
+  streamTicketCleanupInterval.unref();
+  intervals.push(streamTicketCleanupInterval);
 
   // Periodic sweep of expired anomaly cooldowns (every 15 minutes)
   startCooldownSweep();

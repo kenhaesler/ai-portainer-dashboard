@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useLogStream } from './use-log-stream';
+import { api } from '@/shared/lib/api';
 
 // Mock EventSource
 class MockEventSource {
@@ -38,11 +39,24 @@ class MockEventSource {
 }
 
 describe('useLogStream', () => {
+  let postSpy: ReturnType<typeof vi.spyOn>;
+  let ticketCounter: number;
+
   beforeEach(() => {
     MockEventSource.instances = [];
     vi.stubGlobal('EventSource', MockEventSource);
-    vi.stubGlobal('localStorage', {
-      getItem: vi.fn(() => 'test-jwt-token'),
+
+    // Each container needs a single-use ticket — return a fresh one per call.
+    ticketCounter = 0;
+    postSpy = vi.spyOn(api, 'post').mockImplementation(async (path: string) => {
+      if (path === '/api/auth/stream-ticket') {
+        ticketCounter += 1;
+        return {
+          ticket: `st_test_ticket_${ticketCounter}`,
+          expiresAt: new Date(Date.now() + 30_000).toISOString(),
+        } as unknown as never;
+      }
+      throw new Error(`Unexpected post path: ${path}`);
     });
   });
 
@@ -57,6 +71,7 @@ describe('useLogStream', () => {
     }));
 
     expect(MockEventSource.instances).toHaveLength(0);
+    expect(postSpy).not.toHaveBeenCalled();
   });
 
   it('does not create EventSource when containers is empty', () => {
@@ -66,9 +81,10 @@ describe('useLogStream', () => {
     }));
 
     expect(MockEventSource.instances).toHaveLength(0);
+    expect(postSpy).not.toHaveBeenCalled();
   });
 
-  it('creates EventSource per container when enabled', () => {
+  it('creates EventSource per container when enabled', async () => {
     renderHook(() => useLogStream({
       containers: [
         { id: 'c1', name: 'web', endpointId: 1 },
@@ -77,26 +93,52 @@ describe('useLogStream', () => {
       enabled: true,
     }));
 
-    expect(MockEventSource.instances).toHaveLength(2);
-    expect(MockEventSource.instances[0].url).toContain('/api/containers/1/c1/logs/stream');
-    expect(MockEventSource.instances[1].url).toContain('/api/containers/1/c2/logs/stream');
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
+    const urls = MockEventSource.instances.map((i) => i.url);
+    expect(urls.some((u) => u.includes('/api/containers/1/c1/logs/stream'))).toBe(true);
+    expect(urls.some((u) => u.includes('/api/containers/1/c2/logs/stream'))).toBe(true);
   });
 
-  it('includes token query parameter in URL', () => {
+  it('passes a single-use ticket (not the JWT) in the URL', async () => {
     renderHook(() => useLogStream({
       containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
       enabled: true,
     }));
 
-    expect(MockEventSource.instances[0].url).toContain('token=test-jwt-token');
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
+    const url = MockEventSource.instances[0].url;
+    expect(url).toContain('ticket=st_test_ticket_1');
+    // The JWT must never appear in the URL — only opaque tickets (#1112).
+    expect(url).not.toContain('token=');
+    expect(postSpy).toHaveBeenCalledWith('/api/auth/stream-ticket');
   });
 
-  it('accumulates streamed entries on message', () => {
+  it('mints one ticket per container (single-use semantics)', async () => {
+    renderHook(() => useLogStream({
+      containers: [
+        { id: 'c1', name: 'web', endpointId: 1 },
+        { id: 'c2', name: 'api', endpointId: 1 },
+        { id: 'c3', name: 'db', endpointId: 1 },
+      ],
+      enabled: true,
+    }));
+
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(3));
+    expect(postSpy).toHaveBeenCalledTimes(3);
+    const tickets = MockEventSource.instances.map(
+      (i) => new URL(i.url).searchParams.get('ticket'),
+    );
+    // Every ticket must be distinct.
+    expect(new Set(tickets).size).toBe(3);
+  });
+
+  it('accumulates streamed entries on message', async () => {
     const { result } = renderHook(() => useLogStream({
       containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
       enabled: true,
     }));
 
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
     const source = MockEventSource.instances[0];
 
     act(() => {
@@ -108,12 +150,13 @@ describe('useLogStream', () => {
     expect(result.current.streamedEntries[0].message).toContain('server started');
   });
 
-  it('skips heartbeat messages', () => {
+  it('skips heartbeat messages', async () => {
     const { result } = renderHook(() => useLogStream({
       containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
       enabled: true,
     }));
 
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
     const source = MockEventSource.instances[0];
 
     act(() => {
@@ -124,12 +167,13 @@ describe('useLogStream', () => {
     expect(result.current.streamedEntries).toHaveLength(0);
   });
 
-  it('sets isFallback when SSE fails', () => {
+  it('sets isFallback when SSE fails', async () => {
     const { result } = renderHook(() => useLogStream({
       containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
       enabled: true,
     }));
 
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
     const source = MockEventSource.instances[0];
 
     act(() => {
@@ -140,12 +184,25 @@ describe('useLogStream', () => {
     expect(result.current.isFallback).toBe(true);
   });
 
-  it('sets isStreaming when SSE connects', () => {
+  it('sets isFallback when ticket exchange fails', async () => {
+    postSpy.mockRejectedValueOnce(new Error('ticket exchange failed'));
+
     const { result } = renderHook(() => useLogStream({
       containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
       enabled: true,
     }));
 
+    await waitFor(() => expect(result.current.isFallback).toBe(true));
+    expect(MockEventSource.instances).toHaveLength(0);
+  });
+
+  it('sets isStreaming when SSE connects', async () => {
+    const { result } = renderHook(() => useLogStream({
+      containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
+      enabled: true,
+    }));
+
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
     const source = MockEventSource.instances[0];
 
     act(() => {
@@ -156,12 +213,13 @@ describe('useLogStream', () => {
     expect(result.current.isFallback).toBe(false);
   });
 
-  it('closes EventSource on unmount', () => {
+  it('closes EventSource on unmount', async () => {
     const { unmount } = renderHook(() => useLogStream({
       containers: [{ id: 'c1', name: 'web', endpointId: 1 }],
       enabled: true,
     }));
 
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
     const source = MockEventSource.instances[0];
 
     unmount();
@@ -169,7 +227,7 @@ describe('useLogStream', () => {
     expect(source.close).toHaveBeenCalled();
   });
 
-  it('resets entries when containers change', () => {
+  it('resets entries when containers change', async () => {
     const { result, rerender } = renderHook(
       (props: { containers: Array<{ id: string; name: string; endpointId: number }> }) =>
         useLogStream({ containers: props.containers, enabled: true }),
@@ -178,6 +236,7 @@ describe('useLogStream', () => {
       },
     );
 
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
     const source = MockEventSource.instances[0];
 
     act(() => {
