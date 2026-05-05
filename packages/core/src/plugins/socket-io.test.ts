@@ -211,6 +211,54 @@ describe('remediation namespace admin role middleware', () => {
   });
 });
 
+// =====================================================================
+//  CORS allow-list (issue #1115) — REST + Socket.IO share getAllowedOrigins
+// =====================================================================
+describe('socket-io CORS allow-list (#1115)', () => {
+  let app: FastifyInstance;
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(async () => {
+    if (app) await app.close();
+    process.env.NODE_ENV = originalNodeEnv;
+    // Late-import to avoid the module path differing in mock setup above.
+    const { resetConfig } = await import('../config/index.js');
+    resetConfig();
+  });
+
+  it('production with CORS_ALLOWED_ORIGINS unset → cors.origin=false (legacy default)', async () => {
+    const { setConfigForTest } = await import('../config/index.js');
+    process.env.NODE_ENV = 'test';
+    setConfigForTest({ CORS_ALLOWED_ORIGINS: undefined });
+    process.env.NODE_ENV = 'production';
+
+    app = Fastify();
+    await app.register(socketIoPlugin);
+    await app.ready();
+
+    const opts = (app.io as unknown as { opts: { cors: { origin: unknown } } }).opts;
+    expect(opts.cors.origin).toBe(false);
+  });
+
+  it('production with CORS_ALLOWED_ORIGINS list → cors.origin = parsed array (same source as REST)', async () => {
+    const { setConfigForTest } = await import('../config/index.js');
+    process.env.NODE_ENV = 'test';
+    setConfigForTest({ CORS_ALLOWED_ORIGINS: 'https://example.com,https://other.com' });
+    process.env.NODE_ENV = 'production';
+
+    app = Fastify();
+    await app.register(socketIoPlugin);
+    await app.ready();
+
+    const opts = (app.io as unknown as { opts: { cors: { origin: unknown } } }).opts;
+    expect(opts.cors.origin).toEqual(['https://example.com', 'https://other.com']);
+
+    // Cross-check: REST helper returns the same list — single source of truth.
+    const { getAllowedOrigins } = await import('./allowed-origins.js');
+    expect(getAllowedOrigins()).toEqual(['https://example.com', 'https://other.com']);
+  });
+});
+
 describe('verifyTransportRequest (Engine.IO allowRequest)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

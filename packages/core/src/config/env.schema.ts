@@ -131,6 +131,28 @@ export const envSchema = z.object({
   // Remediation Safety
   REMEDIATION_PROTECTED_CONTAINERS: z.string().optional(),
 
+  // CORS
+  // Comma-separated list of fully-qualified origins (protocol://host[:port], no path/trailing slash)
+  // permitted to make cross-origin requests in production. Applies to both the REST API
+  // (@fastify/cors) and Socket.IO. When unset, production keeps the existing
+  // "no cross-origin" default (origin: false). Development uses DEV_ALLOWED_ORIGINS.
+  // Example: CORS_ALLOWED_ORIGINS=https://dashboard.example.com,https://admin.example.com
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .refine(
+      (raw) => {
+        if (!raw) return true;
+        const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+        const originRegex = /^https?:\/\/[^/\s]+$/;
+        return parts.every((p) => originRegex.test(p));
+      },
+      {
+        message:
+          'CORS_ALLOWED_ORIGINS entries must be of the form protocol://host[:port] (no path, no trailing slash)',
+      },
+    ),
+
   // Cache
   CACHE_ENABLED: z.coerce.boolean().default(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
@@ -166,6 +188,12 @@ export const envSchema = z.object({
   // `X-Forwarded-For`. Without trustProxy, rate-limit buckets and audit log IPs would
   // collapse to the proxy IP, defeating per-client throttling.
   TRUSTED_PROXY_IPS: z.string().optional(),
+  // HSTS preload (opt-in). When true, the backend appends "; preload" to the
+  // Strict-Transport-Security header AND bumps max-age to 63072000 (2 years —
+  // hstspreload.org submission requirement). Submission is *irrevocable* for
+  // ~6 months — only enable for HTTPS-only deployments. Default false keeps
+  // the current 1-year max-age without the preload directive.
+  HSTS_PRELOAD: z.coerce.boolean().default(false),
 
   // Notifications — Teams
   TEAMS_WEBHOOK_URL: z.string().url().optional(),
