@@ -80,13 +80,13 @@ export async function signJwt(payload: {
   sessionId: string;
   role?: string;
 }): Promise<string> {
-  const { JWT_ALGORITHM } = getConfig();
+  const { JWT_ALGORITHM, JWT_TOKEN_EXPIRY_MINUTES } = getConfig();
   const key = await getSigningKey();
 
   return new SignJWT(payload)
     .setProtectedHeader({ alg: JWT_ALGORITHM })
     .setIssuedAt()
-    .setExpirationTime('60m')
+    .setExpirationTime(`${JWT_TOKEN_EXPIRY_MINUTES}m`)
     .sign(key);
 }
 

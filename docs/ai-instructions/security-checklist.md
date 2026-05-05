@@ -9,6 +9,7 @@ Project-specific security requirements for the AI Portainer Dashboard. Reference
 - OIDC/SSO via `openid-client` v6 — PKCE required for all authorization code flows
 - Rate limiting on login endpoints (configurable via `LOGIN_RATE_LIMIT`)
 - Auth decorator: `fastify.authenticate` — all protected `/api/*` routes must use it
+- Token & session lifetime configurable via `JWT_TOKEN_EXPIRY_MINUTES` (default 60, bounds 5–1440). The same value drives both the JWT `exp` claim and the PostgreSQL session row's `expires_at` — single source of truth (#1106). Frontend re-arms its refresh timer from the JWT `exp` claim, so changing the env var requires no client code changes.
 
 ## Input Validation
 

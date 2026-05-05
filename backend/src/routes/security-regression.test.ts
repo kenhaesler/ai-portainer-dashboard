@@ -2449,3 +2449,64 @@ describe('verifyJwt hardening (#1109, #1120)', () => {
     expect(result).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #1106 — JWT_TOKEN_EXPIRY_MINUTES env-var boundary regression.
+// Confirms the schema rejects out-of-bound values at boot, and that the in-test
+// override surface (setConfigForTest) accepts the documented bounds. The
+// crypto module is mocked file-wide so the lifetime-propagation assertions
+// live in `packages/core/src/utils/crypto.test.ts` and
+// `packages/core/src/services/session-store.test.ts`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('JWT_TOKEN_EXPIRY_MINUTES boundaries (issue #1106)', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env.PORTAINER_API_KEY = 'test-portainer-api-key';
+    process.env.DASHBOARD_USERNAME = 'admin';
+    process.env.DASHBOARD_PASSWORD = 'replace-with-strong-random-passphrase';
+    process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    resetConfig();
+  });
+
+  it('boots with default 60 when unset', async () => {
+    delete process.env.JWT_TOKEN_EXPIRY_MINUTES;
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(getConfig().JWT_TOKEN_EXPIRY_MINUTES).toBe(60);
+  });
+
+  it('accepts 5 (lower bound)', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '5';
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(getConfig().JWT_TOKEN_EXPIRY_MINUTES).toBe(5);
+  });
+
+  it('rejects 4 at boot', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '4';
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+
+  it('accepts 1440 (upper bound)', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '1440';
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(getConfig().JWT_TOKEN_EXPIRY_MINUTES).toBe(1440);
+  });
+
+  it('rejects 1441 at boot', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '1441';
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+});
