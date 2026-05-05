@@ -26,6 +26,13 @@ export const envSchema = z.object({
   // them in sync ensures a token never outlives its session and vice versa.
   // Bounds: 5 min (auditable lower bound) → 1440 min (24 h sanity ceiling).
   JWT_TOKEN_EXPIRY_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+  // Max concurrent sessions per user. When exceeded on login, the oldest sessions are
+  // atomically evicted to make room for the new one. Eviction runs inside a
+  // transaction guarded by a per-user `pg_advisory_xact_lock(hashtext(user_id))` so
+  // concurrent logins from the same user serialise and cannot leave more than
+  // `MAX_CONCURRENT_SESSIONS_PER_USER` valid sessions; different users do not block
+  // each other. See packages/core/src/services/session-store.ts (#1107).
+  MAX_CONCURRENT_SESSIONS_PER_USER: z.coerce.number().int().min(1).max(100).default(5),
 
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),
