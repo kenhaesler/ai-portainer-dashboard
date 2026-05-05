@@ -88,6 +88,42 @@ export function getAllRates(): Record<string, LiveNetworkRate> {
   return rates;
 }
 
+/**
+ * Drop entries whose latest sample is older than `staleMs`.
+ *
+ * Called periodically by the scheduler to prevent unbounded growth of the
+ * tracker map when containers are deleted/recreated with new IDs (issue #1111).
+ * Without pruning, the tracker would accumulate stale entries indefinitely.
+ *
+ * Empty endpoint maps are also removed so re-creating containers on a recycled
+ * endpoint starts from a clean slate.
+ *
+ * @param staleMs - entries with `current.timestamp` older than `Date.now() - staleMs`
+ *                  are dropped. Default 120_000 ms (2× the default 60 s metrics
+ *                  collection interval) — picks up samples that haven't been
+ *                  refreshed across two collection cycles.
+ * @returns number of entries removed (for logging).
+ */
+export function pruneStaleEntries(staleMs: number = 120_000): number {
+  const cutoff = Date.now() - staleMs;
+  let removed = 0;
+  for (const [endpointId, endpointMap] of store) {
+    for (const [containerId, entry] of endpointMap) {
+      if (entry.current.timestamp <= cutoff) {
+        endpointMap.delete(containerId);
+        removed++;
+      }
+    }
+    if (endpointMap.size === 0) {
+      store.delete(endpointId);
+    }
+  }
+  if (removed > 0) {
+    log.debug({ removed }, 'Pruned stale network rate entries');
+  }
+  return removed;
+}
+
 /** Clear all stored samples (for testing). */
 export function _resetTracker(): void {
   store.clear();

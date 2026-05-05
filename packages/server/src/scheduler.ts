@@ -8,7 +8,7 @@ import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/port
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '@dashboard/ai';
-import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots } from '@dashboard/observability';
+import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
@@ -380,6 +380,21 @@ export async function runCleanup(): Promise<void> {
   } catch (err) {
     log.error({ err }, 'Harbor vulnerability cleanup failed');
   }
+
+  // Prune stale entries from the in-memory network rate tracker (issue #1111).
+  // Containers that are deleted/recreated with new IDs leave entries in the
+  // tracker map indefinitely. Anything older than 2× the metrics collection
+  // interval is guaranteed to be stale (we'd have refreshed it otherwise).
+  try {
+    const config = getConfig();
+    const staleMs = config.METRICS_COLLECTION_INTERVAL_SECONDS * 1000 * 2;
+    const pruned = pruneStaleEntries(staleMs);
+    if (pruned > 0) {
+      log.info({ pruned }, 'Stale network rate tracker entries pruned');
+    }
+  } catch (err) {
+    log.error({ err }, 'Network rate tracker pruning failed');
+  }
 }
 
 async function waitForPortainer(): Promise<boolean> {
@@ -607,6 +622,41 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
     24 * 60 * 60 * 1000,
   );
   intervals.push(cleanupInterval);
+
+  // Hourly expired-session cleanup (issue #1114). Sessions have a 1h TTL, so a
+  // 24h cleanup leaves expired rows in the table for up to 23h. Hourly matches
+  // the TTL exactly. The DELETE is idempotent, so the daily runCleanup above
+  // remains as a safety net (it'll just delete 0 rows when the hourly already
+  // cleared them). cleanExpiredSessions itself is unchanged — only the cadence.
+  const sessionCleanupInterval = setInterval(
+    () => runWithTraceContext({ source: 'scheduler' }, async () => {
+      try {
+        const deleted = await cleanExpiredSessions();
+        if (deleted > 0) {
+          log.info({ deleted }, 'Expired sessions cleaned up (hourly)');
+        }
+      } catch (err) {
+        log.error({ err }, 'Hourly session cleanup failed');
+      }
+    }),
+    60 * 60 * 1000,
+  );
+  sessionCleanupInterval.unref();
+  intervals.push(sessionCleanupInterval);
+  // Run once shortly after startup so a freshly-restarted server clears
+  // sessions left over from before the restart promptly.
+  setTimeout(() => {
+    runWithTraceContext({ source: 'scheduler' }, async () => {
+      try {
+        const deleted = await cleanExpiredSessions();
+        if (deleted > 0) {
+          log.info({ deleted }, 'Expired sessions cleaned up (startup)');
+        }
+      } catch (err) {
+        log.error({ err }, 'Startup session cleanup failed');
+      }
+    }).catch(() => {});
+  }, 30_000);
 
   // Periodic sweep of expired anomaly cooldowns (every 15 minutes)
   startCooldownSweep();
