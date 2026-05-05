@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { SignJWT, jwtVerify, importPKCS8, importSPKI, type CryptoKey } from 'jose';
+import { SignJWT, jwtVerify, importPKCS8, importSPKI, errors, type CryptoKey } from 'jose';
 import bcrypt from 'bcrypt';
 import { getConfig } from '../config/index.js';
+import { createChildLogger } from './logger.js';
+
+const log = createChildLogger('crypto');
 
 /**
  * JWT Signing Algorithm Decision (Issue #312)
@@ -89,10 +92,25 @@ export async function signJwt(payload: {
 
 export async function verifyJwt(token: string) {
   try {
+    const { JWT_ALGORITHM } = getConfig();
     const key = await getVerifyKey();
-    const { payload } = await jwtVerify(token, key);
+    const { payload } = await jwtVerify(token, key, {
+      algorithms: [JWT_ALGORITHM],
+      requiredClaims: ['sub', 'exp', 'iat'],
+    });
     return payload as { sub: string; username: string; sessionId: string; role?: string; exp: number; iat: number };
-  } catch {
+  } catch (err) {
+    // jose-specific errors represent the normal "invalid token" failure mode
+    // (expired, bad signature, wrong algorithm, missing claim, malformed JWT).
+    // We return null silently — these are routine and should not produce log spam
+    // on every failed auth attempt.
+    if (err instanceof errors.JOSEError) {
+      return null;
+    }
+    // Anything else is unexpected: a key-import failure, missing key file, an
+    // invariant violation in our own code, etc. These indicate operational or
+    // configuration issues that operators must see in logs.
+    log.error({ err }, 'JWT verification failed with unexpected error');
     return null;
   }
 }

@@ -93,12 +93,13 @@ vi.mock('@dashboard/core/db/timescale.js', () => ({
   isMetricsDbHealthy: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('@dashboard/core/utils/crypto.js', () => ({
-  verifyJwt: vi.fn().mockResolvedValue(null),
-  signJwt: vi.fn().mockResolvedValue('mock-token'),
-  hashPassword: vi.fn().mockResolvedValue('hashed'),
-  verifyPassword: vi.fn().mockResolvedValue(false),
-}));
+// Passthrough mock for crypto: keeps the real implementations so that the
+// verifyJwt-hardening tests below (#1109, #1120) can exercise actual behaviour,
+// while still allowing other tests to spy on / override individual functions
+// via vi.spyOn. Auth-sweep tests don't pass JWTs, so real verifyJwt(undefined)
+// naturally returns null without needing a stub.
+vi.mock('@dashboard/core/utils/crypto.js', async (importOriginal) => await importOriginal());
+
 
 vi.mock('@dashboard/core/services/session-store.js', () => ({
   createSession: vi.fn(() => ({ id: 'sess-1', user_id: 'u1', username: 'admin' })),
@@ -1845,5 +1846,148 @@ describe('Incident Resolve Admin RBAC Enforcement', () => {
     });
 
     expect(res.statusCode).not.toBe(403);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// verifyJwt hardening — Issues #1109, #1120 (regression contract tests)
+//
+// Two related security fixes verified together:
+//   #1109: bare `catch {}` in verifyJwt swallowed unexpected errors (e.g. key
+//          import failure, missing PEM file). These must surface in logs at
+//          'error' level so operators can react. Routine "invalid token"
+//          failures (jose-class errors) must remain silent — no log spam on
+//          every failed login attempt.
+//   #1120: jwtVerify was called without explicit `algorithms` and
+//          `requiredClaims`. Adds defense-in-depth against algorithm-confusion
+//          attacks and tokens missing standard claims (`sub`, `exp`, `iat`).
+//
+// These regression tests verify the OBSERVABLE contract (verifyJwt returns
+// null and never throws) for each failure mode. The "logs error vs. silent"
+// assertion is covered alongside the implementation in
+// packages/core/src/utils/crypto.test.ts where the logger is directly
+// observable — Vitest's module-mock chain in this workspace does not
+// reliably intercept the `createChildLogger('crypto')` call inside
+// crypto.ts when imported transitively, so log-call assertions are kept
+// at the unit-test layer, while behaviour is anchored here.
+// ─────────────────────────────────────────────────────────────────────────
+describe('verifyJwt hardening (#1109, #1120)', () => {
+  let realCrypto: typeof import('@dashboard/core/utils/crypto.js');
+  let jose: typeof import('jose');
+  const JWT_SECRET = 'a'.repeat(64);
+
+  beforeAll(async () => {
+    // The crypto mock at the top of the file is a passthrough
+    // (await importOriginal()), so a normal dynamic import yields the real
+    // module — exactly what we want for these regression tests.
+    realCrypto = await import('@dashboard/core/utils/crypto.js');
+    jose = await import('jose');
+  });
+
+  beforeEach(() => {
+    realCrypto._resetKeyCache();
+    setConfigForTest({
+      JWT_ALGORITHM: 'HS256',
+      JWT_SECRET,
+    });
+  });
+
+  afterAll(() => {
+    realCrypto._resetKeyCache();
+  });
+
+  it('returns null when signature is tampered (#1109)', async () => {
+    const validToken = await realCrypto.signJwt({
+      sub: 'user-1',
+      username: 'admin',
+      sessionId: 'sess-1',
+    });
+    const tampered = validToken.slice(0, -5) + 'XXXXX';
+
+    const result = await realCrypto.verifyJwt(tampered);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for token signed with wrong algorithm (#1120 — algorithm-confusion defence)', async () => {
+    // Sign a token with HS512 while verifyJwt is configured for HS256.
+    // Without the explicit `algorithms` option (issue #1120), jose v5 would
+    // accept this token because the signature is valid for the same key.
+    // With the option, jose throws JOSEAlgNotAllowed — verifyJwt returns null.
+    const key = new TextEncoder().encode(JWT_SECRET);
+    const wrongAlgToken = await new jose.SignJWT({
+      sub: 'user-1',
+      username: 'admin',
+      sessionId: 'sess-1',
+    })
+      .setProtectedHeader({ alg: 'HS512' })
+      .setIssuedAt()
+      .setExpirationTime('60m')
+      .sign(key);
+
+    const result = await realCrypto.verifyJwt(wrongAlgToken);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for an expired token (#1109)', async () => {
+    const key = new TextEncoder().encode(JWT_SECRET);
+    const expiredToken = await new jose.SignJWT({
+      sub: 'user-1',
+      username: 'admin',
+      sessionId: 'sess-1',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt(Math.floor(Date.now() / 1000) - 7200) // iat 2h ago
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 3600) // exp 1h ago
+      .sign(key);
+
+    const result = await realCrypto.verifyJwt(expiredToken);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null for token missing the required `sub` claim (#1120)', async () => {
+    // requiredClaims: ['sub', 'exp', 'iat'] — omitting `sub` should trip
+    // JWTClaimValidationFailed; verifyJwt swallows and returns null.
+    const key = new TextEncoder().encode(JWT_SECRET);
+    const tokenNoSub = await new jose.SignJWT({
+      username: 'admin',
+      sessionId: 'sess-1',
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime('60m')
+      .sign(key);
+
+    const result = await realCrypto.verifyJwt(tokenNoSub);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null without throwing when an unexpected (non-JOSE) error occurs (#1109)', async () => {
+    // Force getVerifyKey to throw a non-JOSE error by switching JWT_ALGORITHM
+    // to RS256 and pointing at a non-existent public-key file. readFileSync
+    // will throw ENOENT (a Node SystemError, NOT a JOSEError). Pre-fix, the
+    // bare `catch {}` would still return null but silently — the logger
+    // assertion lives in crypto.test.ts. Here we only verify the contract:
+    // verifyJwt must NOT throw, and must return null, even on operational
+    // failures.
+    realCrypto._resetKeyCache();
+    setConfigForTest({
+      JWT_ALGORITHM: 'RS256',
+      JWT_PUBLIC_KEY_PATH: '/nonexistent/path/to/public-key.pem',
+    });
+
+    let threw = false;
+    let result: unknown = 'not-set';
+    try {
+      result = await realCrypto.verifyJwt('any-token-value');
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(false);
+    expect(result).toBeNull();
   });
 });
