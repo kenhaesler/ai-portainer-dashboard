@@ -248,4 +248,51 @@ describe('ImageFootprintPage', () => {
       { refetchInterval: 60_000 },
     );
   });
+
+  describe('empty state', () => {
+    it('renders the no-images empty state copy when images is an empty array', () => {
+      mockUseImages.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isPending: false,
+        isError: false,
+        error: null,
+        refetch: mockRefetch,
+        isFetching: false,
+      });
+
+      render(<ImageFootprintPage />);
+
+      expect(screen.getByText('No images found')).toBeInTheDocument();
+      expect(
+        screen.getByText('No Docker images found across any endpoints.'),
+      ).toBeInTheDocument();
+
+      // No charts, no data table when there is nothing to plot.
+      expect(screen.queryByTestId('image-treemap')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('image-sunburst')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('data-table')).not.toBeInTheDocument();
+    });
+
+    it('renders the error state with a retry button when useImages errors', () => {
+      mockUseImages.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        isPending: false,
+        isError: true,
+        error: new Error('boom'),
+        refetch: mockRefetch,
+        isFetching: false,
+      });
+
+      render(<ImageFootprintPage />);
+
+      expect(screen.getByText('Failed to load images')).toBeInTheDocument();
+      expect(screen.getByText('boom')).toBeInTheDocument();
+
+      const retry = screen.getByRole('button', { name: 'Try again' });
+      fireEvent.click(retry);
+      expect(mockRefetch).toHaveBeenCalled();
+    });
+  });
 });
