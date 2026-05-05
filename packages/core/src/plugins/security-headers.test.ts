@@ -19,7 +19,9 @@ describe('security headers plugin', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['x-content-type-options']).toBe('nosniff');
-    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    // Referrer-Policy is owned by nginx (issue #1101) — backend must NOT set it
+    // to avoid duplicate / conflicting values reaching the browser.
+    expect(response.headers['referrer-policy']).toBeUndefined();
     expect(response.headers['permissions-policy']).toContain('geolocation=()');
     // X-Frame-Options and CSP are handled by nginx, not the backend
     expect(response.headers['x-frame-options']).toBeUndefined();
