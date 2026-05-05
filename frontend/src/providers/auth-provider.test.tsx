@@ -400,33 +400,46 @@ describe('AuthProvider — refresh timer (issue #1106)', () => {
     expect(mockPost).toHaveBeenCalledTimes(2);
   });
 
-  it('falls back to 50-min cadence when the token has no exp claim', async () => {
-    const malformedToken = makeFakeJwt({
-      sub: 'user-123',
-      username: 'testuser',
-      sessionId: 'sess-1',
-      role: 'admin',
-      // exp omitted — but isTokenValid() will reject the token entirely,
-      // so we instead populate localStorage manually after the provider boots.
-    });
-
-    // Manually seed localStorage with a token that has exp (so the provider
-    // hydrates), then we patch the storage to a malformed token before the
-    // refresh window. The simpler equivalent: put a token with exp far in the
-    // future and verify isTokenValid path. Here we just verify that
-    // decodeJwtPayload returning null falls back to 50 min by mocking storage
-    // to a mid-life valid token whose payload happens not to decode cleanly.
-    // Skip this assertion path if not feasible — the early-refresh case above
-    // already covers the malformed-decode safety net.
+  it('falls back to 50-min cadence when a refreshed token has no exp claim', async () => {
+    // This test exercises the legacy-cadence safety net at
+    // auth-provider.tsx:`return 50 * 60_000`. Reaching it requires
+    // `decodeJwtPayload(jwt)` to yield a payload with no numeric `exp` AT THE
+    // SCHEDULING SITE — but `getStoredAuth()` would reject a stored malformed
+    // token via `isTokenValid()`, so we cannot hydrate the provider with one.
+    //
+    // The realistic path: hydrate with a valid token, let the first refresh
+    // fire on schedule, and have the server return a malformed token (no
+    // `exp`). The refresh handler calls `setToken(data.token)` without
+    // re-validating, so the effect re-runs against the malformed token and
+    // hits the fallback. We then advance another 50 min and assert a second
+    // refresh fires — proving the fallback cadence is in effect (and not, for
+    // example, an immediate refresh due to `targetMs < 30s`).
     const baseSec = Math.floor(Date.now() / 1000);
     const initialToken = buildToken({ lifetimeSec: 60 * 60, issuedAtSec: baseSec });
     window.localStorage.setItem(AUTH_TOKEN_KEY, initialToken);
     window.localStorage.setItem(AUTH_USERNAME_KEY, 'testuser');
     window.localStorage.setItem(AUTH_ROLE_KEY, 'admin');
 
-    mockPost.mockResolvedValue({
-      token: buildToken({ lifetimeSec: 60 * 60, issuedAtSec: baseSec + 50 * 60 }),
+    // First refresh response: a token with NO `exp` claim. `decodeJwtPayload`
+    // will succeed (valid base64url JSON) but `payload.exp` is undefined, so
+    // `computeRefreshDelayMs` falls through to `return 50 * 60_000`.
+    const malformedToken = makeFakeJwt({
+      sub: 'user-123',
+      username: 'testuser',
+      sessionId: 'sess-1',
+      role: 'admin',
+      // exp omitted on purpose
     });
+    // Second refresh response: a fresh valid token (just so the effect doesn't
+    // crash if it re-arms again — we only assert the *count* of refresh calls).
+    const validRefreshToken = buildToken({
+      lifetimeSec: 60 * 60,
+      issuedAtSec: baseSec + 100 * 60,
+    });
+
+    mockPost
+      .mockResolvedValueOnce({ token: malformedToken })
+      .mockResolvedValueOnce({ token: validRefreshToken });
 
     render(
       <AuthProvider>
@@ -434,16 +447,31 @@ describe('AuthProvider — refresh timer (issue #1106)', () => {
       </AuthProvider>
     );
 
-    // Sanity check: refresh fires within the 50-60 min window even for the
-    // happy-path token. This ensures the new self-rearming setTimeout path
-    // does not silently never fire.
+    // First refresh fires at the 50-min mark for the initial 60-min token.
     await act(async () => {
-      vi.advanceTimersByTime(60 * 60 * 1000);
+      vi.advanceTimersByTime(51 * 60 * 1000);
     });
-    expect(mockPost).toHaveBeenCalled();
+    // Drain the awaited promise so setToken(malformedToken) commits and the
+    // effect re-runs with the fallback delay.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockPost).toHaveBeenCalledTimes(1);
 
-    // Suppress unused-var lint for the malformed token construction helper.
-    expect(malformedToken).toContain('.');
+    // The malformed token has no exp → fallback is exactly 50 * 60_000 ms.
+    // Advance 49 min — fallback timer must NOT have fired yet.
+    await act(async () => {
+      vi.advanceTimersByTime(49 * 60 * 1000);
+    });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    // Advance past the 50-min fallback mark — second refresh must fire,
+    // proving the legacy 50-min cadence was scheduled (not an immediate
+    // refresh, not "never fires", not a different cadence).
+    await act(async () => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+    expect(mockPost).toHaveBeenCalledTimes(2);
   });
 
   it('logs out when the refresh request fails', async () => {
