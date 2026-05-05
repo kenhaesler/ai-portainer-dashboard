@@ -1,11 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 const ROOT = resolve(__dirname, '../..');
 
 function readFile(relativePath: string): string {
   return readFileSync(resolve(ROOT, relativePath), 'utf-8');
+}
+
+function readCompose(): {
+  services: Record<string, { ports?: string[] | undefined }>;
+} {
+  return parseYaml(readFile('docker/docker-compose.yml')) as {
+    services: Record<string, { ports?: string[] | undefined }>;
+  };
 }
 
 function readLines(relativePath: string): string[] {
@@ -333,5 +342,28 @@ describe('docker/docker-compose.yml capability hardening', () => {
       // change tracked outside this PR.
       expect(getServiceListField(block, 'cap_add')).toEqual(['NET_RAW', 'NET_ADMIN']);
     });
+  });
+});
+
+describe('docker/docker-compose.yml port bindings (#1113)', () => {
+  // Production compose must publish ports to localhost only — direct external
+  // exposure is gated by a host-level reverse proxy (Traefik/nginx). LAN-direct
+  // deployments can override via docker-compose.override.yml.
+  const compose = readCompose();
+
+  it('frontend service binds port 8080 to 127.0.0.1 only', () => {
+    const ports = compose.services.frontend?.ports ?? [];
+    expect(ports).toHaveLength(1);
+    expect(ports[0]).toBe('127.0.0.1:8080:8080');
+    // Defence-in-depth: explicitly reject the two unsafe forms.
+    expect(ports[0]).not.toBe('8080:8080');
+    expect(ports[0]).not.toMatch(/^0\.0\.0\.0:/);
+  });
+
+  it('backend service binds port 3051 to 127.0.0.1 only (regression guard)', () => {
+    const ports = compose.services.backend?.ports ?? [];
+    expect(ports).toHaveLength(1);
+    expect(ports[0]).toBe('127.0.0.1:3051:3051');
+    expect(ports[0]).not.toMatch(/^0\.0\.0\.0:/);
   });
 });
