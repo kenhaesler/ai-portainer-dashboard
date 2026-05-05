@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { readSecret } from './secrets.js';
 
 /** Optional URL that treats empty strings as undefined (common in Docker Compose env defaults). */
 const optionalUrl = z.preprocess(
@@ -6,11 +7,32 @@ const optionalUrl = z.preprocess(
   z.string().url().optional(),
 );
 
+/**
+ * Build a Zod preprocessor that resolves a sensitive value from Docker Secrets
+ * (`/run/secrets/<secretName>`) and falls back to the env value Zod was given.
+ *
+ * We do not pass `envVarName` to `readSecret` because Zod already extracted
+ * the env value into `envValue`; we just want the file to take precedence
+ * when present. Falling back to `envValue` (rather than re-reading
+ * `process.env`) preserves Zod's normal hydration order — including any
+ * test-time `process.env` overrides — so the validation surface is
+ * unchanged when no secret file exists.
+ */
+function preprocessSecret(secretName: string) {
+  return (envValue: unknown): unknown => {
+    const fromFile = readSecret(secretName, '');
+    if (fromFile !== undefined && fromFile !== '') return fromFile;
+    return envValue;
+  };
+}
+
 export const envSchema = z.object({
   // Auth
   DASHBOARD_USERNAME: z.string().min(1),
   DASHBOARD_PASSWORD: z.string().min(12),
-  JWT_SECRET: z.string().min(32),
+  // JWT_SECRET: prefers /run/secrets/jwt_secret (Docker Secrets), falls back to
+  // the JWT_SECRET env var. Min-length validation runs against the resolved value.
+  JWT_SECRET: z.preprocess(preprocessSecret('jwt_secret'), z.string().min(32)),
   // JWT signing algorithm: HS256 (symmetric, default), RS256 or ES256 (asymmetric).
   // HS256 is appropriate for single-service architectures. Switch to RS256/ES256 if:
   //   - Multiple backend services need to verify tokens independently
@@ -164,7 +186,10 @@ export const envSchema = z.object({
   CACHE_ENABLED: z.coerce.boolean().default(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
   REDIS_URL: z.string().url().optional(),
-  REDIS_PASSWORD: z.string().optional(),
+  // REDIS_PASSWORD: prefers /run/secrets/redis_password (Docker Secrets),
+  // falls back to the REDIS_PASSWORD env var. Optional — only required when
+  // the Redis server is configured with --requirepass (production default).
+  REDIS_PASSWORD: z.preprocess(preprocessSecret('redis_password'), z.string().optional()),
   REDIS_KEY_PREFIX: z.string().default('aidash:cache:'),
 
   // App PostgreSQL

@@ -37,8 +37,52 @@ Configurable: `LLM_PROMPT_GUARD_STRICT` env var.
 
 - Never commit `.env`, credentials, API keys, or passwords
 - Never log secrets, tokens, or passwords — even at debug level
-- All sensitive config from environment variables
 - Frontend must never contain or expose backend secrets
+
+### Secrets management — Docker Secrets vs. environment variables (#1121)
+
+The four sensitive values — `JWT_SECRET`, `POSTGRES_APP_PASSWORD`,
+`TIMESCALE_PASSWORD`, `REDIS_PASSWORD` — are sourced from Docker Secrets
+(file-backed) in production and fall back to environment variables for local
+dev. Docker Secrets are preferred because env vars are visible via
+`docker inspect <container>` and `/proc/<pid>/environ`; secret files are
+mounted at `/run/secrets/<name>` with mode 0400 and are accessible only to
+the container process.
+
+**Resolution order** (implemented in `packages/core/src/config/secrets.ts`):
+1. `/run/secrets/<name>` — read and trimmed if the file exists
+2. `process.env[<NAME>]` — fallback when no secret file is present
+
+**Operator setup** (one-time):
+
+```sh
+mkdir -p docker/secrets && chmod 700 docker/secrets
+cd docker
+for s in jwt_secret postgres_app_password timescale_password redis_password; do
+  openssl rand -hex 32 > secrets/$s.txt
+done
+chmod 600 secrets/*.txt
+```
+
+**Per-service notes**:
+- **postgres-app / timescaledb**: the official `postgres` image natively
+  honours `POSTGRES_PASSWORD_FILE`. Compose sets it to
+  `/run/secrets/postgres_app_password` (or `timescale_password`).
+- **redis**: the official Redis image does NOT honour `REDIS_PASSWORD_FILE`.
+  Compose uses a shell wrapper (`sh -c "REDIS_PASS=$(cat /run/secrets/redis_password); exec redis-server --requirepass \"$REDIS_PASS\""`) so the password never appears in argv-visible form.
+- **backend (Fastify)**: `readSecret()` is called inside the env-schema
+  preprocessor for `JWT_SECRET` and `REDIS_PASSWORD` before Zod validation.
+  The min-length / weak-default guards still fire on the resolved value.
+
+**Validation invariants**:
+- `JWT_SECRET` must be ≥ 32 characters after resolution. Production
+  (`NODE_ENV=production`) additionally rejects known weak values (`changeme`,
+  `dev-secret-…`, etc.).
+- The `secrets/` directory MUST be in `.gitignore`. The compose file is the
+  only artifact that references the secrets paths.
+
+See `packages/core/src/config/secrets.ts`, `packages/core/src/config/secrets.test.ts`,
+and `docker/.env.example` for the full operator guide.
 
 ## Network Security
 
