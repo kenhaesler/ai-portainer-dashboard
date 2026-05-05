@@ -234,9 +234,12 @@ describe('session-store performance benchmarks (real PostgreSQL)', () => {
  * Per CRITIC-FINDINGS §B3/§C2 the load-bearing assertion is the concurrency test:
  * a non-atomic `count()` + `DELETE` would let two concurrent createSession calls
  * read the same pre-eviction count and produce <max sessions. createSession()
- * uses a SERIALIZABLE transaction with retry-on-40001, so the post-condition
- * `count(valid sessions for user) == max` must hold even when 5 logins fire
- * via Promise.all.
+ * acquires `pg_advisory_xact_lock(hashtext(user_id))` at the start of its
+ * transaction, which provides per-user mutual exclusion under READ COMMITTED
+ * (concurrent same-user calls block; different users never contend). The lock
+ * auto-releases at COMMIT/ROLLBACK. The post-condition
+ * `count(valid sessions for user) == max` must therefore hold even when 5
+ * logins fire via Promise.all.
  */
 describe('session-store max concurrent sessions — real PostgreSQL (#1107)', () => {
   it('caps at MAX with sequential logins (latest sessions remain valid)', async () => {
