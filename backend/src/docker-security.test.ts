@@ -443,3 +443,104 @@ describe('Docker Secrets migration (#1121)', () => {
     expect(block).toMatch(/JWT_SECRET=\$\{JWT_SECRET:-\}/);
   });
 });
+
+// Issue #1187 — Follow-up to #1121. Two remaining gaps closed:
+//  (1) timescale-backup sidecar reads its password from
+//      /run/secrets/timescale_password via POSTGRES_PASSWORD_FILE (native
+//      support in prodrigestivill/postgres-backup-local).
+//  (2) Backend's POSTGRES_APP_URL / TIMESCALE_URL / REDIS_URL are no longer
+//      reconstructed via env-var interpolation in compose. Components
+//      (HOST/PORT/USER/DATABASE) come from env, password from the secret
+//      file, and the URL is assembled inside the backend's config layer.
+describe('Docker Secrets follow-up (#1187)', () => {
+  const compose = readFile('docker/docker-compose.yml');
+
+  function getServiceBlock(name: string): string {
+    const lines = compose.split('\n');
+    const startIdx = lines.findIndex((l) => l === `  ${name}:`);
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    const endIdx = lines.findIndex(
+      (l, i) => i > startIdx && /^(\S| {2}\S)/.test(l) && !/^ {2}\s/.test(l),
+    );
+    return lines.slice(startIdx, endIdx === -1 ? undefined : endIdx).join('\n');
+  }
+
+  describe('timescale-backup secrets migration', () => {
+    const block = getServiceBlock('timescale-backup');
+
+    it('uses POSTGRES_PASSWORD_FILE pointing at the timescale_password secret', () => {
+      expect(block).toMatch(/POSTGRES_PASSWORD_FILE:\s+\/run\/secrets\/timescale_password/);
+    });
+
+    it('no longer interpolates TIMESCALE_PASSWORD as a plaintext env var', () => {
+      // Before #1187: `POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?...}` — the
+      // compose interpolation would reconstruct the password into the env.
+      expect(block).not.toMatch(/POSTGRES_PASSWORD:\s+\$\{TIMESCALE_PASSWORD/);
+    });
+
+    it('mounts the timescale_password secret', () => {
+      expect(block).toMatch(/^ {4}secrets:\s*$/m);
+      expect(block).toMatch(/^\s+- timescale_password$/m);
+    });
+
+    it('preserves the no-new-privileges hardening from the B1 audit', () => {
+      // Regression guard for the #1121 B1 audit — this PR must NOT regress
+      // the security_opt setting on the backup sidecar.
+      expect(block).toMatch(/^ {4}security_opt:\s*$/m);
+      expect(block).toMatch(/no-new-privileges:true/);
+    });
+  });
+
+  describe('backend URL components (no password in compose interpolation)', () => {
+    const block = getServiceBlock('backend');
+
+    it('does not embed POSTGRES_APP_PASSWORD inside POSTGRES_APP_URL', () => {
+      // Before #1187:
+      //   POSTGRES_APP_URL=postgresql://app_user:${POSTGRES_APP_PASSWORD:?...}@postgres-app:5432/...
+      // After: the URL is empty and assembled inside the backend.
+      expect(block).not.toMatch(/POSTGRES_APP_URL=postgresql:\/\/[^$]*\$\{POSTGRES_APP_PASSWORD/);
+    });
+
+    it('does not embed TIMESCALE_PASSWORD inside TIMESCALE_URL', () => {
+      expect(block).not.toMatch(/TIMESCALE_URL=postgresql:\/\/[^$]*\$\{TIMESCALE_PASSWORD/);
+    });
+
+    it('exposes POSTGRES_APP_HOST/PORT/USER/DATABASE as discrete env vars', () => {
+      expect(block).toMatch(/POSTGRES_APP_HOST=\$\{POSTGRES_APP_HOST:-postgres-app\}/);
+      expect(block).toMatch(/POSTGRES_APP_PORT=\$\{POSTGRES_APP_PORT:-5432\}/);
+      expect(block).toMatch(/POSTGRES_APP_USER=\$\{POSTGRES_APP_USER:-app_user\}/);
+      expect(block).toMatch(/POSTGRES_APP_DATABASE=\$\{POSTGRES_APP_DATABASE:-portainer_dashboard\}/);
+    });
+
+    it('exposes TIMESCALE_HOST/PORT/USER/DATABASE as discrete env vars', () => {
+      expect(block).toMatch(/TIMESCALE_HOST=\$\{TIMESCALE_HOST:-timescaledb\}/);
+      expect(block).toMatch(/TIMESCALE_PORT=\$\{TIMESCALE_PORT:-5432\}/);
+      expect(block).toMatch(/TIMESCALE_USER=\$\{TIMESCALE_USER:-metrics_user\}/);
+      expect(block).toMatch(/TIMESCALE_DATABASE=\$\{TIMESCALE_DATABASE:-metrics\}/);
+    });
+
+    it('exposes REDIS_HOST/PORT as discrete env vars', () => {
+      expect(block).toMatch(/REDIS_HOST=\$\{REDIS_HOST:-redis\}/);
+      expect(block).toMatch(/REDIS_PORT=\$\{REDIS_PORT:-6379\}/);
+    });
+
+    it('keeps POSTGRES_APP_PASSWORD/TIMESCALE_PASSWORD passthroughs as soft-default (file > env)', () => {
+      // Backend reads via readSecret() — file at /run/secrets/* takes
+      // precedence. The env-var passthrough must NOT be hard-failing
+      // (`:?`) because Docker Secrets users do not set the env var.
+      expect(block).toMatch(/POSTGRES_APP_PASSWORD=\$\{POSTGRES_APP_PASSWORD:-\}/);
+      expect(block).toMatch(/TIMESCALE_PASSWORD=\$\{TIMESCALE_PASSWORD:-\}/);
+      expect(block).not.toMatch(/POSTGRES_APP_PASSWORD=\$\{POSTGRES_APP_PASSWORD:\?/);
+      expect(block).not.toMatch(/TIMESCALE_PASSWORD=\$\{TIMESCALE_PASSWORD:\?/);
+    });
+
+    it('keeps POSTGRES_APP_URL / TIMESCALE_URL / REDIS_URL as overridable empty defaults', () => {
+      // Components take precedence inside the backend, but the dev/legacy
+      // single-string path still works when an operator sets the URL env
+      // var explicitly. The default must be empty — never embed a password.
+      expect(block).toMatch(/POSTGRES_APP_URL=\$\{POSTGRES_APP_URL:-\}/);
+      expect(block).toMatch(/TIMESCALE_URL=\$\{TIMESCALE_URL:-\}/);
+      expect(block).toMatch(/REDIS_URL=\$\{REDIS_URL:-\}/);
+    });
+  });
+});

@@ -132,6 +132,9 @@ function validateServicePasswords(data: EnvConfig): void {
   }
 
   // Extract password from TIMESCALE_URL (format: postgresql://user:password@host:port/db)
+  // After #1187 the URL may have been re-assembled from components; the password
+  // check below catches both the legacy URL-with-password path AND the newer
+  // component-based path (the assembled URL still embeds the resolved password).
   try {
     const url = new URL(data.TIMESCALE_URL);
     const tsPassword = decodeURIComponent(url.password);
@@ -143,6 +146,112 @@ function validateServicePasswords(data: EnvConfig): void {
   } catch (e) {
     if (e instanceof Error && e.message.includes('TIMESCALE_URL')) throw e;
     // URL parsing failed — non-standard format, skip password check
+  }
+}
+
+/**
+ * Assemble a postgres-style connection URL from individual components.
+ *
+ * Reserved characters in `password` (e.g. `@`, `:`, `/`, `#`, `?`) are
+ * percent-encoded automatically by the WHATWG URL setter. We deliberately do
+ * NOT pre-encode the password — pre-encoding would either be a no-op for
+ * already-safe chars OR cause double-encoding for values containing literal
+ * `%`. The downstream consumers (`pg` library + `backup-service.ts`'s
+ * `decodeURIComponent(url.password)` round-trip) expect the standard libpq
+ * convention of single-encoded passwords inside the URL.
+ *
+ * `user` is config-controlled (not a secret) and assumed to use the safe
+ * subset; the URL setter still escapes any unexpected reserved chars.
+ */
+function assembleConnectionUrl(
+  scheme: 'postgresql' | 'redis',
+  host: string,
+  port: number,
+  user: string | undefined,
+  password: string | undefined,
+  database: string | undefined,
+): string {
+  const url = new URL(`${scheme}://${host}:${port}`);
+  if (user) url.username = user;
+  if (password !== undefined && password !== '') url.password = password;
+  // URL semantics: pathname always begins with '/'; for postgres URLs the
+  // database name is the path *without* a leading slash. `url.pathname = ''`
+  // collapses to `/`, which `pg` handles fine (no database selected).
+  if (database) url.pathname = `/${database}`;
+  return url.toString();
+}
+
+/**
+ * Issue #1187 — assemble service URLs from components when those components
+ * are set. This lets operators avoid embedding secrets in compose-time env-var
+ * interpolations: instead, host/port/user/database come from env, while the
+ * password is resolved via `readSecret()` (Docker Secrets file > env var).
+ *
+ * Behaviour:
+ *   - If HOST is set for a service, the URL is rebuilt from components +
+ *     resolved password. PORT defaults to the service's standard port; USER
+ *     and DATABASE are required when components are used (validated below).
+ *   - If HOST is unset, the existing *_URL value (env or schema default) is
+ *     left in place — full backwards compatibility for dev workflows.
+ *
+ * The assembled URL takes precedence over any *_URL env var when components
+ * are present. This is the documented behaviour: components are opt-in for
+ * production deployments using Docker Secrets.
+ */
+function assembleUrlsFromComponents(data: EnvConfig): void {
+  // Postgres app DB
+  if (data.POSTGRES_APP_HOST) {
+    const port = data.POSTGRES_APP_PORT ?? 5432;
+    const user = data.POSTGRES_APP_USER;
+    const database = data.POSTGRES_APP_DATABASE;
+    if (!user || !database) {
+      throw new Error(
+        'Invalid environment configuration:\n  POSTGRES_APP_USER and POSTGRES_APP_DATABASE are required when POSTGRES_APP_HOST is set (component-based URL assembly, #1187)'
+      );
+    }
+    data.POSTGRES_APP_URL = assembleConnectionUrl(
+      'postgresql',
+      data.POSTGRES_APP_HOST,
+      port,
+      user,
+      data.POSTGRES_APP_PASSWORD,
+      database,
+    );
+  }
+
+  // TimescaleDB
+  if (data.TIMESCALE_HOST) {
+    const port = data.TIMESCALE_PORT ?? 5432;
+    const user = data.TIMESCALE_USER;
+    const database = data.TIMESCALE_DATABASE;
+    if (!user || !database) {
+      throw new Error(
+        'Invalid environment configuration:\n  TIMESCALE_USER and TIMESCALE_DATABASE are required when TIMESCALE_HOST is set (component-based URL assembly, #1187)'
+      );
+    }
+    data.TIMESCALE_URL = assembleConnectionUrl(
+      'postgresql',
+      data.TIMESCALE_HOST,
+      port,
+      user,
+      data.TIMESCALE_PASSWORD,
+      database,
+    );
+  }
+
+  // Redis. Database is optional (redis databases are numeric and 0 is the
+  // implicit default). User is also optional (redis ACLs are opt-in via
+  // requirepass + ACL, not username/password by default).
+  if (data.REDIS_HOST) {
+    const port = data.REDIS_PORT ?? 6379;
+    data.REDIS_URL = assembleConnectionUrl(
+      'redis',
+      data.REDIS_HOST,
+      port,
+      data.REDIS_USER,
+      data.REDIS_PASSWORD,
+      data.REDIS_DATABASE,
+    );
   }
 }
 
@@ -239,6 +348,9 @@ export function getConfig(): EnvConfig {
     validateJwtSecret(result.data.JWT_SECRET);
     validateJwtAlgorithm(result.data);
     validateDashboardCredentials(result.data.DASHBOARD_USERNAME, result.data.DASHBOARD_PASSWORD);
+    // #1187: assemble *_URL from components BEFORE password validation so the
+    // weak-password guard runs against the resolved (post-assembly) URL.
+    assembleUrlsFromComponents(result.data);
     validateServicePasswords(result.data);
     validatePrometheusToken(result.data);
     warnDeprecatedEnvVars();
