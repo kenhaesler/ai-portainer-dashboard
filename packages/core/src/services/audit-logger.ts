@@ -1,8 +1,20 @@
 import { getDbForDomain } from '../db/app-db-router.js';
+import type { AppDb } from '../db/app-db.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('audit');
-const db = getDbForDomain('audit');
+
+// Resolve the DB lazily so test files can swap the app-db-router mock between
+// imports without triggering a real connection at module load. Particularly
+// important for callers that depend on audit-logger transitively (e.g.
+// session-store) and run under vi.mock-with-late-bound testDb patterns.
+let dbInstance: AppDb | null = null;
+function getDb(): AppDb {
+  if (!dbInstance) {
+    dbInstance = getDbForDomain('audit');
+  }
+  return dbInstance;
+}
 
 export interface AuditEntry {
   user_id?: string;
@@ -17,7 +29,7 @@ export interface AuditEntry {
 
 export async function writeAuditLog(entry: AuditEntry): Promise<void> {
   try {
-    await db.execute(`
+    await getDb().execute(`
       INSERT INTO audit_log (user_id, username, action, target_type, target_id, details, request_id, ip_address, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
@@ -63,7 +75,7 @@ export async function getAuditLogs(options?: {
   const limit = options?.limit || 100;
   const offset = options?.offset || 0;
 
-  return db.query(`
+  return getDb().query(`
     SELECT * FROM audit_log ${where}
     ORDER BY created_at DESC
     LIMIT ? OFFSET ?

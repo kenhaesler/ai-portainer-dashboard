@@ -2,23 +2,53 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // In-memory store for mock DB
-const sessionStore: Map<string, Record<string, unknown>> = new Map();
+interface MockRow {
+  id: string;
+  user_id: string;
+  username: string;
+  created_at: string;
+  expires_at: string;
+  last_active: string;
+  is_valid: 0 | 1;
+}
+const sessionStore: Map<string, MockRow> = new Map();
 
-// Kept: in-memory mock for perf benchmarks; real PG tests in session-store.integration.test.ts
+// Capture audit-log calls so tests can assert on session.evicted events.
+const auditLogCalls: Array<Record<string, unknown>> = [];
+
+// Kept: in-memory audit logger mock — avoids DB dependency from session-store imports.
+vi.mock('./audit-logger.js', () => ({
+  writeAuditLog: vi.fn(async (entry: Record<string, unknown>) => {
+    auditLogCalls.push(entry);
+  }),
+}));
+
+// Kept: in-memory mock for perf benchmarks + atomic-eviction unit tests;
+// real PG tests live in session-store.integration.test.ts.
 vi.mock('../db/app-db-router.js', () => {
-  const mockDb = {
+  // Helpers shared between the top-level mockDb and tx mockDb (they're the same instance).
+  function selectValidForUser(userId: string, now: string): MockRow[] {
+    return Array.from(sessionStore.values())
+      .filter((r) => r.user_id === userId && r.is_valid === 1 && r.expires_at > now)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  const mockDb: Record<string, unknown> = {
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE')) {
+        return { changes: 0 };
+      }
       if (sql.includes('INSERT INTO sessions')) {
-        const row = {
-          id: params[0],
-          user_id: params[1],
-          username: params[2],
-          created_at: params[3],
-          expires_at: params[4],
-          last_active: params[5],
+        const row: MockRow = {
+          id: params[0] as string,
+          user_id: params[1] as string,
+          username: params[2] as string,
+          created_at: params[3] as string,
+          expires_at: params[4] as string,
+          last_active: params[5] as string,
           is_valid: 1,
         };
-        sessionStore.set(row.id as string, row);
+        sessionStore.set(row.id, row);
         return { changes: 1 };
       }
       if (sql.includes('UPDATE sessions SET expires_at')) {
@@ -28,24 +58,27 @@ vi.mock('../db/app-db-router.js', () => {
         const id = params[2] as string;
         const nowParam = params[3] as string;
         const existing = sessionStore.get(id);
-        if (existing && existing.is_valid === 1 && (existing.expires_at as string) > nowParam) {
-          existing.expires_at = expiresAt;
-          existing.last_active = lastActive;
+        if (existing && existing.is_valid === 1 && existing.expires_at > nowParam) {
+          existing.expires_at = expiresAt as string;
+          existing.last_active = lastActive as string;
           return { changes: 1 };
         }
         return { changes: 0 };
       }
-      if (sql.includes('UPDATE sessions SET is_valid = 0')) {
+      if (sql.includes('UPDATE sessions SET is_valid = false')) {
         const id = params[0] as string;
         const existing = sessionStore.get(id);
         if (existing) existing.is_valid = 0;
         return { changes: existing ? 1 : 0 };
       }
-      if (sql.includes('DELETE FROM sessions')) {
+      if (sql.includes('DELETE FROM sessions')
+          && sql.includes('expires_at <')
+          && !sql.includes('user_id')) {
+        // cleanExpiredSessions path
         const now = params[0] as string;
         let deleted = 0;
         for (const [id, row] of sessionStore) {
-          if ((row.expires_at as string) < now || row.is_valid === 0) {
+          if (row.expires_at < now || row.is_valid === 0) {
             sessionStore.delete(id);
             deleted++;
           }
@@ -55,27 +88,65 @@ vi.mock('../db/app-db-router.js', () => {
       return { changes: 0 };
     }),
     queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('SELECT count(*)') && sql.includes('FROM sessions')) {
+        const userId = params[0] as string;
+        const now = params[1] as string;
+        return { count: selectValidForUser(userId, now).length };
+      }
       if (sql.includes('FROM sessions WHERE id')) {
         const id = params[0] as string;
         const now = params[1] as string;
         const row = sessionStore.get(id);
-        if (row && row.is_valid === 1 && (row.expires_at as string) > now) {
+        if (row && row.is_valid === 1 && row.expires_at > now) {
           return row;
         }
         return null;
       }
       return null;
     }),
-    query: vi.fn(async () => []),
+    query: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('DELETE FROM sessions') && sql.includes('RETURNING id')) {
+        const userId = params[0] as string;
+        const now = params[1] as string;
+        const limit = params[2] as number;
+        const oldest = selectValidForUser(userId, now).slice(0, limit);
+        const ids: { id: string }[] = [];
+        for (const r of oldest) {
+          sessionStore.delete(r.id);
+          ids.push({ id: r.id });
+        }
+        return ids;
+      }
+      return [];
+    }),
+    transaction: vi.fn(async (fn: (db: typeof mockDb) => Promise<unknown>) => {
+      // Mock transactions just delegate to the same in-memory mockDb. The atomic
+      // eviction concurrency contract is exercised in the real-PG integration test.
+      return fn(mockDb);
+    }),
+    healthCheck: vi.fn(async () => true),
   };
   return { getDbForDomain: vi.fn(() => mockDb) };
 });
 
-import { createSession, getSession, invalidateSession, refreshSession, cleanExpiredSessions } from './session-store.js';
+import {
+  createSession,
+  getSession,
+  invalidateSession,
+  refreshSession,
+  cleanExpiredSessions,
+} from './session-store.js';
 
 describe('session-store performance benchmarks', () => {
   beforeEach(() => {
     sessionStore.clear();
+    auditLogCalls.length = 0;
+    // Ensure default max so perf tests don't trigger eviction.
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 100 });
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   it('session lookup completes in under 2ms (PostgreSQL target)', async () => {
@@ -141,10 +212,13 @@ describe('session-store performance benchmarks', () => {
 describe('session-store expiration semantics', () => {
   beforeEach(() => {
     sessionStore.clear();
+    auditLogCalls.length = 0;
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 100 });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    resetConfig();
   });
 
   it('does not return expired sessions with ISO timestamps', async () => {
@@ -342,5 +416,134 @@ describe('session-store configurable TTL (issue #1106)', () => {
     expect(ttlMs).toBe(45 * 60_000);
 
     vi.useRealTimers();
+  });
+});
+
+/**
+ * Unit-level coverage of the MAX_CONCURRENT_SESSIONS_PER_USER eviction (#1107).
+ * The full atomic-under-concurrency contract is asserted in the real-PG
+ * integration test (session-store.integration.test.ts) — single-process mock
+ * cannot prove SERIALIZABLE conflict detection.
+ */
+describe('session-store max concurrent sessions (#1107)', () => {
+  beforeEach(() => {
+    sessionStore.clear();
+    auditLogCalls.length = 0;
+  });
+
+  afterEach(() => {
+    resetConfig();
+  });
+
+  it('allows exactly MAX sessions for a single user without eviction', async () => {
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 5 });
+
+    const sessions = [];
+    for (let i = 0; i < 5; i++) {
+      sessions.push(await createSession('user-cap', `alice${i}`));
+    }
+
+    const valid = Array.from(sessionStore.values()).filter(
+      (r) => r.user_id === 'user-cap' && r.is_valid === 1,
+    );
+    expect(valid).toHaveLength(5);
+    expect(auditLogCalls).toHaveLength(0); // no eviction yet
+  });
+
+  it('evicts oldest sessions sequentially when MAX is exceeded', async () => {
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 3 });
+
+    const created: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      // Stagger created_at deterministically so ORDER BY created_at ASC is well-defined.
+      const session = await createSession('user-evict', `bob${i}`);
+      created.push(session.id);
+      // Force monotonically-increasing created_at by tweaking the in-memory row.
+      const row = sessionStore.get(session.id);
+      if (row) {
+        row.created_at = `2026-05-05T10:00:0${i}.000Z`;
+      }
+    }
+
+    const valid = Array.from(sessionStore.values())
+      .filter((r) => r.user_id === 'user-evict' && r.is_valid === 1)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+    expect(valid).toHaveLength(3);
+    // Latest 3 should remain — by id, those are created[2..4]
+    const validIds = new Set(valid.map((r) => r.id));
+    expect(validIds.has(created[0])).toBe(false);
+    expect(validIds.has(created[1])).toBe(false);
+    expect(validIds.has(created[2])).toBe(true);
+    expect(validIds.has(created[3])).toBe(true);
+    expect(validIds.has(created[4])).toBe(true);
+  });
+
+  it('does not evict sessions belonging to other users', async () => {
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 3 });
+
+    // User B logs in once first.
+    const userB = await createSession('user-B', 'beth');
+
+    // User A blasts through 5 logins — forcing eviction within user A only.
+    for (let i = 0; i < 5; i++) {
+      await createSession('user-A', `alice${i}`);
+    }
+
+    const userAValid = Array.from(sessionStore.values()).filter(
+      (r) => r.user_id === 'user-A' && r.is_valid === 1,
+    );
+    const userBValid = Array.from(sessionStore.values()).filter(
+      (r) => r.user_id === 'user-B' && r.is_valid === 1,
+    );
+
+    expect(userAValid).toHaveLength(3);
+    expect(userBValid).toHaveLength(1);
+    expect(userBValid[0]!.id).toBe(userB.id);
+  });
+
+  it('emits a session.evicted audit-log entry with evicted session ids', async () => {
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 2 });
+
+    const created: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const s = await createSession('user-audit', `c${i}`);
+      created.push(s.id);
+      // Stagger created_at so the eviction picks the deterministic oldest row.
+      const row = sessionStore.get(s.id);
+      if (row) row.created_at = `2026-05-05T10:00:0${i}.000Z`;
+    }
+
+    // Only the 3rd login should have triggered eviction (1 session evicted).
+    expect(auditLogCalls).toHaveLength(1);
+    const audit = auditLogCalls[0]!;
+    expect(audit.action).toBe('session.evicted');
+    expect(audit.user_id).toBe('user-audit');
+    expect(audit.target_type).toBe('session');
+    expect(audit.target_id).toBe(created[2]); // session that triggered eviction
+    const details = audit.details as {
+      evicted_session_ids: string[];
+      reason: string;
+      max_concurrent_sessions: number;
+    };
+    expect(details.reason).toBe('max_concurrent_sessions_exceeded');
+    expect(details.max_concurrent_sessions).toBe(2);
+    expect(details.evicted_session_ids).toHaveLength(1);
+    // The evicted id should be the FIRST created (oldest by created_at).
+    expect(details.evicted_session_ids[0]).toBe(created[0]);
+  });
+
+  it('respects different MAX values via configuration', async () => {
+    setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 1 });
+
+    const a = await createSession('user-config', 'first');
+    const b = await createSession('user-config', 'second');
+
+    const valid = Array.from(sessionStore.values()).filter(
+      (r) => r.user_id === 'user-config' && r.is_valid === 1,
+    );
+    expect(valid).toHaveLength(1);
+    expect(valid[0]!.id).toBe(b.id);
+    expect(sessionStore.has(a.id)).toBe(false);
   });
 });

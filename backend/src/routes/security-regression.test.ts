@@ -2510,3 +2510,85 @@ describe('JWT_TOKEN_EXPIRY_MINUTES boundaries (issue #1106)', () => {
     expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
   });
 });
+
+// =====================================================================
+//  19. MAX_CONCURRENT_SESSIONS_PER_USER (#1107)
+// =====================================================================
+// Boot-time validation of the new env var. The atomic-eviction behaviour
+// itself is covered in packages/core/src/services/session-store.test.ts
+// and session-store.integration.test.ts (real PostgreSQL).
+describe('MAX_CONCURRENT_SESSIONS_PER_USER env validation (#1107)', () => {
+  it('accepts the documented default of 5', async () => {
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'this-is-a-strong-password-1234',
+      JWT_SECRET: 'a'.repeat(32),
+      MAX_CONCURRENT_SESSIONS_PER_USER: '5',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.MAX_CONCURRENT_SESSIONS_PER_USER).toBe(5);
+    }
+  });
+
+  it('falls back to default when env var is unset', async () => {
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'this-is-a-strong-password-1234',
+      JWT_SECRET: 'a'.repeat(32),
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.MAX_CONCURRENT_SESSIONS_PER_USER).toBe(5);
+    }
+  });
+
+  it('rejects negative values at boot', async () => {
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'this-is-a-strong-password-1234',
+      JWT_SECRET: 'a'.repeat(32),
+      MAX_CONCURRENT_SESSIONS_PER_USER: '-1',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain('MAX_CONCURRENT_SESSIONS_PER_USER');
+    }
+  });
+
+  it('rejects zero (must be at least 1)', async () => {
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'this-is-a-strong-password-1234',
+      JWT_SECRET: 'a'.repeat(32),
+      MAX_CONCURRENT_SESSIONS_PER_USER: '0',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects values above the upper bound (101)', async () => {
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'this-is-a-strong-password-1234',
+      JWT_SECRET: 'a'.repeat(32),
+      MAX_CONCURRENT_SESSIONS_PER_USER: '101',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-integer values', async () => {
+    const { envSchema } = await import('@dashboard/core/config/env.schema.js');
+    const result = envSchema.safeParse({
+      DASHBOARD_USERNAME: 'admin',
+      DASHBOARD_PASSWORD: 'this-is-a-strong-password-1234',
+      JWT_SECRET: 'a'.repeat(32),
+      MAX_CONCURRENT_SESSIONS_PER_USER: '3.5',
+    });
+    expect(result.success).toBe(false);
+  });
+});
