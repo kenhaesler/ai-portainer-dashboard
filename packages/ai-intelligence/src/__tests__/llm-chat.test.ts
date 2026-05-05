@@ -767,7 +767,10 @@ describe('setupLlmNamespace — per-user chat throttle', () => {
 describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    chatThrottleMap.clear();
+    // PR #1186 replaced the in-file `chatThrottleMap` with the shared
+    // `socket-throttle` utility. Clear the test-user's bucket the same way
+    // the throttling describe (line ~707) does so canary tests start fresh.
+    chatThrottle.clearByUserId('test-user');
     clearCanary('test-socket-id');
     mockCollectAllTools.mockReturnValue([]);
     mockRouteToolCalls.mockResolvedValue([]);
