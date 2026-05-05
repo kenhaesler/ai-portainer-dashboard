@@ -67,7 +67,18 @@ class TtlCache {
     }
   }
 
-  /** Evict `count` entries with the earliest staleAt timestamps */
+  /**
+   * Evict `count` entries with the earliest `staleAt` timestamps.
+   *
+   * Complexity is O(n log n) due to the full sort on each overflow. This is
+   * acceptable while `maxSize` ≤ 5000 — at that scale the sort is sub-ms and
+   * only runs when the cache is over its cap. If `maxSize` is raised
+   * substantially (≥ ~50k) or eviction shows up in profiling, replace this
+   * with a proper LRU (doubly-linked list + Map for O(1) eviction). See
+   * issue #1116 for the cost/benefit analysis — at current scale the
+   * algorithmic upgrade adds bug surface to a security-critical cache for
+   * no measurable performance gain.
+   */
   private evictOldest(count: number): void {
     const entries = [...this.store.entries()]
       .sort((a, b) => a[1].staleAt - b[1].staleAt);

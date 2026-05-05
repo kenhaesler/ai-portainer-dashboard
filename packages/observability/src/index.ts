@@ -51,6 +51,7 @@ export {
   recordNetworkSample,
   getRatesForEndpoint,
   getAllRates,
+  pruneStaleEntries,
   _resetTracker,
 } from './services/network-rate-tracker.js';
 
