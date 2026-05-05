@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 
@@ -6,6 +7,7 @@ const log = createChildLogger('service:prompt-guard');
 // ─── In-memory Prometheus counter ───────────────────────────────────
 
 let nearMissCounter = 0;
+let canaryLeakCounter = 0;
 
 /** Return the current near-miss count (for Prometheus /metrics). */
 export function getPromptGuardNearMissTotal(): number {
@@ -15,6 +17,102 @@ export function getPromptGuardNearMissTotal(): number {
 /** Reset counter (test helper). */
 export function resetPromptGuardNearMissCounter(): void {
   nearMissCounter = 0;
+}
+
+/** Return the current canary-leak detection count (for Prometheus /metrics). */
+export function getPromptGuardCanaryLeakTotal(): number {
+  return canaryLeakCounter;
+}
+
+/** Reset canary leak counter (test helper). */
+export function resetPromptGuardCanaryLeakCounter(): void {
+  canaryLeakCounter = 0;
+}
+
+// ─── Layer 4: Canary tokens (#1119) ─────────────────────────────────
+//
+// Per-session canary tokens are injected into the LLM system prompt and
+// checked in `sanitizeLlmOutput`. If the LLM ever echoes the canary back
+// into its output, that proves the system prompt leaked — regardless of
+// the injection technique used. This is a 4th layer of defense that
+// augments (does not replace) the existing static-pattern checks
+// (regex, heuristic, output sanitization).
+//
+// Known limitation (per critic C3): detection uses exact-substring
+// `output.includes(canary)`. A truncated or interleaved partial canary
+// echo (e.g. only the first 8 characters) is a known false-negative.
+// Accepted because the canary is `CANARY-` + UUIDv4 = 43 characters; the
+// bar for a "natural" partial echo of that prefix is high. Future work
+// could add a Hamming-distance / fuzzy-match layer if false-negatives
+// become a problem in practice.
+//
+// Per critic A3: Module-scoped registry leaks entries on ungraceful
+// disconnect (network drop, SIGKILL). `clearCanary` in the socket
+// `disconnect`/`chat:clear` handlers covers the happy path; the
+// `pruneCanaryRegistry` sweep below covers the rest.
+
+interface CanaryEntry {
+  canary: string;
+  createdAt: number;
+}
+
+const canaryRegistry = new Map<string, CanaryEntry>();
+
+/** Default TTL for canary registry entries. Matches the assumed upper
+ *  bound of an LLM chat session. */
+export const CANARY_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Generate a fresh canary token for the given session and store it in
+ * the registry. Replaces any existing canary for the same session
+ * (e.g. when a session is reset via `chat:clear`).
+ *
+ * Returns the canary value so the caller can inject it into the LLM
+ * system prompt.
+ */
+export function registerCanary(sessionId: string): string {
+  const canary = `CANARY-${randomUUID()}`;
+  canaryRegistry.set(sessionId, { canary, createdAt: Date.now() });
+  return canary;
+}
+
+/** Remove the canary entry for a session (called on disconnect / clear). */
+export function clearCanary(sessionId: string): void {
+  canaryRegistry.delete(sessionId);
+}
+
+/** Lookup helper used by the LLM-chat socket to inject the canary into
+ *  the system prompt for a given session. Returns `undefined` when no
+ *  canary has been registered yet. */
+export function getCanary(sessionId: string): string | undefined {
+  return canaryRegistry.get(sessionId)?.canary;
+}
+
+/**
+ * Periodic sweep — removes canary entries older than `ttlMs`.
+ * Hooked into the daily cleanup scheduler so that ungraceful
+ * disconnects (network drop, process crash) cannot accumulate registry
+ * entries indefinitely.
+ *
+ * @returns count of entries removed
+ */
+export function pruneCanaryRegistry(
+  now: number = Date.now(),
+  ttlMs: number = CANARY_TTL_MS,
+): number {
+  let removed = 0;
+  for (const [sessionId, entry] of canaryRegistry) {
+    if (now - entry.createdAt > ttlMs) {
+      canaryRegistry.delete(sessionId);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+/** Test helper — exposes registry size without leaking the registry itself. */
+export function _getCanaryRegistrySize(): number {
+  return canaryRegistry.size;
 }
 
 // ─── Unicode normalization ──────────────────────────────────────────
@@ -400,8 +498,32 @@ const SENTINEL_PHRASES = [
 /**
  * Remove or replace text segments that look like leaked system prompts,
  * tool definitions, sentinel phrases, or raw tool_call JSON from LLM output.
+ *
+ * @param output     Raw LLM response text.
+ * @param sessionId  Optional session identifier — when provided, layer 4
+ *                   (canary-token leak detection, #1119) is performed.
+ *                   Omitting it preserves the pre-canary 3-layer behavior
+ *                   (backwards compatible for stateless REST callers).
  */
-export function sanitizeLlmOutput(output: string): string {
+export function sanitizeLlmOutput(output: string, sessionId?: string): string {
+  // Layer 4: Canary leak detection (#1119)
+  // Runs FIRST so a confirmed leak short-circuits all other processing —
+  // we don't want to risk emitting partial system-prompt content even
+  // after stripping/sanitization. NOTE: exact-substring match is a known
+  // false-negative for partial / truncated canary echoes (see header
+  // comment in this file).
+  if (sessionId !== undefined) {
+    const entry = canaryRegistry.get(sessionId);
+    if (entry && output.includes(entry.canary)) {
+      canaryLeakCounter++;
+      log.error(
+        { sessionId, leak: 'PROMPT_INJECTION_CANARY_TRIGGERED' },
+        'Output sanitized: canary token leaked from system prompt — likely successful prompt injection',
+      );
+      return 'I cannot provide internal system instructions. Ask about dashboard data or navigation.';
+    }
+  }
+
   // Strip thinking blocks first (before other checks, since think blocks
   // may contain system prompt fragments that would trigger false positives)
   let cleaned = stripThinkingBlocks(output);

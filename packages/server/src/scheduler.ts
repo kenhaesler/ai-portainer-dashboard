@@ -7,7 +7,7 @@ import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/p
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
-import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights } from '@dashboard/ai';
+import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
@@ -394,6 +394,20 @@ export async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'Network rate tracker pruning failed');
+  }
+
+  try {
+    // Sweep stale prompt-guard canary registry entries (#1119, critic A3).
+    // Ungraceful disconnects (network drop, SIGKILL, lb reconnect) do not
+    // fire the socket `disconnect` handler, so the per-session entry
+    // would otherwise leak. The TTL matches the assumed upper bound of an
+    // LLM chat session.
+    const canariesPruned = pruneCanaryRegistry();
+    if (canariesPruned > 0) {
+      log.info({ deleted: canariesPruned }, 'Stale LLM canary registry entries pruned');
+    }
+  } catch (err) {
+    log.error({ err }, 'Canary registry pruning failed');
   }
 }
 
