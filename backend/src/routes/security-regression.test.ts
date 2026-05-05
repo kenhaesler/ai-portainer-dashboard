@@ -1796,6 +1796,37 @@ describe('Nginx Security Header Consistency', () => {
     expect(content).toContain('Content-Security-Policy');
   });
 
+  it('should set X-XSS-Protection to "0" per OWASP guidance (issue #1105)', () => {
+    // The deprecated XSS auditor in older browsers can be tricked into
+    // removing legitimate script content. Explicitly disable it; CSP
+    // script-src 'self' provides superior protection.
+    const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx-security-headers.conf');
+    const content = readFileSync(file, 'utf8');
+
+    expect(content).toMatch(/add_header\s+X-XSS-Protection\s+"0"\s+always/);
+    expect(content).not.toMatch(/add_header\s+X-XSS-Protection\s+"1/);
+  });
+
+  it('should NOT set Referrer-Policy from the backend — nginx is the owner (issue #1101)', async () => {
+    // Backend duplicating browser-facing headers can produce duplicate /
+    // conflicting values. nginx emits Referrer-Policy: strict-origin-when-cross-origin.
+    const Fastify = (await import('fastify')).default;
+    const securityHeadersPlugin = (await import('@dashboard/core/plugins/security-headers.js'))
+      .default;
+
+    const app = Fastify();
+    await app.register(securityHeadersPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const response = await app.inject({ method: 'GET', url: '/ping' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['referrer-policy']).toBeUndefined();
+
+    await app.close();
+  });
+
   it('should use a map to restrict WebSocket upgrade values against H2C smuggling', () => {
     const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx.conf');
     const content = readFileSync(file, 'utf8');
