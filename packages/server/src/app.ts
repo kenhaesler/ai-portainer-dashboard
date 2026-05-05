@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { readFileSync } from 'node:fs';
+import { getConfig } from '@dashboard/core/config/index.js';
 import requestTracing from '@dashboard/core/plugins/request-tracing.js';
 import corsPlugin from '@dashboard/core/plugins/cors.js';
 import rateLimitPlugin from '@dashboard/core/plugins/rate-limit.js';
@@ -93,10 +94,57 @@ function getHttp2Options(): { http2: true; https: { key: Buffer; cert: Buffer; a
   return {};
 }
 
+/**
+ * Resolve the `trustProxy` value passed to the Fastify constructor (#1099).
+ *
+ * Without `trustProxy`, `request.ip` resolves to the docker-bridge IP of the nginx
+ * proxy container, collapsing every client into one rate-limit bucket and audit-log
+ * entry. The production stack always runs behind nginx (see `docker/docker-compose.yml`)
+ * so the safe default is `trustProxy: true`. Operators on hostile/multi-tenant networks
+ * can tighten this by setting `TRUSTED_PROXY_IPS` to a comma-separated list of IPs or
+ * CIDRs (e.g. `127.0.0.1,10.0.0.0/8`); Fastify forwards the list to `proxy-addr`.
+ *
+ * Invalid entries are dropped with a warning rather than failing boot — Fastify would
+ * silently ignore them anyway, so visibility-with-best-effort is the conservative path.
+ */
+export function resolveTrustProxy(value: string | undefined): boolean | string[] {
+  if (value === undefined) return true;
+  const trimmed = value.trim();
+  if (trimmed === '') return true;
+
+  // Accept IPv4 with optional CIDR mask, plain IPv4, plain IPv6, or IPv6 with mask.
+  // Keep the regex deliberately loose: proxy-addr does the authoritative parsing.
+  const cidrPattern = /^(?:[0-9a-fA-F:.]+)(?:\/[0-9]+)?$/;
+  const entries = trimmed.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+  const valid: string[] = [];
+  for (const entry of entries) {
+    if (cidrPattern.test(entry)) {
+      valid.push(entry);
+    } else {
+      // eslint-disable-next-line no-console -- emitted before logger is configured
+      console.warn(`[trust-proxy] Ignoring invalid TRUSTED_PROXY_IPS entry: ${JSON.stringify(entry)}`);
+    }
+  }
+
+  if (valid.length === 0) {
+    // eslint-disable-next-line no-console -- emitted before logger is configured
+    console.warn('[trust-proxy] TRUSTED_PROXY_IPS contained no valid entries; falling back to trustProxy=true');
+    return true;
+  }
+  return valid;
+}
+
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
   const app = Fastify({
     ...getHttp2Options(),
+    // #1099: Trust X-Forwarded-* headers from upstream proxies so `request.ip`,
+    // `request.ips`, and `request.protocol` reflect the real client. Critical for
+    // per-client rate limiting (`packages/core/src/plugins/rate-limit.ts`) and audit
+    // logging (`packages/core/src/services/audit-logger.ts` callers). Default `true`
+    // because the production stack always runs behind nginx; operators can tighten
+    // via `TRUSTED_PROXY_IPS` (CIDR allowlist).
+    trustProxy: resolveTrustProxy(getConfig().TRUSTED_PROXY_IPS),
     logger: {
       level: process.env.LOG_LEVEL || 'info',
       ...(isDev && {

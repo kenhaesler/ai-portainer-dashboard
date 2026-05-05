@@ -39,6 +39,11 @@ async function rateLimitPlugin(fastify: FastifyInstance) {
   await fastify.register(rateLimit, {
     max: config.API_RATE_LIMIT,
     timeWindow: '1 minute',
+    // Bucket per client IP. `request.ip` is populated by Fastify's proxy-addr
+    // integration only when the app is constructed with `trustProxy` set
+    // (see `packages/server/src/app.ts` and #1099). Without trustProxy, every
+    // request behind the nginx container shares one bucket — defeating per-client
+    // throttling. TRUSTED_PROXY_IPS narrows which hops are honoured.
     keyGenerator: (request) => {
       return request.ip;
     },
