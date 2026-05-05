@@ -1,9 +1,37 @@
 import { Namespace } from 'socket.io';
+import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
 const log = createChildLogger('socket:remediation');
 let remediationNamespace: Namespace | null = null;
+
+// ─── Throttle ─────────────────────────────────────────────────────────
+// 1 s cooldown for read events (actions:list). Same rationale as the
+// monitoring namespace — protect the PG pool from rapid redundant reads.
+const REMEDIATION_THROTTLE_MS = 1_000;
+export const remediationThrottle = createSocketThrottle(REMEDIATION_THROTTLE_MS);
+
+// ─── Payload validation ───────────────────────────────────────────────
+// `status` is a free-form string in the existing route layer; restrict it
+// here to the known action lifecycle states to prevent unbounded WHERE
+// clauses (defense-in-depth — the underlying query already uses a
+// parameterized placeholder).
+const ACTION_STATUS_VALUES = [
+  'pending',
+  'approved',
+  'rejected',
+  'executing',
+  'completed',
+  'failed',
+] as const;
+
+const actionsListSchema = z
+  .object({
+    status: z.enum(ACTION_STATUS_VALUES).optional(),
+  })
+  .strict();
 
 export function setupRemediationNamespace(ns: Namespace) {
   remediationNamespace = ns;
@@ -21,15 +49,39 @@ export function setupRemediationNamespace(ns: Namespace) {
     log.info({ userId }, 'Remediation client connected');
 
     // Send pending actions on connect
-    socket.on('actions:list', async (data?: { status?: string }) => {
+    socket.on('actions:list', async (data?: unknown) => {
+      // ── Throttle ──
+      const throttleResult = remediationThrottle.check(`actions:list:${userId}`);
+      if (!throttleResult.allowed) {
+        log.warn({ userId, retryAfterMs: throttleResult.retryAfterMs }, 'actions:list throttled');
+        socket.emit('actions:throttled', {
+          reason: 'Too many requests. Please wait before retrying.',
+          retryAfterMs: throttleResult.retryAfterMs,
+        });
+        return;
+      }
+
+      // ── Validate payload ──
+      const parsed = actionsListSchema.safeParse(data ?? {});
+      if (!parsed.success) {
+        log.warn({ userId, issues: parsed.error.issues }, 'actions:list rejected: invalid payload');
+        socket.emit('actions:error', {
+          error: 'Invalid arguments',
+          code: 'INVALID_PAYLOAD',
+          issues: parsed.error.issues,
+        });
+        return;
+      }
+      const { status } = parsed.data;
+
       try {
         const db = getDbForDomain('actions');
         let query = 'SELECT * FROM actions';
         const params: unknown[] = [];
 
-        if (data?.status) {
+        if (status) {
           query += ' WHERE status = ?';
-          params.push(data.status);
+          params.push(status);
         }
 
         query += ' ORDER BY created_at DESC LIMIT 100';
@@ -42,6 +94,7 @@ export function setupRemediationNamespace(ns: Namespace) {
     });
 
     socket.on('disconnect', () => {
+      remediationThrottle.clearByUserId(userId);
       log.info({ userId }, 'Remediation client disconnected');
     });
   });

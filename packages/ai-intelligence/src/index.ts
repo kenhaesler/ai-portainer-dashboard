@@ -21,7 +21,15 @@ export type {
 } from './routes/index.js';
 
 // Sockets
-export { setupLlmNamespace, setupMonitoringNamespace, broadcastInsight, broadcastInsightBatch } from './sockets/index.js';
+export {
+  setupLlmNamespace,
+  setupMonitoringNamespace,
+  broadcastInsight,
+  broadcastInsightBatch,
+  chatThrottle,
+  CHAT_THROTTLE_MS,
+  monitoringThrottle,
+} from './sockets/index.js';
 
 // Services — monitoring orchestration
 export {

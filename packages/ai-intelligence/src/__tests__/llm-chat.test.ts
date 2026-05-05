@@ -91,7 +91,7 @@ import {
   formatChatContext,
   setupLlmNamespace,
   ThinkingBlockFilter,
-  chatThrottleMap,
+  chatThrottle,
   CHAT_THROTTLE_MS,
 } from '../sockets/llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
@@ -425,8 +425,8 @@ function baseLlmConfig(overrides: Record<string, any> = {}) {
 describe('setupLlmNamespace — tool iteration limit graceful degradation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Clear per-user throttle map so tests don't interfere with each other
-    chatThrottleMap.clear();
+    // Clear per-user throttle so tests don't interfere with each other
+    chatThrottle.clearByUserId('test-user');
     // Phase 1 is skipped because collectAllTools returns [] (no native tools)
     mockCollectAllTools.mockReturnValue([]);
     mockRouteToolCalls.mockResolvedValue([]);
@@ -703,7 +703,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 describe('setupLlmNamespace — per-user chat throttle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    chatThrottleMap.clear();
+    chatThrottle.clearByUserId('test-user');
     mockCollectAllTools.mockReturnValue([]);
     mockRouteToolCalls.mockResolvedValue([]);
     mockParseToolCalls.mockReturnValue(null);
@@ -739,20 +739,21 @@ describe('setupLlmNamespace — per-user chat throttle', () => {
     expect(throttledEvents[0].args[0].retryAfterMs).toBeGreaterThan(0);
   });
 
-  it('cleans up throttle map on disconnect', () => {
+  it('cleans up throttle entries on disconnect', () => {
     const { ns, socketHandlers, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
     connect();
 
-    // Simulate setting a throttle entry
-    chatThrottleMap.set('test-user', Date.now());
-    expect(chatThrottleMap.has('test-user')).toBe(true);
+    // Seed the per-user throttle so the immediate next call would be throttled.
+    chatThrottle.check('chat:message:test-user');
+    expect(chatThrottle.check('chat:message:test-user').allowed).toBe(false);
 
-    // Trigger disconnect
+    // Trigger disconnect — should clear the user's bucket.
     const disconnectHandler = socketHandlers.get('disconnect');
     disconnectHandler!();
 
-    expect(chatThrottleMap.has('test-user')).toBe(false);
+    // After disconnect, the next call must be allowed again.
+    expect(chatThrottle.check('chat:message:test-user').allowed).toBe(true);
   });
 
   it('exports CHAT_THROTTLE_MS as a positive number', () => {

@@ -27,6 +27,7 @@ import {
   setupMonitoringNamespace,
   broadcastInsight,
   broadcastInsightBatch,
+  monitoringThrottle,
 } from '../sockets/monitoring.js';
 
 // ── Helpers ──
@@ -78,6 +79,8 @@ function createMockNamespace() {
 describe('setupMonitoringNamespace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset per-user throttle so back-to-back tests aren't gated.
+    monitoringThrottle.clearByUserId('test-user');
   });
 
   describe('insights:history', () => {
