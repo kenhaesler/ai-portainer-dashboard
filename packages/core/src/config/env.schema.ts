@@ -153,6 +153,14 @@ export const envSchema = z.object({
   HTTP2_ENABLED: z.coerce.boolean().default(false),
   TLS_CERT_PATH: z.string().optional(),
   TLS_KEY_PATH: z.string().optional(),
+  // Trusted proxy IPs/CIDRs for Fastify trustProxy (#1099). Comma-separated list of
+  // IPs or CIDR ranges (e.g., "127.0.0.1,10.0.0.0/8"). When unset, Fastify is started
+  // with `trustProxy: true` because the production stack always runs behind nginx (and
+  // optionally Traefik) on a private Docker network. Set this in hostile multi-tenant
+  // network topologies to restrict which hops may populate `request.ip` from
+  // `X-Forwarded-For`. Without trustProxy, rate-limit buckets and audit log IPs would
+  // collapse to the proxy IP, defeating per-client throttling.
+  TRUSTED_PROXY_IPS: z.string().optional(),
 
   // Notifications — Teams
   TEAMS_WEBHOOK_URL: z.string().url().optional(),

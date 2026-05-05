@@ -1420,6 +1420,144 @@ describe('Rate Limiting Verification', () => {
   });
 });
 
+// ─── Trust Proxy & Client IP Identification (#1099) ───────────────────
+// Validates that Fastify is constructed with `trustProxy` enabled so that
+// `request.ip` reflects the real client IP from `X-Forwarded-For`, not the
+// docker-bridge IP of the upstream nginx proxy. Without trustProxy, both
+// rate-limit buckets and audit-log IP fields collapse to the proxy IP.
+
+describe('Trust Proxy & Client IP Identification', () => {
+  it('request.ip reflects X-Forwarded-For when trustProxy is enabled', async () => {
+    // Mirrors the production Fastify constructor (see packages/server/src/app.ts):
+    // `trustProxy: true` is the default when TRUSTED_PROXY_IPS is unset.
+    const app = Fastify({ logger: false, trustProxy: true });
+    app.get('/test/echo-ip', async (request) => ({ ip: request.ip }));
+    await app.ready();
+
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/test/echo-ip',
+        headers: { 'x-forwarded-for': '203.0.113.42' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { ip: string };
+      expect(body.ip).toBe('203.0.113.42');
+      expect(body.ip).not.toBe('127.0.0.1');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('request.ip falls back to remote address when trustProxy is disabled (regression baseline)', async () => {
+    // Negative control: without trustProxy, X-Forwarded-For is ignored and request.ip
+    // reflects the connection peer (127.0.0.1 in light-my-request). This is exactly
+    // the broken pre-#1099 behaviour we are guarding against.
+    const app = Fastify({ logger: false /* trustProxy intentionally omitted */ });
+    app.get('/test/echo-ip', async (request) => ({ ip: request.ip }));
+    await app.ready();
+
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/test/echo-ip',
+        headers: { 'x-forwarded-for': '203.0.113.42' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { ip: string };
+      expect(body.ip).toBe('127.0.0.1');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rate limiter buckets correctly by client IP, not proxy IP', async () => {
+    // Force a tiny global limit so we can saturate it within a small request budget.
+    const TEST_LIMIT = 3;
+    setConfigForTest({ API_RATE_LIMIT: TEST_LIMIT });
+
+    try {
+      // App built with trustProxy: true so `request.ip` is the X-Forwarded-For value.
+      // Rate-limit plugin's keyGenerator returns request.ip (verified in
+      // packages/core/src/plugins/rate-limit.ts).
+      const app = Fastify({ logger: false, trustProxy: true });
+      // Register at root so the path does NOT start with /api/* (which would hit
+      // the observer-read allowList bypass).
+      await app.register(rateLimitPlugin);
+      app.get('/throttled', async () => ({ ok: true }));
+      await app.ready();
+
+      try {
+        const send = (xff: string) =>
+          app.inject({ method: 'GET', url: '/throttled', headers: { 'x-forwarded-for': xff } });
+
+        // Saturate client A's bucket (TEST_LIMIT successes, then 429).
+        for (let i = 0; i < TEST_LIMIT; i++) {
+          const ok = await send('198.51.100.1');
+          expect(ok.statusCode).toBe(200);
+        }
+        const aBlocked = await send('198.51.100.1');
+        expect(aBlocked.statusCode).toBe(429);
+
+        // Client B (different XFF) MUST still have a fresh bucket. If buckets were
+        // keyed by the proxy IP (127.0.0.1) every client would already be 429 here —
+        // that is the exact bug #1099 is fixing.
+        const bFirst = await send('198.51.100.2');
+        expect(bFirst.statusCode).toBe(200);
+
+        // And client B can be saturated independently.
+        for (let i = 1; i < TEST_LIMIT; i++) {
+          const ok = await send('198.51.100.2');
+          expect(ok.statusCode).toBe(200);
+        }
+        const bBlocked = await send('198.51.100.2');
+        expect(bBlocked.statusCode).toBe(429);
+
+        // Client A is still 429 (bucket isolation works in both directions).
+        const aStillBlocked = await send('198.51.100.1');
+        expect(aStillBlocked.statusCode).toBe(429);
+      } finally {
+        await app.close();
+      }
+    } finally {
+      // Restore the API_RATE_LIMIT the global beforeAll set up.
+      setConfigForTest({ API_RATE_LIMIT: 1200 });
+    }
+  });
+
+  it('handler-observed request.ip matches X-Forwarded-For (audit-logger input contract)', async () => {
+    // packages/core/src/services/audit-logger.ts persists `entry.ip_address`,
+    // which every call site populates from `request.ip` (e.g. llm-feedback.ts,
+    // mcp.ts, prompt-profiles.ts, edge-jobs.ts, backup.ts). The load-bearing
+    // contract from this PR's perspective is therefore: inside a route handler
+    // running behind nginx, `request.ip` is the client IP. We assert that
+    // contract here without coupling to the database layer.
+    const observed: { ip: string | undefined } = { ip: undefined };
+    const app = Fastify({ logger: false, trustProxy: true });
+    app.post('/audited-action', async (request) => {
+      // Mirrors the literal call shape used at every audit-logger call site:
+      //   writeAuditLog({ ..., ip_address: request.ip });
+      observed.ip = request.ip;
+      return { ok: true };
+    });
+    await app.ready();
+
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/audited-action',
+        headers: { 'x-forwarded-for': '203.0.113.99', 'content-type': 'application/json' },
+        payload: {},
+      });
+      expect(res.statusCode).toBe(200);
+      expect(observed.ip).toBe('203.0.113.99');
+      expect(observed.ip).not.toBe('127.0.0.1');
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 // ─── OIDC Group Mapping Security ──────────────────────────────────────
 // Validates that OIDC group-to-role mapping is secure:
 //   - Invalid role values are rejected
