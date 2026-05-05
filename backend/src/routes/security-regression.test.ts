@@ -2450,6 +2450,217 @@ describe('verifyJwt hardening (#1109, #1120)', () => {
   });
 });
 
+// =====================================================================
+//  HSTS preload + CORS_ALLOWED_ORIGINS (issues #1108, #1115)
+//
+//  Verifies the env-gated configurability of:
+//   • Strict-Transport-Security header (HSTS_PRELOAD: false → 1y, true → 2y+preload)
+//   • REST CORS allow-list (CORS_ALLOWED_ORIGINS, production)
+//   • Socket.IO CORS using the same getAllowedOrigins() helper (single source of truth)
+//   • Zod refinement rejecting malformed origins at boot
+// =====================================================================
+describe('HSTS preload + CORS_ALLOWED_ORIGINS (#1108, #1115)', () => {
+  // Each test fully tears down its Fastify instance + resets cached config
+  // before mutating env. NODE_ENV is restored after each case.
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalCorsAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  const originalHstsPreload = process.env.HSTS_PRELOAD;
+
+  afterEach(async () => {
+    process.env.NODE_ENV = originalNodeEnv;
+    if (originalCorsAllowedOrigins === undefined) {
+      delete process.env.CORS_ALLOWED_ORIGINS;
+    } else {
+      process.env.CORS_ALLOWED_ORIGINS = originalCorsAllowedOrigins;
+    }
+    if (originalHstsPreload === undefined) {
+      delete process.env.HSTS_PRELOAD;
+    } else {
+      process.env.HSTS_PRELOAD = originalHstsPreload;
+    }
+    resetConfig();
+    // Re-seed the suite-wide test config that beforeAll() at the top of this
+    // file installs, so subsequent tests in this file still see the expected
+    // baseline.
+    setConfigForTest({
+      PORTAINER_API_URL: 'http://localhost:9000',
+      OLLAMA_BASE_URL: 'http://localhost:11434',
+      OLLAMA_MODEL: 'llama3.2',
+      JWT_ALGORITHM: 'HS256',
+      HTTP2_ENABLED: false,
+    });
+  });
+
+  // ── #1108: HSTS preload (response header) ───────────────────────────────
+  it('HSTS_PRELOAD=false (default) → max-age=31536000; includeSubDomains (no preload)', async () => {
+    setConfigForTest({ HSTS_PRELOAD: false });
+    const securityHeadersPlugin = (await import('@dashboard/core/plugins/security-headers.js')).default;
+
+    const app = Fastify({ logger: false });
+    await app.register(securityHeadersPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['strict-transport-security']).toBe(
+      'max-age=31536000; includeSubDomains',
+    );
+    expect(res.headers['strict-transport-security']).not.toMatch(/preload/);
+
+    await app.close();
+  });
+
+  it('HSTS_PRELOAD=true → max-age=63072000; includeSubDomains; preload', async () => {
+    setConfigForTest({ HSTS_PRELOAD: true });
+    const securityHeadersPlugin = (await import('@dashboard/core/plugins/security-headers.js')).default;
+
+    const app = Fastify({ logger: false });
+    await app.register(securityHeadersPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+    expect(res.statusCode).toBe(200);
+    // hstspreload.org submission requires max-age >= 1 year; we use 2 years
+    // (OWASP recommended) when preload is enabled.
+    expect(res.headers['strict-transport-security']).toBe(
+      'max-age=63072000; includeSubDomains; preload',
+    );
+
+    await app.close();
+  });
+
+  // ── #1115: REST CORS allow-list ─────────────────────────────────────────
+  it('CORS_ALLOWED_ORIGINS unset (production) → no Access-Control-Allow-Origin header', async () => {
+    setConfigForTest({ CORS_ALLOWED_ORIGINS: undefined });
+    process.env.NODE_ENV = 'production';
+    const corsPlugin = (await import('@dashboard/core/plugins/cors.js')).default;
+
+    const app = Fastify({ logger: false });
+    await app.register(corsPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { origin: 'https://example.com' },
+    });
+    expect(res.statusCode).toBe(200);
+    // Legacy `origin: false` behaviour preserved — no ACAO emitted at all.
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+
+    await app.close();
+  });
+
+  it('CORS_ALLOWED_ORIGINS list → matched origin allowed, attacker rejected', async () => {
+    setConfigForTest({
+      CORS_ALLOWED_ORIGINS: 'https://example.com,https://other.com',
+    });
+    process.env.NODE_ENV = 'production';
+    const corsPlugin = (await import('@dashboard/core/plugins/cors.js')).default;
+
+    const app = Fastify({ logger: false });
+    await app.register(corsPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const allowed = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { origin: 'https://example.com' },
+    });
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://example.com');
+    expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+
+    const blocked = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { origin: 'https://attacker.com' },
+    });
+    // Attacker origin must NOT be echoed back in any form.
+    expect(blocked.headers['access-control-allow-origin']).not.toBe('https://attacker.com');
+
+    await app.close();
+  });
+
+  // ── #1115: Zod boot-time refinement ─────────────────────────────────────
+  it('rejects an origin without a protocol at boot (Zod refinement)', async () => {
+    resetConfig();
+    process.env.CORS_ALLOWED_ORIGINS = 'example.com';
+    // Restore baseline required env vars in case this process started with
+    // partial env (suite-level setConfigForTest clears those by setting cached
+    // config; resetConfig() forces re-parsing from process.env).
+    process.env.DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME ?? 'admin';
+    process.env.DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD ?? 'test-password-12345';
+    process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'a'.repeat(64);
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(() => getConfig()).toThrowError(/CORS_ALLOWED_ORIGINS.*protocol:\/\/host/i);
+  });
+
+  it('rejects an origin with a path component at boot (Zod refinement)', async () => {
+    resetConfig();
+    process.env.CORS_ALLOWED_ORIGINS = 'https://example.com/path';
+    process.env.DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME ?? 'admin';
+    process.env.DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD ?? 'test-password-12345';
+    process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'a'.repeat(64);
+
+    const { getConfig } = await import('@dashboard/core/config/index.js');
+    expect(() => getConfig()).toThrowError(/CORS_ALLOWED_ORIGINS.*protocol:\/\/host/i);
+  });
+
+  // ── #1115: Socket.IO uses the same allow-list as REST ───────────────────
+  it('Socket.IO CORS reads the same getAllowedOrigins() list as REST', async () => {
+    setConfigForTest({
+      CORS_ALLOWED_ORIGINS: 'https://example.com,https://other.com',
+    });
+    process.env.NODE_ENV = 'production';
+
+    const { getAllowedOrigins } = await import('@dashboard/core/plugins/allowed-origins.js');
+    const restList = getAllowedOrigins();
+    expect(restList).toEqual(['https://example.com', 'https://other.com']);
+
+    // Register the socket-io plugin and inspect its configured cors.origin —
+    // it must equal the value the REST helper returns (single source of truth).
+    const socketIoPlugin = (await import('@dashboard/core/plugins/socket-io.js')).default;
+    const app = Fastify({ logger: false });
+    await app.register(socketIoPlugin);
+    await app.ready();
+
+    const opts = (app.io as unknown as { opts: { cors: { origin: unknown } } }).opts;
+    expect(opts.cors.origin).toEqual(restList);
+
+    await app.close();
+  });
+
+  it('Socket.IO CORS falls back to false when CORS_ALLOWED_ORIGINS is unset (production)', async () => {
+    setConfigForTest({ CORS_ALLOWED_ORIGINS: undefined });
+    process.env.NODE_ENV = 'production';
+
+    const socketIoPlugin = (await import('@dashboard/core/plugins/socket-io.js')).default;
+    const app = Fastify({ logger: false });
+    await app.register(socketIoPlugin);
+    await app.ready();
+
+    const opts = (app.io as unknown as { opts: { cors: { origin: unknown } } }).opts;
+    // Legacy `origin: false` behaviour preserved when no allow-list is set.
+    expect(opts.cors.origin).toBe(false);
+
+    await app.close();
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Issue #1106 — JWT_TOKEN_EXPIRY_MINUTES env-var boundary regression.
 // Confirms the schema rejects out-of-bound values at boot, and that the in-test
@@ -2457,6 +2668,13 @@ describe('verifyJwt hardening (#1109, #1120)', () => {
 // crypto module is mocked file-wide so the lifetime-propagation assertions
 // live in `packages/core/src/utils/crypto.test.ts` and
 // `packages/core/src/services/session-store.test.ts`.
+//
+// NOTE: Placed at the END of the file because the beforeEach() calls
+// vi.resetModules() to force fresh re-parses of the env schema. That
+// invalidates all module caches and decouples any prior setConfigForTest()
+// from freshly imported plugins, so any later describe blocks that depend
+// on dynamic plugin imports + setConfigForTest() would break. Keeping this
+// block last avoids that ordering hazard.
 // ─────────────────────────────────────────────────────────────────────────────
 describe('JWT_TOKEN_EXPIRY_MINUTES boundaries (issue #1106)', () => {
   const originalEnv = { ...process.env };

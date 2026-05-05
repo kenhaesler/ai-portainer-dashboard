@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
+import { getConfig } from '../config/index.js';
 
 async function securityHeadersPlugin(fastify: FastifyInstance) {
   fastify.addHook('onSend', async (request, reply, payload) => {
@@ -14,7 +15,17 @@ async function securityHeadersPlugin(fastify: FastifyInstance) {
     const forwardedProto = request.headers['x-forwarded-proto'];
     const isHttps = request.protocol === 'https' || forwardedProto === 'https';
     if (isHttps) {
-      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      // HSTS preload submission requires max-age >= 1 year (we use 2 years per
+      // OWASP recommendation when preload is enabled). When preload is off, we
+      // keep the legacy 1-year max-age. Submission to hstspreload.org is
+      // effectively irrevocable for ~6 months — operators must opt in via
+      // HSTS_PRELOAD=true and only on HTTPS-only deployments.
+      const preload = getConfig().HSTS_PRELOAD;
+      const maxAge = preload ? 63072000 : 31536000;
+      reply.header(
+        'Strict-Transport-Security',
+        `max-age=${maxAge}; includeSubDomains${preload ? '; preload' : ''}`,
+      );
     }
 
     return payload;

@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
+import { resetConfig, setConfigForTest } from '../config/index.js';
 import securityHeadersPlugin from './security-headers.js';
 
 describe('security headers plugin', () => {
@@ -7,6 +8,7 @@ describe('security headers plugin', () => {
 
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
+    resetConfig();
   });
 
   it('adds standard security headers to responses', async () => {
@@ -47,6 +49,54 @@ describe('security headers plugin', () => {
     expect(response.headers['strict-transport-security']).toBe(
       'max-age=31536000; includeSubDomains'
     );
+
+    await app.close();
+  });
+
+  // ── #1108: HSTS_PRELOAD ──────────────────────────────────────────────
+  it('HSTS_PRELOAD=false (default) → 1 year max-age, no preload directive', async () => {
+    process.env.NODE_ENV = 'test';
+    setConfigForTest({ HSTS_PRELOAD: false });
+
+    const app = Fastify();
+    await app.register(securityHeadersPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const hsts = response.headers['strict-transport-security'];
+    expect(hsts).toBe('max-age=31536000; includeSubDomains');
+    expect(hsts).not.toContain('preload');
+
+    await app.close();
+  });
+
+  it('HSTS_PRELOAD=true → 2 year max-age + "; preload" appended', async () => {
+    process.env.NODE_ENV = 'test';
+    setConfigForTest({ HSTS_PRELOAD: true });
+
+    const app = Fastify();
+    await app.register(securityHeadersPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const hsts = response.headers['strict-transport-security'];
+    // hstspreload.org submission requires max-age >= 1 year; we use 2 years
+    // (OWASP recommended) when preload is enabled.
+    expect(hsts).toBe('max-age=63072000; includeSubDomains; preload');
 
     await app.close();
   });

@@ -416,6 +416,74 @@ describe('config validation', () => {
       expect(DEPRECATED_ENV_VARS).not.toHaveProperty('ISOLATION_FOREST_CONTAMINATION');
     });
   });
+
+  // ── #1115: CORS_ALLOWED_ORIGINS Zod validation ──────────────────────────
+  describe('CORS_ALLOWED_ORIGINS validation', () => {
+    it('accepts a comma-separated list of valid origins', async () => {
+      process.env.CORS_ALLOWED_ORIGINS =
+        'https://example.com,https://other.example.com:8443,http://localhost:5273';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.CORS_ALLOWED_ORIGINS).toBe(
+        'https://example.com,https://other.example.com:8443,http://localhost:5273',
+      );
+    });
+
+    it('accepts an unset value (legacy default — no cross-origin in production)', async () => {
+      delete process.env.CORS_ALLOWED_ORIGINS;
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.CORS_ALLOWED_ORIGINS).toBeUndefined();
+    });
+
+    it('rejects an entry without a protocol', async () => {
+      process.env.CORS_ALLOWED_ORIGINS = 'example.com';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(
+        /CORS_ALLOWED_ORIGINS.*protocol:\/\/host/i,
+      );
+    });
+
+    it('rejects an entry with a path component', async () => {
+      process.env.CORS_ALLOWED_ORIGINS = 'https://example.com/path';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(
+        /CORS_ALLOWED_ORIGINS.*protocol:\/\/host/i,
+      );
+    });
+
+    it('rejects a mixed list when any single entry is invalid', async () => {
+      process.env.CORS_ALLOWED_ORIGINS = 'https://example.com,not-a-url';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(
+        /CORS_ALLOWED_ORIGINS.*protocol:\/\/host/i,
+      );
+    });
+  });
+
+  // ── #1108: HSTS_PRELOAD env var ────────────────────────────────────────
+  describe('HSTS_PRELOAD validation', () => {
+    it('defaults to false when unset', async () => {
+      delete process.env.HSTS_PRELOAD;
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.HSTS_PRELOAD).toBe(false);
+    });
+
+    it('accepts string "true" and coerces to boolean', async () => {
+      process.env.HSTS_PRELOAD = 'true';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.HSTS_PRELOAD).toBe(true);
+    });
+  });
 });
 
 describe('JWT_TOKEN_EXPIRY_MINUTES (issue #1106)', () => {

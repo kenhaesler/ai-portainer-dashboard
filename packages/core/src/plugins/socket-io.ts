@@ -6,6 +6,7 @@ import { verifyJwt } from '../utils/crypto.js';
 import { createChildLogger } from '../utils/logger.js';
 import { getSession } from '../services/session-store.js';
 import { DEV_ALLOWED_ORIGINS } from './dev-origins.js';
+import { getAllowedOrigins } from './allowed-origins.js';
 
 const log = createChildLogger('socket.io');
 
@@ -83,8 +84,12 @@ async function socketIoPlugin(fastify: FastifyInstance) {
   const io = new Server(fastify.server, {
     allowRequest: verifyTransportRequest as unknown as Server['opts']['allowRequest'],
     cors: {
+      // Same source of truth as packages/core/src/plugins/cors.ts —
+      // CORS_ALLOWED_ORIGINS (parsed + validated at boot) drives both REST
+      // and WebSocket CORS. When unset in production, getAllowedOrigins()
+      // returns false, preserving the legacy "no cross-origin" default.
       origin: process.env.NODE_ENV === 'production'
-        ? false
+        ? getAllowedOrigins()
         : DEV_ALLOWED_ORIGINS,
       credentials: true,
     },
