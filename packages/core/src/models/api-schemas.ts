@@ -43,6 +43,13 @@ export const RefreshResponseSchema = z.object({
   expiresAt: z.string(),
 });
 
+// Issued by POST /api/auth/stream-ticket. Single-use, short-lived (30s) token
+// that EventSource clients pass via ?ticket=… instead of a JWT (#1112).
+export const StreamTicketResponseSchema = z.object({
+  ticket: z.string(),
+  expiresAt: z.string(),
+});
+
 // ─── OIDC schemas ───────────────────────────────────────────────────
 export const OidcStatusResponseSchema = z.object({
   enabled: z.boolean(),
@@ -351,7 +358,11 @@ export const ContainerLogsQuerySchema = z.object({
 export const ContainerLogStreamQuerySchema = z.object({
   since: z.coerce.number().optional(),
   timestamps: QueryBooleanSchema.default(true),
-  token: z.string().optional(),
+  // Short-lived single-use ticket from POST /api/auth/stream-ticket (#1112).
+  // EventSource has no Authorization header; this opaque token replaces the
+  // JWT-in-URL pattern and is also scrubbed from nginx access logs by a
+  // dedicated log_format on this location (frontend/nginx.conf).
+  ticket: z.string().optional(),
 });
 
 // ─── Dashboard schemas ──────────────────────────────────────────────

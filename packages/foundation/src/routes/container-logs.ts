@@ -14,7 +14,7 @@ import {
   cleanupEdgeJob,
   IncrementalDockerFrameDecoder,
 } from '@dashboard/infrastructure';
-import { authenticateBearerHeader } from '@dashboard/core/plugins/auth.js';
+import { consumeStreamTicket } from '@dashboard/core/services/stream-tickets.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('container-logs-route');
@@ -177,14 +177,33 @@ export async function containerLogsRoutes(fastify: FastifyInstance) {
       querystring: ContainerLogStreamQuerySchema,
     },
     preHandler: [async (request, reply) => {
-      // Allow token via query param for SSE (EventSource cannot set Authorization header)
-      const { token } = request.query as { token?: string };
-      if (!request.headers.authorization && token) {
-        const user = await authenticateBearerHeader(`Bearer ${token}`);
-        if (!user) {
-          return reply.code(401).send({ error: 'Invalid or expired token' });
+      // SSE auth path (#1112): EventSource cannot set Authorization headers,
+      // so the client first POSTs /api/auth/stream-ticket (authenticated by
+      // JWT in the Authorization header, which fetch supports) and then opens
+      // the stream with ?ticket=… in the URL.
+      //
+      // The ticket is opaque, single-use, and 30-second TTL. nginx scrubs the
+      // ticket from access logs via a per-location log_format that omits
+      // $args (frontend/nginx.conf). No JWT ever touches the URL.
+      //
+      // We still accept a Bearer header path for non-EventSource callers
+      // (e.g. native fetch streams used by useStreamingLogs).
+      const { ticket } = request.query as { ticket?: string };
+      if (!request.headers.authorization && ticket) {
+        const validated = await consumeStreamTicket(ticket);
+        if (!validated) {
+          return reply.code(401).send({ error: 'Invalid, expired, or already-used stream ticket' });
         }
-        request.user = user;
+        // Tickets do not carry a role — the SSE endpoint is read-only and
+        // its capability gating is handled by `assertCapability` below. We
+        // populate request.user with viewer role so downstream middleware
+        // (audit, logging) sees a consistent identity.
+        request.user = {
+          sub: validated.userId,
+          username: validated.username,
+          sessionId: '',
+          role: 'viewer',
+        };
         return;
       }
       return fastify.authenticate(request, reply);

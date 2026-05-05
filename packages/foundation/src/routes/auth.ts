@@ -1,10 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { createSession, getSession, invalidateSession, refreshSession } from '@dashboard/core/services/session-store.js';
+import { createStreamTicket } from '@dashboard/core/services/stream-tickets.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { authenticateUser, ensureDefaultAdmin, getUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
 import { LoginRequestSchema } from '@dashboard/core/models/auth.js';
-import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { LoginResponseSchema, SessionResponseSchema, RefreshResponseSchema, StreamTicketResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -116,6 +117,31 @@ export async function authRoutes(fastify: FastifyInstance) {
       createdAt: session.created_at,
       expiresAt: session.expires_at,
     };
+  });
+
+  // Stream ticket — single-use, short-lived auth token for EventSource (#1112).
+  // EventSource cannot set Authorization headers, so previously the JWT was
+  // passed via ?token=… which leaked it to nginx access logs and browser
+  // history. This endpoint exchanges a Bearer JWT (sent in the POST header
+  // where it is safe) for an opaque ticket that the client puts in the SSE
+  // URL. Tickets are 30s TTL and burn on first use.
+  fastify.post('/api/auth/stream-ticket', {
+    schema: {
+      tags: ['Auth'],
+      summary: 'Issue a short-lived single-use ticket for SSE streaming',
+      response: {
+        200: StreamTicketResponseSchema,
+        401: ErrorResponseSchema,
+      },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    if (!request.user) {
+      return reply.code(401).send({ error: 'Not authenticated' });
+    }
+
+    const issued = await createStreamTicket(request.user.sub, request.user.username);
+    return issued;
   });
 
   // Refresh token

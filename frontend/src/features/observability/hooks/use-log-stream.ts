@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { detectLevel, lintLogLine, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
-import { AUTH_TOKEN_KEY } from '@/shared/lib/auth-constants';
+import { api } from '@/shared/lib/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+
+interface StreamTicketResponse {
+  ticket: string;
+  expiresAt: string;
+}
 
 interface LogStreamContainer {
   id: string;
@@ -91,6 +96,9 @@ export function useLogStream({
 
     let activeCount = 0;
     let failedCount = 0;
+    // Tracks whether this effect run has been cleaned up. Async ticket
+    // fetches that resolve after cleanup must NOT open EventSources.
+    let cancelled = false;
 
     function updateStreamingState() {
       if (activeCount > 0) {
@@ -102,20 +110,19 @@ export function useLogStream({
       }
     }
 
-    for (const container of containers) {
-      const token = (() => {
-        try {
-          return window.localStorage.getItem(AUTH_TOKEN_KEY);
-        } catch {
-          return null;
-        }
-      })();
+    function attachEventSource(
+      container: LogStreamContainer,
+      ticket: string | null,
+    ): void {
+      if (cancelled) return;
 
       const params = new URLSearchParams();
       if (timestamps) params.set('timestamps', 'true');
       // Start from now (epoch seconds) so we only get new lines
       params.set('since', String(Math.floor(Date.now() / 1000)));
-      if (token) params.set('token', token);
+      // Single-use 30-second ticket (#1112). Replaces the JWT-in-URL pattern
+      // — see POST /api/auth/stream-ticket and frontend/nginx.conf.
+      if (ticket) params.set('ticket', ticket);
 
       const base = API_BASE || window.location.origin;
       const url = `${base}/api/containers/${container.endpointId}/${container.id}/logs/stream?${params}`;
@@ -161,7 +168,24 @@ export function useLogStream({
       };
     }
 
+    // Mint one ticket per container. Tickets are single-use, so each
+    // EventSource needs its own. POST is authenticated by the JWT in the
+    // Authorization header — that header path is safe.
+    for (const container of containers) {
+      api.post<StreamTicketResponse>('/api/auth/stream-ticket')
+        .then((res) => {
+          attachEventSource(container, res.ticket);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Ticket exchange failed — surface fallback, mirroring SSE failure.
+          failedCount++;
+          updateStreamingState();
+        });
+    }
+
     return () => {
+      cancelled = true;
       for (const [, source] of sources) {
         source.close();
       }
