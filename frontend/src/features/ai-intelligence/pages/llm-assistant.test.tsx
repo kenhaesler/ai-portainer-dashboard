@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -736,5 +736,237 @@ describe('Connection status indicator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Dismiss context banner' }));
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #1050 — clear-history modal flow + chat send/receive coverage.
+//
+// Depends on #1019 (CLOSED): `window.confirm()` was replaced with the
+// `ConfirmDialog` Radix modal, so we exercise it via accessible role/name
+// queries instead of stubbing `window.confirm`. The LLM transport is mocked
+// at the `useLlmChat` hook boundary (matches the pattern used above and
+// project CLAUDE.md guidance to "keep mocks close to the boundary").
+// ---------------------------------------------------------------------------
+
+describe('Clear history flow (#1050)', () => {
+  const sampleMessages = [
+    { id: 'u1', role: 'user' as const, content: 'Hello', timestamp: new Date().toISOString() },
+    { id: 'a1', role: 'assistant' as const, content: 'Hi there!', timestamp: new Date().toISOString() },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLlmSocket.connected = true;
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+  });
+
+  it('opens the confirm dialog when Clear History button is clicked', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: sampleMessages,
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    // No dialog before clicking.
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear History/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText('Clear Chat History')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/Clear all chat history\? This action cannot be undone\./i),
+    ).toBeInTheDocument();
+  });
+
+  it('calls clearHistory and closes the dialog when confirming', () => {
+    const clearHistory = vi.fn();
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: sampleMessages,
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory,
+    } as any);
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /Clear History/i }));
+
+    const dialog = screen.getByRole('dialog');
+    // The dialog has its own "Clear History" confirm button — scope to the dialog
+    // so we don't accidentally re-click the header trigger.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear History' }));
+
+    expect(clearHistory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('preserves messages and does not call clearHistory when Cancel is clicked', () => {
+    const clearHistory = vi.fn();
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: sampleMessages,
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory,
+    } as any);
+
+    renderPage();
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByText('Hi there!')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear History/i }));
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(clearHistory).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // Messages still rendered after cancel.
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByText('Hi there!')).toBeInTheDocument();
+  });
+});
+
+describe('Chat send/receive flow (#1050)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLlmSocket.connected = true;
+    vi.mocked(useLlmModels).mockReturnValue({
+      data: { models: [{ name: 'llama3.2' }], default: 'llama3.2' },
+    } as any);
+  });
+
+  it('sends the typed message to the LLM transport on submit', () => {
+    const sendMessage = vi.fn();
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage,
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'How many containers are running?' } });
+    expect(input.value).toBe('How many containers are running?');
+
+    fireEvent.click(screen.getByRole('button', { name: /Send/i }));
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      'How many containers are running?',
+      undefined,
+      'llama3.2',
+    );
+    // Input is cleared after submit.
+    expect(input.value).toBe('');
+  });
+
+  it('renders an assistant response returned by the LLM transport', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: 'u1', role: 'user', content: 'Status?', timestamp: new Date().toISOString() },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'All containers healthy.',
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByText('Status?')).toBeInTheDocument();
+    expect(screen.getByText('All containers healthy.')).toBeInTheDocument();
+  });
+
+  it('shows the loading indicator after submit while waiting for the response', () => {
+    const sendMessage = vi.fn();
+    vi.mocked(useLlmChat).mockReturnValue({
+      // `isSending` is local to the page and toggles on submit. The
+      // ThinkingIndicator renders while isSending && !isStreaming.
+      messages: [],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: 'Loading model llama3.2...',
+      sendMessage,
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    // No indicator before submit.
+    expect(screen.queryByTestId('thinking-indicator')).toBeNull();
+
+    const input = screen.getByPlaceholderText('Ask about your infrastructure...');
+    fireEvent.change(input, { target: { value: 'ping' } });
+    fireEvent.click(screen.getByRole('button', { name: /Send/i }));
+
+    // Indicator appears between submit and response receipt.
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('thinking-indicator')).toBeInTheDocument();
+  });
+
+  it('renders a system error message when the LLM transport surfaces an error', () => {
+    // The page renders messages with role === 'system' as a destructive
+    // alert bubble inside the chat (see MessageBubble). The hook is the
+    // boundary that emits these on transport errors, so we mock that state.
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: 'u1', role: 'user', content: 'List anomalies', timestamp: new Date().toISOString() },
+        {
+          id: 'sys-err',
+          role: 'system',
+          content: 'Error: failed to reach the AI service. Please try again.',
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      isStreaming: false,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+
+    expect(
+      screen.getByText('Error: failed to reach the AI service. Please try again.'),
+    ).toBeInTheDocument();
   });
 });
