@@ -2661,6 +2661,88 @@ describe('HSTS preload + CORS_ALLOWED_ORIGINS (#1108, #1115)', () => {
   });
 });
 
+// =====================================================================
+//  17. USERS ROUTE — assertUser DEFENSIVE FAIL-LOUD (issue #1110)
+// =====================================================================
+//
+// `users.ts` replaced `request.user!` non-null assertions with the typed
+// `assertUser` helper. Under correct configuration the helper is a no-op
+// — preHandler `[fastify.authenticate, fastify.requireRole('admin')]`
+// guarantees `request.user` is populated before the handler body runs.
+//
+// These tests verify the defensive branch: if the `authenticate`
+// preHandler is removed/misconfigured and never sets `request.user`, the
+// helper must throw (producing a 5xx) rather than silently letting the
+// audit log write `undefined` for `user_id` / `username`. This is the
+// "loud failure beats silent admin auth bypass" guarantee.
+//
+// We do NOT test "handler returns 401 when request.user is missing under
+// normal operation" — that scenario is unreachable in production and a
+// test asserting it would be misleading. The legitimate test is the
+// fail-loud-on-misconfiguration test below.
+// =====================================================================
+describe('Users route — assertUser defensive fail-loud (issue #1110)', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+
+    // Intentionally misconfigured: `authenticate` does NOT set `request.user`.
+    // This simulates a future refactor that accidentally removes the real
+    // preHandler chain. `assertUser` must catch this and throw rather than
+    // letting the handler audit-log `undefined`.
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
+    app.decorateRequest('user', undefined);
+
+    await app.register(userRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('POST /api/users fails loudly (5xx) when authenticate preHandler does not set request.user', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      payload: { username: 'newuser', password: 'password123', role: 'viewer' },
+      headers: { 'content-type': 'application/json' },
+    });
+
+    // Helper threw → Fastify converts to 500. Anything in the 5xx range
+    // proves the defensive branch fired (vs. a silent 200/201 with a
+    // `user_id: undefined` audit log entry, which would be the bug).
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
+    expect(res.statusCode).toBeLessThan(600);
+  });
+
+  it('PATCH /api/users/:id fails loudly (5xx) when authenticate preHandler does not set request.user', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/users/some-id',
+      payload: { username: 'renamed' },
+      headers: { 'content-type': 'application/json' },
+    });
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
+    expect(res.statusCode).toBeLessThan(600);
+  });
+
+  it('DELETE /api/users/:id fails loudly (5xx) when authenticate preHandler does not set request.user', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/users/some-id',
+    });
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
+    expect(res.statusCode).toBeLessThan(600);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Issue #1106 — JWT_TOKEN_EXPIRY_MINUTES env-var boundary regression.
 // Confirms the schema rejects out-of-bound values at boot, and that the in-test

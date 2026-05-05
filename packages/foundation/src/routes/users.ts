@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { listUsers, createUser, updateUser, deleteUser, type Role } from '@dashboard/core/services/user-store.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { UserCreateBodySchema, UserIdParamsSchema, UserUpdateBodySchema } from '@dashboard/core/models/api-schemas.js';
+import { assertUser } from '@dashboard/core/utils/auth-helpers.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // List all users (admin only)
@@ -26,13 +27,14 @@ export async function userRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
+    const actor = assertUser(request);
     const { username, password, role } = request.body as { username: string; password: string; role: Role };
 
     try {
       const user = await createUser(username, password, role);
       writeAuditLog({
-        user_id: request.user!.sub,
-        username: request.user!.username,
+        user_id: actor.sub,
+        username: actor.username,
         action: 'user.create',
         target_type: 'user',
         target_id: user.id,
@@ -61,6 +63,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
+    const actor = assertUser(request);
     const { id } = request.params as { id: string };
     const body = request.body as { username?: string; password?: string; role?: Role };
 
@@ -77,8 +80,8 @@ export async function userRoutes(fastify: FastifyInstance) {
     if (!user) return reply.status(404).send({ error: 'User not found' });
 
     writeAuditLog({
-      user_id: request.user!.sub,
-      username: request.user!.username,
+      user_id: actor.sub,
+      username: actor.username,
       action: 'user.update',
       target_type: 'user',
       target_id: id,
@@ -100,9 +103,10 @@ export async function userRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
   }, async (request, reply) => {
+    const actor = assertUser(request);
     const { id } = request.params as { id: string };
 
-    if (request.user!.sub === id) {
+    if (actor.sub === id) {
       return reply.status(400).send({ error: 'Cannot delete your own account' });
     }
 
@@ -110,8 +114,8 @@ export async function userRoutes(fastify: FastifyInstance) {
     if (!deleted) return reply.status(404).send({ error: 'User not found' });
 
     writeAuditLog({
-      user_id: request.user!.sub,
-      username: request.user!.username,
+      user_id: actor.sub,
+      username: actor.username,
       action: 'user.delete',
       target_type: 'user',
       target_id: id,
