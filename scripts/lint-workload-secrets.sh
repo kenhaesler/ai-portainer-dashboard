@@ -30,6 +30,9 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
 fi
 
 FOUND=0
+# Literal '${' substring marking a Compose variable substitution; ANSI-C
+# quoting avoids triggering shellcheck SC2016 (single-quote expansion warning).
+SUBST_MARKER=$'\x24{'
 
 for file in "${FILES[@]}"; do
   if [[ ! -f "$file" ]]; then
@@ -45,7 +48,7 @@ for file in "${FILES[@]}"; do
     echo "ERROR: Hardcoded credential in $(basename "$file"): $line"
   done < <(grep -iE '(PASSWORD|_PASS|_SECRET|_KEY)\s*[:=]' "$file" \
     | grep -v '^\s*#' \
-    | grep -vF '${' \
+    | grep -vF "$SUBST_MARKER" \
     || true)
 done
 
