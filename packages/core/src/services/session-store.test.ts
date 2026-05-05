@@ -16,6 +16,19 @@ const sessionStore: Map<string, MockRow> = new Map();
 // Capture audit-log calls so tests can assert on session.evicted events.
 const auditLogCalls: Array<Record<string, unknown>> = [];
 
+// Capture the order of SQL operations within createSession so tests can assert
+// that pg_advisory_xact_lock runs BEFORE count/delete/insert.
+type SqlOpKind = 'advisory_lock' | 'count' | 'delete' | 'insert' | 'other';
+const sqlOpLog: Array<{ kind: SqlOpKind; params: unknown[] }> = [];
+
+function classifySql(sql: string): SqlOpKind {
+  if (sql.includes('pg_advisory_xact_lock')) return 'advisory_lock';
+  if (sql.includes('SELECT count(*)') && sql.includes('FROM sessions')) return 'count';
+  if (sql.includes('DELETE FROM sessions') && sql.includes('RETURNING id')) return 'delete';
+  if (sql.includes('INSERT INTO sessions')) return 'insert';
+  return 'other';
+}
+
 // Kept: in-memory audit logger mock — avoids DB dependency from session-store imports.
 vi.mock('./audit-logger.js', () => ({
   writeAuditLog: vi.fn(async (entry: Record<string, unknown>) => {
@@ -35,7 +48,10 @@ vi.mock('../db/app-db-router.js', () => {
 
   const mockDb: Record<string, unknown> = {
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE')) {
+      sqlOpLog.push({ kind: classifySql(sql), params });
+      if (sql.includes('pg_advisory_xact_lock')) {
+        // Per-user advisory lock — no-op in the in-memory mock; real-PG behaviour
+        // is exercised in session-store.integration.test.ts.
         return { changes: 0 };
       }
       if (sql.includes('INSERT INTO sessions')) {
@@ -88,6 +104,7 @@ vi.mock('../db/app-db-router.js', () => {
       return { changes: 0 };
     }),
     queryOne: vi.fn(async (sql: string, params: unknown[] = []) => {
+      sqlOpLog.push({ kind: classifySql(sql), params });
       if (sql.includes('SELECT count(*)') && sql.includes('FROM sessions')) {
         const userId = params[0] as string;
         const now = params[1] as string;
@@ -105,6 +122,7 @@ vi.mock('../db/app-db-router.js', () => {
       return null;
     }),
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
+      sqlOpLog.push({ kind: classifySql(sql), params });
       if (sql.includes('DELETE FROM sessions') && sql.includes('RETURNING id')) {
         const userId = params[0] as string;
         const now = params[1] as string;
@@ -423,12 +441,13 @@ describe('session-store configurable TTL (issue #1106)', () => {
  * Unit-level coverage of the MAX_CONCURRENT_SESSIONS_PER_USER eviction (#1107).
  * The full atomic-under-concurrency contract is asserted in the real-PG
  * integration test (session-store.integration.test.ts) — single-process mock
- * cannot prove SERIALIZABLE conflict detection.
+ * cannot prove the per-user advisory-lock mutual-exclusion contract.
  */
 describe('session-store max concurrent sessions (#1107)', () => {
   beforeEach(() => {
     sessionStore.clear();
     auditLogCalls.length = 0;
+    sqlOpLog.length = 0;
   });
 
   afterEach(() => {
@@ -546,4 +565,65 @@ describe('session-store max concurrent sessions (#1107)', () => {
     expect(valid[0]!.id).toBe(b.id);
     expect(sessionStore.has(a.id)).toBe(false);
   });
+
+  /**
+   * Regression test for PR #1182 review fix: createSession must serialise
+   * concurrent same-user calls via `pg_advisory_xact_lock(hashtext(user_id))`
+   * BEFORE running the count → delete → insert sequence. Otherwise the
+   * advisory lock provides no mutual exclusion and the race the lock is
+   * meant to prevent is reintroduced.
+   *
+   * Real per-user mutual-exclusion is exercised in
+   * session-store.integration.test.ts; this test guards the SQL ordering.
+   */
+  it(
+    'acquires pg_advisory_xact_lock(hashtext(user_id)) before count/delete/insert',
+    async () => {
+      setConfigForTest({ MAX_CONCURRENT_SESSIONS_PER_USER: 2 });
+
+      // Pre-seed two sessions for the same user so this createSession will
+      // exercise the full count → delete → insert path (eviction triggered).
+      sessionStore.set('seed-1', {
+        id: 'seed-1',
+        user_id: 'user-lock',
+        username: 'seed1',
+        created_at: '2026-05-05T10:00:00.000Z',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        last_active: '2026-05-05T10:00:00.000Z',
+        is_valid: 1,
+      });
+      sessionStore.set('seed-2', {
+        id: 'seed-2',
+        user_id: 'user-lock',
+        username: 'seed2',
+        created_at: '2026-05-05T10:00:01.000Z',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        last_active: '2026-05-05T10:00:01.000Z',
+        is_valid: 1,
+      });
+
+      sqlOpLog.length = 0;
+      await createSession('user-lock', 'newcomer');
+
+      // Find the index of each operation kind. The advisory lock must come
+      // first; count, delete, and insert must all follow it in that order.
+      const kinds = sqlOpLog.map((op) => op.kind);
+      const lockIdx = kinds.indexOf('advisory_lock');
+      const countIdx = kinds.indexOf('count');
+      const deleteIdx = kinds.indexOf('delete');
+      const insertIdx = kinds.indexOf('insert');
+
+      expect(lockIdx).toBeGreaterThanOrEqual(0);
+      expect(countIdx).toBeGreaterThan(lockIdx);
+      expect(deleteIdx).toBeGreaterThan(lockIdx);
+      expect(insertIdx).toBeGreaterThan(lockIdx);
+      // Sanity: lock-call params include the user_id so per-user isolation works.
+      expect(sqlOpLog[lockIdx]!.params).toEqual(['user-lock']);
+      // Eviction actually happened (we pre-seeded MAX rows + the new login).
+      const valid = Array.from(sessionStore.values()).filter(
+        (r) => r.user_id === 'user-lock' && r.is_valid === 1,
+      );
+      expect(valid).toHaveLength(2);
+    },
+  );
 });

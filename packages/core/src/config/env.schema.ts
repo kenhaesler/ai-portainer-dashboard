@@ -28,9 +28,10 @@ export const envSchema = z.object({
   JWT_TOKEN_EXPIRY_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
   // Max concurrent sessions per user. When exceeded on login, the oldest sessions are
   // atomically evicted to make room for the new one. Eviction runs inside a
-  // pg_advisory_xact_lock-guarded transaction so concurrent logins from the same
-  // user cannot leave more than `MAX_CONCURRENT_SESSIONS_PER_USER` valid sessions.
-  // See packages/core/src/services/session-store.ts (#1107).
+  // transaction guarded by a per-user `pg_advisory_xact_lock(hashtext(user_id))` so
+  // concurrent logins from the same user serialise and cannot leave more than
+  // `MAX_CONCURRENT_SESSIONS_PER_USER` valid sessions; different users do not block
+  // each other. See packages/core/src/services/session-store.ts (#1107).
   MAX_CONCURRENT_SESSIONS_PER_USER: z.coerce.number().int().min(1).max(100).default(5),
 
   // Portainer

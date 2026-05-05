@@ -15,16 +15,6 @@ function getSessionTtlMs(): number {
   return getConfig().JWT_TOKEN_EXPIRY_MINUTES * 60_000;
 }
 
-/**
- * Maximum retry attempts when a SERIALIZABLE transaction fails with PostgreSQL
- * error code `40001` (serialization_failure) during concurrent createSession calls.
- * 3 attempts is sufficient under realistic login concurrency; further conflicts
- * indicate a hot-spot worth surfacing.
- */
-const SERIALIZATION_RETRY_LIMIT = 3;
-
-/** PostgreSQL serialization_failure error code. */
-const PG_SERIALIZATION_FAILURE = '40001';
 
 export interface Session {
   id: string;
@@ -36,27 +26,22 @@ export interface Session {
   is_valid: boolean;
 }
 
-interface PgError {
-  code?: string;
-}
-
-function isSerializationFailure(err: unknown): boolean {
-  return typeof err === 'object'
-    && err !== null
-    && (err as PgError).code === PG_SERIALIZATION_FAILURE;
-}
-
 /**
  * Create a new session for `userId`/`username`, enforcing the per-user concurrent
  * session cap (`MAX_CONCURRENT_SESSIONS_PER_USER`).
  *
  * Atomic eviction (issue #1107):
- *   - All work runs inside a SERIALIZABLE transaction so concurrent createSession
- *     calls for the same user cannot both observe the same pre-eviction count
- *     (the READ COMMITTED race called out in CRITIC-FINDINGS §B3/C2).
- *   - On `40001 serialization_failure`, the transaction retries up to
- *     `SERIALIZATION_RETRY_LIMIT` times. Under realistic login concurrency this
- *     converges quickly; the post-condition is `count(valid sessions) <= max`.
+ *   - The transaction starts by acquiring a per-user PostgreSQL transaction-scoped
+ *     advisory lock (`pg_advisory_xact_lock(hashtext(user_id))`) so all
+ *     `createSession` calls for the same user serialise. Different users hash to
+ *     different lock keys and continue to run in parallel.
+ *   - With per-user mutual exclusion guaranteed by the advisory lock, the
+ *     count → evict → insert sequence runs at the default READ COMMITTED
+ *     isolation level. Concurrent same-user calls cannot observe the same
+ *     pre-eviction count, so the previous SERIALIZABLE-tx-with-retry pattern
+ *     (PR #1182 review: 40001 escaped the 3-attempt retry budget under
+ *     `Promise.all × 5, MAX=3`) is no longer needed.
+ *   - The advisory lock is automatically released at COMMIT/ROLLBACK.
  *   - Evicted sessions are deleted (not soft-invalidated) so the row count
  *     constraint is enforced by physical deletion. An audit-log entry
  *     (`session.evicted`) is written for each eviction batch.
@@ -69,100 +54,84 @@ export async function createSession(userId: string, username: string): Promise<S
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + getSessionTtlMs()).toISOString();
 
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < SERIALIZATION_RETRY_LIMIT; attempt++) {
-    try {
-      const evictedIds = await db.transaction(async (tx) => {
-        // First statement of the tx — establishes isolation level for this connection.
-        await tx.execute('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+  const evictedIds = await db.transaction(async (tx) => {
+    // Per-user advisory lock — serialises concurrent createSession calls for the
+    // same user_id without blocking other users. hashtext() maps the variable-
+    // length user_id to the int4 key required by the single-arg form of
+    // pg_advisory_xact_lock. The lock auto-releases at COMMIT/ROLLBACK.
+    await tx.execute('SELECT pg_advisory_xact_lock(hashtext(?))', [userId]);
 
-        // Count currently-valid sessions for this user. Under SERIALIZABLE, this read
-        // participates in conflict detection so a concurrent INSERT/DELETE that would
-        // change the result will trigger a 40001 retry rather than a silent race.
-        const countRow = await tx.queryOne<{ count: string | number }>(
-          `SELECT count(*)::int AS count FROM sessions
-           WHERE user_id = ? AND is_valid = true AND expires_at > ?`,
-          [userId, now],
-        );
-        const validCount = Number(countRow?.count ?? 0);
+    // Count currently-valid sessions for this user. Safe under READ COMMITTED
+    // because the advisory lock above already guarantees mutual exclusion for
+    // this user_id.
+    const countRow = await tx.queryOne<{ count: string | number }>(
+      `SELECT count(*)::int AS count FROM sessions
+       WHERE user_id = ? AND is_valid = true AND expires_at > ?`,
+      [userId, now],
+    );
+    const validCount = Number(countRow?.count ?? 0);
 
-        // Evict oldest if we would exceed the cap after inserting the new row.
-        // toEvict = max(0, validCount + 1 - maxSessions) so post-INSERT count == maxSessions.
-        const toEvict = Math.max(0, validCount + 1 - maxSessions);
-        let evicted: string[] = [];
+    // Evict oldest if we would exceed the cap after inserting the new row.
+    // toEvict = max(0, validCount + 1 - maxSessions) so post-INSERT count == maxSessions.
+    const toEvict = Math.max(0, validCount + 1 - maxSessions);
+    let evicted: string[] = [];
 
-        if (toEvict > 0) {
-          const evictedRows = await tx.query<{ id: string }>(
-            `DELETE FROM sessions
-             WHERE id IN (
-               SELECT id FROM sessions
-               WHERE user_id = ? AND is_valid = true AND expires_at > ?
-               ORDER BY created_at ASC
-               LIMIT ?
-             )
-             RETURNING id`,
-            [userId, now, toEvict],
-          );
-          evicted = evictedRows.map((r) => r.id);
-        }
-
-        await tx.execute(
-          `INSERT INTO sessions (id, user_id, username, created_at, expires_at, last_active, is_valid)
-           VALUES (?, ?, ?, ?, ?, ?, true)`,
-          [id, userId, username, now, expiresAt, now],
-        );
-
-        return evicted;
-      });
-
-      log.info({ sessionId: id, userId, evictedCount: evictedIds.length }, 'Session created');
-
-      // Audit-log eviction outside the transaction so a slow audit write does not
-      // hold session-store row locks. Best-effort; writeAuditLog already swallows errors.
-      if (evictedIds.length > 0) {
-        await writeAuditLog({
-          user_id: userId,
-          username,
-          action: 'session.evicted',
-          target_type: 'session',
-          target_id: id, // the session that triggered the eviction
-          details: {
-            evicted_session_ids: evictedIds,
-            reason: 'max_concurrent_sessions_exceeded',
-            max_concurrent_sessions: maxSessions,
-          },
-        });
-        log.info(
-          { userId, evictedSessionIds: evictedIds, max: maxSessions },
-          'Evicted oldest sessions due to MAX_CONCURRENT_SESSIONS_PER_USER',
-        );
-      }
-
-      return {
-        id,
-        user_id: userId,
-        username,
-        created_at: now,
-        expires_at: expiresAt,
-        last_active: now,
-        is_valid: true,
-      };
-    } catch (err) {
-      lastErr = err;
-      if (!isSerializationFailure(err)) {
-        throw err;
-      }
-      log.warn(
-        { userId, attempt: attempt + 1, max: SERIALIZATION_RETRY_LIMIT },
-        'createSession serialization failure, retrying',
+    if (toEvict > 0) {
+      const evictedRows = await tx.query<{ id: string }>(
+        `DELETE FROM sessions
+         WHERE id IN (
+           SELECT id FROM sessions
+           WHERE user_id = ? AND is_valid = true AND expires_at > ?
+           ORDER BY created_at ASC
+           LIMIT ?
+         )
+         RETURNING id`,
+        [userId, now, toEvict],
       );
+      evicted = evictedRows.map((r) => r.id);
     }
+
+    await tx.execute(
+      `INSERT INTO sessions (id, user_id, username, created_at, expires_at, last_active, is_valid)
+       VALUES (?, ?, ?, ?, ?, ?, true)`,
+      [id, userId, username, now, expiresAt, now],
+    );
+
+    return evicted;
+  });
+
+  log.info({ sessionId: id, userId, evictedCount: evictedIds.length }, 'Session created');
+
+  // Audit-log eviction outside the transaction so a slow audit write does not
+  // hold session-store row locks. Best-effort; writeAuditLog already swallows errors.
+  if (evictedIds.length > 0) {
+    await writeAuditLog({
+      user_id: userId,
+      username,
+      action: 'session.evicted',
+      target_type: 'session',
+      target_id: id, // the session that triggered the eviction
+      details: {
+        evicted_session_ids: evictedIds,
+        reason: 'max_concurrent_sessions_exceeded',
+        max_concurrent_sessions: maxSessions,
+      },
+    });
+    log.info(
+      { userId, evictedSessionIds: evictedIds, max: maxSessions },
+      'Evicted oldest sessions due to MAX_CONCURRENT_SESSIONS_PER_USER',
+    );
   }
 
-  // All retries exhausted — surface the underlying serialization error.
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error('createSession: serialization failure after retries');
+  return {
+    id,
+    user_id: userId,
+    username,
+    created_at: now,
+    expires_at: expiresAt,
+    last_active: now,
+    is_valid: true,
+  };
 }
 
 export async function getSession(sessionId: string): Promise<Session | undefined> {
