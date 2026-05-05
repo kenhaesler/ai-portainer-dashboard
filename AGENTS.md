@@ -11,7 +11,7 @@ This file provides guidance to AI coding assistants (GitHub Copilot, Cursor, Win
 3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard. Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
 4. **Infrastructure Isolation** — Internal services (Prometheus, Ollama, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
 5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
-6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression.test.ts`.
+6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression-*.test.ts`. Add the test to the file matching your domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra), or create a new per-domain file if none fits.
 7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
 
 ## Testing & Mocks

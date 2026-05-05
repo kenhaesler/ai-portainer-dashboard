@@ -43,7 +43,7 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 - OIDC/SSO via `openid-client` v6 with PKCE. Rate limiting on login (`LOGIN_RATE_LIMIT`).
 - Auth decorator: `fastify.authenticate` on all protected routes.
 - **Prompt injection guard** (`packages/ai-intelligence/src/services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
-- Security regression tests: `backend/src/routes/security-regression.test.ts` (68 tests — auth sweep, prompt injection, false positives, rate limiting).
+- Security regression tests live under `backend/src/routes/security-regression-*.test.ts` — one file per domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra). Coverage: auth sweep, prompt injection, false positives, rate limiting, RBAC, headers, sockets, stream tickets, JWT, infra isolation.
 - For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
 ## Security First (Mandatory)
@@ -53,7 +53,7 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard. Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
 4. **Infrastructure Isolation** — Internal services (Prometheus, Ollama, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
 5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
-6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression.test.ts`.
+6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression-*.test.ts`. Add the test to the file matching your domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra), or create a new per-domain file if none fits.
 7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
 
 ## UI/UX Design
