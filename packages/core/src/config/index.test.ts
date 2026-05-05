@@ -484,6 +484,48 @@ describe('config validation', () => {
       expect(config.HSTS_PRELOAD).toBe(true);
     });
   });
+
+  // Issue #1121 — Docker Secrets integration. The env-schema preprocessor
+  // resolves /run/secrets/<name> first, then falls back to the named env var.
+  // The min-length / production-guard rules must still fire on the resolved
+  // value (i.e. validation is opaque to the source).
+  describe('Docker Secrets integration (#1121)', () => {
+    it('still rejects a missing JWT_SECRET when neither file nor env is set', async () => {
+      // Belt-and-braces: the min-length guard is the safety net when the
+      // ops team forgets to mount the secret AND forgets the env var.
+      delete process.env.JWT_SECRET;
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/JWT_SECRET/i);
+    });
+
+    it('still enforces 32-char min length on the resolved JWT_SECRET', async () => {
+      // Whether the value comes from /run/secrets/jwt_secret or from the env
+      // var, the resolved string must satisfy z.string().min(32).
+      process.env.JWT_SECRET = 'too-short';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/JWT_SECRET/i);
+    });
+
+    it('still enforces production weak-secret guard on the resolved value', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_SECRET = 'dev-secret-change-in-production-must-be-at-least-32-chars';
+      process.env.DASHBOARD_PASSWORD = 'xK9#mP2$vL7@nQ4!';
+
+      const { getConfig } = await import('./index.js');
+      expect(() => getConfig()).toThrowError(/insecure JWT secret/i);
+    });
+
+    it('uses the env-var path when no Docker Secret file is present', async () => {
+      // Confirms backwards compatibility: no /run/secrets dir on dev machines.
+      process.env.JWT_SECRET = 'a-strong-32-plus-character-jwt-secret-from-env';
+
+      const { getConfig } = await import('./index.js');
+      const config = getConfig();
+      expect(config.JWT_SECRET).toBe('a-strong-32-plus-character-jwt-secret-from-env');
+    });
+  });
 });
 
 describe('JWT_TOKEN_EXPIRY_MINUTES (issue #1106)', () => {
