@@ -14,6 +14,7 @@ import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks } from '../services/prompt-guard.js';
 import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
 const log = createChildLogger('socket:llm');
 
@@ -544,13 +545,14 @@ async function callOllamaWithNativeTools(
 }
 
 // ─── Per-user WebSocket chat throttle ─────────────────────────────────
-// Simple in-memory map tracking the last chat:message timestamp per user.
-// Rejects messages that arrive within the configured rate window.
-const chatThrottleMap = new Map<string, number>();
+// Uses the shared `socket-throttle` kernel utility. Cooldown is unchanged
+// (2 s between chat:message events per user) and is also reused by the
+// monitoring and remediation namespaces with their own cooldown values.
 const CHAT_THROTTLE_MS = 2_000; // minimum 2 seconds between messages per user
+const chatThrottle = createSocketThrottle(CHAT_THROTTLE_MS);
 
-/** Exported for testing */
-export { chatThrottleMap, CHAT_THROTTLE_MS };
+/** Exported for testing — gives tests a way to reset state and to assert the cooldown. */
+export { chatThrottle, CHAT_THROTTLE_MS };
 
 export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsInterface) {
   ns.on('connection', (socket) => {
@@ -561,17 +563,19 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
 
     socket.on('chat:message', async (data: { text: string; context?: any; model?: string }) => {
       // ── Per-user throttle: reject rapid-fire messages ──
-      const now = Date.now();
-      const lastMessageAt = chatThrottleMap.get(userId);
-      if (lastMessageAt && now - lastMessageAt < CHAT_THROTTLE_MS) {
-        log.warn({ userId, elapsed: now - lastMessageAt, throttleMs: CHAT_THROTTLE_MS }, 'Chat message throttled');
+      const throttleKey = `chat:message:${userId}`;
+      const throttleResult = chatThrottle.check(throttleKey);
+      if (!throttleResult.allowed) {
+        log.warn(
+          { userId, retryAfterMs: throttleResult.retryAfterMs, throttleMs: CHAT_THROTTLE_MS },
+          'Chat message throttled',
+        );
         socket.emit('chat:throttled', {
           reason: 'Too many requests. Please wait before sending another message.',
-          retryAfterMs: CHAT_THROTTLE_MS - (now - lastMessageAt),
+          retryAfterMs: throttleResult.retryAfterMs,
         });
         return;
       }
-      chatThrottleMap.set(userId, now);
 
       // ── Input guard: block prompt injection attempts ──
       const guardResult = isPromptInjection(data.text);
@@ -981,7 +985,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
 
     socket.on('disconnect', () => {
       sessions.delete(socket.id);
-      chatThrottleMap.delete(userId);
+      chatThrottle.clearByUserId(userId);
       log.info({ userId }, 'LLM client disconnected');
     });
   });

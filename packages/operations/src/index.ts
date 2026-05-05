@@ -22,4 +22,4 @@ export {
 } from './services/portainer-backup.js';
 
 // Sockets
-export { setupRemediationNamespace } from './sockets/remediation.js';
+export { setupRemediationNamespace, remediationThrottle } from './sockets/remediation.js';

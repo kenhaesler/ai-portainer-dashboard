@@ -30,6 +30,7 @@ import {
   setupRemediationNamespace,
   broadcastActionUpdate,
   broadcastNewAction,
+  remediationThrottle,
 } from '../sockets/remediation.js';
 
 // ── Helpers ──
@@ -81,6 +82,8 @@ function createMockNamespace() {
 describe('setupRemediationNamespace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset per-user throttle so back-to-back tests aren't gated.
+    remediationThrottle.clearByUserId('test-user');
   });
 
   describe('admin role enforcement', () => {
