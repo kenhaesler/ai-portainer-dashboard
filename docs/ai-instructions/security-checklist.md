@@ -129,7 +129,7 @@ and `docker/.env.example` for the full operator guide.
 
 ## Security Regression Tests
 
-File: `backend/src/routes/security-regression.test.ts` (68 tests)
+Files: `backend/src/routes/security-regression-*.test.ts` — one file per domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra). Add new security-fix tests to the file matching your domain, or create a new per-domain file if none fits.
 
 - **Auth sweep**: Dynamically discovers all routes, verifies no `/api/*` returns 2xx without auth
 - **Prompt injection**: 22 vectors (system prompt extraction, ignore-instructions, case variations)
