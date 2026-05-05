@@ -68,11 +68,46 @@ chmod 600 secrets/*.txt
 - **postgres-app / timescaledb**: the official `postgres` image natively
   honours `POSTGRES_PASSWORD_FILE`. Compose sets it to
   `/run/secrets/postgres_app_password` (or `timescale_password`).
+- **timescale-backup** (#1187): `prodrigestivill/postgres-backup-local`
+  natively honours `POSTGRES_PASSWORD_FILE` — its `env.sh` reads the file
+  and copies the value into `PGPASSWORD` for `pg_dump`. Compose mounts the
+  same `timescale_password` secret used by the source DB so passwords stay
+  in lockstep.
 - **redis**: the official Redis image does NOT honour `REDIS_PASSWORD_FILE`.
   Compose uses a shell wrapper (`sh -c "REDIS_PASS=$(cat /run/secrets/redis_password); exec redis-server --requirepass \"$REDIS_PASS\""`) so the password never appears in argv-visible form.
 - **backend (Fastify)**: `readSecret()` is called inside the env-schema
-  preprocessor for `JWT_SECRET` and `REDIS_PASSWORD` before Zod validation.
-  The min-length / weak-default guards still fire on the resolved value.
+  preprocessor for `JWT_SECRET`, `REDIS_PASSWORD`, `POSTGRES_APP_PASSWORD`,
+  and `TIMESCALE_PASSWORD` before Zod validation. The min-length /
+  weak-default guards still fire on the resolved value.
+
+### URL assembly from components (#1187)
+
+Before #1187, the backend's `POSTGRES_APP_URL` and `TIMESCALE_URL` were
+constructed at compose-time via env-var interpolation:
+```yaml
+POSTGRES_APP_URL=postgresql://app_user:${POSTGRES_APP_PASSWORD:?...}@postgres-app:5432/...
+```
+That defeats the Docker Secrets benefit — the password is reconstructed in
+the container env (visible via `docker inspect` and `/proc/<pid>/environ`).
+
+After #1187, compose exposes the URL components as discrete env vars and
+the backend assembles the URL at runtime, reading the password via
+`readSecret()`:
+
+| Var | Source | Default in compose |
+|-----|--------|---------------------|
+| `POSTGRES_APP_HOST` | env | `postgres-app` |
+| `POSTGRES_APP_PORT` | env | `5432` |
+| `POSTGRES_APP_USER` | env | `app_user` |
+| `POSTGRES_APP_DATABASE` | env | `portainer_dashboard` |
+| `POSTGRES_APP_PASSWORD` | `/run/secrets/postgres_app_password` (file) > env | empty |
+| `POSTGRES_APP_URL` | env (override only — empty when components used) | empty |
+
+Identical pattern for `TIMESCALE_*` and `REDIS_*` (Redis components do not
+require USER/DATABASE — the protocol does not mandate either).
+
+**Backwards compatibility**: when `*_HOST` is unset the existing single
+`*_URL` env var is consumed unchanged, so the dev workflow (`postgresql://user:pass@host/db` straight in `.env`) keeps working.
 
 **Validation invariants**:
 - `JWT_SECRET` must be ≥ 32 characters after resolution. Production
