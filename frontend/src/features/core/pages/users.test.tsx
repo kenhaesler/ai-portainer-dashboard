@@ -279,4 +279,227 @@ describe('UsersPanel', () => {
       expect(screen.getByText('Failed to delete user')).toBeInTheDocument();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Issue #1048 — confirmation modal + error message coverage
+  //
+  // Pre-existing tests above already cover:
+  //   • Deactivate success path (#1048 case 1) — see 'deactivates and deletes existing users'
+  //   • Deactivate error path (#1048 case 2) — see 'shows error message when deactivateUser…'
+  //   • Remove success path (#1048 case 3) — see 'deactivates and deletes existing users'
+  //   • Remove error path  (#1048 case 4) — see 'shows error message when removeUser…'
+  //
+  // The describe blocks below close the remaining gaps from the issue:
+  //   • Case 5 — dismissing the confirm dialog must NOT call the mutation
+  //   • Case 6 — error message renders inside the form section after a failure
+  // Plus a focused success-path test that opening the dialog and confirming
+  // calls the mutation exactly once with the correct payload (separate from
+  // the combined deactivate+delete flow above).
+  //
+  // Deps verified CLOSED: #1019 (window.confirm → ConfirmDialog modal) and
+  // #1036 (mutation errors surfaced via setErrorMessage) — see PR body.
+  // ---------------------------------------------------------------------------
+
+  it('does not call deactivate mutation when the confirm dialog is cancelled', async () => {
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Deactivate' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    // Open the deactivate confirm dialog
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+    await waitFor(() => {
+      expect(screen.getByText('Deactivate User')).toBeInTheDocument();
+    });
+
+    // Click the dialog's Cancel button (rendered by ConfirmDialog with cancelLabel default)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // Dialog closes and no mutation is invoked
+    await waitFor(() => {
+      expect(screen.queryByText('Deactivate User')).not.toBeInTheDocument();
+    });
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it('does not call delete mutation when the confirm dialog is cancelled', async () => {
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Delete' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(screen.getByText('Delete User')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Delete User')).not.toBeInTheDocument();
+    });
+    expect(mockDeleteUser).not.toHaveBeenCalled();
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  it('dismisses the confirm dialog via Escape without calling the mutation', async () => {
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Delete' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    const dialogTitle = await screen.findByText('Delete User');
+    expect(dialogTitle).toBeInTheDocument();
+
+    // Radix Dialog's onOpenChange fires when Escape is pressed → onCancel
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+      code: 'Escape',
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Delete User')).not.toBeInTheDocument();
+    });
+    expect(mockDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it('shows the deactivate confirmation modal with descriptive title and body before any mutation runs', async () => {
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Deactivate' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    // Trigger the row-level Deactivate button — the mutation must not run yet
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+
+    // The Radix dialog renders the descriptive title + body from ConfirmDialog
+    expect(await screen.findByText('Deactivate User')).toBeInTheDocument();
+    expect(
+      screen.getByText('Deactivate this account by changing role to Viewer?'),
+    ).toBeInTheDocument();
+
+    // Confirming the dialog finally invokes the mutation with the expected payload
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+    await waitFor(() => {
+      expect(mockUpdateUser).toHaveBeenCalledTimes(1);
+      expect(mockUpdateUser).toHaveBeenCalledWith({ id: 'u1', payload: { role: 'viewer' } });
+    });
+  });
+
+  it('shows the delete confirmation modal with descriptive title and body before any mutation runs', async () => {
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Delete' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    expect(mockDeleteUser).not.toHaveBeenCalled();
+
+    expect(await screen.findByText('Delete User')).toBeInTheDocument();
+    expect(screen.getByText('Delete this account permanently?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(mockDeleteUser).toHaveBeenCalledTimes(1);
+      expect(mockDeleteUser).toHaveBeenCalledWith('u1');
+    });
+  });
+
+  it('renders the errorMessage state inside the user form section after a failed deactivate', async () => {
+    mockUpdateUser.mockRejectedValueOnce(new Error('Forbidden — admin only'));
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Deactivate' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Deactivate' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+
+    // Wait for confirm dialog to close (handleConfirmAction → setConfirmAction(null))
+    await waitFor(() => {
+      expect(screen.queryByText('Deactivate this account by changing role to Viewer?')).not.toBeInTheDocument();
+    });
+
+    // The error renders within the Create User / Edit User <section>, not in
+    // the dialog. This locks the contract that errorMessage state binds to
+    // the form panel — see users.tsx:275 (`<p className="text-xs text-destructive">`).
+    const formSection = screen.getByRole('heading', { name: /Create User/i }).closest('section');
+    expect(formSection).toBeTruthy();
+    if (!formSection) return;
+
+    expect(within(formSection).getByText('Forbidden — admin only')).toBeInTheDocument();
+  });
+
+  it('renders the errorMessage state inside the user form section after a failed delete', async () => {
+    mockDeleteUser.mockRejectedValueOnce(new Error('User has active sessions'));
+    render(<UsersPanel />);
+
+    const adminRow = screen
+      .getAllByRole('row')
+      .find(
+        (row) =>
+          within(row).queryAllByText('admin').length > 0 &&
+          within(row).queryByRole('button', { name: 'Delete' }),
+      );
+    expect(adminRow).toBeDefined();
+    if (!adminRow) return;
+
+    fireEvent.click(within(adminRow).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Delete this account permanently?')).not.toBeInTheDocument();
+    });
+
+    const formSection = screen.getByRole('heading', { name: /Create User/i }).closest('section');
+    expect(formSection).toBeTruthy();
+    if (!formSection) return;
+
+    expect(within(formSection).getByText('User has active sessions')).toBeInTheDocument();
+  });
 });
