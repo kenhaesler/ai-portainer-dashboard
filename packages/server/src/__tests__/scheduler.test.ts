@@ -72,11 +72,13 @@ vi.mock('@dashboard/core/services/session-store.js', () => ({
 }));
 
 const cleanupOldInsightsMock = vi.fn().mockReturnValue(0);
+const pruneCanaryRegistryMock = vi.fn().mockReturnValue(0);
 // Kept: @dashboard/ai mock — tests control insights cleanup and cooldown sweep
 vi.mock('@dashboard/ai', () => ({
   startCooldownSweep: vi.fn(),
   stopCooldownSweep: vi.fn(),
   cleanupOldInsights: (...args: unknown[]) => cleanupOldInsightsMock(...args),
+  pruneCanaryRegistry: (...args: unknown[]) => pruneCanaryRegistryMock(...args),
 }));
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
@@ -140,6 +142,7 @@ beforeEach(async () => {
   insertMetricsMock.mockResolvedValue(undefined);
   cleanExpiredSessionsMock.mockReturnValue(0);
   cleanupOldInsightsMock.mockReturnValue(0);
+  pruneCanaryRegistryMock.mockReturnValue(0);
 
   // Re-set inline vi.mock fn defaults cleared by restoreAllMocks
   const securityPkg = await import('@dashboard/security');
@@ -532,5 +535,34 @@ describe('scheduler/setup – runCleanup includes insights cleanup', () => {
     await runCleanup();
 
     expect(cleanupOldInsightsMock).toHaveBeenCalledWith(14);
+  });
+});
+
+describe('scheduler/setup – runCleanup prunes the LLM canary registry (#1119)', () => {
+  it('calls pruneCanaryRegistry during cleanup', async () => {
+    pruneCanaryRegistryMock.mockReturnValue(3);
+
+    await runCleanup();
+
+    expect(pruneCanaryRegistryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when pruneCanaryRegistry fails', async () => {
+    pruneCanaryRegistryMock.mockImplementation(() => {
+      throw new Error('registry corrupted');
+    });
+
+    await expect(runCleanup()).resolves.toBeUndefined();
+  });
+
+  it('still calls earlier cleanup steps when canary pruning fails', async () => {
+    pruneCanaryRegistryMock.mockImplementation(() => {
+      throw new Error('boom');
+    });
+
+    await runCleanup();
+
+    expect(cleanExpiredSessionsMock).toHaveBeenCalledTimes(1);
+    expect(cleanupOldInsightsMock).toHaveBeenCalledTimes(1);
   });
 });

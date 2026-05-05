@@ -63,7 +63,11 @@ export { triggerInvestigation, initInvestigationDeps, setInvestigationNamespace 
 export type { InvestigationMetricsDeps } from './services/investigation-service.js';
 
 // Services — prompt guard
-export { getPromptGuardNearMissTotal } from './services/prompt-guard.js';
+export {
+  getPromptGuardNearMissTotal,
+  getPromptGuardCanaryLeakTotal,
+  pruneCanaryRegistry,
+} from './services/prompt-guard.js';
 
 // Services — MCP
 export { autoConnectAll, disconnectAll } from './services/mcp-manager.js';

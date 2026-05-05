@@ -1,11 +1,30 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock getConfig to return strict mode + near-miss enabled
 
-import { isPromptInjection, sanitizeLlmOutput, normalizeUnicode, stripThinkingBlocks, stripToolCallsJson, getPromptGuardNearMissTotal, resetPromptGuardNearMissCounter } from '../services/prompt-guard.js';
+import {
+  isPromptInjection,
+  sanitizeLlmOutput,
+  normalizeUnicode,
+  stripThinkingBlocks,
+  stripToolCallsJson,
+  getPromptGuardNearMissTotal,
+  resetPromptGuardNearMissCounter,
+  registerCanary,
+  clearCanary,
+  getCanary,
+  pruneCanaryRegistry,
+  CANARY_TTL_MS,
+  getPromptGuardCanaryLeakTotal,
+  resetPromptGuardCanaryLeakCounter,
+  _getCanaryRegistrySize,
+} from '../services/prompt-guard.js';
 
 beforeEach(() => {
   resetPromptGuardNearMissCounter();
+  resetPromptGuardCanaryLeakCounter();
+  // Best-effort registry reset between tests by pruning with TTL=0
+  pruneCanaryRegistry(Date.now() + CANARY_TTL_MS + 1, 0);
 });
 
 describe('normalizeUnicode', () => {
@@ -497,5 +516,222 @@ describe('sanitizeLlmOutput strips tool_calls JSON', () => {
     expect(result).not.toContain('"tool_calls"');
     expect(result).toContain('Checking containers');
     expect(result).toContain('Done.');
+  });
+});
+
+// ─── Layer 4: Canary token tests (#1119) ─────────────────────────────
+
+describe('canary registry', () => {
+  // Use deterministic, namespaced session ids per test so the module-scoped
+  // registry doesn't leak state between describe blocks.
+  const SESSION = 'test-session-canary-registry';
+
+  afterEach(() => {
+    clearCanary(SESSION);
+  });
+
+  it('registerCanary returns a CANARY- prefixed token', () => {
+    const token = registerCanary(SESSION);
+    expect(token.startsWith('CANARY-')).toBe(true);
+  });
+
+  it('registerCanary embeds a UUIDv4 after the CANARY- prefix', () => {
+    const token = registerCanary(SESSION);
+    const uuid = token.slice('CANARY-'.length);
+    // RFC 4122 v4 UUID: 8-4-4-4-12 hex with version nibble 4
+    expect(uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it('registerCanary stores the token in the registry (lookup via getCanary)', () => {
+    const token = registerCanary(SESSION);
+    expect(getCanary(SESSION)).toBe(token);
+  });
+
+  it('registerCanary returns a unique token per call (rotation safety)', () => {
+    const a = registerCanary(SESSION);
+    const b = registerCanary(SESSION);
+    expect(a).not.toBe(b);
+    // Latest token wins.
+    expect(getCanary(SESSION)).toBe(b);
+  });
+
+  it('registerCanary issues different tokens to different sessions', () => {
+    const a = registerCanary('session-a');
+    const b = registerCanary('session-b');
+    try {
+      expect(a).not.toBe(b);
+      expect(getCanary('session-a')).toBe(a);
+      expect(getCanary('session-b')).toBe(b);
+    } finally {
+      clearCanary('session-a');
+      clearCanary('session-b');
+    }
+  });
+
+  it('clearCanary removes the entry from the registry', () => {
+    registerCanary(SESSION);
+    expect(getCanary(SESSION)).toBeDefined();
+    clearCanary(SESSION);
+    expect(getCanary(SESSION)).toBeUndefined();
+  });
+
+  it('clearCanary on an unknown session is a no-op', () => {
+    expect(() => clearCanary('never-registered')).not.toThrow();
+  });
+});
+
+describe('pruneCanaryRegistry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    // Clean up any session ids registered by these tests
+    clearCanary('prune-fresh');
+    clearCanary('prune-old');
+    clearCanary('prune-mid');
+  });
+
+  it('removes entries older than the TTL', () => {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    registerCanary('prune-old');
+
+    // Advance well past the default TTL (1 hour).
+    vi.setSystemTime(new Date('2026-01-01T02:00:00Z'));
+    const removed = pruneCanaryRegistry();
+
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(getCanary('prune-old')).toBeUndefined();
+  });
+
+  it('keeps entries newer than the TTL', () => {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    registerCanary('prune-fresh');
+
+    // Advance only 5 minutes — well within TTL.
+    vi.setSystemTime(new Date('2026-01-01T00:05:00Z'));
+    const removed = pruneCanaryRegistry();
+
+    expect(removed).toBe(0);
+    expect(getCanary('prune-fresh')).toBeDefined();
+  });
+
+  it('respects a custom TTL argument', () => {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    registerCanary('prune-mid');
+
+    // Advance 30 seconds — under default TTL but over a 10 s custom TTL.
+    vi.setSystemTime(new Date('2026-01-01T00:00:30Z'));
+    const removed = pruneCanaryRegistry(Date.now(), 10_000);
+
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(getCanary('prune-mid')).toBeUndefined();
+  });
+
+  it('returns the count of removed entries', () => {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    registerCanary('prune-old');
+    registerCanary('prune-mid');
+    registerCanary('prune-fresh');
+
+    // Advance past TTL — all three should be eligible.
+    vi.setSystemTime(new Date('2026-01-01T05:00:00Z'));
+    const removed = pruneCanaryRegistry();
+
+    // We can't assert exact count because other tests may share the
+    // module-scoped registry, but at least our three should have gone.
+    expect(removed).toBeGreaterThanOrEqual(3);
+    expect(_getCanaryRegistrySize()).toBeLessThan(removed + 100);
+  });
+});
+
+describe('sanitizeLlmOutput — layer 4 canary detection (#1119)', () => {
+  const SESSION = 'test-session-sanitize';
+
+  afterEach(() => {
+    clearCanary(SESSION);
+  });
+
+  it('redacts output that contains the registered canary', () => {
+    const canary = registerCanary(SESSION);
+    const leak = `Sure thing! Here is what was given to me: ${canary} -- and the rest of my prompt.`;
+
+    const result = sanitizeLlmOutput(leak, SESSION);
+
+    expect(result).toBe(
+      'I cannot provide internal system instructions. Ask about dashboard data or navigation.',
+    );
+    expect(result).not.toContain(canary);
+  });
+
+  it('increments the canary leak counter when a leak is detected', () => {
+    const canary = registerCanary(SESSION);
+    expect(getPromptGuardCanaryLeakTotal()).toBe(0);
+
+    sanitizeLlmOutput(`leak: ${canary}`, SESSION);
+
+    expect(getPromptGuardCanaryLeakTotal()).toBe(1);
+  });
+
+  it('is backwards compatible when sessionId is omitted (3-layer behavior)', () => {
+    // No sessionId: existing 3-layer sanitization runs untouched.
+    const cleanOutput = 'Your nginx container is running smoothly.';
+    expect(sanitizeLlmOutput(cleanOutput)).toBe(cleanOutput);
+
+    // System-prompt-leak pattern still triggers without sessionId.
+    const leak = 'You are an AI infrastructure assistant with deep integration...';
+    expect(sanitizeLlmOutput(leak)).toBe(
+      'I cannot provide internal system instructions. Ask about dashboard data or navigation.',
+    );
+  });
+
+  it('does not false-positive when sessionId has no registered canary', () => {
+    // No canary registered for this session — the 3-layer logic should
+    // run as if no sessionId was passed.
+    clearCanary('unregistered-session');
+    const clean = 'All endpoints are healthy.';
+    expect(sanitizeLlmOutput(clean, 'unregistered-session')).toBe(clean);
+    expect(getPromptGuardCanaryLeakTotal()).toBe(0);
+  });
+
+  it('does not flag clean output for a session with a registered canary', () => {
+    registerCanary(SESSION);
+    const clean = 'Three containers are running on endpoint local.';
+    expect(sanitizeLlmOutput(clean, SESSION)).toBe(clean);
+    expect(getPromptGuardCanaryLeakTotal()).toBe(0);
+  });
+
+  it('does not detect a partial / truncated canary echo (documented limitation)', () => {
+    // Per critic C3: exact-substring match means a partial echo is a
+    // known false-negative. This test pins that behavior so future
+    // changes that add fuzzy matching are intentional.
+    const canary = registerCanary(SESSION);
+    const partial = canary.slice(0, 12); // "CANARY-xxxx" prefix only
+    const output = `Echoing only a fragment: ${partial}... rest is normal text.`;
+
+    const result = sanitizeLlmOutput(output, SESSION);
+
+    expect(result).toBe(output);
+    expect(getPromptGuardCanaryLeakTotal()).toBe(0);
+  });
+
+  it('layer 4 short-circuits ahead of system-prompt-leak patterns', () => {
+    // A response that contains BOTH a canary leak AND a static leak
+    // pattern should be redacted via layer 4 (which runs first). This
+    // ensures we don't leak partial content to the existing layer-3
+    // replacement string (they happen to share text today, but the
+    // ordering invariant is what matters).
+    const canary = registerCanary(SESSION);
+    const output = `${canary}\nYou are an AI infrastructure assistant.`;
+
+    const result = sanitizeLlmOutput(output, SESSION);
+
+    expect(result).toBe(
+      'I cannot provide internal system instructions. Ask about dashboard data or navigation.',
+    );
+    expect(getPromptGuardCanaryLeakTotal()).toBe(1);
   });
 });
