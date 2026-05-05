@@ -417,3 +417,83 @@ describe('config validation', () => {
     });
   });
 });
+
+describe('JWT_TOKEN_EXPIRY_MINUTES (issue #1106)', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env.PORTAINER_API_KEY = 'test-portainer-api-key';
+    process.env.DASHBOARD_USERNAME = 'admin';
+    process.env.DASHBOARD_PASSWORD = 'replace-with-strong-random-passphrase';
+    process.env.JWT_SECRET = 'test-jwt-secret-at-least-32-characters-long';
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('defaults to 60 minutes when unset (preserves prior behavior)', async () => {
+    delete process.env.JWT_TOKEN_EXPIRY_MINUTES;
+
+    const { getConfig } = await import('./index.js');
+    expect(getConfig().JWT_TOKEN_EXPIRY_MINUTES).toBe(60);
+  });
+
+  it('accepts the lower bound of 5 minutes', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '5';
+
+    const { getConfig } = await import('./index.js');
+    expect(getConfig().JWT_TOKEN_EXPIRY_MINUTES).toBe(5);
+  });
+
+  it('rejects values below 5 minutes', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '4';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+
+  it('accepts the upper bound of 1440 minutes', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '1440';
+
+    const { getConfig } = await import('./index.js');
+    expect(getConfig().JWT_TOKEN_EXPIRY_MINUTES).toBe(1440);
+  });
+
+  it('rejects values above 1440 minutes', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '1441';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+
+  it('rejects non-integer (fractional) values', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '60.5';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+
+  it('rejects non-numeric values', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = 'sixty';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+
+  it('rejects zero', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '0';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+
+  it('rejects negative values', async () => {
+    process.env.JWT_TOKEN_EXPIRY_MINUTES = '-30';
+
+    const { getConfig } = await import('./index.js');
+    expect(() => getConfig()).toThrowError(/JWT_TOKEN_EXPIRY_MINUTES/i);
+  });
+});

@@ -1,8 +1,18 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDbForDomain } from '../db/app-db-router.js';
+import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const log = createChildLogger('session-store');
+
+/**
+ * Session TTL — derived from the same `JWT_TOKEN_EXPIRY_MINUTES` env var as
+ * the signed JWT `exp` claim. Keeping a single source of truth guarantees a
+ * token can never outlive its session row (and vice versa).
+ */
+function getSessionTtlMs(): number {
+  return getConfig().JWT_TOKEN_EXPIRY_MINUTES * 60_000;
+}
 
 export interface Session {
   id: string;
@@ -18,7 +28,7 @@ export async function createSession(userId: string, username: string): Promise<S
   const db = getDbForDomain('auth');
   const id = uuidv4();
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+  const expiresAt = new Date(Date.now() + getSessionTtlMs()).toISOString();
 
   await db.execute(`
     INSERT INTO sessions (id, user_id, username, created_at, expires_at, last_active, is_valid)
@@ -55,7 +65,7 @@ export async function invalidateSession(sessionId: string): Promise<void> {
 
 export async function refreshSession(sessionId: string): Promise<Session | undefined> {
   const db = getDbForDomain('auth');
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + getSessionTtlMs()).toISOString();
   const now = new Date().toISOString();
 
   await db.execute(`

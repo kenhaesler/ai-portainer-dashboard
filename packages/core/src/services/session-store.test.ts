@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setConfigForTest, resetConfig } from '../config/index.js';
 
 // In-memory store for mock DB
 const sessionStore: Map<string, Record<string, unknown>> = new Map();
@@ -269,5 +270,77 @@ describe('session-store expiration semantics', () => {
     expect(cleaned).toBe(2);
     expect(sessionStore.size).toBe(1);
     expect(sessionStore.has('future-valid')).toBe(true);
+  });
+});
+
+describe('session-store configurable TTL (issue #1106)', () => {
+  beforeEach(() => {
+    sessionStore.clear();
+  });
+
+  afterEach(() => {
+    resetConfig();
+  });
+
+  it('createSession honors the configured JWT_TOKEN_EXPIRY_MINUTES', async () => {
+    setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 30 });
+
+    const session = await createSession('user-cfg-1', 'cfgalice');
+
+    const ttlMs =
+      new Date(session.expires_at).getTime() - new Date(session.created_at).getTime();
+    // Allow 1s clock-skew tolerance from Date.now() vs new Date().toISOString() ordering.
+    expect(ttlMs).toBeGreaterThanOrEqual(30 * 60_000 - 1000);
+    expect(ttlMs).toBeLessThanOrEqual(30 * 60_000 + 1000);
+  });
+
+  it('createSession honors a 5-minute lower bound', async () => {
+    setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 5 });
+
+    const session = await createSession('user-cfg-2', 'cfgbob');
+
+    const ttlMs =
+      new Date(session.expires_at).getTime() - new Date(session.created_at).getTime();
+    expect(ttlMs).toBeGreaterThanOrEqual(5 * 60_000 - 1000);
+    expect(ttlMs).toBeLessThanOrEqual(5 * 60_000 + 1000);
+  });
+
+  it('createSession honors a 1440-minute upper bound', async () => {
+    setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 1440 });
+
+    const session = await createSession('user-cfg-3', 'cfgcarol');
+
+    const ttlMs =
+      new Date(session.expires_at).getTime() - new Date(session.created_at).getTime();
+    expect(ttlMs).toBeGreaterThanOrEqual(1440 * 60_000 - 1000);
+    expect(ttlMs).toBeLessThanOrEqual(1440 * 60_000 + 1000);
+  });
+
+  it('refreshSession extends the session by the configured TTL', async () => {
+    setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 45 });
+
+    // Seed a valid session that hasn't expired yet.
+    sessionStore.set('refresh-target', {
+      id: 'refresh-target',
+      user_id: 'user-cfg-4',
+      username: 'cfgdave',
+      created_at: '2026-02-07T09:00:00.000Z',
+      expires_at: '2026-02-07T11:00:00.000Z',
+      last_active: '2026-02-07T09:15:00.000Z',
+      is_valid: 1,
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-07T10:00:00.000Z'));
+
+    const result = await refreshSession('refresh-target');
+    expect(result).toBeDefined();
+
+    const ttlMs =
+      new Date(result!.expires_at).getTime() -
+      new Date('2026-02-07T10:00:00.000Z').getTime();
+    expect(ttlMs).toBe(45 * 60_000);
+
+    vi.useRealTimers();
   });
 });

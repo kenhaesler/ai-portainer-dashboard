@@ -21,6 +21,11 @@ export const envSchema = z.object({
   JWT_ALGORITHM: z.enum(['HS256', 'RS256', 'ES256']).default('HS256'),
   JWT_PRIVATE_KEY_PATH: z.string().optional(),
   JWT_PUBLIC_KEY_PATH: z.string().optional(),
+  // Lifetime (minutes) applied to BOTH the signed JWT `exp` claim AND the
+  // PostgreSQL session row's `expires_at`. Single source of truth — keeping
+  // them in sync ensures a token never outlives its session and vice versa.
+  // Bounds: 5 min (auditable lower bound) → 1440 min (24 h sanity ceiling).
+  JWT_TOKEN_EXPIRY_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
 
   // Portainer
   PORTAINER_API_URL: z.string().url().default('http://localhost:9000'),

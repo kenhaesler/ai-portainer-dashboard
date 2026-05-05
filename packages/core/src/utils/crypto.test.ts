@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { SignJWT } from 'jose';
 import { signJwt, verifyJwt, hashPassword, comparePassword, _resetKeyCache } from './crypto.js';
 import { setConfigForTest, resetConfig } from '../config/index.js';
@@ -36,6 +36,10 @@ vi.mock('./logger.js', () => {
 describe('crypto', () => {
   beforeEach(() => {
     _resetKeyCache();
+  });
+
+  afterEach(() => {
+    resetConfig();
   });
 
   describe('JWT operations', () => {
@@ -98,10 +102,51 @@ describe('crypto', () => {
 
         expect(verified?.exp).toBeDefined();
         expect(verified?.iat).toBeDefined();
-        // Expiration should be ~60 minutes from now
-        const expectedExp = Math.floor(Date.now() / 1000) + 60 * 60;
+        // Default lifetime is 60 min — exp - iat must equal that, regardless of clock skew.
+        expect(verified!.exp - verified!.iat).toBe(60 * 60);
         expect(verified?.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
-        expect(verified?.exp).toBeLessThanOrEqual(expectedExp + 5); // Allow 5 second tolerance
+      });
+
+      it('should sign with configured JWT_TOKEN_EXPIRY_MINUTES (issue #1106)', async () => {
+        // Override config to a non-default lifetime and verify it propagates.
+        setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 15 });
+
+        const token = await signJwt({
+          sub: 'user-1',
+          username: 'admin',
+          sessionId: 'sess-1',
+        });
+        const verified = await verifyJwt(token);
+
+        expect(verified).not.toBeNull();
+        // exp - iat should equal exactly 15 * 60 seconds (jose computes from iat).
+        expect(verified!.exp - verified!.iat).toBe(15 * 60);
+      });
+
+      it('should sign with a 5-minute lifetime (issue #1106 lower bound)', async () => {
+        setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 5 });
+
+        const token = await signJwt({
+          sub: 'user-1',
+          username: 'admin',
+          sessionId: 'sess-1',
+        });
+        const verified = await verifyJwt(token);
+
+        expect(verified!.exp - verified!.iat).toBe(5 * 60);
+      });
+
+      it('should sign with a 1440-minute lifetime (issue #1106 upper bound)', async () => {
+        setConfigForTest({ JWT_TOKEN_EXPIRY_MINUTES: 1440 });
+
+        const token = await signJwt({
+          sub: 'user-1',
+          username: 'admin',
+          sessionId: 'sess-1',
+        });
+        const verified = await verifyJwt(token);
+
+        expect(verified!.exp - verified!.iat).toBe(1440 * 60);
       });
 
       it('should return null for invalid token', async () => {
