@@ -39,9 +39,9 @@ test.describe('Infrastructure Overview', () => {
     // The Fleet tab is the default landing tab. The filtered count is always
     // rendered once endpoints have loaded, even if the count is zero.
     const filteredCount = page.locator('[data-testid="fleet-filtered-count"]');
-    const errorState = page.getByRole('heading', {
-      name: /failed to load infrastructure data/i,
-    });
+    // The error message is rendered inside a <p> at fleet-overview.tsx:856,
+    // not a heading — match by visible text instead of role.
+    const errorState = page.getByText(/failed to load infrastructure data/i);
 
     // Either we get the count text (success path) or an explicit error card.
     // We accept both — backend may be cold/unreachable in CI.
