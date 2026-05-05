@@ -72,6 +72,7 @@ describe('Incidents JSONB Type Regression Tests', () => {
     vi.clearAllMocks();
     app = Fastify();
     app.decorate('authenticate', async () => {});
+    app.decorate('requireRole', () => async () => undefined);
     await app.register(incidentsRoutes);
     await app.ready();
   });

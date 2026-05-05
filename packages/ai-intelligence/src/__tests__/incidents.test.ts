@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import { getTestDb, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
 import type { AppDb } from '@dashboard/core/db/app-db.js';
+import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import { incidentsRoutes } from '../routes/incidents.js';
 import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
 
@@ -38,6 +39,7 @@ describe('incidents routes', () => {
 
     // Mock auth decorator
     app.decorate('authenticate', async () => {});
+    app.decorate('requireRole', () => async () => undefined);
     await app.register(incidentsRoutes);
     await app.ready();
   });
@@ -128,4 +130,38 @@ describe('incidents routes', () => {
       expect(mockedResolveIncident).toHaveBeenCalledWith('inc-1');
     });
   });
+});
+
+describe('incidents RBAC', () => {
+  let rbacApp: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    rbacApp = Fastify({ logger: false });
+    rbacApp.decorate('authenticate', async () => undefined);
+    rbacApp.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request: FastifyRequest, reply: FastifyReply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole as keyof typeof rank] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    rbacApp.decorateRequest('user', undefined);
+    rbacApp.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'tester', sessionId: 's1', role: currentRole };
+    });
+    await rbacApp.register(incidentsRoutes);
+    await rbacApp.ready();
+  });
+
+  afterAll(async () => {
+    await rbacApp.close();
+  });
+
+  beforeEach(() => {
+    currentRole = 'admin';
+  });
+
+  testAdminOnly(() => rbacApp, (r) => { currentRole = r; }, 'POST', '/api/incidents/inc-1/resolve');
 });

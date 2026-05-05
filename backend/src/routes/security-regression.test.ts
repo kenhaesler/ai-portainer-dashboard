@@ -1781,3 +1781,69 @@ describe('WebSocket Chat Throttle', () => {
     expect(content).toMatch(/export\s+\{[^}]*CHAT_THROTTLE_MS/);
   });
 });
+
+// =====================================================================
+//  16. INCIDENT RESOLVE ADMIN RBAC ENFORCEMENT (issue #1028, CWE-862)
+// =====================================================================
+describe('Incident Resolve Admin RBAC Enforcement', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin';
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
+    });
+    await app.register(incidentsRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('denies POST /api/incidents/:id/resolve for viewer', async () => {
+    currentRole = 'viewer';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/incidents/inc-1/resolve',
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies POST /api/incidents/:id/resolve for operator', async () => {
+    currentRole = 'operator';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/incidents/inc-1/resolve',
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows POST /api/incidents/:id/resolve for admin', async () => {
+    currentRole = 'admin';
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/incidents/inc-1/resolve',
+    });
+
+    expect(res.statusCode).not.toBe(403);
+  });
+});
