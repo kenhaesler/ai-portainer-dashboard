@@ -2,10 +2,10 @@ import { useState, useMemo, useEffect } from 'react';
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
 import { useInvestigations, safeParseJson } from '@/features/ai-intelligence/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/features/ai-intelligence/hooks/use-investigations';
-import { useIncidents, useResolveIncident, type Incident } from '@/features/ai-intelligence/hooks/use-incidents';
 import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { FleetHealthSummary, calculateHealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
+import { IncidentGroupsView } from '@/features/ai-intelligence/components/incident-groups-view';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
@@ -540,138 +540,6 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
   );
 }
 
-function IncidentCard({
-  incident,
-  onResolve,
-  isSelected,
-  onToggleSelect,
-}: {
-  incident: Incident;
-  onResolve: (id: string) => void;
-  isSelected: boolean;
-  onToggleSelect: (id: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const containers: string[] = incident.affected_containers || [];
-  const isActive = incident.status === 'active';
-
-  // Tint the leading icon by severity instead of always purple. Pulls the
-  // viewer's eye to the row's actual urgency rather than the generic
-  // "incident" shape.
-  const severityIconClasses = {
-    critical: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-    warning: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
-    info: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
-  }[incident.severity];
-
-  return (
-    <div className={cn(
-      'overflow-hidden rounded-lg border-2 bg-card transition-all',
-      isActive
-        ? incident.severity === 'critical'
-          ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
-          : 'border-amber-500/40 bg-amber-50/30 dark:bg-amber-900/10'
-        : 'border-border opacity-60',
-      expanded && 'ring-2 ring-primary/20',
-    )}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full p-4 text-left transition-colors hover:bg-muted/20"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            {isActive && (
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => onToggleSelect(incident.id)}
-                onClick={(e) => e.stopPropagation()}
-                aria-label={`Select incident: ${incident.title}`}
-                className="mt-1.5 h-4 w-4 cursor-pointer rounded border-input accent-primary"
-              />
-            )}
-            <div className={cn('mt-0.5 rounded-full p-2', severityIconClasses)}>
-              <Layers className="h-4 w-4" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <SeverityBadge severity={incident.severity} />
-                {!isActive && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                    Resolved
-                  </span>
-                )}
-              </div>
-              <h3 className="font-semibold text-base leading-snug mb-1">{incident.title}</h3>
-              {!expanded && incident.summary && (
-                <p className="text-sm text-muted-foreground line-clamp-2">{incident.summary}</p>
-              )}
-              {/* Demoted metadata — correlation type + timestamp on a muted line.
-                  Removes 2 of the 5 same-weight chips that crowded the header. */}
-              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <CorrelationTypeBadge type={incident.correlation_type} />
-                <span>·</span>
-                <span>{formatDate(incident.created_at)}</span>
-                <span>·</span>
-                <span>{incident.insight_count} alert{incident.insight_count === 1 ? '' : 's'}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {expanded ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            )}
-          </div>
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="border-t px-4 py-4 bg-muted/10 space-y-3">
-          {incident.summary && (
-            <div>
-              <h4 className="text-sm font-medium mb-1">Summary</h4>
-              <p className="text-sm text-muted-foreground">{incident.summary}</p>
-            </div>
-          )}
-
-          {containers.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-1.5">Affected Containers</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {containers.map((name) => (
-                  // Incidents store affected containers by name only; without
-                  // ids we render plain chips. ContainerChip degrades to a
-                  // span when the ids aren't provided.
-                  <ContainerChip key={name} name={name} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-4 pt-2 border-t text-xs text-muted-foreground">
-            <ConfidenceBadge confidence={incident.correlation_confidence} />
-            {incident.endpoint_name && <span>Endpoint: {incident.endpoint_name}</span>}
-            <span>ID: {incident.id.slice(0, 8)}</span>
-            {isActive && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onResolve(incident.id);
-                }}
-                className="ml-auto inline-flex items-center gap-1 rounded-md bg-emerald-100 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
-              >
-                <CheckCircle2 className="h-3 w-3" />
-                Resolve
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function InsightCard({
   insight,
@@ -876,23 +744,6 @@ function InsightCard({
   );
 }
 
-type TimeRange = '1h' | '24h' | '7d' | 'all';
-type IncidentSort = 'severity' | 'time';
-
-const TIME_RANGE_MS: Record<Exclude<TimeRange, 'all'>, number> = {
-  '1h': 60 * 60 * 1000,
-  '24h': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000,
-};
-
-// Severity weight for default sort: critical > warning > info. Higher = more
-// urgent and floats to the top.
-const SEVERITY_WEIGHT: Record<Severity, number> = {
-  critical: 3,
-  warning: 2,
-  info: 1,
-};
-
 export default function AiMonitorPage() {
   const [severityFilter, setSeverityFilter] = useState<'all' | Severity>('all');
   const [acknowledgementFilter, setAcknowledgementFilter] = useState<'all' | 'unacknowledged'>('all');
@@ -905,8 +756,6 @@ export default function AiMonitorPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState(searchParams.get('q') ?? '');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
-  const timeRange = (searchParams.get('range') as TimeRange) || '24h';
-  const incidentSort = (searchParams.get('sort') as IncidentSort) || 'severity';
 
   // Debounce search input → query (~150ms) so each keystroke doesn't refilter
   // the full list. URL-sync happens on the debounced value.
@@ -933,34 +782,6 @@ export default function AiMonitorPage() {
     setSearchQuery((current) => (current === urlQuery ? current : urlQuery));
   }, [urlQuery]);
 
-  const setUrlParam = (key: string, value: string | null) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value === null) next.delete(key);
-      else next.set(key, value);
-      return next;
-    }, { replace: true });
-  };
-
-  // Bulk-resolve selection state — keyed by incident id. Failed ids stay in
-  // the set on completion so the user can retry; succeeded ids are removed.
-  const [selectedIncidentIds, setSelectedIncidentIds] = useState<Set<string>>(new Set());
-  const [isBulkResolving, setIsBulkResolving] = useState(false);
-  const [bulkResolveError, setBulkResolveError] = useState<string | null>(null);
-  const toggleIncidentSelected = (id: string) => {
-    setSelectedIncidentIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    setBulkResolveError(null);
-  };
-  const clearSelection = () => {
-    setSelectedIncidentIds(new Set());
-    setBulkResolveError(null);
-  };
-
   const {
     insights,
     isLoading,
@@ -975,8 +796,6 @@ export default function AiMonitorPage() {
   } = useMonitoring();
 
   const { getInvestigationForInsight } = useInvestigations();
-  const { data: incidentsData } = useIncidents('active');
-  const resolveIncidentMutation = useResolveIncident();
   const { data: correlatedAnomalies, isLoading: correlatedLoading } = useCorrelatedAnomalies();
 
   // Fleet health data
@@ -1037,42 +856,6 @@ export default function AiMonitorPage() {
     return bySearch;
   }, [acknowledgementFilter, insights, severityFilter, searchLower]);
 
-  // Filter, sort, and bound incidents for the visible list.
-  const visibleIncidents = useMemo(() => {
-    if (!incidentsData) return [];
-    const cutoff = timeRange === 'all' ? null : Date.now() - TIME_RANGE_MS[timeRange];
-
-    let result = incidentsData.incidents.filter((incident) => {
-      if (cutoff !== null) {
-        const created = Date.parse(incident.created_at);
-        if (Number.isFinite(created) && created < cutoff) return false;
-      }
-      if (searchLower) {
-        const haystack = [
-          incident.title,
-          incident.summary,
-          incident.endpoint_name,
-          incident.correlation_type,
-          ...(incident.affected_containers ?? []),
-        ];
-        if (!matchesSearch(haystack)) return false;
-      }
-      return true;
-    });
-
-    if (incidentSort === 'severity') {
-      result = [...result].sort((a, b) => {
-        const weightDiff = SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity];
-        if (weightDiff !== 0) return weightDiff;
-        return Date.parse(b.created_at) - Date.parse(a.created_at);
-      });
-    } else {
-      result = [...result].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-    }
-
-    return result;
-  }, [incidentsData, timeRange, incidentSort, searchLower]);
-
   // Apply search to anomalies + health issues so the search box covers every
   // list on the page consistently.
   const filteredCorrelatedAnomalies = useMemo(() => {
@@ -1087,47 +870,6 @@ export default function AiMonitorPage() {
     if (!searchLower) return healthIssues;
     return healthIssues.filter((c) => matchesSearch([c.name, c.image, c.healthStatus]));
   }, [healthIssues, searchLower]);
-
-  const handleBulkResolve = async () => {
-    if (selectedIncidentIds.size === 0 || isBulkResolving) return;
-    setIsBulkResolving(true);
-    setBulkResolveError(null);
-    const ids = Array.from(selectedIncidentIds);
-    const failedIds: string[] = [];
-
-    // Streaming worker pool — N workers each pull the next id from a shared
-    // queue. A slow request blocks only its own worker, not the whole batch
-    // (the previous batched-wave loop made all 5 workers wait for the
-    // slowest in each wave before starting the next 5). Per-id success and
-    // failure is tracked here rather than via the mutation hook because
-    // `mutation.error` only ever reflects the most recent call when many
-    // run in parallel.
-    const POOL_SIZE = 5;
-    const queue = [...ids];
-    const worker = async () => {
-      while (queue.length > 0) {
-        const id = queue.shift();
-        if (id === undefined) break;
-        try {
-          await resolveIncidentMutation.mutateAsync(id);
-        } catch {
-          failedIds.push(id);
-        }
-      }
-    };
-    const workerCount = Math.min(POOL_SIZE, ids.length);
-    await Promise.all(Array.from({ length: workerCount }, worker));
-
-    // Keep only failed ids selected so the user can retry without
-    // re-checking each row, and surface the failure count inline.
-    setSelectedIncidentIds(new Set(failedIds));
-    if (failedIds.length > 0) {
-      setBulkResolveError(
-        `Failed to resolve ${failedIds.length} of ${ids.length} incident${ids.length === 1 ? '' : 's'}. Retry from the action bar.`,
-      );
-    }
-    setIsBulkResolving(false);
-  };
 
   // Stats
   const stats = useMemo(() => {
@@ -1450,148 +1192,8 @@ export default function AiMonitorPage() {
         </div>
       )}
 
-      {/* Active Incidents */}
-      {incidentsData && incidentsData.incidents.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Layers className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-              <h2 className="text-lg font-semibold">
-                Active Incidents
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({visibleIncidents.length} of {incidentsData.counts.active})
-                </span>
-              </h2>
-            </div>
-
-            {/* Time-range + sort controls */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-0.5 rounded-md border bg-card p-0.5" role="tablist" aria-label="Time range">
-                {(['1h', '24h', '7d', 'all'] as const).map((range) => (
-                  <button
-                    key={range}
-                    type="button"
-                    role="tab"
-                    aria-selected={timeRange === range}
-                    onClick={() => setUrlParam('range', range)}
-                    className={cn(
-                      'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                      timeRange === range
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    )}
-                  >
-                    {range === 'all' ? 'All' : range.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex items-center gap-0.5 rounded-md border bg-card p-0.5" role="tablist" aria-label="Sort">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={incidentSort === 'severity'}
-                  onClick={() => setUrlParam('sort', 'severity')}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                    incidentSort === 'severity'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                >
-                  <AlertTriangle className="h-3 w-3" /> Severity
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={incidentSort === 'time'}
-                  onClick={() => setUrlParam('sort', 'time')}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                    incidentSort === 'time'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                >
-                  <Clock className="h-3 w-3" /> Recent
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Bulk-action bar — only renders when something is selected so it
-              doesn't take vertical space at rest. Surfaces partial-failure
-              count inline so the operator knows which retries are pending. */}
-          {(selectedIncidentIds.size > 0 || bulkResolveError) && (
-            <div
-              data-testid="bulk-action-bar"
-              className={cn(
-                'rounded-md border px-4 py-2',
-                bulkResolveError
-                  ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
-                  : 'border-primary/40 bg-primary/5',
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">
-                  {selectedIncidentIds.size > 0
-                    ? `${selectedIncidentIds.size} selected`
-                    : 'No incidents selected'}
-                </p>
-                {selectedIncidentIds.size > 0 && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={clearSelection}
-                      disabled={isBulkResolving}
-                      className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
-                    >
-                      Clear
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleBulkResolve}
-                      disabled={isBulkResolving}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      {isBulkResolving ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-3 w-3" />
-                      )}
-                      Resolve {selectedIncidentIds.size}
-                    </button>
-                  </div>
-                )}
-              </div>
-              {bulkResolveError && (
-                <p
-                  role="alert"
-                  data-testid="bulk-resolve-error"
-                  className="mt-2 text-xs text-red-700 dark:text-red-400"
-                >
-                  {bulkResolveError}
-                </p>
-              )}
-            </div>
-          )}
-
-          {visibleIncidents.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-              No incidents match the current filters.
-            </div>
-          ) : (
-            visibleIncidents.map((incident) => (
-              <IncidentCard
-                key={incident.id}
-                incident={incident}
-                onResolve={(id) => resolveIncidentMutation.mutate(id)}
-                isSelected={selectedIncidentIds.has(incident.id)}
-                onToggleSelect={toggleIncidentSelected}
-              />
-            ))
-          )}
-        </div>
-      )}
+      {/* Active Incidents (rollup view) */}
+      <IncidentGroupsView search={searchInput} />
 
       {/* Insights Feed */}
       {isLoading ? (

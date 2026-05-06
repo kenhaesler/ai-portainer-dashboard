@@ -22,6 +22,10 @@ beforeAll(() => {
 
 // --- mocks ---
 
+vi.mock('@/features/ai-intelligence/components/incident-groups-view', () => ({
+  IncidentGroupsView: () => <div data-testid="igv-marker" />,
+}));
+
 vi.mock('@/features/ai-intelligence/hooks/use-monitoring', () => ({
   useMonitoring: vi.fn().mockReturnValue({
     insights: [],
@@ -83,7 +87,7 @@ vi.mock('@/shared/hooks/use-force-refresh', () => ({
 }));
 
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
-import { useIncidents, useResolveIncident } from '@/features/ai-intelligence/hooks/use-incidents';
+import { useIncidents } from '@/features/ai-intelligence/hooks/use-incidents';
 import { useCorrelatedAnomalies } from '@/features/observability/hooks/use-correlated-anomalies';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import AiMonitorPage from './ai-monitor';
@@ -217,44 +221,10 @@ describe('AiMonitorPage', () => {
     expect(screen.queryByText('ML-Detected Anomalies')).toBeNull();
   });
 
-  it('renders IncidentCard with colored correlation type badge', () => {
-    // Use a recent timestamp so the default 24h time-range filter doesn't
-    // exclude this fixture from the visible incidents list.
-    const recentTimestamp = new Date().toISOString();
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          {
-            id: 'inc-1',
-            title: 'Multiple containers CPU spike',
-            severity: 'critical' as const,
-            status: 'active' as const,
-            root_cause_insight_id: null,
-            related_insight_ids: [],
-            affected_containers: ['nginx', 'redis'],
-            endpoint_id: 1,
-            endpoint_name: 'prod',
-            correlation_type: 'temporal',
-            correlation_confidence: 'high' as const,
-            insight_count: 3,
-            summary: 'Correlated CPU anomalies',
-            created_at: recentTimestamp,
-            updated_at: recentTimestamp,
-            resolved_at: null,
-          },
-        ],
-        counts: { active: 1, resolved: 0, total: 1 },
-        limit: 50,
-        offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
+  it('renders IncidentGroupsView section (rollup replaces flat list)', () => {
     renderPage();
-
-    // Correlation type badge moved to a muted metadata line under the title
-    // (item 5: reduce visual noise). The label text is still rendered.
-    expect(screen.getByText('Temporal')).toBeTruthy();
-    expect(screen.queryByText('temporal correlation')).toBeNull();
+    // IncidentGroupsView is mocked — its marker confirms it rendered.
+    expect(screen.getByTestId('igv-marker')).toBeTruthy();
   });
 
   it('shows detection method badge on anomaly insight', () => {
@@ -531,48 +501,18 @@ describe('AiMonitorPage', () => {
 
 // =============================================================================
 // New UX features (PR review feedback): cover the AC that previously had no
-// behavioural tests — search, time-range filter, sort, bulk-resolve, and
-// bell-icon subscription independence.
+// behavioural tests — search filtering and bell-icon subscription independence.
+// Incident-specific features (time-range, sort, bulk-resolve) now live inside
+// IncidentGroupsView which has its own dedicated test suite.
 // =============================================================================
 
-import { act, waitFor } from '@testing-library/react';
+import { act } from '@testing-library/react';
 
 function nowIso(offsetMs = 0): string {
   return new Date(Date.now() + offsetMs).toISOString();
 }
 
-function fakeIncident(overrides: Partial<{
-  id: string;
-  title: string;
-  severity: 'critical' | 'warning' | 'info';
-  status: 'active' | 'resolved';
-  affected_containers: string[];
-  endpoint_name: string | null;
-  correlation_type: string;
-  created_at: string;
-  insight_count: number;
-}> = {}) {
-  return {
-    id: overrides.id ?? 'inc-x',
-    title: overrides.title ?? 'Test incident',
-    severity: overrides.severity ?? 'warning',
-    status: overrides.status ?? 'active',
-    root_cause_insight_id: null,
-    related_insight_ids: [],
-    affected_containers: overrides.affected_containers ?? [],
-    endpoint_id: 1,
-    endpoint_name: overrides.endpoint_name ?? 'prod',
-    correlation_type: overrides.correlation_type ?? 'temporal',
-    correlation_confidence: 'high' as const,
-    insight_count: overrides.insight_count ?? 1,
-    summary: 'Summary',
-    created_at: overrides.created_at ?? nowIso(),
-    updated_at: overrides.created_at ?? nowIso(),
-    resolved_at: null,
-  };
-}
-
-describe('AiMonitorPage — search, sort, time range', () => {
+describe('AiMonitorPage — search', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
@@ -642,163 +582,6 @@ describe('AiMonitorPage — search, sort, time range', () => {
     expect(screen.getByText('Match A')).toBeTruthy();
     expect(screen.getByText('Match B')).toBeTruthy();
   });
-
-  it('time-range filter (1H) excludes incidents older than the window', async () => {
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          fakeIncident({ id: 'fresh', title: 'Recent incident', created_at: nowIso(-10 * 60_000) }), // 10 min ago
-          fakeIncident({ id: 'stale', title: 'Old incident', created_at: nowIso(-3 * 60 * 60_000) }), // 3h ago
-        ],
-        counts: { active: 2, resolved: 0, total: 2 },
-        limit: 50, offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
-    renderPage();
-
-    // Default range is 24H — both visible
-    expect(screen.getByText('Recent incident')).toBeTruthy();
-    expect(screen.getByText('Old incident')).toBeTruthy();
-
-    // Switch to 1H — only fresh remains
-    fireEvent.click(screen.getByRole('tab', { name: '1H' }));
-    expect(screen.getByText('Recent incident')).toBeTruthy();
-    expect(screen.queryByText('Old incident')).toBeNull();
-  });
-
-  it('sort: severity (default) puts critical above warning', () => {
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          // Warning is FIRST in source order but should render second after sort.
-          fakeIncident({ id: 'w', title: 'Warning Z', severity: 'warning', created_at: nowIso(-5 * 60_000) }),
-          fakeIncident({ id: 'c', title: 'Critical A', severity: 'critical', created_at: nowIso(-10 * 60_000) }),
-        ],
-        counts: { active: 2, resolved: 0, total: 2 },
-        limit: 50, offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
-    renderPage();
-
-    const titles = screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
-    const ci = titles.indexOf('Critical A');
-    const wi = titles.indexOf('Warning Z');
-    expect(ci).toBeGreaterThanOrEqual(0);
-    expect(wi).toBeGreaterThan(ci);
-  });
-
-  it('sort: switching to Recent reorders by timestamp regardless of severity', () => {
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          // Critical 30 min ago, Warning 5 min ago. Severity sort would put
-          // Critical first; Recent sort flips that.
-          fakeIncident({ id: 'c', title: 'Critical Old', severity: 'critical', created_at: nowIso(-30 * 60_000) }),
-          fakeIncident({ id: 'w', title: 'Warning New', severity: 'warning', created_at: nowIso(-5 * 60_000) }),
-        ],
-        counts: { active: 2, resolved: 0, total: 2 },
-        limit: 50, offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: /Recent/i }));
-
-    const titles = screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
-    const ci = titles.indexOf('Critical Old');
-    const wi = titles.indexOf('Warning New');
-    expect(wi).toBeGreaterThanOrEqual(0);
-    expect(ci).toBeGreaterThan(wi);
-  });
-});
-
-describe('AiMonitorPage — bulk resolve', () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('action bar appears when an incident is selected, and resolves call mutateAsync per id', async () => {
-    const mutateAsync = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(useResolveIncident).mockReturnValue({
-      mutate: vi.fn(),
-      mutateAsync,
-    } as unknown as ReturnType<typeof useResolveIncident>);
-
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          fakeIncident({ id: 'inc-a', title: 'Inc A', severity: 'critical' }),
-          fakeIncident({ id: 'inc-b', title: 'Inc B', severity: 'warning' }),
-        ],
-        counts: { active: 2, resolved: 0, total: 2 },
-        limit: 50, offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
-    renderPage();
-
-    // Select two incidents
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[0]);
-    fireEvent.click(checkboxes[1]);
-
-    // Action bar visible with selection count
-    const bar = screen.getByTestId('bulk-action-bar');
-    expect(bar.textContent).toContain('2 selected');
-
-    // Resolve both
-    fireEvent.click(screen.getByRole('button', { name: /Resolve 2/i }));
-
-    await waitFor(() => {
-      expect(mutateAsync).toHaveBeenCalledTimes(2);
-    });
-    expect(mutateAsync).toHaveBeenCalledWith('inc-a');
-    expect(mutateAsync).toHaveBeenCalledWith('inc-b');
-  });
-
-  it('partial failure: keeps failed ids selected and surfaces an inline error', async () => {
-    const mutateAsync = vi
-      .fn()
-      .mockImplementation((id: string) =>
-        id === 'inc-fail' ? Promise.reject(new Error('boom')) : Promise.resolve(),
-      );
-    vi.mocked(useResolveIncident).mockReturnValue({
-      mutate: vi.fn(),
-      mutateAsync,
-    } as unknown as ReturnType<typeof useResolveIncident>);
-
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          fakeIncident({ id: 'inc-ok', title: 'OK', severity: 'warning' }),
-          fakeIncident({ id: 'inc-fail', title: 'Fail', severity: 'warning' }),
-        ],
-        counts: { active: 2, resolved: 0, total: 2 },
-        limit: 50, offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
-    renderPage();
-
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[0]);
-    fireEvent.click(checkboxes[1]);
-    fireEvent.click(screen.getByRole('button', { name: /Resolve 2/i }));
-
-    // Error message should surface with the failure count
-    await waitFor(() => {
-      expect(screen.getByTestId('bulk-resolve-error')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('bulk-resolve-error').textContent).toContain('Failed to resolve 1 of 2');
-    // The action bar still shows 1 selected (only the failed id remains)
-    expect(screen.getByTestId('bulk-action-bar').textContent).toContain('1 selected');
-  });
 });
 
 describe('AiMonitorPage — container chip linking', () => {
@@ -837,28 +620,6 @@ describe('AiMonitorPage — container chip linking', () => {
     const link = screen.getByRole('link', { name: /linkable-container/i, hidden: true });
     expect(link.getAttribute('href')).toBe('/containers/7/c-abc');
   });
-
-  it('renders a plain (non-link) chip for incident affected_containers because ids are unknown', () => {
-    vi.mocked(useIncidents).mockReturnValue({
-      data: {
-        incidents: [
-          fakeIncident({ id: 'inc-x', title: 'Has affected containers', affected_containers: ['nginx-1'] }),
-        ],
-        counts: { active: 1, resolved: 0, total: 1 },
-        limit: 50, offset: 0,
-      },
-    } as ReturnType<typeof useIncidents>);
-
-    renderPage();
-
-    // Expand the incident card so the affected-containers list renders
-    fireEvent.click(screen.getByText('Has affected containers'));
-
-    // The text appears, but it's NOT inside an anchor — incidents store
-    // affected_containers as names only, not as ids.
-    const nginxChip = screen.getByText('nginx-1');
-    expect(nginxChip.closest('a')).toBeNull();
-  });
 });
 
 describe('AiMonitorPage — stat card filter vs subscription independence', () => {
@@ -889,5 +650,12 @@ describe('AiMonitorPage — stat card filter vs subscription independence', () =
     // tab remains the active tab (aria-pressed=true on Total Insights btn).
     const totalCard = screen.getByRole('button', { name: /Total Insights/i });
     expect(totalCard.getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('AiMonitorPage — IncidentGroupsView integration', () => {
+  it('renders IncidentGroupsView in place of the legacy flat list', () => {
+    renderPage();
+    expect(screen.getByTestId('igv-marker')).toBeTruthy();
   });
 });
