@@ -98,6 +98,7 @@ export async function addInsightToIncident(incidentId: string, insightId: string
 export interface GetIncidentsOptions {
   status?: 'active' | 'resolved';
   severity?: string;
+  signature?: string;
   limit?: number;
   offset?: number;
 }
@@ -114,6 +115,10 @@ export async function getIncidents(options: GetIncidentsOptions = {}): Promise<I
   if (options.severity) {
     conditions.push('severity = ?');
     params.push(options.severity);
+  }
+  if (options.signature) {
+    conditions.push('signature = ?');
+    params.push(options.signature);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

@@ -15,14 +15,15 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { status, severity, limit = 50, offset = 0 } = request.query as {
+    const { status, severity, signature, limit = 50, offset = 0 } = request.query as {
       status?: 'active' | 'resolved';
       severity?: string;
+      signature?: string;
       limit?: number;
       offset?: number;
     };
 
-    const incidents = await getIncidents({ status, severity, limit, offset });
+    const incidents = await getIncidents({ status, severity, signature, limit, offset });
     const counts = await getIncidentCount();
 
     return {
