@@ -2,6 +2,8 @@ import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useIncidentGroups, type IncidentGroup } from '../hooks/use-incident-groups';
+import { useBatchResolveIncidents, type BatchResolveResponse } from '../hooks/use-incidents';
+import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 
@@ -27,6 +29,9 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const { data, isLoading } = useIncidentGroups({ status: 'active' });
   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
   const [longTailBySig, setLongTailBySig] = useState<Record<string, LongTailRow[]>>({});
+  const batchResolve = useBatchResolveIncidents();
+  const [pendingGroup, setPendingGroup] = useState<IncidentGroup | null>(null);
+  const [lastFailure, setLastFailure] = useState<BatchResolveResponse | null>(null);
 
   const summary = useMemo(() => computeSummary(data?.groups ?? []), [data?.groups]);
 
@@ -69,6 +74,21 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const toggle = useCallback((sig: string, severity: IncidentGroup['severity']) => {
     setExpandedOverrides((prev) => ({ ...prev, [sig]: !isOpen(sig, severity) }));
   }, [isOpen]);
+
+  const onResolveGroup = useCallback(async (group: IncidentGroup) => {
+    setPendingGroup(null);
+    const longTail = longTailBySig[group.signature];
+    const ids = (longTail ?? group.top_containers).map((c) => c.incident_id);
+    const r = await batchResolve.mutateAsync(ids);
+    if (r.failed.length > 0) setLastFailure(r);
+    else setLastFailure(null);
+  }, [batchResolve, longTailBySig]);
+
+  const onRetryFailed = useCallback(async () => {
+    if (!lastFailure) return;
+    const r = await batchResolve.mutateAsync(lastFailure.failed.map((f) => f.id));
+    setLastFailure(r.failed.length > 0 ? r : null);
+  }, [batchResolve, lastFailure]);
 
   const showAll = useCallback(async (group: IncidentGroup) => {
     const r = await api.get<{
@@ -187,11 +207,49 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
                     Show all {g.container_count}
                   </button>
                 )}
+                {rows.length > 0 && (
+                  <div className="border-t flex items-center justify-end gap-2 p-2">
+                    <button
+                      type="button"
+                      onClick={() => setPendingGroup(g)}
+                      className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                    >
+                      Resolve all {g.incident_count}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
         );
       })}
+      {pendingGroup && (
+        <ConfirmDialog
+          open={pendingGroup !== null}
+          title={`Resolve all ${pendingGroup.incident_count} incidents in this group?`}
+          description={`This will mark all ${pendingGroup.incident_count} active incident${pendingGroup.incident_count === 1 ? '' : 's'} in "${pendingGroup.label}" as resolved.`}
+          onConfirm={() => void onResolveGroup(pendingGroup)}
+          onCancel={() => setPendingGroup(null)}
+          confirmLabel="Confirm"
+          variant="warning"
+        />
+      )}
+      {lastFailure && lastFailure.failed.length > 0 && (
+        lastFailure.failed.length <= 5 ? (
+          <div role="alert" className="rounded-md border border-red-500/40 bg-red-50/30 p-2 text-sm">
+            <p className="font-medium">Retry {lastFailure.failed.length} failed</p>
+            <ul className="mt-1 list-disc pl-5">
+              {lastFailure.failed.map((f) => <li key={f.id}>{f.id}: {f.error}</li>)}
+            </ul>
+            <button onClick={() => void onRetryFailed()} className="mt-1 rounded-md bg-emerald-600 px-2 py-1 text-xs text-white">Retry</button>
+          </div>
+        ) : (
+          <div role="alert" className="rounded-md border border-red-500/40 bg-red-50/30 p-2 text-sm">
+            <p className="font-medium">{lastFailure.failed.length} of {lastFailure.failed.length + lastFailure.resolved.length} resolves failed</p>
+            <button onClick={() => void onRetryFailed()} className="mt-1 rounded-md bg-emerald-600 px-2 py-1 text-xs text-white">Retry failed only</button>
+          </div>
+        )
+      )}
     </div>
   );
 }

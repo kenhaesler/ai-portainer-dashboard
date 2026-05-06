@@ -69,3 +69,19 @@ export function useResolveIncident() {
     },
   });
 }
+
+export interface BatchResolveResponse {
+  resolved: string[];
+  failed: Array<{ id: string; error: string }>;
+}
+
+export function useBatchResolveIncidents() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.post<BatchResolveResponse>('/api/incidents/resolve', { ids }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['incident-groups'] });
+    },
+  });
+}
