@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -47,7 +47,10 @@ vi.mock('@/features/ai-intelligence/hooks/use-investigations', () => ({
 
 vi.mock('@/features/ai-intelligence/hooks/use-incidents', () => ({
   useIncidents: vi.fn().mockReturnValue({ data: null }),
-  useResolveIncident: vi.fn().mockReturnValue({ mutate: vi.fn() }),
+  useResolveIncident: vi.fn().mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+  }),
 }));
 
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
@@ -80,7 +83,7 @@ vi.mock('@/shared/hooks/use-force-refresh', () => ({
 }));
 
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
-import { useIncidents } from '@/features/ai-intelligence/hooks/use-incidents';
+import { useIncidents, useResolveIncident } from '@/features/ai-intelligence/hooks/use-incidents';
 import { useCorrelatedAnomalies } from '@/features/observability/hooks/use-correlated-anomalies';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import AiMonitorPage from './ai-monitor';
@@ -193,7 +196,9 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Anomalies & Health Issues')).toBeTruthy();
+    // Section was renamed from "Anomalies & Health Issues" to clearer twin
+    // sections: "ML-Detected Anomalies" + "Container Health".
+    expect(screen.getByText('ML-Detected Anomalies')).toBeTruthy();
     expect(screen.getByText('web-server')).toBeTruthy();
     expect(screen.getByText('Resource Exhaustion')).toBeTruthy();
     expect(screen.getByText('4.08')).toBeTruthy();
@@ -209,10 +214,13 @@ describe('AiMonitorPage', () => {
     } as ReturnType<typeof useCorrelatedAnomalies>);
 
     renderPage();
-    expect(screen.queryByText('Anomalies & Health Issues')).toBeNull();
+    expect(screen.queryByText('ML-Detected Anomalies')).toBeNull();
   });
 
   it('renders IncidentCard with colored correlation type badge', () => {
+    // Use a recent timestamp so the default 24h time-range filter doesn't
+    // exclude this fixture from the visible incidents list.
+    const recentTimestamp = new Date().toISOString();
     vi.mocked(useIncidents).mockReturnValue({
       data: {
         incidents: [
@@ -222,16 +230,16 @@ describe('AiMonitorPage', () => {
             severity: 'critical' as const,
             status: 'active' as const,
             root_cause_insight_id: null,
-            related_insight_ids: '[]',
-            affected_containers: '["nginx","redis"]',
+            related_insight_ids: [],
+            affected_containers: ['nginx', 'redis'],
             endpoint_id: 1,
             endpoint_name: 'prod',
             correlation_type: 'temporal',
             correlation_confidence: 'high' as const,
             insight_count: 3,
             summary: 'Correlated CPU anomalies',
-            created_at: '2025-01-15T10:00:00Z',
-            updated_at: '2025-01-15T10:00:00Z',
+            created_at: recentTimestamp,
+            updated_at: recentTimestamp,
             resolved_at: null,
           },
         ],
@@ -243,7 +251,8 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Should show "Temporal" badge text, not "temporal correlation" plain text
+    // Correlation type badge moved to a muted metadata line under the title
+    // (item 5: reduce visual noise). The label text is still rendered.
     expect(screen.getByText('Temporal')).toBeTruthy();
     expect(screen.queryByText('temporal correlation')).toBeNull();
   });
@@ -413,13 +422,19 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
+    // New score formula: healthy / (healthy + unhealthy). 1 healthy + 1
+    // unhealthy = 50.0%. The db (no healthcheck) and cache (exited) are
+    // excluded from the denominator so the operator's healthcheck coverage
+    // gap doesn't penalise the score.
     expect(screen.getByText('Overall Health Score')).toBeTruthy();
-    // 1 healthy (web) out of 4 = 25.0% — db has no healthcheck so counts as unknown, not healthy
-    expect(screen.getAllByText('25.0%').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('50.0%').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('Healthy')).toBeTruthy();
     expect(screen.getAllByText('Unhealthy').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Stopped').length).toBeGreaterThanOrEqual(1);
+    // The "Stopped" stat card was replaced by "No Healthcheck" — surfacing
+    // the cohort that's actually excluded from scoring is more useful than
+    // counting exited containers (already shown elsewhere as health issues).
+    expect(screen.getByText('No Healthcheck')).toBeTruthy();
   });
 
   it('shows skeleton loading state for health section', () => {
@@ -450,10 +465,13 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Health score and all stat card percentages should be "0.0%", never NaN
-    const allPcts = screen.getAllByText('0.0%');
-    expect(allPcts.length).toBeGreaterThanOrEqual(1);
-    allPcts.forEach((el) => expect(el.textContent).not.toContain('NaN'));
+    // Empty fleet now shows "No healthchecks configured" instead of an
+    // arbitrary 0.0% — the new score formula returns null when no container
+    // reports a health signal and we surface that as N/A so operators are
+    // not misled by a bogus zero.
+    expect(screen.getByTestId('health-score-na')).toBeTruthy();
+    // No NaN should ever leak into the rendered DOM.
+    expect(document.body.textContent ?? '').not.toContain('NaN');
   });
 
   it('surfaces unhealthy and stopped containers in the Anomalies & Health Issues section', () => {
@@ -476,7 +494,10 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Anomalies & Health Issues')).toBeTruthy();
+    // The mixed list was split into "ML-Detected Anomalies" + "Container
+    // Health". State-based issues (unhealthy/stopped) live under "Container
+    // Health" now.
+    expect(screen.getByText('Container Health')).toBeTruthy();
     // Both problematic containers appear; healthy one does not
     expect(screen.getByText('sick-api')).toBeTruthy();
     expect(screen.getByText('crashed-worker')).toBeTruthy();
@@ -505,5 +526,368 @@ describe('AiMonitorPage', () => {
     fireEvent.click(screen.getByText('CPU trend spike'));
 
     expect(screen.getByText('Failed to acknowledge insight')).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// New UX features (PR review feedback): cover the AC that previously had no
+// behavioural tests — search, time-range filter, sort, bulk-resolve, and
+// bell-icon subscription independence.
+// =============================================================================
+
+import { act, waitFor } from '@testing-library/react';
+
+function nowIso(offsetMs = 0): string {
+  return new Date(Date.now() + offsetMs).toISOString();
+}
+
+function fakeIncident(overrides: Partial<{
+  id: string;
+  title: string;
+  severity: 'critical' | 'warning' | 'info';
+  status: 'active' | 'resolved';
+  affected_containers: string[];
+  endpoint_name: string | null;
+  correlation_type: string;
+  created_at: string;
+  insight_count: number;
+}> = {}) {
+  return {
+    id: overrides.id ?? 'inc-x',
+    title: overrides.title ?? 'Test incident',
+    severity: overrides.severity ?? 'warning',
+    status: overrides.status ?? 'active',
+    root_cause_insight_id: null,
+    related_insight_ids: [],
+    affected_containers: overrides.affected_containers ?? [],
+    endpoint_id: 1,
+    endpoint_name: overrides.endpoint_name ?? 'prod',
+    correlation_type: overrides.correlation_type ?? 'temporal',
+    correlation_confidence: 'high' as const,
+    insight_count: overrides.insight_count ?? 1,
+    summary: 'Summary',
+    created_at: overrides.created_at ?? nowIso(),
+    updated_at: overrides.created_at ?? nowIso(),
+    resolved_at: null,
+  };
+}
+
+describe('AiMonitorPage — search, sort, time range', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('search box filters insights and persists to URL after debounce', async () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [
+        { id: 'i1', endpoint_id: 1, endpoint_name: 'local', container_id: 'c1', container_name: 'matching-redis', severity: 'warning', category: 'anomaly', title: 'Redis spike', description: '', suggested_action: null, is_acknowledged: 0, created_at: nowIso() },
+        { id: 'i2', endpoint_id: 1, endpoint_name: 'local', container_id: 'c2', container_name: 'unrelated-pg', severity: 'warning', category: 'anomaly', title: 'PG normal', description: '', suggested_action: null, is_acknowledged: 0, created_at: nowIso() },
+      ],
+      isLoading: false,
+      error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(),
+      unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    // Both rows visible at first
+    expect(screen.getByText('Redis spike')).toBeTruthy();
+    expect(screen.getByText('PG normal')).toBeTruthy();
+
+    const searchBox = screen.getByPlaceholderText(/Search by container/i);
+    fireEvent.change(searchBox, { target: { value: 'redis' } });
+
+    // Debounce window — advance fake timers past the 150ms threshold
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(screen.getByText('Redis spike')).toBeTruthy();
+    expect(screen.queryByText('PG normal')).toBeNull();
+  });
+
+  it('clearing the search box restores all rows', async () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [
+        { id: 'i1', endpoint_id: 1, endpoint_name: 'local', container_id: 'c1', container_name: 'redis-1', severity: 'warning', category: 'anomaly', title: 'Match A', description: '', suggested_action: null, is_acknowledged: 0, created_at: nowIso() },
+        { id: 'i2', endpoint_id: 1, endpoint_name: 'local', container_id: 'c2', container_name: 'pg-1', severity: 'warning', category: 'anomaly', title: 'Match B', description: '', suggested_action: null, is_acknowledged: 0, created_at: nowIso() },
+      ],
+      isLoading: false, error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(), unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(), acknowledgeError: null,
+      isAcknowledging: false, acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+    const searchBox = screen.getByPlaceholderText(/Search by container/i);
+    fireEvent.change(searchBox, { target: { value: 'redis' } });
+    await act(async () => { vi.advanceTimersByTime(200); });
+    expect(screen.queryByText('Match B')).toBeNull();
+
+    fireEvent.change(searchBox, { target: { value: '' } });
+    await act(async () => { vi.advanceTimersByTime(200); });
+    expect(screen.getByText('Match A')).toBeTruthy();
+    expect(screen.getByText('Match B')).toBeTruthy();
+  });
+
+  it('time-range filter (1H) excludes incidents older than the window', async () => {
+    vi.mocked(useIncidents).mockReturnValue({
+      data: {
+        incidents: [
+          fakeIncident({ id: 'fresh', title: 'Recent incident', created_at: nowIso(-10 * 60_000) }), // 10 min ago
+          fakeIncident({ id: 'stale', title: 'Old incident', created_at: nowIso(-3 * 60 * 60_000) }), // 3h ago
+        ],
+        counts: { active: 2, resolved: 0, total: 2 },
+        limit: 50, offset: 0,
+      },
+    } as ReturnType<typeof useIncidents>);
+
+    renderPage();
+
+    // Default range is 24H — both visible
+    expect(screen.getByText('Recent incident')).toBeTruthy();
+    expect(screen.getByText('Old incident')).toBeTruthy();
+
+    // Switch to 1H — only fresh remains
+    fireEvent.click(screen.getByRole('tab', { name: '1H' }));
+    expect(screen.getByText('Recent incident')).toBeTruthy();
+    expect(screen.queryByText('Old incident')).toBeNull();
+  });
+
+  it('sort: severity (default) puts critical above warning', () => {
+    vi.mocked(useIncidents).mockReturnValue({
+      data: {
+        incidents: [
+          // Warning is FIRST in source order but should render second after sort.
+          fakeIncident({ id: 'w', title: 'Warning Z', severity: 'warning', created_at: nowIso(-5 * 60_000) }),
+          fakeIncident({ id: 'c', title: 'Critical A', severity: 'critical', created_at: nowIso(-10 * 60_000) }),
+        ],
+        counts: { active: 2, resolved: 0, total: 2 },
+        limit: 50, offset: 0,
+      },
+    } as ReturnType<typeof useIncidents>);
+
+    renderPage();
+
+    const titles = screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
+    const ci = titles.indexOf('Critical A');
+    const wi = titles.indexOf('Warning Z');
+    expect(ci).toBeGreaterThanOrEqual(0);
+    expect(wi).toBeGreaterThan(ci);
+  });
+
+  it('sort: switching to Recent reorders by timestamp regardless of severity', () => {
+    vi.mocked(useIncidents).mockReturnValue({
+      data: {
+        incidents: [
+          // Critical 30 min ago, Warning 5 min ago. Severity sort would put
+          // Critical first; Recent sort flips that.
+          fakeIncident({ id: 'c', title: 'Critical Old', severity: 'critical', created_at: nowIso(-30 * 60_000) }),
+          fakeIncident({ id: 'w', title: 'Warning New', severity: 'warning', created_at: nowIso(-5 * 60_000) }),
+        ],
+        counts: { active: 2, resolved: 0, total: 2 },
+        limit: 50, offset: 0,
+      },
+    } as ReturnType<typeof useIncidents>);
+
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: /Recent/i }));
+
+    const titles = screen.getAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
+    const ci = titles.indexOf('Critical Old');
+    const wi = titles.indexOf('Warning New');
+    expect(wi).toBeGreaterThanOrEqual(0);
+    expect(ci).toBeGreaterThan(wi);
+  });
+});
+
+describe('AiMonitorPage — bulk resolve', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('action bar appears when an incident is selected, and resolves call mutateAsync per id', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useResolveIncident).mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync,
+    } as unknown as ReturnType<typeof useResolveIncident>);
+
+    vi.mocked(useIncidents).mockReturnValue({
+      data: {
+        incidents: [
+          fakeIncident({ id: 'inc-a', title: 'Inc A', severity: 'critical' }),
+          fakeIncident({ id: 'inc-b', title: 'Inc B', severity: 'warning' }),
+        ],
+        counts: { active: 2, resolved: 0, total: 2 },
+        limit: 50, offset: 0,
+      },
+    } as ReturnType<typeof useIncidents>);
+
+    renderPage();
+
+    // Select two incidents
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+
+    // Action bar visible with selection count
+    const bar = screen.getByTestId('bulk-action-bar');
+    expect(bar.textContent).toContain('2 selected');
+
+    // Resolve both
+    fireEvent.click(screen.getByRole('button', { name: /Resolve 2/i }));
+
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledTimes(2);
+    });
+    expect(mutateAsync).toHaveBeenCalledWith('inc-a');
+    expect(mutateAsync).toHaveBeenCalledWith('inc-b');
+  });
+
+  it('partial failure: keeps failed ids selected and surfaces an inline error', async () => {
+    const mutateAsync = vi
+      .fn()
+      .mockImplementation((id: string) =>
+        id === 'inc-fail' ? Promise.reject(new Error('boom')) : Promise.resolve(),
+      );
+    vi.mocked(useResolveIncident).mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync,
+    } as unknown as ReturnType<typeof useResolveIncident>);
+
+    vi.mocked(useIncidents).mockReturnValue({
+      data: {
+        incidents: [
+          fakeIncident({ id: 'inc-ok', title: 'OK', severity: 'warning' }),
+          fakeIncident({ id: 'inc-fail', title: 'Fail', severity: 'warning' }),
+        ],
+        counts: { active: 2, resolved: 0, total: 2 },
+        limit: 50, offset: 0,
+      },
+    } as ReturnType<typeof useIncidents>);
+
+    renderPage();
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole('button', { name: /Resolve 2/i }));
+
+    // Error message should surface with the failure count
+    await waitFor(() => {
+      expect(screen.getByTestId('bulk-resolve-error')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('bulk-resolve-error').textContent).toContain('Failed to resolve 1 of 2');
+    // The action bar still shows 1 selected (only the failed id remains)
+    expect(screen.getByTestId('bulk-action-bar').textContent).toContain('1 selected');
+  });
+});
+
+describe('AiMonitorPage — container chip linking', () => {
+  it('renders a container link to /containers/:endpointId/:containerId on insights with ids', () => {
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [
+        {
+          id: 'i-link',
+          endpoint_id: 7,
+          endpoint_name: 'prod',
+          container_id: 'c-abc',
+          container_name: 'linkable-container',
+          severity: 'warning',
+          category: 'anomaly',
+          title: 'Linkable',
+          description: '',
+          suggested_action: null,
+          is_acknowledged: 0,
+          created_at: nowIso(),
+        },
+      ],
+      isLoading: false, error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: vi.fn(), unsubscribeSeverity: vi.fn(),
+      acknowledgeInsight: vi.fn(), acknowledgeError: null,
+      isAcknowledging: false, acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    // The accessible name for a link comes from its text content. The chip
+    // wraps a Box icon + the container name. The chip lives inside a
+    // `hidden sm:flex` wrapper which jsdom treats as inaccessible by default,
+    // so opt into hidden lookups for the query.
+    const link = screen.getByRole('link', { name: /linkable-container/i, hidden: true });
+    expect(link.getAttribute('href')).toBe('/containers/7/c-abc');
+  });
+
+  it('renders a plain (non-link) chip for incident affected_containers because ids are unknown', () => {
+    vi.mocked(useIncidents).mockReturnValue({
+      data: {
+        incidents: [
+          fakeIncident({ id: 'inc-x', title: 'Has affected containers', affected_containers: ['nginx-1'] }),
+        ],
+        counts: { active: 1, resolved: 0, total: 1 },
+        limit: 50, offset: 0,
+      },
+    } as ReturnType<typeof useIncidents>);
+
+    renderPage();
+
+    // Expand the incident card so the affected-containers list renders
+    fireEvent.click(screen.getByText('Has affected containers'));
+
+    // The text appears, but it's NOT inside an anchor — incidents store
+    // affected_containers as names only, not as ids.
+    const nginxChip = screen.getByText('nginx-1');
+    expect(nginxChip.closest('a')).toBeNull();
+  });
+});
+
+describe('AiMonitorPage — stat card filter vs subscription independence', () => {
+  it('clicking the bell icon toggles subscription without changing the severity filter', async () => {
+    const subscribe = vi.fn();
+    const unsubscribe = vi.fn();
+    vi.mocked(useMonitoring).mockReturnValue({
+      insights: [],
+      isLoading: false, error: null,
+      subscribedSeverities: new Set(['critical', 'warning', 'info']),
+      subscribeSeverity: subscribe,
+      unsubscribeSeverity: unsubscribe,
+      acknowledgeInsight: vi.fn(),
+      acknowledgeError: null,
+      isAcknowledging: false,
+      acknowledgingInsightId: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useMonitoring>);
+
+    renderPage();
+
+    // Bell button has accessible name "Pause live critical alerts"
+    const pauseCritical = screen.getByRole('button', { name: /Pause live critical alerts/i });
+    fireEvent.click(pauseCritical);
+
+    expect(unsubscribe).toHaveBeenCalledWith('critical');
+    // Should NOT have triggered a severity-filter change — the All filter
+    // tab remains the active tab (aria-pressed=true on Total Insights btn).
+    const totalCard = screen.getByRole('button', { name: /Total Insights/i });
+    expect(totalCard.getAttribute('aria-pressed')).toBe('true');
   });
 });

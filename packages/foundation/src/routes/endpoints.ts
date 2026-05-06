@@ -3,6 +3,9 @@ import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { createChildLogger } from '@dashboard/core/utils/logger.js';
+
+const log = createChildLogger('route:endpoints');
 
 export async function endpointsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/endpoints', {
@@ -12,13 +15,24 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
-    const endpoints = await cachedFetch(
-      getCacheKey('endpoints'),
-      TTL.ENDPOINTS,
-      () => portainer.getEndpoints(),
-    );
-    return endpoints.map(normalizeEndpoint);
+  }, async (_request, reply) => {
+    // Upstream Portainer failures (including 401 from Portainer itself) must
+    // surface as 502 Bad Gateway, not 401. The frontend treats 401 as
+    // "session expired" and clears the user's auth, which would otherwise
+    // bounce a logged-in user back to /login on every page load when the
+    // dashboard's PORTAINER_API_KEY is missing or invalid.
+    try {
+      const endpoints = await cachedFetch(
+        getCacheKey('endpoints'),
+        TTL.ENDPOINTS,
+        () => portainer.getEndpoints(),
+      );
+      return endpoints.map(normalizeEndpoint);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err }, 'Failed to fetch endpoints from Portainer');
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+    }
   });
 
   // Diagnostic endpoint: shows raw Portainer data for Edge endpoints
@@ -29,8 +43,15 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async () => {
-    const endpoints = await portainer.getEndpoints();
+  }, async (_request, reply) => {
+    let endpoints;
+    try {
+      endpoints = await portainer.getEndpoints();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err }, 'Failed to fetch endpoints from Portainer (edge-status)');
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+    }
     return endpoints.map((ep) => {
       const normalized = normalizeEndpoint(ep);
       return {
@@ -62,13 +83,19 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
       params: EndpointIdParamsSchema,
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: number };
-    const endpoint = await cachedFetch(
-      getCacheKey('endpoint', id),
-      TTL.ENDPOINTS,
-      () => portainer.getEndpoint(id),
-    );
-    return normalizeEndpoint(endpoint);
+    try {
+      const endpoint = await cachedFetch(
+        getCacheKey('endpoint', id),
+        TTL.ENDPOINTS,
+        () => portainer.getEndpoint(id),
+      );
+      return normalizeEndpoint(endpoint);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, id }, 'Failed to fetch endpoint from Portainer');
+      return reply.code(502).send({ error: 'Unable to connect to Portainer', details: msg });
+    }
   });
 }
