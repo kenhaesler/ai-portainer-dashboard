@@ -85,15 +85,32 @@ The Active Incidents block on `/health` shows a flat list of 455 rows. Each pred
 
 ### 3.1 Migration
 
+The migration is split into two phases to avoid a write-blocking index build at deploy time. The auto-migration runner in `packages/core/src/db/postgres.ts` runs migrations inside a transaction; `CREATE INDEX` (without `CONCURRENTLY`) inside a transaction takes an `ACCESS EXCLUSIVE` lock and blocks writes for the duration. On a large `incidents` table that's an unacceptable deploy stall.
+
+**Phase A — column add (auto-migration, transactional, fast):**
+
 `packages/core/src/db/postgres-migrations/<NNN>_add_incident_signature.sql`:
 
 ```sql
 ALTER TABLE incidents ADD COLUMN signature TEXT;
-CREATE INDEX idx_incidents_signature_status ON incidents (signature, status);
-CREATE INDEX idx_incidents_endpoint_status ON incidents (endpoint_id, status);
 ```
 
-`signature` is nullable in this migration so the column add is non-blocking. The backfill populates it; thereafter all writes set it. `NOT NULL` is enforced in a follow-up after one week of clean writes (see §5.5).
+This is `O(1)` on Postgres (metadata-only) and runs safely inside the migration transaction.
+
+**Phase B — index creation (deploy-time script, non-transactional):**
+
+`packages/ai-intelligence/scripts/create-incident-signature-indexes.ts` runs after the column-add migration but outside any transaction:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_incidents_signature_status
+  ON incidents (signature, status);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_incidents_endpoint_status
+  ON incidents (endpoint_id, status);
+```
+
+`CONCURRENTLY` requires running outside a transaction block, which is why this can't live in the standard migration runner. The script connects directly via `pg`, runs each `CREATE INDEX CONCURRENTLY` separately (each must be its own transaction), and uses `IF NOT EXISTS` so it's safe to re-run. It's invoked once during deploy after the column-add migration completes.
+
+`signature` is nullable across both phases so the column add is non-blocking. The backfill populates it; thereafter all writes set it. `NOT NULL` is enforced in a follow-up after one week of clean writes (see §5.5).
 
 ### 3.2 Insight schema additions
 
@@ -165,12 +182,20 @@ The signature is the *kind* of problem; it does not include container or endpoin
 
 - Selects incidents where `signature IS NULL` in batches of 500.
 - Joins each row's `root_cause_insight_id` against `insights` to get category + structured fields.
-- Calls `deriveSignature(rootInsight)`; falls through to `deriveSignatureFromTitle(incident.title)` if the root insight is missing (deleted, archived).
+- Calls **the same `deriveSignature` function** used by live writes (single source of truth). The function's preference order is unchanged: structured fields → category-only fallback → title regex.
 - `UPDATE incidents SET signature = ? WHERE id = ? AND signature IS NULL` (idempotent — only fills nulls).
 - Logs progress every 500 rows and a final `(signature, count)` summary.
 - A `--force` flag re-derives all rows (drops the `IS NULL` predicate). Default behaviour is null-only.
 
 Run once at deploy time. Re-runnable safely.
+
+**Drift verification (mandatory before merge).** The risk is that legacy incidents whose root insight lacks the new structured fields fall through to the title regex and produce a signature that doesn't match what live writes produce for the same problem class — splitting the rollup. To prevent this:
+
+1. Export a representative sample of historical incident titles from a real environment (script provided alongside the backfill: `dump-historical-titles.ts`, dumps to a CSV).
+2. Add a test in `signature.test.ts` that loads this CSV and asserts every historical title maps to a signature in the known-good set (i.e., no `unknown:*` results, and the regex outputs match what the structured-field path would emit for the same problem class).
+3. Any title that produces a mismatch is a regex bug to fix in `deriveSignatureFromTitle` before merge — not an acceptable "legacy fallback".
+
+The CSV is checked in as a test fixture so the corpus stays stable across PRs. Add to it whenever new title patterns are discovered in production.
 
 ### 3.5 New endpoint: `GET /api/incidents/groups`
 
@@ -180,7 +205,7 @@ Run once at deploy time. Re-runnable safely.
 GET /api/incidents/groups?status=active&endpoint_id=42&since=24h&severity=critical
 ```
 
-All query params optional. `status` defaults to `active`. `since` filters incidents whose `created_at >= NOW() - <window>`; accepts `1h`, `24h`, `7d`, or omitted (= all-time). The aggregate counts in the response reflect only the filtered set — including `top_containers` and `endpoint_facets`.
+All query params optional. `status` defaults to `active`. `since` filters incidents whose **`COALESCE(latest_at, updated_at, created_at) >= NOW() - <window>`** — i.e., "recently active", not "recently created". A long-running active incident from 25 hours ago is *not* hidden by `since=24h` if it's still being updated. Accepts `1h`, `24h`, `7d`, or omitted (= all-time). The aggregate counts in the response reflect only the filtered set — including `top_containers`, `all_container_names`, and `endpoint_facets`.
 
 **Response:**
 
@@ -203,6 +228,8 @@ All query params optional. `status` defaults to `active`. `since` filters incide
       severity: 'critical' | 'warning' | 'info';
       created_at: string;
     }>;                           // worst 10 by severity then recency
+    all_container_names: string[]; // every distinct container name in the group,
+                                  // for client-side search across the long tail
   }>,
   endpoint_facets: Array<{
     endpoint_id: number | null;
@@ -213,20 +240,50 @@ All query params optional. `status` defaults to `active`. `since` filters incide
 }
 ```
 
-**Implementation:** one CTE per dimension (signature aggregate, endpoint facet, top-N per signature using `ROW_NUMBER() OVER (PARTITION BY signature ORDER BY severity_rank, created_at DESC)`), wrapped into a single round-trip.
+`all_container_names` is intentionally just strings (not full incident records) to keep the payload bounded. At 200 containers per group × 30 groups × 50 chars/name ≈ 300 KB worst-case — acceptable. If empirical payloads exceed 500 KB, we cap the array at, say, 1000 names per group and require server-side search for groups beyond that (deferred until measured).
+
+**Implementation:** one CTE per dimension (signature aggregate with `array_agg(DISTINCT container_name) AS all_container_names`, endpoint facet, top-N per signature using `ROW_NUMBER() OVER (PARTITION BY signature ORDER BY severity_rank, created_at DESC)`), wrapped into a single round-trip.
+
+**Caching:** the route handler wraps the DB query in `cachedFetchSWR()` (existing pattern in `portainer-cache.ts`) keyed on `(status, endpoint_id, since, severity)` with a 20s TTL. Stale-while-revalidate ensures the 30s frontend poll hits the DB at most once per cache window per filter tuple. Cache invalidation: `invalidateTag('incidents')` is called on every `insertIncident`, `addInsightToIncident`, and `resolveIncident` so the next read refreshes.
 
 **Auth:** `fastify.authenticate` (read-only). No new RBAC role required.
 
-**Resolve action stays on the per-incident endpoint.** The aggregate endpoint is read-only.
+**Resolve action stays on the per-incident endpoint** for single resolves; a new batch endpoint (§3.6) handles multi-resolve.
 
-### 3.6 Tests
+### 3.6 New endpoint: `POST /api/incidents/resolve` (batch)
+
+200 sequential `POST /api/incidents/:id/resolve` calls is unacceptable wall-clock for "Resolve all 200 in this group". Add a batch endpoint:
+
+**Request:**
+
+```
+POST /api/incidents/resolve
+Content-Type: application/json
+{ "ids": ["uuid-1", "uuid-2", ...] }
+```
+
+Validated by Zod: `ids` must be a non-empty array of UUIDs, capped at 500 per call. Same auth as the single-resolve route: `fastify.authenticate` + `fastify.requireRole('admin')` (matches existing single-resolve RBAC at `incidents.ts:81`).
+
+**Response:**
+
+```ts
+{
+  resolved: string[];                              // ids successfully resolved
+  failed: Array<{ id: string; error: string }>;    // per-id failure reasons
+}
+```
+
+**Implementation:** wraps the existing `resolveIncident()` per id in a single transaction; per-id failures are caught and surfaced in `failed[]` rather than aborting the whole batch. Audit-logs each resolution like the single-resolve route. Tag-invalidates `incidents` once at the end. Single round trip, returns within ~1s for batches of 500.
+
+### 3.7 Tests
 
 Added to `packages/ai-intelligence/src/__tests__/`:
 
 | File | Covers |
 |---|---|
-| `signature.test.ts` | Derivation: every category/method/metric combo, fallbacks, label lookup, stability across known title variants. |
-| `incidents-groups.test.ts` | New route end-to-end: aggregate counts, top-N ordering, severity rollup, endpoint filter, since filter, empty result, auth. |
+| `signature.test.ts` | Derivation: every category/method/metric combo, fallbacks, label lookup, stability across known title variants, **and the historical-titles drift corpus from §3.4 (every CSV row maps to a known signature, no `unknown:*`)**. |
+| `incidents-groups.test.ts` | New route end-to-end: aggregate counts, top-N ordering, `all_container_names` correctness, severity rollup, endpoint filter, `since` filter using `latest_at` semantics, empty result, auth, cache invalidation on resolve. |
+| `incidents-resolve-batch.test.ts` | New batch resolve route: success path, partial failure (some ids resolved, others not), input validation (cap, UUID shape), RBAC (admin required), audit-log emission, tag invalidation. |
 | `incidents-backfill.test.ts` | Backfill: populates null signatures, idempotent on re-run, handles missing root insight, batch boundary, `--force` flag. |
 | `incident-correlator.test.ts` (additions) | `buildIncident()` writes `signature` correctly for structured-fields path and falls back for legacy insights. |
 
@@ -282,16 +339,16 @@ Same `refetchInterval` (30s + page-visibility gating) as `useIncidents`. Existin
 
 | Element | Behavior |
 |---|---|
-| Summary strip | Single line. Computed client-side from `groups`. Shows `critical kinds / containers` + `warning kinds / containers`. Info bucket only renders if non-zero. |
+| Summary strip | Single line. Computed client-side from `groups`. Each container is counted **at most once across severity buckets** — by its highest severity. So "Critical: 3 kinds across 8 containers · Warning: 5 kinds across 22 containers" means 8 containers have at least one critical incident, and 22 *additional* containers have at least one warning (and no critical). Info bucket only renders if non-zero. |
 | Time range tabs | Existing controls, moved to header line. URL `?range=` (already in use). Defaults to `24h` if no URL state. |
 | Endpoint chip row | Renders only when `endpoint_facets.length > 1`. Active chip is URL-driven (`?endpoint=`). "All" clears the param. |
 | Group card collapsed | Severity dot · label · `N containers · M alerts` · chevron. Critical groups expanded by default; warnings/info collapsed. |
 | Group card expanded | Top 10 container rows from `top_containers`. Each row: checkbox, container chip (linked to `/containers/:endpointId/:containerId`), severity badge, age, endpoint, individual `[Resolve]`. |
 | "Show all N" link | Visible when `container_count > 10`. Click → fetches `/api/incidents?status=active&signature=X` and replaces the top-10 list with the full set. Per-group state, not URL. |
 | Per-row resolve | Calls existing `useResolveIncident()`. No change. |
-| Per-group "Resolve all" | New action. Confirms via existing `ConfirmDialog`. Iterates `POST /api/incidents/:id/resolve` for incident IDs in the group; reuses bulk-resolve error handling (partial-failure surfacing). |
-| Multi-select bar | Existing bulk-action bar stays for cross-group selection. Selection survives expand/collapse. |
-| Search | Existing search input filters groups by signature label and by container names in `top_containers`. A group is hidden if it has no match in either. When a group matches because of a container hit, the group auto-expands to show the matching rows. Long-tail containers fetched via "Show all" are also filtered. No backend change. |
+| Per-group "Resolve all" | New action. Confirms via existing `ConfirmDialog`. Calls the new **`POST /api/incidents/resolve`** batch endpoint with all incident IDs in the group (one round trip, see §3.6). Failures surfaced per-id via the partial-failure rules below. |
+| Multi-select bar | Existing bulk-action bar stays for cross-group selection. Now also calls the batch endpoint. Selection survives expand/collapse. |
+| Search | Filters groups by (a) signature label and (b) **`all_container_names`** (the full server-provided list, including the long tail — no false negatives). When a group matches via a container hit, it auto-expands. If the matching container is in the long tail (not in `top_containers`), the page auto-triggers the "Show all" fetch for that group so the matching row is visible. No backend change. |
 | Sort | Existing severity/time toggle applies inside groups. Group order is fixed: severity → container_count desc. |
 | Empty state | "No active incidents in this view." Reuses the dashed-border box already used by the page. |
 
@@ -302,9 +359,11 @@ Same `refetchInterval` (30s + page-visibility gating) as `useIncidents`. Existin
 | `range` | `1h` / `24h` / `7d` / `all` | `24h` |
 | `endpoint` | endpoint id | absent (= all) |
 | `sort` | `severity` / `time` | `severity` (existing) |
-| `signature` | signature string | absent (= no group focus; reserved for deep-link to one group) |
+| `expand` | comma-separated signature strings | absent (= use default expand-by-severity rule) |
 
-Expand/collapse is **not** in the URL — local state only. Groups are bounded (~10–30), defaults are good, URL noise outweighs the benefit.
+Expand state is URL-tracked when the user explicitly toggles a group, so deep-linking to "this exact view" works (refresh, share). Toggling a critical group closed adds it to `?expand=` with a `-` prefix (e.g., `?expand=-anomaly:ml-anomaly:cpu`), so the URL captures *deviations* from the default, not the full state. Initial render with no `?expand=` follows the "critical expanded by default" rule from §4.3.
+
+`?signature=` is **not** introduced — search-and-expand covers the deep-link use case. Avoiding ship-but-unused URL params.
 
 ### 4.5 Resolve paths
 
@@ -316,7 +375,13 @@ Three resolve paths coexist; the contract is explicit:
 | Multi-select bar (existing) | selected ids across groups | yes (existing) |
 | Per-group "Resolve all N" | every incident in one signature | yes (new dialog) |
 
-The new "Resolve all" runs through the same partial-failure path as multi-select bulk: failures stay highlighted, user can retry without losing context.
+**Partial-failure UX** (applies to both multi-select and per-group "Resolve all"):
+
+- The batch endpoint returns `{ resolved: [...], failed: [...] }`.
+- If `failed.length === 0`: dismiss the action bar with a "Resolved N" toast.
+- If `failed.length <= 5`: keep the failed rows visible with a red border and the per-id error message inline. The action bar shows "Retry N failed".
+- If `failed.length > 5`: collapse to a single banner — "N of M resolves failed" — with one **Retry failed only** button that re-issues the batch with just `failed[].id`. No 200-row error list. The button retains state until the user dismisses or all retries succeed.
+- Action bar selection is replaced with the failed-id set after each batch so retry is one click away. Successful resolves are removed from selection regardless of retry state.
 
 ### 4.6 Tests
 
@@ -325,12 +390,16 @@ Added to `frontend/src/features/ai-intelligence/`:
 | File | Covers |
 |---|---|
 | `hooks/use-incident-groups.test.ts` | Query key, params serialization, 30s refetch + visibility gating. |
-| `components/incident-groups-view.test.tsx` | Renders summary, chips, collapsed/expanded groups, top-10, "Show all" expansion, severity-dot per group. |
-| `components/incident-groups-view.resolve.test.tsx` | Per-row resolve, per-group "Resolve all" with confirm + partial-failure recovery, multi-select interop. |
-| `components/incident-groups-view.search.test.tsx` | Search filters labels and container names; group cards hide when no matches. |
+| `components/incident-groups-view.test.tsx` | Renders summary (with single-bucket-per-container rule), chips, collapsed/expanded groups, default-expand-on-critical, top-10, severity-dot per group. |
+| `components/incident-groups-view.resolve.test.tsx` | Per-row resolve, per-group "Resolve all" via batch endpoint, multi-select interop, partial-failure UX (≤5 fail → inline; >5 fail → collapsed banner with Retry failed only). |
+| `components/incident-groups-view.search.test.tsx` | Search filters via `all_container_names` (long-tail container is found, not just `top_containers`); auto-expand on container hit; auto-trigger "Show all" when match is in long tail. |
+| `components/incident-groups-view.show-all.test.tsx` | "Show all N" pagination flow: fetch via `/api/incidents?signature=X`, replaces top-10, search remains scoped to the expanded set. |
+| `components/incident-groups-view.url.test.tsx` | URL state: `range`, `endpoint`, `sort`, `expand` (with `-` prefix for closed-by-default deviations) survive refresh; deep-link URL renders matching state. |
 | `pages/ai-monitor.test.tsx` (additions) | The page renders `IncidentGroupsView` instead of the flat list; existing assertions for non-incident sections still pass. |
 
 Mocks: `useIncidentGroups` for component tests (frontend mocks API at the boundary). No backend changes required to run frontend tests.
+
+**i18n note.** Signature labels and copy in this view are English-only. The codebase has no i18n layer yet; adding one is a global concern outside this work. Labels live in `signature.ts` (`SIGNATURE_LABELS`) so a future i18n pass is one-file scope.
 
 ## 5. Rollout
 
@@ -338,37 +407,46 @@ Mocks: `useIncidentGroups` for component tests (frontend mocks API at the bounda
 
 Single PR against `dev`, commits in this order so each step is independently revertable:
 
-1. Migration: add nullable `signature` column + indexes. (No code reads it yet.)
-2. `signature.ts` derivation function + tests. (Pure module, no callers.)
-3. `monitoring-service.ts`: emit optional `metric_type` / `detection_method`. (Backward-compatible.)
-4. `incident-correlator.ts`: write `signature` on insert. (New rows populated; legacy rows still NULL.)
-5. Backfill script. Run once at deploy. Idempotent.
-6. New `GET /api/incidents/groups` endpoint + tests.
-7. Frontend hook + `IncidentGroupsView` component + tests.
-8. Swap the page section in `ai-monitor.tsx`.
+1. **Phase A migration:** add nullable `signature` column. (Auto-migration, transactional, fast.)
+2. **Index-creation script:** non-transactional `CREATE INDEX CONCURRENTLY` script (§3.1 Phase B). Runs at deploy time, before user-facing reads.
+3. `signature.ts` derivation function + tests + historical-titles drift corpus. (Pure module, no callers.)
+4. `monitoring-service.ts`: emit optional `metric_type` / `detection_method`. (Backward-compatible.)
+5. `incident-correlator.ts`: write `signature` on insert. (New rows populated; legacy rows still NULL.)
+6. Backfill script. Run once at deploy. Idempotent.
+7. New `POST /api/incidents/resolve` batch endpoint + tests.
+8. New `GET /api/incidents/groups` endpoint with `cachedFetchSWR` + tests.
+9. Frontend hook + `IncidentGroupsView` component + tests.
+10. Swap the page section in `ai-monitor.tsx`.
 
-If anything goes sideways during rollout, steps 1–6 stay (the column is harmless if unused) and step 8 is the only revert needed to restore the old UI.
+If anything goes sideways during rollout, steps 1–8 stay (the column, indexes, and endpoints are harmless if unused) and step 10 is the only revert needed to restore the old UI.
 
 ### 5.2 Production verification
 
 Done by the deployer after merge:
 
-- [ ] Migration applied; `signature` column present on `incidents`.
+- [ ] Phase A migration applied; `signature` column present on `incidents`.
+- [ ] Phase B index script run; `idx_incidents_signature_status` and `idx_incidents_endpoint_status` exist (verify via `\d+ incidents`).
 - [ ] Backfill script run; `SELECT COUNT(*) FROM incidents WHERE signature IS NULL` returns 0.
-- [ ] `GET /api/incidents/groups` returns within 250ms p95 against the live dataset (size noted in PR).
+- [ ] Drift verification passed locally (signature.test.ts CSV corpus assertion green) before merge.
+- [ ] `GET /api/incidents/groups` returns within 250ms p95 against the live dataset (size noted in PR). Cache hit ratio >70% during steady-state (visible in logs).
+- [ ] `POST /api/incidents/resolve` returns within ~1s for a 100-id batch; partial-failure response shape verified.
 - [ ] `/health` page renders the new view; existing per-incident drill-down still works (click container → existing `/incidents/:id`).
-- [ ] Manual: resolve one incident via per-row, one via per-group "Resolve all", one via multi-select. All three update counts and refetch.
+- [ ] Manual: resolve one incident via per-row, one via per-group "Resolve all", one via multi-select. All three update counts and refetch. Force a partial failure (e.g., resolve an already-resolved id mid-batch) and verify the >5-fail collapsed-banner UX.
 - [ ] Manual: endpoint filter chip changes the URL and the visible groups; refresh preserves the filter.
-- [ ] No regression in existing security-regression tests (auth, RBAC on new route).
+- [ ] Manual: search for a container in the long tail (not in `top_containers`) — group auto-expands and auto-fetches "Show all".
+- [ ] No regression in existing security-regression tests (auth, RBAC on new routes — both `groups` and batch `resolve`).
 
 ### 5.3 Rollback
 
 | Failure mode | Rollback |
 |---|---|
-| Frontend rendering broken | Revert step 8 only — old flat list returns. Backend stays. |
-| `/api/incidents/groups` slow or wrong | Revert steps 6–8. Backfilled column is harmless. |
+| Frontend rendering broken | Revert step 10 only — old flat list returns. Backend stays. |
+| `/api/incidents/groups` slow or wrong | Revert steps 8–10. Backfilled column and indexes are harmless. |
+| Cache misbehaving (stale data, missed invalidations) | Bypass cache via env flag (set `INCIDENTS_GROUPS_CACHE_TTL_MS=0`) — endpoint stays correct, just slower. Then debug. |
+| Batch resolve endpoint failing | Frontend feature-flags fall-back to looped single-resolve calls. Worse UX, still functional. |
 | Backfill produced wrong signatures | Re-run with corrected `deriveSignature`; the script is idempotent and only overwrites NULLs by default. Use `--force` for full re-derivation. |
-| Migration concerns | `ALTER TABLE ADD COLUMN nullable` is non-blocking on Postgres; the indexes can be created `CONCURRENTLY` if the table is large at deploy time. |
+| Phase B index creation fails mid-flight | `CREATE INDEX CONCURRENTLY` failures leave behind invalid indexes. Drop them (`DROP INDEX IF EXISTS …`) and re-run the script. Reads keep working without the indexes (slower full scans), so this isn't user-blocking. |
+| Phase A migration concerns | `ALTER TABLE ADD COLUMN nullable` is `O(1)` on Postgres (metadata-only). No expected blocker. |
 
 `NOT NULL` is **not** added in this PR. Follow-up after one week of clean writes.
 
@@ -392,15 +470,16 @@ These give us the "alerts per container per signature" ratio that #1195 needs to
 
 ## 6. Acceptance criteria
 
-- [ ] `incidents.signature` column exists, indexed alongside `status` and `endpoint_id`.
-- [ ] `signature.ts` exports `deriveSignature()` and `signatureLabel()`, with full test coverage of the derivation matrix.
-- [ ] `monitoring-service.ts` emits `metric_type` and `detection_method` on anomaly + predictive insights.
-- [ ] `incident-correlator.ts` writes `signature` on every new incident. Existing tests continue to pass.
-- [ ] Backfill script populates all existing incidents with non-null signatures; runnable safely more than once.
-- [ ] `GET /api/incidents/groups` returns the response shape in §3.5, supports `status` / `endpoint_id` / `since` / `severity` filters, returns within 250ms p95 against production data.
-- [ ] `/health` page renders `IncidentGroupsView` with summary strip, endpoint chips, collapsed/expanded groups, top-10 container rows, "Show all" expansion.
-- [ ] All three resolve paths (per-row, multi-select, per-group) work and surface partial-failure correctly.
-- [ ] Search filters both group labels and container names.
-- [ ] URL params (`range`, `endpoint`, `sort`) survive refresh and deep-linking.
+- [ ] `incidents.signature` column exists (Phase A); `idx_incidents_signature_status` and `idx_incidents_endpoint_status` exist (Phase B, `CONCURRENTLY`).
+- [ ] `signature.ts` exports `deriveSignature()` and `signatureLabel()`, with full test coverage of the derivation matrix **and** the historical-titles drift corpus.
+- [ ] `monitoring-service.ts` emits `metric_type` and `detection_method` on anomaly + predictive + health-check + log-analysis + security insights.
+- [ ] `incident-correlator.ts` writes `signature` on every new incident via `deriveSignature` (single source of truth shared with backfill). Existing tests continue to pass.
+- [ ] Backfill script populates all existing incidents with non-null signatures; runnable safely more than once. Drift verification CSV passes before merge.
+- [ ] `GET /api/incidents/groups` returns the response shape in §3.5 (including `all_container_names`), supports `status` / `endpoint_id` / `since` / `severity` filters, applies `since` against `latest_at`, returns within 250ms p95, wrapped in `cachedFetchSWR` with tag invalidation on incident writes.
+- [ ] `POST /api/incidents/resolve` batch endpoint exists, admin-RBAC-gated, validates input, returns `{ resolved, failed }`, and audit-logs each resolution.
+- [ ] `/health` page renders `IncidentGroupsView` with summary strip (single-bucket-per-container), endpoint chips, collapsed/expanded groups, top-10 container rows, "Show all" expansion.
+- [ ] All three resolve paths (per-row, multi-select, per-group) use the batch endpoint where multi-id and surface partial-failure per the §4.5 rules (≤5 inline, >5 collapsed banner with Retry failed only).
+- [ ] Search filters via `all_container_names` (long-tail container names found, not just `top_containers`); auto-expands and auto-fetches "Show all" when needed.
+- [ ] URL params (`range`, `endpoint`, `sort`, `expand` with `-` prefix) survive refresh and deep-linking. No unused URL params shipped.
 - [ ] All new and existing tests pass on backend, frontend, and packages workspaces.
-- [ ] No new ESLint or TypeScript errors. No regression in security-regression tests.
+- [ ] No new ESLint or TypeScript errors. No regression in security-regression tests (auth + RBAC on both new routes).
