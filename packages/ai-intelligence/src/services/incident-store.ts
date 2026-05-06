@@ -35,6 +35,7 @@ export interface IncidentInsert {
   correlation_confidence: 'high' | 'medium' | 'low';
   insight_count: number;
   summary: string | null;
+  signature: string;
 }
 
 export async function insertIncident(incident: IncidentInsert): Promise<void> {
@@ -43,9 +44,9 @@ export async function insertIncident(incident: IncidentInsert): Promise<void> {
     INSERT INTO incidents (
       id, title, severity, status, root_cause_insight_id,
       related_insight_ids, affected_containers, endpoint_id, endpoint_name,
-      correlation_type, correlation_confidence, insight_count, summary,
+      correlation_type, correlation_confidence, insight_count, summary, signature,
       created_at, updated_at
-    ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
   `, [
     incident.id,
     incident.title,
@@ -59,6 +60,7 @@ export async function insertIncident(incident: IncidentInsert): Promise<void> {
     incident.correlation_confidence,
     incident.insight_count,
     incident.summary,
+    incident.signature,
   ]);
 
   log.debug({ incidentId: incident.id, insightCount: incident.insight_count }, 'Incident created');

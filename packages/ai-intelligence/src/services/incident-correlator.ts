@@ -10,6 +10,7 @@ import {
   type IncidentInsert,
 } from './incident-store.js';
 import { generateLlmIncidentSummary } from './incident-summarizer.js';
+import { deriveSignature } from './signature.js';
 
 const log = createChildLogger('incident-correlator');
 
@@ -312,6 +313,13 @@ function buildIncident(group: InsightGroup): IncidentInsert {
   if (correlationType === 'dedup') confidence = 'high';
   if (correlationType === 'cascade' && insights.length >= 3) confidence = 'high';
 
+  const signature = deriveSignature({
+    category: rootCause.category,
+    metric_type: rootCause.metric_type,
+    detection_method: rootCause.detection_method,
+    title: rootCause.title,
+  });
+
   return {
     id: uuidv4(),
     title,
@@ -325,6 +333,7 @@ function buildIncident(group: InsightGroup): IncidentInsert {
     correlation_confidence: confidence,
     insight_count: insights.length,
     summary,
+    signature,
   };
 }
 
