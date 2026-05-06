@@ -2,8 +2,9 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { FastifyInstance } from 'fastify';
-import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
+import { getIncidents, getIncident, resolveIncident, getIncidentCount, getIncidentGroups } from '../services/incident-store.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
+import { cachedFetchSWR, getCacheKey, cache } from '@dashboard/core/portainer/portainer-cache.js';
 
 export async function incidentsRoutes(fastify: FastifyInstance) {
   // List incidents
@@ -32,6 +33,30 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
       limit,
       offset,
     };
+  });
+
+  // List active incidents grouped by signature
+  fastify.get('/api/incidents/groups', {
+    schema: {
+      tags: ['Incidents'],
+      summary: 'List active incidents grouped by signature',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const { status = 'active', endpoint_id, since, severity } = request.query as {
+      status?: 'active' | 'resolved';
+      endpoint_id?: string;
+      since?: '1h' | '24h' | '7d';
+      severity?: 'critical' | 'warning' | 'info';
+    };
+    const since_minutes = since === '1h' ? 60 : since === '24h' ? 1440 : since === '7d' ? 10080 : undefined;
+    const epId = endpoint_id != null ? Number(endpoint_id) : undefined;
+
+    const cacheKey = getCacheKey('incidents-groups', status, epId ?? 'all', since ?? 'all', severity ?? 'all');
+    return cachedFetchSWR(cacheKey, 10, () =>
+      getIncidentGroups({ status, endpoint_id: epId, since_minutes, severity }),
+    );
   });
 
   // Get single incident with related insights
@@ -89,6 +114,9 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     }
 
     await resolveIncident(id);
+    // Invalidate grouped-incidents cache so the next request reflects the resolved state.
+    // invalidatePattern matches all variants (by status, endpoint_id, since, severity).
+    await cache.invalidatePattern('incidents-groups').catch(() => undefined);
     return { success: true };
   });
 }

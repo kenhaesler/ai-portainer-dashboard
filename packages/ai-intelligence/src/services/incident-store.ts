@@ -182,6 +182,192 @@ export async function resolveIncident(id: string): Promise<void> {
   log.info({ incidentId: id }, 'Incident resolved');
 }
 
+import { signatureLabel } from './signature.js';
+
+const TOP_CONTAINERS_PER_GROUP = 10;
+const ALL_NAMES_CAP = 500;
+
+export interface IncidentGroupsOptions {
+  status?: 'active' | 'resolved';
+  endpoint_id?: number;
+  since_minutes?: number;
+  severity?: 'critical' | 'warning' | 'info';
+}
+
+export interface IncidentGroup {
+  signature: string;
+  label: string;
+  severity: 'critical' | 'warning' | 'info';
+  incident_count: number;
+  container_count: number;
+  alert_count: number;
+  earliest_at: string;
+  latest_update_at: string;
+  top_containers: Array<{
+    incident_id: string;
+    container_name: string;
+    endpoint_id: number | null;
+    endpoint_name: string | null;
+    severity: 'critical' | 'warning' | 'info';
+    created_at: string;
+  }>;
+  all_container_names: string[];
+  names_truncated: boolean;
+}
+
+export interface IncidentGroupsResult {
+  groups: IncidentGroup[];
+  endpoint_facets: Array<{
+    endpoint_id: number | null;
+    endpoint_name: string | null;
+    incident_count: number;
+  }>;
+  total_active: number;
+}
+
+export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Promise<IncidentGroupsResult> {
+  const db = getDbForDomain('incidents');
+  const where: string[] = ['signature IS NOT NULL'];
+  const params: unknown[] = [];
+  if (options.status) { where.push('status = ?'); params.push(options.status); }
+  if (options.endpoint_id !== undefined) { where.push('endpoint_id = ?'); params.push(options.endpoint_id); }
+  if (options.since_minutes) {
+    where.push("updated_at >= NOW() + (? || ' minutes')::INTERVAL");
+    params.push(`-${options.since_minutes}`);
+  }
+  if (options.severity) { where.push('severity = ?'); params.push(options.severity); }
+  const whereSQL = `WHERE ${where.join(' AND ')}`;
+
+  // 1. Per-signature aggregate — counts, severity rollup, and name list (capped)
+  // We keep the incident-level aggregates (incident_count, alert_count, severity, timestamps)
+  // separate from the container expansion to avoid double-counting insight_count.
+  const rawGroups = await db.query<{
+    signature: string;
+    severity: 'critical' | 'warning' | 'info';
+    incident_count: number;
+    alert_count: number;
+    earliest_at: string;
+    latest_update_at: string;
+    container_count: number;
+    all_names: string[];
+  }>(`
+    WITH base AS (
+      SELECT id, signature, severity, insight_count, created_at, updated_at, affected_containers
+      FROM incidents ${whereSQL}
+    ),
+    per_incident AS (
+      SELECT signature,
+             BOOL_OR(severity = 'critical') AS has_critical,
+             BOOL_OR(severity = 'warning')  AS has_warning,
+             COUNT(*)::int                  AS incident_count,
+             COALESCE(SUM(insight_count), 0)::int AS alert_count,
+             MIN(created_at)::text          AS earliest_at,
+             MAX(updated_at)::text          AS latest_update_at
+      FROM base
+      GROUP BY signature
+    ),
+    per_container AS (
+      SELECT b.signature,
+             COUNT(DISTINCT e.container_name)::int AS container_count,
+             (ARRAY(
+               SELECT DISTINCT e2.container_name
+               FROM base b2
+               CROSS JOIN LATERAL jsonb_array_elements_text(b2.affected_containers) AS e2(container_name)
+               WHERE b2.signature = b.signature
+               ORDER BY e2.container_name
+               LIMIT ${ALL_NAMES_CAP}
+             )) AS all_names
+      FROM base b
+      CROSS JOIN LATERAL jsonb_array_elements_text(b.affected_containers) AS e(container_name)
+      GROUP BY b.signature
+    )
+    SELECT
+      p.signature,
+      CASE WHEN p.has_critical THEN 'critical'
+           WHEN p.has_warning  THEN 'warning'
+           ELSE 'info' END     AS severity,
+      p.incident_count,
+      p.alert_count,
+      p.earliest_at,
+      p.latest_update_at,
+      COALESCE(c.container_count, 0) AS container_count,
+      COALESCE(c.all_names, '{}')    AS all_names
+    FROM per_incident p
+    LEFT JOIN per_container c ON c.signature = p.signature
+    ORDER BY (CASE WHEN p.has_critical THEN 0 WHEN p.has_warning THEN 1 ELSE 2 END),
+             p.incident_count DESC
+  `, params);
+
+  // 2. Top-N containers per signature, ordered by severity then recency
+  const rawTop = await db.query<{
+    signature: string; incident_id: string; container_name: string;
+    endpoint_id: number | null; endpoint_name: string | null;
+    severity: 'critical' | 'warning' | 'info'; created_at: string; rn: number;
+  }>(`
+    WITH base AS (
+      SELECT id, signature, severity, endpoint_id, endpoint_name, created_at, affected_containers
+      FROM incidents ${whereSQL}
+    ),
+    expanded AS (
+      SELECT b.id AS incident_id, b.signature, b.severity, b.endpoint_id, b.endpoint_name,
+             b.created_at, e.container_name
+      FROM base b
+      CROSS JOIN LATERAL jsonb_array_elements_text(b.affected_containers) AS e(container_name)
+    ),
+    ranked AS (
+      SELECT *,
+             ROW_NUMBER() OVER (
+               PARTITION BY signature
+               ORDER BY (CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END),
+                        created_at DESC
+             ) AS rn
+      FROM expanded
+    )
+    SELECT signature, incident_id, container_name, endpoint_id, endpoint_name,
+           severity, created_at::text, rn
+    FROM ranked
+    WHERE rn <= ${TOP_CONTAINERS_PER_GROUP}
+  `, params);
+
+  // 3. Endpoint facets
+  const rawFacets = await db.query<{ endpoint_id: number | null; endpoint_name: string | null; incident_count: number }>(`
+    SELECT endpoint_id, endpoint_name, COUNT(*)::int AS incident_count
+    FROM incidents ${whereSQL}
+    GROUP BY endpoint_id, endpoint_name
+    ORDER BY incident_count DESC
+  `, params);
+
+  // 4. Stitch top_containers per signature
+  const topBySig = new Map<string, IncidentGroup['top_containers']>();
+  for (const r of rawTop) {
+    const arr = topBySig.get(r.signature) ?? [];
+    arr.push({
+      incident_id: r.incident_id, container_name: r.container_name,
+      endpoint_id: r.endpoint_id, endpoint_name: r.endpoint_name,
+      severity: r.severity, created_at: r.created_at,
+    });
+    topBySig.set(r.signature, arr);
+  }
+
+  const groups: IncidentGroup[] = rawGroups.map((g) => ({
+    signature: g.signature,
+    label: signatureLabel(g.signature),
+    severity: g.severity,
+    incident_count: g.incident_count,
+    container_count: g.container_count,
+    alert_count: g.alert_count,
+    earliest_at: g.earliest_at,
+    latest_update_at: g.latest_update_at,
+    top_containers: topBySig.get(g.signature) ?? [],
+    all_container_names: g.all_names ?? [],
+    names_truncated: (g.all_names?.length ?? 0) >= ALL_NAMES_CAP && g.container_count > ALL_NAMES_CAP,
+  }));
+
+  const total_active = rawGroups.reduce((sum, g) => sum + g.incident_count, 0);
+
+  return { groups, endpoint_facets: rawFacets, total_active };
+}
+
 export async function getIncidentCount(): Promise<{ active: number; resolved: number; total: number }> {
   const db = getDbForDomain('incidents');
   const activeRow = await db.queryOne<{ count: number }>("SELECT COUNT(*)::integer as count FROM incidents WHERE status = 'active'");
