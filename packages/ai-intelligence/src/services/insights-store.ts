@@ -15,6 +15,8 @@ export interface InsightInsert {
   title: string;
   description: string;
   suggested_action: string | null;
+  metric_type?: 'cpu' | 'memory' | 'disk' | 'network' | 'restart';
+  detection_method?: 'threshold' | 'ml-anomaly' | 'prediction' | 'health-check' | 'log-pattern' | 'security-scan';
 }
 
 export async function insertInsight(insight: InsightInsert): Promise<void> {

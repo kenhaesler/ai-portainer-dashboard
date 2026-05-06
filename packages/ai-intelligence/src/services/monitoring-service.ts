@@ -365,6 +365,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
           suggested_action: item.metricType === 'memory'
             ? 'Investigate memory usage patterns and check container configuration'
             : 'Investigate CPU usage patterns and check for process anomalies',
+          metric_type: item.metricType as 'cpu' | 'memory',
+          detection_method: 'ml-anomaly',
         });
       }
 
@@ -409,6 +411,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
               suggested_action: metricType === 'memory'
                 ? 'Check for memory leaks or increase memory limit'
                 : 'Check for runaway processes or increase CPU allocation',
+              metric_type: metricType,
+              detection_method: 'threshold',
             });
           }
         }
@@ -465,6 +469,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
                 suggested_action: metricType === 'memory'
                   ? 'Check for memory leaks or increase memory limit'
                   : 'Check for runaway processes or increase CPU allocation',
+                metric_type: metricType,
+                detection_method: 'ml-anomaly',
               });
               break; // One insight per container for IF detection
             }
@@ -504,6 +510,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
                 suggested_action: forecast.metricType === 'memory'
                   ? 'Consider increasing memory limits or investigating memory consumption patterns before threshold is reached'
                   : 'Consider scaling CPU resources or optimizing workload before threshold is reached',
+                metric_type: forecast.metricType as 'cpu' | 'memory',
+                detection_method: 'prediction',
               });
             }
           }
@@ -569,6 +577,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
                   ? `\n\nError patterns: ${result.errorPatterns.join(', ')}`
                   : ''),
               suggested_action: 'Review container logs for the identified error patterns and address the root cause',
+              detection_method: 'log-pattern',
             });
           }
           if (logAnalysisInsights.length > 0) {
@@ -591,6 +600,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
         title: f.finding.title,
         description: f.finding.description,
         suggested_action: null,
+        detection_method: 'security-scan',
       }));
 
       // 6. Attempt AI analysis (fire-and-forget, gated by AI_ANALYSIS_ENABLED)
