@@ -87,6 +87,43 @@ describe('Endpoints Routes', () => {
       expect(body).toEqual([]);
     });
 
+    it('returns 502 (not 401) when upstream Portainer returns 401', async () => {
+      // Regression: an upstream Portainer auth failure must NOT surface as 401.
+      // The frontend api client treats 401 as "session expired" and clears the
+      // user's token, which would bounce a logged-in user back to /login
+      // whenever PORTAINER_API_KEY is missing or invalid.
+      const portainerAuthError = Object.assign(new Error('Auth failed: 401'), {
+        name: 'PortainerError',
+        kind: 'auth',
+        status: 401,
+      });
+      vi.spyOn(portainerClient, 'getEndpoints').mockRejectedValue(portainerAuthError);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/endpoints',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(502);
+      const body = JSON.parse(response.body);
+      expect(body.error).toMatch(/Portainer/i);
+    });
+
+    it('returns 502 when upstream Portainer is unreachable', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockRejectedValue(
+        new Error('ECONNREFUSED'),
+      );
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/endpoints',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(502);
+    });
+
     it('requires authentication', async () => {
       const unauthApp = Fastify({ logger: false });
       unauthApp.setValidatorCompiler(validatorCompiler);
@@ -126,9 +163,13 @@ describe('Endpoints Routes', () => {
       expect(body.name).toBe('prod');
     });
 
-    it('propagates errors from portainer client', async () => {
+    it('returns 502 when upstream Portainer fails', async () => {
       vi.spyOn(portainerClient, 'getEndpoint').mockRejectedValue(
-        Object.assign(new Error('Not Found'), { statusCode: 404 }),
+        Object.assign(new Error('Auth failed: 401'), {
+          name: 'PortainerError',
+          kind: 'auth',
+          status: 401,
+        }),
       );
 
       const response = await app.inject({
@@ -137,8 +178,7 @@ describe('Endpoints Routes', () => {
         headers: { authorization: 'Bearer test' },
       });
 
-      // Fastify propagates the error; exact status depends on error type
-      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+      expect(response.statusCode).toBe(502);
     });
   });
 
