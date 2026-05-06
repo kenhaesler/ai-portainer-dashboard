@@ -106,7 +106,7 @@ class ApiClient {
     return response.json();
   }
 
-  get<T>(path: string, options?: { params?: Record<string, string | number | boolean | undefined> }) {
+  get<T>(path: string, options?: { params?: Record<string, string | number | boolean | undefined>; signal?: AbortSignal }) {
     return this.request<T>(path, { method: 'GET', ...options });
   }
 

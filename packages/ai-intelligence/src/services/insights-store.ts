@@ -15,6 +15,8 @@ export interface InsightInsert {
   title: string;
   description: string;
   suggested_action: string | null;
+  metric_type?: 'cpu' | 'memory' | 'disk' | 'network' | 'restart';
+  detection_method?: 'threshold' | 'ml-anomaly' | 'prediction' | 'health-check' | 'log-pattern' | 'security-scan';
 }
 
 export async function insertInsight(insight: InsightInsert): Promise<void> {
@@ -23,8 +25,9 @@ export async function insertInsight(insight: InsightInsert): Promise<void> {
     `INSERT INTO insights (
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, suggested_action,
+      metric_type, detection_method,
       is_acknowledged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())`,
     [
       insight.id,
       insight.endpoint_id,
@@ -36,6 +39,8 @@ export async function insertInsight(insight: InsightInsert): Promise<void> {
       insight.title,
       insight.description,
       insight.suggested_action,
+      insight.metric_type ?? null,
+      insight.detection_method ?? null,
     ],
   );
 
@@ -115,8 +120,9 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
     INSERT INTO insights (
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, suggested_action,
+      metric_type, detection_method,
       is_acknowledged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())
   `;
 
   const dedupeSQL = `
@@ -152,6 +158,8 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
         insight.title,
         insight.description,
         insight.suggested_action,
+        insight.metric_type ?? null,
+        insight.detection_method ?? null,
       ]);
       ids.add(insight.id);
     }

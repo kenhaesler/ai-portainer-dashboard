@@ -103,19 +103,27 @@ async function getCachedSnapshot(): Promise<MetricsSnapshot> {
     [],
   );
 
+  // Subquery disambiguates the metric_kind alias from the insights.metric_type
+  // column (added in migration 030). Prefer the structured column when present
+  // and fall back to title-regex for legacy rows.
   const anomalies = await insightsDb.query<{ container_name: string; metric_type: string; total: number }>(
-    `SELECT
-       container_name,
-       CASE
-         WHEN lower(title) LIKE '%cpu%' THEN 'cpu'
-         WHEN lower(title) LIKE '%memory%' THEN 'memory'
-         ELSE 'unknown'
-       END as metric_type,
-       COUNT(*)::integer as total
-     FROM insights
-     WHERE category = 'anomaly'
-       AND container_name IS NOT NULL
-     GROUP BY container_name, metric_type`,
+    `SELECT container_name, metric_kind AS metric_type, COUNT(*)::integer AS total
+     FROM (
+       SELECT
+         container_name,
+         COALESCE(
+           metric_type,
+           CASE
+             WHEN lower(title) LIKE '%cpu%' THEN 'cpu'
+             WHEN lower(title) LIKE '%memory%' THEN 'memory'
+             ELSE 'unknown'
+           END
+         ) AS metric_kind
+       FROM insights
+       WHERE category = 'anomaly'
+         AND container_name IS NOT NULL
+     ) sub
+     GROUP BY container_name, metric_kind`,
     [],
   );
 

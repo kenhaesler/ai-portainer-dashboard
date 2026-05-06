@@ -13,6 +13,10 @@ export const InsightSchema = z.object({
   suggested_action: z.string().nullable(),
   is_acknowledged: z.number().default(0),
   created_at: z.string(),
+  metric_type: z.enum(['cpu', 'memory', 'disk', 'network', 'restart']).optional(),
+  detection_method: z
+    .enum(['threshold', 'ml-anomaly', 'prediction', 'health-check', 'log-pattern', 'security-scan'])
+    .optional(),
 });
 
 export type Insight = z.infer<typeof InsightSchema>;

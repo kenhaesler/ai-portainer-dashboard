@@ -1,12 +1,8 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
-import { getTestDb, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
-import type { AppDb } from '@dashboard/core/db/app-db.js';
 import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import { incidentsRoutes } from '../routes/incidents.js';
-import { getIncidents, getIncident, resolveIncident, getIncidentCount } from '../services/incident-store.js';
-
-let testDb: AppDb;
+import { getIncidents, getIncident, resolveIncident, getIncidentCount, resolveIncidentsBatch, getIncidentGroups } from '../services/incident-store.js';
 
 // Mock the stores — all functions are now async
 // Kept: incident-store mock — no PostgreSQL in CI
@@ -15,20 +11,33 @@ vi.mock('../services/incident-store.js', () => ({
   getIncident: vi.fn(() => Promise.resolve(null)),
   resolveIncident: vi.fn(() => Promise.resolve()),
   getIncidentCount: vi.fn(() => Promise.resolve({ active: 0, resolved: 0, total: 0 })),
+  resolveIncidentsBatch: vi.fn(() => Promise.resolve({ resolved: [], failed: [] })),
+  getIncidentGroups: vi.fn(() => Promise.resolve({ groups: [], endpoint_facets: [], total_active: 0 })),
 }));
 
 // Kept: app-db-router mock — tests control database routing
 vi.mock('@dashboard/core/db/app-db-router.js', () => ({
-  getDbForDomain: () => testDb,
+  getDbForDomain: vi.fn(() => ({
+    query: vi.fn().mockResolvedValue([]),
+    queryOne: vi.fn().mockResolvedValue(null),
+    execute: vi.fn(),
+    transaction: vi.fn((fn: (db: unknown) => unknown) => fn({ query: vi.fn(), queryOne: vi.fn(), execute: vi.fn() })),
+  })),
+}));
+
+// Kept: portainer-cache mock — cachedFetchSWR passes through to fetcher in tests
+vi.mock('@dashboard/core/portainer/portainer-cache.js', () => ({
+  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fetcher: () => unknown) => fetcher()),
+  getCacheKey: vi.fn((...parts: unknown[]) => parts.join(':')),
+  cache: { invalidatePattern: vi.fn(() => Promise.resolve()) },
 }));
 
 const mockedGetIncidents = vi.mocked(getIncidents);
 const mockedGetIncident = vi.mocked(getIncident);
 const mockedResolveIncident = vi.mocked(resolveIncident);
 const mockedGetIncidentCount = vi.mocked(getIncidentCount);
-
-beforeAll(async () => { testDb = await getTestDb(); });
-afterAll(async () => { await closeTestDb(); });
+const mockedResolveIncidentsBatch = vi.mocked(resolveIncidentsBatch);
+const mockedGetIncidentGroups = vi.mocked(getIncidentGroups);
 
 describe('incidents routes', () => {
   let app: ReturnType<typeof Fastify>;
@@ -71,6 +80,43 @@ describe('incidents routes', () => {
       expect(mockedGetIncidents).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'active' }),
       );
+    });
+  });
+
+  describe('GET /api/incidents/groups', () => {
+    it('should return 200 with valid query params', async () => {
+      mockedGetIncidentGroups.mockResolvedValue({ groups: [], endpoint_facets: [], total_active: 0 });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents/groups?status=active&since=1h&severity=critical',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.groups).toBeDefined();
+    });
+
+    it('should return 400 when endpoint_id is not a number', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents/groups?endpoint_id=abc',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toBe('invalid query');
+    });
+
+    it('should return 400 when since is an invalid value', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents/groups?since=foo',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toBe('invalid query');
     });
   });
 
@@ -130,6 +176,92 @@ describe('incidents routes', () => {
       expect(mockedResolveIncident).toHaveBeenCalledWith('inc-1');
     });
   });
+
+  describe('POST /api/incidents/resolve (batch)', () => {
+    it('should return 400 for invalid body', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/incidents/resolve',
+        payload: { ids: 'not-an-array' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should return 400 for empty ids array', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/incidents/resolve',
+        payload: { ids: [] },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should resolve a batch of incidents', async () => {
+      const ids = [
+        '550e8400-e29b-41d4-a716-446655440001',
+        '550e8400-e29b-41d4-a716-446655440002',
+        '550e8400-e29b-41d4-a716-446655440003',
+      ];
+      mockedResolveIncidentsBatch.mockResolvedValue({
+        resolved: ids,
+        failed: [],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/incidents/resolve',
+        payload: { ids },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.resolved).toEqual(ids);
+      expect(body.failed).toEqual([]);
+      expect(mockedResolveIncidentsBatch).toHaveBeenCalledWith(ids);
+    });
+
+    it('should handle partial failures', async () => {
+      const validIds = [
+        '550e8400-e29b-41d4-a716-446655440001',
+        '550e8400-e29b-41d4-a716-446655440003',
+      ];
+      const notFoundId = '00000000-0000-0000-0000-000000000000';
+      const allIds = [validIds[0], notFoundId, validIds[1]];
+
+      mockedResolveIncidentsBatch.mockResolvedValue({
+        resolved: validIds,
+        failed: [{ id: notFoundId, error: 'not found' }],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/incidents/resolve',
+        payload: { ids: allIds },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.resolved).toEqual(validIds);
+      expect(body.failed).toHaveLength(1);
+      expect(body.failed[0].id).toBe(notFoundId);
+    });
+
+    it('should reject max 500 ids', async () => {
+      const ids = Array.from({ length: 501 }, (_, i) => {
+        const num = i.toString().padStart(36, '0');
+        return `${num.slice(0, 8)}-${num.slice(8, 12)}-${num.slice(12, 16)}-${num.slice(16, 20)}-${num.slice(20, 32)}`;
+      });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/incidents/resolve',
+        payload: { ids },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
 });
 
 describe('incidents RBAC', () => {
@@ -164,4 +296,5 @@ describe('incidents RBAC', () => {
   });
 
   testAdminOnly(() => rbacApp, (r) => { currentRole = r; }, 'POST', '/api/incidents/inc-1/resolve');
+  testAdminOnly(() => rbacApp, (r) => { currentRole = r; }, 'POST', '/api/incidents/resolve', { ids: ['550e8400-e29b-41d4-a716-446655440001'] });
 });
