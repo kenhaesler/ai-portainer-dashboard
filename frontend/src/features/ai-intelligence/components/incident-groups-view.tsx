@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useIncidentGroups, type IncidentGroup } from '../hooks/use-incident-groups';
 import { useBatchResolveIncidents, type BatchResolveResponse } from '../hooks/use-incidents';
@@ -27,7 +27,20 @@ interface LongTailRow {
 
 export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const { data, isLoading } = useIncidentGroups({ status: 'active' });
-  const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+  const [searchParams, setSearchParams] = useSearchParams();
+  const expandParam = searchParams.get('expand') ?? '';
+
+  const overrides = useMemo(() => {
+    const opens = new Set<string>();
+    const closes = new Set<string>();
+    for (const part of expandParam.split(',').filter(Boolean)) {
+      const decoded = decodeURIComponent(part);
+      if (decoded.startsWith('-')) closes.add(decoded.slice(1));
+      else opens.add(decoded);
+    }
+    return { opens, closes };
+  }, [expandParam]);
+
   const [longTailBySig, setLongTailBySig] = useState<Record<string, LongTailRow[]>>({});
   const batchResolve = useBatchResolveIncidents();
   const [pendingGroup, setPendingGroup] = useState<IncidentGroup | null>(null);
@@ -67,13 +80,32 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   }, [searchLower, debouncedSearch, data]);
 
   const isOpen = useCallback((sig: string, severity: IncidentGroup['severity']) => {
-    if (sig in expandedOverrides) return expandedOverrides[sig];
+    if (overrides.closes.has(sig)) return false;
+    if (overrides.opens.has(sig)) return true;
     return severity === 'critical';
-  }, [expandedOverrides]);
+  }, [overrides]);
 
   const toggle = useCallback((sig: string, severity: IncidentGroup['severity']) => {
-    setExpandedOverrides((prev) => ({ ...prev, [sig]: !isOpen(sig, severity) }));
-  }, [isOpen]);
+    const nowOpen = isOpen(sig, severity);
+    const next = !nowOpen;
+    const opens = new Set(overrides.opens);
+    const closes = new Set(overrides.closes);
+    opens.delete(sig);
+    closes.delete(sig);
+    const defaultOpen = severity === 'critical';
+    // Only encode deviations from the default rule.
+    if (next !== defaultOpen) {
+      if (next) opens.add(sig); else closes.add(sig);
+    }
+    const parts = [
+      ...Array.from(opens).map((s) => encodeURIComponent(s)),
+      ...Array.from(closes).map((s) => '-' + encodeURIComponent(s)),
+    ];
+    const sp = new URLSearchParams(searchParams);
+    if (parts.length > 0) sp.set('expand', parts.join(','));
+    else sp.delete('expand');
+    setSearchParams(sp, { replace: false });
+  }, [searchParams, setSearchParams, overrides, isOpen]);
 
   const onResolveGroup = useCallback(async (group: IncidentGroup) => {
     setPendingGroup(null);
