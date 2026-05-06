@@ -822,7 +822,14 @@ detection_method: 'threshold',
 
 - [ ] **Step 5: Add structured fields to anomaly-context-only emission**
 
-Locate the third anomaly emission near line 458 (search for the third `category: 'anomaly'`). Determine which metric/method it represents from surrounding context; add the appropriate `metric_type` / `detection_method`. (If unclear, default to `metric_type: 'cpu'` and `detection_method: 'threshold'` and leave a TODO comment with `signature.test.ts` reference; the drift CSV will catch any miss.)
+Locate the third anomaly emission near line 458 (search for the third `category: 'anomaly'`). Read the 30 lines above to identify what the emission represents — typically a `metric_type` variable already exists in the surrounding scope (e.g., the loop variable `metricType`) and the detection mode is implied by the function context (z-score → `'ml-anomaly'`, threshold compare → `'threshold'`, prediction series → `'prediction'`). Add the matching pair to the literal:
+
+```ts
+metric_type: metricType,           // existing loop variable
+detection_method: '<mode>',         // 'ml-anomaly' | 'threshold' | 'prediction' per surrounding logic
+```
+
+Verify the choice by adding a corresponding row to the historical-titles CSV (Task 5 fixture) using a real title from this emission and confirming `signature.test.ts` still passes the equivalence assertion. If the equivalence fails, the chosen `detection_method` is wrong — re-read the surrounding code.
 
 - [ ] **Step 6: Add structured fields to prediction emission**
 
