@@ -1,9 +1,18 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useIncidentGroups, type IncidentGroup } from '../hooks/use-incident-groups';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
+
+function useDebounced(value: string, ms: number): string {
+  const [v, setV] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 interface LongTailRow {
   incident_id: string;
@@ -14,12 +23,43 @@ interface LongTailRow {
   created_at: string;
 }
 
-export function IncidentGroupsView() {
+export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const { data, isLoading } = useIncidentGroups({ status: 'active' });
   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
   const [longTailBySig, setLongTailBySig] = useState<Record<string, LongTailRow[]>>({});
 
   const summary = useMemo(() => computeSummary(data?.groups ?? []), [data?.groups]);
+
+  const debouncedSearch = useDebounced(search, 250);
+  const searchLower = debouncedSearch.toLowerCase();
+
+  const visibleGroups = useMemo(() => {
+    if (!data) return [];
+    if (!searchLower) return data.groups;
+    return data.groups.filter((g) =>
+      g.label.toLowerCase().includes(searchLower) ||
+      g.all_container_names.some((n) => n.toLowerCase().includes(searchLower)),
+    );
+  }, [data, searchLower]);
+
+  useEffect(() => {
+    if (!searchLower || !data) return;
+    for (const g of data.groups) {
+      if (!g.names_truncated) continue;
+      api.get<{ incidents: Array<{ id: string; affected_containers: string[]; endpoint_id: number | null; endpoint_name: string | null; severity: 'critical' | 'warning' | 'info'; created_at: string }> }>(
+        '/api/incidents', { params: { status: 'active', signature: g.signature, q: debouncedSearch } },
+      ).then((r) => {
+        const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
+          (inc.affected_containers ?? []).map((name) => ({
+            incident_id: inc.id, container_name: name,
+            endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
+            severity: inc.severity, created_at: inc.created_at,
+          })),
+        );
+        setLongTailBySig((prev) => ({ ...prev, [g.signature]: rows }));
+      }).catch(() => undefined);
+    }
+  }, [searchLower, debouncedSearch, data]);
 
   const isOpen = useCallback((sig: string, severity: IncidentGroup['severity']) => {
     if (sig in expandedOverrides) return expandedOverrides[sig];
@@ -53,10 +93,12 @@ export function IncidentGroupsView() {
 
   if (isLoading || !data) return null;
 
-  if (data.groups.length === 0) {
+  if (data.groups.length === 0 || (searchLower && visibleGroups.length === 0)) {
     return (
       <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-        No active incidents in this view.
+        {searchLower && visibleGroups.length === 0
+          ? 'No incidents match the current search.'
+          : 'No active incidents in this view.'}
       </div>
     );
   }
@@ -83,8 +125,9 @@ export function IncidentGroupsView() {
         )}
       </div>
 
-      {data.groups.map((g) => {
-        const open = isOpen(g.signature, g.severity);
+      {visibleGroups.map((g) => {
+        const effectivelyOpen = isOpen(g.signature, g.severity)
+          || (!!searchLower && g.all_container_names.some((n) => n.toLowerCase().includes(searchLower)));
         const longTail = longTailBySig[g.signature];
         const rows = longTail ?? g.top_containers;
         return (
@@ -115,10 +158,10 @@ export function IncidentGroupsView() {
                     {g.container_count} container{g.container_count === 1 ? '' : 's'} · {g.alert_count} alert{g.alert_count === 1 ? '' : 's'}
                   </span>
                 </div>
-                {open ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
+                {effectivelyOpen ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
               </div>
             </button>
-            {open && (
+            {effectivelyOpen && (
               <div className="border-t bg-muted/10">
                 <ul className="divide-y">
                   {rows.map((row) => (
