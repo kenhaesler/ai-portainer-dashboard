@@ -56,9 +56,9 @@ describe('IncidentGroupsView — Show all pagination', () => {
     await userEvent.click(showAll);
 
     await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith('/api/incidents', {
+      expect(api.get).toHaveBeenCalledWith('/api/incidents', expect.objectContaining({
         params: { status: 'active', signature: 'a:b:c', limit: '500' },
-      });
+      }));
     });
     expect(screen.getByText('cn-10')).toBeInTheDocument();
     expect(screen.getByText('cn-11')).toBeInTheDocument();

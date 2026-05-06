@@ -37,6 +37,13 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
   });
 
   // List active incidents grouped by signature
+  const GroupsQ = z.object({
+    status: z.enum(['active', 'resolved']).optional(),
+    endpoint_id: z.coerce.number().int().optional(),
+    since: z.enum(['1h', '24h', '7d']).optional(),
+    severity: z.enum(['critical', 'warning', 'info']).optional(),
+  });
+
   fastify.get('/api/incidents/groups', {
     schema: {
       tags: ['Incidents'],
@@ -44,16 +51,13 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
       security: [{ bearerAuth: [] }],
     },
     preHandler: [fastify.authenticate],
-  }, async (request) => {
-    const { status = 'active', endpoint_id, since, severity } = request.query as {
-      status?: 'active' | 'resolved';
-      endpoint_id?: string;
-      since?: '1h' | '24h' | '7d';
-      severity?: 'critical' | 'warning' | 'info';
-    };
+  }, async (request, reply) => {
+    const parsed = GroupsQ.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid query', details: parsed.error.flatten() });
+    }
+    const { status = 'active', endpoint_id: epId, since, severity } = parsed.data;
     const since_minutes = since === '1h' ? 60 : since === '24h' ? 1440 : since === '7d' ? 10080 : undefined;
-    const epId = endpoint_id != null ? Number(endpoint_id) : undefined;
-
     const cacheKey = getCacheKey('incidents-groups', status, epId ?? 'all', since ?? 'all', severity ?? 'all');
     return cachedFetchSWR(cacheKey, 10, () =>
       getIncidentGroups({ status, endpoint_id: epId, since_minutes, severity }),

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vites
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import { testAdminOnly } from '@dashboard/core/test-utils/rbac-test-helper.js';
 import { incidentsRoutes } from '../routes/incidents.js';
-import { getIncidents, getIncident, resolveIncident, getIncidentCount, resolveIncidentsBatch } from '../services/incident-store.js';
+import { getIncidents, getIncident, resolveIncident, getIncidentCount, resolveIncidentsBatch, getIncidentGroups } from '../services/incident-store.js';
 
 // Mock the stores — all functions are now async
 // Kept: incident-store mock — no PostgreSQL in CI
@@ -12,6 +12,7 @@ vi.mock('../services/incident-store.js', () => ({
   resolveIncident: vi.fn(() => Promise.resolve()),
   getIncidentCount: vi.fn(() => Promise.resolve({ active: 0, resolved: 0, total: 0 })),
   resolveIncidentsBatch: vi.fn(() => Promise.resolve({ resolved: [], failed: [] })),
+  getIncidentGroups: vi.fn(() => Promise.resolve({ groups: [], endpoint_facets: [], total_active: 0 })),
 }));
 
 // Kept: app-db-router mock — tests control database routing
@@ -24,11 +25,19 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   })),
 }));
 
+// Kept: portainer-cache mock — cachedFetchSWR passes through to fetcher in tests
+vi.mock('@dashboard/core/portainer/portainer-cache.js', () => ({
+  cachedFetchSWR: vi.fn((_key: string, _ttl: number, fetcher: () => unknown) => fetcher()),
+  getCacheKey: vi.fn((...parts: unknown[]) => parts.join(':')),
+  cache: { invalidatePattern: vi.fn(() => Promise.resolve()) },
+}));
+
 const mockedGetIncidents = vi.mocked(getIncidents);
 const mockedGetIncident = vi.mocked(getIncident);
 const mockedResolveIncident = vi.mocked(resolveIncident);
 const mockedGetIncidentCount = vi.mocked(getIncidentCount);
 const mockedResolveIncidentsBatch = vi.mocked(resolveIncidentsBatch);
+const mockedGetIncidentGroups = vi.mocked(getIncidentGroups);
 
 describe('incidents routes', () => {
   let app: ReturnType<typeof Fastify>;
@@ -71,6 +80,43 @@ describe('incidents routes', () => {
       expect(mockedGetIncidents).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'active' }),
       );
+    });
+  });
+
+  describe('GET /api/incidents/groups', () => {
+    it('should return 200 with valid query params', async () => {
+      mockedGetIncidentGroups.mockResolvedValue({ groups: [], endpoint_facets: [], total_active: 0 });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents/groups?status=active&since=1h&severity=critical',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.payload);
+      expect(body.groups).toBeDefined();
+    });
+
+    it('should return 400 when endpoint_id is not a number', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents/groups?endpoint_id=abc',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toBe('invalid query');
+    });
+
+    it('should return 400 when since is an invalid value', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/incidents/groups?since=foo',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.payload);
+      expect(body.error).toBe('invalid query');
     });
   });
 

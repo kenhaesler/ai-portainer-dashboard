@@ -1,5 +1,6 @@
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { signatureLabel } from './signature.js';
 
 const log = createChildLogger('incident-store');
 
@@ -17,6 +18,8 @@ export interface Incident {
   correlation_confidence: 'high' | 'medium' | 'low';
   insight_count: number;
   summary: string | null;
+  /** NULL for legacy rows backfilled before signature column was NOT NULL */
+  signature: string | null;
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
@@ -181,8 +184,6 @@ export async function resolveIncident(id: string): Promise<void> {
   `, [id]);
   log.info({ incidentId: id }, 'Incident resolved');
 }
-
-import { signatureLabel } from './signature.js';
 
 const TOP_CONTAINERS_PER_GROUP = 10;
 const ALL_NAMES_CAP = 500;

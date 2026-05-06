@@ -60,12 +60,20 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
     );
   }, [data, searchLower]);
 
+  // Stable join-key of truncated-group signatures — only changes when the SET of
+  // groups that need a long-tail fetch actually changes, not on every 30s refetch.
+  const truncatedSigs = useMemo(
+    () => (data?.groups.filter((g) => g.names_truncated).map((g) => g.signature).sort().join('|')) ?? '',
+    [data?.groups],
+  );
+
   useEffect(() => {
-    if (!searchLower || !data) return;
-    for (const g of data.groups) {
-      if (!g.names_truncated) continue;
+    if (!searchLower || !truncatedSigs) return;
+    const controller = new AbortController();
+    for (const sig of truncatedSigs.split('|').filter(Boolean)) {
       api.get<{ incidents: Array<{ id: string; affected_containers: string[]; endpoint_id: number | null; endpoint_name: string | null; severity: 'critical' | 'warning' | 'info'; created_at: string }> }>(
-        '/api/incidents', { params: { status: 'active', signature: g.signature, q: debouncedSearch } },
+        '/api/incidents',
+        { params: { status: 'active', signature: sig, q: debouncedSearch }, signal: controller.signal },
       ).then((r) => {
         const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
           (inc.affected_containers ?? []).map((name) => ({
@@ -74,10 +82,11 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
             severity: inc.severity, created_at: inc.created_at,
           })),
         );
-        setLongTailBySig((prev) => ({ ...prev, [g.signature]: rows }));
+        setLongTailBySig((prev) => ({ ...prev, [sig]: rows }));
       }).catch(() => undefined);
     }
-  }, [searchLower, debouncedSearch, data]);
+    return () => controller.abort();
+  }, [searchLower, debouncedSearch, truncatedSigs]);
 
   const isOpen = useCallback((sig: string, severity: IncidentGroup['severity']) => {
     if (overrides.closes.has(sig)) return false;
@@ -123,6 +132,7 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   }, [batchResolve, lastFailure]);
 
   const showAll = useCallback(async (group: IncidentGroup) => {
+    const controller = new AbortController();
     const r = await api.get<{
       incidents: Array<{
         id: string;
@@ -132,7 +142,7 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
         severity: 'critical' | 'warning' | 'info';
         created_at: string;
       }>;
-    }>('/api/incidents', { params: { status: 'active', signature: group.signature, limit: '500' } });
+    }>('/api/incidents', { params: { status: 'active', signature: group.signature, limit: '500' }, signal: controller.signal });
     const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
       (inc.affected_containers ?? []).map((name) => ({
         incident_id: inc.id, container_name: name,
