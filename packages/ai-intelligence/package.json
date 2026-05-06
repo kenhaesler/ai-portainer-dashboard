@@ -17,7 +17,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "indexes:incidents": "tsx scripts/create-incident-signature-indexes.ts"
   },
   "dependencies": {
     "@dashboard/contracts": "*",
