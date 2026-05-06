@@ -177,6 +177,8 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
         )}
       </div>
 
+      <EndpointChips facets={data.endpoint_facets} />
+
       {visibleGroups.map((g) => {
         const effectivelyOpen = isOpen(g.signature, g.severity)
           || (!!searchLower && g.all_container_names.some((n) => n.toLowerCase().includes(searchLower)));
@@ -313,4 +315,37 @@ function computeSummary(groups: IncidentGroup[]): {
 
 function rankSeverity(s: IncidentGroup['severity']): number {
   return s === 'critical' ? 0 : s === 'warning' ? 1 : 2;
+}
+
+function EndpointChips({
+  facets,
+}: {
+  facets: Array<{ endpoint_id: number | null; endpoint_name: string | null; incident_count: number }>;
+}) {
+  if (facets.length <= 1) return null;
+  const inline = facets.slice(0, 8);
+  const overflow = facets.slice(8);
+  return (
+    <div data-testid="endpoint-chip-row" className="flex flex-wrap items-center gap-2">
+      {inline.map((f) => (
+        <button key={`${f.endpoint_id ?? 'none'}`} type="button" className="rounded-full border px-3 py-1 text-xs">
+          {f.endpoint_name ?? 'unknown'} ({f.incident_count})
+        </button>
+      ))}
+      {overflow.length > 0 && (
+        <details className="relative">
+          <summary className="cursor-pointer rounded-full border px-3 py-1 text-xs">+{overflow.length} more</summary>
+          <ul className="absolute z-10 mt-1 max-h-64 w-64 overflow-auto rounded-md border bg-popover p-1 shadow">
+            {overflow.map((f) => (
+              <li key={`${f.endpoint_id ?? 'none'}`}>
+                <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-muted">
+                  {f.endpoint_name ?? 'unknown'} ({f.incident_count})
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
 }
