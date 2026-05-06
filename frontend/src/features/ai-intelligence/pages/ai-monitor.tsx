@@ -923,6 +923,16 @@ export default function AiMonitorPage() {
     return () => window.clearTimeout(timer);
   }, [searchInput, setSearchParams]);
 
+  // Sync local input state from URL when the URL changes from outside this
+  // component (browser back/forward, deep link). Without this, navigating
+  // back to a state with `?q=foo` leaves the input field empty even though
+  // the filter is active.
+  const urlQuery = searchParams.get('q') ?? '';
+  useEffect(() => {
+    setSearchInput((current) => (current === urlQuery ? current : urlQuery));
+    setSearchQuery((current) => (current === urlQuery ? current : urlQuery));
+  }, [urlQuery]);
+
   const setUrlParam = (key: string, value: string | null) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -932,10 +942,11 @@ export default function AiMonitorPage() {
     }, { replace: true });
   };
 
-  // Bulk-resolve selection state — keyed by incident id. Cleared whenever the
-  // resolve mutation completes so stale ids don't linger.
+  // Bulk-resolve selection state — keyed by incident id. Failed ids stay in
+  // the set on completion so the user can retry; succeeded ids are removed.
   const [selectedIncidentIds, setSelectedIncidentIds] = useState<Set<string>>(new Set());
   const [isBulkResolving, setIsBulkResolving] = useState(false);
+  const [bulkResolveError, setBulkResolveError] = useState<string | null>(null);
   const toggleIncidentSelected = (id: string) => {
     setSelectedIncidentIds((prev) => {
       const next = new Set(prev);
@@ -943,8 +954,12 @@ export default function AiMonitorPage() {
       else next.add(id);
       return next;
     });
+    setBulkResolveError(null);
   };
-  const clearSelection = () => setSelectedIncidentIds(new Set());
+  const clearSelection = () => {
+    setSelectedIncidentIds(new Set());
+    setBulkResolveError(null);
+  };
 
   const {
     insights,
@@ -1004,9 +1019,6 @@ export default function AiMonitorPage() {
     }
 
     return bySearch;
-    // matchesSearch is a stable closure over searchLower; depending on it
-    // explicitly avoids a stale-closure subtle bug.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acknowledgementFilter, insights, severityFilter, searchLower]);
 
   // Filter, sort, and bound incidents for the visible list.
@@ -1043,7 +1055,6 @@ export default function AiMonitorPage() {
     }
 
     return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incidentsData, timeRange, incidentSort, searchLower]);
 
   // Apply search to anomalies + health issues so the search box covers every
@@ -1054,33 +1065,44 @@ export default function AiMonitorPage() {
     return correlatedAnomalies.filter((a) =>
       matchesSearch([a.containerName, a.pattern, ...a.metrics.map((m) => m.type)]),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [correlatedAnomalies, searchLower]);
 
   const filteredHealthIssues = useMemo(() => {
     if (!searchLower) return healthIssues;
     return healthIssues.filter((c) => matchesSearch([c.name, c.image, c.healthStatus]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [healthIssues, searchLower]);
 
   const handleBulkResolve = async () => {
     if (selectedIncidentIds.size === 0 || isBulkResolving) return;
     setIsBulkResolving(true);
+    setBulkResolveError(null);
     const ids = Array.from(selectedIncidentIds);
-    try {
-      // Concurrency cap of 5 keeps the UI responsive without flooding the
-      // backend; mutateAsync rejects on individual failures but Promise.all
-      // here would short-circuit, so use allSettled and surface failures via
-      // the existing react-query error pipeline.
-      const concurrency = 5;
-      for (let i = 0; i < ids.length; i += concurrency) {
-        const batch = ids.slice(i, i + concurrency);
-        await Promise.allSettled(batch.map((id) => resolveIncidentMutation.mutateAsync(id)));
-      }
-    } finally {
-      clearSelection();
-      setIsBulkResolving(false);
+    const failedIds: string[] = [];
+
+    // Concurrency cap of 5 keeps the UI responsive without flooding the
+    // backend. Per-id success/failure is tracked here rather than via the
+    // mutation hook because mutation.error/data only ever reflects the most
+    // recent call when many run in parallel.
+    const concurrency = 5;
+    for (let i = 0; i < ids.length; i += concurrency) {
+      const batch = ids.slice(i, i + concurrency);
+      const results = await Promise.allSettled(
+        batch.map((id) => resolveIncidentMutation.mutateAsync(id)),
+      );
+      results.forEach((r, idx) => {
+        if (r.status === 'rejected') failedIds.push(batch[idx]);
+      });
     }
+
+    // Keep only failed ids selected so the user can retry without
+    // re-checking each row, and surface the failure count inline.
+    setSelectedIncidentIds(new Set(failedIds));
+    if (failedIds.length > 0) {
+      setBulkResolveError(
+        `Failed to resolve ${failedIds.length} of ${ids.length} incident${ids.length === 1 ? '' : 's'}. Retry from the action bar.`,
+      );
+    }
+    setIsBulkResolving(false);
   };
 
   // Stats
@@ -1472,35 +1494,59 @@ export default function AiMonitorPage() {
           </div>
 
           {/* Bulk-action bar — only renders when something is selected so it
-              doesn't take vertical space at rest. */}
-          {selectedIncidentIds.size > 0 && (
-            <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-4 py-2">
-              <p className="text-sm font-medium">
-                {selectedIncidentIds.size} selected
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  disabled={isBulkResolving}
-                  className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBulkResolve}
-                  disabled={isBulkResolving}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {isBulkResolving ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3 w-3" />
-                  )}
-                  Resolve {selectedIncidentIds.size}
-                </button>
+              doesn't take vertical space at rest. Surfaces partial-failure
+              count inline so the operator knows which retries are pending. */}
+          {(selectedIncidentIds.size > 0 || bulkResolveError) && (
+            <div
+              data-testid="bulk-action-bar"
+              className={cn(
+                'rounded-md border px-4 py-2',
+                bulkResolveError
+                  ? 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10'
+                  : 'border-primary/40 bg-primary/5',
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">
+                  {selectedIncidentIds.size > 0
+                    ? `${selectedIncidentIds.size} selected`
+                    : 'No incidents selected'}
+                </p>
+                {selectedIncidentIds.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      disabled={isBulkResolving}
+                      className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkResolve}
+                      disabled={isBulkResolving}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {isBulkResolving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-3 w-3" />
+                      )}
+                      Resolve {selectedIncidentIds.size}
+                    </button>
+                  </div>
+                )}
               </div>
+              {bulkResolveError && (
+                <p
+                  role="alert"
+                  data-testid="bulk-resolve-error"
+                  className="mt-2 text-xs text-red-700 dark:text-red-400"
+                >
+                  {bulkResolveError}
+                </p>
+              )}
             </div>
           )}
 
