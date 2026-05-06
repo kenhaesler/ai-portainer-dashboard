@@ -983,6 +983,22 @@ export default function AiMonitorPage() {
   const { data: containers, isLoading: containersLoading, refetch: containerRefetch, isFetching: containersFetching } = useContainers();
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', containerRefetch);
 
+  // Wire the auto-refresh dropdown to actual refetches. The hook only owns
+  // the interval state; without this effect, switching the dropdown to "30s"
+  // would advertise a behaviour that never happens. We refetch the page's
+  // two operator-controlled queries (insights + containers); incidents and
+  // correlated anomalies have their own internal refetch cadences set in
+  // their respective hooks.
+  useEffect(() => {
+    if (interval <= 0) return;
+    const tick = () => {
+      refetch();
+      containerRefetch();
+    };
+    const id = window.setInterval(tick, interval * 1000);
+    return () => window.clearInterval(id);
+  }, [interval, refetch, containerRefetch]);
+
   const healthStats = useMemo(() => {
     if (!containers) return null;
     return calculateHealthStats(containers);
@@ -1079,20 +1095,28 @@ export default function AiMonitorPage() {
     const ids = Array.from(selectedIncidentIds);
     const failedIds: string[] = [];
 
-    // Concurrency cap of 5 keeps the UI responsive without flooding the
-    // backend. Per-id success/failure is tracked here rather than via the
-    // mutation hook because mutation.error/data only ever reflects the most
-    // recent call when many run in parallel.
-    const concurrency = 5;
-    for (let i = 0; i < ids.length; i += concurrency) {
-      const batch = ids.slice(i, i + concurrency);
-      const results = await Promise.allSettled(
-        batch.map((id) => resolveIncidentMutation.mutateAsync(id)),
-      );
-      results.forEach((r, idx) => {
-        if (r.status === 'rejected') failedIds.push(batch[idx]);
-      });
-    }
+    // Streaming worker pool — N workers each pull the next id from a shared
+    // queue. A slow request blocks only its own worker, not the whole batch
+    // (the previous batched-wave loop made all 5 workers wait for the
+    // slowest in each wave before starting the next 5). Per-id success and
+    // failure is tracked here rather than via the mutation hook because
+    // `mutation.error` only ever reflects the most recent call when many
+    // run in parallel.
+    const POOL_SIZE = 5;
+    const queue = [...ids];
+    const worker = async () => {
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (id === undefined) break;
+        try {
+          await resolveIncidentMutation.mutateAsync(id);
+        } catch {
+          failedIds.push(id);
+        }
+      }
+    };
+    const workerCount = Math.min(POOL_SIZE, ids.length);
+    await Promise.all(Array.from({ length: workerCount }, worker));
 
     // Keep only failed ids selected so the user can retry without
     // re-checking each row, and surface the failure count inline.
@@ -1235,7 +1259,7 @@ export default function AiMonitorPage() {
                 title={isFiltered ? 'Click to clear filter' : `Filter list to ${card.label.toLowerCase()}`}
                 className="block w-full text-left"
               >
-                <div className="flex items-center justify-between pr-7">
+                <div className="flex items-center justify-between pr-9">
                   <p className={cn('text-xs font-medium uppercase tracking-wide', card.text)}>{card.label}</p>
                   <Icon className={cn('h-4 w-4', card.iconColor)} />
                 </div>
@@ -1243,23 +1267,24 @@ export default function AiMonitorPage() {
                   {card.count}
                 </p>
               </button>
-              {/* Live-alert subscription toggle — separate target so it doesn't filter */}
+              {/* Live-alert subscription toggle — separate sibling target.
+                  No stopPropagation needed because this button is a sibling
+                  of the card-body button (not nested inside it). 32×32 hit
+                  area: above WCAG 2.5.5 AA (24×24) and well above the
+                  practical comfort zone for pointer + touch input. */}
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSubscriptionToggle(card.severity);
-                }}
+                onClick={() => handleSubscriptionToggle(card.severity)}
                 aria-pressed={isSubscribed}
                 title={isSubscribed ? `Pause live ${card.label.toLowerCase()} alerts` : `Resume live ${card.label.toLowerCase()} alerts`}
                 className={cn(
-                  'absolute right-2.5 top-2.5 inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors',
+                  'absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
                   isSubscribed
                     ? 'bg-card text-muted-foreground hover:bg-muted'
                     : 'bg-muted text-muted-foreground/60 hover:bg-muted/80',
                 )}
               >
-                {isSubscribed ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                {isSubscribed ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
                 <span className="sr-only">
                   {isSubscribed ? 'Pause' : 'Resume'} live {card.label.toLowerCase()} alerts
                 </span>
