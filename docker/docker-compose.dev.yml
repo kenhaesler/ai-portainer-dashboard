@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile.dev
-    command: ["npx", "tsx", "watch", "backend/src/index.ts"]
+    command: ["npx", "tsx", "watch", "packages/server/src/index.ts"]
     ports:
       # Publish backend API on all host interfaces so edge nodes can reach OTLP ingest.
       - "0.0.0.0:3051:3051"
@@ -66,6 +66,7 @@ services:
       start_period: 30s
     volumes:
       - ../backend/src:/app/backend/src
+      - ../packages/server/src:/app/packages/server/src
       - backend-data:/app/data
       # Uncomment to mount custom CA certificate for internal TLS verification
       # - ../certs/ca-bundle.crt:/certs/ca-bundle.crt:ro
@@ -90,7 +91,7 @@ services:
       context: ..
       dockerfile: frontend/Dockerfile.dev
     ports:
-      - "5273:5273"
+      - "8080:5273"
     environment:
       - VITE_API_URL=http://localhost:3051
       - VITE_SOCKET_URL=http://localhost:3051

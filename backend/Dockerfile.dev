@@ -5,11 +5,36 @@ RUN apk add --no-cache python3 make g++ dumb-init su-exec tcpdump wget
 
 WORKDIR /app
 
+# Copy root manifest + all workspace manifests for dependency layer caching
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
-RUN npm ci -w backend
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/core/package.json ./packages/core/
+COPY packages/infrastructure/package.json ./packages/infrastructure/
+COPY packages/security/package.json ./packages/security/
+COPY packages/observability/package.json ./packages/observability/
+COPY packages/operations/package.json ./packages/operations/
+COPY packages/ai-intelligence/package.json ./packages/ai-intelligence/
+COPY packages/foundation/package.json ./packages/foundation/
+COPY packages/server/package.json ./packages/server/
 
+RUN npm ci
+
+# Copy all source
 COPY backend/ backend/
+COPY packages/ packages/
+COPY tsconfig.build.json ./
+
+# Build all packages into dist/ so imports resolve at runtime.
+# server is NOT built here — tsx watch runs it directly from src/.
+RUN npm run build -w @dashboard/contracts \
+ && npm run build -w @dashboard/core \
+ && npm run build -w @dashboard/foundation \
+ && npm run build -w @dashboard/infrastructure \
+ && npm run build -w @dashboard/security \
+ && npm run build -w @dashboard/observability \
+ && npm run build -w @dashboard/operations \
+ && npm run build -w @dashboard/ai
 
 RUN mkdir -p /app/data && chown -R node:node /app
 
@@ -23,4 +48,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --spider --quiet http://127.0.0.1:3051/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--", "/app/backend/docker-entrypoint.sh"]
-CMD ["npx", "tsx", "watch", "--node-arg=--use-system-ca", "backend/src/index.ts"]
+CMD ["npx", "tsx", "watch", "packages/server/src/index.ts"]
