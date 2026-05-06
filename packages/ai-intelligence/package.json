@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "indexes:incidents": "tsx scripts/create-incident-signature-indexes.ts"
+    "indexes:incidents": "tsx scripts/create-incident-signature-indexes.ts",
+    "dump:titles": "tsx scripts/dump-historical-titles.ts"
   },
   "dependencies": {
     "@dashboard/contracts": "*",

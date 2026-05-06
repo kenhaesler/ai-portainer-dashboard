@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { Insight } from '@dashboard/core/models/monitoring.js';
 import {
   deriveSignature,
   deriveSignatureFromTitle,
@@ -124,4 +127,69 @@ describe('equivalence — regex output equals structured-field output', () => {
       expect(fromRegex).toBe(fromStructured);
     });
   }
+});
+
+describe('drift corpus — historical titles', () => {
+  const csvPath = path.join(__dirname, 'fixtures/historical-titles.csv');
+  const text = fs.readFileSync(csvPath, 'utf8').trim();
+  const [, ...rows] = text.split('\n');
+
+  type CsvRecord = {
+    title: string;
+    category: string | undefined;
+    metric_type: string | undefined;
+    detection_method: string | undefined;
+  };
+
+  const records: CsvRecord[] = rows.map((r) => {
+    // Naive CSV parser sufficient for our quoted format.
+    const cells: string[] = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < r.length; i++) {
+      const ch = r[i];
+      if (ch === '"') {
+        if (inQuote && r[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuote = !inQuote;
+        }
+      } else if (ch === ',' && !inQuote) {
+        cells.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    cells.push(cur);
+    const [title, category, metric_type, detection_method] = cells;
+    return {
+      title,
+      category: category || undefined,
+      metric_type: metric_type || undefined,
+      detection_method: detection_method || undefined,
+    };
+  });
+
+  it('every row derives a non-unknown signature', () => {
+    for (const r of records) {
+      const sig = deriveSignatureFromTitle(r.title);
+      expect(sig, `title="${r.title}"`).not.toMatch(/^unknown:/);
+    }
+  });
+
+  it('regex output equals structured-field output (when fields present)', () => {
+    for (const r of records) {
+      if (!r.category) continue;
+      const fromRegex = deriveSignatureFromTitle(r.title);
+      const fromStructured = deriveSignature({
+        category: r.category,
+        metric_type: r.metric_type as Insight['metric_type'],
+        detection_method: r.detection_method as Insight['detection_method'],
+        title: r.title,
+      });
+      expect(fromRegex, `title="${r.title}"`).toBe(fromStructured);
+    }
+  });
 });
