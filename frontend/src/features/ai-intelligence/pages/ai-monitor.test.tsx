@@ -193,7 +193,9 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Anomalies & Health Issues')).toBeTruthy();
+    // Section was renamed from "Anomalies & Health Issues" to clearer twin
+    // sections: "ML-Detected Anomalies" + "Container Health".
+    expect(screen.getByText('ML-Detected Anomalies')).toBeTruthy();
     expect(screen.getByText('web-server')).toBeTruthy();
     expect(screen.getByText('Resource Exhaustion')).toBeTruthy();
     expect(screen.getByText('4.08')).toBeTruthy();
@@ -209,10 +211,13 @@ describe('AiMonitorPage', () => {
     } as ReturnType<typeof useCorrelatedAnomalies>);
 
     renderPage();
-    expect(screen.queryByText('Anomalies & Health Issues')).toBeNull();
+    expect(screen.queryByText('ML-Detected Anomalies')).toBeNull();
   });
 
   it('renders IncidentCard with colored correlation type badge', () => {
+    // Use a recent timestamp so the default 24h time-range filter doesn't
+    // exclude this fixture from the visible incidents list.
+    const recentTimestamp = new Date().toISOString();
     vi.mocked(useIncidents).mockReturnValue({
       data: {
         incidents: [
@@ -222,16 +227,16 @@ describe('AiMonitorPage', () => {
             severity: 'critical' as const,
             status: 'active' as const,
             root_cause_insight_id: null,
-            related_insight_ids: '[]',
-            affected_containers: '["nginx","redis"]',
+            related_insight_ids: [],
+            affected_containers: ['nginx', 'redis'],
             endpoint_id: 1,
             endpoint_name: 'prod',
             correlation_type: 'temporal',
             correlation_confidence: 'high' as const,
             insight_count: 3,
             summary: 'Correlated CPU anomalies',
-            created_at: '2025-01-15T10:00:00Z',
-            updated_at: '2025-01-15T10:00:00Z',
+            created_at: recentTimestamp,
+            updated_at: recentTimestamp,
             resolved_at: null,
           },
         ],
@@ -243,7 +248,8 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Should show "Temporal" badge text, not "temporal correlation" plain text
+    // Correlation type badge moved to a muted metadata line under the title
+    // (item 5: reduce visual noise). The label text is still rendered.
     expect(screen.getByText('Temporal')).toBeTruthy();
     expect(screen.queryByText('temporal correlation')).toBeNull();
   });
@@ -413,13 +419,19 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
+    // New score formula: healthy / (healthy + unhealthy). 1 healthy + 1
+    // unhealthy = 50.0%. The db (no healthcheck) and cache (exited) are
+    // excluded from the denominator so the operator's healthcheck coverage
+    // gap doesn't penalise the score.
     expect(screen.getByText('Overall Health Score')).toBeTruthy();
-    // 1 healthy (web) out of 4 = 25.0% — db has no healthcheck so counts as unknown, not healthy
-    expect(screen.getAllByText('25.0%').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('50.0%').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Running')).toBeTruthy();
     expect(screen.getByText('Healthy')).toBeTruthy();
     expect(screen.getAllByText('Unhealthy').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Stopped').length).toBeGreaterThanOrEqual(1);
+    // The "Stopped" stat card was replaced by "No Healthcheck" — surfacing
+    // the cohort that's actually excluded from scoring is more useful than
+    // counting exited containers (already shown elsewhere as health issues).
+    expect(screen.getByText('No Healthcheck')).toBeTruthy();
   });
 
   it('shows skeleton loading state for health section', () => {
@@ -450,10 +462,13 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    // Health score and all stat card percentages should be "0.0%", never NaN
-    const allPcts = screen.getAllByText('0.0%');
-    expect(allPcts.length).toBeGreaterThanOrEqual(1);
-    allPcts.forEach((el) => expect(el.textContent).not.toContain('NaN'));
+    // Empty fleet now shows "No healthchecks configured" instead of an
+    // arbitrary 0.0% — the new score formula returns null when no container
+    // reports a health signal and we surface that as N/A so operators are
+    // not misled by a bogus zero.
+    expect(screen.getByTestId('health-score-na')).toBeTruthy();
+    // No NaN should ever leak into the rendered DOM.
+    expect(document.body.textContent ?? '').not.toContain('NaN');
   });
 
   it('surfaces unhealthy and stopped containers in the Anomalies & Health Issues section', () => {
@@ -476,7 +491,10 @@ describe('AiMonitorPage', () => {
 
     renderPage();
 
-    expect(screen.getByText('Anomalies & Health Issues')).toBeTruthy();
+    // The mixed list was split into "ML-Detected Anomalies" + "Container
+    // Health". State-based issues (unhealthy/stopped) live under "Container
+    // Health" now.
+    expect(screen.getByText('Container Health')).toBeTruthy();
     // Both problematic containers appear; healthy one does not
     expect(screen.getByText('sick-api')).toBeTruthy();
     expect(screen.getByText('crashed-worker')).toBeTruthy();

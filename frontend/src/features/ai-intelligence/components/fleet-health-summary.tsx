@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, AlertTriangle, CheckCircle2, Pause, XCircle } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
@@ -10,6 +10,13 @@ export interface HealthStats {
   unhealthy: number;
   healthy: number;
   unknown: number;
+  /**
+   * Running containers without a Docker healthcheck configured. These are
+   * excluded from the health-score denominator (score = healthy / (healthy +
+   * unhealthy)) so the operator's choice not to configure a healthcheck
+   * doesn't artificially deflate the fleet health number.
+   */
+  noHealthcheck: number;
 }
 
 export function calculateHealthStats(containers: Container[]): HealthStats {
@@ -21,6 +28,7 @@ export function calculateHealthStats(containers: Container[]): HealthStats {
     unhealthy: 0,
     healthy: 0,
     unknown: 0,
+    noHealthcheck: 0,
   };
 
   containers.forEach((container) => {
@@ -30,14 +38,32 @@ export function calculateHealthStats(containers: Container[]): HealthStats {
 
     if (container.healthStatus === 'unhealthy') stats.unhealthy++;
     else if (container.healthStatus === 'healthy') stats.healthy++;
-    else if (container.state === 'running') stats.unknown++;
-    else stats.unknown++;
+    else {
+      stats.unknown++;
+      if (container.state === 'running') stats.noHealthcheck++;
+    }
   });
 
   return stats;
 }
 
-function HealthStatCard({
+/**
+ * Score = healthy / (healthy + unhealthy). Containers without a healthcheck
+ * are excluded so the operator's choice not to configure one doesn't drag
+ * the score down. Returns null when no container reports a health signal.
+ */
+export function calculateHealthScore(stats: HealthStats): number | null {
+  const reporting = stats.healthy + stats.unhealthy;
+  if (reporting === 0) return null;
+  return (stats.healthy / reporting) * 100;
+}
+
+/**
+ * Compact horizontal stat tile used in the Fleet Vitals strip. Replaces the
+ * earlier 4-card grid of large boxed stats — keeps all four numbers visible
+ * but in roughly half the vertical mass so the hero score still dominates.
+ */
+function HealthStatTile({
   icon: Icon,
   label,
   value,
@@ -50,112 +76,122 @@ function HealthStatCard({
   percentage?: number;
   variant?: 'default' | 'success' | 'warning' | 'danger';
 }) {
-  const variantClasses = {
-    default: 'bg-card border-border',
-    success: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-900/30',
-    warning: 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-900/30',
-    danger: 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-900/30',
-  };
-
   const iconVariantClasses = {
-    default: 'text-primary',
+    default: 'text-muted-foreground',
     success: 'text-emerald-600 dark:text-emerald-400',
     warning: 'text-amber-600 dark:text-amber-400',
     danger: 'text-red-600 dark:text-red-400',
   };
 
   return (
-    <div className={`rounded-lg border p-4 shadow-sm ${variantClasses[variant]}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm text-muted-foreground mb-1">{label}</p>
-          <p className="text-3xl font-bold">{value}</p>
-          {percentage !== undefined && (
-            <p className="text-xs text-muted-foreground mt-1">{percentage.toFixed(1)}%</p>
+    <div className="flex items-center gap-3 rounded-md bg-card/60 px-3 py-2">
+      <div className={`flex h-8 w-8 items-center justify-center rounded-md bg-background ${iconVariantClasses[variant]}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-bold tabular-nums leading-none">{value}</span>
+          {percentage !== undefined && value > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums">{percentage.toFixed(0)}%</span>
           )}
         </div>
-        <div className={`rounded-lg p-2 ${iconVariantClasses[variant]}`}>
-          <Icon className="h-6 w-6" />
-        </div>
+        <p className="text-xs text-muted-foreground mt-0.5 truncate">{label}</p>
       </div>
     </div>
   );
 }
 
-export function FleetHealthSummary({ stats, healthPercentage, isLoading }: {
+export function FleetHealthSummary({ stats, isLoading }: {
   stats: HealthStats | null;
-  healthPercentage: number;
   isLoading: boolean;
 }) {
   if (isLoading || !stats) {
-    return (
-      <>
-        <SkeletonCard className="h-36" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-        </div>
-      </>
-    );
+    return <SkeletonCard className="h-44" />;
   }
 
+  const healthScore = calculateHealthScore(stats);
+  const reporting = stats.healthy + stats.unhealthy;
+  const issueCount = stats.unhealthy + stats.stopped;
+
   return (
-    <>
-      {/* Overall Health Score */}
-      <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground mb-2">Overall Health Score</p>
-            <p className="text-5xl font-bold">{healthPercentage.toFixed(1)}%</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              {stats.healthy} of {stats.total} containers healthy
-            </p>
-          </div>
-          <div className="flex h-32 w-32 items-center justify-center rounded-full border-8 border-primary/20">
-            {healthPercentage >= 80 ? (
-              <CheckCircle2 className="h-16 w-16 text-emerald-500" />
-            ) : healthPercentage >= 50 ? (
-              <AlertCircle className="h-16 w-16 text-amber-500" />
+    <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-6" data-testid="fleet-health-hero">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        {/* Hero — score + issue count */}
+        <div className="flex items-center gap-5 min-w-0">
+          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-card/40">
+            {healthScore === null ? (
+              <HelpCircle className="h-12 w-12 text-muted-foreground" />
+            ) : healthScore >= 80 ? (
+              <CheckCircle2 className="h-12 w-12 text-emerald-500" />
+            ) : healthScore >= 50 ? (
+              <AlertCircle className="h-12 w-12 text-amber-500" />
             ) : (
-              <XCircle className="h-16 w-16 text-red-500" />
+              <XCircle className="h-12 w-12 text-red-500" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-muted-foreground">Overall Health Score</p>
+            {healthScore === null ? (
+              <>
+                <p className="text-2xl font-semibold text-muted-foreground" data-testid="health-score-na">
+                  No healthchecks configured
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {stats.total} containers tracked. Configure Docker healthchecks to enable scoring.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-4xl font-bold tabular-nums leading-none mt-1" data-testid="health-score">
+                  {healthScore.toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {stats.healthy} of {reporting} reporting healthy
+                  {stats.noHealthcheck > 0 && ` · ${stats.noHealthcheck} without healthcheck`}
+                </p>
+              </>
+            )}
+            {issueCount > 0 && (
+              <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 dark:text-red-400">
+                <AlertTriangle className="h-4 w-4" />
+                {issueCount} container{issueCount === 1 ? '' : 's'} need{issueCount === 1 ? 's' : ''} attention
+              </p>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Health Statistics Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <HealthStatCard
-          icon={Activity}
-          label="Running"
-          value={stats.running}
-          percentage={stats.total > 0 ? (stats.running / stats.total) * 100 : 0}
-          variant="success"
-        />
-        <HealthStatCard
-          icon={CheckCircle2}
-          label="Healthy"
-          value={stats.healthy}
-          percentage={stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0}
-          variant="success"
-        />
-        <HealthStatCard
-          icon={AlertTriangle}
-          label="Unhealthy"
-          value={stats.unhealthy}
-          percentage={stats.total > 0 ? (stats.unhealthy / stats.total) * 100 : 0}
-          variant="danger"
-        />
-        <HealthStatCard
-          icon={Pause}
-          label="Stopped"
-          value={stats.stopped}
-          percentage={stats.total > 0 ? (stats.stopped / stats.total) * 100 : 0}
-          variant="warning"
-        />
+        {/* Compact status strip — 4 stats inline instead of separate large cards */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
+          <HealthStatTile
+            icon={Activity}
+            label="Running"
+            value={stats.running}
+            percentage={stats.total > 0 ? (stats.running / stats.total) * 100 : 0}
+            variant="success"
+          />
+          <HealthStatTile
+            icon={CheckCircle2}
+            label="Healthy"
+            value={stats.healthy}
+            percentage={stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0}
+            variant="success"
+          />
+          <HealthStatTile
+            icon={AlertTriangle}
+            label="Unhealthy"
+            value={stats.unhealthy}
+            percentage={stats.total > 0 ? (stats.unhealthy / stats.total) * 100 : 0}
+            variant="danger"
+          />
+          <HealthStatTile
+            icon={HelpCircle}
+            label="No Healthcheck"
+            value={stats.noHealthcheck}
+            percentage={stats.total > 0 ? (stats.noHealthcheck / stats.total) * 100 : 0}
+            variant={stats.noHealthcheck > 0 ? 'warning' : 'default'}
+          />
+        </div>
       </div>
-    </>
+    </div>
   );
 }

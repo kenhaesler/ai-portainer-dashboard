@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
 import { useInvestigations, safeParseJson } from '@/features/ai-intelligence/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/features/ai-intelligence/hooks/use-investigations';
@@ -34,7 +34,10 @@ import {
   Zap,
   TrendingUp,
   FileText,
+  Bell,
+  BellOff,
 } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { getModelUseCase } from '@/features/core/components/settings/model-use-cases';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -58,6 +61,48 @@ interface InsightCardProps {
   onAcknowledge: (insightId: string) => void;
   isAcknowledging: boolean;
   acknowledgeErrorMessage?: string;
+}
+
+/**
+ * Renders a container name in a chip. Links to the container detail page
+ * when both endpointId and containerId are known; otherwise renders as plain
+ * text. `stopPropagation` keeps the parent row's expand-on-click behaviour
+ * intact when the chip lives inside an expandable card.
+ */
+function ContainerChip({
+  name,
+  endpointId,
+  containerId,
+  className,
+}: {
+  name: string;
+  endpointId?: number | null;
+  containerId?: string | null;
+  className?: string;
+}) {
+  const baseClasses = cn(
+    'inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-mono',
+    className,
+  );
+  if (endpointId != null && containerId) {
+    return (
+      <Link
+        to={`/containers/${endpointId}/${containerId}`}
+        onClick={(e) => e.stopPropagation()}
+        className={cn(baseClasses, 'hover:bg-muted/70 hover:text-foreground transition-colors')}
+        title={`Open ${name}`}
+      >
+        <Box className="h-3 w-3 text-muted-foreground" />
+        {name}
+      </Link>
+    );
+  }
+  return (
+    <span className={baseClasses}>
+      <Box className="h-3 w-3 text-muted-foreground" />
+      {name}
+    </span>
+  );
 }
 
 function SeverityBadge({ severity }: { severity: Severity }) {
@@ -293,7 +338,7 @@ function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
   );
 }
 
-function HealthIssueCard({ container }: { container: { name: string; image: string; state: string; healthStatus?: string } }) {
+function HealthIssueCard({ container }: { container: { id: string; name: string; image: string; state: string; healthStatus?: string; endpointId: number } }) {
   const isUnhealthy = container.healthStatus === 'unhealthy';
   return (
     <div
@@ -306,10 +351,14 @@ function HealthIssueCard({ container }: { container: { name: string; image: stri
       data-testid="health-issue-card"
     >
       <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2 min-w-0">
+        <Link
+          to={`/containers/${container.endpointId}/${container.id}`}
+          className="flex items-center gap-2 min-w-0 hover:text-foreground transition-colors"
+          title={`Open ${container.name}`}
+        >
           <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           <span className="font-mono text-sm font-medium truncate">{container.name}</span>
-        </div>
+        </Link>
         {isUnhealthy ? (
           <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
         ) : (
@@ -491,10 +540,29 @@ function InvestigationSection({ investigation }: { investigation: Investigation 
   );
 }
 
-function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: (id: string) => void }) {
+function IncidentCard({
+  incident,
+  onResolve,
+  isSelected,
+  onToggleSelect,
+}: {
+  incident: Incident;
+  onResolve: (id: string) => void;
+  isSelected: boolean;
+  onToggleSelect: (id: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const containers: string[] = incident.affected_containers || [];
   const isActive = incident.status === 'active';
+
+  // Tint the leading icon by severity instead of always purple. Pulls the
+  // viewer's eye to the row's actual urgency rather than the generic
+  // "incident" shape.
+  const severityIconClasses = {
+    critical: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+    warning: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+    info: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
+  }[incident.severity];
 
   return (
     <div className={cn(
@@ -512,35 +580,44 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            <div className="mt-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 p-2">
-              <Layers className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+            {isActive && (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => onToggleSelect(incident.id)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`Select incident: ${incident.title}`}
+                className="mt-1.5 h-4 w-4 cursor-pointer rounded border-input accent-primary"
+              />
+            )}
+            <div className={cn('mt-0.5 rounded-full p-2', severityIconClasses)}>
+              <Layers className="h-4 w-4" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <div className="flex items-center gap-2 mb-1">
                 <SeverityBadge severity={incident.severity} />
-                <span className={cn(
-                  'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
-                  isActive
-                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                )}>
-                  {isActive ? 'Active Incident' : 'Resolved'}
-                </span>
-                <CorrelationTypeBadge type={incident.correlation_type} />
-                <span className="text-xs text-muted-foreground">
-                  {formatDate(incident.created_at)}
-                </span>
+                {!isActive && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    Resolved
+                  </span>
+                )}
               </div>
               <h3 className="font-semibold text-base leading-snug mb-1">{incident.title}</h3>
               {!expanded && incident.summary && (
                 <p className="text-sm text-muted-foreground line-clamp-2">{incident.summary}</p>
               )}
+              {/* Demoted metadata — correlation type + timestamp on a muted line.
+                  Removes 2 of the 5 same-weight chips that crowded the header. */}
+              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <CorrelationTypeBadge type={incident.correlation_type} />
+                <span>·</span>
+                <span>{formatDate(incident.created_at)}</span>
+                <span>·</span>
+                <span>{incident.insight_count} alert{incident.insight_count === 1 ? '' : 's'}</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-md bg-muted px-2 py-1 text-xs font-medium">
-              {incident.insight_count} alerts
-            </span>
             {expanded ? (
               <ChevronDown className="h-5 w-5 text-muted-foreground flex-shrink-0" />
             ) : (
@@ -564,10 +641,10 @@ function IncidentCard({ incident, onResolve }: { incident: Incident; onResolve: 
               <h4 className="text-sm font-medium mb-1.5">Affected Containers</h4>
               <div className="flex flex-wrap gap-1.5">
                 {containers.map((name) => (
-                  <span key={name} className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-mono">
-                    <Box className="h-3 w-3 text-muted-foreground" />
-                    {name}
-                  </span>
+                  // Incidents store affected containers by name only; without
+                  // ids we render plain chips. ContainerChip degrades to a
+                  // span when the ids aren't provided.
+                  <ContainerChip key={name} name={name} />
                 ))}
               </div>
             </div>
@@ -664,9 +741,12 @@ function InsightCard({
               <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
             )}
             {insight.container_name && (
-              <div className="hidden sm:flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs">
-                <Box className="h-3 w-3 text-muted-foreground" />
-                <span className="font-mono">{insight.container_name}</span>
+              <div className="hidden sm:flex">
+                <ContainerChip
+                  name={insight.container_name}
+                  endpointId={insight.endpoint_id}
+                  containerId={insight.container_id}
+                />
               </div>
             )}
             {expanded ? (
@@ -796,10 +876,75 @@ function InsightCard({
   );
 }
 
+type TimeRange = '1h' | '24h' | '7d' | 'all';
+type IncidentSort = 'severity' | 'time';
+
+const TIME_RANGE_MS: Record<Exclude<TimeRange, 'all'>, number> = {
+  '1h': 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+};
+
+// Severity weight for default sort: critical > warning > info. Higher = more
+// urgent and floats to the top.
+const SEVERITY_WEIGHT: Record<Severity, number> = {
+  critical: 3,
+  warning: 2,
+  info: 1,
+};
+
 export default function AiMonitorPage() {
   const [severityFilter, setSeverityFilter] = useState<'all' | Severity>('all');
   const [acknowledgementFilter, setAcknowledgementFilter] = useState<'all' | 'unacknowledged'>('all');
   const { interval, setInterval } = useAutoRefresh(30);
+
+  // URL-synced controls so reloads, deep links, and back-navigation preserve
+  // the operator's filter context. Trade-off: each control change invalidates
+  // a render but the page already re-renders on every refetch so this isn't
+  // load-bearing.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchInput, setSearchInput] = useState(searchParams.get('q') ?? '');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
+  const timeRange = (searchParams.get('range') as TimeRange) || '24h';
+  const incidentSort = (searchParams.get('sort') as IncidentSort) || 'severity';
+
+  // Debounce search input → query (~150ms) so each keystroke doesn't refilter
+  // the full list. URL-sync happens on the debounced value.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (searchInput) next.set('q', searchInput);
+        else next.delete('q');
+        return next;
+      }, { replace: true });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, setSearchParams]);
+
+  const setUrlParam = (key: string, value: string | null) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+      return next;
+    }, { replace: true });
+  };
+
+  // Bulk-resolve selection state — keyed by incident id. Cleared whenever the
+  // resolve mutation completes so stale ids don't linger.
+  const [selectedIncidentIds, setSelectedIncidentIds] = useState<Set<string>>(new Set());
+  const [isBulkResolving, setIsBulkResolving] = useState(false);
+  const toggleIncidentSelected = (id: string) => {
+    setSelectedIncidentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIncidentIds(new Set());
 
   const {
     insights,
@@ -828,11 +973,6 @@ export default function AiMonitorPage() {
     return calculateHealthStats(containers);
   }, [containers]);
 
-  const healthPercentage = useMemo(() => {
-    if (!healthStats || healthStats.total === 0) return 0;
-    return (healthStats.healthy / healthStats.total) * 100;
-  }, [healthStats]);
-
   // Containers with a simple health issue (unhealthy or stopped) — surfaced in Correlated Anomalies (AC-4)
   const healthIssues = useMemo(() => {
     if (!containers) return [];
@@ -841,18 +981,107 @@ export default function AiMonitorPage() {
     );
   }, [containers]);
 
-  // Filter insights by severity
+  // Lowercased query for case-insensitive substring matching.
+  const searchLower = searchQuery.trim().toLowerCase();
+  const matchesSearch = (haystack: Array<string | null | undefined>) =>
+    !searchLower ||
+    haystack.some((s) => typeof s === 'string' && s.toLowerCase().includes(searchLower));
+
+  // Filter insights by severity, acknowledgement, and search query.
   const filteredInsights = useMemo(() => {
     const bySeverity = severityFilter === 'all'
       ? insights
       : insights.filter((i) => i.severity === severityFilter);
 
+    const bySearch = !searchLower
+      ? bySeverity
+      : bySeverity.filter((i) =>
+          matchesSearch([i.title, i.description, i.container_name, i.endpoint_name, i.category]),
+        );
+
     if (acknowledgementFilter === 'unacknowledged') {
-      return bySeverity.filter((i) => !i.is_acknowledged);
+      return bySearch.filter((i) => !i.is_acknowledged);
     }
 
-    return bySeverity;
-  }, [acknowledgementFilter, insights, severityFilter]);
+    return bySearch;
+    // matchesSearch is a stable closure over searchLower; depending on it
+    // explicitly avoids a stale-closure subtle bug.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acknowledgementFilter, insights, severityFilter, searchLower]);
+
+  // Filter, sort, and bound incidents for the visible list.
+  const visibleIncidents = useMemo(() => {
+    if (!incidentsData) return [];
+    const cutoff = timeRange === 'all' ? null : Date.now() - TIME_RANGE_MS[timeRange];
+
+    let result = incidentsData.incidents.filter((incident) => {
+      if (cutoff !== null) {
+        const created = Date.parse(incident.created_at);
+        if (Number.isFinite(created) && created < cutoff) return false;
+      }
+      if (searchLower) {
+        const haystack = [
+          incident.title,
+          incident.summary,
+          incident.endpoint_name,
+          incident.correlation_type,
+          ...(incident.affected_containers ?? []),
+        ];
+        if (!matchesSearch(haystack)) return false;
+      }
+      return true;
+    });
+
+    if (incidentSort === 'severity') {
+      result = [...result].sort((a, b) => {
+        const weightDiff = SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity];
+        if (weightDiff !== 0) return weightDiff;
+        return Date.parse(b.created_at) - Date.parse(a.created_at);
+      });
+    } else {
+      result = [...result].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    }
+
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incidentsData, timeRange, incidentSort, searchLower]);
+
+  // Apply search to anomalies + health issues so the search box covers every
+  // list on the page consistently.
+  const filteredCorrelatedAnomalies = useMemo(() => {
+    if (!correlatedAnomalies) return correlatedAnomalies;
+    if (!searchLower) return correlatedAnomalies;
+    return correlatedAnomalies.filter((a) =>
+      matchesSearch([a.containerName, a.pattern, ...a.metrics.map((m) => m.type)]),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [correlatedAnomalies, searchLower]);
+
+  const filteredHealthIssues = useMemo(() => {
+    if (!searchLower) return healthIssues;
+    return healthIssues.filter((c) => matchesSearch([c.name, c.image, c.healthStatus]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [healthIssues, searchLower]);
+
+  const handleBulkResolve = async () => {
+    if (selectedIncidentIds.size === 0 || isBulkResolving) return;
+    setIsBulkResolving(true);
+    const ids = Array.from(selectedIncidentIds);
+    try {
+      // Concurrency cap of 5 keeps the UI responsive without flooding the
+      // backend; mutateAsync rejects on individual failures but Promise.all
+      // here would short-circuit, so use allSettled and surface failures via
+      // the existing react-query error pipeline.
+      const concurrency = 5;
+      for (let i = 0; i < ids.length; i += concurrency) {
+        const batch = ids.slice(i, i + concurrency);
+        await Promise.allSettled(batch.map((id) => resolveIncidentMutation.mutateAsync(id)));
+      }
+    } finally {
+      clearSelection();
+      setIsBulkResolving(false);
+    }
+  };
 
   // Stats
   const stats = useMemo(() => {
@@ -866,13 +1095,15 @@ export default function AiMonitorPage() {
     return result;
   }, [insights]);
 
-  const handleSeverityToggle = (severity: Severity) => {
+  const handleSeverityFilter = (severity: Severity) => {
+    // Stat-card body click filters the list (or clears filter if already
+    // active). Live-alert subscription is a separate control on each card.
+    setSeverityFilter((current) => (current === severity ? 'all' : severity));
+  };
+
+  const handleSubscriptionToggle = (severity: Severity) => {
     if (subscribedSeverities.has(severity)) {
       unsubscribeSeverity(severity);
-      // If we're filtering by this severity and we unsubscribe, reset to 'all'
-      if (severityFilter === severity) {
-        setSeverityFilter('all');
-      }
     } else {
       subscribeSeverity(severity);
     }
@@ -928,61 +1159,89 @@ export default function AiMonitorPage() {
       {/* Fleet Health Summary */}
       <FleetHealthSummary
         stats={healthStats}
-        healthPercentage={healthPercentage}
         isLoading={containersLoading}
       />
 
-      {/* Stats Cards — click to toggle real-time alerts */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border bg-card p-4">
+      {/* Insights Filter Cards — click body to filter, bell icon toggles live alerts.
+          Slimmer than before so the page hero (Fleet Vitals) keeps dominance. */}
+      <div className="grid gap-3 md:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => setSeverityFilter('all')}
+          aria-pressed={severityFilter === 'all'}
+          className={cn(
+            'rounded-lg border bg-card px-4 py-3 text-left transition-all',
+            severityFilter === 'all' ? 'ring-2 ring-primary/40' : 'hover:bg-muted/30',
+          )}
+        >
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Total Insights</p>
-            <Activity className="h-5 w-5 text-primary" />
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Insights</p>
+            <Activity className="h-4 w-4 text-primary" />
           </div>
-          <p className="mt-2 text-3xl font-bold">{stats.total}</p>
-        </div>
+          <p className="mt-1 text-2xl font-bold tabular-nums">{stats.total}</p>
+        </button>
         {([
           { severity: 'critical' as const, label: 'Critical', icon: AlertTriangle, count: stats.critical,
-            active: 'bg-red-50 dark:bg-red-900/20 ring-2 ring-red-500/20',
+            tint: 'bg-red-50 dark:bg-red-900/20',
             text: 'text-red-800 dark:text-red-200', iconColor: 'text-red-600 dark:text-red-400',
-            countColor: 'text-red-900 dark:text-red-100', dotColor: 'bg-red-500' },
+            countColor: 'text-red-900 dark:text-red-100', ring: 'ring-red-500/40' },
           { severity: 'warning' as const, label: 'Warnings', icon: AlertCircle, count: stats.warning,
-            active: 'bg-amber-50 dark:bg-amber-900/20 ring-2 ring-amber-500/20',
+            tint: 'bg-amber-50 dark:bg-amber-900/20',
             text: 'text-amber-800 dark:text-amber-200', iconColor: 'text-amber-600 dark:text-amber-400',
-            countColor: 'text-amber-900 dark:text-amber-100', dotColor: 'bg-amber-500' },
+            countColor: 'text-amber-900 dark:text-amber-100', ring: 'ring-amber-500/40' },
           { severity: 'info' as const, label: 'Info', icon: Info, count: stats.info,
-            active: 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20',
+            tint: 'bg-blue-50 dark:bg-blue-900/20',
             text: 'text-blue-800 dark:text-blue-200', iconColor: 'text-blue-600 dark:text-blue-400',
-            countColor: 'text-blue-900 dark:text-blue-100', dotColor: 'bg-blue-500' },
+            countColor: 'text-blue-900 dark:text-blue-100', ring: 'ring-blue-500/40' },
         ]).map((card) => {
           const isSubscribed = subscribedSeverities.has(card.severity);
+          const isFiltered = severityFilter === card.severity;
           const Icon = card.icon;
           return (
             <div
               key={card.severity}
               className={cn(
-                'rounded-lg border p-4 cursor-pointer transition-all',
-                isSubscribed ? card.active : 'bg-card opacity-60'
+                'relative rounded-lg border px-4 py-3 transition-all',
+                card.tint,
+                isFiltered && `ring-2 ${card.ring}`,
               )}
-              onClick={() => handleSeverityToggle(card.severity)}
-              title={isSubscribed ? `Click to pause ${card.label.toLowerCase()} live alerts` : `Click to enable ${card.label.toLowerCase()} live alerts`}
             >
-              <div className="flex items-center justify-between">
-                <p className={cn('text-sm font-medium', card.text)}>{card.label}</p>
-                <Icon className={cn('h-5 w-5', card.iconColor)} />
-              </div>
-              <p className={cn('mt-2 text-3xl font-bold', card.countColor)}>
-                {card.count}
-              </p>
-              <div className="mt-2 flex items-center gap-1.5">
-                <span className={cn(
-                  'h-2 w-2 rounded-full',
-                  isSubscribed ? card.dotColor + ' animate-pulse' : 'bg-muted-foreground/40'
-                )} />
-                <span className="text-xs text-muted-foreground">
-                  {isSubscribed ? 'Live alerts' : 'Paused'}
+              <button
+                type="button"
+                onClick={() => handleSeverityFilter(card.severity)}
+                aria-pressed={isFiltered}
+                title={isFiltered ? 'Click to clear filter' : `Filter list to ${card.label.toLowerCase()}`}
+                className="block w-full text-left"
+              >
+                <div className="flex items-center justify-between pr-7">
+                  <p className={cn('text-xs font-medium uppercase tracking-wide', card.text)}>{card.label}</p>
+                  <Icon className={cn('h-4 w-4', card.iconColor)} />
+                </div>
+                <p className={cn('mt-1 text-2xl font-bold tabular-nums', card.countColor)}>
+                  {card.count}
+                </p>
+              </button>
+              {/* Live-alert subscription toggle — separate target so it doesn't filter */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSubscriptionToggle(card.severity);
+                }}
+                aria-pressed={isSubscribed}
+                title={isSubscribed ? `Pause live ${card.label.toLowerCase()} alerts` : `Resume live ${card.label.toLowerCase()} alerts`}
+                className={cn(
+                  'absolute right-2.5 top-2.5 inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors',
+                  isSubscribed
+                    ? 'bg-card text-muted-foreground hover:bg-muted'
+                    : 'bg-muted text-muted-foreground/60 hover:bg-muted/80',
+                )}
+              >
+                {isSubscribed ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                <span className="sr-only">
+                  {isSubscribed ? 'Pause' : 'Resume'} live {card.label.toLowerCase()} alerts
                 </span>
-              </div>
+              </button>
             </div>
           );
         })}
@@ -1072,16 +1331,39 @@ export default function AiMonitorPage() {
         </button>
       </div>
 
-      {/* Correlated Anomalies + Health Issues (AC-4) */}
-      {(correlatedLoading || (correlatedAnomalies && correlatedAnomalies.length > 0) || healthIssues.length > 0) && (
+      {/* Search box — covers incidents, anomalies, health issues, insights */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <input
+          type="search"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search by container, image, title, or endpoint…"
+          aria-label="Search incidents and insights"
+          className="h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        />
+        {searchInput && (
+          <button
+            type="button"
+            onClick={() => setSearchInput('')}
+            aria-label="Clear search"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* ML-Detected Anomalies */}
+      {(correlatedLoading || (filteredCorrelatedAnomalies && filteredCorrelatedAnomalies.length > 0)) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <Brain className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             <h2 className="text-lg font-semibold">
-              Anomalies &amp; Health Issues
+              ML-Detected Anomalies
               {!correlatedLoading && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({(correlatedAnomalies?.length ?? 0) + healthIssues.length})
+                  ({filteredCorrelatedAnomalies?.length ?? 0})
                 </span>
               )}
             </h2>
@@ -1093,36 +1375,150 @@ export default function AiMonitorPage() {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {(correlatedAnomalies ?? []).map((anomaly) => (
+              {(filteredCorrelatedAnomalies ?? []).map((anomaly) => (
                 <CorrelatedAnomalyCard key={anomaly.containerId} anomaly={anomaly} />
-              ))}
-              {healthIssues.map((container) => (
-                <HealthIssueCard key={container.name} container={container} />
               ))}
             </div>
           )}
         </div>
       )}
 
-      {/* Active Incidents */}
-      {incidentsData && incidentsData.incidents.length > 0 && (
+      {/* Container Health (state-based: unhealthy / stopped) */}
+      {filteredHealthIssues.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <Activity className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             <h2 className="text-lg font-semibold">
-              Active Incidents
+              Container Health
               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({incidentsData.counts.active} active)
+                ({filteredHealthIssues.length})
               </span>
             </h2>
           </div>
-          {incidentsData.incidents.map((incident) => (
-            <IncidentCard
-              key={incident.id}
-              incident={incident}
-              onResolve={(id) => resolveIncidentMutation.mutate(id)}
-            />
-          ))}
+          <div className="grid gap-4 md:grid-cols-2">
+            {filteredHealthIssues.map((container) => (
+              <HealthIssueCard key={container.id} container={container} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Active Incidents */}
+      {incidentsData && incidentsData.incidents.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <h2 className="text-lg font-semibold">
+                Active Incidents
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({visibleIncidents.length} of {incidentsData.counts.active})
+                </span>
+              </h2>
+            </div>
+
+            {/* Time-range + sort controls */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-0.5 rounded-md border bg-card p-0.5" role="tablist" aria-label="Time range">
+                {(['1h', '24h', '7d', 'all'] as const).map((range) => (
+                  <button
+                    key={range}
+                    type="button"
+                    role="tab"
+                    aria-selected={timeRange === range}
+                    onClick={() => setUrlParam('range', range)}
+                    className={cn(
+                      'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                      timeRange === range
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    {range === 'all' ? 'All' : range.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex items-center gap-0.5 rounded-md border bg-card p-0.5" role="tablist" aria-label="Sort">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={incidentSort === 'severity'}
+                  onClick={() => setUrlParam('sort', 'severity')}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    incidentSort === 'severity'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <AlertTriangle className="h-3 w-3" /> Severity
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={incidentSort === 'time'}
+                  onClick={() => setUrlParam('sort', 'time')}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    incidentSort === 'time'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <Clock className="h-3 w-3" /> Recent
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Bulk-action bar — only renders when something is selected so it
+              doesn't take vertical space at rest. */}
+          {selectedIncidentIds.size > 0 && (
+            <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-4 py-2">
+              <p className="text-sm font-medium">
+                {selectedIncidentIds.size} selected
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  disabled={isBulkResolving}
+                  className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkResolve}
+                  disabled={isBulkResolving}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {isBulkResolving ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3 w-3" />
+                  )}
+                  Resolve {selectedIncidentIds.size}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {visibleIncidents.length === 0 ? (
+            <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+              No incidents match the current filters.
+            </div>
+          ) : (
+            visibleIncidents.map((incident) => (
+              <IncidentCard
+                key={incident.id}
+                incident={incident}
+                onResolve={(id) => resolveIncidentMutation.mutate(id)}
+                isSelected={selectedIncidentIds.has(incident.id)}
+                onToggleSelect={toggleIncidentSelected}
+              />
+            ))
+          )}
         </div>
       )}
 

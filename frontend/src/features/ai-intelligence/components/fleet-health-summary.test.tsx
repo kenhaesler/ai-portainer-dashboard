@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Container } from '@/features/containers/hooks/use-containers';
-import { calculateHealthStats } from './fleet-health-summary';
+import { calculateHealthScore, calculateHealthStats } from './fleet-health-summary';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
   return {
@@ -31,6 +31,7 @@ describe('calculateHealthStats', () => {
       unhealthy: 0,
       healthy: 0,
       unknown: 0,
+      noHealthcheck: 0,
     });
   });
 
@@ -203,14 +204,14 @@ describe('calculateHealthStats', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Percentage calculation — acceptance criterion: verify percentage math
-  // for a mixed fleet. The component computes:
-  //   healthPercentage = stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0
-  // Tests pin the expected health percentage so that future refactors of
-  // either the stats logic or the percentage formula stay in sync.
+  // Health-score formula — score = healthy / (healthy + unhealthy). Containers
+  // without an explicit health signal are excluded so the operator's choice
+  // not to configure a Docker healthcheck cannot drag the score down.
   // -------------------------------------------------------------------------
 
-  it('mixed fleet: derives a 50% health percentage from 2 healthy out of 4 total', () => {
+  it('score: 2 healthy + 1 unhealthy + 1 stopped-no-check yields ~66.7% (stopped excluded)', () => {
+    // Pre-fix used (healthy / total) * 100 = 50%. Post-fix excludes the
+    // exited-no-healthcheck container from the denominator.
     const containers = [
       makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
       makeContainer({ id: '2', state: 'running', healthStatus: 'healthy' }),
@@ -219,14 +220,16 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const healthPercentage = stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0;
+    const score = calculateHealthScore(stats);
 
     expect(stats.total).toBe(4);
     expect(stats.healthy).toBe(2);
-    expect(healthPercentage).toBe(50);
+    expect(score).toBeCloseTo(66.666, 2);
   });
 
-  it('mixed fleet: derives ~33.3% health percentage from 1 healthy out of 3 total', () => {
+  it('score: 1 healthy + 1 unhealthy + 1 running-no-check yields 50% (no-check excluded)', () => {
+    // Pre-fix returned ~33.3% by dividing by total. The fix excludes the
+    // no-healthcheck container from both numerator and denominator.
     const containers = [
       makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
       makeContainer({ id: '2', state: 'running', healthStatus: 'unhealthy' }),
@@ -234,20 +237,108 @@ describe('calculateHealthStats', () => {
     ];
 
     const stats = calculateHealthStats(containers);
-    const healthPercentage = stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0;
+    const score = calculateHealthScore(stats);
 
     expect(stats.healthy).toBe(1);
     expect(stats.unhealthy).toBe(1);
-    expect(stats.unknown).toBe(1);
-    expect(healthPercentage).toBeCloseTo(33.333, 2);
+    expect(stats.noHealthcheck).toBe(1);
+    expect(score).toBe(50);
   });
 
-  it('empty fleet: percentage formula evaluates to 0 (no division-by-zero)', () => {
-    const stats = calculateHealthStats([]);
-    const healthPercentage = stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0;
+  it('score: returns null when no container reports a health signal', () => {
+    // 47 of 55 containers without healthchecks used to produce a misleading
+    // ~13% score. Now we surface "N/A" instead so operators are not misled.
+    const containers = [
+      makeContainer({ id: '1', state: 'running', healthStatus: undefined }),
+      makeContainer({ id: '2', state: 'running', healthStatus: undefined }),
+    ];
 
-    expect(stats.total).toBe(0);
-    expect(healthPercentage).toBe(0);
+    const stats = calculateHealthStats(containers);
+    const score = calculateHealthScore(stats);
+
+    expect(stats.healthy).toBe(0);
+    expect(stats.unhealthy).toBe(0);
+    expect(stats.noHealthcheck).toBe(2);
+    expect(score).toBeNull();
+  });
+
+  it('score: empty fleet returns null (no division-by-zero)', () => {
+    const stats = calculateHealthStats([]);
+    const score = calculateHealthScore(stats);
+
+    expect(score).toBeNull();
+  });
+
+  it('score: all healthy yields 100%', () => {
+    const containers = [
+      makeContainer({ id: '1', state: 'running', healthStatus: 'healthy' }),
+      makeContainer({ id: '2', state: 'running', healthStatus: 'healthy' }),
+    ];
+
+    const stats = calculateHealthStats(containers);
+    const score = calculateHealthScore(stats);
+
+    expect(score).toBe(100);
+  });
+
+  it('score: all unhealthy yields 0%', () => {
+    const containers = [
+      makeContainer({ id: '1', state: 'running', healthStatus: 'unhealthy' }),
+    ];
+
+    const stats = calculateHealthStats(containers);
+    const score = calculateHealthScore(stats);
+
+    expect(score).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // noHealthcheck field — counts running containers that report no explicit
+  // health signal. Used to render "N without healthcheck (excluded)" copy.
+  // -------------------------------------------------------------------------
+
+  it('noHealthcheck: counts running containers without healthStatus', () => {
+    const containers = [
+      makeContainer({ id: '1', state: 'running', healthStatus: undefined }),
+      makeContainer({ id: '2', state: 'running' }),
+      makeContainer({ id: '3', state: 'running', healthStatus: 'healthy' }),
+      makeContainer({ id: '4', state: 'running', healthStatus: 'unhealthy' }),
+    ];
+
+    const stats = calculateHealthStats(containers);
+
+    expect(stats.noHealthcheck).toBe(2);
+  });
+
+  it('noHealthcheck: does NOT count exited or paused containers (only running)', () => {
+    const containers = [
+      makeContainer({ id: '1', state: 'exited', healthStatus: undefined }),
+      makeContainer({ id: '2', state: 'paused', healthStatus: undefined }),
+      makeContainer({ id: '3', state: 'running', healthStatus: undefined }),
+    ];
+
+    const stats = calculateHealthStats(containers);
+
+    // Stopped/paused are tracked separately; only running-no-check rolls into
+    // noHealthcheck. All three still flow into the broader `unknown` bucket.
+    expect(stats.noHealthcheck).toBe(1);
+    expect(stats.unknown).toBe(3);
+  });
+
+  it('noHealthcheck: ignores intermediate health values like "starting" or "none"', () => {
+    const containers = [
+      makeContainer({ id: '1', state: 'running', healthStatus: 'starting' }),
+      makeContainer({ id: '2', state: 'running', healthStatus: 'none' }),
+    ];
+
+    const stats = calculateHealthStats(containers);
+
+    // These intermediate values still don't qualify as "reporting health" —
+    // they go through the same else-branch as `undefined`, so they count
+    // toward noHealthcheck for running containers.
+    expect(stats.noHealthcheck).toBe(2);
+    expect(stats.healthy).toBe(0);
+    expect(stats.unhealthy).toBe(0);
   });
 
   // -------------------------------------------------------------------------
