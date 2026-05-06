@@ -2,9 +2,10 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { FastifyInstance } from 'fastify';
-import { getIncidents, getIncident, resolveIncident, getIncidentCount, getIncidentGroups } from '../services/incident-store.js';
+import { getIncidents, getIncident, resolveIncident, getIncidentCount, getIncidentGroups, resolveIncidentsBatch } from '../services/incident-store.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { cachedFetchSWR, getCacheKey, cache } from '@dashboard/core/portainer/portainer-cache.js';
+import { z } from 'zod';
 
 export async function incidentsRoutes(fastify: FastifyInstance) {
   // List incidents
@@ -118,5 +119,30 @@ export async function incidentsRoutes(fastify: FastifyInstance) {
     // invalidatePattern matches all variants (by status, endpoint_id, since, severity).
     await cache.invalidatePattern('incidents-groups').catch(() => undefined);
     return { success: true };
+  });
+
+  // Resolve a batch of incidents
+  fastify.post('/api/incidents/resolve', {
+    schema: {
+      tags: ['Incidents'],
+      summary: 'Resolve a batch of incidents',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        properties: {
+          ids: { type: 'array', items: { type: 'string', format: 'uuid' }, minItems: 1, maxItems: 500 },
+        },
+        required: ['ids'],
+      },
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async (request, reply) => {
+    const parsed = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', details: parsed.error.flatten() });
+    }
+    const result = await resolveIncidentsBatch(parsed.data.ids);
+    await cache.invalidatePattern('incidents-groups').catch(() => undefined);
+    return result;
   });
 }

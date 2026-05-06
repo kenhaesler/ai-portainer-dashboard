@@ -376,3 +376,34 @@ export async function getIncidentCount(): Promise<{ active: number; resolved: nu
   const resolved = resolvedRow?.count ?? 0;
   return { active, resolved, total: active + resolved };
 }
+
+export interface BatchResolveResult {
+  resolved: string[];
+  failed: Array<{ id: string; error: string }>;
+}
+
+/**
+ * Resolves multiple incidents in their own per-id transactions.
+ *
+ * Failures of individual ids do NOT roll back already-resolved ones —
+ * each id is its own atomic operation. Per-id errors are surfaced in
+ * `failed[]` rather than aborting the whole batch.
+ */
+export async function resolveIncidentsBatch(ids: string[]): Promise<BatchResolveResult> {
+  const result: BatchResolveResult = { resolved: [], failed: [] };
+  const db = getDbForDomain('incidents');
+  for (const id of ids) {
+    try {
+      const before = await db.queryOne<{ id: string }>('SELECT id FROM incidents WHERE id = ?', [id]);
+      if (!before) {
+        result.failed.push({ id, error: 'not found' });
+        continue;
+      }
+      await resolveIncident(id);
+      result.resolved.push(id);
+    } catch (err) {
+      result.failed.push({ id, error: err instanceof Error ? err.message : 'unknown' });
+    }
+  }
+  return result;
+}
