@@ -129,7 +129,7 @@ export default function MetricsDashboardPage() {
   const [showSecondaryPanels, setShowSecondaryPanels] = useState(false);
   const { interval, setInterval } = useAutoRefresh(0);
 
-  // Check if LLM is available (hide Ask AI button when Ollama is down)
+  // Check if LLM is available (hide Ask AI button when the LLM endpoint is unreachable)
   const { data: llmModels } = useLlmModels();
   const llmAvailable = (llmModels?.models?.length ?? 0) > 0;
 

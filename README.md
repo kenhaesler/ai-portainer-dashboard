@@ -15,7 +15,7 @@
 
 - **Multi-Endpoint Fleet Management** — Connect to multiple Portainer instances from a single pane of glass
 - **Real-Time Monitoring** — CPU/memory metrics collected every 60s with multi-method anomaly detection (z-score, Bollinger bands, adaptive, and Isolation Forest ML)
-- **AI Intelligence** — LLM-powered insights, anomaly explanations, NLP log analysis, predictive alerting, root cause investigation, and conversational chat assistant (Ollama)
+- **AI Intelligence** — LLM-powered insights, anomaly explanations, NLP log analysis, predictive alerting, root cause investigation, and conversational chat assistant (via Ollama, LM Studio, vLLM, LiteLLM, or any OpenAI-compatible endpoint)
 - **Automated Remediation** — AI-suggested fixes with approval workflow (pending → approved → executed)
 - **Network Topology** — Interactive graph visualization of container networks (XYFlow)
 - **Image Footprint Analysis** — Treemap and sunburst visualizations of image sizes across your fleet
@@ -32,7 +32,7 @@ This project follows a **Monorepo** structure with a **Client-Server (Full-stack
 - **Frontend:** React 19 (Vite) + Tailwind CSS v4 + TanStack Query
 - **Backend:** Fastify 5 + Socket.IO + SQLite (WAL)
 - **Design Philosophy:** **Observer-First** — focuses on deep visibility; mutating actions are gated by a remediation approval workflow.
-- **AI Engine:** Integrated Ollama support for local LLM insights and chat.
+- **AI Engine:** OpenAI-compatible LLM client (OpenAI, LM Studio, vLLM, LiteLLM, OpenWebUI, Anthropic via proxy) for insights and chat.
 
 ---
 
@@ -102,19 +102,29 @@ npm install
 npm run dev
 ```
 
-### 3. Start Ollama externally (for AI features)
+### 3. Connect an OpenAI-compatible LLM endpoint (for AI features)
 
-Ollama is not bundled in the Docker Compose stack. Install and run it on your host machine:
+The dashboard uses any OpenAI-compatible chat-completions API: OpenAI, LM Studio, vLLM, LiteLLM, OpenWebUI, Anthropic via proxy, etc. None of these are bundled in the Docker Compose stack — point the dashboard at one with `LLM_API_URL` (and optionally `LLM_API_TOKEN`):
 
 ```bash
-ollama pull llama3.2
+# In your .env (or Settings → AI & LLM → API Endpoint URL):
+LLM_API_URL=http://lmstudio:1234        # /v1/chat/completions is appended automatically
+LLM_API_TOKEN=sk-...                    # optional
+LLM_MODEL=gpt-4o-mini                   # default model name
+```
+
+Security defaults for self-hosted LLM servers:
+- Do not expose your LLM endpoint on `0.0.0.0` without authentication.
+- Preferred default is localhost-only binding or an internal Docker network.
+- If remote access is required, place the LLM endpoint behind an authenticated reverse proxy or bastion and set `LLM_API_URL` to that protected endpoint.
+
+**Ollama example** — bind to localhost only:
+
+```bash
 OLLAMA_HOST=127.0.0.1:11434 ollama serve
 ```
 
-Security defaults for Ollama:
-- Do not expose Ollama on `0.0.0.0` without authentication.
-- Preferred default is localhost-only binding (`127.0.0.1`).
-- If remote access is required, place Ollama behind an authenticated reverse proxy or bastion and set `OLLAMA_BASE_URL` to that protected endpoint.
+Do not expose Ollama on `0.0.0.0` without authentication.
 
 ### 4. Access the dashboard
 

@@ -30,7 +30,7 @@ describe('IncidentGroupsView — URL ?expand=', () => {
         signature: 'anomaly:ml-anomaly:cpu', label: 'CPU anomaly', severity: 'critical',
         incident_count: 1, container_count: 1, alert_count: 1,
         earliest_at: '', latest_update_at: '',
-        top_containers: [{ incident_id: 'x', container_name: 'cn', endpoint_id: 1, endpoint_name: 'e', severity: 'critical', created_at: '' }],
+        top_containers: [{ incident_id: 'x', container_name: 'cn', endpoint_id: 1, endpoint_name: 'e', severity: 'critical', created_at: '', incident_ids: ['x'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
         all_container_names: ['cn'], names_truncated: false,
       }],
     });
@@ -49,7 +49,7 @@ describe('IncidentGroupsView — URL ?expand=', () => {
         signature: 'predictive:prediction:memory', label: 'Mem pred', severity: 'warning',
         incident_count: 1, container_count: 1, alert_count: 1,
         earliest_at: '', latest_update_at: '',
-        top_containers: [{ incident_id: 'y', container_name: 'cn-warn', endpoint_id: 1, endpoint_name: 'e', severity: 'warning', created_at: '' }],
+        top_containers: [{ incident_id: 'y', container_name: 'cn-warn', endpoint_id: 1, endpoint_name: 'e', severity: 'warning', created_at: '', incident_ids: ['y'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
         all_container_names: ['cn-warn'], names_truncated: false,
       }],
     });
@@ -68,7 +68,7 @@ describe('IncidentGroupsView — URL ?expand=', () => {
         signature: 'anomaly:ml-anomaly:cpu', label: 'CPU anomaly', severity: 'critical',
         incident_count: 1, container_count: 1, alert_count: 1,
         earliest_at: '', latest_update_at: '',
-        top_containers: [{ incident_id: 'x', container_name: 'cn', endpoint_id: 1, endpoint_name: 'e', severity: 'critical', created_at: '' }],
+        top_containers: [{ incident_id: 'x', container_name: 'cn', endpoint_id: 1, endpoint_name: 'e', severity: 'critical', created_at: '', incident_ids: ['x'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
         all_container_names: ['cn'], names_truncated: false,
       }],
     });

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-store.js';
-import { isOllamaAvailable } from './llm-client.js';
+import { isLlmAvailable } from './llm-client.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 import {
   insertIncident,
@@ -117,8 +117,8 @@ export async function correlateInsights(
   }
 
   // LLM summary enrichment for multi-insight groups
-  const ollamaAvailable = monCfg.incidentSummaryEnabled ? await isOllamaAvailable() : false;
-  if (ollamaAvailable) {
+  const llmAvailable = monCfg.incidentSummaryEnabled ? await isLlmAvailable() : false;
+  if (llmAvailable) {
     for (const group of grouped) {
       if (group.insights.length >= 2) {
         try {

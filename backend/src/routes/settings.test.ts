@@ -299,14 +299,14 @@ describe('settings security', () => {
 
     const response = await app.inject({
       method: 'PUT',
-      url: '/api/settings/llm.ollama_url',
+      url: '/api/settings/llm.api_url',
       headers: { authorization: 'Bearer test' },
       payload: { value: 'file:///etc/passwd', category: 'llm' },
     });
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
-      error: 'llm.ollama_url must use http:// or https://',
+      error: 'llm.api_url must use http:// or https://',
     });
     expect(mockExecute).not.toHaveBeenCalled();
 

@@ -84,7 +84,7 @@ export const ReadinessResponseSchema = z.object({
     appDb: RedactedDependencyCheckSchema,
     metricsDb: RedactedDependencyCheckSchema,
     portainer: RedactedDependencyCheckSchema,
-    ollama: RedactedDependencyCheckSchema,
+    llm: RedactedDependencyCheckSchema.optional(),
     redis: RedactedDependencyCheckSchema.optional(),
   }),
   timestamp: z.string(),
@@ -96,7 +96,7 @@ export const ReadinessDetailResponseSchema = z.object({
     appDb: DependencyCheckSchema,
     metricsDb: DependencyCheckSchema,
     portainer: DependencyCheckSchema,
-    ollama: DependencyCheckSchema,
+    llm: DependencyCheckSchema.optional(),
     redis: DependencyCheckSchema.optional(),
   }),
   timestamp: z.string(),
@@ -476,7 +476,6 @@ export const LlmTestConnectionBodySchema = z.object({
   url: z.string().optional(),
   token: z.string().optional(),
   authType: z.enum(['bearer', 'basic']).optional(),
-  ollamaUrl: z.string().optional(),
 });
 
 export const LlmTestPromptBodySchema = z.object({

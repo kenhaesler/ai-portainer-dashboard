@@ -205,12 +205,25 @@ export interface IncidentGroup {
   earliest_at: string;
   latest_update_at: string;
   top_containers: Array<{
+    /** Representative incident (highest-severity, then most-recent) for this container in this group. */
     incident_id: string;
     container_name: string;
     endpoint_id: number | null;
     endpoint_name: string | null;
+    /** Severity of the representative incident. */
     severity: 'critical' | 'warning' | 'info';
+    /** created_at of the representative incident. */
     created_at: string;
+    /** All active incident ids for (signature, container_name). Length == incident_count. */
+    incident_ids: string[];
+    /** How many active incidents this container has under this signature. */
+    incident_count: number;
+    /** updated_at of the most recently updated incident among incident_ids. */
+    latest_at: string;
+    /** incidents.summary of the representative incident (LLM-derived, may be null). */
+    latest_summary: string | null;
+    /** insights.description of the representative incident's root-cause insight (contains metric values, may be null). */
+    latest_description: string | null;
   }>;
   all_container_names: string[];
   names_truncated: boolean;
@@ -299,34 +312,92 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
              p.incident_count DESC
   `, params);
 
-  // 2. Top-N containers per signature, ordered by severity then recency
+  // 2. One representative row per (signature, container_name), ordered by severity then recency.
+  //    `representative` = highest-severity incident on that container; ties broken by most-recent created_at.
+  //    `incident_ids` = ALL active incidents on that (signature, container) pair so the UI can render counts
+  //    and the resolve action can act on the whole pair.
+  //    `latest_description` is sourced from the representative incident's root-cause insight when present.
   const rawTop = await db.query<{
-    signature: string; incident_id: string; container_name: string;
-    endpoint_id: number | null; endpoint_name: string | null;
-    severity: 'critical' | 'warning' | 'info'; created_at: string; rn: number;
+    signature: string;
+    incident_id: string;
+    container_name: string;
+    endpoint_id: number | null;
+    endpoint_name: string | null;
+    severity: 'critical' | 'warning' | 'info';
+    created_at: string;
+    incident_ids: string[];
+    incident_count: number;
+    latest_at: string;
+    latest_summary: string | null;
+    latest_description: string | null;
   }>(`
     WITH base AS (
-      SELECT id, signature, severity, endpoint_id, endpoint_name, created_at, affected_containers
+      SELECT id, signature, severity, endpoint_id, endpoint_name,
+             created_at, updated_at, affected_containers,
+             root_cause_insight_id, summary
       FROM incidents ${whereSQL}
     ),
     expanded AS (
       SELECT b.id AS incident_id, b.signature, b.severity, b.endpoint_id, b.endpoint_name,
-             b.created_at, e.container_name
+             b.created_at, b.updated_at, b.root_cause_insight_id, b.summary,
+             e.container_name
       FROM base b
       CROSS JOIN LATERAL jsonb_array_elements_text(b.affected_containers) AS e(container_name)
     ),
     ranked AS (
       SELECT *,
              ROW_NUMBER() OVER (
-               PARTITION BY signature
+               PARTITION BY signature, container_name
                ORDER BY (CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END),
-                        created_at DESC
-             ) AS rn
+                        created_at DESC,
+                        incident_id DESC
+             ) AS rn_in_container
       FROM expanded
+    ),
+    representatives AS (
+      SELECT signature, container_name,
+             incident_id AS rep_incident_id,
+             severity AS rep_severity,
+             endpoint_id, endpoint_name,
+             created_at AS rep_created_at,
+             root_cause_insight_id AS rep_root_cause_insight_id,
+             summary AS rep_summary
+      FROM ranked
+      WHERE rn_in_container = 1
+    ),
+    grouped AS (
+      SELECT signature, container_name,
+             ARRAY_AGG(incident_id ORDER BY created_at DESC) AS incident_ids,
+             COUNT(*)::int AS incident_count,
+             MAX(updated_at)::text AS latest_at
+      FROM expanded
+      GROUP BY signature, container_name
+    ),
+    joined AS (
+      SELECT r.signature, r.container_name,
+             r.rep_incident_id AS incident_id,
+             r.rep_severity AS severity,
+             r.endpoint_id, r.endpoint_name,
+             r.rep_created_at::text AS created_at,
+             g.incident_ids, g.incident_count, g.latest_at,
+             r.rep_summary AS latest_summary,
+             ins.description AS latest_description,
+             ROW_NUMBER() OVER (
+               PARTITION BY r.signature
+               ORDER BY (CASE r.rep_severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END),
+                        r.rep_created_at DESC,
+                        r.rep_incident_id DESC
+             ) AS rn
+      FROM representatives r
+      JOIN grouped g
+        ON g.signature = r.signature AND g.container_name = r.container_name
+      LEFT JOIN insights ins
+        ON ins.id = r.rep_root_cause_insight_id
     )
     SELECT signature, incident_id, container_name, endpoint_id, endpoint_name,
-           severity, created_at::text, rn
-    FROM ranked
+           severity, created_at, incident_ids, incident_count, latest_at,
+           latest_summary, latest_description, rn
+    FROM joined
     WHERE rn <= ${TOP_CONTAINERS_PER_GROUP}
   `, params);
 
@@ -343,9 +414,17 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
   for (const r of rawTop) {
     const arr = topBySig.get(r.signature) ?? [];
     arr.push({
-      incident_id: r.incident_id, container_name: r.container_name,
-      endpoint_id: r.endpoint_id, endpoint_name: r.endpoint_name,
-      severity: r.severity, created_at: r.created_at,
+      incident_id: r.incident_id,
+      container_name: r.container_name,
+      endpoint_id: r.endpoint_id,
+      endpoint_name: r.endpoint_name,
+      severity: r.severity,
+      created_at: r.created_at,
+      incident_ids: r.incident_ids,
+      incident_count: r.incident_count,
+      latest_at: r.latest_at,
+      latest_summary: r.latest_summary,
+      latest_description: r.latest_description,
     });
     topBySig.set(r.signature, arr);
   }

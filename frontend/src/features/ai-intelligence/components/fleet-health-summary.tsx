@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Info, XCircle } from 'lucide-react';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
@@ -74,17 +74,18 @@ function HealthStatTile({
   label: string;
   value: number;
   percentage?: number;
-  variant?: 'default' | 'success' | 'warning' | 'danger';
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
 }) {
   const iconVariantClasses = {
     default: 'text-muted-foreground',
     success: 'text-emerald-600 dark:text-emerald-400',
     warning: 'text-amber-600 dark:text-amber-400',
     danger: 'text-red-600 dark:text-red-400',
+    info: 'text-blue-600 dark:text-blue-400',
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-md bg-card/60 px-3 py-2">
+    <div className="flex items-center gap-3 rounded-md bg-muted/40 px-3 py-2">
       <div className={`flex h-8 w-8 items-center justify-center rounded-md bg-background ${iconVariantClasses[variant]}`}>
         <Icon className="h-4 w-4" />
       </div>
@@ -101,9 +102,22 @@ function HealthStatTile({
   );
 }
 
-export function FleetHealthSummary({ stats, isLoading }: {
+/**
+ * Optional second row of stat tiles for insight counts (Total / Critical /
+ * Warning / Info). When provided, renders below the container-status row
+ * inside the same hero pane so the page only has one Vitals card to scan.
+ */
+export interface InsightStats {
+  total: number;
+  critical: number;
+  warning: number;
+  info: number;
+}
+
+export function FleetHealthSummary({ stats, isLoading, insightStats }: {
   stats: HealthStats | null;
   isLoading: boolean;
+  insightStats?: InsightStats;
 }) {
   if (isLoading || !stats) {
     return <SkeletonCard className="h-44" />;
@@ -114,11 +128,14 @@ export function FleetHealthSummary({ stats, isLoading }: {
   const issueCount = stats.unhealthy + stats.stopped;
 
   return (
-    <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-6" data-testid="fleet-health-hero">
+    <div
+      className="rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+      data-testid="fleet-health-hero"
+    >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         {/* Hero — score + issue count */}
         <div className="flex items-center gap-5 min-w-0">
-          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-card/40">
+          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-muted/30">
             {healthScore === null ? (
               <HelpCircle className="h-12 w-12 text-muted-foreground" />
             ) : healthScore >= 80 ? (
@@ -160,36 +177,66 @@ export function FleetHealthSummary({ stats, isLoading }: {
           </div>
         </div>
 
-        {/* Compact status strip — 4 stats inline instead of separate large cards */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
-          <HealthStatTile
-            icon={Activity}
-            label="Running"
-            value={stats.running}
-            percentage={stats.total > 0 ? (stats.running / stats.total) * 100 : 0}
-            variant="success"
-          />
-          <HealthStatTile
-            icon={CheckCircle2}
-            label="Healthy"
-            value={stats.healthy}
-            percentage={stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0}
-            variant="success"
-          />
-          <HealthStatTile
-            icon={AlertTriangle}
-            label="Unhealthy"
-            value={stats.unhealthy}
-            percentage={stats.total > 0 ? (stats.unhealthy / stats.total) * 100 : 0}
-            variant="danger"
-          />
-          <HealthStatTile
-            icon={HelpCircle}
-            label="No Healthcheck"
-            value={stats.noHealthcheck}
-            percentage={stats.total > 0 ? (stats.noHealthcheck / stats.total) * 100 : 0}
-            variant={stats.noHealthcheck > 0 ? 'warning' : 'default'}
-          />
+        {/* Compact status strip — container stats on row 1, insights stats on
+            row 2 (when supplied). Two rows of 4 tiles inside the same hero. */}
+        <div className="flex flex-col gap-2 lg:w-auto">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <HealthStatTile
+              icon={Activity}
+              label="Running"
+              value={stats.running}
+              percentage={stats.total > 0 ? (stats.running / stats.total) * 100 : 0}
+              variant="success"
+            />
+            <HealthStatTile
+              icon={CheckCircle2}
+              label="Healthy"
+              value={stats.healthy}
+              percentage={stats.total > 0 ? (stats.healthy / stats.total) * 100 : 0}
+              variant="success"
+            />
+            <HealthStatTile
+              icon={AlertTriangle}
+              label="Unhealthy"
+              value={stats.unhealthy}
+              percentage={stats.total > 0 ? (stats.unhealthy / stats.total) * 100 : 0}
+              variant="danger"
+            />
+            <HealthStatTile
+              icon={HelpCircle}
+              label="No Healthcheck"
+              value={stats.noHealthcheck}
+              percentage={stats.total > 0 ? (stats.noHealthcheck / stats.total) * 100 : 0}
+              variant={stats.noHealthcheck > 0 ? 'warning' : 'default'}
+            />
+          </div>
+          {insightStats && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <HealthStatTile
+                icon={Activity}
+                label="Total Insights"
+                value={insightStats.total}
+              />
+              <HealthStatTile
+                icon={AlertTriangle}
+                label="Critical"
+                value={insightStats.critical}
+                variant="danger"
+              />
+              <HealthStatTile
+                icon={AlertCircle}
+                label="Warnings"
+                value={insightStats.warning}
+                variant="warning"
+              />
+              <HealthStatTile
+                icon={Info}
+                label="Info"
+                value={insightStats.info}
+                variant="info"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

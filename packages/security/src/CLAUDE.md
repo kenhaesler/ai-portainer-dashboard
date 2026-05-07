@@ -17,7 +17,7 @@ import { cleanupOldCaptures, cleanupOrphanedSidecars } from '../../security/inde
 ## Cross-domain Imports (Phase 3 Exceptions)
 
 - `infrastructure/index.js` → `assertCapability` (edge capability checking)
-- `ai-intelligence/index.js` → `isOllamaAvailable`, `chatStream`, `getEffectivePrompt`
+- `ai-intelligence/index.js` → `isLlmAvailable`, `chatStream`, `getEffectivePrompt`
 
 ## Key Rules
 

@@ -40,14 +40,12 @@ export const DEFAULT_SETTINGS = {
     { key: 'cache.image_ttl', label: 'Image Cache TTL', description: 'Time to cache image list (seconds)', type: 'number', defaultValue: '60', min: 30, max: 600 },
   ],
   llm: [
-    { key: 'llm.model', label: 'LLM Model', description: 'Model to use for AI features', type: 'string', defaultValue: 'llama3.2' },
+    { key: 'llm.api_url', label: 'API Endpoint URL', description: 'Base URL of an OpenAI-compatible server. /v1/chat/completions is appended automatically.', type: 'string', defaultValue: '' },
+    { key: 'llm.api_token', label: 'API Token', description: 'Bearer token (or username:password for Basic auth) for the LLM endpoint', type: 'password', defaultValue: '' },
+    { key: 'llm.auth_type', label: 'Auth Type', description: 'Authentication header type — Bearer (default) or Basic.', type: 'string', defaultValue: 'bearer' },
+    { key: 'llm.model', label: 'LLM Model', description: 'Model to use for AI features', type: 'string', defaultValue: 'gpt-4o-mini' },
     { key: 'llm.temperature', label: 'Temperature', description: 'Creativity of LLM responses (0-1)', type: 'number', defaultValue: '0.7', min: 0, max: 1, step: 0.1 },
-    { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://host.docker.internal:11434' },
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '20000', min: 256, max: 128000 },
-    { key: 'llm.custom_endpoint_enabled', label: 'Custom Endpoint Enabled', description: 'Use a custom OpenAI-compatible API endpoint', type: 'boolean', defaultValue: 'false' },
-    { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'OpenAI-compatible chat completions URL', type: 'string', defaultValue: '' },
-    { key: 'llm.custom_endpoint_token', label: 'Custom Endpoint Token', description: 'Bearer token for custom endpoint', type: 'password', defaultValue: '' },
-    { key: 'llm.auth_type', label: 'Auth Type', description: 'Authentication header type (Bearer for most LLM proxies including ParisNeo Ollama Proxy)', type: 'string', defaultValue: 'bearer' },
   ],
   authentication: [
     { key: 'oidc.enabled', label: 'Enable OIDC/SSO', description: 'Enable OpenID Connect single sign-on authentication', type: 'boolean', defaultValue: 'false' },

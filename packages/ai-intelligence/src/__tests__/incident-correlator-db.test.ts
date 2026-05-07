@@ -38,7 +38,7 @@ vi.mock('../services/incident-summarizer.js', () => ({
 
 // Skip Ollama availability check
 vi.mock('../services/llm-client.js', () => ({
-  isOllamaAvailable: vi.fn().mockResolvedValue(false),
+  isLlmAvailable: vi.fn().mockResolvedValue(false),
 }));
 
 import { correlateInsights } from '../services/incident-correlator.js';

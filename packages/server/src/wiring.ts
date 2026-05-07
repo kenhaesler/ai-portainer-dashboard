@@ -4,7 +4,7 @@
  */
 import {
   createMonitoringService,
-  isOllamaAvailable,
+  isLlmAvailable,
   chatStream,
   buildInfrastructureContext,
   getEffectivePrompt,
@@ -38,7 +38,7 @@ export const infraLogsAdapter: InfrastructureLogsInterface = {
 /** LLM adapter — wires ai-intelligence services to the LLMInterface contract. */
 export function buildLlmAdapter(): LLMInterface {
   return {
-    isAvailable: isOllamaAvailable,
+    isAvailable: isLlmAvailable,
     chatStream,
     buildInfrastructureContext,
     getEffectivePrompt,

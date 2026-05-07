@@ -43,7 +43,7 @@ export {
 export type { MonitoringDeps } from './services/monitoring-service.js';
 
 // Services — LLM client
-export { isOllamaAvailable, ensureModel, chatStream, buildInfrastructureContext } from './services/llm-client.js';
+export { isLlmAvailable, chatStream, buildInfrastructureContext } from './services/llm-client.js';
 
 // Services — insights
 export { cleanupOldInsights } from './services/insights-store.js';

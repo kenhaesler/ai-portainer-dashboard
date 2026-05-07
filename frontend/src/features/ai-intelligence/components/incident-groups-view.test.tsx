@@ -31,7 +31,7 @@ describe('IncidentGroupsView — rendering', () => {
           signature: 'a:b:c', label: 'Critical thing', severity: 'critical',
           incident_count: 1, container_count: 1, alert_count: 1,
           earliest_at: '2026-05-06T00:00:00Z', latest_update_at: '2026-05-06T00:00:00Z',
-          top_containers: [{ incident_id: 'x', container_name: 'cn-A', endpoint_id: 1, endpoint_name: 'eA', severity: 'critical', created_at: '2026-05-06T00:00:00Z' }],
+          top_containers: [{ incident_id: 'x', container_name: 'cn-A', endpoint_id: 1, endpoint_name: 'eA', severity: 'critical', created_at: '2026-05-06T00:00:00Z', incident_ids: ['x'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
           all_container_names: ['cn-A'], names_truncated: false,
         },
         {
@@ -39,8 +39,8 @@ describe('IncidentGroupsView — rendering', () => {
           incident_count: 2, container_count: 2, alert_count: 2,
           earliest_at: '2026-05-06T00:00:00Z', latest_update_at: '2026-05-06T00:00:00Z',
           top_containers: [
-            { incident_id: 'y1', container_name: 'cn-A', endpoint_id: 1, endpoint_name: 'eA', severity: 'warning', created_at: '2026-05-06T00:00:00Z' },
-            { incident_id: 'y2', container_name: 'cn-B', endpoint_id: 1, endpoint_name: 'eA', severity: 'warning', created_at: '2026-05-06T00:00:00Z' },
+            { incident_id: 'y1', container_name: 'cn-A', endpoint_id: 1, endpoint_name: 'eA', severity: 'warning', created_at: '2026-05-06T00:00:00Z', incident_ids: ['y1'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null },
+            { incident_id: 'y2', container_name: 'cn-B', endpoint_id: 1, endpoint_name: 'eA', severity: 'warning', created_at: '2026-05-06T00:00:00Z', incident_ids: ['y2'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null },
           ],
           all_container_names: ['cn-A', 'cn-B'], names_truncated: false,
         },
@@ -60,11 +60,11 @@ describe('IncidentGroupsView — rendering', () => {
       groups: [
         { signature: 'crit', label: 'Crit', severity: 'critical', incident_count: 1, container_count: 1, alert_count: 1,
           earliest_at: '', latest_update_at: '',
-          top_containers: [{ incident_id: 'x', container_name: 'cn', endpoint_id: 1, endpoint_name: 'e', severity: 'critical', created_at: '' }],
+          top_containers: [{ incident_id: 'x', container_name: 'cn', endpoint_id: 1, endpoint_name: 'e', severity: 'critical', created_at: '', incident_ids: ['x'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
           all_container_names: ['cn'], names_truncated: false },
         { signature: 'warn', label: 'Warn', severity: 'warning', incident_count: 1, container_count: 1, alert_count: 1,
           earliest_at: '', latest_update_at: '',
-          top_containers: [{ incident_id: 'y', container_name: 'cn2', endpoint_id: 1, endpoint_name: 'e', severity: 'warning', created_at: '' }],
+          top_containers: [{ incident_id: 'y', container_name: 'cn2', endpoint_id: 1, endpoint_name: 'e', severity: 'warning', created_at: '', incident_ids: ['y'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
           all_container_names: ['cn2'], names_truncated: false },
       ],
     });
@@ -80,7 +80,7 @@ describe('IncidentGroupsView — rendering', () => {
       groups: [
         { signature: 'warn', label: 'Warn', severity: 'warning', incident_count: 1, container_count: 1, alert_count: 1,
           earliest_at: '', latest_update_at: '',
-          top_containers: [{ incident_id: 'y', container_name: 'cn2', endpoint_id: 1, endpoint_name: 'e', severity: 'warning', created_at: '' }],
+          top_containers: [{ incident_id: 'y', container_name: 'cn2', endpoint_id: 1, endpoint_name: 'e', severity: 'warning', created_at: '', incident_ids: ['y'], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null }],
           all_container_names: ['cn2'], names_truncated: false },
       ],
     });

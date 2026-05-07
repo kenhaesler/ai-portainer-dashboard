@@ -1,11 +1,14 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, Layers, Loader2 } from 'lucide-react';
+import { useIncidentInsights } from '../hooks/use-incident-insights';
+import { InsightCard } from './insight-card';
 import { useIncidentGroups, type IncidentGroup } from '../hooks/use-incident-groups';
 import { useBatchResolveIncidents, type BatchResolveResponse } from '../hooks/use-incidents';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { api } from '@/shared/lib/api';
-import { cn } from '@/shared/lib/utils';
+import { cn, formatDate } from '@/shared/lib/utils';
+import { categoryIcon, parseSignature, detectionMethodLabel } from '../lib/signature-meta';
 
 function useDebounced(value: string, ms: number): string {
   const [v, setV] = useState('');
@@ -23,6 +26,57 @@ interface LongTailRow {
   endpoint_name: string | null;
   severity: 'critical' | 'warning' | 'info';
   created_at: string;
+  incident_ids: string[];
+  incident_count: number;
+  latest_at: string;
+  latest_summary: string | null;
+  latest_description: string | null;
+}
+
+const SEV_RANK: Record<LongTailRow['severity'], number> = { critical: 0, warning: 1, info: 2 };
+
+function dedupeByContainer(
+  incidents: Array<{
+    id: string; affected_containers: string[];
+    endpoint_id: number | null; endpoint_name: string | null;
+    severity: 'critical' | 'warning' | 'info'; created_at: string;
+    updated_at?: string; summary?: string | null;
+  }>,
+): LongTailRow[] {
+  const byContainer = new Map<string, LongTailRow>();
+  for (const inc of incidents) {
+    for (const name of inc.affected_containers ?? []) {
+      const existing = byContainer.get(name);
+      const incLatest = inc.updated_at ?? inc.created_at;
+      if (!existing) {
+        byContainer.set(name, {
+          incident_id: inc.id, container_name: name,
+          endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
+          severity: inc.severity, created_at: inc.created_at,
+          incident_ids: [inc.id], incident_count: 1,
+          latest_at: incLatest,
+          latest_summary: inc.summary ?? null,
+          latest_description: null, // long-tail fetch doesn't carry the joined insight description
+        });
+        continue;
+      }
+      existing.incident_ids.push(inc.id);
+      existing.incident_count = existing.incident_ids.length;
+      if (incLatest > existing.latest_at) existing.latest_at = incLatest;
+      // Promote representative if this incident is more severe, or same severity but more recent.
+      const sevCmp = SEV_RANK[inc.severity] - SEV_RANK[existing.severity];
+      const isMoreRecent = inc.created_at > existing.created_at;
+      if (sevCmp < 0 || (sevCmp === 0 && isMoreRecent)) {
+        existing.incident_id = inc.id;
+        existing.severity = inc.severity;
+        existing.created_at = inc.created_at;
+        existing.endpoint_id = inc.endpoint_id;
+        existing.endpoint_name = inc.endpoint_name;
+        existing.latest_summary = inc.summary ?? existing.latest_summary;
+      }
+    }
+  }
+  return Array.from(byContainer.values());
 }
 
 export function IncidentGroupsView({ search = '' }: { search?: string }) {
@@ -45,6 +99,16 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const batchResolve = useBatchResolveIncidents();
   const [pendingGroup, setPendingGroup] = useState<IncidentGroup | null>(null);
   const [lastFailure, setLastFailure] = useState<BatchResolveResponse | null>(null);
+
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleRow = useCallback((rowKey: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+  }, []);
 
   const summary = useMemo(() => computeSummary(data?.groups ?? []), [data?.groups]);
 
@@ -71,17 +135,11 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
     if (!searchLower || !truncatedSigs) return;
     const controller = new AbortController();
     for (const sig of truncatedSigs.split('|').filter(Boolean)) {
-      api.get<{ incidents: Array<{ id: string; affected_containers: string[]; endpoint_id: number | null; endpoint_name: string | null; severity: 'critical' | 'warning' | 'info'; created_at: string }> }>(
+      api.get<{ incidents: Array<{ id: string; affected_containers: string[]; endpoint_id: number | null; endpoint_name: string | null; severity: 'critical' | 'warning' | 'info'; created_at: string; updated_at?: string; summary?: string | null }> }>(
         '/api/incidents',
         { params: { status: 'active', signature: sig, q: debouncedSearch }, signal: controller.signal },
       ).then((r) => {
-        const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
-          (inc.affected_containers ?? []).map((name) => ({
-            incident_id: inc.id, container_name: name,
-            endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
-            severity: inc.severity, created_at: inc.created_at,
-          })),
-        );
+        const rows = dedupeByContainer(r.incidents);
         setLongTailBySig((prev) => ({ ...prev, [sig]: rows }));
       }).catch(() => undefined);
     }
@@ -119,7 +177,7 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const onResolveGroup = useCallback(async (group: IncidentGroup) => {
     setPendingGroup(null);
     const longTail = longTailBySig[group.signature];
-    const ids = (longTail ?? group.top_containers).map((c) => c.incident_id);
+    const ids = (longTail ?? group.top_containers).flatMap((c) => c.incident_ids);
     const r = await batchResolve.mutateAsync(ids);
     if (r.failed.length > 0) setLastFailure(r);
     else setLastFailure(null);
@@ -141,15 +199,11 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
         endpoint_name: string | null;
         severity: 'critical' | 'warning' | 'info';
         created_at: string;
+        updated_at?: string;
+        summary?: string | null;
       }>;
     }>('/api/incidents', { params: { status: 'active', signature: group.signature, limit: '500' }, signal: controller.signal });
-    const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
-      (inc.affected_containers ?? []).map((name) => ({
-        incident_id: inc.id, container_name: name,
-        endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
-        severity: inc.severity, created_at: inc.created_at,
-      })),
-    );
+    const rows = dedupeByContainer(r.incidents);
     setLongTailBySig((prev) => ({ ...prev, [group.signature]: rows }));
   }, []);
 
@@ -228,19 +282,71 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
             {effectivelyOpen && (
               <div className="border-t bg-muted/10">
                 <ul className="divide-y">
-                  {rows.map((row) => (
-                    <li key={`${row.incident_id}:${row.container_name}`} className="flex items-center justify-between px-4 py-2 text-sm">
-                      <Link
-                        to={`/containers/${row.endpoint_id}/${row.container_name}`}
-                        className="font-mono text-sm hover:underline"
-                      >
-                        {row.container_name}
-                      </Link>
-                      <span className="text-xs text-muted-foreground">
-                        {row.severity} · {row.endpoint_name ?? 'unknown'}
-                      </span>
-                    </li>
-                  ))}
+                  {rows.map((row) => {
+                    const detail = ('latest_description' in row ? row.latest_description : null)
+                      ?? ('latest_summary' in row ? row.latest_summary : null);
+                    const count = ('incident_count' in row ? row.incident_count : 1) ?? 1;
+                    const meta = parseSignature(g.signature);
+                    const Icon = categoryIcon(meta.category);
+                    const methodLabel = detectionMethodLabel(meta.detectionMethod);
+                    const rowKey = `${row.incident_id}:${row.container_name}`;
+                    const isExpanded = expandedRows.has(rowKey);
+                    return (
+                      <li key={rowKey} className="flex flex-col">
+                        <button
+                          type="button"
+                          onClick={() => toggleRow(rowKey)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} events for ${row.container_name}`}
+                          className="flex flex-col gap-1 w-full px-4 py-2 text-sm text-left hover:bg-muted/30 transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Icon
+                                data-testid="row-category-icon"
+                                className="h-4 w-4 text-muted-foreground flex-shrink-0"
+                              />
+                              <Link
+                                to={`/containers/${row.endpoint_id}/${row.container_name}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="font-mono text-sm hover:underline truncate"
+                              >
+                                {row.container_name}
+                              </Link>
+                              {count > 1 && (
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                  {count} alerts
+                                </span>
+                              )}
+                              {methodLabel && (
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                  {methodLabel}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+                              <span>{formatDate(row.created_at)}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>{row.severity}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>{row.endpoint_name ?? 'unknown'}</span>
+                              {isExpanded
+                                ? <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                                : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                            </div>
+                          </div>
+                          {detail && (
+                            <p className="pl-1 text-xs text-muted-foreground">
+                              {detail}
+                            </p>
+                          )}
+                        </button>
+                        {isExpanded && (
+                          <RowEventsDrawer incidentIds={row.incident_ids} />
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {!longTail && g.container_count > g.top_containers.length && (
                   <button
@@ -294,6 +400,45 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
           </div>
         )
       )}
+    </div>
+  );
+}
+
+function RowEventsDrawer({ incidentIds }: { incidentIds: string[] }) {
+  const { insights, isLoading, isError } = useIncidentInsights(incidentIds);
+
+  if (isLoading) {
+    return (
+      <div className="border-t bg-muted/5 px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Loading events...
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="border-t bg-red-50/30 dark:bg-red-900/10 px-4 py-3 text-xs text-red-700 dark:text-red-300">
+        Failed to load events.
+      </div>
+    );
+  }
+  if (insights.length === 0) {
+    return (
+      <div className="border-t bg-muted/5 px-4 py-3 text-xs text-muted-foreground">
+        No events found for this incident.
+      </div>
+    );
+  }
+  return (
+    <div className="border-t bg-muted/5 px-4 py-3 space-y-2">
+      {insights.map((insight) => (
+        <InsightCard
+          key={insight.id}
+          insight={insight}
+          isAcknowledging={false}
+          onAcknowledge={() => undefined}
+        />
+      ))}
     </div>
   );
 }

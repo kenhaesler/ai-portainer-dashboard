@@ -16,7 +16,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, resolveChatCompletionsUrl, resolveModelsUrl } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -90,12 +90,10 @@ export async function llmRoutes(fastify: FastifyInstance) {
     },
   }, async (request) => {
     const llmConfig = await getEffectiveLlmConfig();
-    const config = getConfig();
     const { query } = request.body;
     const startTime = Date.now();
 
-    // Use AI_SEARCH_MODEL if set, fall back to model from settings/env
-    let searchModel = config.AI_SEARCH_MODEL;
+    const searchModel = llmConfig.model;
 
     const guardResult = isPromptInjection(query);
     if (guardResult.blocked) {
@@ -115,84 +113,35 @@ export async function llmRoutes(fastify: FastifyInstance) {
         { role: 'user' as const, content: query },
       ];
 
-      let fullResponse = '';
-
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await llmFetch(llmConfig.customEndpointUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-          },
-          body: JSON.stringify({
-            model: searchModel,
-            messages,
-            stream: false,
-            response_format: { type: 'json_object' },
-          }),
-          signal: AbortSignal.timeout(60_000),
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json() as any;
-        fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
-
-        if (!fullResponse && searchModel !== llmConfig.model) {
-          log.warn({ searchModel, fallbackModel: llmConfig.model }, 'AI_SEARCH_MODEL may not be available, falling back to settings model');
-          searchModel = llmConfig.model;
-          const retryResponse = await llmFetch(llmConfig.customEndpointUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-            },
-            body: JSON.stringify({
-              model: searchModel,
-              messages,
-              stream: false,
-              response_format: { type: 'json_object' },
-            }),
-            signal: AbortSignal.timeout(60_000),
-          });
-
-          if (!retryResponse.ok) {
-            throw new Error(`HTTP ${retryResponse.status}: ${retryResponse.statusText}`);
-          }
-
-          const retryData = await retryResponse.json() as any;
-          fullResponse = retryData.choices?.[0]?.message?.content || retryData.message?.content || '';
-        }
-      } else {
-        const ollama = await createConfiguredOllamaClient(llmConfig);
-
-        try {
-          const response = await ollama.chat({
-            model: searchModel,
-            messages,
-            stream: false,
-            format: 'json',
-          });
-          fullResponse = response.message?.content || '';
-        } catch (modelErr) {
-          const errorMsg = modelErr instanceof Error ? modelErr.message : String(modelErr);
-          if (errorMsg.includes('not found') && searchModel !== llmConfig.model) {
-            log.warn({ searchModel, fallbackModel: llmConfig.model }, 'AI_SEARCH_MODEL not found in Ollama, falling back to settings model');
-            searchModel = llmConfig.model;
-            const response = await ollama.chat({
-              model: searchModel,
-              messages,
-              stream: false,
-              format: 'json',
-            });
-            fullResponse = response.message?.content || '';
-          } else {
-            throw modelErr;
-          }
-        }
+      if (!llmConfig.apiUrl) {
+        return {
+          action: 'error',
+          text: 'AI Search is not configured. Set Settings → AI & LLM → API Endpoint URL.',
+        };
       }
+
+      const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+      const response = await llmFetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+        },
+        body: JSON.stringify({
+          model: searchModel,
+          messages,
+          stream: false,
+          response_format: { type: 'json_object' },
+        }),
+        signal: AbortSignal.timeout(60_000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      const fullResponse: string = data.choices?.[0]?.message?.content || data.message?.content || '';
 
       // Record success trace
       const latencyMs = Date.now() - startTime;
@@ -280,64 +229,41 @@ export async function llmRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Test connection to Ollama or custom endpoint
-  fastify.post<{ Body: { url?: string; token?: string; authType?: 'bearer' | 'basic'; ollamaUrl?: string } }>('/api/llm/test-connection', {
+  // Test connection to the configured (or supplied) OpenAI-compatible LLM endpoint
+  fastify.post<{ Body: { url?: string; token?: string; authType?: 'bearer' | 'basic' } }>('/api/llm/test-connection', {
     schema: {
       tags: ['LLM'],
-      summary: 'Test connectivity to Ollama or a custom OpenAI-compatible endpoint',
+      summary: 'Test connectivity to an OpenAI-compatible LLM endpoint',
       security: [{ bearerAuth: [] }],
       body: LlmTestConnectionBodySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
-    const { url, token, authType, ollamaUrl } = request.body;
+    const { url, token, authType } = request.body;
 
     try {
-      if (url) {
-        // Test custom endpoint — try OpenAI-compatible /v1/models first,
-        // then fall back to Ollama-native /api/tags for proxies (e.g. ParisNeo)
-        // that don't implement the OpenAI compatibility layer.
-        const baseUrl = new URL(url);
-        const effectiveAuthType = authType ?? (await getEffectiveLlmConfig()).authType;
-        const authHeaders = getAuthHeaders(token, effectiveAuthType);
-        const fetchOpts = {
-          headers: { 'Content-Type': 'application/json', ...authHeaders },
-          signal: AbortSignal.timeout(10_000),
-        };
-
-        // Try OpenAI-compatible /v1/models
-        const modelsUrl = `${baseUrl.origin}/v1/models`;
-        const response = await llmFetch(modelsUrl, fetchOpts);
-
-        if (response.ok) {
-          const data = await response.json() as { data?: Array<{ id: string }> };
-          const models = (data.data ?? []).map((m) => m.id);
-          return { ok: true, models };
-        }
-
-        // Fallback: try Ollama-native /api/tags (for proxies like ParisNeo Ollama Proxy)
-        const tagsUrl = `${baseUrl.origin}/api/tags`;
-        try {
-          const fallbackResponse = await llmFetch(tagsUrl, fetchOpts);
-          if (fallbackResponse.ok) {
-            const data = await fallbackResponse.json() as { models?: Array<{ name: string }> };
-            const models = (data.models ?? []).map((m) => m.name);
-            return { ok: true, models };
-          }
-        } catch {
-          // Fallback also failed — report the original error
-        }
-
-        return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
+      const effectiveConfig = await getEffectiveLlmConfig();
+      const targetUrl = url || effectiveConfig.apiUrl;
+      if (!targetUrl) {
+        return { ok: false, error: 'No API endpoint URL configured. Set Settings → AI & LLM → API Endpoint URL.' };
       }
 
-      // Test Ollama connection using provided URL or fallback to settings/config
-      const effectiveConfig = await getEffectiveLlmConfig();
-      const host = ollamaUrl || effectiveConfig.ollamaUrl;
-      const ollama = await createConfiguredOllamaClient({ ...effectiveConfig, ollamaUrl: host });
-      const response = await ollama.list();
-      const models = response.models.map((m) => m.name);
-      return { ok: true, models };
+      const effectiveToken = token ?? effectiveConfig.apiToken;
+      const effectiveAuthType = authType ?? effectiveConfig.authType;
+      const authHeaders = getAuthHeaders(effectiveToken, effectiveAuthType);
+      const modelsUrl = resolveModelsUrl(targetUrl);
+      const response = await llmFetch(modelsUrl, {
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (response.ok) {
+        const data = await response.json() as { data?: Array<{ id: string }> };
+        const models = (data.data ?? []).map((m) => m.id);
+        return { ok: true, models };
+      }
+
+      return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
     } catch (err) {
       log.error({ err }, 'LLM connection test failed');
       return { ok: false, error: getFetchErrorMessage(err) };
@@ -377,40 +303,32 @@ export async function llmRoutes(fastify: FastifyInstance) {
     ];
 
     try {
-      let fullResponse = '';
+      if (!llmConfig.apiUrl) {
+        throw new Error('LLM is not configured. Set Settings → AI & LLM → API Endpoint URL.');
+      }
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await llmFetch(llmConfig.customEndpointUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-          },
-          body: JSON.stringify({
-            model: effectiveModel,
-            messages,
-            stream: false,
-            ...(temperature !== undefined ? { temperature } : {}),
-          }),
-          signal: AbortSignal.timeout(60_000),
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json() as any;
-        fullResponse = data.choices?.[0]?.message?.content || data.message?.content || '';
-      } else {
-        const ollama = await createConfiguredOllamaClient(llmConfig);
-        const response = await ollama.chat({
+      const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+      const response = await llmFetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+        },
+        body: JSON.stringify({
           model: effectiveModel,
           messages,
           stream: false,
-          ...(temperature !== undefined ? { options: { temperature } } : {}),
-        });
-        fullResponse = response.message?.content || '';
+          ...(temperature !== undefined ? { temperature } : {}),
+        }),
+        signal: AbortSignal.timeout(60_000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const data = await response.json() as any;
+      const fullResponse: string = data.choices?.[0]?.message?.content || data.message?.content || '';
 
       const latencyMs = Date.now() - startTime;
       const promptTokens = estimateTokens(messages.map((m) => m.content).join(''));
@@ -486,58 +404,48 @@ export async function llmRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // List available models
+  // List available models from the configured LLM endpoint
   fastify.get<{ Querystring: { host?: string } }>('/api/llm/models', {
     schema: {
       tags: ['LLM'],
-      summary: 'List available LLM models from Ollama',
+      summary: 'List models from the configured OpenAI-compatible LLM endpoint',
       security: [{ bearerAuth: [] }],
       querystring: LlmModelsQuerySchema,
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
     const llmConfig = await getEffectiveLlmConfig();
-    const customHost = request.query.host;
+    // Optional `host` query param lets the Settings page probe an unsaved URL.
+    const targetUrl = request.query.host || llmConfig.apiUrl;
 
     try {
-      // If using custom API endpoint, try OpenAI-compatible /v1/models
-      if (!customHost && llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const baseUrl = new URL(llmConfig.customEndpointUrl);
-        const modelsUrl = `${baseUrl.origin}/v1/models`;
-
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-        };
-
-        const response = await llmFetch(modelsUrl, { headers });
-        if (response.ok) {
-          const data = await response.json() as { data?: Array<{ id: string }> };
-          return {
-            models: (data.data ?? []).map((m: { id: string }) => ({
-              name: m.id,
-            })),
-            default: llmConfig.model,
-          };
-        }
+      if (!targetUrl) {
+        return { models: llmConfig.model ? [{ name: llmConfig.model }] : [], default: llmConfig.model };
       }
 
-      // Default: use Ollama SDK (prefer custom host from query over settings/env)
-      const ollama = await createConfiguredOllamaClient({ ...llmConfig, ollamaUrl: customHost || llmConfig.ollamaUrl });
-      const response = await ollama.list();
+      const modelsUrl = resolveModelsUrl(targetUrl);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+      };
+
+      const response = await llmFetch(modelsUrl, { headers });
+      if (response.ok) {
+        const data = await response.json() as { data?: Array<{ id: string }> };
+        return {
+          models: (data.data ?? []).map((m: { id: string }) => ({ name: m.id })),
+          default: llmConfig.model,
+        };
+      }
+
       return {
-        models: response.models.map((m) => ({
-          name: m.name,
-          size: m.size,
-          modified: m.modified_at,
-        })),
+        models: llmConfig.model ? [{ name: llmConfig.model }] : [],
         default: llmConfig.model,
       };
     } catch (err) {
       log.error({ err }, 'Failed to fetch models');
-      // Return at least the configured default
       return {
-        models: [{ name: llmConfig.model }],
+        models: llmConfig.model ? [{ name: llmConfig.model }] : [],
         default: llmConfig.model,
       };
     }

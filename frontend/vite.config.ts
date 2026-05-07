@@ -96,7 +96,12 @@ export default defineConfig({
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
         changeOrigin: true,
       },
-      '/health': {
+      // The bare `/health` path is owned by the SPA (Health & Monitoring page).
+      // Backend liveness sub-paths (`/health/ready`, `/health/ready/detail`)
+      // still proxy through. External callers that want bare-path liveness
+      // (load balancers, k8s probes, docker healthcheck) should hit the
+      // backend directly at port 3051.
+      '/health/ready': {
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
         changeOrigin: true,
       },

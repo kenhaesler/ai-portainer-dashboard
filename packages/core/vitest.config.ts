@@ -16,8 +16,6 @@ export default defineConfig({
       REDIS_URL: 'redis://localhost:6379',
       PORTAINER_API_URL: 'http://localhost:9000',
       PORTAINER_API_KEY: 'test-api-key-placeholder',
-      OLLAMA_BASE_URL: 'http://localhost:11434',
-      OLLAMA_MODEL: 'tinyllama',
       CACHE_ENABLED: 'true',
     },
     coverage: {

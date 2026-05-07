@@ -44,6 +44,7 @@ const groupOf = (ids: string[]) => ({
   top_containers: ids.map((id, i) => ({
     incident_id: id, container_name: `cn-${i}`, endpoint_id: 1, endpoint_name: 'e',
     severity: 'critical' as const, created_at: '',
+    incident_ids: [id], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null,
   })),
   all_container_names: ids.map((_, i) => `cn-${i}`),
   names_truncated: false,
@@ -64,6 +65,26 @@ describe('IncidentGroupsView — resolve', () => {
     await userEvent.click(screen.getByRole('button', { name: /confirm/i }));
 
     expect(api.post).toHaveBeenCalledWith('/api/incidents/resolve', { ids: ['x', 'y', 'z'] });
+  });
+
+  it('resolves all dedupe siblings when a row has incident_ids with multiple entries', async () => {
+    const group = groupOf(['a1']);
+    // Override the single row to represent two incidents (dedupe pair)
+    group.top_containers[0].incident_ids = ['a1', 'a1b'];
+    group.top_containers[0].incident_count = 2;
+    group.incident_count = 2;
+
+    (useIncidentGroups as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: { total_active: 2, endpoint_facets: [], groups: [group] },
+      isLoading: false,
+    });
+    (api.post as ReturnType<typeof vi.fn>).mockResolvedValue({ resolved: ['a1', 'a1b'], failed: [] });
+
+    render(wrap(<IncidentGroupsView />));
+    await userEvent.click(screen.getByRole('button', { name: /Resolve all 2/i }));
+    await userEvent.click(screen.getByRole('button', { name: /confirm/i }));
+
+    expect(api.post).toHaveBeenCalledWith('/api/incidents/resolve', { ids: ['a1', 'a1b'] });
   });
 
   it('partial failure ≤5 keeps failed inline with retry option', async () => {

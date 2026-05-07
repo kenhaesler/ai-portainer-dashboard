@@ -49,7 +49,7 @@ import { closeTestRedis } from '@dashboard/core/test-utils/test-redis-helper.js'
 let mockGetContainerLogs: any;
 let mockGetContainers: any;
 let mockCachedFetchSWR: any;
-let mockIsOllamaAvailable: any;
+let mockIsLlmAvailable: any;
 let mockChatStream: any;
 
 function makeInsight(overrides?: Partial<Insight>): Insight {
@@ -115,7 +115,7 @@ describe('investigation-service', () => {
     mockGetContainerLogs = vi.spyOn(portainerClient, 'getContainerLogs');
     mockGetContainers = vi.spyOn(portainerClient, 'getContainers').mockResolvedValue([]);
     // LLM spies
-    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable');
+    mockIsLlmAvailable = vi.spyOn(llmClient, 'isLlmAvailable');
     mockChatStream = vi.spyOn(llmClient, 'chatStream');
   });
 
@@ -470,7 +470,7 @@ Hope this helps!`;
         id: 'existing-inv',
         status: 'complete',
       });
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
 
       const insight = makeInsight();
       await triggerInvestigation(insight);
@@ -480,7 +480,7 @@ Hope this helps!`;
 
     it('should skip when LLM is not available', async () => {
       mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
-      mockIsOllamaAvailable.mockResolvedValue(false);
+      mockIsLlmAvailable.mockResolvedValue(false);
 
       const insight = makeInsight();
       await triggerInvestigation(insight);
@@ -490,7 +490,7 @@ Hope this helps!`;
 
     it('should use cachedFetchSWR for getContainers during evidence gathering', async () => {
       mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
       mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"info","recommended_actions":[],"confidence_score":0.5}');
       mockGetContainerLogs.mockResolvedValue('some logs');
       mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 10, sample_count: 30 });
@@ -517,7 +517,7 @@ Hope this helps!`;
 
     it('should create investigation when all guards pass', async () => {
       mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
       mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"info","recommended_actions":[],"confidence_score":0.5}');
 
       // Mock evidence gathering
@@ -549,7 +549,7 @@ Hope this helps!`;
 
     it('should allow critical severity when min is warning (#697)', async () => {
       mockGetRecentInvestigationForContainer.mockReturnValue(undefined);
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
       mockChatStream.mockResolvedValue('{"root_cause":"test","contributing_factors":[],"severity_assessment":"critical","recommended_actions":[],"confidence_score":0.9}');
       mockGetContainerLogs.mockResolvedValue('some logs');
       mockGetMovingAverage.mockReturnValue({ mean: 50, std_dev: 10, sample_count: 30 });

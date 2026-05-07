@@ -51,7 +51,7 @@ Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard
 1. **RBAC by Default** — All mutating endpoints (POST/PUT/DELETE) and sensitive read endpoints (Backups, Settings, Cache, User Management) MUST require `fastify.requireRole('admin')`. Never assume `fastify.authenticate` is sufficient for administrative actions.
 2. **Zero Default Secrets** — Production deployments (`NODE_ENV=production`) MUST fail to start if `JWT_SECRET` is the default value or less than 32 characters. Never hardcode credentials.
 3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard. Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
-4. **Infrastructure Isolation** — Internal services (Prometheus, Ollama, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
+4. **Infrastructure Isolation** — Internal services (Prometheus, LLM API, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
 5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
 6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression-*.test.ts`. Add the test to the file matching your domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra), or create a new per-domain file if none fits.
 7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
@@ -66,10 +66,10 @@ For detailed specs (animation durations, easing curves, glass override patterns,
 
 ## Testing & Mocks
 
-**Mocks are for CI only.** External services (Portainer API, Ollama, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
+**Mocks are for CI only.** External services (Portainer API, LLM API, Redis) are unavailable in CI, so tests must mock those calls. But mocks should be minimal — only mock what CI cannot reach. Prefer real integrations wherever possible:
 
 - **Backend DB tests**: Use real PostgreSQL via `test-db-helper.ts` (port 5433). Never mock the database.
-- **Backend route tests**: Mock only external API calls (Portainer, Ollama) and auth (`app.decorate('authenticate', ...)`). Use `vi.spyOn()` with passthrough mocks (`vi.mock('module', async (importOriginal) => await importOriginal())`) so real logic runs but individual functions can be stubbed.
+- **Backend route tests**: Mock only external API calls (Portainer, LLM API) and auth (`app.decorate('authenticate', ...)`). Use `vi.spyOn()` with passthrough mocks (`vi.mock('module', async (importOriginal) => await importOriginal())`) so real logic runs but individual functions can be stubbed.
 - **Frontend tests**: Mock API responses (`vi.spyOn(globalThis, 'fetch')` or MSW), not internal components.
 - **Never mock pure utility functions** — test them directly with real inputs.
 - **Keep mocks close to the boundary** — mock the HTTP call, not the service function that wraps it.
@@ -95,7 +95,7 @@ Branch: `dev` → `feature/<issue#>-<desc>`. PRs: `feature/* → dev` (CI runs).
 
 ## Environment
 
-Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`), `OLLAMA_MODEL` (default `llama3.2`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. Harbor (optional): `HARBOR_API_URL`, `HARBOR_ROBOT_NAME`, `HARBOR_ROBOT_SECRET`, `HARBOR_VERIFY_SSL` (default `true`), `HARBOR_SYNC_ENABLED` (default `false`), `HARBOR_SYNC_INTERVAL_MINUTES` (default `30`), `HARBOR_CONCURRENCY` (default `5`). Harbor can also be configured via Settings UI (stored in PostgreSQL, takes precedence over env vars).
+Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `LLM_API_URL` (OpenAI-compatible base URL — `/v1/chat/completions` is auto-appended), `LLM_API_TOKEN`, `LLM_MODEL` (default `gpt-4o-mini`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. Harbor (optional): `HARBOR_API_URL`, `HARBOR_ROBOT_NAME`, `HARBOR_ROBOT_SECRET`, `HARBOR_VERIFY_SSL` (default `true`), `HARBOR_SYNC_ENABLED` (default `false`), `HARBOR_SYNC_INTERVAL_MINUTES` (default `30`), `HARBOR_CONCURRENCY` (default `5`). Harbor can also be configured via Settings UI (stored in PostgreSQL, takes precedence over env vars).
 
 Component-based DB URLs (#1187): `POSTGRES_APP_HOST`/`PORT`/`USER`/`DATABASE`, `TIMESCALE_HOST`/`PORT`/`USER`/`DATABASE`, `REDIS_HOST`/`PORT` are optional. When set, the backend assembles the connection URL from these + the password resolved via `readSecret()` (Docker Secrets file > env), instead of relying on env-var interpolation in compose. Backwards compatible: existing `*_URL` env vars still work when components are not set.
 

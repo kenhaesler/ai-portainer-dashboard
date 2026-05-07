@@ -18,6 +18,11 @@ export interface IncidentGroup {
     endpoint_name: string | null;
     severity: 'critical' | 'warning' | 'info';
     created_at: string;
+    incident_ids: string[];
+    incident_count: number;
+    latest_at: string;
+    latest_summary: string | null;
+    latest_description: string | null;
   }>;
   all_container_names: string[];
   names_truncated: boolean;

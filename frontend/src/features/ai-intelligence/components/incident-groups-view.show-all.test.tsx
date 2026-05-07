@@ -31,6 +31,7 @@ describe('IncidentGroupsView — Show all pagination', () => {
             incident_id: `i${i}`, container_name: `cn-${i}`,
             endpoint_id: 1, endpoint_name: 'e', severity: 'warning' as const,
             created_at: '',
+            incident_ids: [`i${i}`], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null,
           })),
           all_container_names: Array.from({ length: 12 }, (_, i) => `cn-${i}`),
           names_truncated: false,
@@ -46,6 +47,10 @@ describe('IncidentGroupsView — Show all pagination', () => {
         { id: 'i11', title: 't', signature: 'a:b:c', severity: 'warning', status: 'active',
           affected_containers: ['cn-11'], endpoint_id: 1, endpoint_name: 'e',
           created_at: '', updated_at: '' },
+        { id: 'i10b', title: 't', signature: 'a:b:c', severity: 'critical', status: 'active',
+          affected_containers: ['cn-10'], endpoint_id: 1, endpoint_name: 'e',
+          created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+          summary: null },
       ],
       counts: { active: 12, resolved: 0, total: 12 },
       limit: 50, offset: 0,
@@ -62,5 +67,9 @@ describe('IncidentGroupsView — Show all pagination', () => {
     });
     expect(screen.getByText('cn-10')).toBeInTheDocument();
     expect(screen.getByText('cn-11')).toBeInTheDocument();
+    // cn-10 appears in two incidents (i10, i10b). Long-tail must dedupe to a single row.
+    expect(screen.getAllByText('cn-10')).toHaveLength(1);
+    // Badge shows 2 alerts for that container.
+    expect(screen.getByText('2 alerts')).toBeInTheDocument();
   });
 });

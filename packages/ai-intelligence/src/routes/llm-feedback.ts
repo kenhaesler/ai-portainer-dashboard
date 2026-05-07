@@ -20,7 +20,7 @@ import {
 } from '../services/feedback-store.js';
 import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
-import { getAuthHeaders, llmFetch, createConfiguredOllamaClient } from '../services/llm-client.js';
+import { getAuthHeaders, llmFetch, resolveChatCompletionsUrl } from '../services/llm-client.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
 const log = createChildLogger('llm-feedback-routes');
@@ -278,47 +278,34 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
 
       const llmConfig = await getEffectiveLlmConfig();
 
-      let responseText = '';
+      if (!llmConfig.apiUrl) {
+        throw new Error('LLM is not configured. Set Settings → AI & LLM → API Endpoint URL.');
+      }
 
-      if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        // Custom endpoint (token is optional — some endpoints don't require auth)
-        const response = await llmFetch(llmConfig.customEndpointUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-          },
-          body: JSON.stringify({
-            model: llmConfig.model,
-            messages: [
-              { role: 'system', content: 'You are a prompt engineering expert. Analyze feedback and suggest prompt improvements. Always respond in the exact JSON format requested.' },
-              { role: 'user', content: analysisPrompt },
-            ],
-            stream: false,
-            temperature: 0.3,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`LLM HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-        responseText = data.choices?.[0]?.message?.content ?? '';
-      } else {
-        // Ollama
-        const ollama = await createConfiguredOllamaClient(llmConfig);
-        const response = await ollama.chat({
+      const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+      const response = await llmFetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+        },
+        body: JSON.stringify({
           model: llmConfig.model,
           messages: [
             { role: 'system', content: 'You are a prompt engineering expert. Analyze feedback and suggest prompt improvements. Always respond in the exact JSON format requested.' },
             { role: 'user', content: analysisPrompt },
           ],
           stream: false,
-          options: { temperature: 0.3 },
-        });
-        responseText = response.message?.content ?? '';
+          temperature: 0.3,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`LLM HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const responseText = data.choices?.[0]?.message?.content ?? '';
 
       // Parse the LLM response
       const parsed = parseSuggestionResponse(responseText);

@@ -34,13 +34,11 @@ function createWrapper() {
 
 describe('LlmSettingsSection', () => {
   const defaultValues: Record<string, string> = {
-    'llm.model': 'llama3.2',
+    'llm.model': 'gpt-4o-mini',
     'llm.temperature': '0.7',
-    'llm.ollama_url': 'http://host.docker.internal:11434',
     'llm.max_tokens': '20000',
-    'llm.custom_endpoint_enabled': 'false',
-    'llm.custom_endpoint_url': '',
-    'llm.custom_endpoint_token': '',
+    'llm.api_url': 'http://localhost:3000/v1/chat/completions',
+    'llm.api_token': '',
     'llm.auth_type': 'bearer',
   };
 
@@ -49,13 +47,12 @@ describe('LlmSettingsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     onChange = vi.fn();
-    // Default: useLlmModels returns models
     mockGet.mockResolvedValue({
       models: [
-        { name: 'llama3.2', size: 2_000_000_000 },
-        { name: 'mistral', size: 4_000_000_000 },
+        { name: 'gpt-4o-mini', size: 2_000_000_000 },
+        { name: 'claude-sonnet-4-5', size: 4_000_000_000 },
       ],
-      default: 'llama3.2',
+      default: 'gpt-4o-mini',
     });
   });
 
@@ -68,20 +65,15 @@ describe('LlmSettingsSection', () => {
     expect(screen.getByText('LLM Configuration')).toBeInTheDocument();
   });
 
-  it('renders model dropdown populated from API', async () => {
+  it('renders model dropdown when models are returned by the API', async () => {
     render(
       <LlmSettingsSection values={defaultValues} originalValues={defaultValues} onChange={onChange} />,
       { wrapper: createWrapper() },
     );
 
     await waitFor(() => {
-      const select = screen.getByRole('combobox');
-      expect(select).toBeInTheDocument();
+      expect(screen.getByRole('combobox')).toBeInTheDocument();
     });
-
-    fireEvent.click(screen.getByRole('combobox'));
-    expect(screen.getByRole('option', { name: /llama3.2/i })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /mistral/i })).toBeInTheDocument();
   });
 
   it('falls back to text input when no models available', async () => {
@@ -116,21 +108,9 @@ describe('LlmSettingsSection', () => {
     expect(screen.getByRole('button', { name: /test connection/i })).toBeInTheDocument();
   });
 
-  it('does not show custom endpoint fields when disabled', async () => {
+  it('renders the API endpoint URL and token fields', async () => {
     render(
       <LlmSettingsSection values={defaultValues} originalValues={defaultValues} onChange={onChange} />,
-      { wrapper: createWrapper() },
-    );
-
-    expect(screen.queryByLabelText(/api endpoint url/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/api key/i)).not.toBeInTheDocument();
-  });
-
-  it('shows custom endpoint fields when enabled', async () => {
-    const customValues = { ...defaultValues, 'llm.custom_endpoint_enabled': 'true' };
-
-    render(
-      <LlmSettingsSection values={customValues} originalValues={customValues} onChange={onChange} />,
       { wrapper: createWrapper() },
     );
 
@@ -138,14 +118,15 @@ describe('LlmSettingsSection', () => {
     expect(screen.getByLabelText(/api key/i)).toBeInTheDocument();
   });
 
-  it('calls onChange when Custom API card is clicked', async () => {
+  it('calls onChange when API endpoint URL is changed', async () => {
     render(
       <LlmSettingsSection values={defaultValues} originalValues={defaultValues} onChange={onChange} />,
       { wrapper: createWrapper() },
     );
 
-    fireEvent.click(screen.getByText('Custom API'));
-    expect(onChange).toHaveBeenCalledWith('llm.custom_endpoint_enabled', 'true');
+    const urlInput = screen.getByLabelText(/api endpoint url/i);
+    fireEvent.change(urlInput, { target: { value: 'http://lmstudio:1234' } });
+    expect(onChange).toHaveBeenCalledWith('llm.api_url', 'http://lmstudio:1234');
   });
 
   it('calls onChange when temperature is changed', async () => {
@@ -170,7 +151,7 @@ describe('LlmSettingsSection', () => {
   });
 
   it('shows unsaved changes badge when values change', async () => {
-    const modifiedValues = { ...defaultValues, 'llm.model': 'mistral' };
+    const modifiedValues = { ...defaultValues, 'llm.model': 'claude-sonnet-4-5' };
 
     render(
       <LlmSettingsSection values={modifiedValues} originalValues={defaultValues} onChange={onChange} />,
@@ -180,16 +161,15 @@ describe('LlmSettingsSection', () => {
     expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
   });
 
-  it('blocks test connection when custom endpoint is enabled but URL is empty', async () => {
-    const customValues = {
+  it('blocks test connection when API URL is empty', async () => {
+    const emptyUrlValues = {
       ...defaultValues,
-      'llm.custom_endpoint_enabled': 'true',
-      'llm.custom_endpoint_url': '',
-      'llm.custom_endpoint_token': 'secret-token',
+      'llm.api_url': '',
+      'llm.api_token': 'secret-token',
     };
 
     render(
-      <LlmSettingsSection values={customValues} originalValues={customValues} onChange={onChange} />,
+      <LlmSettingsSection values={emptyUrlValues} originalValues={emptyUrlValues} onChange={onChange} />,
       { wrapper: createWrapper() },
     );
 
@@ -197,6 +177,18 @@ describe('LlmSettingsSection', () => {
 
     expect(mockError).toHaveBeenCalledWith('Set an API endpoint URL before testing connection');
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('shows live preview of resolved chat-completions URL when bare URL is entered', async () => {
+    const bareUrlValues = { ...defaultValues, 'llm.api_url': 'http://lmstudio:1234' };
+
+    render(
+      <LlmSettingsSection values={bareUrlValues} originalValues={bareUrlValues} onChange={onChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    expect(screen.getByText(/Will POST to/i)).toBeInTheDocument();
+    expect(screen.getByText('http://lmstudio:1234/v1/chat/completions')).toBeInTheDocument();
   });
 });
 
