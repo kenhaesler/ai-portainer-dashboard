@@ -164,7 +164,7 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const onResolveGroup = useCallback(async (group: IncidentGroup) => {
     setPendingGroup(null);
     const longTail = longTailBySig[group.signature];
-    const ids = (longTail ?? group.top_containers).map((c) => c.incident_id);
+    const ids = (longTail ?? group.top_containers).flatMap((c) => c.incident_ids);
     const r = await batchResolve.mutateAsync(ids);
     if (r.failed.length > 0) setLastFailure(r);
     else setLastFailure(null);
