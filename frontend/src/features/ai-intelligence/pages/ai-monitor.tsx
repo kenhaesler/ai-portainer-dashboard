@@ -438,93 +438,12 @@ export default function AiMonitorPage() {
         />
       </SpotlightCard>
 
-      {/* Severity Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2 overflow-x-auto rounded-lg border bg-card p-1">
-        <button
-          onClick={() => setSeverityFilter('all')}
-          className={cn(
-            'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
-            severityFilter === 'all'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          )}
-        >
-          <Filter className="h-4 w-4" />
-          All
-          <span
-            className={cn(
-              'rounded-full px-1.5 py-0.5 text-xs',
-              severityFilter === 'all'
-                ? 'bg-primary-foreground/20'
-                : 'bg-muted-foreground/20'
-            )}
-          >
-            {stats.total}
-          </span>
-        </button>
-        {(['critical', 'warning', 'info'] as const).map((severity) => {
-          const config = {
-            critical: { icon: AlertTriangle, label: 'Critical', count: stats.critical },
-            warning: { icon: AlertCircle, label: 'Warnings', count: stats.warning },
-            info: { icon: Info, label: 'Info', count: stats.info },
-          }[severity];
-
-          const Icon = config.icon;
-
-          return (
-            <button
-              key={severity}
-              onClick={() => setSeverityFilter(severity)}
-              className={cn(
-                'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
-                severityFilter === severity
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {config.label}
-              <span
-                className={cn(
-                  'rounded-full px-1.5 py-0.5 text-xs',
-                  severityFilter === severity
-                    ? 'bg-primary-foreground/20'
-                    : 'bg-muted-foreground/20'
-                )}
-              >
-                {config.count}
-              </span>
-            </button>
-          );
-        })}
-        <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
-        <button
-          onClick={() => setAcknowledgementFilter('all')}
-          className={cn(
-            'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
-            acknowledgementFilter === 'all'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          )}
-        >
-          All Statuses
-        </button>
-        <button
-          onClick={() => setAcknowledgementFilter('unacknowledged')}
-          className={cn(
-            'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
-            acknowledgementFilter === 'unacknowledged'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          )}
-        >
-          Unacknowledged
-        </button>
-      </div>
-
-      {/* Search box — covers incidents, anomalies, health issues, insights */}
+      {/* Search + filter pane — search input on top, severity / status tabs below.
+          Single pane so the filter context lives next to the query that
+          drives it; removes the visual gap between the two controls. */}
       <SpotlightCard>
-        <div className="rounded-lg border bg-card p-3 shadow-sm">
+        <div className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
+          {/* Search */}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <input
@@ -545,6 +464,89 @@ export default function AiMonitorPage() {
                 <XCircle className="h-4 w-4" />
               </button>
             )}
+          </div>
+          {/* Severity + acknowledgement filter tabs */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSeverityFilter('all')}
+              className={cn(
+                'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                severityFilter === 'all'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              <Filter className="h-4 w-4" />
+              All
+              <span
+                className={cn(
+                  'rounded-full px-1.5 py-0.5 text-xs',
+                  severityFilter === 'all'
+                    ? 'bg-primary-foreground/20'
+                    : 'bg-muted-foreground/20'
+                )}
+              >
+                {stats.total}
+              </span>
+            </button>
+            {(['critical', 'warning', 'info'] as const).map((severity) => {
+              const config = {
+                critical: { icon: AlertTriangle, label: 'Critical', count: stats.critical },
+                warning: { icon: AlertCircle, label: 'Warnings', count: stats.warning },
+                info: { icon: Info, label: 'Info', count: stats.info },
+              }[severity];
+
+              const Icon = config.icon;
+
+              return (
+                <button
+                  key={severity}
+                  onClick={() => setSeverityFilter(severity)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                    severityFilter === severity
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {config.label}
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 py-0.5 text-xs',
+                      severityFilter === severity
+                        ? 'bg-primary-foreground/20'
+                        : 'bg-muted-foreground/20'
+                    )}
+                  >
+                    {config.count}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
+            <button
+              onClick={() => setAcknowledgementFilter('all')}
+              className={cn(
+                'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                acknowledgementFilter === 'all'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              All Statuses
+            </button>
+            <button
+              onClick={() => setAcknowledgementFilter('unacknowledged')}
+              className={cn(
+                'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
+                acknowledgementFilter === 'unacknowledged'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              Unacknowledged
+            </button>
           </div>
         </div>
       </SpotlightCard>
