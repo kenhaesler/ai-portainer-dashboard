@@ -370,8 +370,10 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(dismissStackButton);
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
-    expect(params).toEqual({ endpoint: '1', group: 'workload' });
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('stack')).toBeNull();
   });
 
   it('renders state filter chip when state param is set', () => {
@@ -400,8 +402,10 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(screen.getByText('Clear all'));
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
-    expect(params).toEqual({});
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBeNull();
+    expect(params.get('stack')).toBeNull();
+    expect(params.get('group')).toBeNull();
   });
 
   it('renders WorkloadStatusSummary with pre-state container count', () => {
@@ -578,13 +582,11 @@ describe('WorkloadExplorerPage', () => {
     // filter values preserved, not just the stack. Before the fix, endpoint,
     // group, and state would be lost due to stale closure.
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
-    expect(params).toEqual({
-      endpoint: '1',
-      stack: 'workers',
-      group: 'workload',
-      state: 'running',
-    });
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('state')).toBe('running');
   });
 
   // -------------------------------------------------------------------------
@@ -645,14 +647,12 @@ describe('WorkloadExplorerPage', () => {
     );
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
     // endpoint is dropped, all other active filters remain
-    expect(params).toEqual({
-      stack: 'workers',
-      group: 'workload',
-      state: 'running',
-    });
-    expect(params).not.toHaveProperty('endpoint');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('state')).toBe('running');
+    expect(params.get('endpoint')).toBeNull();
   });
 
   it('removes group filter from URL params when group chip dismiss is clicked', () => {
@@ -664,14 +664,12 @@ describe('WorkloadExplorerPage', () => {
     );
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
     // group is dropped, all other active filters remain
-    expect(params).toEqual({
-      endpoint: '1',
-      stack: 'workers',
-      state: 'running',
-    });
-    expect(params).not.toHaveProperty('group');
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('state')).toBe('running');
+    expect(params.get('group')).toBeNull();
   });
 
   it('preserves state filter when clicking a stack column cell with only endpoint+state active (#1031 + #1035)', () => {
@@ -713,15 +711,13 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(stackButton!);
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
     // Both endpoint and state must be preserved — pre-#1031 the closure
     // dropped them; pre-#1035 the state chip wouldn't have been visible
     // even if the state param were preserved.
-    expect(params).toEqual({
-      endpoint: '1',
-      stack: 'workers',
-      state: 'running',
-    });
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('state')).toBe('running');
   });
 });
 
@@ -786,7 +782,7 @@ describe('WorkloadExplorerPage — compare mode', () => {
     fireEvent.click(backBtn);
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const [nextParams] = mockSetSearchParams.mock.calls[0] as [URLSearchParams, unknown];
+    const [nextParams, options] = mockSetSearchParams.mock.calls[0] as [URLSearchParams, { replace: boolean }];
     // Filter params preserved
     expect(nextParams.get('endpoint')).toBe('1');
     expect(nextParams.get('stack')).toBe('workers');
@@ -795,6 +791,7 @@ describe('WorkloadExplorerPage — compare mode', () => {
     expect(nextParams.get('containers')).toBeNull();
     expect(nextParams.get('tab')).toBeNull();
     expect(nextParams.get('range')).toBeNull();
+    expect(options).toEqual({ replace: false });
   });
 
   it('clicking a pill × removes that container from the containers param', () => {

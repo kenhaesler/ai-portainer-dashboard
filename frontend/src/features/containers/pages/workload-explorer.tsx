@@ -71,20 +71,17 @@ export default function WorkloadExplorerPage() {
     group: ContainerGroup | undefined,
     state?: string | undefined
   ) => {
-    const params: Record<string, string> = {};
-    if (endpointId !== undefined) {
-      params.endpoint = String(endpointId);
-    }
-    if (stackName) {
-      params.stack = stackName;
-    }
-    if (group) {
-      params.group = group;
-    }
-    if (state) {
-      params.state = state;
-    }
-    setSearchParams(params);
+    const next = new URLSearchParams(searchParams);
+    // Reset only the filter keys this function owns
+    next.delete('endpoint');
+    next.delete('stack');
+    next.delete('group');
+    next.delete('state');
+    if (endpointId !== undefined) next.set('endpoint', String(endpointId));
+    if (stackName) next.set('stack', stackName);
+    if (group) next.set('group', group);
+    if (state) next.set('state', state);
+    setSearchParams(next);
   };
 
   const setSelectedEndpoint = (endpointId: number | undefined) => {
@@ -525,7 +522,8 @@ export default function WorkloadExplorerPage() {
         <>
           {(() => {
             const compared = compareContainerIds
-              .map(({ containerId }) => containers?.find((c) => c.id === containerId))
+              .map(({ endpointId, containerId }) =>
+                containers?.find((c) => c.id === containerId && c.endpointId === endpointId))
               .filter((c): c is Container => c !== undefined);
 
             if (isLoading) return <SkeletonCard className="h-[300px]" />;
