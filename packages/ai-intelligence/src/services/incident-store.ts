@@ -205,12 +205,25 @@ export interface IncidentGroup {
   earliest_at: string;
   latest_update_at: string;
   top_containers: Array<{
+    /** Representative incident (highest-severity, then most-recent) for this container in this group. */
     incident_id: string;
     container_name: string;
     endpoint_id: number | null;
     endpoint_name: string | null;
+    /** Severity of the representative incident. */
     severity: 'critical' | 'warning' | 'info';
+    /** created_at of the representative incident. */
     created_at: string;
+    /** All active incident ids for (signature, container_name). Length == incident_count. */
+    incident_ids: string[];
+    /** How many active incidents this container has under this signature. */
+    incident_count: number;
+    /** updated_at of the most recently updated incident among incident_ids. */
+    latest_at: string;
+    /** incidents.summary of the representative incident (LLM-derived, may be null). */
+    latest_summary: string | null;
+    /** insights.description of the representative incident's root-cause insight (contains metric values, may be null). */
+    latest_description: string | null;
   }>;
   all_container_names: string[];
   names_truncated: boolean;
@@ -346,6 +359,12 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
       incident_id: r.incident_id, container_name: r.container_name,
       endpoint_id: r.endpoint_id, endpoint_name: r.endpoint_name,
       severity: r.severity, created_at: r.created_at,
+      // Placeholder values — Task 3 will replace these with real SQL results.
+      incident_ids: [r.incident_id],
+      incident_count: 1,
+      latest_at: r.created_at,
+      latest_summary: null,
+      latest_description: null,
     });
     topBySig.set(r.signature, arr);
   }
