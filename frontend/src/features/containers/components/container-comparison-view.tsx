@@ -27,6 +27,14 @@ export interface ContainerComparisonViewProps {
 }
 
 // ─── Pill row (extracted from the old ContainerSelector, minus the picker) ──
+//
+// Visual changes from the original selector pills (intentional):
+//   - Container name uses font-mono (matches the rest of the UI's
+//     treatment of container identifiers, e.g. the table column).
+//   - Endpoint name shown as small muted text — disambiguates the
+//     same container name appearing on different endpoints.
+//   - No color dot; the per-pill border-color carries the chart-line
+//     mapping for that container.
 
 function ContainerPills({
   containers,
