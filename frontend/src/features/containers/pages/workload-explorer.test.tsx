@@ -817,3 +817,32 @@ describe('WorkloadExplorerPage — compare mode', () => {
     expect(nextParams.get('mode')).toBe('compare');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header Compare button
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('WorkloadExplorerPage — header Compare button', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+    mockOnSelectionChange = undefined;
+  });
+
+  it('renders the Compare button in the header in table mode, disabled when no rows selected', () => {
+    render(<WorkloadExplorerPage />);
+
+    const button = screen.getByRole('button', { name: /^Compare$/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Select 2 or more containers to compare');
+  });
+
+  it('does NOT render the header Compare button in compare mode', () => {
+    mockQueryString = 'mode=compare&containers=1:c-workers,1:c-billing';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.queryByRole('button', { name: /^Compare( \d+)?$/ })).not.toBeInTheDocument();
+  });
+});

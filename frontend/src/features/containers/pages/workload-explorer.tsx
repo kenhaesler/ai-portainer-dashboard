@@ -18,7 +18,7 @@ import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/features/containers/lib/system-container-grouping';
-import { formatDate, truncate, formatRelativeAge } from '@/shared/lib/utils';
+import { cn, formatDate, truncate, formatRelativeAge } from '@/shared/lib/utils';
 import { transition } from '@/shared/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/shared/components/forms/workload-smart-search';
 import { SelectionActionBar } from '@/shared/components/layout/selection-action-bar';
@@ -512,6 +512,23 @@ export default function WorkloadExplorerPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {!compareMode && (
+            <button
+              type="button"
+              onClick={handleCompare}
+              disabled={selectedContainers.length < 2}
+              title={selectedContainers.length < 2 ? 'Select 2 or more containers to compare' : `Compare ${selectedContainers.length} selected containers`}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-sm font-medium transition-colors',
+                selectedContainers.length < 2
+                  ? 'cursor-not-allowed bg-muted/30 text-muted-foreground'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90',
+              )}
+            >
+              <GitCompareArrows className="h-4 w-4" />
+              {selectedContainers.length < 2 ? 'Compare' : `Compare ${selectedContainers.length}`}
+            </button>
+          )}
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
           <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
         </div>
