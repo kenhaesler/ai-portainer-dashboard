@@ -24,6 +24,7 @@ import { WorkloadSmartSearch } from '@/shared/components/forms/workload-smart-se
 import { SelectionActionBar } from '@/shared/components/layout/selection-action-bar';
 import { WorkloadStatusSummary } from '@/features/containers/components/workload/workload-status-summary';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { ContainerComparisonView } from '@/features/containers/components/container-comparison-view';
 
 const MAX_COMPARE = 4;
 
@@ -44,6 +45,25 @@ export default function WorkloadExplorerPage() {
       ? groupParam
       : undefined;
   const selectedState = stateParam || undefined;
+
+  // Compare-mode state from URL
+  const compareMode = searchParams.get('mode') === 'compare';
+  const compareContainerIds = useMemo(() => {
+    const raw = searchParams.get('containers');
+    if (!raw) return [] as Array<{ endpointId: number; containerId: string }>;
+    return raw
+      .split(',')
+      .filter(Boolean)
+      .map((pair) => {
+        const [eIdStr, cId] = pair.split(':');
+        const eId = Number(eIdStr);
+        if (!cId || Number.isNaN(eId)) return null;
+        return { endpointId: eId, containerId: cId };
+      })
+      .filter((x): x is { endpointId: number; containerId: string } => x !== null);
+  }, [searchParams]);
+  const compareTab = (searchParams.get('tab') as 'metrics' | 'config' | 'summary' | null) ?? 'metrics';
+  const compareRange = searchParams.get('range') ?? '1h';
 
   const setFilters = (
     endpointId: number | undefined,
@@ -226,8 +246,50 @@ export default function WorkloadExplorerPage() {
     const param = selectedContainers
       .map((c) => `${c.endpointId}:${c.id}`)
       .join(',');
-    navigate(`/comparison?containers=${param}`);
-  }, [selectedContainers, navigate]);
+    const next = new URLSearchParams(searchParams);
+    next.set('mode', 'compare');
+    next.set('containers', param);
+    setSearchParams(next, { replace: false });
+  }, [selectedContainers, searchParams, setSearchParams]);
+
+  // ── Compare-mode URL helpers ────────────────────────────────────────────
+
+  const exitCompareMode = useCallback(() => {
+    // Strip mode/containers/tab/range from the URL while keeping filter
+    // params (endpoint/stack/group/state/q) intact.
+    const next = new URLSearchParams(searchParams);
+    next.delete('mode');
+    next.delete('containers');
+    next.delete('tab');
+    next.delete('range');
+    setSearchParams(next, { replace: false });
+  }, [searchParams, setSearchParams]);
+
+  const removeFromCompare = useCallback((containerId: string) => {
+    const remaining = compareContainerIds
+      .filter((p) => p.containerId !== containerId)
+      .map((p) => `${p.endpointId}:${p.containerId}`)
+      .join(',');
+    const next = new URLSearchParams(searchParams);
+    if (remaining) next.set('containers', remaining);
+    else next.delete('containers');
+    setSearchParams(next, { replace: false });
+  }, [compareContainerIds, searchParams, setSearchParams]);
+
+  const setCompareTab = useCallback((tab: 'metrics' | 'config' | 'summary') => {
+    const next = new URLSearchParams(searchParams);
+    // Only write to URL if non-default, to keep the URL clean.
+    if (tab === 'metrics') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const setCompareRange = useCallback((range: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (range === '1h') next.delete('range');
+    else next.set('range', range);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const columns: ColumnDef<Container, any>[] = useMemo(() => [
     {
@@ -425,10 +487,32 @@ export default function WorkloadExplorerPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Workload Explorer</h1>
-          <p className="text-muted-foreground">
-            Browse and manage containers across all endpoints
-          </p>
+          {compareMode ? (
+            <>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={exitCompareMode}
+                  className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
+                >
+                  ← Back to list
+                </button>
+                <h1 className="text-3xl font-bold tracking-tight">
+                  Comparing {compareContainerIds.length} container{compareContainerIds.length === 1 ? '' : 's'}
+                </h1>
+              </div>
+              <p className="mt-1 text-muted-foreground">
+                Compare metrics, configuration, and status across selected containers
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold tracking-tight">Workload Explorer</h1>
+              <p className="text-muted-foreground">
+                Browse and manage containers across all endpoints
+              </p>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
@@ -436,185 +520,234 @@ export default function WorkloadExplorerPage() {
         </div>
       </div>
 
-      {/* Filter pane: dropdowns + status summary */}
-      <SpotlightCard>
-      <div className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label htmlFor="endpoint-select" className="text-sm font-medium">
-              Endpoint
-            </label>
-            <ThemedSelect
-              id="endpoint-select"
-              value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
-              onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
-              options={[
-                { value: '__all__', label: 'All endpoints' },
-                ...(endpoints?.map((ep) => ({
-                  value: String(ep.id),
-                  label: `${ep.name} (ID: ${ep.id})`,
-                })) ?? []),
-              ]}
-            />
-          </div>
+      {compareMode ? (
+        // ── Compare mode body ──
+        <>
+          {(() => {
+            const compared = compareContainerIds
+              .map(({ containerId }) => containers?.find((c) => c.id === containerId))
+              .filter((c): c is Container => c !== undefined);
 
-          <div className="flex items-center gap-2">
-            <label htmlFor="stack-select" className="text-sm font-medium">
-              Stack
-            </label>
-            <ThemedSelect
-              id="stack-select"
-              value={selectedStack ?? '__all__'}
-              onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
-              options={[
-                { value: '__all__', label: 'All stacks' },
-                ...availableStacks.map((stackName) => ({
-                  value: stackName,
-                  label: stackName,
-                })),
-              ]}
-              disabled={!containers || availableStacks.length === 0}
-            />
-          </div>
+            if (isLoading) return <SkeletonCard className="h-[300px]" />;
 
-          <div className="flex items-center gap-2">
-            <label htmlFor="group-select" className="text-sm font-medium">
-              Group
-            </label>
-            <ThemedSelect
-              id="group-select"
-              value={selectedGroup ?? '__all__'}
-              onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
-              options={[
-                { value: '__all__', label: 'All groups' },
-                { value: 'system', label: 'System' },
-                { value: 'workload', label: 'Workload' },
-              ]}
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label htmlFor="state-select" className="text-sm font-medium">
-              State
-            </label>
-            <ThemedSelect
-              id="state-select"
-              value={selectedState ?? '__all__'}
-              onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
-              options={[
-                { value: '__all__', label: 'All states' },
-                ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
-                  value: state,
-                  label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
-                })),
-              ]}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={!exportRows.length}
-            className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          >
-            Export CSV
-          </button>
-        </div>
-
-        {preStateFilteredContainers.length > 0 && (
-          <WorkloadStatusSummary
-            containers={preStateFilteredContainers}
-            activeStateFilter={selectedState}
-            onStateFilterChange={setSelectedState}
-          />
-        )}
-      </div>
-      </SpotlightCard>
-
-      {/* Table pane: filter chips + search + table */}
-      {isLoading ? (
-        <SkeletonCard className="h-[500px]" />
-      ) : filteredContainers ? (
-        <SpotlightCard>
-        <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
-          {/* Active filter chips */}
-          {activeFilters.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
-              <AnimatePresence mode="popLayout">
-                {activeFilters.map((filter) => (
-                  <motion.span
-                    key={filter.key}
-                    layout
-                    initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
-                    animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-                    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
-                    transition={reduceMotion ? { duration: 0 } : transition.fast}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
+            if (compared.length < 2) {
+              const heading = compared.length === 0
+                ? 'No containers to compare'
+                : 'Compare needs at least 2 containers';
+              const body = compared.length === 0
+                ? 'Pick at least 2 containers from Workload Explorer to compare them.'
+                : 'Add another container from Workload Explorer to compare.';
+              return (
+                <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
+                  <h2 className="text-lg font-semibold">{heading}</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+                  <button
+                    type="button"
+                    onClick={exitCompareMode}
+                    className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
                   >
-                    <span className="font-medium text-muted-foreground">{filter.label}:</span>
-                    <span>{filter.value}</span>
+                    ← Back to list
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <ContainerComparisonView
+                containers={compared}
+                tab={compareTab}
+                onTabChange={setCompareTab}
+                timeRange={compareRange}
+                onTimeRangeChange={setCompareRange}
+                onRemove={removeFromCompare}
+              />
+            );
+          })()}
+        </>
+      ) : (
+        // ── Original table / filter pane / selection-action-bar block ──
+        <>
+          {/* Filter pane: dropdowns + status summary */}
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label htmlFor="endpoint-select" className="text-sm font-medium">
+                  Endpoint
+                </label>
+                <ThemedSelect
+                  id="endpoint-select"
+                  value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+                  onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+                  options={[
+                    { value: '__all__', label: 'All endpoints' },
+                    ...(endpoints?.map((ep) => ({
+                      value: String(ep.id),
+                      label: `${ep.name} (ID: ${ep.id})`,
+                    })) ?? []),
+                  ]}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="stack-select" className="text-sm font-medium">
+                  Stack
+                </label>
+                <ThemedSelect
+                  id="stack-select"
+                  value={selectedStack ?? '__all__'}
+                  onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
+                  options={[
+                    { value: '__all__', label: 'All stacks' },
+                    ...availableStacks.map((stackName) => ({
+                      value: stackName,
+                      label: stackName,
+                    })),
+                  ]}
+                  disabled={!containers || availableStacks.length === 0}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="group-select" className="text-sm font-medium">
+                  Group
+                </label>
+                <ThemedSelect
+                  id="group-select"
+                  value={selectedGroup ?? '__all__'}
+                  onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
+                  options={[
+                    { value: '__all__', label: 'All groups' },
+                    { value: 'system', label: 'System' },
+                    { value: 'workload', label: 'Workload' },
+                  ]}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="state-select" className="text-sm font-medium">
+                  State
+                </label>
+                <ThemedSelect
+                  id="state-select"
+                  value={selectedState ?? '__all__'}
+                  onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
+                  options={[
+                    { value: '__all__', label: 'All states' },
+                    ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
+                      value: state,
+                      label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
+                    })),
+                  ]}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                disabled={!exportRows.length}
+                className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                Export CSV
+              </button>
+            </div>
+
+            {preStateFilteredContainers.length > 0 && (
+              <WorkloadStatusSummary
+                containers={preStateFilteredContainers}
+                activeStateFilter={selectedState}
+                onStateFilterChange={setSelectedState}
+              />
+            )}
+          </div>
+          </SpotlightCard>
+
+          {/* Table pane: filter chips + search + table */}
+          {isLoading ? (
+            <SkeletonCard className="h-[500px]" />
+          ) : filteredContainers ? (
+            <SpotlightCard>
+            <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
+              {/* Active filter chips */}
+              {activeFilters.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
+                  <AnimatePresence mode="popLayout">
+                    {activeFilters.map((filter) => (
+                      <motion.span
+                        key={filter.key}
+                        layout
+                        initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+                        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+                        transition={reduceMotion ? { duration: 0 } : transition.fast}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-card/80 backdrop-blur-sm border border-border/50 px-3 py-1 text-sm shadow-sm"
+                      >
+                        <span className="font-medium text-muted-foreground">{filter.label}:</span>
+                        <span>{filter.value}</span>
+                        <button
+                          type="button"
+                          onClick={filter.onRemove}
+                          className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`Remove ${filter.label} filter`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
+                  {activeFilters.length >= 2 && (
                     <button
                       type="button"
-                      onClick={filter.onRemove}
-                      className="ml-1 -mr-1 rounded-full p-0.5 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive"
-                      aria-label={`Remove ${filter.label} filter`}
+                      onClick={() => setFilters(undefined, undefined, undefined, undefined)}
+                      className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                     >
-                      <X className="h-3 w-3" />
+                      Clear all
                     </button>
-                  </motion.span>
-                ))}
-              </AnimatePresence>
-              {activeFilters.length >= 2 && (
-                <button
-                  type="button"
-                  onClick={() => setFilters(undefined, undefined, undefined, undefined)}
-                  className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                >
-                  Clear all
-                </button>
+                  )}
+                </div>
               )}
+
+              {/* Smart search */}
+              <WorkloadSmartSearch
+                containers={filteredContainers}
+                knownStackNames={knownStackNames}
+                onFiltered={setSearchFilteredContainers}
+                totalCount={filteredContainers.length}
+              />
+
+              <DataTable
+                columns={columns}
+                data={searchFilteredContainers ?? filteredContainers}
+                hideSearch
+                pageSize={15}
+                enableRowSelection
+                maxSelection={MAX_COMPARE}
+                onSelectionChange={handleSelectionChange}
+                getRowId={(row) => `${row.endpointId}:${row.id}`}
+                selectedRowIds={controlledRowIds}
+                onRowClick={(row) => navigate(`/containers/${row.endpointId}/${row.id}`)}
+              />
             </div>
-          )}
+            </SpotlightCard>
+          ) : null}
 
-          {/* Smart search */}
-          <WorkloadSmartSearch
-            containers={filteredContainers}
-            knownStackNames={knownStackNames}
-            onFiltered={setSearchFilteredContainers}
-            totalCount={filteredContainers.length}
-          />
-
-          <DataTable
-            columns={columns}
-            data={searchFilteredContainers ?? filteredContainers}
-            hideSearch
-            pageSize={15}
-            enableRowSelection
-            maxSelection={MAX_COMPARE}
-            onSelectionChange={handleSelectionChange}
-            getRowId={(row) => `${row.endpointId}:${row.id}`}
-            selectedRowIds={controlledRowIds}
-            onRowClick={(row) => navigate(`/containers/${row.endpointId}/${row.id}`)}
-          />
-        </div>
-        </SpotlightCard>
-      ) : null}
-
-      {/* Floating compare action bar */}
-      <SelectionActionBar
-        selectedCount={selectedContainers.length}
-        visible={selectedContainers.length >= 2}
-        onClear={handleClearSelection}
-      >
-        <button
-          data-testid="compare-button"
-          onClick={handleCompare}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <GitCompareArrows className="h-4 w-4" />
-          Compare ({selectedContainers.length})
-        </button>
-      </SelectionActionBar>
+          {/* Floating compare action bar */}
+          <SelectionActionBar
+            selectedCount={selectedContainers.length}
+            visible={selectedContainers.length >= 2}
+            onClear={handleClearSelection}
+          >
+            <button
+              data-testid="compare-button"
+              onClick={handleCompare}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              <GitCompareArrows className="h-4 w-4" />
+              Compare ({selectedContainers.length})
+            </button>
+          </SelectionActionBar>
+        </>
+      )}
     </div>
   );
 }

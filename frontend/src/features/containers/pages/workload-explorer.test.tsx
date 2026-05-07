@@ -453,7 +453,7 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.getByTestId('compare-button')).toBeInTheDocument();
   });
 
-  it('navigates to comparison page when compare button is clicked', () => {
+  it('navigates to compare mode via setSearchParams when compare button is clicked', () => {
     render(<WorkloadExplorerPage />);
 
     act(() => {
@@ -465,9 +465,14 @@ describe('WorkloadExplorerPage', () => {
 
     fireEvent.click(screen.getByTestId('compare-button'));
 
-    expect(mockNavigate).toHaveBeenCalledWith(
-      '/comparison?containers=1:c-workers,1:c-billing'
-    );
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const [nextParams, options] = mockSetSearchParams.mock.calls[0] as [URLSearchParams, { replace: boolean }];
+    expect(nextParams.get('mode')).toBe('compare');
+    expect(nextParams.get('containers')).toBe('1:c-workers,1:c-billing');
+    // Filter params preserved
+    expect(nextParams.get('endpoint')).toBe('1');
+    expect(nextParams.get('stack')).toBe('workers');
+    expect(options).toEqual({ replace: false });
   });
 
   it('clears selection when clear button is clicked', () => {
