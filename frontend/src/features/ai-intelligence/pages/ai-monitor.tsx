@@ -12,6 +12,7 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { cn } from '@/shared/lib/utils';
 import {
   AlertTriangle,
@@ -447,13 +448,16 @@ export default function AiMonitorPage() {
       </div>
 
       {/* Fleet Health Summary */}
-      <FleetHealthSummary
-        stats={healthStats}
-        isLoading={containersLoading}
-      />
+      <SpotlightCard>
+        <FleetHealthSummary
+          stats={healthStats}
+          isLoading={containersLoading}
+        />
+      </SpotlightCard>
 
       {/* Insights Filter Cards — click body to filter, bell icon toggles live alerts.
           Slimmer than before so the page hero (Fleet Vitals) keeps dominance. */}
+      <SpotlightCard className="p-1">
       <div className="grid gap-3 md:grid-cols-4">
         <button
           type="button"
@@ -537,6 +541,7 @@ export default function AiMonitorPage() {
           );
         })}
       </div>
+      </SpotlightCard>
 
       {/* Severity Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 overflow-x-auto rounded-lg border bg-card p-1">
@@ -623,27 +628,31 @@ export default function AiMonitorPage() {
       </div>
 
       {/* Search box — covers incidents, anomalies, health issues, insights */}
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <input
-          type="search"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search by container, image, title, or endpoint…"
-          aria-label="Search incidents and insights"
-          className="h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-        />
-        {searchInput && (
-          <button
-            type="button"
-            onClick={() => setSearchInput('')}
-            aria-label="Clear search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted"
-          >
-            <XCircle className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+      <SpotlightCard>
+        <div className="rounded-lg border bg-card p-3 shadow-sm">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search by container, image, title, or endpoint…"
+              aria-label="Search incidents and insights"
+              className="h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:bg-muted"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </SpotlightCard>
 
       {/* ML-Detected Anomalies */}
       {(correlatedLoading || (filteredCorrelatedAnomalies && filteredCorrelatedAnomalies.length > 0)) && (
@@ -695,42 +704,46 @@ export default function AiMonitorPage() {
       )}
 
       {/* Active Incidents (rollup view) */}
-      <IncidentGroupsView search={searchInput} />
+      <SpotlightCard>
+        <IncidentGroupsView search={searchInput} />
+      </SpotlightCard>
 
       {/* Insights Feed */}
-      {isLoading ? (
-        <SkeletonCard className="h-[400px]" />
-      ) : filteredInsights.length === 0 ? (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <Activity className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">No insights</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {acknowledgementFilter === 'unacknowledged'
-              ? 'No unacknowledged insights match the current filters.'
-              : severityFilter === 'all'
-                ? 'AI monitoring has not generated any insights yet. Check back soon.'
-                : `No ${severityFilter} insights found. Try a different filter.`}
-          </p>
-          {!subscribedSeverities.has(severityFilter as Severity) && severityFilter !== 'all' && (
-            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              You are not subscribed to {severityFilter} severity. Click the stat card above to subscribe.
+      <SpotlightCard>
+        {isLoading ? (
+          <SkeletonCard className="h-[400px]" />
+        ) : filteredInsights.length === 0 ? (
+          <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
+            <Activity className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-4 text-lg font-semibold">No insights</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {acknowledgementFilter === 'unacknowledged'
+                ? 'No unacknowledged insights match the current filters.'
+                : severityFilter === 'all'
+                  ? 'AI monitoring has not generated any insights yet. Check back soon.'
+                  : `No ${severityFilter} insights found. Try a different filter.`}
             </p>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredInsights.map((insight) => (
-            <InsightCard
-              key={insight.id}
-              insight={insight}
-              investigation={getInvestigationForInsight(insight.id)}
-              onAcknowledge={acknowledgeInsight}
-              isAcknowledging={acknowledgingInsightId === insight.id}
-              acknowledgeErrorMessage={acknowledgeError instanceof Error ? acknowledgeError.message : undefined}
-            />
-          ))}
-        </div>
-      )}
+            {!subscribedSeverities.has(severityFilter as Severity) && severityFilter !== 'all' && (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                You are not subscribed to {severityFilter} severity. Click the stat card above to subscribe.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredInsights.map((insight) => (
+              <InsightCard
+                key={insight.id}
+                insight={insight}
+                investigation={getInvestigationForInsight(insight.id)}
+                onAcknowledge={acknowledgeInsight}
+                isAcknowledging={acknowledgingInsightId === insight.id}
+                acknowledgeErrorMessage={acknowledgeError instanceof Error ? acknowledgeError.message : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </SpotlightCard>
     </div>
   );
 }
