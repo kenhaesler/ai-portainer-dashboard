@@ -30,6 +30,52 @@ interface LongTailRow {
   latest_description: string | null;
 }
 
+const SEV_RANK: Record<LongTailRow['severity'], number> = { critical: 0, warning: 1, info: 2 };
+
+function dedupeByContainer(
+  incidents: Array<{
+    id: string; affected_containers: string[];
+    endpoint_id: number | null; endpoint_name: string | null;
+    severity: 'critical' | 'warning' | 'info'; created_at: string;
+    updated_at?: string; summary?: string | null;
+  }>,
+): LongTailRow[] {
+  const byContainer = new Map<string, LongTailRow>();
+  for (const inc of incidents) {
+    for (const name of inc.affected_containers ?? []) {
+      const existing = byContainer.get(name);
+      const incLatest = inc.updated_at ?? inc.created_at;
+      if (!existing) {
+        byContainer.set(name, {
+          incident_id: inc.id, container_name: name,
+          endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
+          severity: inc.severity, created_at: inc.created_at,
+          incident_ids: [inc.id], incident_count: 1,
+          latest_at: incLatest,
+          latest_summary: inc.summary ?? null,
+          latest_description: null, // long-tail fetch doesn't carry the joined insight description
+        });
+        continue;
+      }
+      existing.incident_ids.push(inc.id);
+      existing.incident_count = existing.incident_ids.length;
+      if (incLatest > existing.latest_at) existing.latest_at = incLatest;
+      // Promote representative if this incident is more severe, or same severity but more recent.
+      const sevCmp = SEV_RANK[inc.severity] - SEV_RANK[existing.severity];
+      const isMoreRecent = inc.created_at > existing.created_at;
+      if (sevCmp < 0 || (sevCmp === 0 && isMoreRecent)) {
+        existing.incident_id = inc.id;
+        existing.severity = inc.severity;
+        existing.created_at = inc.created_at;
+        existing.endpoint_id = inc.endpoint_id;
+        existing.endpoint_name = inc.endpoint_name;
+        existing.latest_summary = inc.summary ?? existing.latest_summary;
+      }
+    }
+  }
+  return Array.from(byContainer.values());
+}
+
 export function IncidentGroupsView({ search = '' }: { search?: string }) {
   const { data, isLoading } = useIncidentGroups({ status: 'active' });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -76,19 +122,11 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
     if (!searchLower || !truncatedSigs) return;
     const controller = new AbortController();
     for (const sig of truncatedSigs.split('|').filter(Boolean)) {
-      api.get<{ incidents: Array<{ id: string; affected_containers: string[]; endpoint_id: number | null; endpoint_name: string | null; severity: 'critical' | 'warning' | 'info'; created_at: string }> }>(
+      api.get<{ incidents: Array<{ id: string; affected_containers: string[]; endpoint_id: number | null; endpoint_name: string | null; severity: 'critical' | 'warning' | 'info'; created_at: string; updated_at?: string; summary?: string | null }> }>(
         '/api/incidents',
         { params: { status: 'active', signature: sig, q: debouncedSearch }, signal: controller.signal },
       ).then((r) => {
-        const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
-          (inc.affected_containers ?? []).map((name) => ({
-            incident_id: inc.id, container_name: name,
-            endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
-            severity: inc.severity, created_at: inc.created_at,
-            incident_ids: [inc.id], incident_count: 1,
-            latest_at: inc.created_at, latest_summary: null, latest_description: null,
-          })),
-        );
+        const rows = dedupeByContainer(r.incidents);
         setLongTailBySig((prev) => ({ ...prev, [sig]: rows }));
       }).catch(() => undefined);
     }
@@ -148,17 +186,11 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
         endpoint_name: string | null;
         severity: 'critical' | 'warning' | 'info';
         created_at: string;
+        updated_at?: string;
+        summary?: string | null;
       }>;
     }>('/api/incidents', { params: { status: 'active', signature: group.signature, limit: '500' }, signal: controller.signal });
-    const rows: LongTailRow[] = r.incidents.flatMap((inc) =>
-      (inc.affected_containers ?? []).map((name) => ({
-        incident_id: inc.id, container_name: name,
-        endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
-        severity: inc.severity, created_at: inc.created_at,
-        incident_ids: [inc.id], incident_count: 1,
-        latest_at: inc.created_at, latest_summary: null, latest_description: null,
-      })),
-    );
+    const rows = dedupeByContainer(r.incidents);
     setLongTailBySig((prev) => ({ ...prev, [group.signature]: rows }));
   }, []);
 
