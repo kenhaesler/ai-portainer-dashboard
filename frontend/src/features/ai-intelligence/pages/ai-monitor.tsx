@@ -457,23 +457,24 @@ export default function AiMonitorPage() {
 
       {/* Insights Filter Cards — click body to filter, bell icon toggles live alerts.
           Slimmer than before so the page hero (Fleet Vitals) keeps dominance. */}
-      <SpotlightCard className="p-1">
       <div className="grid gap-3 md:grid-cols-4">
-        <button
-          type="button"
-          onClick={() => setSeverityFilter('all')}
-          aria-pressed={severityFilter === 'all'}
-          className={cn(
-            'rounded-lg border bg-card px-4 py-3 text-left transition-all',
-            severityFilter === 'all' ? 'ring-2 ring-primary/40' : 'hover:bg-muted/30',
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Insights</p>
-            <Activity className="h-4 w-4 text-primary" />
-          </div>
-          <p className="mt-1 text-2xl font-bold tabular-nums">{stats.total}</p>
-        </button>
+        <SpotlightCard>
+          <button
+            type="button"
+            onClick={() => setSeverityFilter('all')}
+            aria-pressed={severityFilter === 'all'}
+            className={cn(
+              'block w-full rounded-lg border bg-card px-4 py-3 text-left transition-all',
+              severityFilter === 'all' ? 'ring-2 ring-primary/40' : 'hover:bg-muted/30',
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Insights</p>
+              <Activity className="h-4 w-4 text-primary" />
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{stats.total}</p>
+          </button>
+        </SpotlightCard>
         {([
           { severity: 'critical' as const, label: 'Critical', icon: AlertTriangle, count: stats.critical,
             tint: 'bg-red-50 dark:bg-red-900/20',
@@ -492,14 +493,14 @@ export default function AiMonitorPage() {
           const isFiltered = severityFilter === card.severity;
           const Icon = card.icon;
           return (
-            <div
-              key={card.severity}
-              className={cn(
-                'relative rounded-lg border px-4 py-3 transition-all',
-                card.tint,
-                isFiltered && `ring-2 ${card.ring}`,
-              )}
-            >
+            <SpotlightCard key={card.severity}>
+              <div
+                className={cn(
+                  'relative rounded-lg border px-4 py-3 transition-all',
+                  card.tint,
+                  isFiltered && `ring-2 ${card.ring}`,
+                )}
+              >
               <button
                 type="button"
                 onClick={() => handleSeverityFilter(card.severity)}
@@ -537,11 +538,11 @@ export default function AiMonitorPage() {
                   {isSubscribed ? 'Pause' : 'Resume'} live {card.label.toLowerCase()} alerts
                 </span>
               </button>
-            </div>
+              </div>
+            </SpotlightCard>
           );
         })}
       </div>
-      </SpotlightCard>
 
       {/* Severity Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 overflow-x-auto rounded-lg border bg-card p-1">
@@ -705,11 +706,14 @@ export default function AiMonitorPage() {
 
       {/* Active Incidents (rollup view) */}
       <SpotlightCard>
-        <IncidentGroupsView search={searchInput} />
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <IncidentGroupsView search={searchInput} />
+        </div>
       </SpotlightCard>
 
       {/* Insights Feed */}
       <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
         {isLoading ? (
           <SkeletonCard className="h-[400px]" />
         ) : filteredInsights.length === 0 ? (
@@ -743,6 +747,7 @@ export default function AiMonitorPage() {
             ))}
           </div>
         )}
+        </div>
       </SpotlightCard>
     </div>
   );
