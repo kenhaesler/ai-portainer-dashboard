@@ -36,56 +36,52 @@ function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
     : null;
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border bg-card p-4 transition-all',
-        anomaly.severity === 'critical' && 'border-red-500/40 bg-red-50/30 dark:bg-red-900/10',
-        anomaly.severity === 'high' && 'border-orange-500/40 bg-orange-50/30 dark:bg-orange-900/10',
-      )}
-    >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-          <span className="font-mono text-sm font-medium truncate">{anomaly.containerName}</span>
+    <SpotlightCard className="h-full">
+      <div className="h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="font-mono text-sm font-medium truncate">{anomaly.containerName}</span>
+          </div>
+          <span className="text-lg font-bold tabular-nums flex-shrink-0" title="Composite score">
+            {anomaly.compositeScore.toFixed(2)}
+          </span>
         </div>
-        <span className="text-lg font-bold tabular-nums flex-shrink-0" title="Composite score">
-          {anomaly.compositeScore.toFixed(2)}
-        </span>
-      </div>
 
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        <CorrelationSeverityBadge severity={anomaly.severity} />
-        {anomaly.pattern && <PatternBadge pattern={anomaly.pattern} />}
-      </div>
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <CorrelationSeverityBadge severity={anomaly.severity} />
+          {anomaly.pattern && <PatternBadge pattern={anomaly.pattern} />}
+        </div>
 
-      {/* Per-metric z-score bars */}
-      <div className="space-y-1.5" data-testid="zscore-bars">
-        {anomaly.metrics.map((m) => {
-          const absZ = Math.abs(m.zScore);
-          const widthPct = Math.min((absZ / 5) * 100, 100);
-          const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
+        {/* Per-metric z-score bars */}
+        <div className="space-y-1.5" data-testid="zscore-bars">
+          {anomaly.metrics.map((m) => {
+            const absZ = Math.abs(m.zScore);
+            const widthPct = Math.min((absZ / 5) * 100, 100);
+            const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
 
-          return (
-            <div key={m.type} className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground w-20 truncate font-mono">{m.type}</span>
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={cn('h-full rounded-full transition-all', barColor)}
-                  style={{ width: `${widthPct}%` }}
-                />
+            return (
+              <div key={m.type} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-20 truncate font-mono">{m.type}</span>
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={cn('h-full rounded-full transition-all', barColor)}
+                    style={{ width: `${widthPct}%` }}
+                  />
+                </div>
+                <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
+                  {m.zScore.toFixed(1)}
+                </span>
               </div>
-              <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
-                {m.zScore.toFixed(1)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
 
-      {patternDescription && (
-        <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
-      )}
-    </div>
+        {patternDescription && (
+          <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
+        )}
+      </div>
+    </SpotlightCard>
   );
 }
 
@@ -566,12 +562,13 @@ export default function AiMonitorPage() {
             </h2>
           </div>
           {correlatedLoading ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <SkeletonCard className="h-[180px]" />
               <SkeletonCard className="h-[180px]" />
               <SkeletonCard className="h-[180px]" />
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {(filteredCorrelatedAnomalies ?? []).map((anomaly) => (
                 <CorrelatedAnomalyCard key={anomaly.containerId} anomaly={anomaly} />
               ))}
