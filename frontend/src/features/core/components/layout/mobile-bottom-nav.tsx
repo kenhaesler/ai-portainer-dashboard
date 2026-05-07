@@ -7,7 +7,6 @@ import {
   MoreHorizontal,
   X,
   Server,
-  GitCompareArrows,
   PackageOpen,
   Network,
   BarChart3,
@@ -35,7 +34,6 @@ const primaryNav: MobileNavItem[] = [
 
 const secondaryNav: MobileNavItem[] = [
   { label: 'Infrastructure', to: '/infrastructure', icon: Server },
-  { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
   { label: 'Images', to: '/images', icon: PackageOpen },
   { label: 'Topology', to: '/topology', icon: Network },
   { label: 'Traces', to: '/traces', icon: GitBranch },
