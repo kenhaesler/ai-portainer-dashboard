@@ -5,7 +5,8 @@ import { useIncidentGroups, type IncidentGroup } from '../hooks/use-incident-gro
 import { useBatchResolveIncidents, type BatchResolveResponse } from '../hooks/use-incidents';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { api } from '@/shared/lib/api';
-import { cn } from '@/shared/lib/utils';
+import { cn, formatDate } from '@/shared/lib/utils';
+import { categoryIcon, parseSignature, detectionMethodLabel } from '../lib/signature-meta';
 
 function useDebounced(value: string, ms: number): string {
   const [v, setV] = useState('');
@@ -273,6 +274,9 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
                     const detail = ('latest_description' in row ? row.latest_description : null)
                       ?? ('latest_summary' in row ? row.latest_summary : null);
                     const count = ('incident_count' in row ? row.incident_count : 1) ?? 1;
+                    const meta = parseSignature(g.signature);
+                    const Icon = categoryIcon(meta.category);
+                    const methodLabel = detectionMethodLabel(meta.detectionMethod);
                     return (
                       <li
                         key={`${row.incident_id}:${row.container_name}`}
@@ -280,6 +284,10 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2 min-w-0">
+                            <Icon
+                              data-testid="row-category-icon"
+                              className="h-4 w-4 text-muted-foreground flex-shrink-0"
+                            />
                             <Link
                               to={`/containers/${row.endpoint_id}/${row.container_name}`}
                               className="font-mono text-sm hover:underline truncate"
@@ -291,10 +299,19 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
                                 {count} alerts
                               </span>
                             )}
+                            {methodLabel && (
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                {methodLabel}
+                              </span>
+                            )}
                           </div>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {row.severity} · {row.endpoint_name ?? 'unknown'}
-                          </span>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground whitespace-nowrap">
+                            <span>{formatDate(row.created_at)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{row.severity}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{row.endpoint_name ?? 'unknown'}</span>
+                          </div>
                         </div>
                         {detail && (
                           <p className="pl-1 text-xs text-muted-foreground">
