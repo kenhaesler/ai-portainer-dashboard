@@ -6,7 +6,7 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { getMetricsDb, closeMetricsDb, closeReportsDb } from '@dashboard/core/db/timescale.js';
 import { getAppDb, closeAppDb } from '@dashboard/core/db/postgres.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import { ensureModel, autoConnectAll, disconnectAll } from '@dashboard/ai';
+import { autoConnectAll, disconnectAll } from '@dashboard/ai';
 
 const log = createChildLogger('server');
 
@@ -57,9 +57,6 @@ async function main() {
     await app.listen({ port: config.PORT, host: '0.0.0.0' });
     log.info({ port: config.PORT }, 'Server started');
     log.info('Socket.IO namespaces: /llm, /monitoring, /remediation');
-
-    // Pull configured Ollama model in the background (non-blocking)
-    ensureModel().catch(() => {});
 
     // Auto-connect enabled MCP servers in the background (non-blocking)
     autoConnectAll().catch(() => {});

@@ -5,7 +5,7 @@ import { getEffectiveMonitoringConfig } from '@dashboard/core/services/settings-
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getContainerLogs, getContainers } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { isOllamaAvailable, chatStream } from './llm-client.js';
+import { isLlmAvailable, chatStream } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import {
   insertInvestigation,
@@ -379,7 +379,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
         confidence_score: 0.1,
         ai_summary: 'Investigation aborted due to insufficient evidence — no logs or metrics available for analysis.',
         analysis_duration_ms: durationMs,
-        llm_model: config.OLLAMA_MODEL,
+        llm_model: config.LLM_MODEL,
         completed_at: new Date().toISOString(),
       });
       broadcastInvestigationUpdate(investigationId, 'complete');
@@ -413,7 +413,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
       confidence_score: result.confidence_score,
       ai_summary: result.ai_summary,
       analysis_duration_ms: durationMs,
-      llm_model: config.OLLAMA_MODEL,
+      llm_model: config.LLM_MODEL,
       completed_at: new Date().toISOString(),
     });
 
@@ -517,7 +517,7 @@ export async function triggerInvestigation(insight: Insight): Promise<void> {
   }
 
   // Guard: LLM availability
-  const llmAvailable = await isOllamaAvailable();
+  const llmAvailable = await isLlmAvailable();
   if (!llmAvailable) {
     log.debug('Skipping investigation: LLM not available');
     return;

@@ -67,17 +67,14 @@ export const envSchema = z.object({
   // Public/external dashboard URL used by remote agents/endpoints to call back into the API.
   DASHBOARD_EXTERNAL_URL: optionalUrl,
 
-  // Ollama / LLM
-  OLLAMA_BASE_URL: z.string().url().default('http://host.docker.internal:11434'),
-  OLLAMA_MODEL: z.string().default('llama3.2'),
-  LLM_OPENAI_ENDPOINT: optionalUrl, // OpenAI-compatible endpoint (e.g., OpenWebUI)
-  LLM_BEARER_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
-  LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'), // Auth header type for LLM endpoint tokens
+  // LLM (OpenAI-compatible API: OpenAI, LM Studio, vLLM, LiteLLM, OpenWebUI, Anthropic, etc.)
+  // Bare base URL is fine — /v1/chat/completions is appended automatically.
+  LLM_API_URL: optionalUrl,
+  LLM_API_TOKEN: z.string().optional(), // Bearer token or username:password for Basic auth
+  LLM_MODEL: z.string().default('gpt-4o-mini'),
+  LLM_AUTH_TYPE: z.enum(['bearer', 'basic']).default('bearer'),
   LLM_VERIFY_SSL: z.string().default('true').transform((v) => v === 'true' || v === '1'),
   LLM_REQUEST_TIMEOUT: z.coerce.number().int().min(5000).max(600000).default(120000),
-
-  // AI Search specific model (defaults to llama3.2:latest - change to qwen3:30b for better reasoning)
-  AI_SEARCH_MODEL: z.string().default('llama3.2:latest'),
 
   // Kibana (optional)
   KIBANA_ENDPOINT: z.string().url().optional(),

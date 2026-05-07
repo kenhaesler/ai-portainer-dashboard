@@ -13,7 +13,7 @@ import { detectAnomaliesBatch } from './adaptive-anomaly-detector.js';
 import type { BatchDetectionItem } from './adaptive-anomaly-detector.js';
 import { detectAnomalyIsolationForest } from './isolation-forest-detector.js';
 import { insertInsight, insertInsights, getRecentInsights, type InsightInsert } from './insights-store.js';
-import { isOllamaAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
+import { isLlmAvailable, chatStream, buildInfrastructureContext } from './llm-client.js';
 import { getEffectivePrompt } from './prompt-store.js';
 import { triggerInvestigation } from './investigation-service.js';
 import { explainAnomalies } from './anomaly-explainer.js';
@@ -524,8 +524,8 @@ export function createMonitoringService(deps: MonitoringDeps) {
       }
 
       // 4.75. Anomaly explanations — LLM explains anomalies in plain English
-      const ollamaAvailable = await isOllamaAvailable();
-      if (monCfg.anomalyExplanationEnabled && ollamaAvailable && anomalyInsights.length > 0) {
+      const llmAvailable = await isLlmAvailable();
+      if (monCfg.anomalyExplanationEnabled && llmAvailable && anomalyInsights.length > 0) {
         try {
           const anomalyData = anomalyInsights.map((ins) => ({
             insight: ins,
@@ -548,7 +548,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
 
       // 4.8. NLP Log Analysis — LLM analyzes container logs for error patterns
       const logAnalysisInsights: InsightInsert[] = [];
-      if (monCfg.nlpLogAnalysisEnabled && ollamaAvailable && runningContainers.length > 0) {
+      if (monCfg.nlpLogAnalysisEnabled && llmAvailable && runningContainers.length > 0) {
         try {
           const containersForLogAnalysis = runningContainers.map((c) => ({
             endpointId: c.endpointId,
@@ -604,7 +604,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
       }));
 
       // 6. Attempt AI analysis (fire-and-forget, gated by AI_ANALYSIS_ENABLED)
-      if (monCfg.aiAnalysisEnabled && ollamaAvailable) {
+      if (monCfg.aiAnalysisEnabled && llmAvailable) {
         // Fire-and-forget: AI analysis inserts its own insight when complete
         (async () => {
           try {
@@ -786,7 +786,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
         metricsFromDb: metricsFromDb.length,
         predictiveAlerts: predictiveInsights.length,
         logAnalysisInsights: logAnalysisInsights.length,
-        aiAvailable: ollamaAvailable,
+        aiAvailable: llmAvailable,
         suggestedActions: suggestedActions.length,
       };
 

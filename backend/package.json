@@ -36,7 +36,6 @@
     "fastify-type-provider-zod": "^6.1.0",
     "jose": "^6.2.2",
     "nodemailer": "^8.0.7",
-    "ollama": "^0.6.3",
     "openid-client": "^6.8.2",
     "p-limit": "^7.3.0",
     "pg": "^8.20.0",

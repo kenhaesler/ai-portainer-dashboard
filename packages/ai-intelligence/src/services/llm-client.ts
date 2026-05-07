@@ -1,4 +1,3 @@
-import { Ollama } from 'ollama';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
@@ -16,7 +15,7 @@ const log = createChildLogger('llm-client');
 
 /**
  * Global concurrency limiter for LLM calls.
- * Prevents overwhelming a single Ollama instance when multiple services
+ * Prevents overwhelming the configured endpoint when multiple services
  * (investigations, remediation, log analysis, incident summaries) all
  * trigger LLM calls during the same monitoring cycle.
  * Max 2 concurrent calls — additional callers queue automatically.
@@ -44,7 +43,7 @@ function getCustomCaCert(): Buffer | undefined {
 /**
  * Cached undici Agent for LLM fetch calls.
  * When LLM_VERIFY_SSL=false, disables certificate verification so that
- * self-signed or internal-CA endpoints (e.g. OpenWebUI behind a reverse proxy) work.
+ * self-signed or internal-CA endpoints work.
  * When NODE_EXTRA_CA_CERTS is set, passes the CA cert to undici (which does not
  * read this env var automatically like Node's built-in TLS).
  */
@@ -72,7 +71,7 @@ function estimateTokens(text: string): number {
 }
 
 /**
- * Normalize a custom LLM endpoint URL so users can enter just the base URL
+ * Normalize the configured LLM API URL so users can enter just the base URL
  * (e.g. `http://lmstudio:1234`) without remembering the exact path. Most
  * OpenAI-compatible servers (OpenAI, LM Studio, vLLM, LiteLLM, LocalAI,
  * OpenRouter) expose chat at `/v1/chat/completions`; some (Open WebUI) use
@@ -92,6 +91,16 @@ export function resolveChatCompletionsUrl(rawUrl: string): string {
   if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
   if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/chat/completions`;
   return `${trimmed}/v1/chat/completions`;
+}
+
+/**
+ * Derive the `/v1/models` URL from the configured chat-completions URL by
+ * stripping the `/chat/completions` suffix (if present). Used by health
+ * probes and the model-listing endpoint.
+ */
+export function resolveModelsUrl(rawUrl: string): string {
+  const chatUrl = resolveChatCompletionsUrl(rawUrl);
+  return chatUrl.replace(/\/chat\/completions$/i, '/models');
 }
 
 /**
@@ -143,44 +152,6 @@ export function llmFetch(url: string | URL, init?: RequestInit): Promise<Respons
   } as any) as unknown as Promise<Response>;
 }
 
-/**
- * Create a fetch wrapper that injects auth headers into every request.
- * Used by createOllamaClient to authenticate Ollama SDK calls with proxies
- * like ParisNeo Ollama Proxy Server that require Bearer tokens.
- */
-function createAuthenticatedFetch(authHeaders: Record<string, string>): typeof llmFetch {
-  return (url: string | URL, init?: RequestInit) => {
-    const mergedHeaders = {
-      ...(init?.headers as Record<string, string> | undefined),
-      ...authHeaders,
-    };
-    return llmFetch(url, { ...init, headers: mergedHeaders });
-  };
-}
-
-/**
- * Create an Ollama SDK client that respects LLM_VERIFY_SSL and optionally
- * injects authentication headers. When auth headers are provided (e.g. for
- * ParisNeo Ollama Proxy), every SDK request will include them.
- */
-export function createOllamaClient(host: string, authHeaders?: Record<string, string>): Ollama {
-  const fetchFn = authHeaders && Object.keys(authHeaders).length > 0
-    ? createAuthenticatedFetch(authHeaders)
-    : llmFetch;
-  return new Ollama({ host, fetch: fetchFn as any });
-}
-
-/**
- * Create an Ollama SDK client using the current LLM configuration.
- * Automatically injects auth headers when a token is configured,
- * enabling compatibility with authenticated Ollama proxies.
- */
-export async function createConfiguredOllamaClient(llmConfig?: { ollamaUrl: string; customEndpointToken?: string; authType?: LlmAuthType }): Promise<Ollama> {
-  const config = llmConfig ?? await getEffectiveLlmConfig();
-  const authHeaders = getAuthHeaders(config.customEndpointToken, config.authType);
-  return createOllamaClient(config.ollamaUrl, authHeaders);
-}
-
 export type LlmAuthType = 'bearer' | 'basic';
 
 export function getAuthHeaders(token: string | undefined, authType: LlmAuthType = 'bearer'): Record<string, string> {
@@ -198,7 +169,7 @@ export function getAuthHeaders(token: string | undefined, authType: LlmAuthType 
     return { 'Authorization': `Basic ${base64Credentials}` };
   }
 
-  // Default: Bearer token (works with ParisNeo Ollama Proxy "user:token" format)
+  // Default: Bearer token
   return { 'Authorization': `Bearer ${sanitized}` };
 }
 
@@ -229,6 +200,10 @@ async function chatStreamInner(
   const startTime = Date.now();
   const requestTimeoutMs = config.LLM_REQUEST_TIMEOUT;
 
+  if (!llmConfig.apiUrl) {
+    throw new Error('LLM is not configured. Set LLM_API_URL or configure Settings → AI & LLM → API Endpoint URL.');
+  }
+
   // Layer 1: PII Scrubbing (Privacy-first)
   const scrubbedMessages = scrubPiiDeep(messages);
   const scrubbedSystemPrompt = scrubPii(systemPrompt);
@@ -242,86 +217,66 @@ async function chatStreamInner(
   const userQuery = [...scrubbedMessages].reverse().find((m) => m.role === 'user')?.content;
 
   let fullResponse = '';
+  const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
 
   try {
-    // Use authenticated fetch if custom endpoint is enabled and configured
-    // Token is optional — some endpoints (e.g. Open WebUI on internal networks) don't require auth
-    if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-      const chatUrl = resolveChatCompletionsUrl(llmConfig.customEndpointUrl);
-      const response = await llmFetch(chatUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-        },
-        body: JSON.stringify({
-          model: llmConfig.model,
-          messages: fullMessages,
-          stream: true,
-        }),
-        signal: AbortSignal.timeout(requestTimeoutMs),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Response body is not readable');
-      }
-
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter((line) => line.trim() !== '');
-
-        for (const raw of lines) {
-          // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
-          let payload = raw.trim();
-          if (payload.startsWith('data: ')) payload = payload.slice(6);
-          else if (payload.startsWith('data:')) payload = payload.slice(5);
-
-          // Skip SSE end sentinel and comment lines
-          if (payload === '[DONE]' || payload.startsWith(':')) continue;
-
-          try {
-            const json = JSON.parse(payload);
-            const apiError = extractApiError(json);
-            if (apiError) {
-              throw new Error(`Custom LLM endpoint returned an error: ${apiError}. Verify Settings → LLM → API Endpoint URL ends with /v1/chat/completions (or your provider's chat-completions path).`);
-            }
-            const content = json.choices?.[0]?.delta?.content || json.message?.content || '';
-            if (content) {
-              fullResponse += content;
-              onChunk(content);
-            }
-          } catch (parseErr) {
-            // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
-            if (parseErr instanceof Error && parseErr.message.startsWith('Custom LLM endpoint returned an error')) {
-              throw parseErr;
-            }
-            // Skip non-JSON lines (e.g. SSE event types)
-          }
-        }
-      }
-    } else {
-      // Use Ollama SDK with auth headers injected for proxy compatibility
-      const ollama = await createConfiguredOllamaClient(llmConfig);
-      const response = await ollama.chat({
+    const response = await llmFetch(chatUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+      },
+      body: JSON.stringify({
         model: llmConfig.model,
         messages: fullMessages,
         stream: true,
-      });
+      }),
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
 
-      for await (const part of response) {
-        const content = part.message?.content || '';
-        if (content) {
-          fullResponse += content;
-          onChunk(content);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+
+      for (const raw of lines) {
+        // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
+        let payload = raw.trim();
+        if (payload.startsWith('data: ')) payload = payload.slice(6);
+        else if (payload.startsWith('data:')) payload = payload.slice(5);
+
+        // Skip SSE end sentinel and comment lines
+        if (payload === '[DONE]' || payload.startsWith(':')) continue;
+
+        try {
+          const json = JSON.parse(payload);
+          const apiError = extractApiError(json);
+          if (apiError) {
+            throw new Error(`LLM endpoint returned an error: ${apiError}. Verify Settings → AI & LLM → API Endpoint URL points at an OpenAI-compatible chat-completions endpoint.`);
+          }
+          const content = json.choices?.[0]?.delta?.content || json.message?.content || '';
+          if (content) {
+            fullResponse += content;
+            onChunk(content);
+          }
+        } catch (parseErr) {
+          // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
+          if (parseErr instanceof Error && parseErr.message.startsWith('LLM endpoint returned an error')) {
+            throw parseErr;
+          }
+          // Skip non-JSON lines (e.g. SSE event types)
         }
       }
     }
@@ -364,15 +319,6 @@ async function chatStreamInner(
       });
     } catch (traceErr) {
       log.warn({ err: traceErr }, 'Failed to record LLM error trace');
-    }
-
-    // Translate cryptic ByteString error (occurs when Ollama SDK receives HTML instead of JSON)
-    if (err instanceof Error && err.message.includes('ByteString')) {
-      const translated = new Error(
-        'LLM endpoint returned HTML instead of JSON. Check that the configured URL points to a valid Ollama or OpenAI-compatible API endpoint (e.g. /api/chat/completions, not a web UI page).',
-      );
-      log.error({ err: translated, originalMessage: err.message }, 'LLM chat stream failed — ByteString error translated');
-      throw translated;
     }
 
     log.error({ err }, 'LLM chat stream failed');
@@ -432,71 +378,25 @@ Provide concise, actionable recommendations. When suggesting changes, always exp
   return scrubPii(context);
 }
 
-export async function isOllamaAvailable(): Promise<boolean> {
+/**
+ * Probe the configured LLM endpoint via `/v1/models`. Returns true if the
+ * endpoint responds with HTTP 2xx, false otherwise (or if no URL is set).
+ */
+export async function isLlmAvailable(): Promise<boolean> {
   try {
     const llmConfig = await getEffectiveLlmConfig();
+    if (!llmConfig.apiUrl) return false;
 
-    // When custom endpoint is enabled, test that instead of Ollama
-    if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-      const baseUrl = new URL(llmConfig.customEndpointUrl);
-      const modelsUrl = `${baseUrl.origin}/v1/models`;
-      const response = await llmFetch(modelsUrl, {
-        headers: {
-          ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-      return response.ok;
-    }
-
-    const ollama = await createConfiguredOllamaClient(llmConfig);
-    await ollama.list();
-    return true;
+    const modelsUrl = resolveModelsUrl(llmConfig.apiUrl);
+    const response = await llmFetch(modelsUrl, {
+      headers: {
+        ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
   } catch {
-    log.warn('LLM backend is not available');
+    log.warn('LLM endpoint is not available');
     return false;
-  }
-}
-
-/**
- * Ensure the configured model is available in Ollama, pulling it if needed.
- * Called at backend startup so the LLM Assistant is ready without manual intervention.
- */
-export async function ensureModel(): Promise<void> {
-  const llmConfig = await getEffectiveLlmConfig();
-  const { model, ollamaUrl } = llmConfig;
-
-  // Custom endpoints manage their own models — skip Ollama pull
-  if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-    log.info({ model, customEndpoint: llmConfig.customEndpointUrl }, 'Custom LLM endpoint configured — skipping Ollama model pull');
-    return;
-  }
-
-  try {
-    const ollama = await createConfiguredOllamaClient(llmConfig);
-    const { models } = await ollama.list();
-    const installed = models.some((m) => m.name === model || m.name.startsWith(`${model}:`));
-
-    if (installed) {
-      log.info({ model }, 'Ollama model already available');
-      return;
-    }
-
-    log.info({ model }, 'Pulling Ollama model (this may take a few minutes on first run)...');
-    try {
-      await ollama.pull({ model });
-      log.info({ model }, 'Ollama model pulled successfully');
-    } catch (pullErr) {
-      // Ollama proxies (e.g. ParisNeo) block /api/pull by default.
-      // Log a warning instead of failing — proxied environments manage models server-side.
-      const msg = pullErr instanceof Error ? pullErr.message : String(pullErr);
-      if (msg.includes('403') || msg.includes('405') || msg.includes('Forbidden') || msg.includes('Not Allowed')) {
-        log.warn({ model }, 'Model pull blocked by proxy (403/405) — ensure the model is available on the Ollama server');
-      } else {
-        throw pullErr;
-      }
-    }
-  } catch (err) {
-    log.warn({ err, model }, 'Failed to ensure Ollama model — LLM features may be unavailable');
   }
 }

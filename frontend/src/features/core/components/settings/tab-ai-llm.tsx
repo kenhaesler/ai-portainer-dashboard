@@ -229,19 +229,16 @@ interface LlmSettingsSectionProps {
 }
 
 export function LlmSettingsSection({ values, originalValues, onChange, disabled }: LlmSettingsSectionProps) {
-  const ollamaUrl = values['llm.ollama_url'] || 'http://host.docker.internal:11434';
-  const selectedModel = values['llm.model'] || 'llama3.2';
+  const selectedModel = values['llm.model'] || '';
   const temperature = values['llm.temperature'] || '0.7';
   const maxTokens = values['llm.max_tokens'] || '2048';
-  const customEnabled = values['llm.custom_endpoint_enabled'] === 'true';
-  const customUrl = values['llm.custom_endpoint_url'] || '';
-  const resolvedChatUrl = resolveCustomChatUrl(customUrl);
-  const customUrlAutoAppended = Boolean(customUrl.trim()) && resolvedChatUrl !== customUrl.trim().replace(/\/+$/, '');
-  const customToken = values['llm.custom_endpoint_token'] || '';
+  const apiUrl = values['llm.api_url'] || '';
+  const resolvedChatUrl = resolveCustomChatUrl(apiUrl);
+  const apiUrlAutoAppended = Boolean(apiUrl.trim()) && resolvedChatUrl !== apiUrl.trim().replace(/\/+$/, '');
+  const apiToken = values['llm.api_token'] || '';
   const authType = values['llm.auth_type'] || 'bearer';
 
-  const modelsHost = customEnabled ? undefined : ollamaUrl;
-  const { data: modelsData, isLoading: modelsLoading, refetch: refetchModels } = useLlmModels(modelsHost);
+  const { data: modelsData, isLoading: modelsLoading, refetch: refetchModels } = useLlmModels(apiUrl || undefined);
   const testConnection = useLlmTestConnection();
   const queryClient = useQueryClient();
   const [showToken, setShowToken] = useState(false);
@@ -252,27 +249,25 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   const models: LlmModel[] = modelsData?.models ?? [];
 
   const hasChanges = [
-    'llm.model', 'llm.temperature', 'llm.ollama_url', 'llm.max_tokens',
-    'llm.custom_endpoint_enabled', 'llm.custom_endpoint_url', 'llm.custom_endpoint_token', 'llm.auth_type',
+    'llm.model', 'llm.temperature', 'llm.max_tokens',
+    'llm.api_url', 'llm.api_token', 'llm.auth_type',
   ].some((key) => values[key] !== originalValues[key]);
-  const llmConfigured = Boolean(selectedModel.trim()) && (customEnabled ? Boolean(customUrl.trim()) : Boolean(ollamaUrl.trim()));
+  const llmConfigured = Boolean(selectedModel.trim()) && Boolean(apiUrl.trim());
 
   const handleScanModels = () => {
-    void queryClient.invalidateQueries({ queryKey: ['llm-models', modelsHost] });
+    void queryClient.invalidateQueries({ queryKey: ['llm-models', apiUrl] });
     void refetchModels();
   };
 
   const handleTestConnection = () => {
-    if (customEnabled && !customUrl.trim()) {
+    if (!apiUrl.trim()) {
       setConnectionStatus('error');
       setConnectionError('API endpoint URL is required.');
       toast.error('Set an API endpoint URL before testing connection');
       return;
     }
 
-    const body = customEnabled
-      ? { url: customUrl.trim(), token: customToken || undefined, authType: authType as 'bearer' | 'basic' }
-      : { ollamaUrl: ollamaUrl };
+    const body = { url: apiUrl.trim(), token: apiToken || undefined, authType: authType as 'bearer' | 'basic' };
     testConnection.mutate(body, {
       onSuccess: (data) => {
         if (data.ok) {
@@ -305,7 +300,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
       ? 'Connection Failed'
       : 'Not tested';
 
-  const activeBackendUrl = customEnabled ? customUrl || 'No URL set' : ollamaUrl;
+  const activeBackendUrl = apiUrl || 'No URL set';
 
   return (
     <div className="rounded-lg border bg-card">
@@ -333,132 +328,119 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
       </div>
 
       <div className="p-4 space-y-6">
-        {/* Backend Selection */}
-        <div className="space-y-3">
-          <div>
-            <label className="font-medium">LLM Backend</label>
-            <p className="text-sm text-muted-foreground mt-0.5">Choose how to connect to your LLM</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => onChange('llm.custom_endpoint_enabled', 'false')}
-              disabled={disabled}
-              className={cn(
-                'flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-colors',
-                !customEnabled
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground/30',
-                disabled && 'opacity-50 cursor-not-allowed'
-              )}
-            >
-              <span className="text-sm font-medium">Ollama (Local)</span>
-              <span className="text-xs text-muted-foreground">Connect to a local or remote Ollama instance</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange('llm.custom_endpoint_enabled', 'true')}
-              disabled={disabled}
-              className={cn(
-                'flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-colors',
-                customEnabled
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground/30',
-                disabled && 'opacity-50 cursor-not-allowed'
-              )}
-            >
-              <span className="text-sm font-medium">Custom API</span>
-              <span className="text-xs text-muted-foreground">OpenAI-compatible endpoint (Open WebUI, vLLM, etc.)</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Backend-specific configuration */}
+        {/* OpenAI-compatible API configuration */}
         <div className="rounded-lg border border-border p-4 bg-muted/30 space-y-4">
-          {!customEnabled ? (
-            <div>
-              <label htmlFor="ollama-url" className="text-sm font-medium">Ollama URL</label>
-              <p className="text-xs text-muted-foreground mb-1.5">URL of the Ollama server</p>
-              <input
-                id="ollama-url"
-                type="text"
-                value={ollamaUrl}
-                onChange={(e) => onChange('llm.ollama_url', e.target.value)}
-                disabled={disabled}
-                placeholder="http://host.docker.internal:11434"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              />
-            </div>
-          ) : (
-            <>
-              <div>
-                <label htmlFor="custom-endpoint-url" className="text-sm font-medium">API Endpoint URL</label>
-                <p className="text-xs text-muted-foreground mb-1.5">
-                  Base URL of an OpenAI-compatible server (e.g., LM Studio, vLLM, LiteLLM, OpenAI). <code className="text-[11px]">/v1/chat/completions</code> is appended automatically. Paste a full chat-completions URL only if your provider uses a non-standard path (e.g., Open WebUI's <code className="text-[11px]">/api/chat/completions</code>).
-                </p>
-                <input
-                  id="custom-endpoint-url"
-                  type="text"
-                  value={customUrl}
-                  onChange={(e) => onChange('llm.custom_endpoint_url', e.target.value)}
-                  disabled={disabled}
-                  placeholder="http://lmstudio:1234"
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                />
-                {resolvedChatUrl && (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    {customUrlAutoAppended ? (
-                      <>
-                        Will POST to <code className="text-[11px] text-foreground/80">{resolvedChatUrl}</code>
-                      </>
-                    ) : (
-                      <>Using URL as-is (already a chat-completions endpoint).</>
-                    )}
-                  </p>
+          <div>
+            <h3 className="text-sm font-semibold">API Endpoint</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Connect to any OpenAI-compatible chat-completions API. Use the Test Connection button below to verify reachability and discover available models.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="llm-api-url" className="text-sm font-medium">API Endpoint URL</label>
+            <p className="text-xs text-muted-foreground mb-1.5">
+              Base URL of an OpenAI-compatible server (OpenAI, LM Studio, vLLM, LiteLLM, OpenWebUI, Anthropic via proxy, etc.). <code className="text-[11px]">/v1/chat/completions</code> is appended automatically. Paste a full chat-completions URL only if your provider uses a non-standard path (e.g., Open WebUI's <code className="text-[11px]">/api/chat/completions</code>).
+            </p>
+            <input
+              id="llm-api-url"
+              type="text"
+              value={apiUrl}
+              onChange={(e) => onChange('llm.api_url', e.target.value)}
+              disabled={disabled}
+              placeholder="http://lmstudio:1234"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+            {resolvedChatUrl && (
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {apiUrlAutoAppended ? (
+                  <>
+                    Will POST to <code className="text-[11px] text-foreground/80">{resolvedChatUrl}</code>
+                  </>
+                ) : (
+                  <>Using URL as-is (already a chat-completions endpoint).</>
                 )}
-              </div>
-              <div>
-                <label htmlFor="custom-endpoint-token" className="text-sm font-medium">API Key / Bearer Token</label>
-                <p className="text-xs text-muted-foreground mb-1.5">
-                  Optional — leave empty if the endpoint doesn't require authentication
-                </p>
-                <div className="relative">
-                  <input
-                    id="custom-endpoint-token"
-                    type={showToken ? 'text' : 'password'}
-                    value={customToken}
-                    onChange={(e) => onChange('llm.custom_endpoint_token', e.target.value)}
-                    disabled={disabled}
-                    placeholder="sk-... (optional)"
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+              </p>
+            )}
+          </div>
+          <div>
+            <label htmlFor="llm-api-token" className="text-sm font-medium">API Key / Bearer Token</label>
+            <p className="text-xs text-muted-foreground mb-1.5">
+              Optional — leave empty if the endpoint doesn't require authentication
+            </p>
+            <div className="relative">
+              <input
+                id="llm-api-token"
+                type={showToken ? 'text' : 'password'}
+                value={apiToken}
+                onChange={(e) => onChange('llm.api_token', e.target.value)}
+                disabled={disabled}
+                placeholder="sk-... (optional)"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="auth-type-select" className="text-sm font-medium">Auth Header Type</label>
+            <p className="text-xs text-muted-foreground mb-1.5">
+              Bearer works with most providers. Use Basic only for endpoints that require HTTP Basic auth.
+            </p>
+            <select
+              id="auth-type-select"
+              value={authType}
+              onChange={(e) => onChange('llm.auth_type', e.target.value)}
+              disabled={disabled}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            >
+              <option value="bearer">Bearer (default)</option>
+              <option value="basic">Basic</option>
+            </select>
+          </div>
+
+          {/* Test Connection — verifies the API URL + token can list models */}
+          <div className="border-t border-border/60 pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {testConnection.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
+                ) : connectionIcon}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {testConnection.isPending ? 'Testing...' : connectionLabel}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {connectionStatus === 'error' && connectionError
+                      ? connectionError
+                      : activeBackendUrl}
+                  </p>
                 </div>
               </div>
-              <div>
-                <label htmlFor="auth-type-select" className="text-sm font-medium">Auth Header Type</label>
-                <p className="text-xs text-muted-foreground mb-1.5">
-                  Bearer works with most proxies including ParisNeo Ollama Proxy (user:token format). Use Basic only for endpoints that require HTTP Basic auth.
-                </p>
-                <select
-                  id="auth-type-select"
-                  value={authType}
-                  onChange={(e) => onChange('llm.auth_type', e.target.value)}
-                  disabled={disabled}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                >
-                  <option value="bearer">Bearer (default)</option>
-                  <option value="basic">Basic</option>
-                </select>
-              </div>
-            </>
-          )}
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testConnection.isPending || disabled}
+                className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50 shrink-0"
+              >
+                {testConnection.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wifi className="h-3.5 w-3.5" />
+                )}
+                Test Connection
+              </button>
+            </div>
+            {connectionStatus === 'ok' && testConnection.data?.models && testConnection.data.models.length > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {testConnection.data.models.length} model{testConnection.data.models.length !== 1 ? 's' : ''} available on server
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Model Selection */}
@@ -600,44 +582,6 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
           </div>
         </div>
 
-        {/* Test Connection */}
-        <div className="border-t border-border pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              {testConnection.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              ) : connectionIcon}
-              <div>
-                <p className="text-sm font-medium">
-                  {testConnection.isPending ? 'Testing...' : connectionLabel}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {connectionStatus === 'error' && connectionError
-                    ? connectionError
-                    : activeBackendUrl}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleTestConnection}
-              disabled={testConnection.isPending || disabled}
-              className="flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-            >
-              {testConnection.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Wifi className="h-3.5 w-3.5" />
-              )}
-              Test Connection
-            </button>
-          </div>
-          {connectionStatus === 'ok' && testConnection.data?.models && testConnection.data.models.length > 0 && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {testConnection.data.models.length} model{testConnection.data.models.length !== 1 ? 's' : ''} available on server
-            </p>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -1798,9 +1742,9 @@ export function AiPromptsTab({
   const [importPreviewData, setImportPreviewData] = useState<{ data: PromptExportData; preview: ImportPreviewResponse } | null>(null);
   const importApply = useImportApply();
 
-  const ollamaUrl = values['llm.ollama_url'] || 'http://host.docker.internal:11434';
-  const globalModel = values['llm.model'] || 'llama3.2';
-  const { data: modelsData } = useLlmModels(ollamaUrl);
+  const apiUrl = values['llm.api_url'] || '';
+  const globalModel = values['llm.model'] || '';
+  const { data: modelsData } = useLlmModels(apiUrl || undefined);
   const models: LlmModel[] = modelsData?.models ?? [];
 
   useEffect(() => {

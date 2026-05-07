@@ -8,6 +8,18 @@ import { HealthResponseSchema, ReadinessResponseSchema } from '@dashboard/core/m
 
 type DependencyCheck = { status: string; url?: string; error?: string };
 
+/**
+ * Derive `/v1/models` probe URL from a configured LLM endpoint URL.
+ * Mirrors `resolveModelsUrl` in @dashboard/ai but without the cross-package
+ * dependency (foundation must not depend on ai-intelligence).
+ */
+function deriveModelsProbeUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim().replace(/\/+$/, '');
+  if (/\/chat\/completions$/i.test(trimmed)) return trimmed.replace(/\/chat\/completions$/i, '/models');
+  if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/models`;
+  return `${trimmed}/v1/models`;
+}
+
 async function runChecks(): Promise<{ checks: Record<string, DependencyCheck>; overallStatus: string }> {
   const config = getConfig();
   const checks: Record<string, DependencyCheck> = {};
@@ -41,20 +53,22 @@ async function runChecks(): Promise<{ checks: Record<string, DependencyCheck>; o
     return { status: ok ? 'healthy' : 'degraded', url: config.PORTAINER_API_URL };
   });
 
-  // Check Ollama (cached 30s — same rationale as Portainer)
-  checks.ollama = await cachedFetch<DependencyCheck>('health:ollama', 30, async () => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(`${config.OLLAMA_BASE_URL}/api/tags`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      return { status: res.ok ? 'healthy' : 'degraded', url: config.OLLAMA_BASE_URL };
-    } catch (err) {
-      return { status: 'unhealthy', url: config.OLLAMA_BASE_URL, error: err instanceof Error ? err.message : 'Connection failed' };
-    }
-  });
+  // Check LLM endpoint (cached 30s — same rationale as Portainer).
+  // Skips when no URL is configured (LLM is optional).
+  if (config.LLM_API_URL) {
+    checks.llm = await cachedFetch<DependencyCheck>('health:llm', 30, async () => {
+      const probeUrl = deriveModelsProbeUrl(config.LLM_API_URL!);
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(probeUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+        return { status: res.ok ? 'healthy' : 'degraded', url: probeUrl };
+      } catch (err) {
+        return { status: 'unhealthy', url: probeUrl, error: err instanceof Error ? err.message : 'Connection failed' };
+      }
+    });
+  }
 
   // Check Redis (only when configured -- degraded not unhealthy because L1 fallback works)
   const backoff = cache.getBackoffState();

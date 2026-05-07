@@ -21,7 +21,7 @@ import { setupLlmNamespace, setupMonitoringNamespace, broadcastInsight, broadcas
 import { createMonitoringService, startCooldownSweep, stopCooldownSweep } from '@dashboard/ai';
 
 // LLM client
-import { isOllamaAvailable, chatStream, buildInfrastructureContext } from '@dashboard/ai';
+import { isLlmAvailable, chatStream, buildInfrastructureContext } from '@dashboard/ai';
 
 // Prompt management
 import { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from '@dashboard/ai';
@@ -53,7 +53,7 @@ All wiring happens in `@dashboard/server/src/wiring.ts`.
 ## Security-Critical Files
 
 - `services/prompt-guard.ts` — 3-layer prompt injection defense (regex 25+, heuristic scoring, output sanitization)
-- `services/llm-client.ts` — LLM communication (gated by `isOllamaAvailable()`)
+- `services/llm-client.ts` — LLM communication (gated by `isLlmAvailable()`)
 
 ## Key Rules
 

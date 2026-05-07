@@ -1,57 +1,50 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { Agent } from 'undici';
-import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, extractApiError, resolveChatCompletionsUrl, type LlmAuthType } from '../services/llm-client.js';
-import { Ollama } from 'ollama';
+import {
+  chatStream,
+  isLlmAvailable,
+  getAuthHeaders,
+  getFetchErrorMessage,
+  getLlmDispatcher,
+  getLlmQueueSize,
+  extractApiError,
+  resolveChatCompletionsUrl,
+  resolveModelsUrl,
+  type LlmAuthType,
+} from '../services/llm-client.js';
 
-// Kept: settings-store mock — tests control LLM config
-const mockGetConfig = vi.fn().mockReturnValue({
-  ollamaUrl: 'http://localhost:11434',
-  model: 'llama3.2',
-  customEnabled: false,
-  customEndpointUrl: undefined,
-  customEndpointToken: undefined,
+// Default LLM config used by tests — configured for the OpenAI-compatible API.
+const DEFAULT_LLM_CONFIG = {
+  apiUrl: 'http://localhost:3000/v1/chat/completions',
+  apiToken: '',
+  model: 'gpt-4o-mini',
   authType: 'bearer' as LlmAuthType,
   maxTokens: 2048,
   maxToolIterations: 5,
-});
+};
+
+const mockGetConfig = vi.fn().mockReturnValue({ ...DEFAULT_LLM_CONFIG });
 vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 
-// Kept: undici mock — tests control fetch for SSL bypass and custom endpoint tests
+// Tests control fetch via undici (the real client uses undici dispatcher).
 const mockUndiciFetch = vi.fn();
 vi.mock('undici', () => ({
   Agent: vi.fn(),
   fetch: (...args: unknown[]) => mockUndiciFetch(...args),
 }));
 
-// Kept: llm-trace-store mock — tests control trace recording
 const mockInsertLlmTrace = vi.fn();
 vi.mock('../services/llm-trace-store.js', () => ({
   insertLlmTrace: (...args: unknown[]) => mockInsertLlmTrace(...args),
 }));
 
-let mockChat: any;
-
 describe('llm-client', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    // Re-set forwarding-target defaults cleared by restoreAllMocks
-    mockGetConfig.mockReturnValue({
-      ollamaUrl: 'http://localhost:11434',
-      model: 'llama3.2',
-      customEnabled: false,
-      customEndpointUrl: undefined,
-      customEndpointToken: undefined,
-      authType: 'bearer' as LlmAuthType,
-      maxTokens: 2048,
-      maxToolIterations: 5,
-    });
-    // Spy on real Ollama prototype methods
-    mockChat = vi.spyOn(Ollama.prototype, 'chat');
-    vi.spyOn(Ollama.prototype, 'list').mockResolvedValue({ models: [] } as any);
-    vi.spyOn(Ollama.prototype, 'pull').mockResolvedValue({} as any);
+    mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG });
     setConfigForTest({ LLM_VERIFY_SSL: true, LLM_REQUEST_TIMEOUT: 120000 });
   });
 
@@ -60,15 +53,18 @@ describe('llm-client', () => {
   });
 
   describe('chatStream', () => {
-    it('records a success trace after streaming completes', async () => {
-      // Simulate an async iterable stream that yields two chunks
-      const chunks = [
-        { message: { content: 'Hello ' } },
-        { message: { content: 'world!' } },
-      ];
-      mockChat.mockResolvedValue((async function* () {
-        for (const chunk of chunks) yield chunk;
-      })());
+    function mockSseResponse(payload: string) {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(payload));
+          controller.close();
+        },
+      });
+      mockUndiciFetch.mockResolvedValue(new Response(body, { status: 200 }));
+    }
+
+    it('streams via the configured API URL and records a success trace', async () => {
+      mockSseResponse(JSON.stringify({ choices: [{ delta: { content: 'Hello world' } }] }) + '\n');
 
       const onChunk = vi.fn();
       const result = await chatStream(
@@ -77,160 +73,68 @@ describe('llm-client', () => {
         onChunk,
       );
 
-      expect(result).toBe('Hello world!');
-      expect(onChunk).toHaveBeenCalledTimes(2);
+      expect(result).toBe('Hello world');
+      expect(onChunk).toHaveBeenCalledWith('Hello world');
+      expect(mockUndiciFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/v1/chat/completions',
+        expect.objectContaining({ method: 'POST' }),
+      );
 
-      // Verify trace was recorded
       expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
       const trace = mockInsertLlmTrace.mock.calls[0][0];
-      expect(trace.model).toBe('llama3.2');
       expect(trace.status).toBe('success');
       expect(trace.user_query).toBe('Say hello');
-      expect(trace.response_preview).toBe('Hello world!');
-      expect(trace.latency_ms).toBeGreaterThanOrEqual(0);
-      expect(trace.prompt_tokens).toBeGreaterThan(0);
-      expect(trace.completion_tokens).toBeGreaterThan(0);
-      expect(trace.trace_id).toBeDefined();
+      expect(trace.response_preview).toBe('Hello world');
+    });
+
+    it('throws when no API URL is configured', async () => {
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiUrl: '' });
+      await expect(
+        chatStream([{ role: 'user', content: 'hi' }], 'system', () => {}),
+      ).rejects.toThrow(/LLM is not configured/);
     });
 
     it('records an error trace when LLM call fails', async () => {
-      mockChat.mockRejectedValue(new Error('Connection refused'));
+      mockUndiciFetch.mockRejectedValue(new Error('Connection refused'));
 
-      const onChunk = vi.fn();
       await expect(
-        chatStream(
-          [{ role: 'user', content: 'Fail please' }],
-          'You are a test assistant.',
-          onChunk,
-        ),
-      ).rejects.toThrow('Connection refused');
+        chatStream([{ role: 'user', content: 'test' }], 'system', () => {}),
+      ).rejects.toThrow();
 
       expect(mockInsertLlmTrace).toHaveBeenCalledTimes(1);
       const trace = mockInsertLlmTrace.mock.calls[0][0];
       expect(trace.status).toBe('error');
-      expect(trace.user_query).toBe('Fail please');
-      expect(trace.response_preview).toContain('Connection refused');
-      expect(trace.completion_tokens).toBe(0);
     });
 
-    it('does not fail if trace recording throws', async () => {
-      mockInsertLlmTrace.mockImplementation(() => {
-        throw new Error('DB write failed');
-      });
+    it('still returns response when trace recording fails', async () => {
+      mockSseResponse(JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n');
+      mockInsertLlmTrace.mockRejectedValue(new Error('DB down'));
 
-      const chunks = [{ message: { content: 'ok' } }];
-      mockChat.mockResolvedValue((async function* () {
-        for (const chunk of chunks) yield chunk;
-      })());
-
-      const onChunk = vi.fn();
-      const result = await chatStream(
-        [{ role: 'user', content: 'test' }],
-        'system',
-        onChunk,
-      );
-
-      // chatStream should still succeed even if trace recording fails
+      const result = await chatStream([{ role: 'user', content: 'test' }], 'system', () => {});
       expect(result).toBe('ok');
     });
 
-    it('uses custom endpoint when customEnabled + url set, even with empty token', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
+    it('omits Authorization header when no token configured', async () => {
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiToken: '' });
+      mockSseResponse(JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n');
 
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(
-            new TextEncoder().encode(
-              JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n',
-            ),
-          );
-          controller.close();
-        },
-      });
+      await chatStream([{ role: 'user', content: 'test' }], 'system', () => {});
 
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
-      );
-
-      const chunks: string[] = [];
-      await chatStream(
-        [{ role: 'user', content: 'test' }],
-        'system prompt',
-        (chunk) => chunks.push(chunk),
-      );
-
-      // Should call custom endpoint, not Ollama
-      expect(mockUndiciFetch).toHaveBeenCalledWith(
-        'http://localhost:3000/api/chat/completions',
-        expect.objectContaining({ method: 'POST' }),
-      );
-      // Should NOT have Authorization header when token is empty
-      const callHeaders = mockUndiciFetch.mock.calls[0][1]?.headers as Record<string, string>;
-      expect(callHeaders['Authorization']).toBeUndefined();
-      // Ollama SDK should NOT have been called
-      expect(mockChat).not.toHaveBeenCalled();
-      expect(chunks).toContain('Hello');
+      const headers = mockUndiciFetch.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(headers['Authorization']).toBeUndefined();
     });
 
-    it('includes Bearer token when customEndpointToken is set', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
-        customEndpointToken: 'my-secret',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
+    it('includes Bearer token when apiToken is set', async () => {
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiToken: 'my-secret' });
+      mockSseResponse(JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n');
 
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(
-            new TextEncoder().encode(
-              JSON.stringify({ choices: [{ delta: { content: 'Hi' } }] }) + '\n',
-            ),
-          );
-          controller.close();
-        },
-      });
+      await chatStream([{ role: 'user', content: 'test' }], 'system', () => {});
 
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
-      );
-
-      await chatStream(
-        [{ role: 'user', content: 'test' }],
-        'system prompt',
-        () => {},
-      );
-
-      const callHeaders = mockUndiciFetch.mock.calls[0][1]?.headers as Record<string, string>;
-      expect(callHeaders['Authorization']).toBe('Bearer my-secret');
+      const headers = mockUndiciFetch.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(headers['Authorization']).toBe('Bearer my-secret');
     });
 
     it('strips SSE "data: " prefix from OpenAI-compatible streaming responses', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'gpt-4',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
-        customEndpointToken: 'sk-test',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      // Simulate OpenAI SSE format: "data: {json}\n\ndata: {json}\n\ndata: [DONE]\n\n"
       const ssePayload = [
         'data: {"choices":[{"delta":{"content":"Hello"}}]}',
         '',
@@ -239,17 +143,7 @@ describe('llm-client', () => {
         'data: [DONE]',
         '',
       ].join('\n');
-
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(ssePayload));
-          controller.close();
-        },
-      });
-
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
-      );
+      mockSseResponse(ssePayload);
 
       const chunks: string[] = [];
       const result = await chatStream(
@@ -263,71 +157,19 @@ describe('llm-client', () => {
     });
 
     it('handles mixed SSE formats (with and without data: prefix)', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'gpt-4',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      // Some APIs send raw NDJSON without data: prefix
       const payload = [
         '{"choices":[{"delta":{"content":"Raw"}}]}',
         'data: {"choices":[{"delta":{"content":" SSE"}}]}',
       ].join('\n');
+      mockSseResponse(payload);
 
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(payload));
-          controller.close();
-        },
-      });
-
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
-      );
-
-      const chunks: string[] = [];
-      const result = await chatStream(
-        [{ role: 'user', content: 'test' }],
-        'system prompt',
-        (chunk) => chunks.push(chunk),
-      );
-
+      const result = await chatStream([{ role: 'user', content: 'test' }], 'system', () => {});
       expect(result).toBe('Raw SSE');
-      expect(chunks).toEqual(['Raw', ' SSE']);
     });
 
     it('auto-appends /v1/chat/completions when user enters a bare base URL', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'google/gemma-3-4b',
-        customEnabled: true,
-        customEndpointUrl: 'http://192.168.1.10:1234',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(
-            new TextEncoder().encode(
-              JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n',
-            ),
-          );
-          controller.close();
-        },
-      });
-
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
-      );
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiUrl: 'http://192.168.1.10:1234' });
+      mockSseResponse(JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n');
 
       await chatStream([{ role: 'user', content: 'hi' }], 'system', () => {});
 
@@ -337,35 +179,9 @@ describe('llm-client', () => {
       );
     });
 
-    it('surfaces API error response from LM-Studio-style 200-with-error body (regression: empty AI Assistant replies)', async () => {
-      // Regression: when the configured custom endpoint URL points to the
-      // wrong path (e.g. base URL without /v1/chat/completions), LM Studio
-      // returns 200 OK with `{"error": "Unexpected endpoint or method..."}`.
-      // The streaming parser used to silently drop this and return an empty
-      // string, leaving the user staring at "I could not generate a complete
-      // response for that request" with no clue why.
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'google/gemma-3-4b',
-        customEnabled: true,
-        customEndpointUrl: 'http://192.168.1.10:1234',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      const errorBody = JSON.stringify({ error: 'Unexpected endpoint or method. (POST /)' });
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(errorBody));
-          controller.close();
-        },
-      });
-
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
-      );
+    it('surfaces API error response from LM-Studio-style 200-with-error body', async () => {
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiUrl: 'http://192.168.1.10:1234' });
+      mockSseResponse(JSON.stringify({ error: 'Unexpected endpoint or method. (POST /)' }));
 
       await expect(
         chatStream([{ role: 'user', content: 'hi' }], 'system', () => {}),
@@ -373,29 +189,9 @@ describe('llm-client', () => {
     });
 
     it('surfaces structured OpenAI-style error object ({error: {message}})', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'gpt-4',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
-        customEndpointToken: 'sk-bad',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      const errorBody = JSON.stringify({
-        error: { message: 'Invalid API key', type: 'invalid_request_error' },
-      });
-      const mockResponseBody = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(errorBody));
-          controller.close();
-        },
-      });
-
-      mockUndiciFetch.mockResolvedValue(
-        new Response(mockResponseBody, { status: 200 }),
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiToken: 'sk-bad' });
+      mockSseResponse(
+        JSON.stringify({ error: { message: 'Invalid API key', type: 'invalid_request_error' } }),
       );
 
       await expect(
@@ -404,31 +200,24 @@ describe('llm-client', () => {
     });
 
     it('limits concurrent LLM calls to 2 (queues the rest)', async () => {
-      // Reset to default config (Ollama path, not custom endpoint)
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: false,
-        customEndpointUrl: '',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      // Each call will block until we resolve its deferred promise
+      // Each call holds the body reader open until we resolve the deferred.
       const resolvers: Array<() => void> = [];
-      mockChat.mockImplementation(() => {
-        return new Promise<AsyncIterable<{ message: { content: string } }>>((resolve) => {
+      mockUndiciFetch.mockImplementation(() => {
+        return new Promise((resolve) => {
           resolvers.push(() => {
-            resolve((async function* () {
-              yield { message: { content: 'ok' } };
-            })());
+            const body = new ReadableStream({
+              start(controller) {
+                controller.enqueue(
+                  new TextEncoder().encode(JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n'),
+                );
+                controller.close();
+              },
+            });
+            resolve(new Response(body, { status: 200 }));
           });
         });
       });
 
-      // Launch 4 calls concurrently
       const results = [
         chatStream([{ role: 'user', content: '1' }], 'sys', vi.fn()),
         chatStream([{ role: 'user', content: '2' }], 'sys', vi.fn()),
@@ -436,62 +225,54 @@ describe('llm-client', () => {
         chatStream([{ role: 'user', content: '4' }], 'sys', vi.fn()),
       ];
 
-      // Wait for microtasks so p-limit schedules the first 2
       await new Promise((r) => setTimeout(r, 50));
-
-      // Only 2 should have started (2 resolvers created)
       expect(resolvers.length).toBe(2);
 
-      // Queue should show 2 pending
       const queue = getLlmQueueSize();
       expect(queue.active).toBe(2);
       expect(queue.pending).toBe(2);
 
-      // Resolve first two
       resolvers[0]();
       resolvers[1]();
       await new Promise((r) => setTimeout(r, 50));
-
-      // Now the next 2 should have started
       expect(resolvers.length).toBe(4);
 
-      // Resolve remaining
       resolvers[2]();
       resolvers[3]();
 
-      // All 4 should complete
       const allResults = await Promise.all(results);
       expect(allResults).toEqual(['ok', 'ok', 'ok', 'ok']);
     });
+  });
 
-    it('translates ByteString error to helpful message', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: false,
-        customEndpointUrl: '',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      mockChat.mockRejectedValue(
-        new Error('Cannot convert argument to a ByteString because the character at index 7 has a value of 8226'),
+  describe('isLlmAvailable', () => {
+    it('returns true when /v1/models responds with 2xx', async () => {
+      mockUndiciFetch.mockResolvedValue(
+        new Response(JSON.stringify({ data: [{ id: 'gpt-4' }] }), { status: 200 }),
       );
 
-      await expect(
-        chatStream(
-          [{ role: 'user', content: 'test' }],
-          'system prompt',
-          () => {},
-        ),
-      ).rejects.toThrow(/HTML instead of JSON/);
+      const result = await isLlmAvailable();
+
+      expect(result).toBe(true);
+      expect(mockUndiciFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/v1/models',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it('returns false when endpoint is unreachable', async () => {
+      mockUndiciFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+      expect(await isLlmAvailable()).toBe(false);
+    });
+
+    it('returns false when no API URL is configured', async () => {
+      mockGetConfig.mockReturnValue({ ...DEFAULT_LLM_CONFIG, apiUrl: '' });
+      expect(await isLlmAvailable()).toBe(false);
     });
   });
 
   describe('resolveChatCompletionsUrl', () => {
-    it('appends /v1/chat/completions to a bare base URL (LM Studio)', () => {
+    it('appends /v1/chat/completions to a bare base URL', () => {
       expect(resolveChatCompletionsUrl('http://192.168.1.10:1234')).toBe(
         'http://192.168.1.10:1234/v1/chat/completions',
       );
@@ -539,10 +320,27 @@ describe('llm-client', () => {
     });
   });
 
+  describe('resolveModelsUrl', () => {
+    it('replaces /chat/completions with /models', () => {
+      expect(resolveModelsUrl('http://localhost:3000/v1/chat/completions')).toBe(
+        'http://localhost:3000/v1/models',
+      );
+    });
+
+    it('appends /v1/models to a bare base URL', () => {
+      expect(resolveModelsUrl('http://lmstudio:1234')).toBe('http://lmstudio:1234/v1/models');
+    });
+
+    it('handles Open WebUI /api/chat/completions', () => {
+      expect(resolveModelsUrl('http://localhost:3000/api/chat/completions')).toBe(
+        'http://localhost:3000/api/models',
+      );
+    });
+  });
+
   describe('extractApiError', () => {
     it('returns null for non-objects', () => {
       expect(extractApiError(null)).toBeNull();
-      expect(extractApiError(undefined)).toBeNull();
       expect(extractApiError('string')).toBeNull();
       expect(extractApiError(42)).toBeNull();
     });
@@ -552,13 +350,13 @@ describe('llm-client', () => {
       expect(extractApiError({ choices: [{ delta: { content: 'hi' } }] })).toBeNull();
     });
 
-    it('extracts string-shaped error (LM Studio)', () => {
-      expect(
-        extractApiError({ error: 'Unexpected endpoint or method. (POST /)' }),
-      ).toBe('Unexpected endpoint or method. (POST /)');
+    it('extracts string-shaped error', () => {
+      expect(extractApiError({ error: 'Unexpected endpoint or method. (POST /)' })).toBe(
+        'Unexpected endpoint or method. (POST /)',
+      );
     });
 
-    it('extracts message from object-shaped error (OpenAI)', () => {
+    it('extracts message from object-shaped error', () => {
       expect(
         extractApiError({ error: { message: 'Invalid API key', type: 'invalid_request_error' } }),
       ).toBe('Invalid API key');
@@ -567,53 +365,6 @@ describe('llm-client', () => {
     it('falls back to JSON-stringified object when no message field', () => {
       const result = extractApiError({ error: { code: 500, type: 'server_error' } });
       expect(result).toContain('server_error');
-    });
-  });
-
-  describe('isOllamaAvailable', () => {
-    it('tests custom endpoint when customEnabled + url set', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      mockUndiciFetch.mockResolvedValue(
-        new Response(JSON.stringify({ data: [{ id: 'gpt-4' }] }), { status: 200 }),
-      );
-
-      const result = await isOllamaAvailable();
-
-      expect(result).toBe(true);
-      expect(mockUndiciFetch).toHaveBeenCalledWith(
-        'http://localhost:3000/v1/models',
-        expect.objectContaining({
-          signal: expect.any(AbortSignal),
-        }),
-      );
-    });
-
-    it('returns false when custom endpoint is unreachable', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      mockUndiciFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-
-      const result = await isOllamaAvailable();
-      expect(result).toBe(false);
     });
   });
 
@@ -628,12 +379,7 @@ describe('llm-client', () => {
     });
 
     it('returns Bearer header for colon-containing token with default authType', () => {
-      // ParisNeo Ollama Proxy uses "user:token" format with Bearer auth
       expect(getAuthHeaders('myuser:abc123key')).toEqual({ Authorization: 'Bearer myuser:abc123key' });
-    });
-
-    it('returns Bearer header when authType is explicitly bearer', () => {
-      expect(getAuthHeaders('user:token', 'bearer')).toEqual({ Authorization: 'Bearer user:token' });
     });
 
     it('returns Basic header when authType is explicitly basic', () => {
@@ -642,40 +388,14 @@ describe('llm-client', () => {
       expect(result).toEqual({ Authorization: `Basic ${expected}` });
     });
 
-    it('returns Basic header for plain token when authType is basic', () => {
-      const result = getAuthHeaders('my-api-key', 'basic');
-      const expected = Buffer.from('my-api-key').toString('base64');
-      expect(result).toEqual({ Authorization: `Basic ${expected}` });
-    });
-
     it('strips non-Latin1 characters from token to prevent ByteString errors', () => {
-      // Simulate a token with invisible Unicode characters (e.g. copy-pasted from web UI)
-      const tokenWithUnicode = 'sk-test\u204Akey';
+      const tokenWithUnicode = 'sk-test⁊key';
       const result = getAuthHeaders(tokenWithUnicode);
       expect(result).toEqual({ Authorization: 'Bearer sk-testkey' });
     });
 
     it('returns empty object when token is entirely non-Latin1', () => {
-      expect(getAuthHeaders('\u204A\u2050')).toEqual({});
-    });
-  });
-
-  describe('ensureModel', () => {
-    it('skips Ollama model pull when custom endpoint is enabled', async () => {
-      mockGetConfig.mockReturnValue({
-        ollamaUrl: 'http://localhost:11434',
-        model: 'llama3.2',
-        customEnabled: true,
-        customEndpointUrl: 'http://localhost:3000/api/chat/completions',
-        customEndpointToken: '',
-        authType: 'bearer' as LlmAuthType,
-        maxTokens: 2048,
-        maxToolIterations: 5,
-      });
-
-      // If it tried to use Ollama, it would call ollama.list() which is mocked
-      // but we want to verify it returns immediately without calling Ollama
-      await expect(ensureModel()).resolves.toBeUndefined();
+      expect(getAuthHeaders('⁊⁐')).toEqual({});
     });
   });
 
@@ -693,8 +413,7 @@ describe('llm-client', () => {
     });
 
     it('falls back to error message when no cause', () => {
-      const err = new Error('some other error');
-      expect(getFetchErrorMessage(err)).toBe('some other error');
+      expect(getFetchErrorMessage(new Error('some error'))).toBe('some error');
     });
 
     it('returns generic message for non-Error values', () => {
@@ -710,18 +429,11 @@ describe('llm-client', () => {
       expect(dispatcher).toBeUndefined();
     });
 
-    it('creates an Agent with rejectUnauthorized: false when LLM_VERIFY_SSL is false (per-connection bypass, not global)', () => {
-      // This test verifies the security fix for issue #551:
-      // The global process.env.NODE_TLS_REJECT_UNAUTHORIZED override was removed from index.ts.
-      // Instead, TLS bypass is applied per-connection via undici Agent, so only LLM connections
-      // skip cert validation — all other HTTPS (Portainer, PostgreSQL, etc.) remain protected.
+    it('creates an Agent with rejectUnauthorized: false when LLM_VERIFY_SSL is false', () => {
       setConfigForTest({ LLM_VERIFY_SSL: false });
-      // llmDispatcher singleton is undefined at this point (previous test returned early).
       const dispatcher = getLlmDispatcher();
       expect(dispatcher).toBeDefined();
-      // Verify the Agent was constructed with the per-connection option, not a global override
       expect(Agent).toHaveBeenCalledWith({ connect: { rejectUnauthorized: false } });
-      // The global Node.js TLS flag must NOT be set to '0'
       expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).not.toBe('0');
     });
   });

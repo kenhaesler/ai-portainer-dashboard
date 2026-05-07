@@ -29,11 +29,10 @@ vi.mock('../services/prompt-profile-store.js', () => ({
 }));
 
 const GLOBAL_CONFIG = {
-  ollamaUrl: 'http://localhost:11434',
-  model: 'llama3.2',
-  customEnabled: false,
-  customEndpointUrl: undefined,
-  customEndpointToken: undefined,
+  apiUrl: 'http://localhost:3000/v1/chat/completions',
+  apiToken: '',
+  model: 'gpt-4o-mini',
+  authType: 'bearer' as const,
   maxTokens: 20000,
   maxToolIterations: 6,
 };
@@ -144,7 +143,7 @@ describe('prompt-store', () => {
       mockGetSetting.mockReturnValue(undefined);
 
       const result = await getEffectiveLlmConfig('chat_assistant');
-      expect(result.model).toBe('llama3.2');
+      expect(result.model).toBe('gpt-4o-mini');
       expect(result).not.toHaveProperty('temperature');
     });
 
@@ -181,7 +180,7 @@ describe('prompt-store', () => {
       });
 
       const result = await getEffectiveLlmConfig('log_analyzer');
-      expect(result.model).toBe('llama3.2');
+      expect(result.model).toBe('gpt-4o-mini');
     });
 
     it('ignores empty temperature override', async () => {
@@ -223,7 +222,7 @@ describe('prompt-store', () => {
       expect(result.model).toBe('mistral');
       expect(result.temperature).toBe(0.3);
       // Global fields preserved
-      expect(result.ollamaUrl).toBe('http://localhost:11434');
+      expect(result.apiUrl).toBe('http://localhost:3000/v1/chat/completions');
     });
   });
 
@@ -296,7 +295,7 @@ describe('prompt-store', () => {
         mockGetActiveProfileId.mockReturnValue('default');
 
         const result = await getEffectiveLlmConfig('chat_assistant');
-        expect(result.model).toBe('llama3.2');
+        expect(result.model).toBe('gpt-4o-mini');
         // Profile prompt config should not be called because active profile is default
         // (getActiveProfileId is called but getProfilePromptConfig should not be)
       });

@@ -12,7 +12,7 @@ import { remediationRoutes, backupRoutes, logsRoutes } from '../../operations/in
 
 ## Cross-domain Imports (Phase 3 Exceptions)
 
-- `ai-intelligence/index.js` → `chatStream`, `isOllamaAvailable`, `getEffectivePrompt`
+- `ai-intelligence/index.js` → `chatStream`, `isLlmAvailable`, `getEffectivePrompt`
 - `observability/index.js` → `getLatestMetrics`
 - `infrastructure/index.js` → `getElasticsearchConfig`
 

@@ -12,7 +12,7 @@ import { getToolSystemPrompt, parseToolCalls, type ToolCallResult } from '../ser
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks, registerCanary, clearCanary, getCanary } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient, extractApiError, resolveChatCompletionsUrl } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, extractApiError, resolveChatCompletionsUrl } from '../services/llm-client.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
@@ -253,7 +253,9 @@ ${issuesSummary}
   }
 }
 
-// Stream an LLM call and collect the full response
+// Stream an LLM call and collect the full response.
+// Single OpenAI-compatible streaming path: POST /v1/chat/completions, parse
+// SSE chunks, surface `{error}` bodies via extractApiError.
 async function streamLlmCall(
   llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
   selectedModel: string,
@@ -261,111 +263,23 @@ async function streamLlmCall(
   onChunk: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  let fullResponse = '';
-
-  if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-    const chatUrl = resolveChatCompletionsUrl(llmConfig.customEndpointUrl);
-    const response = await llmFetch(chatUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
-      },
-      body: JSON.stringify({
-        model: selectedModel,
-        messages,
-        stream: true,
-        max_tokens: llmConfig.maxTokens,
-      }),
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('Response body is not readable');
-    }
-
-    const decoder = new TextDecoder();
-    while (true) {
-      if (signal?.aborted) break;
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n').filter((line) => line.trim() !== '');
-
-      for (const raw of lines) {
-        // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
-        let payload = raw.trim();
-        if (payload.startsWith('data: ')) payload = payload.slice(6);
-        else if (payload.startsWith('data:')) payload = payload.slice(5);
-
-        // Skip SSE end sentinel and comment lines
-        if (payload === '[DONE]' || payload.startsWith(':')) continue;
-
-        try {
-          const json = JSON.parse(payload);
-          const apiError = extractApiError(json);
-          if (apiError) {
-            throw new Error(`Custom LLM endpoint returned an error: ${apiError}. Verify Settings → LLM → API Endpoint URL ends with /v1/chat/completions (or your provider's chat-completions path).`);
-          }
-          const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
-          if (text) {
-            fullResponse += text;
-            onChunk(text);
-          }
-        } catch (parseErr) {
-          // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
-          if (parseErr instanceof Error && parseErr.message.startsWith('Custom LLM endpoint returned an error')) {
-            throw parseErr;
-          }
-          // Skip non-JSON lines (e.g. SSE event types)
-        }
-      }
-    }
-  } else {
-    const ollama = await createConfiguredOllamaClient(llmConfig);
-    const response = await ollama.chat({
-      model: selectedModel,
-      messages,
-      stream: true,
-      options: { num_predict: llmConfig.maxTokens },
-    });
-
-    for await (const chunk of response) {
-      if (signal?.aborted) break;
-      const text = chunk.message?.content || '';
-      fullResponse += text;
-      onChunk(text);
-    }
+  if (!llmConfig.apiUrl) {
+    throw new Error('LLM is not configured. Set LLM_API_URL or configure Settings → AI & LLM → API Endpoint URL.');
   }
 
-  return fullResponse;
-}
-
-async function streamOllamaRawCall(
-  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
-  selectedModel: string,
-  messages: ChatMessage[],
-  onChunk: (text: string) => void,
-  signal?: AbortSignal,
-): Promise<string> {
-  const baseUrl = llmConfig.ollamaUrl.replace(/\/$/, '');
-  const response = await llmFetch(`${baseUrl}/api/chat`, {
+  let fullResponse = '';
+  const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
+  const response = await llmFetch(chatUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(llmConfig.customEndpointToken, llmConfig.authType),
+      ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
     },
     body: JSON.stringify({
       model: selectedModel,
       messages,
       stream: true,
-      options: { num_predict: llmConfig.maxTokens },
+      max_tokens: llmConfig.maxTokens,
     }),
     signal,
   });
@@ -380,92 +294,45 @@ async function streamOllamaRawCall(
   }
 
   const decoder = new TextDecoder();
-  let fullResponse = '';
-  let buffer = '';
-
   while (true) {
     if (signal?.aborted) break;
     const { done, value } = await reader.read();
     if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n').filter((line) => line.trim() !== '');
 
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) continue;
+    for (const raw of lines) {
+      // Strip SSE "data: " prefix (OpenAI-compatible streaming format)
+      let payload = raw.trim();
+      if (payload.startsWith('data: ')) payload = payload.slice(6);
+      else if (payload.startsWith('data:')) payload = payload.slice(5);
+
+      // Skip SSE end sentinel and comment lines
+      if (payload === '[DONE]' || payload.startsWith(':')) continue;
+
       try {
-        const json = JSON.parse(line);
-        const text = json?.message?.content || '';
+        const json = JSON.parse(payload);
+        const apiError = extractApiError(json);
+        if (apiError) {
+          throw new Error(`LLM endpoint returned an error: ${apiError}. Verify Settings → AI & LLM → API Endpoint URL points at an OpenAI-compatible chat-completions endpoint.`);
+        }
+        const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
         if (text) {
           fullResponse += text;
           onChunk(text);
-          continue;
         }
-        const toolCallJson = normalizeToolCallsFromOllama(json);
-        if (toolCallJson) {
-          fullResponse += toolCallJson;
-          // Don't emit tool call JSON as a chat chunk — the main loop
-          // will detect and execute tool calls via parseToolCalls().
+      } catch (parseErr) {
+        // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
+        if (parseErr instanceof Error && parseErr.message.startsWith('LLM endpoint returned an error')) {
+          throw parseErr;
         }
-      } catch {
-        // Skip malformed NDJSON fragments.
+        // Skip non-JSON lines (e.g. SSE event types)
       }
-    }
-  }
-
-  // Flush any final buffered line.
-  const remaining = buffer.trim();
-  if (remaining) {
-    try {
-      const json = JSON.parse(remaining);
-      const text = json?.message?.content || '';
-      if (text) {
-        fullResponse += text;
-        onChunk(text);
-      } else {
-        const toolCallJson = normalizeToolCallsFromOllama(json);
-        if (toolCallJson) {
-          fullResponse += toolCallJson;
-          // Don't emit tool call JSON as a chat chunk.
-        }
-      }
-    } catch {
-      // Ignore trailing partial JSON.
     }
   }
 
   return fullResponse;
-}
-
-function normalizeToolCallsFromOllama(json: any): string | null {
-  const calls = json?.message?.tool_calls;
-  if (!Array.isArray(calls) || calls.length === 0) return null;
-
-  const normalized = calls
-    .map((call: any) => {
-      const tool = call?.function?.name || call?.tool || call?.name;
-      if (!tool || typeof tool !== 'string') return null;
-
-      let args = call?.function?.arguments ?? call?.arguments ?? {};
-      if (typeof args === 'string') {
-        try {
-          args = JSON.parse(args);
-        } catch {
-          args = {};
-        }
-      }
-      if (!args || typeof args !== 'object') {
-        args = {};
-      }
-
-      return { tool, arguments: args };
-    })
-    .filter(Boolean);
-
-  if (normalized.length === 0) return null;
-  return JSON.stringify({ tool_calls: normalized });
 }
 
 /**
@@ -506,51 +373,6 @@ export function formatChatContext(ctx: Record<string, unknown>): string {
   }
 
   return '';
-}
-
-/**
- * Call Ollama with native tool calling (non-streaming).
- * Returns the response message which may contain tool_calls.
- */
-async function callOllamaWithNativeTools(
-  llmConfig: Awaited<ReturnType<typeof getEffectiveLlmConfig>>,
-  selectedModel: string,
-  messages: ChatMessage[],
-): Promise<{ content: string; toolCalls: OllamaToolCall[] }> {
-  const tools = collectAllTools();
-  log.debug({ toolCount: tools.length, toolNames: tools.map(t => t.function.name) }, 'Collected tools for native Ollama call');
-
-  if (tools.length === 0) {
-    return { content: '', toolCalls: [] };
-  }
-
-  const ollama = await createConfiguredOllamaClient(llmConfig);
-  const response = await ollama.chat({
-    model: selectedModel,
-    messages,
-    tools: tools.map(t => ({
-      type: 'function' as const,
-      function: t.function,
-    })),
-    stream: false,
-    options: { num_predict: llmConfig.maxTokens },
-  });
-
-  const content = response.message?.content || '';
-  const rawCalls = response.message?.tool_calls;
-
-  if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
-    return { content, toolCalls: [] };
-  }
-
-  const toolCalls: OllamaToolCall[] = rawCalls.map((call: any) => ({
-    function: {
-      name: call.function?.name || '',
-      arguments: call.function?.arguments || {},
-    },
-  }));
-
-  return { content, toolCalls };
 }
 
 // ─── Per-user WebSocket chat throttle ─────────────────────────────────
@@ -661,118 +483,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
         let finalResponse = '';
         let toolIteration = 0;
 
-        // ── Phase 1: Try native Ollama tool calling (non-streaming) ──
-        // This only works with local Ollama (not custom endpoints).
-        if (!llmConfig.customEnabled && toolsEnabled) {
-          try {
-            socket.emit('chat:status', { message: `Loading model ${selectedModel}...`, phase: 'model' });
-            log.debug({ userId, model: selectedModel }, 'Attempting native Ollama tool calling');
-            const nativeResult = await callOllamaWithNativeTools(llmConfig, selectedModel, messages);
-            log.debug({ userId, toolCallCount: nativeResult.toolCalls.length, hasContent: !!nativeResult.content }, 'Native tool call result');
-            if (nativeResult.toolCalls.length > 0) {
-              // Native tool calls detected — execute them
-              const toolNames = nativeResult.toolCalls.map(tc => tc.function.name);
-              log.debug({ userId, tools: toolNames }, 'Native Ollama tool calls detected');
-              socket.emit('chat:tool_call', { tools: toolNames, status: 'executing' });
-
-              const results = await routeToolCalls(nativeResult.toolCalls, infraLogs);
-              lastToolResults = results;
-
-              socket.emit('chat:tool_call', {
-                tools: toolNames,
-                status: 'complete',
-                results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
-              });
-
-              // Add tool context and get final streamed response.
-              // Use a neutral assistant message — nativeResult.content often
-              // contains "I can't run this" text that poisons the follow-up.
-              // Use role: 'system' for tool results since the follow-up streaming
-              // call doesn't use native tool format and small models may not
-              // understand role: 'tool' outside of a native tool conversation.
-              messages = [
-                ...messages,
-                { role: 'assistant', content: `I executed the following tools: ${toolNames.join(', ')}` },
-                {
-                  role: 'system',
-                  content: `## Tool Execution Results\n\nThe tools have been executed successfully. Present these results to the user in a clear, helpful response.\n\n${formatToolResults(results)}`,
-                },
-              ];
-              toolIteration++;
-              // Fall through to streaming loop for final response
-            } else if (nativeResult.content) {
-              // No native tool calls — check if the model embedded text-based
-              // tool calls in its content (models that follow system prompt
-              // instructions but don't support Ollama's native tool format).
-              const textToolCalls = toolsEnabled ? parseToolCalls(nativeResult.content) : null;
-
-              if (textToolCalls) {
-                log.debug({ userId, tools: textToolCalls.map(t => t.tool) }, 'Text-based tool calls found in Phase 1 content');
-                socket.emit('chat:tool_call', {
-                  tools: textToolCalls.map(t => t.tool),
-                  status: 'executing',
-                });
-
-                const ollamaFormatCalls: OllamaToolCall[] = textToolCalls.map(tc => ({
-                  function: { name: tc.tool, arguments: tc.arguments },
-                }));
-                const results = await routeToolCalls(ollamaFormatCalls, infraLogs);
-                lastToolResults = results;
-
-                socket.emit('chat:tool_call', {
-                  tools: textToolCalls.map(t => t.tool),
-                  status: 'complete',
-                  results: results.map(r => ({ tool: r.tool, success: r.success, error: r.error })),
-                });
-
-                messages = [
-                  ...messages,
-                  { role: 'assistant', content: nativeResult.content },
-                  {
-                    role: 'system',
-                    content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
-                  },
-                ];
-                toolIteration++;
-                // Fall through to streaming loop for final response with tool results
-              } else if (looksLikeToolCallAttempt(nativeResult.content)) {
-                // Hallucinated tool names — fall through to Phase 2 without tools
-                log.debug({ userId }, 'Phase 1 content contains hallucinated tool call JSON, falling through to Phase 2 without tools');
-                toolsEnabled = false;
-                messages = [
-                  { role: 'system', content: systemPromptWithoutTools },
-                  ...history.slice(-historyLimit),
-                ];
-                // Fall through to streaming loop
-              } else {
-                // No tool calls at all — send content as final response
-                finalResponse = sanitizeLlmOutput(nativeResult.content, socket.id);
-                socket.emit('chat:chunk', finalResponse);
-                history.push({ role: 'assistant', content: finalResponse });
-                socket.emit('chat:end', { id: randomUUID(), content: finalResponse });
-
-                const latencyMs = Date.now() - startTime;
-                const promptTokens = estimateTokens(messages.map(m => m.content).join(''));
-                const completionTokens = estimateTokens(finalResponse);
-                try {
-                  await insertLlmTrace({
-                    trace_id: randomUUID(), session_id: socket.id, model: selectedModel,
-                    prompt_tokens: promptTokens, completion_tokens: completionTokens,
-                    total_tokens: promptTokens + completionTokens, latency_ms: latencyMs,
-                    status: 'success', user_query: data.text.slice(0, 500),
-                    response_preview: finalResponse.slice(0, 500),
-                  });
-                } catch (traceErr) { log.warn({ err: traceErr }, 'Failed to record LLM trace'); }
-                return; // Done — skip streaming loop
-              }
-            }
-          } catch (nativeErr) {
-            log.warn({ err: nativeErr, userId, message: nativeErr instanceof Error ? nativeErr.message : String(nativeErr) }, 'Native Ollama tool calling failed, falling back to text-based');
-            // Fall through to text-based streaming
-          }
-        }
-
-        // ── Phase 2: Text-based streaming with tool call parsing (fallback) ──
+        // ── Text-based streaming with tool call parsing ──
         // Tool calling loop: stream response, check for tool calls, execute, repeat.
         // Every iteration streams chunks to the client. If tool calls are detected,
         // we emit chat:tool_response_pending to clear the streamed tool-call JSON,
@@ -794,27 +505,14 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
           } catch (streamErr) {
             if (toolsEnabled && isRecoverableToolCallParseError(streamErr)) {
               log.warn({ err: streamErr, userId }, 'LLM tool-call parse failed; retrying without tool mode');
-              if (!llmConfig.customEnabled) {
-                iterationResponse = await streamOllamaRawCall(
-                  llmConfig,
-                  selectedModel,
-                  messages,
-                  emitChunk,
-                  abortController.signal,
-                );
-                // Continue regular flow: parse tool calls or finalize natural response.
-              } else {
-                toolsEnabled = false;
-                messages = [
-                  { role: 'system', content: systemPromptWithoutTools },
-                  ...history.slice(-historyLimit),
-                ];
-                continue;
-              }
+              toolsEnabled = false;
+              messages = [
+                { role: 'system', content: systemPromptWithoutTools },
+                ...history.slice(-historyLimit),
+              ];
+              continue;
             }
-            else {
-              throw streamErr;
-            }
+            throw streamErr;
           }
 
           if (abortController.signal.aborted) break;
@@ -920,12 +618,10 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             finalResponse = `I could not generate a complete natural-language summary, but I retrieved live results:\n\n${formatToolResults(lastToolResults)}`;
           } else {
             log.warn(
-              { userId, model: selectedModel, customEnabled: llmConfig.customEnabled, customEndpoint: llmConfig.customEnabled ? llmConfig.customEndpointUrl : undefined },
+              { userId, model: selectedModel, apiUrl: llmConfig.apiUrl },
               'Empty LLM response — model returned no content',
             );
-            finalResponse = llmConfig.customEnabled
-              ? `The model returned an empty response. This usually means the configured endpoint URL does not point to a chat-completions API. Verify Settings → LLM → API Endpoint URL ends with \`/v1/chat/completions\` (or your provider's chat-completions path) and that the model name matches one available at that endpoint.`
-              : 'The model returned an empty response. The selected model may not be installed in Ollama, or the request hit the token limit before any output was produced. Try a different question or check that the configured model is available.';
+            finalResponse = `The model returned an empty response. Verify Settings → AI & LLM → API Endpoint URL points at an OpenAI-compatible chat-completions endpoint and that the configured model exists at that endpoint.`;
           }
         }
 

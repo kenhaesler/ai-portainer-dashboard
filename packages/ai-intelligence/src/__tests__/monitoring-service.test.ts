@@ -209,7 +209,7 @@ let mockGetContainers: any;
 let mockIsEndpointDegraded: any;
 let mockIsCircuitOpen: any;
 let mockCachedFetchSWR: any;
-let mockIsOllamaAvailable: any;
+let mockIsLlmAvailable: any;
 let mockChatStream: any;
 let runMonitoringCycle: () => Promise<void>;
 
@@ -314,7 +314,7 @@ describe('monitoring-service', () => {
     mockIsCircuitOpen = vi.spyOn(portainerClient, 'isCircuitOpen').mockReturnValue(false);
 
     // Create LLM spies
-    mockIsOllamaAvailable = vi.spyOn(llmClient, 'isOllamaAvailable').mockResolvedValue(false);
+    mockIsLlmAvailable = vi.spyOn(llmClient, 'isLlmAvailable').mockResolvedValue(false);
     mockChatStream = vi.spyOn(llmClient, 'chatStream');
 
     setConfigForTest(defaultConfig);
@@ -572,7 +572,7 @@ describe('monitoring-service', () => {
         mean: 40.0,
         method: 'adaptive',
       });
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
 
       // We need to capture the insight ID dynamically since it's a UUID
       mockExplainAnomalies.mockImplementation(
@@ -607,7 +607,7 @@ describe('monitoring-service', () => {
         mean: 40.0,
         method: 'adaptive',
       });
-      mockIsOllamaAvailable.mockResolvedValue(false);
+      mockIsLlmAvailable.mockResolvedValue(false);
 
       await runMonitoringCycle();
 
@@ -635,7 +635,7 @@ describe('monitoring-service', () => {
         mean: 40.0,
         method: 'adaptive',
       });
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
 
       await runMonitoringCycle();
 
@@ -648,7 +648,7 @@ describe('monitoring-service', () => {
       setConfigForTest({
         AI_ANALYSIS_ENABLED: false,
       });
-      mockIsOllamaAvailable.mockResolvedValue(true);
+      mockIsLlmAvailable.mockResolvedValue(true);
 
       await runMonitoringCycle();
 

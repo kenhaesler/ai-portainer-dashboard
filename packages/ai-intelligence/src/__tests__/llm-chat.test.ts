@@ -8,13 +8,13 @@ let testDb: AppDb;
 // ── Hoisted mock references (available inside vi.mock factories) ──
 
 const {
-  mockOllamaChat,
+  mockUndiciFetch,
   mockParseToolCalls,
   mockCollectAllTools,
   mockRouteToolCalls,
   mockGetEffectiveLlmConfig,
 } = vi.hoisted(() => ({
-  mockOllamaChat: vi.fn(),
+  mockUndiciFetch: vi.fn(),
   mockParseToolCalls: vi.fn(),
   mockCollectAllTools: vi.fn(),
   mockRouteToolCalls: vi.fn(),
@@ -23,11 +23,12 @@ const {
 
 // ── Module mocks ──
 
-// Kept: ollama mock — tests control LLM chat responses
-vi.mock('ollama', () => ({
-  Ollama: vi.fn(function () {
-    return { chat: mockOllamaChat };
-  }),
+// Tests control HTTP responses via undici fetch — the LLM client uses undici
+// for streaming, so this mock is the single integration point for the OpenAI-
+// compatible chat-completions API.
+vi.mock('undici', () => ({
+  Agent: vi.fn(),
+  fetch: (...args: unknown[]) => mockUndiciFetch(...args),
 }));
 
 
@@ -412,15 +413,52 @@ function createMockSocketPair() {
 
 function baseLlmConfig(overrides: Record<string, any> = {}) {
   return {
-    ollamaUrl: 'http://localhost:11434',
-    model: 'llama3.2',
-    customEnabled: false,
-    customEndpointUrl: undefined,
-    customEndpointToken: undefined,
+    apiUrl: 'http://localhost:3000/v1/chat/completions',
+    apiToken: '',
+    model: 'gpt-4o-mini',
+    authType: 'bearer' as const,
     maxTokens: 2000,
     maxToolIterations: 2,
     ...overrides,
   };
+}
+
+/**
+ * Build a streaming Response object that emits each chunk as an SSE-style
+ * payload (`{json}\n`) — matches what the OpenAI-compatible LLM endpoint
+ * sends for `stream: true` calls. Tests use this to drive `streamLlmCall`.
+ */
+function sseResponseFromChunks(contentChunks: string[]): Response {
+  const body = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const text of contentChunks) {
+        const payload = JSON.stringify({ choices: [{ delta: { content: text } }] }) + '\n';
+        controller.enqueue(encoder.encode(payload));
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, { status: 200 });
+}
+
+/** Build a single-chunk SSE response from a full string. */
+function sseResponse(content: string): Response {
+  return sseResponseFromChunks([content]);
+}
+
+/**
+ * Wire `mockUndiciFetch` to a router that inspects the outgoing chat
+ * messages and returns a Response per call. Supports throwing for error-
+ * path tests.
+ */
+function mockLlmFetchByRequest(
+  router: (messages: Array<{ role: string; content: string }>) => Response | Promise<Response>,
+) {
+  mockUndiciFetch.mockImplementation(async (_url: string | URL, init: any) => {
+    const body = JSON.parse(init.body);
+    return await router(body.messages);
+  });
 }
 
 describe('setupLlmNamespace — tool iteration limit graceful degradation', () => {
@@ -437,15 +475,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
   it('emits chat:status events during message processing', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
 
-    // Simple response with no tool calls
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'Hello!' } };
-        })();
-      }
-      return { message: { content: 'Hello!', tool_calls: [] } };
-    });
+    mockUndiciFetch.mockResolvedValue(sseResponse('Hello!'));
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
@@ -471,15 +501,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 
   it('emits model loading status before LLM call', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
-
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'Response' } };
-        })();
-      }
-      return { message: { content: 'Response', tool_calls: [] } };
-    });
+    mockUndiciFetch.mockResolvedValue(sseResponse('Response'));
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
@@ -491,28 +513,18 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     const statusEvents = emitted.filter(e => e.event === 'chat:status');
     const modelPhases = statusEvents.filter(e => e.args[0].phase === 'model');
     expect(modelPhases.length).toBeGreaterThanOrEqual(1);
-    expect(modelPhases[0].args[0].message).toContain('llama3.2');
+    expect(modelPhases[0].args[0].message).toContain('gpt-4o-mini');
   });
 
   it('generates a partial summary via LLM when tool iteration limit is reached', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 2 }));
 
     const toolCallJson = '{"tool_calls":[{"tool":"get_container_logs","arguments":{"container_name":"nginx","tail":20}}]}';
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          const isSummaryCall = opts.messages?.some?.(
-            (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
-          );
-          if (isSummaryCall) {
-            yield { message: { content: 'Here is a partial summary of your infrastructure.' } };
-          } else {
-            yield { message: { content: toolCallJson } };
-          }
-        })();
-      }
-      // Non-streaming (Phase 1 native): no tool calls
-      return { message: { content: '', tool_calls: [] } };
+    mockLlmFetchByRequest((messages) => {
+      const isSummaryCall = messages.some(
+        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+      );
+      return sseResponse(isSummaryCall ? 'Here is a partial summary of your infrastructure.' : toolCallJson);
     });
 
     mockParseToolCalls.mockImplementation((text: string) => {
@@ -557,20 +569,14 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
   it('falls back to raw tool results when summary LLM call fails', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 1 }));
 
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        const isSummaryCall = opts.messages?.some?.(
-          (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
-        );
-        if (isSummaryCall) {
-          throw new Error('Ollama connection refused');
-        }
-        const toolCallJson = '{"tool_calls":[{"tool":"get_container_metrics","arguments":{}}]}';
-        return (async function* () {
-          yield { message: { content: toolCallJson } };
-        })();
+    mockLlmFetchByRequest((messages) => {
+      const isSummaryCall = messages.some(
+        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+      );
+      if (isSummaryCall) {
+        throw new Error('LLM connection refused');
       }
-      return { message: { content: '', tool_calls: [] } };
+      return sseResponse('{"tool_calls":[{"tool":"get_container_metrics","arguments":{}}]}');
     });
 
     mockParseToolCalls.mockImplementation((text: string) => {
@@ -606,20 +612,14 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
   it('falls back to hard error when summary fails and no tool results exist', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: 1 }));
 
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        const isSummaryCall = opts.messages?.some?.(
-          (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
-        );
-        if (isSummaryCall) {
-          throw new Error('Ollama down');
-        }
-        const toolCallJson = '{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}';
-        return (async function* () {
-          yield { message: { content: toolCallJson } };
-        })();
+    mockLlmFetchByRequest((messages) => {
+      const isSummaryCall = messages.some(
+        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+      );
+      if (isSummaryCall) {
+        throw new Error('LLM down');
       }
-      return { message: { content: '', tool_calls: [] } };
+      return sseResponse('{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}');
     });
 
     mockParseToolCalls.mockImplementation((text: string) => {
@@ -653,22 +653,13 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     const customLimit = 7;
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig({ maxToolIterations: customLimit }));
 
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        const isSummaryCall = opts.messages?.some?.(
-          (m: any) => m.role === 'system' && m.content?.includes('run out of tool calls'),
-        );
-        if (isSummaryCall) {
-          return (async function* () {
-            yield { message: { content: 'Summary text.' } };
-          })();
-        }
-        const toolCallJson = '{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}';
-        return (async function* () {
-          yield { message: { content: toolCallJson } };
-        })();
-      }
-      return { message: { content: '', tool_calls: [] } };
+    mockLlmFetchByRequest((messages) => {
+      const isSummaryCall = messages.some(
+        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+      );
+      return sseResponse(
+        isSummaryCall ? 'Summary text.' : '{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}',
+      );
     });
 
     mockParseToolCalls.mockImplementation((text: string) => {
@@ -712,14 +703,7 @@ describe('setupLlmNamespace — per-user chat throttle', () => {
 
   it('rejects rapid-fire messages with chat:throttled event', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'Hello!' } };
-        })();
-      }
-      return { message: { content: 'Hello!', tool_calls: [] } };
-    });
+    mockUndiciFetch.mockResolvedValue(sseResponse('Hello!'));
 
     const { ns, socketHandlers, emitted, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
@@ -779,14 +763,7 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
 
   it('registers a canary when a chat session is first created', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'hello' } };
-        })();
-      }
-      return { message: { content: 'hello', tool_calls: [] } };
-    });
+    mockUndiciFetch.mockResolvedValue(sseResponse('hello'));
 
     const { ns, socketHandlers, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
@@ -806,18 +783,12 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
 
     let observedSystemPrompt: string | undefined;
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      // Capture the system message content sent to the LLM
-      const sys = opts.messages?.find((m: any) => m.role === 'system');
+    mockLlmFetchByRequest((messages) => {
+      const sys = messages.find((m) => m.role === 'system');
       if (sys && observedSystemPrompt === undefined) {
         observedSystemPrompt = sys.content;
       }
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'ok' } };
-        })();
-      }
-      return { message: { content: 'ok', tool_calls: [] } };
+      return sseResponse('ok');
     });
 
     const { ns, socketHandlers, connect } = createMockSocketPair();
@@ -839,14 +810,7 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
 
   it('clears the canary on socket disconnect', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'ok' } };
-        })();
-      }
-      return { message: { content: 'ok', tool_calls: [] } };
-    });
+    mockUndiciFetch.mockResolvedValue(sseResponse('ok'));
 
     const { ns, socketHandlers, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
@@ -864,14 +828,7 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
 
   it('rotates the canary on chat:clear (new value, not undefined)', async () => {
     mockGetEffectiveLlmConfig.mockReturnValue(baseLlmConfig());
-    mockOllamaChat.mockImplementation(async (opts: any) => {
-      if (opts.stream) {
-        return (async function* () {
-          yield { message: { content: 'ok' } };
-        })();
-      }
-      return { message: { content: 'ok', tool_calls: [] } };
-    });
+    mockUndiciFetch.mockResolvedValue(sseResponse('ok'));
 
     const { ns, socketHandlers, connect } = createMockSocketPair();
     setupLlmNamespace(ns, mockInfraLogs);
