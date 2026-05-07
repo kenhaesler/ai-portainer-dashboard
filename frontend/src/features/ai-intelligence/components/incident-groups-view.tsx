@@ -23,6 +23,11 @@ interface LongTailRow {
   endpoint_name: string | null;
   severity: 'critical' | 'warning' | 'info';
   created_at: string;
+  incident_ids: string[];
+  incident_count: number;
+  latest_at: string;
+  latest_summary: string | null;
+  latest_description: string | null;
 }
 
 export function IncidentGroupsView({ search = '' }: { search?: string }) {
@@ -80,6 +85,8 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
             incident_id: inc.id, container_name: name,
             endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
             severity: inc.severity, created_at: inc.created_at,
+            incident_ids: [inc.id], incident_count: 1,
+            latest_at: inc.created_at, latest_summary: null, latest_description: null,
           })),
         );
         setLongTailBySig((prev) => ({ ...prev, [sig]: rows }));
@@ -148,6 +155,8 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
         incident_id: inc.id, container_name: name,
         endpoint_id: inc.endpoint_id, endpoint_name: inc.endpoint_name,
         severity: inc.severity, created_at: inc.created_at,
+        incident_ids: [inc.id], incident_count: 1,
+        latest_at: inc.created_at, latest_summary: null, latest_description: null,
       })),
     );
     setLongTailBySig((prev) => ({ ...prev, [group.signature]: rows }));
