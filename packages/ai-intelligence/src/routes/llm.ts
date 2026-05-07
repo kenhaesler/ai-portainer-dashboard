@@ -16,7 +16,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient, resolveChatCompletionsUrl } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -118,7 +118,8 @@ export async function llmRoutes(fastify: FastifyInstance) {
       let fullResponse = '';
 
       if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await llmFetch(llmConfig.customEndpointUrl, {
+        const chatUrl = resolveChatCompletionsUrl(llmConfig.customEndpointUrl);
+        const response = await llmFetch(chatUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -143,7 +144,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
         if (!fullResponse && searchModel !== llmConfig.model) {
           log.warn({ searchModel, fallbackModel: llmConfig.model }, 'AI_SEARCH_MODEL may not be available, falling back to settings model');
           searchModel = llmConfig.model;
-          const retryResponse = await llmFetch(llmConfig.customEndpointUrl, {
+          const retryResponse = await llmFetch(chatUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -380,7 +381,8 @@ export async function llmRoutes(fastify: FastifyInstance) {
       let fullResponse = '';
 
       if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-        const response = await llmFetch(llmConfig.customEndpointUrl, {
+        const chatUrl = resolveChatCompletionsUrl(llmConfig.customEndpointUrl);
+        const response = await llmFetch(chatUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

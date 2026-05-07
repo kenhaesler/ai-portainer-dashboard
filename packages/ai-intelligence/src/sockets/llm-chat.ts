@@ -12,7 +12,7 @@ import { getToolSystemPrompt, parseToolCalls, type ToolCallResult } from '../ser
 import { collectAllTools, routeToolCalls, getMcpToolPrompt, type OllamaToolCall } from '../services/mcp-tool-bridge.js';
 import type { InfrastructureLogsInterface } from '@dashboard/contracts';
 import { isPromptInjection, sanitizeLlmOutput, stripThinkingBlocks, registerCanary, clearCanary, getCanary } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, createOllamaClient, createConfiguredOllamaClient, extractApiError, resolveChatCompletionsUrl } from '../services/llm-client.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createSocketThrottle } from '@dashboard/core/utils/socket-throttle.js';
 
@@ -264,7 +264,8 @@ async function streamLlmCall(
   let fullResponse = '';
 
   if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-    const response = await llmFetch(llmConfig.customEndpointUrl, {
+    const chatUrl = resolveChatCompletionsUrl(llmConfig.customEndpointUrl);
+    const response = await llmFetch(chatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -308,12 +309,20 @@ async function streamLlmCall(
 
         try {
           const json = JSON.parse(payload);
+          const apiError = extractApiError(json);
+          if (apiError) {
+            throw new Error(`Custom LLM endpoint returned an error: ${apiError}. Verify Settings → LLM → API Endpoint URL ends with /v1/chat/completions (or your provider's chat-completions path).`);
+          }
           const text = json.choices?.[0]?.delta?.content || json.message?.content || '';
           if (text) {
             fullResponse += text;
             onChunk(text);
           }
-        } catch {
+        } catch (parseErr) {
+          // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
+          if (parseErr instanceof Error && parseErr.message.startsWith('Custom LLM endpoint returned an error')) {
+            throw parseErr;
+          }
           // Skip non-JSON lines (e.g. SSE event types)
         }
       }
@@ -910,7 +919,13 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
           if (lastToolResults.length > 0) {
             finalResponse = `I could not generate a complete natural-language summary, but I retrieved live results:\n\n${formatToolResults(lastToolResults)}`;
           } else {
-            finalResponse = 'I could not generate a complete response for that request. Please try again.';
+            log.warn(
+              { userId, model: selectedModel, customEnabled: llmConfig.customEnabled, customEndpoint: llmConfig.customEnabled ? llmConfig.customEndpointUrl : undefined },
+              'Empty LLM response — model returned no content',
+            );
+            finalResponse = llmConfig.customEnabled
+              ? `The model returned an empty response. This usually means the configured endpoint URL does not point to a chat-completions API. Verify Settings → LLM → API Endpoint URL ends with \`/v1/chat/completions\` (or your provider's chat-completions path) and that the model name matches one available at that endpoint.`
+              : 'The model returned an empty response. The selected model may not be installed in Ollama, or the request hit the token limit before any output was produced. Try a different question or check that the configured model is available.';
           }
         }
 

@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS = {
     { key: 'llm.ollama_url', label: 'Ollama URL', description: 'URL of the Ollama server', type: 'string', defaultValue: 'http://host.docker.internal:11434' },
     { key: 'llm.max_tokens', label: 'Max Tokens', description: 'Maximum tokens in LLM response', type: 'number', defaultValue: '20000', min: 256, max: 128000 },
     { key: 'llm.custom_endpoint_enabled', label: 'Custom Endpoint Enabled', description: 'Use a custom OpenAI-compatible API endpoint', type: 'boolean', defaultValue: 'false' },
-    { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'OpenAI-compatible chat completions URL', type: 'string', defaultValue: '' },
+    { key: 'llm.custom_endpoint_url', label: 'Custom Endpoint URL', description: 'Base URL of an OpenAI-compatible server. /v1/chat/completions is appended automatically.', type: 'string', defaultValue: '' },
     { key: 'llm.custom_endpoint_token', label: 'Custom Endpoint Token', description: 'Bearer token for custom endpoint', type: 'password', defaultValue: '' },
     { key: 'llm.auth_type', label: 'Auth Type', description: 'Authentication header type (Bearer for most LLM proxies including ParisNeo Ollama Proxy)', type: 'string', defaultValue: 'bearer' },
   ],

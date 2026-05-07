@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { Agent } from 'undici';
-import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, type LlmAuthType } from '../services/llm-client.js';
+import { chatStream, isOllamaAvailable, ensureModel, getAuthHeaders, getFetchErrorMessage, getLlmDispatcher, getLlmQueueSize, extractApiError, resolveChatCompletionsUrl, type LlmAuthType } from '../services/llm-client.js';
 import { Ollama } from 'ollama';
 
 // Kept: settings-store mock — tests control LLM config
@@ -302,6 +302,107 @@ describe('llm-client', () => {
       expect(chunks).toEqual(['Raw', ' SSE']);
     });
 
+    it('auto-appends /v1/chat/completions when user enters a bare base URL', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'google/gemma-3-4b',
+        customEnabled: true,
+        customEndpointUrl: 'http://192.168.1.10:1234',
+        customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({ choices: [{ delta: { content: 'ok' } }] }) + '\n',
+            ),
+          );
+          controller.close();
+        },
+      });
+
+      mockUndiciFetch.mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      await chatStream([{ role: 'user', content: 'hi' }], 'system', () => {});
+
+      expect(mockUndiciFetch).toHaveBeenCalledWith(
+        'http://192.168.1.10:1234/v1/chat/completions',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('surfaces API error response from LM-Studio-style 200-with-error body (regression: empty AI Assistant replies)', async () => {
+      // Regression: when the configured custom endpoint URL points to the
+      // wrong path (e.g. base URL without /v1/chat/completions), LM Studio
+      // returns 200 OK with `{"error": "Unexpected endpoint or method..."}`.
+      // The streaming parser used to silently drop this and return an empty
+      // string, leaving the user staring at "I could not generate a complete
+      // response for that request" with no clue why.
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'google/gemma-3-4b',
+        customEnabled: true,
+        customEndpointUrl: 'http://192.168.1.10:1234',
+        customEndpointToken: '',
+        authType: 'bearer' as LlmAuthType,
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      const errorBody = JSON.stringify({ error: 'Unexpected endpoint or method. (POST /)' });
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(errorBody));
+          controller.close();
+        },
+      });
+
+      mockUndiciFetch.mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      await expect(
+        chatStream([{ role: 'user', content: 'hi' }], 'system', () => {}),
+      ).rejects.toThrow(/Unexpected endpoint or method/);
+    });
+
+    it('surfaces structured OpenAI-style error object ({error: {message}})', async () => {
+      mockGetConfig.mockReturnValue({
+        ollamaUrl: 'http://localhost:11434',
+        model: 'gpt-4',
+        customEnabled: true,
+        customEndpointUrl: 'http://localhost:3000/v1/chat/completions',
+        customEndpointToken: 'sk-bad',
+        authType: 'bearer' as LlmAuthType,
+        maxTokens: 2048,
+        maxToolIterations: 5,
+      });
+
+      const errorBody = JSON.stringify({
+        error: { message: 'Invalid API key', type: 'invalid_request_error' },
+      });
+      const mockResponseBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(errorBody));
+          controller.close();
+        },
+      });
+
+      mockUndiciFetch.mockResolvedValue(
+        new Response(mockResponseBody, { status: 200 }),
+      );
+
+      await expect(
+        chatStream([{ role: 'user', content: 'hi' }], 'system', () => {}),
+      ).rejects.toThrow(/Invalid API key/);
+    });
+
     it('limits concurrent LLM calls to 2 (queues the rest)', async () => {
       // Reset to default config (Ollama path, not custom endpoint)
       mockGetConfig.mockReturnValue({
@@ -386,6 +487,86 @@ describe('llm-client', () => {
           () => {},
         ),
       ).rejects.toThrow(/HTML instead of JSON/);
+    });
+  });
+
+  describe('resolveChatCompletionsUrl', () => {
+    it('appends /v1/chat/completions to a bare base URL (LM Studio)', () => {
+      expect(resolveChatCompletionsUrl('http://192.168.1.10:1234')).toBe(
+        'http://192.168.1.10:1234/v1/chat/completions',
+      );
+    });
+
+    it('strips trailing slash before appending', () => {
+      expect(resolveChatCompletionsUrl('http://lmstudio:1234/')).toBe(
+        'http://lmstudio:1234/v1/chat/completions',
+      );
+    });
+
+    it('appends /chat/completions when URL ends with /v1', () => {
+      expect(resolveChatCompletionsUrl('http://api.example.com/v1')).toBe(
+        'http://api.example.com/v1/chat/completions',
+      );
+    });
+
+    it('leaves a full /v1/chat/completions URL unchanged', () => {
+      expect(resolveChatCompletionsUrl('http://localhost:3000/v1/chat/completions')).toBe(
+        'http://localhost:3000/v1/chat/completions',
+      );
+    });
+
+    it('leaves a non-standard /api/chat/completions URL unchanged (Open WebUI)', () => {
+      expect(resolveChatCompletionsUrl('http://localhost:3000/api/chat/completions')).toBe(
+        'http://localhost:3000/api/chat/completions',
+      );
+    });
+
+    it('preserves reverse-proxy path prefix when appending', () => {
+      expect(resolveChatCompletionsUrl('https://gateway.example.com/llm-proxy')).toBe(
+        'https://gateway.example.com/llm-proxy/v1/chat/completions',
+      );
+    });
+
+    it('returns empty string for empty input', () => {
+      expect(resolveChatCompletionsUrl('')).toBe('');
+      expect(resolveChatCompletionsUrl('   ')).toBe('');
+    });
+
+    it('trims surrounding whitespace', () => {
+      expect(resolveChatCompletionsUrl('  http://lmstudio:1234  ')).toBe(
+        'http://lmstudio:1234/v1/chat/completions',
+      );
+    });
+  });
+
+  describe('extractApiError', () => {
+    it('returns null for non-objects', () => {
+      expect(extractApiError(null)).toBeNull();
+      expect(extractApiError(undefined)).toBeNull();
+      expect(extractApiError('string')).toBeNull();
+      expect(extractApiError(42)).toBeNull();
+    });
+
+    it('returns null for objects without an error field', () => {
+      expect(extractApiError({})).toBeNull();
+      expect(extractApiError({ choices: [{ delta: { content: 'hi' } }] })).toBeNull();
+    });
+
+    it('extracts string-shaped error (LM Studio)', () => {
+      expect(
+        extractApiError({ error: 'Unexpected endpoint or method. (POST /)' }),
+      ).toBe('Unexpected endpoint or method. (POST /)');
+    });
+
+    it('extracts message from object-shaped error (OpenAI)', () => {
+      expect(
+        extractApiError({ error: { message: 'Invalid API key', type: 'invalid_request_error' } }),
+      ).toBe('Invalid API key');
+    });
+
+    it('falls back to JSON-stringified object when no message field', () => {
+      const result = extractApiError({ error: { code: 500, type: 'server_error' } });
+      expect(result).toContain('server_error');
     });
   });
 

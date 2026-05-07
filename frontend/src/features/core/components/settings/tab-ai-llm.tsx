@@ -208,6 +208,19 @@ export function AiLlmTab({
 
 // ─── LLM Settings Section ───────────────────────────────────────────
 
+/**
+ * Mirrors the backend `resolveChatCompletionsUrl` so the Settings UI can
+ * preview the URL the backend will actually POST to. Keep in sync with
+ * `packages/ai-intelligence/src/services/llm-client.ts`.
+ */
+function resolveCustomChatUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+  if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/chat/completions`;
+  return `${trimmed}/v1/chat/completions`;
+}
+
 interface LlmSettingsSectionProps {
   values: Record<string, string>;
   originalValues: Record<string, string>;
@@ -222,6 +235,8 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
   const maxTokens = values['llm.max_tokens'] || '2048';
   const customEnabled = values['llm.custom_endpoint_enabled'] === 'true';
   const customUrl = values['llm.custom_endpoint_url'] || '';
+  const resolvedChatUrl = resolveCustomChatUrl(customUrl);
+  const customUrlAutoAppended = Boolean(customUrl.trim()) && resolvedChatUrl !== customUrl.trim().replace(/\/+$/, '');
   const customToken = values['llm.custom_endpoint_token'] || '';
   const authType = values['llm.auth_type'] || 'bearer';
 
@@ -379,7 +394,7 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
               <div>
                 <label htmlFor="custom-endpoint-url" className="text-sm font-medium">API Endpoint URL</label>
                 <p className="text-xs text-muted-foreground mb-1.5">
-                  OpenAI-compatible chat completions URL (e.g., http://host.docker.internal:3000/api/chat/completions)
+                  Base URL of an OpenAI-compatible server (e.g., LM Studio, vLLM, LiteLLM, OpenAI). <code className="text-[11px]">/v1/chat/completions</code> is appended automatically. Paste a full chat-completions URL only if your provider uses a non-standard path (e.g., Open WebUI's <code className="text-[11px]">/api/chat/completions</code>).
                 </p>
                 <input
                   id="custom-endpoint-url"
@@ -387,9 +402,20 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
                   value={customUrl}
                   onChange={(e) => onChange('llm.custom_endpoint_url', e.target.value)}
                   disabled={disabled}
-                  placeholder="https://api.example.com/v1/chat/completions"
+                  placeholder="http://lmstudio:1234"
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 />
+                {resolvedChatUrl && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    {customUrlAutoAppended ? (
+                      <>
+                        Will POST to <code className="text-[11px] text-foreground/80">{resolvedChatUrl}</code>
+                      </>
+                    ) : (
+                      <>Using URL as-is (already a chat-completions endpoint).</>
+                    )}
+                  </p>
+                )}
               </div>
               <div>
                 <label htmlFor="custom-endpoint-token" className="text-sm font-medium">API Key / Bearer Token</label>

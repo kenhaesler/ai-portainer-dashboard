@@ -72,6 +72,52 @@ function estimateTokens(text: string): number {
 }
 
 /**
+ * Normalize a custom LLM endpoint URL so users can enter just the base URL
+ * (e.g. `http://lmstudio:1234`) without remembering the exact path. Most
+ * OpenAI-compatible servers (OpenAI, LM Studio, vLLM, LiteLLM, LocalAI,
+ * OpenRouter) expose chat at `/v1/chat/completions`; some (Open WebUI) use
+ * `/api/chat/completions`. URLs that already point at a chat-completions
+ * endpoint are returned unchanged, so existing configs keep working.
+ *
+ * Rules:
+ * - URL already ends with `/chat/completions` (any prefix) → unchanged
+ * - URL ends with `/v1` → append `/chat/completions`
+ * - Anything else → append `/v1/chat/completions` to the existing path
+ *   (so reverse-proxy prefixes like `http://host/proxy` still work)
+ */
+export function resolveChatCompletionsUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim().replace(/\/+$/, '');
+  if (!trimmed) return trimmed;
+
+  if (/\/chat\/completions$/i.test(trimmed)) return trimmed;
+  if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/chat/completions`;
+  return `${trimmed}/v1/chat/completions`;
+}
+
+/**
+ * Extract a human-readable error message from a non-streaming JSON response
+ * body that the OpenAI-compatible parser would otherwise drop silently.
+ *
+ * Servers like LM Studio (when called on the wrong path), OpenRouter, and
+ * vLLM return `200 OK` with a JSON body shaped like `{ "error": "..." }` or
+ * `{ "error": { "message": "..." } }`. Without this, the streaming parser
+ * skips these because they have no `choices[0].delta.content`, leading to
+ * silent empty responses.
+ */
+export function extractApiError(json: unknown): string | null {
+  if (!json || typeof json !== 'object') return null;
+  const err = (json as { error?: unknown }).error;
+  if (!err) return null;
+  if (typeof err === 'string') return err;
+  if (typeof err === 'object' && err !== null) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+    return JSON.stringify(err);
+  }
+  return String(err);
+}
+
+/**
  * Extract a human-readable message from Node.js fetch errors.
  * Native fetch wraps the real cause (DNS, connection refused, SSL) inside err.cause.
  */
@@ -201,7 +247,8 @@ async function chatStreamInner(
     // Use authenticated fetch if custom endpoint is enabled and configured
     // Token is optional — some endpoints (e.g. Open WebUI on internal networks) don't require auth
     if (llmConfig.customEnabled && llmConfig.customEndpointUrl) {
-      const response = await llmFetch(llmConfig.customEndpointUrl, {
+      const chatUrl = resolveChatCompletionsUrl(llmConfig.customEndpointUrl);
+      const response = await llmFetch(chatUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -243,12 +290,20 @@ async function chatStreamInner(
 
           try {
             const json = JSON.parse(payload);
+            const apiError = extractApiError(json);
+            if (apiError) {
+              throw new Error(`Custom LLM endpoint returned an error: ${apiError}. Verify Settings → LLM → API Endpoint URL ends with /v1/chat/completions (or your provider's chat-completions path).`);
+            }
             const content = json.choices?.[0]?.delta?.content || json.message?.content || '';
             if (content) {
               fullResponse += content;
               onChunk(content);
             }
-          } catch {
+          } catch (parseErr) {
+            // Re-throw API errors; swallow JSON parse errors for non-JSON SSE lines.
+            if (parseErr instanceof Error && parseErr.message.startsWith('Custom LLM endpoint returned an error')) {
+              throw parseErr;
+            }
             // Skip non-JSON lines (e.g. SSE event types)
           }
         }
