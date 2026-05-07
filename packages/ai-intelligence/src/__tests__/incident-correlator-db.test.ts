@@ -172,7 +172,7 @@ describe('correlator — long-running anomaly joins existing incident regardless
         insight_count, summary, signature, created_at, updated_at, root_cause_insight_id
       ) VALUES (
         'inc-old', 'Anomalous cpu usage on "c1" (ML-detected)', 'warning', 'active',
-        '["seed-insight"]'::jsonb, '["c1"]'::jsonb,
+        '["seed-insight"]'::jsonb, '["web-app"]'::jsonb,
         1, 'eA', 'temporal', 'medium', 1, NULL,
         'anomaly:ml-anomaly:cpu', NOW() - INTERVAL '30 minutes',
         NOW() - INTERVAL '30 minutes', 'seed-insight'
@@ -223,7 +223,7 @@ describe('correlator — long-running anomaly joins existing incident regardless
         insight_count, summary, signature, created_at, updated_at, root_cause_insight_id
       ) VALUES (
         'inc-cpu', 'cpu', 'warning', 'active',
-        '["seed-cpu"]'::jsonb, '["c1"]'::jsonb, 1, 'eA',
+        '["seed-cpu"]'::jsonb, '["web-app"]'::jsonb, 1, 'eA',
         'temporal', 'medium', 1, NULL, 'anomaly:ml-anomaly:cpu',
         NOW() - INTERVAL '10 minutes', NOW() - INTERVAL '10 minutes', 'seed-cpu'
       )

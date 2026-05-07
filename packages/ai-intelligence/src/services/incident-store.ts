@@ -140,21 +140,24 @@ export async function getIncident(id: string): Promise<Incident | null> {
 }
 
 /**
- * Find an active incident that already covers `(signature, containerId)`.
+ * Find an active incident that already covers `(signature, containerName)`.
  *
- * Matches `incidents.signature = ? AND status = 'active' AND containers
- * include containerId` regardless of incident age. The previous version
- * filtered to incidents created within `withinMinutes` (default 5), which
- * caused continuous-emission scenarios (a 1-hour-long anomaly) to spawn
- * dozens of ungrouped singletons after the original incident aged past
- * the window. Fixed in #1195.
+ * Matches `incidents.signature = ? AND status = 'active' AND
+ * affected_containers @> [containerName]` regardless of incident age. The
+ * `affected_containers` column stores container NAMES (not container IDs)
+ * — see other queries in this file that lateral-unnest the column with the
+ * `container_name` alias, and `buildIncident()` in incident-correlator.ts
+ * which populates it from `insight.container_name`.
  *
- * Returns the most recently updated matching incident if multiple exist
- * (same signature on same container is rare but possible across
- * resolved-then-reopened cycles).
+ * The previous implementation filtered to incidents created within
+ * `withinMinutes` (default 5), which caused continuous-emission scenarios
+ * (a 1-hour-long anomaly) to spawn dozens of ungrouped singletons after
+ * the original incident aged past the window. Fixed in #1195.
+ *
+ * Returns the most recently updated matching incident if multiple exist.
  */
 export async function getActiveIncidentForContainer(
-  containerId: string,
+  containerName: string,
   signature: string,
 ): Promise<Incident | undefined> {
   const db = getDbForDomain('incidents');
@@ -165,7 +168,7 @@ export async function getActiveIncidentForContainer(
       AND affected_containers @> ?::jsonb
     ORDER BY updated_at DESC
     LIMIT 1
-  `, [signature, JSON.stringify([containerId])]);
+  `, [signature, JSON.stringify([containerName])]);
 
   return incidents[0];
 }
