@@ -622,36 +622,11 @@ describe('AiMonitorPage — container chip linking', () => {
   });
 });
 
-describe('AiMonitorPage — stat card filter vs subscription independence', () => {
-  it('clicking the bell icon toggles subscription without changing the severity filter', async () => {
-    const subscribe = vi.fn();
-    const unsubscribe = vi.fn();
-    vi.mocked(useMonitoring).mockReturnValue({
-      insights: [],
-      isLoading: false, error: null,
-      subscribedSeverities: new Set(['critical', 'warning', 'info']),
-      subscribeSeverity: subscribe,
-      unsubscribeSeverity: unsubscribe,
-      acknowledgeInsight: vi.fn(),
-      acknowledgeError: null,
-      isAcknowledging: false,
-      acknowledgingInsightId: null,
-      refetch: vi.fn(),
-    } as unknown as ReturnType<typeof useMonitoring>);
-
-    renderPage();
-
-    // Bell button has accessible name "Pause live critical alerts"
-    const pauseCritical = screen.getByRole('button', { name: /Pause live critical alerts/i });
-    fireEvent.click(pauseCritical);
-
-    expect(unsubscribe).toHaveBeenCalledWith('critical');
-    // Should NOT have triggered a severity-filter change — the All filter
-    // tab remains the active tab (aria-pressed=true on Total Insights btn).
-    const totalCard = screen.getByRole('button', { name: /Total Insights/i });
-    expect(totalCard.getAttribute('aria-pressed')).toBe('true');
-  });
-});
+// Stat-card subscription/filter independence test removed — the per-severity
+// stat cards (with their bell-icon subscription toggles) were folded into the
+// Fleet Vitals hero as display-only HealthStatTiles. Filter is now driven by
+// the severity-tab strip and subscriptions are managed via useMonitoring's
+// defaults; no per-card affordance remains for this test to exercise.
 
 describe('AiMonitorPage — IncidentGroupsView integration', () => {
   it('renders IncidentGroupsView in place of the legacy flat list', () => {
