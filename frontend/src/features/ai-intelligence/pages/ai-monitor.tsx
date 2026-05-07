@@ -456,88 +456,81 @@ export default function AiMonitorPage() {
       </SpotlightCard>
 
       {/* Insights Filter Cards — click body to filter, bell icon toggles live alerts.
-          Slimmer than before so the page hero (Fleet Vitals) keeps dominance. */}
-      <div className="grid gap-3 md:grid-cols-4">
-        <SpotlightCard>
+          Surface and typography mirror Home's KpiCard (`shared/components/data-display/kpi-card.tsx`):
+          neutral `bg-card`, `p-6`, `text-sm` label, `text-3xl` value, hover lift.
+          Severity is conveyed via a colored icon, not a tinted card background. */}
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <SpotlightCard className="h-full">
           <button
             type="button"
             onClick={() => setSeverityFilter('all')}
             aria-pressed={severityFilter === 'all'}
             className={cn(
-              'block w-full rounded-lg border bg-card px-4 py-3 text-left transition-all',
-              severityFilter === 'all' ? 'ring-2 ring-primary/40' : 'hover:bg-muted/30',
+              'block h-full w-full rounded-lg border bg-card p-6 shadow-sm text-left transition-all duration-200',
+              'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
+              severityFilter === 'all' && 'ring-2 ring-primary/40',
             )}
           >
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Insights</p>
-              <Activity className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-muted-foreground">Total Insights</p>
+              <Activity className="h-5 w-5 text-primary" />
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums">{stats.total}</p>
+            <p className="mt-2 text-3xl font-bold tracking-tight tabular-nums">{stats.total}</p>
           </button>
         </SpotlightCard>
         {([
           { severity: 'critical' as const, label: 'Critical', icon: AlertTriangle, count: stats.critical,
-            tint: 'bg-red-50 dark:bg-red-900/20',
-            text: 'text-red-800 dark:text-red-200', iconColor: 'text-red-600 dark:text-red-400',
-            countColor: 'text-red-900 dark:text-red-100', ring: 'ring-red-500/40' },
+            iconColor: 'text-red-600 dark:text-red-400', ring: 'ring-red-500/40' },
           { severity: 'warning' as const, label: 'Warnings', icon: AlertCircle, count: stats.warning,
-            tint: 'bg-amber-50 dark:bg-amber-900/20',
-            text: 'text-amber-800 dark:text-amber-200', iconColor: 'text-amber-600 dark:text-amber-400',
-            countColor: 'text-amber-900 dark:text-amber-100', ring: 'ring-amber-500/40' },
+            iconColor: 'text-amber-600 dark:text-amber-400', ring: 'ring-amber-500/40' },
           { severity: 'info' as const, label: 'Info', icon: Info, count: stats.info,
-            tint: 'bg-blue-50 dark:bg-blue-900/20',
-            text: 'text-blue-800 dark:text-blue-200', iconColor: 'text-blue-600 dark:text-blue-400',
-            countColor: 'text-blue-900 dark:text-blue-100', ring: 'ring-blue-500/40' },
+            iconColor: 'text-blue-600 dark:text-blue-400', ring: 'ring-blue-500/40' },
         ]).map((card) => {
           const isSubscribed = subscribedSeverities.has(card.severity);
           const isFiltered = severityFilter === card.severity;
           const Icon = card.icon;
           return (
-            <SpotlightCard key={card.severity}>
+            <SpotlightCard key={card.severity} className="h-full">
               <div
                 className={cn(
-                  'relative rounded-lg border px-4 py-3 transition-all',
-                  card.tint,
+                  'relative h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
+                  'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
                   isFiltered && `ring-2 ${card.ring}`,
                 )}
               >
-              <button
-                type="button"
-                onClick={() => handleSeverityFilter(card.severity)}
-                aria-pressed={isFiltered}
-                title={isFiltered ? 'Click to clear filter' : `Filter list to ${card.label.toLowerCase()}`}
-                className="block w-full text-left"
-              >
-                <div className="flex items-center justify-between pr-9">
-                  <p className={cn('text-xs font-medium uppercase tracking-wide', card.text)}>{card.label}</p>
-                  <Icon className={cn('h-4 w-4', card.iconColor)} />
-                </div>
-                <p className={cn('mt-1 text-2xl font-bold tabular-nums', card.countColor)}>
-                  {card.count}
-                </p>
-              </button>
-              {/* Live-alert subscription toggle — separate sibling target.
-                  No stopPropagation needed because this button is a sibling
-                  of the card-body button (not nested inside it). 32×32 hit
-                  area: above WCAG 2.5.5 AA (24×24) and well above the
-                  practical comfort zone for pointer + touch input. */}
-              <button
-                type="button"
-                onClick={() => handleSubscriptionToggle(card.severity)}
-                aria-pressed={isSubscribed}
-                title={isSubscribed ? `Pause live ${card.label.toLowerCase()} alerts` : `Resume live ${card.label.toLowerCase()} alerts`}
-                className={cn(
-                  'absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
-                  isSubscribed
-                    ? 'bg-card text-muted-foreground hover:bg-muted'
-                    : 'bg-muted text-muted-foreground/60 hover:bg-muted/80',
-                )}
-              >
-                {isSubscribed ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
-                <span className="sr-only">
-                  {isSubscribed ? 'Pause' : 'Resume'} live {card.label.toLowerCase()} alerts
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleSeverityFilter(card.severity)}
+                  aria-pressed={isFiltered}
+                  title={isFiltered ? 'Click to clear filter' : `Filter list to ${card.label.toLowerCase()}`}
+                  className="block w-full text-left"
+                >
+                  <div className="flex items-center justify-between pr-9">
+                    <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
+                    <Icon className={cn('h-5 w-5', card.iconColor)} />
+                  </div>
+                  <p className="mt-2 text-3xl font-bold tracking-tight tabular-nums">
+                    {card.count}
+                  </p>
+                </button>
+                {/* Live-alert subscription toggle — sibling target. */}
+                <button
+                  type="button"
+                  onClick={() => handleSubscriptionToggle(card.severity)}
+                  aria-pressed={isSubscribed}
+                  title={isSubscribed ? `Pause live ${card.label.toLowerCase()} alerts` : `Resume live ${card.label.toLowerCase()} alerts`}
+                  className={cn(
+                    'absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+                    isSubscribed
+                      ? 'bg-card text-muted-foreground hover:bg-muted'
+                      : 'bg-muted text-muted-foreground/60 hover:bg-muted/80',
+                  )}
+                >
+                  {isSubscribed ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+                  <span className="sr-only">
+                    {isSubscribed ? 'Pause' : 'Resume'} live {card.label.toLowerCase()} alerts
+                  </span>
+                </button>
               </div>
             </SpotlightCard>
           );
