@@ -228,19 +228,41 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
             {effectivelyOpen && (
               <div className="border-t bg-muted/10">
                 <ul className="divide-y">
-                  {rows.map((row) => (
-                    <li key={`${row.incident_id}:${row.container_name}`} className="flex items-center justify-between px-4 py-2 text-sm">
-                      <Link
-                        to={`/containers/${row.endpoint_id}/${row.container_name}`}
-                        className="font-mono text-sm hover:underline"
+                  {rows.map((row) => {
+                    const detail = ('latest_description' in row ? row.latest_description : null)
+                      ?? ('latest_summary' in row ? row.latest_summary : null);
+                    const count = ('incident_count' in row ? row.incident_count : 1) ?? 1;
+                    return (
+                      <li
+                        key={`${row.incident_id}:${row.container_name}`}
+                        className="flex flex-col gap-1 px-4 py-2 text-sm"
                       >
-                        {row.container_name}
-                      </Link>
-                      <span className="text-xs text-muted-foreground">
-                        {row.severity} · {row.endpoint_name ?? 'unknown'}
-                      </span>
-                    </li>
-                  ))}
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Link
+                              to={`/containers/${row.endpoint_id}/${row.container_name}`}
+                              className="font-mono text-sm hover:underline truncate"
+                            >
+                              {row.container_name}
+                            </Link>
+                            {count > 1 && (
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                {count} alerts
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {row.severity} · {row.endpoint_name ?? 'unknown'}
+                          </span>
+                        </div>
+                        {detail && (
+                          <p className="pl-1 text-xs text-muted-foreground">
+                            {detail}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {!longTail && g.container_count > g.top_containers.length && (
                   <button
