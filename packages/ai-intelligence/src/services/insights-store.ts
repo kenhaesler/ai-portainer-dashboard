@@ -4,6 +4,9 @@ import type { Insight } from '@dashboard/core/models/monitoring.js';
 
 const log = createChildLogger('insights-store');
 
+/** Minutes within which a duplicate insight is suppressed. */
+const DEDUP_WINDOW_MINUTES = 60;
+
 export interface InsightInsert {
   id: string;
   endpoint_id: number | null;
@@ -141,7 +144,7 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
       AND category = ?
       AND metric_type = ?
       AND detection_method = ?
-      AND created_at >= NOW() - INTERVAL '60 minutes'
+      AND created_at >= NOW() - (${DEDUP_WINDOW_MINUTES} || ' minutes')::INTERVAL
   `;
 
   const dedupeTitleSQL = `
@@ -149,7 +152,7 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
     WHERE container_id = ?
       AND category = ?
       AND title = ?
-      AND created_at >= NOW() - INTERVAL '60 minutes'
+      AND created_at >= NOW() - (${DEDUP_WINDOW_MINUTES} || ' minutes')::INTERVAL
   `;
 
   const insertedIds = await db.transaction(async (txDb) => {
