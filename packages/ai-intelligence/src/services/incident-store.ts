@@ -330,7 +330,6 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
     latest_at: string;
     latest_summary: string | null;
     latest_description: string | null;
-    rn: number;
   }>(`
     WITH base AS (
       SELECT id, signature, severity, endpoint_id, endpoint_name,
@@ -350,7 +349,8 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
              ROW_NUMBER() OVER (
                PARTITION BY signature, container_name
                ORDER BY (CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END),
-                        created_at DESC
+                        created_at DESC,
+                        incident_id DESC
              ) AS rn_in_container
       FROM expanded
     ),
@@ -385,7 +385,8 @@ export async function getIncidentGroups(options: IncidentGroupsOptions = {}): Pr
              ROW_NUMBER() OVER (
                PARTITION BY r.signature
                ORDER BY (CASE r.rep_severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END),
-                        r.rep_created_at DESC
+                        r.rep_created_at DESC,
+                        r.rep_incident_id DESC
              ) AS rn
       FROM representatives r
       JOIN grouped g
