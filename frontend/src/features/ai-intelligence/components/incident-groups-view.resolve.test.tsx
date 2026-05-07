@@ -44,6 +44,7 @@ const groupOf = (ids: string[]) => ({
   top_containers: ids.map((id, i) => ({
     incident_id: id, container_name: `cn-${i}`, endpoint_id: 1, endpoint_name: 'e',
     severity: 'critical' as const, created_at: '',
+    incident_ids: [id], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null,
   })),
   all_container_names: ids.map((_, i) => `cn-${i}`),
   names_truncated: false,

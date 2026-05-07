@@ -31,6 +31,7 @@ describe('IncidentGroupsView — Show all pagination', () => {
             incident_id: `i${i}`, container_name: `cn-${i}`,
             endpoint_id: 1, endpoint_name: 'e', severity: 'warning' as const,
             created_at: '',
+            incident_ids: [`i${i}`], incident_count: 1, latest_at: '', latest_summary: null, latest_description: null,
           })),
           all_container_names: Array.from({ length: 12 }, (_, i) => `cn-${i}`),
           names_truncated: false,

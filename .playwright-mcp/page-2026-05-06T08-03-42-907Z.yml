@@ -1,0 +1,29 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - img "Brain logo" [ref=e10]
+        - heading "Docker Insights" [level=1] [ref=e14]
+        - paragraph [ref=e15]: powered by AI
+        - paragraph [ref=e16]: Sign in to your account
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - text: Username
+          - textbox "Username" [ref=e19]:
+            - /placeholder: Enter your username
+            - text: admin
+        - generic [ref=e20]:
+          - text: Password
+          - textbox "Password" [ref=e21]:
+            - /placeholder: Enter your password
+            - text: changeme123changeme123
+        - button "Sign in Signed in" [disabled]:
+          - generic: Sign in
+          - generic: Signed in
+    - region "Notifications alt+T"
+  - generic [ref=e24]:
+    - img "Loading logo" [ref=e29]
+    - generic [ref=e33]:
+      - paragraph [ref=e34]: Initializing Intelligence
+      - paragraph [ref=e37]: Powered by AI
+    - paragraph [ref=e42]: Establishing secure neural link...
