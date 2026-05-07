@@ -108,8 +108,14 @@ export async function getRecentInsights(minutes: number, limit: number = 500): P
 
 /**
  * Batch insert insights in a single transaction with deduplication.
- * Skips insights where (container_id, category, title) already exists within the last 60 minutes.
- * Returns the set of actually-inserted insight IDs so callers can filter downstream operations.
+ *
+ * Within the last 60 minutes, skips insights that match an existing row by:
+ * - `(container_id, category, metric_type, detection_method)` when both
+ *   structured fields are present (anomaly / threshold / prediction emitters)
+ * - `(container_id, category, title)` otherwise (legacy / free-text insights)
+ *
+ * Returns the set of actually-inserted insight IDs so callers can filter
+ * downstream operations.
  */
 export async function insertInsights(insights: InsightInsert[]): Promise<Set<string>> {
   if (insights.length === 0) return new Set();
@@ -125,9 +131,24 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())
   `;
 
-  const dedupeSQL = `
+  // Two dedup queries: structured for insights that carry metric_type +
+  // detection_method (anomaly, threshold, prediction — title-stable signature),
+  // and the legacy title-based key for insights without those columns
+  // (security scans, free-text log patterns, ai-analysis findings).
+  const dedupeStructuredSQL = `
     SELECT COUNT(*)::integer as cnt FROM insights
-    WHERE container_id = ? AND category = ? AND title = ?
+    WHERE container_id = ?
+      AND category = ?
+      AND metric_type = ?
+      AND detection_method = ?
+      AND created_at >= NOW() - INTERVAL '60 minutes'
+  `;
+
+  const dedupeTitleSQL = `
+    SELECT COUNT(*)::integer as cnt FROM insights
+    WHERE container_id = ?
+      AND category = ?
+      AND title = ?
       AND created_at >= NOW() - INTERVAL '60 minutes'
   `;
 
@@ -136,13 +157,25 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
     for (const insight of insights) {
       // Deduplication check
       if (insight.container_id) {
-        const row = await txDb.queryOne<{ cnt: number }>(dedupeSQL, [
-          insight.container_id,
-          insight.category,
-          insight.title,
-        ]);
+        const useStructuredKey = insight.metric_type && insight.detection_method;
+        const row = useStructuredKey
+          ? await txDb.queryOne<{ cnt: number }>(dedupeStructuredSQL, [
+              insight.container_id,
+              insight.category,
+              insight.metric_type,
+              insight.detection_method,
+            ])
+          : await txDb.queryOne<{ cnt: number }>(dedupeTitleSQL, [
+              insight.container_id,
+              insight.category,
+              insight.title,
+            ]);
         if (row && row.cnt > 0) {
-          log.debug({ containerId: insight.container_id, category: insight.category, title: insight.title }, 'Duplicate insight skipped');
+          log.debug({
+            containerId: insight.container_id,
+            category: insight.category,
+            dedupKey: useStructuredKey ? 'structured' : 'title',
+          }, 'Duplicate insight skipped');
           continue;
         }
       }
