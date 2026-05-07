@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
 const mockSetSearchParams = vi.fn();
 const mockNavigate = vi.fn();
@@ -31,55 +32,59 @@ vi.mock('@/features/containers/hooks/use-stacks', () => ({
   }),
 }));
 
+const defaultContainersMock = {
+  data: [
+    {
+      id: 'c-workers',
+      name: 'workers-api-1',
+      image: 'workers:latest',
+      state: 'running',
+      status: 'Up',
+      endpointId: 1,
+      endpointName: 'local',
+      ports: [],
+      created: 1700000000,
+      labels: { 'com.docker.compose.project': 'workers' },
+      networks: [],
+    },
+    {
+      id: 'c-beyla',
+      name: 'beyla',
+      image: 'grafana/beyla:latest',
+      state: 'running',
+      status: 'Up',
+      endpointId: 1,
+      endpointName: 'local',
+      ports: [],
+      created: 1700000000,
+      labels: {},
+      networks: [],
+    },
+    {
+      id: 'c-billing',
+      name: 'billing-api-1',
+      image: 'billing:latest',
+      state: 'running',
+      status: 'Up',
+      endpointId: 1,
+      endpointName: 'local',
+      ports: [],
+      created: 1700000000,
+      labels: { 'com.docker.compose.project': 'billing' },
+      networks: [],
+    },
+  ] as Container[],
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: vi.fn(),
+  isFetching: false,
+};
+
+const mockUseContainers = vi.fn(() => defaultContainersMock);
+
 vi.mock('@/features/containers/hooks/use-containers', () => ({
-  useContainers: () => ({
-    data: [
-      {
-        id: 'c-workers',
-        name: 'workers-api-1',
-        image: 'workers:latest',
-        state: 'running',
-        status: 'Up',
-        endpointId: 1,
-        endpointName: 'local',
-        ports: [],
-        created: 1700000000,
-        labels: { 'com.docker.compose.project': 'workers' },
-        networks: [],
-      },
-      {
-        id: 'c-beyla',
-        name: 'beyla',
-        image: 'grafana/beyla:latest',
-        state: 'running',
-        status: 'Up',
-        endpointId: 1,
-        endpointName: 'local',
-        ports: [],
-        created: 1700000000,
-        labels: {},
-        networks: [],
-      },
-      {
-        id: 'c-billing',
-        name: 'billing-api-1',
-        image: 'billing:latest',
-        state: 'running',
-        status: 'Up',
-        endpointId: 1,
-        endpointName: 'local',
-        ports: [],
-        created: 1700000000,
-        labels: { 'com.docker.compose.project': 'billing' },
-        networks: [],
-      },
-    ],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: vi.fn(),
-    isFetching: false,
-  }),
+  useContainers: (...args: unknown[]) => mockUseContainers(...args),
 }));
 
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
@@ -187,6 +192,41 @@ vi.mock('@/shared/lib/motion-tokens', () => ({
   transition: { fast: { duration: 0.15, ease: [0.4, 0, 0.2, 1] } },
 }));
 
+let mockOnRemoveFromComparison: ((target: { endpointId: number; containerId: string }) => void) | undefined;
+
+vi.mock('@/features/containers/components/container-comparison-view', () => ({
+  ContainerComparisonView: ({
+    containers,
+    tab,
+    onRemove,
+  }: {
+    containers: Array<{ id: string; name: string; endpointId: number }>;
+    tab: string;
+    onRemove: (target: { endpointId: number; containerId: string }) => void;
+  }) => {
+    mockOnRemoveFromComparison = onRemove;
+    return (
+      <div data-testid="container-comparison-view" data-tab={tab} data-container-count={containers.length}>
+        {tab === 'metrics' && (
+          <>
+            <h3>CPU Usage</h3>
+            <h3>Memory Usage</h3>
+          </>
+        )}
+        {containers.map((c) => (
+          <button
+            key={c.id}
+            aria-label={`Remove ${c.name} from comparison`}
+            onClick={() => onRemove({ endpointId: c.endpointId, containerId: c.id })}
+          >
+            {c.name}
+          </button>
+        ))}
+      </div>
+    );
+  },
+}));
+
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
   motion: {
@@ -225,6 +265,7 @@ describe('WorkloadExplorerPage', () => {
     mockOnSelectionChange = undefined;
     mockOnStateFilterChange = undefined;
     mockColumns = undefined;
+    mockUseContainers.mockReturnValue(defaultContainersMock);
   });
 
   it('renders stack and group dropdowns with options', () => {
@@ -329,8 +370,10 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(dismissStackButton);
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
-    expect(params).toEqual({ endpoint: '1', group: 'workload' });
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('stack')).toBeNull();
   });
 
   it('renders state filter chip when state param is set', () => {
@@ -359,8 +402,10 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(screen.getByText('Clear all'));
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
-    expect(params).toEqual({});
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBeNull();
+    expect(params.get('stack')).toBeNull();
+    expect(params.get('group')).toBeNull();
   });
 
   it('renders WorkloadStatusSummary with pre-state container count', () => {
@@ -453,7 +498,7 @@ describe('WorkloadExplorerPage', () => {
     expect(screen.getByTestId('compare-button')).toBeInTheDocument();
   });
 
-  it('navigates to comparison page when compare button is clicked', () => {
+  it('navigates to compare mode via setSearchParams when compare button is clicked', () => {
     render(<WorkloadExplorerPage />);
 
     act(() => {
@@ -465,9 +510,14 @@ describe('WorkloadExplorerPage', () => {
 
     fireEvent.click(screen.getByTestId('compare-button'));
 
-    expect(mockNavigate).toHaveBeenCalledWith(
-      '/comparison?containers=1:c-workers,1:c-billing'
-    );
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const [nextParams, options] = mockSetSearchParams.mock.calls[0] as [URLSearchParams, { replace: boolean }];
+    expect(nextParams.get('mode')).toBe('compare');
+    expect(nextParams.get('containers')).toBe('1:c-workers,1:c-billing');
+    // Filter params preserved
+    expect(nextParams.get('endpoint')).toBe('1');
+    expect(nextParams.get('stack')).toBe('workers');
+    expect(options).toEqual({ replace: false });
   });
 
   it('clears selection when clear button is clicked', () => {
@@ -532,13 +582,11 @@ describe('WorkloadExplorerPage', () => {
     // filter values preserved, not just the stack. Before the fix, endpoint,
     // group, and state would be lost due to stale closure.
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
-    expect(params).toEqual({
-      endpoint: '1',
-      stack: 'workers',
-      group: 'workload',
-      state: 'running',
-    });
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('state')).toBe('running');
   });
 
   // -------------------------------------------------------------------------
@@ -599,14 +647,12 @@ describe('WorkloadExplorerPage', () => {
     );
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
     // endpoint is dropped, all other active filters remain
-    expect(params).toEqual({
-      stack: 'workers',
-      group: 'workload',
-      state: 'running',
-    });
-    expect(params).not.toHaveProperty('endpoint');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('group')).toBe('workload');
+    expect(params.get('state')).toBe('running');
+    expect(params.get('endpoint')).toBeNull();
   });
 
   it('removes group filter from URL params when group chip dismiss is clicked', () => {
@@ -618,14 +664,12 @@ describe('WorkloadExplorerPage', () => {
     );
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
     // group is dropped, all other active filters remain
-    expect(params).toEqual({
-      endpoint: '1',
-      stack: 'workers',
-      state: 'running',
-    });
-    expect(params).not.toHaveProperty('group');
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('state')).toBe('running');
+    expect(params.get('group')).toBeNull();
   });
 
   it('preserves state filter when clicking a stack column cell with only endpoint+state active (#1031 + #1035)', () => {
@@ -667,14 +711,138 @@ describe('WorkloadExplorerPage', () => {
     fireEvent.click(stackButton!);
 
     expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
-    const params = mockSetSearchParams.mock.calls[0][0];
+    const params = mockSetSearchParams.mock.calls[0][0] as URLSearchParams;
     // Both endpoint and state must be preserved — pre-#1031 the closure
     // dropped them; pre-#1035 the state chip wouldn't have been visible
     // even if the state param were preserved.
-    expect(params).toEqual({
-      endpoint: '1',
-      stack: 'workers',
-      state: 'running',
-    });
+    expect(params.get('endpoint')).toBe('1');
+    expect(params.get('stack')).toBe('workers');
+    expect(params.get('state')).toBe('running');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compare-mode URL contract
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('WorkloadExplorerPage — compare mode', () => {
+  beforeEach(() => {
+    mockQueryString = '';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+    mockOnRemoveFromComparison = undefined;
+  });
+
+  it('renders ContainerComparisonView when mode=compare and containers param is set with valid ids', () => {
+    // Two containers from the default mock: c-workers (endpointId 1) and c-billing (endpointId 1)
+    mockQueryString = 'mode=compare&containers=1:c-workers,1:c-billing';
+    render(<WorkloadExplorerPage />);
+
+    // ContainerComparisonView is rendered (mocked stub)
+    expect(screen.getByTestId('container-comparison-view')).toBeInTheDocument();
+    // Default tab is metrics — the stub renders CPU Usage and Memory Usage
+    expect(screen.getByText('CPU Usage')).toBeInTheDocument();
+    expect(screen.getByText('Memory Usage')).toBeInTheDocument();
+
+    // The table should NOT be in the DOM in compare mode
+    expect(screen.queryByTestId('workloads-table')).not.toBeInTheDocument();
+  });
+
+  it('shows the "no containers" empty state when mode=compare but no containers param is set', () => {
+    mockQueryString = 'mode=compare';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('No containers to compare')).toBeInTheDocument();
+    // There are two back buttons (header + empty state) — assert at least one is present
+    const backBtns = screen.getAllByRole('button', { name: /← Back to list/i });
+    expect(backBtns.length).toBeGreaterThanOrEqual(1);
+
+    // ContainerComparisonView stub should NOT be present
+    expect(screen.queryByTestId('container-comparison-view')).not.toBeInTheDocument();
+  });
+
+  it('shows the "needs at least 2" empty state when only 1 container resolves', () => {
+    // Only one container id in the param; the mock data only has c-workers
+    mockQueryString = 'mode=compare&containers=1:c-workers';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.getByText('Compare needs at least 2 containers')).toBeInTheDocument();
+    expect(screen.queryByTestId('container-comparison-view')).not.toBeInTheDocument();
+  });
+
+  it('Back to list strips mode/containers/tab/range but preserves filter params', () => {
+    // c-workers and c-billing are both in the default mock data,
+    // so compared.length === 2 and ContainerComparisonView is shown.
+    mockQueryString = 'endpoint=1&stack=workers&mode=compare&containers=1:c-workers,1:c-billing&tab=config&range=24h';
+    render(<WorkloadExplorerPage />);
+
+    // In compare mode the header always shows a "← Back to list" button
+    const backBtn = screen.getByRole('button', { name: /← Back to list/i });
+    fireEvent.click(backBtn);
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const [nextParams, options] = mockSetSearchParams.mock.calls[0] as [URLSearchParams, { replace: boolean }];
+    // Filter params preserved
+    expect(nextParams.get('endpoint')).toBe('1');
+    expect(nextParams.get('stack')).toBe('workers');
+    // Compare-mode params stripped
+    expect(nextParams.get('mode')).toBeNull();
+    expect(nextParams.get('containers')).toBeNull();
+    expect(nextParams.get('tab')).toBeNull();
+    expect(nextParams.get('range')).toBeNull();
+    expect(options).toEqual({ replace: false });
+  });
+
+  it('clicking a pill × removes that container from the containers param', () => {
+    // Three containers in the URL; remove the first (c-workers / web-app alias: workers-api-1)
+    mockQueryString = 'mode=compare&containers=1:c-workers,1:c-beyla,1:c-billing';
+    render(<WorkloadExplorerPage />);
+
+    // Confirm all three resolved
+    expect(screen.getByTestId('container-comparison-view')).toHaveAttribute(
+      'data-container-count',
+      '3',
+    );
+
+    // The ContainerComparisonView mock renders a remove button per container.
+    // Click the × for workers-api-1.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove workers-api-1 from comparison' }));
+
+    expect(mockSetSearchParams).toHaveBeenCalledTimes(1);
+    const [nextParams] = mockSetSearchParams.mock.calls[0] as [URLSearchParams, unknown];
+    // c-workers is removed; c-beyla and c-billing remain
+    expect(nextParams.get('containers')).toBe('1:c-beyla,1:c-billing');
+    // mode is preserved (still in compare mode with 2 remaining containers)
+    expect(nextParams.get('mode')).toBe('compare');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header Compare button
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('WorkloadExplorerPage — header Compare button', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+    mockOnSelectionChange = undefined;
+  });
+
+  it('renders the Compare button in the header in table mode, disabled when no rows selected', () => {
+    render(<WorkloadExplorerPage />);
+
+    const button = screen.getByRole('button', { name: /^Compare$/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'Select 2 or more containers to compare');
+  });
+
+  it('does NOT render the header Compare button in compare mode', () => {
+    mockQueryString = 'mode=compare&containers=1:c-workers,1:c-billing';
+    render(<WorkloadExplorerPage />);
+
+    expect(screen.queryByRole('button', { name: /^Compare( \d+)?$/ })).not.toBeInTheDocument();
   });
 });

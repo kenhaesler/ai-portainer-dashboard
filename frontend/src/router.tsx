@@ -25,7 +25,7 @@ const Settings = lazy(() => import('@/features/core/pages/settings'));
 const Backups = lazy(() => import('@/features/core/pages/backups'));
 const ContainerDetail = lazy(() => import('@/features/containers/pages/container-detail'));
 const PacketCapture = lazy(() => import('@/features/security/pages/packet-capture'));
-const ContainerComparison = lazy(() => import('@/features/containers/pages/container-comparison'));
+const ContainerComparisonRedirect = lazy(() => import('@/features/containers/pages/container-comparison-redirect'));
 const StatusPage = lazy(() => import('@/features/observability/pages/status-page'));
 const Reports = lazy(() => import('@/features/observability/pages/reports'));
 const LogViewer = lazy(() => import('@/features/observability/pages/log-viewer'));
@@ -78,7 +78,7 @@ export const router = createBrowserRouter([
       { path: 'stacks', element: <Navigate to="/infrastructure?tab=stacks" replace /> },
       { path: 'containers/:endpointId/:containerId', element: <LazyPage><ContainerDetail /></LazyPage> },
       { path: 'health', element: <LazyPage><AiMonitor /></LazyPage> },
-      { path: 'comparison', element: <LazyPage><ContainerComparison /></LazyPage> },
+      { path: 'comparison', element: <LazyPage><ContainerComparisonRedirect /></LazyPage> },
       { path: 'images', element: <LazyPage><ImageFootprint /></LazyPage> },
       { path: 'topology', element: <LazyPage><NetworkTopology /></LazyPage> },
       { path: 'ai-monitor', element: <Navigate to="/health" replace /> },

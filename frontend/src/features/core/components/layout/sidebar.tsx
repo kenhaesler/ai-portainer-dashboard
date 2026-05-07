@@ -5,7 +5,6 @@ import {
   Boxes,
   Server,
   HeartPulse,
-  GitCompareArrows,
   PackageOpen,
   Network,
   BarChart3,
@@ -64,7 +63,6 @@ const navigation: NavGroup[] = [
     title: 'Containers',
     items: [
       { label: 'Health & Monitoring', to: '/health', icon: HeartPulse },
-      { label: 'Comparison', to: '/comparison', icon: GitCompareArrows },
       { label: 'Image Footprint', to: '/images', icon: PackageOpen },
       { label: 'Network Topology', to: '/topology', icon: Network },
     ],
@@ -196,7 +194,6 @@ export function Sidebar() {
     '/workloads': idlePrefetch(prefetchContainers),
     '/infrastructure': idlePrefetch(() => { prefetchEndpoints(); prefetchStacks(); }),
     '/health': idlePrefetch(prefetchContainers),
-    '/comparison': idlePrefetch(prefetchContainers),
     '/images': idlePrefetch(prefetchImages),
   };
 
