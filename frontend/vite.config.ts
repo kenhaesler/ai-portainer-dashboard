@@ -99,6 +99,12 @@ export default defineConfig({
       '/health': {
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
         changeOrigin: true,
+        // The SPA has a `/health` route AND the backend has a `/health` liveness
+        // probe (load-balancer convention). Browser navigation gets the SPA;
+        // API/probe callers (Accept: !text/html) get the backend.
+        bypass: (req) => {
+          if (req.headers.accept?.includes('text/html')) return req.url;
+        },
       },
       '/socket.io': {
         target: process.env.VITE_INTERNAL_API_URL || 'http://localhost:3051',
