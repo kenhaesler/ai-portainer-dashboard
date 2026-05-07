@@ -57,7 +57,7 @@ export default function WorkloadExplorerPage() {
       .map((pair) => {
         const [eIdStr, cId] = pair.split(':');
         const eId = Number(eIdStr);
-        if (!cId || Number.isNaN(eId)) return null;
+        if (!cId || Number.isNaN(eId) || eId <= 0) return null;
         return { endpointId: eId, containerId: cId };
       })
       .filter((x): x is { endpointId: number; containerId: string } => x !== null);
@@ -265,9 +265,9 @@ export default function WorkloadExplorerPage() {
     setSearchParams(next, { replace: false });
   }, [searchParams, setSearchParams]);
 
-  const removeFromCompare = useCallback((containerId: string) => {
+  const removeFromCompare = useCallback((target: { endpointId: number; containerId: string }) => {
     const remaining = compareContainerIds
-      .filter((p) => p.containerId !== containerId)
+      .filter((p) => !(p.containerId === target.containerId && p.endpointId === target.endpointId))
       .map((p) => `${p.endpointId}:${p.containerId}`)
       .join(',');
     const next = new URLSearchParams(searchParams);

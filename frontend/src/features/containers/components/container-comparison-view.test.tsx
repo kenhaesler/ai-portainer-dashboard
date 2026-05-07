@@ -98,7 +98,7 @@ describe('ContainerComparisonView', () => {
     );
 
     await userEvent.click(screen.getByLabelText('Remove web-app from comparison'));
-    expect(onRemove).toHaveBeenCalledWith('c1');
+    expect(onRemove).toHaveBeenCalledWith({ endpointId: 1, containerId: 'c1' });
   });
 
   it('renders the metrics tab by default and shows the time-range strip', () => {

@@ -23,7 +23,7 @@ export interface ContainerComparisonViewProps {
   onTabChange: (tab: ComparisonTab) => void;
   timeRange: string;
   onTimeRangeChange: (range: string) => void;
-  onRemove: (containerId: string) => void;
+  onRemove: (target: { endpointId: number; containerId: string }) => void;
 }
 
 // ─── Pill row (extracted from the old ContainerSelector, minus the picker) ──
@@ -41,7 +41,7 @@ function ContainerPills({
   onRemove,
 }: {
   containers: Container[];
-  onRemove: (containerId: string) => void;
+  onRemove: (target: { endpointId: number; containerId: string }) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2" data-testid="comparison-pills">
@@ -55,7 +55,7 @@ function ContainerPills({
           <span className="text-xs text-muted-foreground">{c.endpointName}</span>
           <button
             type="button"
-            onClick={() => onRemove(c.id)}
+            onClick={() => onRemove({ endpointId: c.endpointId, containerId: c.id })}
             aria-label={`Remove ${c.name} from comparison`}
             className="rounded-full p-0.5 text-muted-foreground hover:bg-muted"
           >
