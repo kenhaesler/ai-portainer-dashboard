@@ -15,7 +15,7 @@
 
 - **Multi-Endpoint Fleet Management** — Connect to multiple Portainer instances from a single pane of glass
 - **Real-Time Monitoring** — CPU/memory metrics collected every 60s with multi-method anomaly detection (z-score, Bollinger bands, adaptive, and Isolation Forest ML)
-- **AI Intelligence** — LLM-powered insights, anomaly explanations, NLP log analysis, predictive alerting, root cause investigation, and conversational chat assistant (Ollama)
+- **AI Intelligence** — LLM-powered insights, anomaly explanations, NLP log analysis, predictive alerting, root cause investigation, and conversational chat assistant (via Ollama, LM Studio, vLLM, LiteLLM, or any OpenAI-compatible endpoint)
 - **Automated Remediation** — AI-suggested fixes with approval workflow (pending → approved → executed)
 - **Network Topology** — Interactive graph visualization of container networks (XYFlow)
 - **Image Footprint Analysis** — Treemap and sunburst visualizations of image sizes across your fleet
@@ -114,9 +114,17 @@ LLM_MODEL=gpt-4o-mini                   # default model name
 ```
 
 Security defaults for self-hosted LLM servers:
-- Do not expose the LLM endpoint on `0.0.0.0` without authentication.
+- Do not expose your LLM endpoint on `0.0.0.0` without authentication.
 - Preferred default is localhost-only binding or an internal Docker network.
 - If remote access is required, place the LLM endpoint behind an authenticated reverse proxy or bastion and set `LLM_API_URL` to that protected endpoint.
+
+**Ollama example** — bind to localhost only:
+
+```bash
+OLLAMA_HOST=127.0.0.1:11434 ollama serve
+```
+
+Do not expose Ollama on `0.0.0.0` without authentication.
 
 ### 4. Access the dashboard
 

@@ -46,12 +46,12 @@ describe('Infrastructure Exposure Defaults', () => {
     expect(content).toMatch(/redis-cli -a \\"\$\{REDIS_PASSWORD\}\\" ping/);
   });
 
-  it('should document localhost-bound Ollama startup in README', () => {
+  it('should document localhost-bound LLM endpoint guidance in README', () => {
     const file = path.resolve(process.cwd(), '..', 'README.md');
     const content = readFileSync(file, 'utf8');
 
     expect(content).toContain('OLLAMA_HOST=127.0.0.1:11434 ollama serve');
-    expect(content).toContain('Do not expose Ollama on `0.0.0.0` without authentication.');
+    expect(content).toMatch(/Do not expose .*on `0\.0\.0\.0`.*without authentication/);
   });
 });
 
