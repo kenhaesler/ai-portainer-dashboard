@@ -160,7 +160,7 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
     for (const insight of insights) {
       // Deduplication check
       if (insight.container_id) {
-        const useStructuredKey = insight.metric_type && insight.detection_method;
+        const useStructuredKey = Boolean(insight.metric_type && insight.detection_method);
         const row = useStructuredKey
           ? await txDb.queryOne<{ cnt: number }>(dedupeStructuredSQL, [
               insight.container_id,

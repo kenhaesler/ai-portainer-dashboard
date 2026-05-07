@@ -70,7 +70,7 @@ export async function correlateInsights(
       const sig = deriveSignature(insight);
       const existing = await getActiveIncidentForContainer(insight.container_name, sig);
       if (existing) {
-        await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
+        await addInsightToIncident(existing.id, insight.id, insight.container_name);
         result.insightsGrouped = 1;
         log.debug({ incidentId: existing.id, insightId: insight.id }, 'Added insight to existing incident');
         return result;
@@ -142,7 +142,7 @@ export async function correlateInsights(
         const sig = deriveSignature(insight);
         const existing = await getActiveIncidentForContainer(insight.container_name, sig);
         if (existing) {
-          await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
+          await addInsightToIncident(existing.id, insight.id, insight.container_name);
           result.insightsGrouped++;
           continue;
         }

@@ -54,8 +54,6 @@ function makeInsight(overrides: Partial<Insight> & Pick<Insight, 'id' | 'contain
     description: 'd',
     suggested_action: null,
     is_acknowledged: 0,
-    metric_type: undefined,
-    detection_method: undefined,
     ...overrides,
   } as Insight;
 }
