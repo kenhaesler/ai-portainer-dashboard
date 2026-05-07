@@ -139,41 +139,35 @@ export async function getIncident(id: string): Promise<Incident | null> {
   return db.queryOne<Incident>('SELECT * FROM incidents WHERE id = ?', [id]);
 }
 
+/**
+ * Find an active incident that already covers `(signature, containerId)`.
+ *
+ * Matches `incidents.signature = ? AND status = 'active' AND containers
+ * include containerId` regardless of incident age. The previous version
+ * filtered to incidents created within `withinMinutes` (default 5), which
+ * caused continuous-emission scenarios (a 1-hour-long anomaly) to spawn
+ * dozens of ungrouped singletons after the original incident aged past
+ * the window. Fixed in #1195.
+ *
+ * Returns the most recently updated matching incident if multiple exist
+ * (same signature on same container is rare but possible across
+ * resolved-then-reopened cycles).
+ */
 export async function getActiveIncidentForContainer(
   containerId: string,
-  withinMinutes: number,
+  signature: string,
 ): Promise<Incident | undefined> {
   const db = getDbForDomain('incidents');
-  // Find an active incident that includes this container and was created recently
   const incidents = await db.query<Incident>(`
     SELECT * FROM incidents
     WHERE status = 'active'
-      AND created_at >= NOW() + (? || ' minutes')::INTERVAL
-    ORDER BY created_at DESC
-  `, [`-${withinMinutes}`]);
+      AND signature = ?
+      AND affected_containers @> ?::jsonb
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `, [signature, JSON.stringify([containerId])]);
 
-  // Check if any incident's affected containers or related insights reference this container
-  for (const incident of incidents) {
-    if (incident.endpoint_id !== null) {
-      // Check related insights for matching container
-      const relatedIds: string[] = incident.related_insight_ids;
-      const rootId = incident.root_cause_insight_id;
-      const allIds = rootId ? [rootId, ...relatedIds] : relatedIds;
-
-      if (allIds.length === 0) continue;
-
-      const placeholders = allIds.map(() => '?').join(',');
-      const match = await db.queryOne(`
-        SELECT 1 FROM insights
-        WHERE id IN (${placeholders}) AND container_id = ?
-        LIMIT 1
-      `, [...allIds, containerId]);
-
-      if (match) return incident;
-    }
-  }
-
-  return undefined;
+  return incidents[0];
 }
 
 export async function resolveIncident(id: string): Promise<void> {

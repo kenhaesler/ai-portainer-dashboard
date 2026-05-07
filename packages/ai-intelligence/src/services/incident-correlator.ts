@@ -67,7 +67,8 @@ export async function correlateInsights(
     const insight = anomalyInsights[0];
     // Check if it fits into an existing active incident
     if (insight.container_id) {
-      const existing = await getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
+      const sig = deriveSignature(insight);
+      const existing = await getActiveIncidentForContainer(insight.container_id, sig);
       if (existing) {
         await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
         result.insightsGrouped = 1;
@@ -138,7 +139,8 @@ export async function correlateInsights(
       // Single insight — check for existing incident to join
       const insight = group.insights[0];
       if (insight.container_id) {
-        const existing = await getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
+        const sig = deriveSignature(insight);
+        const existing = await getActiveIncidentForContainer(insight.container_id, sig);
         if (existing) {
           await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
           result.insightsGrouped++;

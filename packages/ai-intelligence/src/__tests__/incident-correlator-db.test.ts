@@ -45,6 +45,21 @@ import { correlateInsights } from '../services/incident-correlator.js';
 import { insertInsights, type InsightInsert } from '../services/insights-store.js';
 import type { Insight } from '@dashboard/core/models/monitoring.js';
 
+function makeInsight(overrides: Partial<Insight> & Pick<Insight, 'id' | 'container_id' | 'container_name' | 'category' | 'created_at'>): Insight {
+  return {
+    endpoint_id: 1,
+    endpoint_name: 'eA',
+    severity: 'warning',
+    title: '',
+    description: 'd',
+    suggested_action: null,
+    is_acknowledged: 0,
+    metric_type: undefined,
+    detection_method: undefined,
+    ...overrides,
+  } as Insight;
+}
+
 beforeAll(async () => { testDb = await getTestDb(); });
 afterAll(async () => { await closeTestDb(); });
 beforeEach(async () => { await truncateTestTables(['incidents', 'insights']); });
@@ -135,5 +150,99 @@ describe('correlateInsights — writes signature', () => {
     expect(incidentRows).toHaveLength(1);
     // Title regex: "Anomalous memory usage" → anomaly:threshold:memory
     expect(incidentRows[0].signature).toBe('anomaly:threshold:memory');
+  });
+});
+
+describe('correlator — long-running anomaly joins existing incident regardless of age', () => {
+  it('absorbs a new insight into an active incident older than the 5-minute correlation window', async () => {
+    // Seed the original insight FIRST (FK: incidents.root_cause_insight_id → insights.id).
+    await testDb.execute(`
+      INSERT INTO insights (id, endpoint_id, endpoint_name, container_id, container_name,
+                            severity, category, title, description, suggested_action,
+                            metric_type, detection_method, is_acknowledged, created_at)
+      VALUES ('seed-insight', 1, 'eA', 'c1', 'web-app', 'warning', 'anomaly',
+              'Anomalous cpu usage on "c1" (ML-detected)', '...', NULL,
+              'cpu', 'ml-anomaly', false, NOW() - INTERVAL '30 minutes')
+    `);
+    // Seed an active incident created 30 minutes ago for c1 + cpu ML signature.
+    await testDb.execute(`
+      INSERT INTO incidents (
+        id, title, severity, status, related_insight_ids, affected_containers,
+        endpoint_id, endpoint_name, correlation_type, correlation_confidence,
+        insight_count, summary, signature, created_at, updated_at, root_cause_insight_id
+      ) VALUES (
+        'inc-old', 'Anomalous cpu usage on "c1" (ML-detected)', 'warning', 'active',
+        '["seed-insight"]'::jsonb, '["c1"]'::jsonb,
+        1, 'eA', 'temporal', 'medium', 1, NULL,
+        'anomaly:ml-anomaly:cpu', NOW() - INTERVAL '30 minutes',
+        NOW() - INTERVAL '30 minutes', 'seed-insight'
+      )
+    `);
+
+    const newInsight: Insight = makeInsight({
+      id: 'fresh',
+      container_id: 'c1',
+      container_name: 'web-app',
+      category: 'anomaly',
+      metric_type: 'cpu',
+      detection_method: 'ml-anomaly',
+      title: 'Anomalous cpu usage on "c1" (ML-detected)',
+      created_at: new Date().toISOString(),
+    });
+
+    const result = await correlateInsights([newInsight]);
+    expect(result.insightsGrouped).toBe(1);
+    expect(result.insightsUngrouped).toBe(0);
+
+    // The new insight is now part of the existing 30-minute-old incident.
+    const updated = await testDb.queryOne<{ related_insight_ids: string[]; insight_count: number }>(
+      'SELECT related_insight_ids, insight_count FROM incidents WHERE id = ?',
+      ['inc-old'],
+    );
+    expect(updated?.related_insight_ids).toContain('fresh');
+    // insight_count = related_insight_ids.length + 1 (root cause); seeded with
+    // ["seed-insight"] + now "fresh" appended → 2 related + 1 root = 3.
+    expect(updated?.insight_count).toBe(3);
+  });
+
+  it('does NOT join an active incident when the signature differs', async () => {
+    // CPU incident already exists, new memory anomaly should NOT join it.
+    // Seed insight FIRST (FK: incidents.root_cause_insight_id → insights.id).
+    await testDb.execute(`
+      INSERT INTO insights (id, endpoint_id, endpoint_name, container_id, container_name,
+                            severity, category, title, description, suggested_action,
+                            metric_type, detection_method, is_acknowledged, created_at)
+      VALUES ('seed-cpu', 1, 'eA', 'c1', 'web-app', 'warning', 'anomaly',
+              'Anomalous cpu usage on "c1" (ML-detected)', '...', NULL,
+              'cpu', 'ml-anomaly', false, NOW() - INTERVAL '10 minutes')
+    `);
+    await testDb.execute(`
+      INSERT INTO incidents (
+        id, title, severity, status, related_insight_ids, affected_containers,
+        endpoint_id, endpoint_name, correlation_type, correlation_confidence,
+        insight_count, summary, signature, created_at, updated_at, root_cause_insight_id
+      ) VALUES (
+        'inc-cpu', 'cpu', 'warning', 'active',
+        '["seed-cpu"]'::jsonb, '["c1"]'::jsonb, 1, 'eA',
+        'temporal', 'medium', 1, NULL, 'anomaly:ml-anomaly:cpu',
+        NOW() - INTERVAL '10 minutes', NOW() - INTERVAL '10 minutes', 'seed-cpu'
+      )
+    `);
+
+    const memoryAnomaly: Insight = makeInsight({
+      id: 'fresh-mem',
+      container_id: 'c1',
+      container_name: 'web-app',
+      category: 'anomaly',
+      metric_type: 'memory',
+      detection_method: 'ml-anomaly',
+      title: 'Anomalous memory usage on "c1" (ML-detected)',
+      created_at: new Date().toISOString(),
+    });
+
+    const result = await correlateInsights([memoryAnomaly]);
+    // New memory anomaly is ungrouped (different signature than existing cpu incident).
+    expect(result.insightsGrouped).toBe(0);
+    expect(result.insightsUngrouped).toBe(1);
   });
 });
