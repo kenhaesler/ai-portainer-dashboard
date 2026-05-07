@@ -84,7 +84,7 @@ function HealthStatTile({
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-md bg-card/60 px-3 py-2">
+    <div className="flex items-center gap-3 rounded-md bg-muted/40 px-3 py-2">
       <div className={`flex h-8 w-8 items-center justify-center rounded-md bg-background ${iconVariantClasses[variant]}`}>
         <Icon className="h-4 w-4" />
       </div>
@@ -114,11 +114,14 @@ export function FleetHealthSummary({ stats, isLoading }: {
   const issueCount = stats.unhealthy + stats.stopped;
 
   return (
-    <div className="rounded-lg border bg-gradient-to-br from-primary/5 to-primary/10 p-6" data-testid="fleet-health-hero">
+    <div
+      className="rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
+      data-testid="fleet-health-hero"
+    >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         {/* Hero — score + issue count */}
         <div className="flex items-center gap-5 min-w-0">
-          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-card/40">
+          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-muted/30">
             {healthScore === null ? (
               <HelpCircle className="h-12 w-12 text-muted-foreground" />
             ) : healthScore >= 80 ? (
