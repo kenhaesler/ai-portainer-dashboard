@@ -66,10 +66,11 @@ export async function correlateInsights(
   if (anomalyInsights.length === 1) {
     const insight = anomalyInsights[0];
     // Check if it fits into an existing active incident
-    if (insight.container_id) {
-      const existing = await getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
+    if (insight.container_name) {
+      const sig = deriveSignature(insight);
+      const existing = await getActiveIncidentForContainer(insight.container_name, sig);
       if (existing) {
-        await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
+        await addInsightToIncident(existing.id, insight.id, insight.container_name);
         result.insightsGrouped = 1;
         log.debug({ incidentId: existing.id, insightId: insight.id }, 'Added insight to existing incident');
         return result;
@@ -137,10 +138,11 @@ export async function correlateInsights(
     if (group.insights.length < 2) {
       // Single insight — check for existing incident to join
       const insight = group.insights[0];
-      if (insight.container_id) {
-        const existing = await getActiveIncidentForContainer(insight.container_id, correlationWindowMinutes);
+      if (insight.container_name) {
+        const sig = deriveSignature(insight);
+        const existing = await getActiveIncidentForContainer(insight.container_name, sig);
         if (existing) {
-          await addInsightToIncident(existing.id, insight.id, insight.container_name ?? undefined);
+          await addInsightToIncident(existing.id, insight.id, insight.container_name);
           result.insightsGrouped++;
           continue;
         }
@@ -234,7 +236,7 @@ function groupByCorrelation(
       // Require at least 2 distinct anomaly types (e.g., cpu + memory)
       // to avoid cascade alerts from the same metric spiking on multiple containers
       const distinctTypes = new Set(
-        cascadeInsights.map((i) => extractMetricType(i.title)),
+        cascadeInsights.map((i) => extractMetricType(i)),
       );
 
       if (distinctTypes.size >= 2) {
@@ -266,13 +268,19 @@ function groupByCorrelation(
 }
 
 /**
- * Extract the metric type from an anomaly insight title.
- * Titles follow the pattern: 'Anomalous cpu usage on "container"'
- * Falls back to the full title if pattern doesn't match.
+ * Extract the metric type from an anomaly insight.
+ *
+ * Reads the structured `insight.metric_type` field first (populated by
+ * monitoring-service.ts since migration 030). Falls back to the legacy
+ * title regex (`Anomalous <metric> usage`) for older insights that
+ * predate the structured field. The title fallback returns the full
+ * title when the regex doesn't match — same behaviour as before, kept
+ * for cascade-gate continuity on legacy data.
  */
-function extractMetricType(title: string): string {
-  const match = /anomalous\s+(\w+)\s+usage/i.exec(title);
-  return match ? match[1].toLowerCase() : title;
+function extractMetricType(insight: Insight): string {
+  if (insight.metric_type) return insight.metric_type;
+  const match = /anomalous\s+(\w+)\s+usage/i.exec(insight.title);
+  return match ? match[1].toLowerCase() : insight.title;
 }
 
 function groupByContainerAndMetric(insights: Insight[]): Insight[][] {

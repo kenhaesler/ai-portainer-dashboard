@@ -103,6 +103,81 @@ describe('insights-store', () => {
       expect(rows).toHaveLength(2); // original-1 + unique-1
     });
 
+    it('deduplicates predictions whose title carries a refining ETA, by (category, metric_type, detection_method)', async () => {
+      const first: InsightInsert = makeInsight({
+        id: 'pred-1',
+        category: 'predictive',
+        metric_type: 'memory',
+        detection_method: 'prediction',
+        title: 'Predicted memory exhaustion on "web-app" ~24h',
+      });
+      const second: InsightInsert = makeInsight({
+        id: 'pred-2',
+        category: 'predictive',
+        metric_type: 'memory',
+        detection_method: 'prediction',
+        title: 'Predicted memory exhaustion on "web-app" ~20h',
+      });
+
+      const insertedIds = await insertInsights([first]);
+      expect(insertedIds.has('pred-1')).toBe(true);
+
+      const insertedIdsAgain = await insertInsights([second]);
+      expect(insertedIdsAgain.has('pred-2')).toBe(false);
+
+      const rows = await testDb.query<{ id: string }>('SELECT id FROM insights WHERE container_id = ?', ['c1']);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe('pred-1');
+    });
+
+    it('does NOT dedupe when category matches but metric_type differs (CPU prediction vs memory prediction)', async () => {
+      const cpu: InsightInsert = makeInsight({
+        id: 'pred-cpu', category: 'predictive', metric_type: 'cpu', detection_method: 'prediction',
+        title: 'Predicted CPU exhaustion on "web-app"',
+      });
+      const memory: InsightInsert = makeInsight({
+        id: 'pred-mem', category: 'predictive', metric_type: 'memory', detection_method: 'prediction',
+        title: 'Predicted memory exhaustion on "web-app"',
+      });
+
+      await insertInsights([cpu]);
+      await insertInsights([memory]);
+
+      const rows = await testDb.query<{ id: string }>(
+        'SELECT id FROM insights WHERE container_id = ? ORDER BY id',
+        ['c1'],
+      );
+      expect(rows.map((r) => r.id).sort()).toEqual(['pred-cpu', 'pred-mem']);
+    });
+
+    it('falls back to title-based dedup when metric_type and detection_method are both null (legacy insights)', async () => {
+      const first: InsightInsert = makeInsight({
+        id: 'leg-1',
+        category: 'security',
+        title: 'Vulnerable image: foo:1.2.3',
+      });
+      const second: InsightInsert = makeInsight({
+        id: 'leg-2',
+        category: 'security',
+        title: 'Vulnerable image: foo:1.2.3',
+      });
+      const different: InsightInsert = makeInsight({
+        id: 'leg-3',
+        category: 'security',
+        title: 'Vulnerable image: bar:9.9.9',
+      });
+
+      await insertInsights([first]);
+      await insertInsights([second]);
+      await insertInsights([different]);
+
+      const rows = await testDb.query<{ id: string }>(
+        'SELECT id FROM insights WHERE container_id = ? ORDER BY id',
+        ['c1'],
+      );
+      expect(rows.map((r) => r.id).sort()).toEqual(['leg-1', 'leg-3']);
+    });
+
     it('skips deduplication for insights without container_id', async () => {
       const insights = [makeInsight({ id: 'no-container', container_id: null })];
 

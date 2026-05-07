@@ -223,6 +223,37 @@ describe('incident-correlator', () => {
       expect(call.summary).toContain('2');
     });
 
+    it('cascade gate uses structured insight.metric_type when present, not the title regex', async () => {
+      // Both titles match the regex with the SAME metric word "cpu", so the
+      // legacy regex-based path would conclude both are CPU anomalies and skip
+      // the cascade. Structured metric_type fields say one is cpu, the other
+      // memory — so the cascade gate should fire when using structured fields.
+      const cpuAnomaly = makeInsight({
+        id: 'i-cpu',
+        container_id: 'c1', container_name: 'app-1',
+        endpoint_id: 1,
+        category: 'anomaly', metric_type: 'cpu', detection_method: 'ml-anomaly',
+        title: 'Anomalous cpu usage on "app-1" (ML-detected)',
+        severity: 'critical',
+      });
+      const memoryAnomaly = makeInsight({
+        id: 'i-mem',
+        container_id: 'c2', container_name: 'app-2',
+        endpoint_id: 1,
+        category: 'anomaly', metric_type: 'memory', detection_method: 'ml-anomaly',
+        // Title says "cpu" but the structured field says memory — the structured
+        // field is authoritative.
+        title: 'Anomalous cpu usage on "app-2" (ML-detected)',
+        severity: 'critical',
+      });
+
+      const result = await correlateInsights([cpuAnomaly, memoryAnomaly]);
+      // Two distinct metric types on two containers → cascade gate passes,
+      // a single multi-insight incident is created (not two singletons).
+      expect(result.incidentsCreated).toBe(1);
+      expect(result.insightsGrouped).toBe(2);
+    });
+
     it('should add insight to existing incident when match found', async () => {
       mockedGetActiveIncidentForContainer.mockResolvedValueOnce({
         id: 'existing-incident',
