@@ -218,12 +218,16 @@ describe('LLM Routes', () => {
     });
 
     // Defense-in-depth: if a client ever echoes back the redaction sentinel
-    // ('••••••••') that the settings GET returns for sensitive values, the
-    // route MUST treat it as nullish and fall back to the stored config.
-    // The non-Latin1 sanitizer in getAuthHeaders strips it to an empty string,
-    // which would otherwise leave Authorization unset and yield a 401.
+    // (REDACTED_TOKEN_PLACEHOLDER, exported from llm-client) that the settings
+    // GET returns for sensitive values, the route MUST treat it as nullish
+    // and fall back to the stored config. The non-Latin1 sanitizer in
+    // getAuthHeaders strips it to an empty string, which would otherwise
+    // leave Authorization unset and yield a 401.
     describe('redaction-sentinel handling', () => {
-      const REDACTED = '••••••••';
+      // Import the sentinel from the route's source of truth so the test
+      // cannot silently diverge if the constant is ever renamed or the
+      // glyph is changed (e.g. to a different character count).
+      const REDACTED = llmClient.REDACTED_TOKEN_PLACEHOLDER;
 
       it('treats the redaction sentinel as nullish and falls back to the stored token', async () => {
         mockGetEffectiveLlmConfig.mockReturnValueOnce({

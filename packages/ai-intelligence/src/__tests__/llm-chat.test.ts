@@ -1048,7 +1048,13 @@ describe('assembleBudgetedMessages', () => {
     expect(result.messages[2].content).toBe('third');
   });
 
-  it('records a tool_mode truncation when toolPrompt is empty but tools were enabled and budget forces a flip', () => {
+  it('does NOT flip toolsEnabled when toolPrompt is already empty (flipping would only inflate the prompt)', () => {
+    // Regression: a previous Step-3 else-if branch flipped toolsEnabled=false
+    // when toolPrompt was already empty, which ADDS the ~28-token "tools
+    // unavailable" footer without dropping anything — making the prompt
+    // larger and triggering Step 4 unnecessarily. The helper must leave
+    // toolsEnabled alone in this case and let later steps (drop infra,
+    // drop additional context, floor) handle the over-budget condition.
     const input = {
       ...baseInput(),
       toolPrompt: '',
@@ -1067,12 +1073,17 @@ describe('assembleBudgetedMessages', () => {
     const result = assembleBudgetedMessages(input);
 
     const sectionsDropped = result.truncations.map(t => t.section);
+    // history is still trimmed; tool_mode must NOT appear because the helper
+    // no longer toggles toolsEnabled when toolPrompt is empty.
     expect(sectionsDropped).toContain('history');
-    expect(sectionsDropped).toContain('tool_mode');
-    expect(result.toolsEnabled).toBe(false);
+    expect(sectionsDropped).not.toContain('tool_mode');
+    expect(result.toolsEnabled).toBe(true);
 
+    // Because toolsEnabled stays true and both tool prompts are empty,
+    // buildSystemPrompt emits neither the "tools unavailable" footer nor
+    // any tool prompt block — just the bare core sections.
     expect(result.messages[0].role).toBe('system');
-    expect(result.messages[0].content).toContain('Tool calling is temporarily unavailable');
+    expect(result.messages[0].content).not.toContain('Tool calling is temporarily unavailable');
   });
 
   it('handles the retry call shape (toolsEnabled=false, empty tool prompts) and trims when over budget', () => {

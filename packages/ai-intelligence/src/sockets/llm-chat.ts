@@ -222,7 +222,7 @@ function buildSystemPrompt(parts: {
   if (parts.toolsEnabled) {
     const tools = [parts.toolPrompt, parts.mcpToolPrompt]
       .filter(s => s && s.trim().length > 0)
-      .join('');
+      .join('\n\n');
     if (tools) {
       return `${core}\n\n${tools}`;
     }
@@ -295,18 +295,14 @@ export function assembleBudgetedMessages(input: AssembleInput): AssembleResult {
   }
 
   // Step 3: drop built-in tool prompt and disable tool mode.
+  // Only flip when toolPrompt is non-empty: if it is already empty, flipping
+  // toolsEnabled would only ADD the "tools unavailable" footer (~28 tokens)
+  // without dropping anything, making the prompt larger. Subsequent steps
+  // handle the over-budget case correctly without inflation.
   if (!fits(history) && toolPrompt) {
     toolPrompt = '';
     toolsEnabled = false;
     truncations.push({ section: 'tool_prompt', reason: 'still over budget after dropping MCP tool prompt' });
-  } else if (!fits(history) && !toolPrompt && toolsEnabled) {
-    // Edge case: toolPrompt was already empty but tools are nominally enabled.
-    // Disable tool mode so the system message switches to the "tools unavailable" form.
-    toolsEnabled = false;
-    truncations.push({
-      section: 'tool_mode',
-      reason: 'disabled tool mode (toolPrompt was already empty) so the model is told tools are unavailable',
-    });
   }
 
   // Step 4: drop infrastructure context (replace with a marker so the model
@@ -664,7 +660,11 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
           historyLimit,
         });
         for (const t of budgeted.truncations) {
-          log.warn(
+          // info level: once LLM_CONTEXT_BUDGET is tuned for the deployed
+          // model, truncation is expected behaviour on long conversations
+          // and large fleets — operators still want to see what got dropped
+          // at default verbosity, but not at warn-level alert noise.
+          log.info(
             { ...t, budget: contextBudget, sessionId: socket.id, userId },
             'LLM chat prompt trimmed to fit context budget',
           );
@@ -718,7 +718,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
                 historyLimit,
               });
               for (const t of retryAssembly.truncations) {
-                log.warn(
+                log.info(
                   { ...t, budget: contextBudget, sessionId: socket.id, userId, retry: true },
                   'LLM chat retry prompt trimmed to fit budget',
                 );
@@ -755,7 +755,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
                 historyLimit,
               });
               for (const t of retryAssembly.truncations) {
-                log.warn(
+                log.info(
                   { ...t, budget: contextBudget, sessionId: socket.id, userId, retry: true },
                   'LLM chat retry prompt trimmed to fit budget',
                 );
