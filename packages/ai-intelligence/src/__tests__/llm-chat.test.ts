@@ -95,6 +95,7 @@ import {
   chatThrottle,
   CHAT_THROTTLE_MS,
   assembleBudgetedMessages,
+  INFRA_TRUNCATION_MARKER,
 } from '../sockets/llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
 import { getCanary, clearCanary } from '../services/prompt-guard.js';
@@ -851,15 +852,6 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
 });
 
 // ── assembleBudgetedMessages ──
-//
-// Helper trims sections in priority order until the rough token estimate
-// (text.length / 4) fits the budget:
-//   1. shorten history (always keep last user message)
-//   2. drop MCP tool prompt
-//   3. drop built-in tool prompt + disable tool mode
-//   4. drop infrastructure context (replace with truncation marker)
-//   5. drop additional page context
-//   6. floor: basePrompt + last history entry, even if still over budget
 
 describe('assembleBudgetedMessages', () => {
   // estimateTokens(text) = ceil(text.length / 4). Sizing strings via repeat()
@@ -1113,5 +1105,61 @@ describe('assembleBudgetedMessages', () => {
     const last = result.messages[result.messages.length - 1];
     expect(last.role).toBe('user');
     expect(last.content).toBe('small last question');
+  });
+
+  it('does not re-emit infrastructure_context truncation when fed the marker (retry-site safety)', () => {
+    // The handler pre-substitutes INFRA_TRUNCATION_MARKER for retry calls
+    // when the initial assembly already dropped infra context. Verify the
+    // helper does not log a second `infrastructure_context` truncation when
+    // it sees the marker — even when over budget.
+    const input = {
+      ...baseInput(),
+      toolPrompt: '',
+      mcpToolPrompt: '',
+      toolsEnabled: false,
+      infrastructureContext: INFRA_TRUNCATION_MARKER,
+      additionalContext: 'A'.repeat(40000),
+      history: [{ role: 'user' as const, content: 'small last question' }],
+      budget: 500,
+    };
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).not.toContain('infrastructure_context');
+    // Additional context should still be dropped on this call — the marker
+    // guard only suppresses re-trimming the section that's already a marker.
+    expect(sectionsDropped).toContain('additional_context');
+  });
+
+  it('floors to system + last user message when historyLimit=1 and budget is tiny', () => {
+    const input = {
+      ...baseInput(),
+      mcpToolPrompt: 'M'.repeat(40000),
+      toolPrompt: 'T'.repeat(40000),
+      infrastructureContext: 'I'.repeat(40000),
+      additionalContext: 'A'.repeat(40000),
+      history: [
+        { role: 'user' as const, content: 'oldest' },
+        { role: 'assistant' as const, content: 'oldest answer' },
+        { role: 'user' as const, content: 'newest' },
+      ],
+      historyLimit: 1,
+      budget: 50,
+    };
+
+    const result = assembleBudgetedMessages(input);
+
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0].role).toBe('system');
+    expect(result.messages[1].role).toBe('user');
+    expect(result.messages[1].content).toBe('newest');
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('mcp_tool_prompt');
+    expect(sectionsDropped).toContain('tool_prompt');
+    expect(sectionsDropped).toContain('infrastructure_context');
+    expect(sectionsDropped).toContain('additional_context');
+    expect(sectionsDropped).toContain('floor');
   });
 });

@@ -176,7 +176,7 @@ export function looksLikeToolCallAttempt(text: string): boolean {
 
 // ─── Budgeted message assembly ───────────────────────────────────────
 
-const INFRA_TRUNCATION_MARKER = `## Infrastructure Context Omitted
+export const INFRA_TRUNCATION_MARKER = `## Infrastructure Context Omitted
 
 (Truncated to fit model context budget — ask the user to increase LLM_CONTEXT_BUDGET if their model supports a larger context window.)`;
 
@@ -669,6 +669,21 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             'LLM chat prompt trimmed to fit context budget',
           );
         }
+        // Capture which sections the initial assembly already dropped so
+        // retry sites can pass the already-trimmed values (e.g. the infra
+        // truncation marker, empty additional context) instead of feeding
+        // the originals back in. Without this, a retry would re-trim and
+        // re-emit the same `infrastructure_context` / `additional_context`
+        // log entries with `retry: true` for no useful reason.
+        const initialDropped = new Set(budgeted.truncations.map(t => t.section));
+        const sectionsAfterInitial = {
+          infrastructureContext: initialDropped.has('infrastructure_context')
+            ? INFRA_TRUNCATION_MARKER
+            : infrastructureContext,
+          additionalContext: initialDropped.has('additional_context')
+            ? ''
+            : additionalContext,
+        };
         let messages: ChatMessage[] = budgeted.messages;
         let toolsEnabled = budgeted.toolsEnabled;
         let plainRetryAttempted = false;
@@ -711,8 +726,8 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
                 baseSystemPrompt,
                 toolPrompt: '',
                 mcpToolPrompt: '',
-                infrastructureContext,
-                additionalContext,
+                infrastructureContext: sectionsAfterInitial.infrastructureContext,
+                additionalContext: sectionsAfterInitial.additionalContext,
                 toolsEnabled: false,
                 history,
                 historyLimit,
@@ -748,8 +763,8 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
                 baseSystemPrompt,
                 toolPrompt: '',
                 mcpToolPrompt: '',
-                infrastructureContext,
-                additionalContext,
+                infrastructureContext: sectionsAfterInitial.infrastructureContext,
+                additionalContext: sectionsAfterInitial.additionalContext,
                 toolsEnabled: false,
                 history,
                 historyLimit,
