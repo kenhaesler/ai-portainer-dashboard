@@ -88,11 +88,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request) => {
-    const llmConfig = await getEffectiveLlmConfig('command_palette');
     const { query } = request.body;
-    const startTime = Date.now();
-
-    const searchModel = llmConfig.model;
 
     const guardResult = isPromptInjection(query);
     if (guardResult.blocked) {
@@ -102,6 +98,11 @@ export async function llmRoutes(fastify: FastifyInstance) {
         description: 'Prompt-injection guardrail',
       };
     }
+
+    const llmConfig = await getEffectiveLlmConfig('command_palette');
+    const startTime = Date.now();
+
+    const searchModel = llmConfig.model;
 
     try {
       const infraContext = await getInfrastructureSummary();
