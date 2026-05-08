@@ -216,6 +216,74 @@ describe('LLM Routes', () => {
       expect(body.ok).toBe(false);
       expect(body.error).toBe('HTTP 404: Not Found');
     });
+
+    // Defense-in-depth: if a client ever echoes back the redaction sentinel
+    // (REDACTED_TOKEN_PLACEHOLDER, exported from llm-client) that the settings
+    // GET returns for sensitive values, the route MUST treat it as nullish
+    // and fall back to the stored config. The non-Latin1 sanitizer in
+    // getAuthHeaders strips it to an empty string, which would otherwise
+    // leave Authorization unset and yield a 401.
+    describe('redaction-sentinel handling', () => {
+      // Import the sentinel from the route's source of truth so the test
+      // cannot silently diverge if the constant is ever renamed or the
+      // glyph is changed (e.g. to a different character count).
+      const REDACTED = llmClient.REDACTED_TOKEN_PLACEHOLDER;
+
+      it('treats the redaction sentinel as nullish and falls back to the stored token', async () => {
+        mockGetEffectiveLlmConfig.mockReturnValueOnce({
+          ...DEFAULT_LLM_CONFIG,
+          apiToken: 'sk-stored-real-token',
+        });
+        mockLlmFetch.mockResolvedValueOnce(modelsResponse(['gpt-4o-mini']));
+        const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/llm/test-connection',
+          payload: { url: 'http://my-api:3000', token: REDACTED },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.json().ok).toBe(true);
+        expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-stored-real-token', 'bearer');
+      });
+
+      it('falls back to the stored token when no token is supplied at all', async () => {
+        mockGetEffectiveLlmConfig.mockReturnValueOnce({
+          ...DEFAULT_LLM_CONFIG,
+          apiToken: 'sk-stored-real-token',
+        });
+        mockLlmFetch.mockResolvedValueOnce(modelsResponse(['gpt-4o-mini']));
+        const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/llm/test-connection',
+          payload: { url: 'http://my-api:3000' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-stored-real-token', 'bearer');
+      });
+
+      it('uses an explicit non-sentinel token verbatim', async () => {
+        mockGetEffectiveLlmConfig.mockReturnValueOnce({
+          ...DEFAULT_LLM_CONFIG,
+          apiToken: 'sk-stored-real-token',
+        });
+        mockLlmFetch.mockResolvedValueOnce(modelsResponse(['gpt-4o-mini']));
+        const getAuthHeadersSpy = vi.mocked(llmClient.getAuthHeaders);
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/llm/test-connection',
+          payload: { url: 'http://my-api:3000', token: 'sk-typed-by-user' },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(getAuthHeadersSpy).toHaveBeenCalledWith('sk-typed-by-user', 'bearer');
+      });
+    });
   });
 
   describe('POST /api/llm/query', () => {

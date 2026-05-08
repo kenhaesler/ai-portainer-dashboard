@@ -16,7 +16,7 @@ import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
 import { isPromptInjection, sanitizeLlmOutput } from '../services/prompt-guard.js';
-import { getAuthHeaders, getFetchErrorMessage, llmFetch, resolveChatCompletionsUrl, resolveModelsUrl } from '../services/llm-client.js';
+import { getAuthHeaders, getFetchErrorMessage, llmFetch, REDACTED_TOKEN_PLACEHOLDER, resolveChatCompletionsUrl, resolveModelsUrl } from '../services/llm-client.js';
 
 const log = createChildLogger('route:llm');
 
@@ -248,7 +248,11 @@ export async function llmRoutes(fastify: FastifyInstance) {
         return { ok: false, error: 'No API endpoint URL configured. Set Settings → AI & LLM → API Endpoint URL.' };
       }
 
-      const effectiveToken = token ?? effectiveConfig.apiToken;
+      // Defense-in-depth: if a client echoes back the redaction sentinel
+      // returned by the settings GET, treat it as nullish so the stored
+      // config wins. See REDACTED_TOKEN_PLACEHOLDER for full rationale.
+      const tokenIsRedacted = token === REDACTED_TOKEN_PLACEHOLDER;
+      const effectiveToken = (token && !tokenIsRedacted) ? token : effectiveConfig.apiToken;
       const effectiveAuthType = authType ?? effectiveConfig.authType;
       const authHeaders = getAuthHeaders(effectiveToken, effectiveAuthType);
       const modelsUrl = resolveModelsUrl(targetUrl);

@@ -154,6 +154,16 @@ export function llmFetch(url: string | URL, init?: RequestInit): Promise<Respons
 
 export type LlmAuthType = 'bearer' | 'basic';
 
+/**
+ * The settings GET endpoint redacts sensitive values to this exact string
+ * (see the REDACTED constant in the foundation settings route). Callers
+ * that accept tokens from clients should treat this string as nullish —
+ * sending it on to upstream services would defeat fallback logic and
+ * silently strip to empty in getAuthHeaders (the bullets are outside
+ * Latin-1) and yield a 401.
+ */
+export const REDACTED_TOKEN_PLACEHOLDER = '••••••••';
+
 export function getAuthHeaders(token: string | undefined, authType: LlmAuthType = 'bearer'): Record<string, string> {
   if (!token) return {};
 

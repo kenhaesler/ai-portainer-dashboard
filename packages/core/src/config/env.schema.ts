@@ -341,6 +341,13 @@ export const envSchema = z.object({
   // Scalability Limits (#544, #547)
   INSIGHTS_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   MAX_LLM_HISTORY_MESSAGES: z.coerce.number().int().min(1).default(50),
+  // Maximum input tokens (rough estimate: ~4 chars/token) for LLM chat requests.
+  // Default 3500 fits small-context models (gemma-3-4b's 4K window with margin
+  // for response). Raise this when using larger-context models — e.g. set to
+  // 7000 for Llama-3.1-8B's 8K window, 100000+ for Claude/GPT-4-class models.
+  // When the budget is exceeded, the chat handler trims history, MCP tool
+  // descriptions, built-in tools, and infrastructure context (in that order).
+  LLM_CONTEXT_BUDGET: z.coerce.number().int().min(512).default(3500),
   LOG_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
 
   // Rate Limiting
