@@ -459,9 +459,7 @@ async function streamLlmCall(
       messages,
       stream: true,
       max_tokens: llmConfig.maxTokens,
-      ...(typeof (llmConfig as { temperature?: number }).temperature === 'number'
-        ? { temperature: (llmConfig as { temperature?: number }).temperature }
-        : {}),
+      ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
     }),
     signal,
   });

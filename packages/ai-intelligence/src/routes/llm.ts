@@ -131,9 +131,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
           messages,
           stream: false,
           response_format: { type: 'json_object' },
-          ...(typeof (llmConfig as { temperature?: number }).temperature === 'number'
-            ? { temperature: (llmConfig as { temperature?: number }).temperature }
-            : {}),
+          ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
         }),
         signal: AbortSignal.timeout(60_000),
       });

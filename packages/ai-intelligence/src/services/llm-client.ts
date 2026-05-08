@@ -242,9 +242,7 @@ async function chatStreamInner(
         model: llmConfig.model,
         messages: fullMessages,
         stream: true,
-        ...(typeof (llmConfig as { temperature?: number }).temperature === 'number'
-          ? { temperature: (llmConfig as { temperature?: number }).temperature }
-          : {}),
+        ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
       }),
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
