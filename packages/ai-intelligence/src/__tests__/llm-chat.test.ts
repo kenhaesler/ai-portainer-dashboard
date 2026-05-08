@@ -94,6 +94,7 @@ import {
   ThinkingBlockFilter,
   chatThrottle,
   CHAT_THROTTLE_MS,
+  assembleBudgetedMessages,
 } from '../sockets/llm-chat.js';
 import { getAuthHeaders } from '../services/llm-client.js';
 import { getCanary, clearCanary } from '../services/prompt-guard.js';
@@ -846,5 +847,260 @@ describe('setupLlmNamespace — canary lifecycle (#1119)', () => {
     expect(after).toBeDefined();
     expect(after).not.toBe(before);
     expect(after!.startsWith('CANARY-')).toBe(true);
+  });
+});
+
+// ── assembleBudgetedMessages ──
+//
+// Helper trims sections in priority order until the rough token estimate
+// (text.length / 4) fits the budget:
+//   1. shorten history (always keep last user message)
+//   2. drop MCP tool prompt
+//   3. drop built-in tool prompt + disable tool mode
+//   4. drop infrastructure context (replace with truncation marker)
+//   5. drop additional page context
+//   6. floor: basePrompt + last history entry, even if still over budget
+
+describe('assembleBudgetedMessages', () => {
+  // estimateTokens(text) = ceil(text.length / 4). Sizing strings via repeat()
+  // gives predictable token counts: 'x'.repeat(4000) ≈ 1000 tokens.
+
+  const baseInput = () => ({
+    budget: 8000,
+    baseSystemPrompt: 'You are a helpful assistant.',
+    toolPrompt: 'TOOL_PROMPT',
+    mcpToolPrompt: 'MCP_PROMPT',
+    infrastructureContext: 'INFRA_CONTEXT',
+    additionalContext: 'ADDITIONAL_CONTEXT',
+    toolsEnabled: true,
+    history: [
+      { role: 'user' as const, content: 'previous question' },
+      { role: 'assistant' as const, content: 'previous answer' },
+      { role: 'user' as const, content: 'newest question' },
+    ],
+    historyLimit: 50,
+  });
+
+  it('returns full content when everything fits under budget', () => {
+    const result = assembleBudgetedMessages(baseInput());
+
+    expect(result.truncations).toEqual([]);
+    expect(result.toolsEnabled).toBe(true);
+    expect(result.messages).toHaveLength(4);
+    expect(result.messages[0].role).toBe('system');
+    const sys = result.messages[0].content;
+    expect(sys).toContain('You are a helpful assistant.');
+    expect(sys).toContain('TOOL_PROMPT');
+    expect(sys).toContain('MCP_PROMPT');
+    expect(sys).toContain('INFRA_CONTEXT');
+    expect(sys).toContain('ADDITIONAL_CONTEXT');
+    expect(result.messages[1].content).toBe('previous question');
+    expect(result.messages[3].content).toBe('newest question');
+  });
+
+  it('trims history first when over budget', () => {
+    const input = baseInput();
+    input.history = [
+      { role: 'user', content: 'x'.repeat(20000) },
+      { role: 'assistant', content: 'y'.repeat(20000) },
+      { role: 'user', content: 'newest question' },
+    ];
+    input.budget = 1000;
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('history');
+    expect(sectionsDropped).not.toContain('mcp_tool_prompt');
+    expect(sectionsDropped).not.toContain('tool_prompt');
+
+    const lastMsg = result.messages[result.messages.length - 1];
+    expect(lastMsg.role).toBe('user');
+    expect(lastMsg.content).toBe('newest question');
+    expect(result.toolsEnabled).toBe(true);
+  });
+
+  it('drops MCP tool prompt when history trim is not enough', () => {
+    const input = baseInput();
+    input.mcpToolPrompt = 'M'.repeat(40000);
+    input.toolPrompt = 'small tool prompt';
+    input.infrastructureContext = 'small infra';
+    input.additionalContext = 'small ctx';
+    input.history = [{ role: 'user', content: 'tiny last question' }];
+    input.budget = 2000;
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('mcp_tool_prompt');
+    expect(sectionsDropped).not.toContain('tool_prompt');
+
+    const sys = result.messages[0].content;
+    expect(sys).not.toContain('MMMM');
+    expect(sys).toContain('small tool prompt');
+    expect(result.toolsEnabled).toBe(true);
+  });
+
+  it('drops built-in tool prompt and disables tool mode when MCP drop is not enough', () => {
+    const input = baseInput();
+    input.mcpToolPrompt = 'M'.repeat(40000);
+    input.toolPrompt = 'T'.repeat(40000);
+    input.infrastructureContext = 'small infra';
+    input.additionalContext = 'small ctx';
+    input.history = [{ role: 'user', content: 'tiny last question' }];
+    input.budget = 1000;
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('mcp_tool_prompt');
+    expect(sectionsDropped).toContain('tool_prompt');
+    expect(result.toolsEnabled).toBe(false);
+
+    const sys = result.messages[0].content;
+    expect(sys).not.toContain('MMMM');
+    expect(sys).not.toContain('TTTT');
+    expect(sys).toContain('small infra');
+  });
+
+  it('drops infrastructure context when tool drops are not enough', () => {
+    const input = baseInput();
+    input.mcpToolPrompt = 'M'.repeat(40000);
+    input.toolPrompt = 'T'.repeat(40000);
+    input.infrastructureContext = 'I'.repeat(40000);
+    input.additionalContext = 'small ctx';
+    input.history = [{ role: 'user', content: 'tiny last question' }];
+    input.budget = 800;
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('mcp_tool_prompt');
+    expect(sectionsDropped).toContain('tool_prompt');
+    expect(sectionsDropped).toContain('infrastructure_context');
+    expect(result.toolsEnabled).toBe(false);
+
+    const sys = result.messages[0].content;
+    expect(sys).not.toContain('IIII');
+    expect(sys).toContain('Infrastructure Context Omitted');
+    expect(sys).toContain('small ctx');
+  });
+
+  it('drops additional page context when infra drop is not enough', () => {
+    const input = baseInput();
+    input.mcpToolPrompt = 'M'.repeat(40000);
+    input.toolPrompt = 'T'.repeat(40000);
+    input.infrastructureContext = 'I'.repeat(40000);
+    input.additionalContext = 'A'.repeat(40000);
+    input.history = [{ role: 'user', content: 'tiny last question' }];
+    input.budget = 600;
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('additional_context');
+
+    const sys = result.messages[0].content;
+    expect(sys).not.toContain('AAAA');
+  });
+
+  it('always preserves the last history entry even at the floor', () => {
+    const input = baseInput();
+    input.mcpToolPrompt = 'M'.repeat(40000);
+    input.toolPrompt = 'T'.repeat(40000);
+    input.infrastructureContext = 'I'.repeat(40000);
+    input.additionalContext = 'A'.repeat(40000);
+    input.history = [
+      { role: 'user', content: 'old' },
+      { role: 'assistant', content: 'old answer' },
+      { role: 'user', content: 'KEEP ME' },
+    ];
+    input.budget = 100;
+
+    const result = assembleBudgetedMessages(input);
+
+    expect(result.messages[0].role).toBe('system');
+    expect(result.messages[0].content).toContain('You are a helpful assistant.');
+
+    const last = result.messages[result.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(last.content).toBe('KEEP ME');
+
+    expect(result.toolsEnabled).toBe(false);
+  });
+
+  it('respects historyLimit even when budget allows more', () => {
+    const input = baseInput();
+    input.history = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'first answer' },
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'second answer' },
+      { role: 'user', content: 'third' },
+    ];
+    input.historyLimit = 2;
+    input.budget = 100000;
+
+    const result = assembleBudgetedMessages(input);
+
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[1].content).toBe('second answer');
+    expect(result.messages[2].content).toBe('third');
+  });
+
+  it('records a tool_mode truncation when toolPrompt is empty but tools were enabled and budget forces a flip', () => {
+    const input = {
+      ...baseInput(),
+      toolPrompt: '',
+      mcpToolPrompt: '',
+      toolsEnabled: true,
+      infrastructureContext: '',
+      additionalContext: '',
+      history: [
+        { role: 'user' as const, content: 'x'.repeat(20000) },
+        { role: 'assistant' as const, content: 'y'.repeat(20000) },
+        { role: 'user' as const, content: 'z'.repeat(20000) },
+      ],
+      budget: 800,
+    };
+
+    const result = assembleBudgetedMessages(input);
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('history');
+    expect(sectionsDropped).toContain('tool_mode');
+    expect(result.toolsEnabled).toBe(false);
+
+    expect(result.messages[0].role).toBe('system');
+    expect(result.messages[0].content).toContain('Tool calling is temporarily unavailable');
+  });
+
+  it('handles the retry call shape (toolsEnabled=false, empty tool prompts) and trims when over budget', () => {
+    const input = {
+      ...baseInput(),
+      toolPrompt: '',
+      mcpToolPrompt: '',
+      toolsEnabled: false,
+      infrastructureContext: 'I'.repeat(40000),
+      additionalContext: 'small additional ctx',
+      history: [{ role: 'user' as const, content: 'small last question' }],
+      budget: 800,
+    };
+
+    const result = assembleBudgetedMessages(input);
+
+    expect(result.toolsEnabled).toBe(false);
+
+    expect(result.messages[0].role).toBe('system');
+    expect(result.messages[0].content).toContain('Tool calling is temporarily unavailable');
+    expect(result.messages[0].content).toContain('You are a helpful assistant.');
+
+    const sectionsDropped = result.truncations.map(t => t.section);
+    expect(sectionsDropped).toContain('infrastructure_context');
+    expect(result.messages[0].content).not.toContain('IIII');
+
+    const last = result.messages[result.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(last.content).toBe('small last question');
   });
 });
