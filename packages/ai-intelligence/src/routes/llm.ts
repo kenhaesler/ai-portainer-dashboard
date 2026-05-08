@@ -10,8 +10,7 @@ import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
-import { getEffectivePrompt, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
+import { getEffectivePrompt, getEffectiveLlmConfig, PROMPT_FEATURES, type PromptFeature } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { LlmQueryBodySchema, LlmTestConnectionBodySchema, LlmModelsQuerySchema, LlmTestPromptBodySchema } from '@dashboard/core/models/api-schemas.js';
 import { PROMPT_TEST_FIXTURES } from '../services/prompt-test-fixtures.js';
@@ -89,7 +88,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request) => {
-    const llmConfig = await getEffectiveLlmConfig();
+    const llmConfig = await getEffectiveLlmConfig('command_palette');
     const { query } = request.body;
     const startTime = Date.now();
 
@@ -132,6 +131,9 @@ export async function llmRoutes(fastify: FastifyInstance) {
           messages,
           stream: false,
           response_format: { type: 'json_object' },
+          ...(typeof (llmConfig as { temperature?: number }).temperature === 'number'
+            ? { temperature: (llmConfig as { temperature?: number }).temperature }
+            : {}),
         }),
         signal: AbortSignal.timeout(60_000),
       });
@@ -298,7 +300,7 @@ export async function llmRoutes(fastify: FastifyInstance) {
       return { success: false, error: `No test fixture for feature: ${feature}` };
     }
 
-    const llmConfig = await getEffectiveLlmConfig();
+    const llmConfig = await getEffectiveLlmConfig(feature as PromptFeature);
     const effectiveModel = model && model.trim() ? model.trim() : llmConfig.model;
 
     const messages = [

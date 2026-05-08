@@ -59,6 +59,7 @@ vi.mock('@dashboard/core/services/settings-store.js', () => ({
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn(() => 'You are an AI assistant.'),
+  getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
 }));
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
