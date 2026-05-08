@@ -34,7 +34,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { SettingsSection, SettingRow, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
+import { SettingsSection, SettingRow, DEFAULT_SETTINGS, REDACTED_SECRET, type SettingsTabProps } from './shared';
 import { useLlmModels, useLlmTestConnection, useLlmTestPrompt } from '@/features/ai-intelligence/hooks/use-llm-models';
 import {
   useMcpServers,
@@ -267,7 +267,11 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
       return;
     }
 
-    const body = { url: apiUrl.trim(), token: apiToken || undefined, authType: authType as 'bearer' | 'basic' };
+    const body = {
+      url: apiUrl.trim(),
+      token: apiToken && apiToken !== REDACTED_SECRET ? apiToken : undefined,
+      authType: authType as 'bearer' | 'basic',
+    };
     testConnection.mutate(body, {
       onSuccess: (data) => {
         if (data.ok) {
