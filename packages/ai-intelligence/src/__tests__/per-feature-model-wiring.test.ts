@@ -12,10 +12,19 @@ const DEFAULT_LLM_CONFIG = {
   maxToolIterations: 5,
 };
 
-const mockGetEffectiveLlmConfigPromptStore = vi.fn();
-const mockGetEffectiveLlmConfigGlobal = vi.fn();
-const mockGetEffectivePrompt = vi.fn();
-const mockInsertLlmTrace = vi.fn().mockResolvedValue(undefined);
+const {
+  mockGetEffectiveLlmConfigPromptStore,
+  mockGetEffectiveLlmConfigGlobal,
+  mockGetEffectivePrompt,
+  mockInsertLlmTrace,
+  mockUndiciFetch,
+} = vi.hoisted(() => ({
+  mockGetEffectiveLlmConfigPromptStore: vi.fn(),
+  mockGetEffectiveLlmConfigGlobal: vi.fn(),
+  mockGetEffectivePrompt: vi.fn(),
+  mockInsertLlmTrace: vi.fn().mockResolvedValue(undefined),
+  mockUndiciFetch: vi.fn(),
+}));
 
 vi.mock('../services/prompt-store.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/prompt-store.js')>();
@@ -39,7 +48,6 @@ vi.mock('../services/llm-trace-store.js', () => ({
 }));
 
 // Mock undici (the production code uses undici.fetch, NOT globalThis.fetch).
-const mockUndiciFetch = vi.fn();
 vi.mock('undici', () => ({
   Agent: vi.fn(),
   fetch: (...args: unknown[]) => mockUndiciFetch(...args),
@@ -92,7 +100,6 @@ describe('chatStream — per-feature model resolution', () => {
       [{ role: 'user', content: 'hi' }],
       'system',
       () => {},
-      // @ts-expect-error remove after Task 3 when signature is updated to accept feature key
       'anomaly_explainer',
     );
 
@@ -121,7 +128,6 @@ describe('chatStream — per-feature model resolution', () => {
       [{ role: 'user', content: 'hi' }],
       'system',
       () => {},
-      // @ts-expect-error remove after Task 3 when signature is updated to accept feature key
       'log_analyzer',
     );
 

@@ -4,7 +4,7 @@ import { readFileSync } from 'fs';
 import pLimit from 'p-limit';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
-import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
+import { getEffectiveLlmConfig, type PromptFeature } from './prompt-store.js';
 import { insertLlmTrace } from './llm-trace-store.js';
 import { withSpan } from '@dashboard/core/tracing/trace-context.js';
 import { scrubPii, scrubPiiDeep } from '@dashboard/core/utils/pii-scrubber.js';
@@ -192,10 +192,11 @@ export async function chatStream(
   messages: ChatMessage[],
   systemPrompt: string,
   onChunk: (chunk: string) => void,
+  feature?: PromptFeature,
 ): Promise<string> {
   return llmLimit(() =>
     withSpan('LLM chat', 'llm-service', 'client', () =>
-      chatStreamInner(messages, systemPrompt, onChunk),
+      chatStreamInner(messages, systemPrompt, onChunk, feature),
     ),
   );
 }
@@ -204,8 +205,9 @@ async function chatStreamInner(
   messages: ChatMessage[],
   systemPrompt: string,
   onChunk: (chunk: string) => void,
+  feature?: PromptFeature,
 ): Promise<string> {
-  const llmConfig = await getEffectiveLlmConfig();
+  const llmConfig = await getEffectiveLlmConfig(feature);
   const config = getConfig();
   const startTime = Date.now();
   const requestTimeoutMs = config.LLM_REQUEST_TIMEOUT;
@@ -240,6 +242,9 @@ async function chatStreamInner(
         model: llmConfig.model,
         messages: fullMessages,
         stream: true,
+        ...(typeof (llmConfig as { temperature?: number }).temperature === 'number'
+          ? { temperature: (llmConfig as { temperature?: number }).temperature }
+          : {}),
       }),
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
