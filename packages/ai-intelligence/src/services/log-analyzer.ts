@@ -38,6 +38,7 @@ export async function analyzeContainerLogs(
       [{ role: 'user', content: `Analyze these container logs from "${containerName}":\n\n${logs.slice(0, 4000)}` }],
       await getEffectivePrompt('log_analyzer'),
       (chunk) => { response += chunk; },
+      'log_analyzer',
     );
 
     const trimmed = response.trim();

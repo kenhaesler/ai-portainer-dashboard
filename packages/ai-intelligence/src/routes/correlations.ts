@@ -313,6 +313,7 @@ export async function correlationRoutes(fastify: FastifyInstance, opts: Correlat
         [{ role: 'user', content: prompt }],
         await getEffectivePrompt('correlation_insights'),
         () => {},
+        'correlation_insights',
       );
 
       const { insights, summary } = parseInsightsResponse(response.trim(), topPairs);

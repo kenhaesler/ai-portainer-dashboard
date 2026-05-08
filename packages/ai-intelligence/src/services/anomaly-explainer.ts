@@ -34,6 +34,7 @@ export async function explainAnomaly(
         [{ role: 'user', content: userPrompt }],
         await getEffectivePrompt('anomaly_explainer'),
         (chunk) => { response += chunk; },
+        'anomaly_explainer',
       );
 
       const trimmed = response.trim();
@@ -132,6 +133,7 @@ export async function explainAnomalies(
       [{ role: 'user', content: userPrompt }],
       await getEffectivePrompt('anomaly_explainer'),
       (chunk) => { response += chunk; },
+      'anomaly_explainer',
     );
 
     const parsed = parseBatchResponse(response.trim(), toExplain.length);
