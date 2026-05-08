@@ -622,6 +622,7 @@ export function createMonitoringService(deps: MonitoringDeps) {
               [{ role: 'user', content: analysisPrompt }],
               systemPrompt,
               (chunk) => { aiResponse += chunk; },
+              'monitoring_analysis',
             );
 
             if (aiResponse.trim()) {

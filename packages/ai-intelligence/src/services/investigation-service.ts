@@ -399,6 +399,7 @@ async function runInvestigation(investigationId: string, insight: Insight): Prom
       [{ role: 'user', content: prompt }],
       await getEffectivePrompt('root_cause'),
       (chunk) => { llmResponse += chunk; },
+      'root_cause',
     );
 
     // Phase 3: Parse and store

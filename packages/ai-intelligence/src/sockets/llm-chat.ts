@@ -3,8 +3,7 @@ import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
-import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
-import { getEffectivePrompt } from '../services/prompt-store.js';
+import { getEffectivePrompt, getEffectiveLlmConfig } from '../services/prompt-store.js';
 import { insertLlmTrace } from '../services/llm-trace-store.js';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { randomUUID } from 'crypto';
@@ -460,6 +459,7 @@ async function streamLlmCall(
       messages,
       stream: true,
       max_tokens: llmConfig.maxTokens,
+      ...(llmConfig.temperature !== undefined ? { temperature: llmConfig.temperature } : {}),
     }),
     signal,
   });
@@ -602,7 +602,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
       // Emit status updates so the frontend can show progress during long waits
       socket.emit('chat:status', { message: 'Preparing request...', phase: 'init' });
 
-      const llmConfig = await getEffectiveLlmConfig();
+      const llmConfig = await getEffectiveLlmConfig('chat_assistant');
       const selectedModel = data.model || llmConfig.model;
 
       // Get or create session history. The canary registry is keyed on

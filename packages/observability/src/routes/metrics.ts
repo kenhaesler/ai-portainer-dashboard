@@ -313,6 +313,7 @@ Endpoint ID: ${endpointId}`;
         (chunk: string) => {
           reply.raw.write(`data: ${JSON.stringify({ chunk })}\n\n`);
         },
+        'metrics_summary',
       );
       reply.raw.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     } catch (err) {

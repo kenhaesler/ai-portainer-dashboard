@@ -30,6 +30,7 @@ export async function generateLlmIncidentSummary(
       [{ role: 'user', content: userPrompt }],
       await getEffectivePrompt('incident_summarizer'),
       (chunk) => { response += chunk; },
+      'incident_summarizer',
     );
 
     const trimmed = response.trim();

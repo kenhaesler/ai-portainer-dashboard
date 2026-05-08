@@ -16,12 +16,19 @@ const { DEFAULT_LLM_CONFIG } = vi.hoisted(() => ({
   },
 }));
 
+// Single shared mock function for getEffectiveLlmConfig — both
+// settings-store (test-connection, models-list routes) and prompt-store
+// (AI search, test-prompt routes) wire to the same mock so per-test
+// `mockGetEffectiveLlmConfig.mockReturnValue(...)` overrides apply
+// regardless of which route the request hits.
+const { mockGetEffectiveLlmConfig } = vi.hoisted(() => ({
+  mockGetEffectiveLlmConfig: vi.fn(),
+}));
+
 vi.mock('@dashboard/core/services/settings-store.js', () => ({
-  getEffectiveLlmConfig: vi.fn().mockReturnValue({ ...DEFAULT_LLM_CONFIG }),
+  getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
   getSetting: vi.fn().mockReturnValue(undefined),
 }));
-import { getEffectiveLlmConfig } from '@dashboard/core/services/settings-store.js';
-const mockGetEffectiveLlmConfig = vi.mocked(getEffectiveLlmConfig);
 
 vi.mock('../services/llm-trace-store.js', async () =>
   (await import('../test-utils/mock-llm.js')).createLlmTraceStoreMock()
@@ -38,6 +45,7 @@ import { flushTestCache, closeTestRedis } from '@dashboard/core/test-utils/test-
 
 vi.mock('../services/prompt-store.js', () => ({
   getEffectivePrompt: vi.fn().mockReturnValue('default prompt'),
+  getEffectiveLlmConfig: mockGetEffectiveLlmConfig,
   PROMPT_FEATURES: [
     { key: 'chat_assistant', label: 'Chat Assistant', description: 'Main AI chat' },
     { key: 'anomaly_explainer', label: 'Anomaly Explainer', description: 'Explains anomalies' },

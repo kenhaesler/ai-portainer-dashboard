@@ -326,6 +326,7 @@ async function enrichActionWithLlmAnalysis(
       (chunk) => {
         rawResponse += chunk;
       },
+      'remediation',
     );
 
     let parsed = tryParseRemediationAnalysis(rawResponse);
@@ -344,6 +345,7 @@ async function enrichActionWithLlmAnalysis(
         (chunk) => {
           retryResponse += chunk;
         },
+        'remediation',
       );
       parsed = tryParseRemediationAnalysis(retryResponse);
 

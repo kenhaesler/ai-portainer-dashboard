@@ -327,6 +327,7 @@ export async function analyzeCapture(captureId: string, llm: LLMInterface): Prom
     [{ role: 'user', content: prompt }],
     await llm.getEffectivePrompt('pcap_analyzer'),
     (chunk) => { llmResponse += chunk; },
+    'pcap_analyzer',
   );
 
   // Phase 3: Parse and store

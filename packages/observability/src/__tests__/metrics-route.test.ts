@@ -372,6 +372,7 @@ describe('metrics routes', () => {
         ]),
         expect.any(String),
         expect.any(Function),
+        'metrics_summary',
       );
     });
 

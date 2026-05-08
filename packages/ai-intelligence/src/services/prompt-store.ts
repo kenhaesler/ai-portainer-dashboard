@@ -144,6 +144,14 @@ export async function getEffectivePrompt(feature: PromptFeature): Promise<string
 }
 
 /**
+ * Effective LLM config for a feature: global config + optional per-feature
+ * temperature override. Tracks any future shape changes in the global config.
+ */
+export type EffectiveLlmConfig = Awaited<ReturnType<typeof getGlobalLlmConfig>> & {
+  temperature?: number;
+};
+
+/**
  * Returns LLM config for a specific feature, allowing per-feature model
  * and temperature overrides.
  * Resolution order:
@@ -151,7 +159,7 @@ export async function getEffectivePrompt(feature: PromptFeature): Promise<string
  * 2. Active profile's model/temperature for this feature
  * 3. Global LLM config
  */
-export async function getEffectiveLlmConfig(feature?: PromptFeature) {
+export async function getEffectiveLlmConfig(feature?: PromptFeature): Promise<EffectiveLlmConfig> {
   const global = await getGlobalLlmConfig();
 
   if (!feature) return global;
