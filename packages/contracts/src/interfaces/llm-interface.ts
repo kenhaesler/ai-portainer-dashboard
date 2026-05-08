@@ -14,10 +14,16 @@ export interface ChatMessage {
  */
 export interface LLMInterface {
   isAvailable(): Promise<boolean>;
+  /**
+   * Stream an LLM chat completion. Pass `feature` (e.g. 'pcap_analyzer',
+   * 'capacity_forecast') so per-feature model and temperature overrides
+   * from the active prompt profile take effect.
+   */
   chatStream(
     messages: ChatMessage[],
     systemPrompt: string,
     onChunk: (chunk: string) => void,
+    feature?: string,
   ): Promise<string>;
   buildInfrastructureContext(
     endpoints: NormalizedEndpoint[],
