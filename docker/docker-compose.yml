@@ -148,11 +148,18 @@ services:
       traefik.http.routers.beyla-otlp.service: beyla-backend
       # Service: backend Fastify on port 3051
       traefik.http.services.beyla-backend.loadbalancer.server.port: "3051"
-      # Middleware: restrict to Beyla source networks (replace CIDRs with your actual ranges)
-      traefik.http.middlewares.beyla-ip-allow.ipallowlist.sourcerange: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-      # Middleware: rate limit — 100 req/s average, burst up to 200
-      traefik.http.middlewares.beyla-rate-limit.ratelimit.average: "100"
-      traefik.http.middlewares.beyla-rate-limit.ratelimit.burst: "200"
+      # Middleware: restrict to Beyla source networks.
+      # Defaults to RFC1918 private ranges. Override with BEYLA_ALLOWED_SOURCE_CIDRS
+      # (comma-separated CIDRs) when edge endpoints reach the dashboard from public
+      # IPs, behind a known NAT, or via a VPN with non-private ranges. Traefik sees
+      # the source IP of the immediate upstream — if a CDN sits in front of Traefik,
+      # add that CDN's egress ranges here.
+      traefik.http.middlewares.beyla-ip-allow.ipallowlist.sourcerange: "${BEYLA_ALLOWED_SOURCE_CIDRS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
+      # Middleware: rate limit — defaults to 100 req/s average, burst up to 200.
+      # Beyla batches roughly every 16s so this is generous for most fleets; tune via
+      # BEYLA_RATE_LIMIT_AVERAGE / BEYLA_RATE_LIMIT_BURST when scaling out.
+      traefik.http.middlewares.beyla-rate-limit.ratelimit.average: "${BEYLA_RATE_LIMIT_AVERAGE:-100}"
+      traefik.http.middlewares.beyla-rate-limit.ratelimit.burst: "${BEYLA_RATE_LIMIT_BURST:-200}"
     deploy:
       resources:
         limits:

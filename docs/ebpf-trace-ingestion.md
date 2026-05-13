@@ -332,37 +332,80 @@ This instruments services visible from the dashboard's Docker network.
 
 ### Option C: Production via Traefik on HTTPS 443
 
-Use this when endpoint firewalls allow only `443` and direct access to backend `:3051` is blocked.
+Use this when endpoint firewalls allow only `443` and direct access to backend `:3051` is blocked, or when you want a single uniform ingest path across local and remote endpoints. Two variants are supported.
 
-1. Set required env vars:
+#### C1: Existing Traefik with Docker label discovery (recommended)
 
-```env
-DASHBOARD_EXTERNAL_URL=https://dashboard.example.com
-TRACES_INGESTION_ENABLED=true
-TRACES_INGESTION_API_KEY=your-secret-api-key-here
-```
+Use this when you already run Traefik on the host with the Docker provider — e.g. Traefik already fronts the dashboard frontend on 443. The backend container ships with Traefik labels (`docker/docker-compose.yml` ~lines 139–159) that add a dedicated POST-only route for `/api/traces/otlp` directly to the backend on `:3051`, bypassing the frontend nginx for OTLP payloads. No file-provider config and no second Traefik instance are needed.
 
-2. Start dashboard with the Traefik OTLP overlay:
+1. Set required env vars in `.env`:
 
-```bash
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
-```
+   ```env
+   # Origin Beyla uses to reach the dashboard (no trailing slash, no /api/...)
+   DASHBOARD_EXTERNAL_URL=https://dashboard.example.com
+   # Hostname the Traefik router rule matches on the backend
+   DASHBOARD_DOMAIN=dashboard.example.com
+   # Ingest auth
+   TRACES_INGESTION_ENABLED=true
+   TRACES_INGESTION_API_KEY=your-secret-api-key-here
+   # Optional: tune the IP allowlist and rate limit baked into the labels
+   # BEYLA_ALLOWED_SOURCE_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+   # BEYLA_RATE_LIMIT_AVERAGE=100
+   # BEYLA_RATE_LIMIT_BURST=200
+   ```
 
-3. Set Beyla exporter endpoint on each remote endpoint:
+2. Make sure your existing Traefik can see the backend:
+   - Attach the Traefik container to the `dashboard-net` network created by `docker-compose.yml` (`docker network connect ai-portainer-dashboard_dashboard-net <traefik-container>` if running outside this compose project), so it can route to `backend:3051`.
+   - Confirm Traefik runs with `--providers.docker=true` and a `websecure` entrypoint on `:443` with TLS configured for `DASHBOARD_DOMAIN`.
 
-```env
-OTEL_EXPORTER_OTLP_ENDPOINT=https://dashboard.example.com/api/traces/otlp
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=your-secret-api-key-here
-```
+3. Start the dashboard stack as usual:
 
-Repository assets for this mode:
+   ```bash
+   docker compose -f docker/docker-compose.yml up -d
+   ```
+
+   Verify the route was published:
+
+   ```bash
+   curl -X POST https://dashboard.example.com/api/traces/otlp \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: your-secret-api-key-here" \
+     -d '{"resourceSpans":[]}'
+   # → {"accepted":0}
+   ```
+
+4. Deploy Beyla to your Portainer endpoints from the dashboard:
+   - Open **eBPF Coverage** in the dashboard sidebar.
+   - Click **Sync Endpoints** to pull the latest list from Portainer.
+   - For each endpoint, click **Deploy**. The backend resolves the OTLP endpoint from `DASHBOARD_EXTERNAL_URL` and creates a privileged `grafana/beyla:latest` container on the target endpoint via the Portainer API, pointing at `https://dashboard.example.com/api/traces/otlp`.
+
+#### C2: Dedicated OTLP-only Traefik (no existing Traefik on host)
+
+Use this when nothing else owns port 443 on the host and you want a self-contained Traefik just for OTLP. This variant uses a file provider config that mirrors the Docker labels — pick one, not both.
+
+1. Set the same env vars as C1 (plus `DASHBOARD_DOMAIN` is not used here; the rule is in the file provider).
+
+2. Start with the Traefik OTLP overlay:
+
+   ```bash
+   docker compose -f docker/docker-compose.yml -f docker/docker-compose.traefik-otlp.yml up -d
+   ```
+
+3. Configure each Beyla exporter:
+
+   ```env
+   OTEL_EXPORTER_OTLP_ENDPOINT=https://dashboard.example.com/api/traces/otlp
+   OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+   OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=your-secret-api-key-here
+   ```
+
+Repository assets for this variant:
 - `docker/docker-compose.traefik-otlp.yml`
 - `docker/traefik/dynamic/beyla-otlp.yml`
 
-Important:
+Before you start:
 - Replace `dashboard.example.com` in `docker/traefik/dynamic/beyla-otlp.yml`.
-- Replace default IP allow-list CIDRs with your real Beyla source networks.
+- Replace the default IP allow-list CIDRs with your real Beyla source networks.
 - Mount valid TLS certs at `docker/traefik/certs/fullchain.pem` and `docker/traefik/certs/privkey.pem`.
 
 ## Multi-Endpoint Deployment
