@@ -525,7 +525,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
     const toolCallJson = '{"tool_calls":[{"tool":"get_container_logs","arguments":{"container_name":"nginx","tail":20}}]}';
     mockLlmFetchByRequest((messages) => {
       const isSummaryCall = messages.some(
-        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+        (m) => m.role === 'assistant' && m.content.includes('run out of tool calls'),
       );
       return sseResponse(isSummaryCall ? 'Here is a partial summary of your infrastructure.' : toolCallJson);
     });
@@ -574,7 +574,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 
     mockLlmFetchByRequest((messages) => {
       const isSummaryCall = messages.some(
-        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+        (m) => m.role === 'assistant' && m.content.includes('run out of tool calls'),
       );
       if (isSummaryCall) {
         throw new Error('LLM connection refused');
@@ -617,7 +617,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 
     mockLlmFetchByRequest((messages) => {
       const isSummaryCall = messages.some(
-        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+        (m) => m.role === 'assistant' && m.content.includes('run out of tool calls'),
       );
       if (isSummaryCall) {
         throw new Error('LLM down');
@@ -658,7 +658,7 @@ describe('setupLlmNamespace — tool iteration limit graceful degradation', () =
 
     mockLlmFetchByRequest((messages) => {
       const isSummaryCall = messages.some(
-        (m) => m.role === 'system' && m.content.includes('run out of tool calls'),
+        (m) => m.role === 'assistant' && m.content.includes('run out of tool calls'),
       );
       return sseResponse(
         isSummaryCall ? 'Summary text.' : '{"tool_calls":[{"tool":"get_endpoints","arguments":{}}]}',
