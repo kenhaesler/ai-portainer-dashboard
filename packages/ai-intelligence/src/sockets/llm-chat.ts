@@ -465,7 +465,29 @@ async function streamLlmCall(
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    let bodyText = '';
+    try {
+      const bodyBuf = await response.arrayBuffer();
+      if (bodyBuf.byteLength > 0) {
+        bodyText = new TextDecoder().decode(bodyBuf);
+      }
+    } catch {
+      // Ignore body read failures — fall back to statusText
+    }
+    const bodyError = bodyText
+      ? (() => {
+          try {
+            const json = JSON.parse(bodyText);
+            const apiErr = json.error;
+            if (typeof apiErr === 'string') return apiErr;
+            if (apiErr && typeof apiErr === 'object' && 'message' in apiErr) return (apiErr as { message?: unknown }).message;
+            return bodyText.substring(0, 500);
+          } catch {
+            return bodyText.substring(0, 500);
+          }
+        })()
+      : response.statusText;
+    throw new Error(`HTTP ${response.status}: ${bodyError}`);
   }
 
   const reader = response.body?.getReader();
@@ -745,7 +767,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             throw streamErr;
           }
 
-          if (abortController.signal.aborted) break;
+          if (abortController?.signal?.aborted) break;
 
           // Check if the response contains tool calls
           const toolCalls = toolsEnabled ? parseToolCalls(iterationResponse) : null;
@@ -932,8 +954,6 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
         } catch (traceErr) {
           log.warn({ err: traceErr }, 'Failed to record LLM error trace');
         }
-      } finally {
-        abortController = null;
       }
     });
 
