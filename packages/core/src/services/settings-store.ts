@@ -49,7 +49,10 @@ export async function getEffectiveLlmConfig() {
   const apiToken = (await getSetting('llm.api_token'))?.value || config.LLM_API_TOKEN || '';
   const model = (await getSetting('llm.model'))?.value || config.LLM_MODEL;
   const authType = ((await getSetting('llm.auth_type'))?.value as 'bearer' | 'basic') || config.LLM_AUTH_TYPE;
-  const maxTokens = parseInt((await getSetting('llm.max_tokens'))?.value || '20000', 10) || 20000;
+  const rawMaxTokens = (await getSetting('llm.max_tokens'))?.value;
+  const maxTokens = rawMaxTokens && rawMaxTokens.trim() !== ''
+    ? Math.max(parseInt(rawMaxTokens, 10), 1) || 20000
+    : 20000;
   const maxToolIterations = parseInt((await getSetting('llm.max_tool_iterations'))?.value || '', 10) || config.LLM_MAX_TOOL_ITERATIONS;
   return { apiUrl, apiToken, model, authType, maxTokens, maxToolIterations };
 }
