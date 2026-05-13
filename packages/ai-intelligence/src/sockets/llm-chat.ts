@@ -838,7 +838,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             ...messages,
             { role: 'assistant', content: iterationResponse },
             {
-              role: 'tool',
+              role: 'system',
               content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
             },
           ];
