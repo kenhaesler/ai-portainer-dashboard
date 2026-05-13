@@ -838,7 +838,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             ...messages,
             { role: 'assistant', content: iterationResponse },
             {
-              role: 'system',
+              role: 'tool',
               content: `## Tool Results\n\nThe following tools were executed. Use these results to answer the user's question:\n\n${formatToolResults(results)}`,
             },
           ];
@@ -854,7 +854,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             const summaryMessages: ChatMessage[] = [
               ...messages,
               {
-                role: 'system',
+                role: 'assistant',
                 content: 'You have run out of tool calls. Summarize the information you have gathered so far into a clear, helpful answer for the user. Do not attempt any more tool calls. Do not output tool_calls JSON.',
               },
             ];
