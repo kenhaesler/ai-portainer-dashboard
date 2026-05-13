@@ -6,7 +6,9 @@ export function useContainerDetail(endpointId: number, containerId: string) {
 
   const container = useMemo(() =>
     containers?.find(c =>
-      c.id === containerId || c.id.startsWith(containerId)
+      c.id === containerId ||
+      c.id.startsWith(containerId) ||
+      containerId.startsWith(c.id)
     ),
     [containers, containerId]
   );
