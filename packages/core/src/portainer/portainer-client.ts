@@ -548,19 +548,64 @@ export async function pullImage(endpointId: number, image: string, tag = 'latest
   const url = buildApiUrl(path);
   const headers = buildApiHeaders(false);
 
-  const res = await undiciFetch(url, {
-    method: 'POST',
-    headers,
-    dispatcher: getDispatcher(),
-  });
+  // Docker's /images/create is a streaming endpoint: it responds 200 OK as soon
+  // as the request is accepted, then streams newline-delimited JSON status frames
+  // (one per layer/progress event) until the pull finishes — or errors with a
+  // frame like {"errorDetail":{"message":"..."},"error":"..."}. If we don't
+  // consume the body the pull is interrupted and the image never lands, leading
+  // to a "No such image" error on the next createContainer call. Pulls can take
+  // a while on slow links so allow a generous timeout.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+  let res;
+  try {
+    res = await undiciFetch(url, {
+      method: 'POST',
+      headers,
+      dispatcher: getDispatcher(),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new PortainerError(`Image pull failed: ${msg}`, 'network');
+  }
 
   if (!res.ok) {
+    clearTimeout(timer);
     const errorBody = await readErrorBody(res);
     throw new PortainerError(
       errorBody || `Image pull failed: ${res.status}`,
       classifyError(res.status),
       res.status,
     );
+  }
+
+  let body: string;
+  try {
+    body = await res.text();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new PortainerError(`Image pull stream interrupted: ${msg}`, 'network');
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Each line is a JSON status frame. Look for an error frame at the end of the
+  // stream — Docker reports pull failures (auth, not found, daemon errors) here
+  // with a 200 status on the HTTP response itself.
+  const lines = body.split('\n').filter((l) => l.trim().length > 0);
+  for (const line of lines) {
+    let frame: { error?: string; errorDetail?: { message?: string } };
+    try {
+      frame = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (frame.error || frame.errorDetail?.message) {
+      const detail = frame.errorDetail?.message || frame.error || 'unknown';
+      throw new PortainerError(`Image pull failed: ${detail}`, 'server', 500);
+    }
   }
 }
 

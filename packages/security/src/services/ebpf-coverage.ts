@@ -168,16 +168,29 @@ function isBeylaContainer(container: { Image: string; Labels?: Record<string, st
   );
 }
 
-async function findBeylaContainer(endpointId: number): Promise<{
+/**
+ * Look up the Beyla container on an endpoint.
+ *
+ * For read paths (status, detection) we use SWR caching to keep the coverage
+ * page snappy. For *write* paths (deploy, enable, disable, remove) we need
+ * authoritative state — a stale cache can make us miss an orphaned container
+ * from a prior failed deploy and then hit a 409 Conflict on createContainer.
+ */
+async function findBeylaContainer(
+  endpointId: number,
+  options: { forceFresh?: boolean } = {},
+): Promise<{
   containerId: string;
   running: boolean;
   managed: boolean;
 } | null> {
-  const containers = await cachedFetchSWR(
-    getCacheKey('containers', endpointId),
-    TTL.CONTAINERS,
-    () => getContainers(endpointId, true),
-  );
+  const containers = options.forceFresh
+    ? await getContainers(endpointId, true)
+    : await cachedFetchSWR(
+      getCacheKey('containers', endpointId),
+      TTL.CONTAINERS,
+      () => getContainers(endpointId, true),
+    );
   const beyla = containers.find(isBeylaContainer);
 
   if (!beyla) {
@@ -189,6 +202,11 @@ async function findBeylaContainer(endpointId: number): Promise<{
     running: beyla.State === 'running',
     managed: beyla.Labels?.['managed-by'] === DASHBOARD_MANAGED_BY,
   };
+}
+
+function isConflictError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return message.includes('409') || message.includes('conflict');
 }
 
 async function updateLifecycleCoverage(
@@ -311,7 +329,9 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     log.info({ endpointId, endpointName: endpoint.Name }, 'Edge Agent tunnel is up; proceeding with deploy');
   }
 
-  const existing = await findBeylaContainer(endpointId);
+  // Deploy is a write path — read authoritative container state so we don't
+  // miss an orphan from a prior failed deploy and hit a 409 on createContainer.
+  const existing = await findBeylaContainer(endpointId, { forceFresh: true });
   const shouldRecreate = options.recreateExisting === true;
 
   if (existing && shouldRecreate) {
@@ -380,33 +400,58 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     env.push(`OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=${options.tracesApiKey}`);
   }
 
-  const created = await createContainer(
-    endpointId,
-    {
-      Image: BEYLA_IMAGE,
-      Env: env,
-      Labels: {
-        'managed-by': DASHBOARD_MANAGED_BY,
-        component: BEYLA_COMPONENT_LABEL,
-      },
-      HostConfig: {
-        Privileged: true,
-        PidMode: 'host',
-        Init: true,
-        Binds: [
-          '/sys/fs/cgroup:/sys/fs/cgroup',
-          '/sys/kernel/security:/sys/kernel/security',
-        ],
-        RestartPolicy: { Name: 'unless-stopped' },
-      },
+  const containerPayload = {
+    Image: BEYLA_IMAGE,
+    Env: env,
+    Labels: {
+      'managed-by': DASHBOARD_MANAGED_BY,
+      component: BEYLA_COMPONENT_LABEL,
     },
-    `beyla-${endpointId}`,
-  );
+    HostConfig: {
+      Privileged: true,
+      PidMode: 'host',
+      Init: true,
+      Binds: [
+        '/sys/fs/cgroup:/sys/fs/cgroup',
+        '/sys/kernel/security:/sys/kernel/security',
+      ],
+      RestartPolicy: { Name: 'unless-stopped' },
+    },
+  };
+
+  let created: { Id: string };
+  try {
+    created = await createContainer(endpointId, containerPayload, `beyla-${endpointId}`);
+  } catch (err) {
+    // 409 means a container with the target name already exists — usually an
+    // orphan from a previous failed deploy that our fresh container list
+    // somehow missed (race, filtered out, etc.). Recover by removing it and
+    // retrying once.
+    if (!isConflictError(err)) throw err;
+    log.warn({ endpointId, err: err instanceof Error ? err.message : String(err) },
+      'createContainer returned 409; reconciling orphan and retrying');
+    const orphan = await findBeylaContainer(endpointId, { forceFresh: true });
+    if (orphan) {
+      if (orphan.running) {
+        try { await stopContainer(endpointId, orphan.containerId); }
+        catch (e) { if (!isNotFoundError(e)) throw e; }
+      }
+      try { await removeContainer(endpointId, orphan.containerId, true); }
+      catch (e) { if (!isNotFoundError(e)) throw e; }
+    }
+    created = await createContainer(endpointId, containerPayload, `beyla-${endpointId}`);
+  }
 
   try {
     await startContainer(endpointId, created.Id);
   } catch (err) {
-    if (!isNotFoundError(err)) throw err;
+    if (!isNotFoundError(err)) {
+      // Roll back the just-created container so the next deploy doesn't 409.
+      log.warn({ endpointId, containerId: created.Id, err: err instanceof Error ? err.message : String(err) },
+        'startContainer failed; removing just-created container to avoid orphan');
+      try { await removeContainer(endpointId, created.Id, true); } catch { /* best-effort */ }
+      throw err;
+    }
     const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
     if (postCheck !== 'deployed') throw err;
   }

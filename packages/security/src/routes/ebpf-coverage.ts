@@ -57,6 +57,20 @@ const RemoveQuerySchema = z.object({
     }),
 });
 
+/**
+ * Sentinel thrown when the default OTLP endpoint cannot be auto-resolved to an
+ * address that a remote agent could actually reach. The deploy route catches
+ * this and returns a 400 with an actionable message — the caller can either
+ * configure DASHBOARD_EXTERNAL_URL or supply an explicit override in the
+ * Deploy dialog.
+ */
+class OtlpResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OtlpResolutionError';
+  }
+}
+
 function resolveOtlpEndpoint(request: { headers: Record<string, unknown>; protocol: string }): string {
   const config = getConfig();
   if (config.DASHBOARD_EXTERNAL_URL) {
@@ -66,6 +80,12 @@ function resolveOtlpEndpoint(request: { headers: Record<string, unknown>; protoc
   const proto = String(request.headers['x-forwarded-proto'] || request.protocol || 'http').split(',')[0].trim();
   const rawHost = String(request.headers['x-forwarded-host'] || request.headers.host || `localhost:${config.PORT}`).split(',')[0].trim();
   const host = resolveReachableHost(rawHost, config.PORT);
+  const { hostname: resolvedHostname } = parseHostAndPort(host);
+  if (isLoopbackHost(resolvedHostname)) {
+    throw new OtlpResolutionError(
+      'Could not resolve a remotely-reachable OTLP endpoint: the dashboard is being addressed via loopback and no usable LAN IP was detected (only Docker bridge addresses are visible from inside the backend container). Set DASHBOARD_EXTERNAL_URL to the URL Beyla should use (e.g. http://dashboard.example.com:3051), or supply an explicit OTLP endpoint in the Deploy dialog.',
+    );
+  }
   return `${proto}://${host}/api/traces/otlp`;
 }
 
@@ -87,7 +107,18 @@ function isPrivateIpv4(ip: string): boolean {
   return ip.startsWith('10.') || ip.startsWith('192.168.') || /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip);
 }
 
-function detectLocalIpv4(): string | null {
+/**
+ * 172.16.0.0/12 is the private range Docker uses for its default bridge
+ * networks (typically 172.17/16, 172.18/16, …). When the dashboard runs in a
+ * container, these are the only "non-internal" interfaces it sees — but they
+ * are completely unreachable from any remote host (e.g. an Edge Agent on a
+ * separate machine). Treat them as useless for OTLP endpoint resolution.
+ */
+function isDockerBridgeIpv4(ip: string): boolean {
+  return /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip);
+}
+
+export function detectLocalIpv4(): string | null {
   const interfaces = networkInterfaces();
   const candidates: string[] = [];
 
@@ -99,8 +130,14 @@ function detectLocalIpv4(): string | null {
     }
   }
 
-  const preferred = candidates.find(isPrivateIpv4);
-  return preferred || candidates[0] || null;
+  // Prefer real LAN IPs (192.168/16, 10/8); never advertise a Docker bridge IP
+  // because remote callers can't reach it. If everything we have is a Docker
+  // bridge, return null so the caller falls back to the configured host or to
+  // the rawHost (which at least produces an obvious failure).
+  const lan = candidates.find((ip) => isPrivateIpv4(ip) && !isDockerBridgeIpv4(ip));
+  if (lan) return lan;
+  const publicCandidate = candidates.find((ip) => !isPrivateIpv4(ip) && !isDockerBridgeIpv4(ip));
+  return publicCandidate || null;
 }
 
 function resolveReachableHost(rawHost: string, fallbackPort: number): string {
@@ -136,12 +173,17 @@ function normalizeManualOtlpEndpoint(
   request: { headers: Record<string, unknown>; protocol: string },
 ): string {
   const value = rawValue.trim();
-  const defaultUrl = new URL(resolveDefaultOtlpEndpoint(request));
 
+  // Full URL: use it as-is, no need to consult the default — important because
+  // resolveDefaultOtlpEndpoint can now throw when the dashboard's address
+  // isn't auto-resolvable, and we don't want the override path to require it.
   if (value.includes('://')) {
     const parsed = new URL(value);
     return ensureOtlpPath(parsed);
   }
+
+  // Host-only override: borrow scheme/path from the default URL.
+  const defaultUrl = new URL(resolveDefaultOtlpEndpoint(request));
 
   const hostPart = value.split('/')[0].trim();
   if (!hostPart) {
@@ -342,10 +384,19 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
         protocol: request.protocol,
       })
       : undefined;
-    const resolvedOtlpEndpoint = requestedOtlpEndpoint || await resolveEndpointOtlpEndpoint(endpointId, {
-      headers: request.headers as Record<string, unknown>,
-      protocol: request.protocol,
-    });
+    let resolvedOtlpEndpoint: string;
+    try {
+      resolvedOtlpEndpoint = requestedOtlpEndpoint || await resolveEndpointOtlpEndpoint(endpointId, {
+        headers: request.headers as Record<string, unknown>,
+        protocol: request.protocol,
+      });
+    } catch (err) {
+      if (err instanceof OtlpResolutionError) {
+        log.warn({ endpointId, err: err.message }, 'Deploy rejected: OTLP endpoint cannot be auto-resolved');
+        return reply.code(400).send({ error: err.message });
+      }
+      throw err;
+    }
 
     if (requestedOtlpEndpoint) {
       await setEndpointOtlpOverride(endpointId, requestedOtlpEndpoint);
