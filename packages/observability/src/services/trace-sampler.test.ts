@@ -74,4 +74,18 @@ describe('createSampler', () => {
     // Different namespace — fresh bucket.
     expect(s.shouldAccept(span('c'.repeat(32), 'svc-a', 'ns2'))).toBe(true);
   });
+
+  it('caps per-source Map size so adversarial random sources cannot grow memory', () => {
+    const s = createSampler({ sampleRate: 1.0, maxSpansPerSec: 0 });
+    for (let i = 0; i < 2000; i++) {
+      s.shouldAccept(span('z'.repeat(32), `svc-${i}`));
+    }
+    // FIFO eviction caps the Map at MAX_SOURCES (1024). Stats reflect what's
+    // still in the Map.
+    expect(s.getStats().perSource.length).toBeLessThanOrEqual(1024);
+    // Eviction is FIFO — most recent inserts should be present, earliest gone.
+    const sources = new Set(s.getStats().perSource.map((p) => p.source));
+    expect(sources.has('svc-1999')).toBe(true);
+    expect(sources.has('svc-0')).toBe(false);
+  });
 });

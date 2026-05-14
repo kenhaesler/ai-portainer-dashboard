@@ -25,7 +25,6 @@ export interface RedQuery {
     service?: string;
     route?: string;
     container?: string;
-    endpointId?: number;
   };
 }
 
@@ -58,6 +57,16 @@ const BUCKET_INTERVAL: Record<RedBucket, string> = {
   '1h': '1 hour',
 };
 
+// Per-bucket duration in seconds — used as the divisor for `rate` (req/s) so
+// that rate is "requests during this bucket / bucket length", not "requests
+// during this bucket / window length". With the window divisor, a 1m bucket
+// over a 1h window reports 1/60th of the real rate.
+const BUCKET_SECONDS: Record<RedBucket, number> = {
+  '1m': 60,
+  '5m': 300,
+  '1h': 3600,
+};
+
 const ROW_CAP = 100;
 
 interface AggRow {
@@ -76,37 +85,29 @@ export async function computeRed(q: RedQuery): Promise<RedResult> {
   const groupCol = GROUP_COL[q.groupBy];
   const bucketInterval = BUCKET_INTERVAL[q.bucket];
 
-  // Param order (AppDb uses `?` → $1, $2, …):
-  //   1: from (timestamp anchor for date_bin AND lower bound)
-  //   2: to   (upper bound, exclusive)
-  //   3: window seconds (for rate)
-  //   N: optional filter values
-  const params: unknown[] = [];
   const fromIso = q.from.toISOString();
   const toIso = q.to.toISOString();
-  params.push(fromIso); // $1 — bucket anchor + lower bound
-  params.push(toIso);   // $2 — upper bound
+  const bucketSeconds = BUCKET_SECONDS[q.bucket];
 
-  const seconds = Math.max(1, (q.to.getTime() - q.from.getTime()) / 1000);
-  params.push(seconds);  // $3
-
+  const filterVals: unknown[] = [];
   const filterClauses: string[] = [`${groupCol} IS NOT NULL`];
   if (q.filters?.service) {
-    params.push(q.filters.service);
+    filterVals.push(q.filters.service);
     filterClauses.push('service_name = ?');
   }
   if (q.filters?.route) {
-    params.push(q.filters.route);
+    filterVals.push(q.filters.route);
     filterClauses.push('http_route = ?');
   }
   if (q.filters?.container) {
-    params.push(q.filters.container);
+    filterVals.push(q.filters.container);
     filterClauses.push('container_name = ?');
   }
-  // endpointId would require a join to endpoints — spans aren't keyed by
-  // endpoint today, so it's not wired up in v1.
 
-  // `bucketInterval` is whitelist-mapped from a TS union — no injection risk.
+  // `bucketInterval` and `bucketSeconds` are whitelist-mapped from a TS union —
+  // no injection risk. Rate is divided by the BUCKET duration (in seconds)
+  // not the window duration, so each bucket reports requests/sec correctly
+  // regardless of (bucket vs window) ratio.
   const sql = `
     WITH agg AS (
       SELECT
@@ -114,7 +115,7 @@ export async function computeRed(q: RedQuery): Promise<RedResult> {
         ${groupCol} AS grp,
         count(*)::int AS call_count,
         (count(*) FILTER (WHERE status = 'error'))::float / NULLIF(count(*), 0) AS error_rate,
-        count(*)::float / ? AS rate,
+        count(*)::float / ${bucketSeconds} AS rate,
         percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms) AS p50,
         percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95,
         percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms) AS p99
@@ -132,14 +133,12 @@ export async function computeRed(q: RedQuery): Promise<RedResult> {
     ORDER BY bucket_start, call_count DESC
   `;
 
-  // The placeholders consumed by the SQL above, in order:
-  //   1: date_bin anchor      → from
-  //   2: rate divisor          → seconds
-  //   3: lower bound           → from
-  //   4: upper bound           → to
-  //   5+: optional filter vals
-  const filterVals = params.slice(3);
-  const sqlParams: unknown[] = [fromIso, seconds, fromIso, toIso, ...filterVals];
+  // Placeholders, in order:
+  //   1: date_bin anchor → from
+  //   2: lower bound     → from
+  //   3: upper bound     → to
+  //   4+: optional filter vals
+  const sqlParams: unknown[] = [fromIso, fromIso, toIso, ...filterVals];
 
   const rows = await db.query<AggRow>(sql, sqlParams);
 
