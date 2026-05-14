@@ -16,11 +16,6 @@ build/
 .env.local
 .env.*.local
 
-# Docker Secrets (#1121) — file-backed secrets for jwt/postgres/timescale/redis
-# Operators populate `docker/secrets/*.txt` locally; never commit these files.
-docker/secrets/
-secrets/
-
 # IDE
 .vscode/
 .idea/
