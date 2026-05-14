@@ -5,8 +5,33 @@ import { transformOtlpToSpans, type OtlpExportRequest } from '@dashboard/core/tr
 import { decodeOtlpProtobuf } from '@dashboard/core/tracing/otlp-protobuf.js';
 import { insertSpans } from '@dashboard/core/tracing/trace-store.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { createSampler, type Sampler, type SamplerStats } from '../services/trace-sampler.js';
 
 const log = createChildLogger('traces-ingest');
+
+// Lazy sampler — constructed from env on first ingest. Defaults are no-op
+// (sampleRate=1.0, maxSpansPerSec=0) so existing deployments are unaffected.
+let _sampler: Sampler | null = null;
+
+function getSampler(): Sampler {
+  if (!_sampler) {
+    const c = getConfig();
+    _sampler = createSampler({
+      sampleRate: c.TRACES_SAMPLE_RATE,
+      maxSpansPerSec: c.TRACES_INGEST_MAX_SPANS_PER_SEC,
+    });
+  }
+  return _sampler;
+}
+
+export function getSamplerStats(): SamplerStats {
+  return getSampler().getStats();
+}
+
+/** Test-only hook — resets the lazy singleton so each test starts clean. */
+export function __resetSamplerForTests(): void {
+  _sampler = null;
+}
 
 export async function tracesIngestRoutes(fastify: FastifyInstance) {
   // Register a content-type parser for protobuf so Fastify reads the raw buffer
@@ -94,10 +119,31 @@ async function handleOtlpIngest(
     return { accepted: 0 };
   }
 
-  const accepted = await insertSpans(spans);
-  log.info({ accepted, resourceSpans: otlpPayload.resourceSpans.length, format: contentType.includes('protobuf') ? 'protobuf' : 'json' }, 'OTLP spans ingested');
+  // Head sample + per-source rate limit. Defaults (sampleRate=1.0,
+  // maxSpansPerSec=0) accept every span — existing deployments are unaffected
+  // unless an operator opts in via env.
+  const sampler = getSampler();
+  const sampled = spans.filter((s) => sampler.shouldAccept(s));
+  const dropped = spans.length - sampled.length;
 
-  return { accepted };
+  if (sampled.length === 0) {
+    log.debug({ submitted: spans.length, dropped }, 'OTLP spans all dropped by sampler');
+    return { accepted: 0, dropped };
+  }
+
+  const accepted = await insertSpans(sampled);
+  log.info(
+    {
+      accepted,
+      dropped,
+      submitted: spans.length,
+      resourceSpans: otlpPayload.resourceSpans.length,
+      format: contentType.includes('protobuf') ? 'protobuf' : 'json',
+    },
+    'OTLP spans ingested',
+  );
+
+  return { accepted, dropped };
 }
 
 function extractApiKey(headers: Record<string, string | string[] | undefined>): string | undefined {

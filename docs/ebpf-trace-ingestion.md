@@ -717,6 +717,65 @@ OTEL_EXPORTER_HEADERS={"DD-API-KEY":"your-datadog-api-key"}
 
 When `OTEL_EXPORTER_ENABLED=false` (the default), the exporter singleton is never initialized. `queueSpanForExport()` is a no-op — no buffer allocation, no timers, no network calls.
 
+## Read API
+
+The trace store is exposed through the following authenticated endpoints:
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/traces` | user | List recent traces (root spans only) with extensive filter support. |
+| `GET /api/traces/:traceId` | user | Fetch all spans for a single trace. |
+| `GET /api/traces/service-map` | user | Service-dependency graph derived from parent/child spans. |
+| `GET /api/traces/summary` | user | Headline counters: total traces, avg duration, error rate, sources. |
+| `GET /api/traces/red` | user | RED metrics (rate / errors / p50-p95-p99 duration) bucketed by service, route, container, or namespace. Backs the "Calls", "Topology RPC overlay", and "Workloads" page integrations. |
+| `GET /api/traces/ingest-stats` | **admin** | Cumulative sampler counters (accepted / dropped totals + per-source breakdown). |
+
+## Sampling & rate-limit
+
+The ingest path runs two pure-CPU stages between OTLP transform and DB insert:
+
+1. **Head sampling** — deterministic on `trace_id` (uses the trailing 16 bits
+   of the trace id as a hash). Either every span of a trace is kept or none is,
+   so distributed traces remain whole. Configured via `TRACES_SAMPLE_RATE`
+   (default `1.0` = keep all).
+2. **Per-source token bucket** — refill rate `TRACES_INGEST_MAX_SPANS_PER_SEC`
+   tokens/sec, keyed by `service_namespace || service_name`. Default `0` =
+   unbounded. A noisy source drains its own bucket without affecting quiet
+   sources.
+
+When the sampler drops spans, it emits a `warn`-level log once per minute per
+source (cumulative drop count) so flooding sources are visible without flooding
+the logs themselves.
+
+Counters are exposed at `GET /api/traces/ingest-stats` (admin-only). Response:
+
+```json
+{
+  "acceptedTotal": 12345,
+  "droppedTotal": 678,
+  "perSource": [
+    { "source": "payments", "accepted": 12000, "dropped": 0 },
+    { "source": "spam-bot", "accepted": 345, "dropped": 678 }
+  ]
+}
+```
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TRACES_SAMPLE_RATE` | `1.0` | Head sample rate, 0..1. |
+| `TRACES_INGEST_MAX_SPANS_PER_SEC` | `0` | Per-source rate limit. `0` = unbounded. |
+
+## Retention
+
+Spans are retained for `TRACES_RETENTION_DAYS` (default `7`). A daily cleanup
+job (in the existing `runCleanup()` scheduler block) calls `cleanOldSpans()`,
+which deletes rows in 10,000-row batches to keep DELETE locks short. The job
+logs the number of deleted rows when non-zero.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TRACES_RETENTION_DAYS` | `7` | Number of days of `spans` data to keep before cleanup. |
+
 ## Test Coverage
 
 | Test File | Tests | Description |

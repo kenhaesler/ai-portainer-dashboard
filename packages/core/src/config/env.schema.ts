@@ -257,6 +257,17 @@ export const envSchema = z.object({
   // eBPF Trace Ingestion (Grafana Beyla)
   TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
   TRACES_INGESTION_API_KEY: z.string().default(''),
+  // How many days of spans to retain. Daily cleanup runs alongside
+  // METRICS_RETENTION_DAYS in scheduler.runCleanup().
+  TRACES_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+  // Head-sampling rate, 0..1. 1.0 = accept all (default; no-op for existing
+  // deployments). Deterministic on trace_id so all spans of a trace travel
+  // together.
+  TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1.0),
+  // Per-source token-bucket refill (spans/sec) keyed by
+  // service_namespace||service_name. 0 = unbounded. Set this to protect the
+  // trace store from a single chatty fleet.
+  TRACES_INGEST_MAX_SPANS_PER_SEC: z.coerce.number().int().min(0).default(0),
 
   // OpenTelemetry Span Export (OTLP/HTTP JSON)
   OTEL_EXPORTER_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),

@@ -85,8 +85,10 @@ describe('traces routes', () => {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
     app.decorate('authenticate', async () => undefined);
+    app.decorate('requireRole', () => async () => undefined);
     await app.register(async (instance) => {
       instance.decorate('authenticate', async () => undefined);
+      instance.decorate('requireRole', () => async () => undefined);
       await tracesRoutes(instance);
     });
     await app.ready();

@@ -27,6 +27,9 @@ export { selectRollupTable } from './services/metrics-rollup-selector.js';
 export type { DataPoint } from './services/lttb-decimator.js';
 export { decimateLTTB } from './services/lttb-decimator.js';
 
+// Services — trace retention
+export { cleanOldSpans } from './services/trace-retention.js';
+
 // Services — KPI
 export type { KpiSnapshot } from './services/kpi-store.js';
 export {
