@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod/v4';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import {
@@ -33,13 +34,10 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       tags: ['Kubernetes'],
       summary: 'List pods across all Kubernetes endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          namespace: { type: 'string' },
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: z.object({
+        namespace: z.string().optional(),
+        endpointId: z.coerce.number().int().positive().optional(),
+      }),
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -80,13 +78,10 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       tags: ['Kubernetes'],
       summary: 'List deployments across all Kubernetes endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          namespace: { type: 'string' },
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: z.object({
+        namespace: z.string().optional(),
+        endpointId: z.coerce.number().int().positive().optional(),
+      }),
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -127,13 +122,10 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       tags: ['Kubernetes'],
       summary: 'List services across all Kubernetes endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          namespace: { type: 'string' },
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: z.object({
+        namespace: z.string().optional(),
+        endpointId: z.coerce.number().int().positive().optional(),
+      }),
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -174,12 +166,9 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       tags: ['Kubernetes'],
       summary: 'List namespaces across all Kubernetes endpoints',
       security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          endpointId: { type: 'number' },
-        },
-      },
+      querystring: z.object({
+        endpointId: z.coerce.number().int().positive().optional(),
+      }),
     },
     preHandler: [fastify.authenticate],
   }, async (request) => {
@@ -220,24 +209,24 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
       tags: ['Kubernetes'],
       summary: 'Get pod logs (read-only)',
       security: [{ bearerAuth: [] }],
-      params: {
-        type: 'object',
-        required: ['endpointId', 'namespace', 'podName'],
-        properties: {
-          endpointId: { type: 'number' },
-          namespace: { type: 'string' },
-          podName: { type: 'string' },
-        },
-      },
-      querystring: {
-        type: 'object',
-        properties: {
-          tail: { type: 'number', default: 100 },
-          sinceSeconds: { type: 'number' },
-          timestamps: { type: 'boolean', default: true },
-          container: { type: 'string' },
-        },
-      },
+      params: z.object({
+        endpointId: z.coerce.number().int().positive(),
+        namespace: z.string().min(1),
+        podName: z.string().min(1),
+      }),
+      querystring: z.object({
+        tail: z.coerce.number().int().positive().optional().default(100),
+        sinceSeconds: z.coerce.number().int().positive().optional(),
+        timestamps: z
+          .union([z.boolean(), z.string()])
+          .optional()
+          .default(true)
+          .transform((value) => {
+            if (typeof value === 'boolean') return value;
+            return value !== 'false' && value !== '0';
+          }),
+        container: z.string().optional(),
+      }),
     },
     preHandler: [fastify.authenticate],
   }, async (request, reply) => {
