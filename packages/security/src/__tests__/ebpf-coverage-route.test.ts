@@ -531,6 +531,28 @@ describe('ebpf-coverage routes', () => {
       }));
     });
 
+    it('POST /api/ebpf/deploy/:endpointId accepts host-only override even when LAN detection fails', async () => {
+      // Host-only override must not require DASHBOARD_EXTERNAL_URL nor a usable
+      // LAN IP — the whole point of the override is the operator telling us
+      // exactly which address Beyla should use. Earlier the host-only path
+      // called resolveDefaultOtlpEndpoint to borrow a scheme and 500'd.
+      mockedNetworkInterfaces.mockReturnValueOnce({
+        eth0: [{ address: '172.19.0.6', family: 'IPv4', internal: false }],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        payload: { otlpEndpoint: 'mbp.local:8080' },
+        headers: { host: 'localhost:3051' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeyla).toHaveBeenCalledWith(1, expect.objectContaining({
+        otlpEndpoint: 'http://mbp.local:8080/api/traces/otlp',
+      }));
+    });
+
     it('POST /api/ebpf/deploy/:endpointId accepts explicit OTLP override even when LAN detection fails', async () => {
       // User worked around the resolution failure by typing an address into
       // the Deploy dialog — that should always win.

@@ -175,29 +175,30 @@ function normalizeManualOtlpEndpoint(
 ): string {
   const value = rawValue.trim();
 
-  // Full URL: use it as-is, no need to consult the default — important because
-  // resolveDefaultOtlpEndpoint can now throw when the dashboard's address
-  // isn't auto-resolvable, and we don't want the override path to require it.
+  // Full URL: use it as-is, no need to consult the default.
   if (value.includes('://')) {
     const parsed = new URL(value);
     return ensureOtlpPath(parsed);
   }
-
-  // Host-only override: borrow scheme/path from the default URL.
-  const defaultUrl = new URL(resolveDefaultOtlpEndpoint(request));
 
   const hostPart = value.split('/')[0].trim();
   if (!hostPart) {
     throw new Error('Invalid OTLP endpoint override');
   }
 
+  // Host-only override: build a URL from scratch. We default to http:// because
+  // requiring the operator to pre-configure DASHBOARD_EXTERNAL_URL just so they
+  // can type a single hostname in the Deploy dialog defeats the point of the
+  // override. If they want TLS they can type the full URL.
+  const config = getConfig();
+  const fallbackPort = String(config.PORT);
+  const base = new URL(`http://placeholder:${fallbackPort}/api/traces/otlp`);
   if (hostPart.includes(':')) {
-    defaultUrl.host = hostPart;
+    base.host = hostPart;
   } else {
-    defaultUrl.hostname = hostPart;
+    base.hostname = hostPart;
   }
-
-  return ensureOtlpPath(defaultUrl);
+  return ensureOtlpPath(base);
 }
 
 async function resolveEndpointOtlpEndpoint(
