@@ -573,6 +573,40 @@ describe('ebpf-coverage routes', () => {
       }));
     });
 
+    it('POST /api/ebpf/deploy/:endpointId refuses to derive OTLP URL from headers in production (#1226)', async () => {
+      // In production, DASHBOARD_EXTERNAL_URL is the only trustworthy source
+      // for the OTLP URL Beyla agents POST telemetry to. Falling back to
+      // Host / X-Forwarded-Host is a Host header injection vector that lets
+      // a crafted admin request redirect telemetry to an attacker endpoint.
+      setConfigForTest({
+        PORT: 3051,
+        TRACES_INGESTION_API_KEY: 'ingest-key',
+        DASHBOARD_EXTERNAL_URL: '',
+      });
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/ebpf/deploy/1',
+          payload: {},
+          headers: {
+            host: 'attacker.example',
+            'x-forwarded-host': 'attacker.example',
+          },
+        });
+
+        expect(response.statusCode).toBe(500);
+        const body = response.json();
+        // Whatever message surfaces, the attacker-controlled host MUST NOT
+        // have been used to build the OTLP URL that reached deployBeyla.
+        expect(JSON.stringify(body)).not.toContain('attacker.example');
+        expect(mockedDeployBeyla).not.toHaveBeenCalled();
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
     it('POST /api/ebpf/deploy/:endpointId respects forwarded https host when behind reverse proxy', async () => {
       const response = await app.inject({
         method: 'POST',

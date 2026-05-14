@@ -78,6 +78,19 @@ function resolveOtlpEndpoint(request: { headers: Record<string, unknown>; protoc
     const base = config.DASHBOARD_EXTERNAL_URL.replace(/\/+$/, '');
     return `${base}/api/traces/otlp`;
   }
+  // OTLP URLs go to Beyla agents which then POST telemetry back to that URL.
+  // Sourcing the host from request headers means a crafted `Host:` /
+  // `X-Forwarded-Host:` header can redirect telemetry to an attacker-
+  // controlled endpoint (Host header injection; #1226). In production,
+  // DASHBOARD_EXTERNAL_URL is the only trustworthy source — refuse to
+  // construct an OTLP URL without it instead of silently falling back.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'DASHBOARD_EXTERNAL_URL must be set in production to deploy Beyla. ' +
+      'It is the public URL Beyla agents POST telemetry to; deriving it from ' +
+      'request headers is unsafe because clients control Host / X-Forwarded-Host.',
+    );
+  }
   const proto = String(request.headers['x-forwarded-proto'] || request.protocol || 'http').split(',')[0].trim();
   const rawHost = String(request.headers['x-forwarded-host'] || request.headers.host || `localhost:${config.PORT}`).split(',')[0].trim();
   const host = resolveReachableHost(rawHost, config.PORT);
