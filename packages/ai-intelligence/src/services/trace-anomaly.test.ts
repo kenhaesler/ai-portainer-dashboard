@@ -1,4 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Stub getConfig() before the SUT imports it — test env doesn't satisfy the
+// full production env schema (JWT_SECRET, DASHBOARD_USERNAME, etc.).
+vi.mock('@dashboard/core/config/index.js', () => ({
+  getConfig: () => ({
+    TRACES_ANOMALY_P95_ZSCORE: 2.5,
+    TRACES_ANOMALY_ERROR_RATE_PCT: 5,
+  }),
+}));
+
 import { runTraceAnomalyCycle, __resetTraceAnomalyLogState } from './trace-anomaly.js';
 import * as insightsStore from './insights-store.js';
 
