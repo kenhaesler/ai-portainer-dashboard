@@ -37,24 +37,17 @@ npm run test -w frontend   # Frontend only
 
 Backend uses npm workspaces under `packages/` with a `core/` kernel (`@dashboard/core`). See `@docs/ai-instructions/architecture.md` for complete directory structure. See `@packages/core/src/CLAUDE.md` for kernel boundaries and security-critical files.
 
-## Security (Project-Specific)
+## Security (Mandatory)
 
-- JWT via `jose` (32+ char secrets). Session store in PostgreSQL — validated server-side per request.
-- OIDC/SSO via `openid-client` v6 with PKCE. Rate limiting on login (`LOGIN_RATE_LIMIT`).
-- Auth decorator: `fastify.authenticate` on all protected routes.
-- **Prompt injection guard** (`packages/ai-intelligence/src/services/prompt-guard.ts`): 3-layer (regex 25+, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable: `LLM_PROMPT_GUARD_STRICT`.
-- Security regression tests live under `backend/src/routes/security-regression-*.test.ts` — one file per domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra). Coverage: auth sweep, prompt injection, false positives, rate limiting, RBAC, headers, sockets, stream tickets, JWT, infra isolation.
-- For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
+1. **Auth & RBAC** — JWT via `jose` (32+ char secrets); session store in PostgreSQL, validated server-side per request. OIDC/SSO via `openid-client` v6 with PKCE; login rate-limited (`LOGIN_RATE_LIMIT`). `fastify.authenticate` on all protected routes; mutating endpoints (POST/PUT/DELETE) and sensitive reads (Backups, Settings, Cache, User Management) MUST also use `fastify.requireRole('admin')` — never assume `authenticate` alone is sufficient for admin actions.
+2. **Zero default secrets** — `NODE_ENV=production` MUST fail to start if `JWT_SECRET` is the default value or < 32 chars. Never hardcode credentials.
+3. **LLM safety** — All LLM interactions go through the prompt-injection guard at `packages/ai-intelligence/src/services/prompt-guard.ts` (3 layers: 25+ regexes, heuristic scoring, output sanitization). Applied to REST `/api/llm/query` and WebSocket `chat:message`. Configurable via `LLM_PROMPT_GUARD_STRICT`. Output must be sanitized to prevent system-prompt leakage or infrastructure exposure.
+4. **Infrastructure isolation** — Internal services (Prometheus, Ollama, Redis) must not bind `0.0.0.0`. Use Docker internal networks; authenticate all cross-service communication.
+5. **Input & data safety** — Zod on every API boundary. Parameterized SQL only (no concatenation). Strip sensitive metadata (e.g., filesystem paths in container labels) before sending to frontend.
+6. **Regression tests required** — Every security fix needs a test in `backend/src/routes/security-regression-*.test.ts`, in the file matching your domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra), or a new per-domain file if none fits. Coverage spans auth sweep, prompt injection, false positives, rate limiting, RBAC, headers, sockets, stream tickets, JWT, and infra isolation.
+7. **Observer-first integrity** — Container-mutating actions (restart/stop) are strictly opt-in and gated by both `admin` role and a Remediation Approval workflow.
 
-## Security First (Mandatory)
-
-1. **RBAC by Default** — All mutating endpoints (POST/PUT/DELETE) and sensitive read endpoints (Backups, Settings, Cache, User Management) MUST require `fastify.requireRole('admin')`. Never assume `fastify.authenticate` is sufficient for administrative actions.
-2. **Zero Default Secrets** — Production deployments (`NODE_ENV=production`) MUST fail to start if `JWT_SECRET` is the default value or less than 32 characters. Never hardcode credentials.
-3. **LLM Safety** — All LLM interactions must pass through the Prompt Injection Guard. Output must be sanitized to prevent system prompt leakage or infrastructure detail exposure to unauthorized users.
-4. **Infrastructure Isolation** — Internal services (Prometheus, LLM API, Redis) must not be exposed on `0.0.0.0`. Use internal Docker networks. Authenticate all cross-service communication.
-5. **Input & Data Safety** — Use Zod for all API boundaries. Use parameterized SQL only (no concatenation). Strip sensitive metadata (like filesystem paths in container labels) before sending to frontend.
-6. **Regression Testing** — Every security fix must include a corresponding test in `backend/src/routes/security-regression-*.test.ts`. Add the test to the file matching your domain (auth, rbac, headers, prompt-guard, sockets, stream-tickets, jwt, infra), or create a new per-domain file if none fits.
-7. **Observer-First Integrity** — Mutating actions (restart/stop containers) are strictly opt-in and must be gated by both an 'Admin' role and a 'Remediation Approval' workflow.
+For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
 ## UI/UX Design
 
