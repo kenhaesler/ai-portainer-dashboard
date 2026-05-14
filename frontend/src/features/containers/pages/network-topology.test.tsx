@@ -22,6 +22,10 @@ vi.mock('@/features/observability/hooks/use-metrics', () => ({
   useNetworkRates: vi.fn(),
 }));
 
+vi.mock('@/features/observability/hooks/use-service-map', () => ({
+  useServiceMap: vi.fn(),
+}));
+
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 30, setInterval: vi.fn() }),
 }));
@@ -32,13 +36,19 @@ vi.mock('@/features/containers/components/network/topology-graph', () => ({
   TopologyGraph: ({
     containers,
     networks,
+    showObservedTraffic,
+    observedEdges,
   }: {
     containers: Array<{ id: string; name: string }>;
     networks: Array<{ id: string; name: string }>;
+    showObservedTraffic?: boolean;
+    observedEdges?: Array<{ source: string; target: string; callCount: number }>;
   }) => (
     <div data-testid="topology-graph">
       <span data-testid="topology-container-count">{containers.length}</span>
       <span data-testid="topology-network-count">{networks.length}</span>
+      <span data-testid="topology-show-observed">{String(Boolean(showObservedTraffic))}</span>
+      <span data-testid="topology-observed-count">{observedEdges?.length ?? 0}</span>
     </div>
   ),
 }));
@@ -47,11 +57,13 @@ import { useContainers } from '@/features/containers/hooks/use-containers';
 import { useNetworks } from '@/features/containers/hooks/use-networks';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useNetworkRates } from '@/features/observability/hooks/use-metrics';
+import { useServiceMap } from '@/features/observability/hooks/use-service-map';
 
 const mockUseContainers = vi.mocked(useContainers);
 const mockUseNetworks = vi.mocked(useNetworks);
 const mockUseEndpoints = vi.mocked(useEndpoints);
 const mockUseNetworkRates = vi.mocked(useNetworkRates);
+const mockUseServiceMap = vi.mocked(useServiceMap);
 
 function makeContainer(overrides: Record<string, unknown> = {}) {
   return {
@@ -152,6 +164,7 @@ describe('NetworkTopologyPage', () => {
     } as any);
 
     mockUseNetworkRates.mockReturnValue({ data: { rates: {} } } as any);
+    mockUseServiceMap.mockReturnValue({ data: undefined } as any);
   });
 
   it('renders the page heading and description', () => {
@@ -237,5 +250,76 @@ describe('NetworkTopologyPage', () => {
     expect(screen.getByTestId('topology-graph')).toBeInTheDocument();
     expect(screen.getByTestId('topology-container-count')).toHaveTextContent('0');
     expect(screen.getByTestId('topology-network-count')).toHaveTextContent('0');
+  });
+
+  describe('RPC overlay (#1233)', () => {
+    it('defaults observed-traffic overlay OFF when service-map has no edges', () => {
+      setHooks({ containers: [makeContainer()], networks: [makeNetwork()] });
+      mockUseServiceMap.mockReturnValue({
+        data: { nodes: [], edges: [] },
+      } as any);
+
+      renderPage();
+
+      expect(screen.getByTestId('topology-show-observed')).toHaveTextContent('false');
+      expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('0');
+      const toggle = screen.getByLabelText('Toggle observed traffic overlay') as HTMLInputElement;
+      expect(toggle.disabled).toBe(true);
+    });
+
+    it('defaults observed-traffic overlay ON when service-map returns edges', async () => {
+      setHooks({
+        containers: [
+          makeContainer({ id: 'c1', name: 'web' }),
+          makeContainer({ id: 'c2', name: 'api' }),
+        ],
+        networks: [makeNetwork()],
+      });
+      mockUseServiceMap.mockReturnValue({
+        data: {
+          nodes: [
+            { id: 'web', name: 'web', errorRate: 0 },
+            { id: 'api', name: 'api', errorRate: 0.02 },
+          ],
+          edges: [
+            { source: 'web', target: 'api', callCount: 100, avgDuration: 50 },
+          ],
+        },
+      } as any);
+
+      renderPage();
+
+      const toggle = screen.getByLabelText('Toggle observed traffic overlay') as HTMLInputElement;
+      expect(toggle.disabled).toBe(false);
+      // Wait one tick for the useEffect to flip default-on.
+      await screen.findByText(/Observed traffic/);
+      expect(toggle.checked).toBe(true);
+      expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('1');
+    });
+
+    it('passes the merged observed edges to TopologyGraph', () => {
+      setHooks({
+        containers: [
+          makeContainer({ id: 'c1', name: 'web' }),
+          makeContainer({ id: 'c2', name: 'api' }),
+        ],
+        networks: [makeNetwork()],
+      });
+      mockUseServiceMap.mockReturnValue({
+        data: {
+          nodes: [
+            { id: 'web', name: 'web', errorRate: 0 },
+            { id: 'api', name: 'api', errorRate: 0.07 },
+          ],
+          edges: [
+            { source: 'web', target: 'api', callCount: 100, avgDuration: 50 },
+            { source: 'api', target: 'web', callCount: 25, avgDuration: 5 },
+          ],
+        },
+      } as any);
+
+      renderPage();
+      expect(screen.getByTestId('topology-observed-count')).toHaveTextContent('2');
+    });
   });
 });

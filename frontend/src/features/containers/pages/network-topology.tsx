@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
@@ -7,13 +7,27 @@ import { useNetworks, type Network } from '@/features/containers/hooks/use-netwo
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { useNetworkRates } from '@/features/observability/hooks/use-metrics';
-import { TopologyGraph } from '@/features/containers/components/network/topology-graph';
+import { useServiceMap } from '@/features/observability/hooks/use-service-map';
+import { TopologyGraph, type RpcEdgeInput } from '@/features/containers/components/network/topology-graph';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { formatDate } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
+
+// Memoised 24h window — recomputed at most once per render. Stable across
+// renders within the same minute so React Query can dedupe.
+function useLast24hWindow() {
+  return useMemo(() => {
+    const to = new Date();
+    const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
+    // Round to the minute to keep the React Query cache key stable.
+    from.setSeconds(0, 0);
+    to.setSeconds(0, 0);
+    return { from, to };
+  }, []);
+}
 
 type SelectedNode =
   | { type: 'container'; data: Container }
@@ -41,6 +55,34 @@ export default function NetworkTopologyPage() {
   const { data: networks, isLoading: networksLoading, isPending: networksPending, isError: networksError, refetch: refetchNetworks, isFetching: networksFetching } = useNetworks(selectedEndpoint);
   const { data: networkRatesData } = useNetworkRates(selectedEndpoint);
   const { interval, setInterval } = useAutoRefresh(30);
+
+  // RPC overlay (#1233): fetch last-24h service map, default-on if there's
+  // anything to show, user can toggle from the header.
+  const { from: smFrom, to: smTo } = useLast24hWindow();
+  const { data: serviceMap } = useServiceMap({ from: smFrom, to: smTo });
+  const observedEdges = useMemo<RpcEdgeInput[]>(() => {
+    if (!serviceMap?.edges) return [];
+    // Cross-reference each edge with its target node's errorRate so the
+    // overlay can colour-code by service health.
+    const nodeErrorRate = new Map<string, number | undefined>();
+    for (const n of serviceMap.nodes) nodeErrorRate.set(n.name, n.errorRate);
+    return serviceMap.edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      callCount: e.callCount ?? 0,
+      avgDuration: e.avgDuration,
+      errorRate: nodeErrorRate.get(e.target),
+    }));
+  }, [serviceMap]);
+
+  const hasObservedTraffic = observedEdges.length > 0;
+  const [overlayUserToggled, setOverlayUserToggled] = useState(false);
+  const [showObservedTraffic, setShowObservedTraffic] = useState(false);
+  useEffect(() => {
+    // Default-on once data confirms observed edges exist, but stop
+    // overriding the user once they've expressed a preference.
+    if (!overlayUserToggled) setShowObservedTraffic(hasObservedTraffic);
+  }, [hasObservedTraffic, overlayUserToggled]);
 
   // Transform data for TopologyGraph
   const graphData = useMemo(() => {
@@ -110,6 +152,27 @@ export default function NetworkTopologyPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showObservedTraffic}
+              onChange={(e) => {
+                setOverlayUserToggled(true);
+                setShowObservedTraffic(e.target.checked);
+              }}
+              disabled={!hasObservedTraffic}
+              aria-label="Toggle observed traffic overlay"
+              className="h-4 w-4 rounded border-input"
+            />
+            <span className={hasObservedTraffic ? '' : 'text-muted-foreground'}>
+              Observed traffic
+              {hasObservedTraffic && (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({observedEdges.length})
+                </span>
+              )}
+            </span>
+          </label>
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
           <RefreshButton onClick={handleRefresh} isLoading={isFetching} />
         </div>
@@ -169,6 +232,8 @@ export default function NetworkTopologyPage() {
                 networks={graphData.networks}
                 onNodeClick={handleNodeClick}
                 networkRates={networkRatesData?.rates}
+                showObservedTraffic={showObservedTraffic}
+                observedEdges={observedEdges}
               />
             </div>
 
