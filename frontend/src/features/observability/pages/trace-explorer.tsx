@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Search,
   GitBranch,
@@ -358,12 +359,32 @@ function TraceListItem({
 }
 
 export default function TraceExplorerPage() {
+  // Deep-link query params from other pages (Workloads, Container Detail,
+  // Network Topology). Read once on mount and applied as filter defaults so
+  // links land already pre-filtered.
+  const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [serviceFilter, setServiceFilter] = useState('');
+  const [serviceFilter, setServiceFilter] = useState(() => searchParams.get('service') ?? '');
   const [sourceFilter, setSourceFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>(() => {
+    const s = searchParams.get('status');
+    return s === 'ok' || s === 'error' ? s : 'all';
+  });
   const [timeRange, setTimeRange] = useState<'15m' | '1h' | '6h' | '24h' | '7d' | 'all'>('24h');
-  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(() => searchParams.get('trace'));
+
+  // Re-apply deep-link params if the URL changes without remounting (e.g.
+  // user clicks a second deep link without leaving the Trace Explorer route).
+  // Only the deep-link fields are touched, so a user editing other filters
+  // is not disturbed.
+  useEffect(() => {
+    const s = searchParams.get('service');
+    if (s !== null) setServiceFilter(s);
+    const status = searchParams.get('status');
+    if (status === 'ok' || status === 'error' || status === 'all') setStatusFilter(status);
+    const trace = searchParams.get('trace');
+    if (trace !== null) setSelectedTraceId(trace);
+  }, [searchParams]);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [showServiceMap, setShowServiceMap] = useState(false);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
