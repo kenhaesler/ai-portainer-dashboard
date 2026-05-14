@@ -420,7 +420,14 @@ async function portainerFetchInner<T>(
         throw new PortainerError(detail ? `${base} — ${detail}` : base, kind, res.status);
       }
 
-      return await res.json() as T;
+      if (res.status === 204) {
+        return undefined as unknown as T;
+      }
+      const text = await res.text();
+      if (text.length === 0) {
+        return undefined as unknown as T;
+      }
+      return JSON.parse(text) as T;
     } catch (err) {
       if (err instanceof PortainerError) throw err;
       if (attempt < retries) {
