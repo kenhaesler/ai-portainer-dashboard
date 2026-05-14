@@ -215,11 +215,10 @@ export async function kubernetesRoutes(fastify: FastifyInstance) {
         podName: z.string().min(1),
       }),
       querystring: z.object({
-        tail: z.coerce.number().int().positive().optional().default(100),
+        tail: z.coerce.number().int().positive().default(100),
         sinceSeconds: z.coerce.number().int().positive().optional(),
         timestamps: z
           .union([z.boolean(), z.string()])
-          .optional()
           .default(true)
           .transform((value) => {
             if (typeof value === 'boolean') return value;
