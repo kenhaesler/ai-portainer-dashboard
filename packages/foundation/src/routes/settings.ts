@@ -310,7 +310,10 @@ export async function settingsRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { feature } = request.params as z.infer<typeof PromptFeatureParamsSchema>;
     if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
-      return (reply as any).code(404).send({ error: `Unknown feature: ${feature}` });
+      return (reply as any).code(404).send({
+        error: 'Unknown feature',
+        code: 'unknown_feature',
+      });
     }
     const versions = await getPromptHistory(feature);
     return { versions };
@@ -333,7 +336,10 @@ export async function settingsRoutes(fastify: FastifyInstance) {
     const { versionId } = request.body as z.infer<typeof RollbackBodySchema>;
 
     if (!PROMPT_FEATURES.some((f) => f.key === feature)) {
-      return (reply as any).code(404).send({ error: `Unknown feature: ${feature}` });
+      return (reply as any).code(404).send({
+        error: 'Unknown feature',
+        code: 'unknown_feature',
+      });
     }
 
     const targetVersion = await getPromptVersionById(versionId, feature);

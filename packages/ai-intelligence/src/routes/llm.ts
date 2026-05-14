@@ -291,12 +291,12 @@ export async function llmRoutes(fastify: FastifyInstance) {
     // Validate feature key
     const validFeature = PROMPT_FEATURES.find((f) => f.key === feature);
     if (!validFeature) {
-      return { success: false, error: `Unknown feature: ${feature}` };
+      return { success: false, error: 'Unknown feature', code: 'unknown_feature' };
     }
 
     const fixture = PROMPT_TEST_FIXTURES[feature as PromptFeature];
     if (!fixture) {
-      return { success: false, error: `No test fixture for feature: ${feature}` };
+      return { success: false, error: 'No test fixture for feature', code: 'no_test_fixture' };
     }
 
     const llmConfig = await getEffectiveLlmConfig(feature as PromptFeature);

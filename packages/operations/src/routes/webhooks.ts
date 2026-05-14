@@ -33,6 +33,15 @@ const VALID_EVENT_TYPES = [
   '*',
 ];
 
+function findInvalidEventType(events: readonly string[]): string | null {
+  for (const evt of events) {
+    if (!VALID_EVENT_TYPES.includes(evt) && !evt.endsWith('.*')) {
+      return evt;
+    }
+  }
+  return null;
+}
+
 function sanitizeWebhook(webhook: Webhook) {
   return {
     ...webhook,
@@ -75,10 +84,11 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     };
 
     // Validate event types
-    for (const evt of body.events) {
-      if (!VALID_EVENT_TYPES.includes(evt) && !evt.endsWith('.*')) {
-        return reply.status(400).send({ error: `Invalid event type: ${evt}` });
-      }
+    if (findInvalidEventType(body.events) !== null) {
+      return reply.status(400).send({
+        error: 'Invalid event type',
+        code: 'invalid_event_type',
+      });
     }
     const urlValidationError = validateOutboundWebhookUrl(body.url);
     if (urlValidationError) {
@@ -126,12 +136,11 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       description?: string;
     };
 
-    if (body.events) {
-      for (const evt of body.events) {
-        if (!VALID_EVENT_TYPES.includes(evt) && !evt.endsWith('.*')) {
-          return reply.status(400).send({ error: `Invalid event type: ${evt}` });
-        }
-      }
+    if (body.events && findInvalidEventType(body.events) !== null) {
+      return reply.status(400).send({
+        error: 'Invalid event type',
+        code: 'invalid_event_type',
+      });
     }
     if (body.url) {
       const urlValidationError = validateOutboundWebhookUrl(body.url);

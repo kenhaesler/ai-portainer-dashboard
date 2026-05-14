@@ -23,9 +23,6 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
 
   fastify.addHook('onResponse', async (request, reply) => {
     const url = request.routeOptions?.url ?? request.url;
-    const host = request.hostname || (typeof request.headers.host === 'string' ? request.headers.host : '');
-    const protocol = request.protocol || 'http';
-    const urlFull = host ? `${protocol}://${host}${url}` : url;
 
     // Skip excluded paths
     for (const prefix of EXCLUDED_PREFIXES) {
@@ -46,6 +43,13 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
     const traceId = ctx?.traceId ?? request.requestId ?? request.id;
     const spanId = ctx?.spanId ?? request.requestId ?? request.id;
 
+    // Host header and request.protocol are intentionally NOT read here.
+    // Clients control Host / X-Forwarded-Host / X-Forwarded-Proto;
+    // embedding those values into stored span attributes lets an attacker
+    // poison the trace store with arbitrary hostnames and schemes that
+    // downstream SIEMs index (#1226). The path alone is sufficient for
+    // trace correlation; the public origin is recorded once at deploy
+    // time via service_name.
     try {
       await insertSpan({
         id: spanId,
@@ -61,14 +65,10 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
         attributes: JSON.stringify({
           method: request.method,
           url,
-          'url.full': urlFull,
           'url.path': url,
           'http.method': request.method,
           statusCode: reply.statusCode,
           'http.status_code': reply.statusCode,
-          'server.address': host || null,
-          'url.scheme': protocol,
-          'network.protocol.name': protocol,
           'network.transport': 'tcp',
           contentLength: reply.getHeader('content-length') ?? null,
         }),
@@ -76,11 +76,11 @@ async function requestTracingPlugin(fastify: FastifyInstance) {
         http_method: request.method,
         http_route: url,
         http_status_code: reply.statusCode,
-        server_address: host || null,
-        url_full: urlFull || null,
-        url_scheme: protocol,
+        server_address: null,
+        url_full: null,
+        url_scheme: null,
         network_transport: 'tcp',
-        network_protocol_name: protocol,
+        network_protocol_name: null,
       });
     } catch (err) {
       log.warn({ err }, 'Failed to insert request span');

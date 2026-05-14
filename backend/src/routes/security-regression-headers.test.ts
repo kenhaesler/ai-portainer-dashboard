@@ -138,6 +138,54 @@ describe('Nginx Security Header Consistency', () => {
     expect(socketBlock![0]).toContain('Connection $connection_upgrade');
     expect(socketBlock![0]).not.toContain('Connection "upgrade"');
   });
+
+  // ── #1226: Host header forwarding (CWE-20) ─────────────────────────────
+  it('should not forward the client-controlled $host to the backend (Host header injection)', () => {
+    const file = path.resolve(process.cwd(), '..', 'frontend', 'nginx.conf');
+    const content = readFileSync(file, 'utf8');
+
+    // Every `proxy_set_header Host …` must use a fixed value (not $host /
+    // $http_host / $host:port). Otherwise an attacker can poison the
+    // upstream Host header by crafting the request's Host: header. The
+    // backend MUST source the public URL from configuration
+    // (DASHBOARD_EXTERNAL_URL), not from headers.
+    const hostDirectives = content.match(/proxy_set_header\s+Host\s+[^;]+;/gi) ?? [];
+    expect(hostDirectives.length).toBeGreaterThan(0);
+    for (const directive of hostDirectives) {
+      expect(directive).not.toMatch(/\$host\b/i);
+      expect(directive).not.toMatch(/\$http_host\b/i);
+    }
+  });
+});
+
+// =====================================================================
+//  HOST HEADER INJECTION — runtime guard (#1226)
+//
+//  The request-tracing plugin (the only generic infra consumer of Host)
+//  must not embed the client-controlled Host header into stored trace
+//  spans. Trace-store poisoning lets an attacker inject arbitrary
+//  hostnames into observability data and downstream SIEMs.
+// =====================================================================
+describe('Host header propagation into traces (#1226)', () => {
+  it('request-tracing plugin source does not use request.headers.host for span attributes', () => {
+    const file = path.resolve(
+      process.cwd(),
+      '..',
+      'packages',
+      'core',
+      'src',
+      'plugins',
+      'request-tracing.ts',
+    );
+    const content = readFileSync(file, 'utf8');
+
+    // The plugin must not pull the host from the request headers anymore —
+    // it should rely on configured values (DASHBOARD_EXTERNAL_URL) or omit
+    // host from span attributes entirely.
+    expect(content).not.toMatch(/request\.hostname/);
+    expect(content).not.toMatch(/request\.headers\.host\b/);
+    expect(content).not.toMatch(/request\.headers\['host'\]/);
+  });
 });
 
 // =====================================================================

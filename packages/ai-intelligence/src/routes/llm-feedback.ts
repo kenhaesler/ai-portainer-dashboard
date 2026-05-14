@@ -98,7 +98,10 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
 
     // Validate feature
     if (!isValidFeature(body.feature)) {
-      return reply.code(400).send({ error: `Invalid feature: ${body.feature}` });
+      return reply.code(400).send({
+        error: 'Invalid feature',
+        code: 'invalid_feature',
+      });
     }
 
     // Rate limit check
@@ -237,7 +240,10 @@ export async function llmFeedbackRoutes(fastify: FastifyInstance) {
     const { feature } = request.body as z.infer<typeof GenerateSuggestionSchema>;
 
     if (!isValidFeature(feature)) {
-      return reply.code(400).send({ error: `Invalid feature: ${feature}` });
+      return reply.code(400).send({
+        error: 'Invalid feature',
+        code: 'invalid_feature',
+      });
     }
 
     const negativeCount = await getNegativeFeedbackCount(feature);
