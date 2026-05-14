@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Search, Download, WrapText, Activity, ArrowDown, Radio } from 'lucide-react';
+import { Search, Download, WrapText, Activity, ArrowDown, Radio, Link2, X } from 'lucide-react';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { ContainerMultiSelect } from '@/shared/components/forms/container-multi-select';
-import { buildSearchMatcher, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
+import { buildSearchMatcher, filterLines, parseLogs, sortByTimestamp, toLocalTimestamp, type LogLevel, type ParsedLogEntry } from '@/features/observability/lib/log-viewer';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useUiStore } from '@/stores/ui-store';
 import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
@@ -202,14 +203,37 @@ export default function LogViewerPage() {
 
   const potatoMode = useUiStore((state) => state.potatoMode);
   const isPageVisible = usePageVisibility();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ── Trace ↔ logs correlation (#1238) ───────────────────────────────────
+  // The trace explorer links here with ?trace=<id>&containerId=<id>&from=<iso>&to=<iso>.
+  // We seed the trace filter and (when present) the container selection
+  // from those params, then render a dismissible banner.
+  const initialTrace = searchParams.get('trace') ?? '';
+  const initialContainerId = searchParams.get('containerId') ?? '';
+  const [traceFilter, setTraceFilter] = useState(initialTrace);
+
   const [selectedEndpoint, setSelectedEndpoint] = useState<number | undefined>();
-  const [selectedContainers, setSelectedContainers] = useState<string[]>([]);
+  const [selectedContainers, setSelectedContainers] = useState<string[]>(
+    initialContainerId ? [initialContainerId] : [],
+  );
   const [searchPattern, setSearchPattern] = useState('');
   const [level, setLevel] = useState<LogLevel | 'all'>('all');
   const [bufferSize, setBufferSize] = useState<number>(1000);
   const [lineWrap, setLineWrap] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [liveTail, setLiveTail] = useState(!potatoMode);
+
+  const disableTraceFilter = useCallback(() => {
+    setTraceFilter('');
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('trace');
+      next.delete('from');
+      next.delete('to');
+      return next;
+    });
+  }, [setSearchParams]);
 
   const { data: endpoints = [] } = useEndpoints();
   const { data: containers = [] } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
@@ -220,7 +244,15 @@ export default function LogViewerPage() {
     }
   }, [endpoints, selectedEndpoint]);
 
+  // Reset container selection when the endpoint changes — but skip the
+  // very first render so an inbound `?containerId=` deep-link from the
+  // trace explorer survives the endpoint-default effect above.
+  const hadFirstEndpointChange = useRef(false);
   useEffect(() => {
+    if (!hadFirstEndpointChange.current) {
+      hadFirstEndpointChange.current = true;
+      return;
+    }
     setSelectedContainers([]);
   }, [selectedEndpoint]);
 
@@ -285,12 +317,13 @@ export default function LogViewerPage() {
   }, [containerQueries, selectedContainerModels, bufferSize, streamedEntries]);
 
   const filteredEntries = useMemo(() => {
-    return mergedEntries.filter((entry) => {
+    const levelFiltered = mergedEntries.filter((entry) => {
       if (level !== 'all' && entry.level !== level) return false;
       if (!matcher) return true;
       return matcher(entry.raw);
     });
-  }, [mergedEntries, level, matcher]);
+    return filterLines(levelFiltered, { trace: traceFilter });
+  }, [mergedEntries, level, matcher, traceFilter]);
 
   const searchMatches = useMemo(() => {
     if (!matcher) return 0;
@@ -339,6 +372,29 @@ export default function LogViewerPage() {
         <p className="text-muted-foreground">Live tail, search, level filtering, and multi-container aggregation.</p>
       </div>
 
+      {traceFilter && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-2.5 text-sm"
+          data-testid="trace-correlation-banner"
+        >
+          <div className="flex items-center gap-2 text-blue-200">
+            <Link2 className="h-4 w-4" aria-hidden="true" />
+            <span>
+              Filtering logs for trace <span className="font-mono text-blue-100">{traceFilter.slice(0, 8)}…{traceFilter.slice(-4)}</span>. Lines without this ID are hidden.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={disableTraceFilter}
+            className="inline-flex items-center gap-1 rounded-md border border-blue-500/50 px-2 py-1 text-xs font-medium text-blue-100 hover:bg-blue-500/20"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+            Disable filter
+          </button>
+        </div>
+      )}
+
       <section className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
@@ -375,6 +431,20 @@ export default function LogViewerPage() {
               value={level}
               onValueChange={(val) => setLevel(val as LogLevel | 'all')}
               options={LEVEL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            />
+          </label>
+        </div>
+
+        <div className="mt-3">
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">Trace ID</span>
+            <input
+              type="text"
+              aria-label="Trace ID filter"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="paste a trace id to filter lines"
+              value={traceFilter}
+              onChange={(e) => setTraceFilter(e.target.value)}
             />
           </label>
         </div>

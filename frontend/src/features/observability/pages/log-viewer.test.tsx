@@ -8,6 +8,21 @@ const mockUseUiStore = vi.fn((selector: (state: { potatoMode: boolean }) => bool
 );
 const mockUsePageVisibility = vi.fn(() => true);
 
+// Mutable URLSearchParams shared between useSearchParams calls so the
+// test can simulate inbound deep-links from the trace explorer.
+let mockUrlSearch = new URLSearchParams();
+const mockSetSearchParams = vi.fn((updater: URLSearchParams | ((p: URLSearchParams) => URLSearchParams)) => {
+  if (typeof updater === 'function') {
+    mockUrlSearch = updater(new URLSearchParams(mockUrlSearch));
+  } else {
+    mockUrlSearch = updater;
+  }
+});
+
+vi.mock('react-router-dom', () => ({
+  useSearchParams: () => [mockUrlSearch, mockSetSearchParams],
+}));
+
 vi.mock('@tanstack/react-query', () => ({
   useQueries: (args: unknown) => mockUseQueries(args),
 }));
@@ -66,6 +81,7 @@ describe('LogViewerPage', () => {
       selector({ potatoMode: false }),
     );
     mockUsePageVisibility.mockReturnValue(true);
+    mockUrlSearch = new URLSearchParams();
   });
 
   it('renders page shell and controls', () => {
@@ -151,5 +167,35 @@ describe('LogViewerPage', () => {
       expect(lastCall.queries).toHaveLength(1);
       expect(lastCall.queries[0]?.refetchInterval).toBe(false);
     });
+  });
+
+  // ── Trace ↔ logs correlation (#1238) ───────────────────────────────────
+  it('pre-populates trace filter from ?trace= URL param and shows banner', () => {
+    mockUrlSearch = new URLSearchParams({ trace: 'abcdef1234567890', containerId: 'c1' });
+    render(<LogViewerPage />);
+
+    const traceInput = screen.getByLabelText('Trace ID filter') as HTMLInputElement;
+    expect(traceInput.value).toBe('abcdef1234567890');
+    expect(screen.getByTestId('trace-correlation-banner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /disable filter/i })).toBeInTheDocument();
+  });
+
+  it('clears the trace filter and URL params when "Disable filter" is clicked', () => {
+    mockUrlSearch = new URLSearchParams({ trace: 'abcdef1234567890', from: '2026-05-14T11:00:00Z' });
+    render(<LogViewerPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /disable filter/i }));
+
+    const traceInput = screen.getByLabelText('Trace ID filter') as HTMLInputElement;
+    expect(traceInput.value).toBe('');
+    expect(screen.queryByTestId('trace-correlation-banner')).not.toBeInTheDocument();
+    expect(mockSetSearchParams).toHaveBeenCalled();
+    expect(mockUrlSearch.has('trace')).toBe(false);
+    expect(mockUrlSearch.has('from')).toBe(false);
+  });
+
+  it('does not render the banner when ?trace is absent', () => {
+    render(<LogViewerPage />);
+    expect(screen.queryByTestId('trace-correlation-banner')).not.toBeInTheDocument();
   });
 });
