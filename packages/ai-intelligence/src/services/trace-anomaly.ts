@@ -56,9 +56,16 @@ export interface TraceAnomalyDeps {
 const LOG_THROTTLE_MS = 60_000;
 const lastLoggedAt = new Map<string, number>();
 
-/** Test hook: clear log throttle state between tests. */
+// Suppress duplicate anomaly inserts for the same (service, metric_type) when
+// the underlying problem is persistent. 10 minutes mirrors the cooldown the
+// existing metric anomaly detector uses for ongoing conditions.
+const COOLDOWN_MS = 10 * 60 * 1000;
+const lastInsertedAt = new Map<string, number>();
+
+/** Test hook: clear log throttle and cooldown state between tests. */
 export function __resetTraceAnomalyLogState(): void {
   lastLoggedAt.clear();
+  lastInsertedAt.clear();
 }
 
 function shouldLog(seriesKey: string): boolean {
@@ -67,6 +74,16 @@ function shouldLog(seriesKey: string): boolean {
   if (now - last < LOG_THROTTLE_MS) return false;
   lastLoggedAt.set(seriesKey, now);
   return true;
+}
+
+function inCooldown(seriesKey: string): boolean {
+  const last = lastInsertedAt.get(seriesKey);
+  if (last === undefined) return false;
+  return Date.now() - last < COOLDOWN_MS;
+}
+
+function markInserted(seriesKey: string): void {
+  lastInsertedAt.set(seriesKey, Date.now());
 }
 
 function meanAndStd(values: number[]): { mean: number; std: number } {
@@ -163,25 +180,31 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             'trace latency p95 anomaly',
           );
         }
-        insights.push({
-          id: uuidv4(),
-          endpoint_id: null,
-          endpoint_name: null,
-          container_id: null,
-          container_name: null,
-          severity: zScore > zThreshold * 2 ? 'critical' : 'warning',
-          category: 'anomaly',
-          title: `High latency p95 on service "${service}"`,
-          description:
-            `Recent p95: ${row.p95Ms.toFixed(1)}ms ` +
-            `(baseline mean: ${mean.toFixed(1)}ms, std: ${std.toFixed(1)}ms, ` +
-            `z-score: ${zScore.toFixed(2)}). Latency is ${Math.abs(zScore).toFixed(1)} ` +
-            `standard deviations above the 24h baseline.`,
-          suggested_action:
-            'Inspect the Calls tab for the affected service to identify slow endpoints, and check downstream dependencies.',
-          metric_type: 'latency_p95',
-          detection_method: 'ml-anomaly',
-        });
+        if (!inCooldown(seriesKey)) {
+          markInserted(seriesKey);
+          insights.push({
+            id: uuidv4(),
+            endpoint_id: null,
+            endpoint_name: null,
+            container_id: null,
+            // Project the service name into container_name so existing
+            // dashboard correlation that groups insights by container surfaces
+            // these anomalies alongside metric-driven ones (#1236 AC).
+            container_name: service,
+            severity: zScore > zThreshold * 2 ? 'critical' : 'warning',
+            category: 'anomaly',
+            title: `High latency p95 on service "${service}"`,
+            description:
+              `Recent p95: ${row.p95Ms.toFixed(1)}ms ` +
+              `(baseline mean: ${mean.toFixed(1)}ms, std: ${std.toFixed(1)}ms, ` +
+              `z-score: ${zScore.toFixed(2)}). Latency is ${Math.abs(zScore).toFixed(1)} ` +
+              `standard deviations above the 24h baseline.`,
+            suggested_action:
+              'Inspect the Calls tab for the affected service to identify slow endpoints, and check downstream dependencies.',
+            metric_type: 'latency_p95',
+            detection_method: 'ml-anomaly',
+          });
+        }
       }
     }
 
@@ -202,23 +225,27 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             'trace error-rate anomaly',
           );
         }
-        insights.push({
-          id: uuidv4(),
-          endpoint_id: null,
-          endpoint_name: null,
-          container_id: null,
-          container_name: null,
-          severity: recentRatePct >= errorRatePct * 2 ? 'critical' : 'warning',
-          category: 'anomaly',
-          title: `Elevated error rate on service "${service}"`,
-          description:
-            `Recent error rate: ${recentRatePct.toFixed(2)}% ` +
-            `(baseline: ${baselineMeanPct.toFixed(2)}%, threshold: ${errorRatePct}%).`,
-          suggested_action:
-            'Open the Trace Explorer for this service and inspect failed spans for the root cause.',
-          metric_type: 'error_rate',
-          detection_method: 'ml-anomaly',
-        });
+        if (!inCooldown(seriesKey)) {
+          markInserted(seriesKey);
+          insights.push({
+            id: uuidv4(),
+            endpoint_id: null,
+            endpoint_name: null,
+            container_id: null,
+            // Same correlation projection as latency_p95 above.
+            container_name: service,
+            severity: recentRatePct >= errorRatePct * 2 ? 'critical' : 'warning',
+            category: 'anomaly',
+            title: `Elevated error rate on service "${service}"`,
+            description:
+              `Recent error rate: ${recentRatePct.toFixed(2)}% ` +
+              `(baseline: ${baselineMeanPct.toFixed(2)}%, threshold: ${errorRatePct}%).`,
+            suggested_action:
+              'Open the Trace Explorer for this service and inspect failed spans for the root cause.',
+            metric_type: 'error_rate',
+            detection_method: 'ml-anomaly',
+          });
+        }
       }
     }
   }

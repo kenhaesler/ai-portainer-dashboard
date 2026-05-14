@@ -79,15 +79,19 @@ export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdo
   const queries = useQueries({
     queries: peerList.map((peer) => ({
       queryKey: ['llm-latency-breakdown', peer, window.from, window.to],
-      queryFn: () =>
-        api.get<PeerSpan[]>('/api/traces', {
+      queryFn: async () => {
+        // /api/traces wraps its payload as { traces: [...] }; unwrap here
+        // so the rest of the component can treat the result as a span list.
+        const body = await api.get<{ traces: PeerSpan[] }>('/api/traces', {
           params: {
             netPeerName: peer,
             from: window.from,
             to: window.to,
             limit: 500,
           } as Record<string, string | number | boolean | undefined>,
-        }),
+        });
+        return body?.traces ?? [];
+      },
     })),
   });
 

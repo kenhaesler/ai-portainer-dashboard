@@ -19,7 +19,6 @@ export interface ObservedDestination {
 export interface AggregateOptions {
   from: Date;
   to: Date;
-  endpointId?: number;
 }
 
 interface RuleRow {

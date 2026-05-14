@@ -8,7 +8,6 @@ import { aggregateObservedDestinations } from '../services/observed-destinations
 const QuerySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  endpointId: z.coerce.number().int().positive().optional(),
 });
 
 /**
@@ -33,11 +32,7 @@ export async function observedDestinationsRoutes(fastify: FastifyInstance) {
     const q = request.query as z.infer<typeof QuerySchema>;
     const to = q.to ? new Date(q.to) : new Date();
     const from = q.from ? new Date(q.from) : new Date(to.getTime() - 24 * 60 * 60 * 1000);
-    const destinations = await aggregateObservedDestinations({
-      from,
-      to,
-      endpointId: q.endpointId,
-    });
+    const destinations = await aggregateObservedDestinations({ from, to });
     return { destinations };
   });
 }

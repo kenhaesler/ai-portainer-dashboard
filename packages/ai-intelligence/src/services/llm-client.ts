@@ -320,15 +320,17 @@ async function chatStreamInner(
       log.warn({ err: traceErr }, 'Failed to record LLM trace');
     }
 
-    // Log line with correlation id so an operator can grep both directions
-    // (LLM trace row and the Beyla span that captured the network roundtrip).
-    log.info(
+    // Debug-level so a chatty deployment doesn't flood info logs on every
+    // successful chat. The correlation id is included for operators who
+    // turn on debug while troubleshooting the LLM latency-breakdown panel.
+    log.debug(
       {
         correlation_id: correlationId,
         model: llmConfig.model,
         model_latency_ms: latencyMs,
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
+        responseLength: fullResponse.length,
       },
       'LLM chat stream completed',
     );

@@ -124,6 +124,36 @@ describe('runTraceAnomalyCycle', () => {
     expect(latencyAnomalies[0].detection_method).toBe('ml-anomaly');
     expect(latencyAnomalies[0].title.toLowerCase()).toContain('latency');
     expect(latencyAnomalies[0].title.toLowerCase()).toContain('api');
+    // Service name is projected into container_name so existing dashboard
+    // correlation that groups by container picks the anomaly up (#1236).
+    expect(latencyAnomalies[0].container_name).toBe('api');
+  });
+
+  it('suppresses duplicate inserts during the cooldown window', async () => {
+    const inserted: insightsStore.InsightInsert[] = [];
+    vi.spyOn(insightsStore, 'insertInsights').mockImplementation(async (rows) => {
+      inserted.push(...rows);
+      return new Set(rows.map((r) => r.id));
+    });
+
+    const computeRed = vi.fn(async (q: { bucket: string }) => {
+      if (q.bucket === '1h') return buildBaseline('api', 20, 0.001, 24);
+      // Persistent latency spike that stays anomalous across multiple cycles.
+      const recent = buildRecent('api', 20, 0.001, 5);
+      recent.buckets.push({
+        bucketStart: new Date(Date.UTC(2026, 4, 14, 13, 0)).toISOString(),
+        rows: [{ group: 'api', rate: 10, errorRate: 0.001, p50Ms: 400, p95Ms: 800, p99Ms: 900, callCount: 100 }],
+      });
+      return recent;
+    });
+
+    await runTraceAnomalyCycle({ computeRed: computeRed as never });
+    await runTraceAnomalyCycle({ computeRed: computeRed as never });
+    await runTraceAnomalyCycle({ computeRed: computeRed as never });
+
+    const latencyAnomalies = inserted.filter((r) => r.metric_type === 'latency_p95');
+    // Only the first cycle inserts; the cooldown suppresses the rest.
+    expect(latencyAnomalies).toHaveLength(1);
   });
 
   it('writes an error_rate anomaly when recent error rate exceeds threshold', async () => {

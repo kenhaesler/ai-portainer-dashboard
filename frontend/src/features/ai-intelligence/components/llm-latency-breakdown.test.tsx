@@ -43,7 +43,8 @@ describe('LlmLatencyBreakdown', () => {
   });
 
   it('renders the empty-state callout when no spans are returned', async () => {
-    mockApiGet.mockResolvedValue([]);
+    // Mirror the real /api/traces shape — { traces: [] }.
+    mockApiGet.mockResolvedValue({ traces: [] });
 
     renderWithProviders(<LlmLatencyBreakdown peers={['api.anthropic.com', 'api.openai.com']} />);
 
@@ -56,19 +57,24 @@ describe('LlmLatencyBreakdown', () => {
     mockApiGet.mockImplementation(async (_path: string, params: Record<string, unknown>) => {
       const host = params?.netPeerName as string;
       if (host === 'api.anthropic.com') {
-        return [
-          { traceId: 't1', duration: 1200, attributes: { 'x-trace-correlation-id': 'c1' } },
-          { traceId: 't2', duration: 1100, attributes: {} },
-          { traceId: 't3', duration: 1300, attributes: {} },
-        ];
+        // Backend wraps the list as { traces: [...] }; the component unwraps.
+        return {
+          traces: [
+            { traceId: 't1', duration: 1200, attributes: { 'x-trace-correlation-id': 'c1' } },
+            { traceId: 't2', duration: 1100, attributes: {} },
+            { traceId: 't3', duration: 1300, attributes: {} },
+          ],
+        };
       }
       if (host === 'api.openai.com') {
-        return [
-          { traceId: 't4', duration: 800, attributes: {} },
-          { traceId: 't5', duration: 850, attributes: {} },
-        ];
+        return {
+          traces: [
+            { traceId: 't4', duration: 800, attributes: {} },
+            { traceId: 't5', duration: 850, attributes: {} },
+          ],
+        };
       }
-      return [];
+      return { traces: [] };
     });
 
     renderWithProviders(<LlmLatencyBreakdown peers={['api.anthropic.com', 'api.openai.com']} />);
