@@ -1,6 +1,37 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats, buildApiUrl, buildApiHeaders, pruneStaleBreakers, startBreakerPruning, stopBreakerPruning, isEdgeTunnelNotActive, EDGE_TUNNEL_NOT_ACTIVE_TOKEN } from './portainer-client.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Kept: undici mock — external dependency. Lets us assert behavior of
+// startContainer / stopContainer against fabricated Docker responses.
+vi.mock('undici', () => ({
+  Agent: vi.fn(function () { return { close: vi.fn().mockResolvedValue(undefined) }; }),
+  fetch: vi.fn(),
+}));
+
+// Kept: trace-context mock — side-effect isolation. withSpan would otherwise
+// require an active trace context for portainerFetch to nest under.
+vi.mock('../tracing/trace-context.js', () => ({
+  withSpan: (_name: string, _service: string, _kind: string, fn: () => unknown) => fn(),
+}));
+
+import { fetch as undiciFetch } from 'undici';
+import {
+  decodeDockerLogPayload,
+  sanitizeContainerLabels,
+  _resetClientState,
+  getCircuitBreakerStats,
+  buildApiUrl,
+  buildApiHeaders,
+  pruneStaleBreakers,
+  startBreakerPruning,
+  stopBreakerPruning,
+  startContainer,
+  stopContainer,
+  isEdgeTunnelNotActive,
+  EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
+} from './portainer-client.js';
 import pLimit from 'p-limit';
+
+const mockFetch = vi.mocked(undiciFetch);
 
 describe('isEdgeTunnelNotActive', () => {
   // SNAPSHOT: this is the exact substring our predicate matches against
@@ -212,5 +243,80 @@ describe('circuit breaker pruning (#547)', () => {
     expect(() => stopBreakerPruning()).not.toThrow();
     // Calling stop again should be idempotent
     expect(() => stopBreakerPruning()).not.toThrow();
+  });
+});
+
+// =====================================================================
+//  Docker idempotent lifecycle endpoints (start / stop) — #1230
+//
+//  Docker's /containers/{id}/start and /stop return HTTP 304 Not Modified
+//  when the container is already in the requested state. Without this
+//  guard, the just-created container was actually running, but
+//  startContainer's phantom 304 failure triggered the orphan-rollback
+//  path in deployBeyla and removed the working container on every retry.
+// =====================================================================
+
+function buildResponse({
+  status,
+  statusText,
+  body = {},
+}: { status: number; statusText: string; body?: unknown }) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText,
+    json: async () => body,
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+    headers: new Headers(),
+  } as unknown as Response;
+}
+
+describe('startContainer / stopContainer — 304 idempotency (#1230)', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  it('startContainer resolves when Docker returns 304 (already running)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      buildResponse({ status: 304, statusText: 'Not Modified' }),
+    );
+    await expect(startContainer(1, 'abc123')).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('stopContainer resolves when Docker returns 304 (already stopped)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      buildResponse({ status: 304, statusText: 'Not Modified' }),
+    );
+    await expect(stopContainer(1, 'abc123')).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('startContainer resolves on 204 No Content (Docker happy path)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      buildResponse({ status: 204, statusText: 'No Content' }),
+    );
+    await expect(startContainer(1, 'abc123')).resolves.toBeUndefined();
+  });
+
+  it('startContainer rethrows other non-2xx errors (e.g. 404, 500)', async () => {
+    // 404: container not found. This must NOT be swallowed by the 304 guard.
+    mockFetch.mockResolvedValue(
+      buildResponse({ status: 404, statusText: 'Not Found' }),
+    );
+    await expect(startContainer(1, 'missing')).rejects.toThrow(/HTTP 404/);
+  });
+
+  it('stopContainer rethrows server errors (e.g. 500)', async () => {
+    // 500: actual server failure. Retries (3) and then surfaces the error.
+    mockFetch.mockResolvedValue(
+      buildResponse({ status: 500, statusText: 'Internal Server Error' }),
+    );
+    await expect(stopContainer(1, 'abc123')).rejects.toThrow(/HTTP 500/);
   });
 });

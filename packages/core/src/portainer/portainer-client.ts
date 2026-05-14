@@ -546,16 +546,35 @@ export async function getContainerHostConfig(endpointId: number, containerId: st
   return raw.HostConfig ?? {};
 }
 
+/**
+ * Docker's lifecycle endpoints (start/stop) are idempotent: they return 304
+ * Not Modified when the container is already in the requested state. That's
+ * a success signal, not a failure — translate by swallowing the 304.
+ */
+function isAlreadyInTargetStateError(err: unknown): boolean {
+  return err instanceof PortainerError && err.status === 304;
+}
+
 export async function startContainer(endpointId: number, containerId: string): Promise<void> {
-  await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/start`, {
-    method: 'POST',
-  });
+  try {
+    await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/start`, {
+      method: 'POST',
+    });
+  } catch (err) {
+    if (isAlreadyInTargetStateError(err)) return; // already running
+    throw err;
+  }
 }
 
 export async function stopContainer(endpointId: number, containerId: string): Promise<void> {
-  await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/stop`, {
-    method: 'POST',
-  });
+  try {
+    await portainerFetch(`/api/endpoints/${endpointId}/docker/containers/${containerId}/stop`, {
+      method: 'POST',
+    });
+  } catch (err) {
+    if (isAlreadyInTargetStateError(err)) return; // already stopped
+    throw err;
+  }
 }
 
 export async function restartContainer(endpointId: number, containerId: string): Promise<void> {
