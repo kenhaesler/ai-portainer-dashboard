@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
+
+function renderWithRouter(ui: ReactElement, route: string = '/traces') {
+  return render(<MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>);
+}
 
 vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   useAutoRefresh: () => ({ interval: 0, setInterval: vi.fn() }),
@@ -134,7 +140,7 @@ describe('TraceExplorerPage', () => {
   });
 
   it('renders source-scoped counters from summary', () => {
-    render(<TraceExplorerPage />);
+    renderWithRouter(<TraceExplorerPage />);
 
     expect(screen.getByText('Source counters:')).toBeInTheDocument();
     expect(screen.getByText('eBPF: 7')).toBeInTheDocument();
@@ -145,7 +151,7 @@ describe('TraceExplorerPage', () => {
   });
 
   it('restores trace source context and span metadata details', () => {
-    render(<TraceExplorerPage />);
+    renderWithRouter(<TraceExplorerPage />);
 
     expect(screen.getByText('Tip: select a source below to focus this list.')).toBeInTheDocument();
     expect(screen.getByText('Showing all trace sources. Use a source filter to focus on a single ingestion path.')).toBeInTheDocument();
@@ -174,7 +180,7 @@ describe('TraceExplorerPage', () => {
   });
 
   it('applies advanced filters through trace query state', () => {
-    render(<TraceExplorerPage />);
+    renderWithRouter(<TraceExplorerPage />);
 
     fireEvent.click(screen.getByText('Show advanced filters'));
     fireEvent.change(screen.getByDisplayValue('Exact match'), { target: { value: 'contains' } });
@@ -200,7 +206,7 @@ describe('TraceExplorerPage', () => {
   });
 
   it('shows container name alongside source on each trace card', () => {
-    render(<TraceExplorerPage />);
+    renderWithRouter(<TraceExplorerPage />);
 
     expect(screen.getByText('container: api-container')).toBeInTheDocument();
   });
@@ -232,7 +238,7 @@ describe('TraceExplorerPage', () => {
       },
     });
 
-    render(<TraceExplorerPage />);
+    renderWithRouter(<TraceExplorerPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /GET \/health/i }));
 
@@ -243,5 +249,22 @@ describe('TraceExplorerPage', () => {
     expect(screen.getAllByText('9.9.9').length).toBeGreaterThan(0);
     expect(screen.getAllByText('staging').length).toBeGreaterThan(0);
     expect(screen.getAllByText('typed-host.internal').length).toBeGreaterThan(0);
+  });
+
+  it('pre-applies service / status / trace from URL query params', () => {
+    renderWithRouter(
+      <TraceExplorerPage />,
+      '/traces?service=payments-api&status=error&trace=trace-1',
+    );
+
+    // useTraces is called with the deep-link service + error status applied.
+    const lastCall = mockUseTraces.mock.calls.at(-1);
+    expect(lastCall).toBeDefined();
+    const opts = lastCall![0];
+    expect(opts.serviceName).toBe('payments-api');
+    expect(opts.status).toBe('error');
+    // ?trace=trace-1 selects the trace immediately, so useTrace is called with it.
+    const traceCall = mockUseTrace.mock.calls.at(-1);
+    expect(traceCall?.[0]).toBe('trace-1');
   });
 });
