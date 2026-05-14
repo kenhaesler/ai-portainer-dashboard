@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import Fastify from 'fastify';
+import { validatorCompiler } from 'fastify-type-provider-zod';
 import { kubernetesRoutes } from '@dashboard/foundation';
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
@@ -16,6 +17,10 @@ afterAll(async () => {
 
 function buildApp() {
   const app = Fastify();
+  // Match production wiring: routes use Zod schemas via fastify-type-provider-zod.
+  // Without this, Fastify's default ajv validator can't parse Zod objects and
+  // route registration fails with "schema is invalid: data/required must be array".
+  app.setValidatorCompiler(validatorCompiler);
   app.decorate('authenticate', async () => undefined);
   app.register(kubernetesRoutes);
   return app;
