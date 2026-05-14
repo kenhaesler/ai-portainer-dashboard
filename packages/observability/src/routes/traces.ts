@@ -1,8 +1,20 @@
 import { FastifyInstance } from 'fastify';
 import '@dashboard/core/plugins/auth.js';
 import '@fastify/swagger';
+import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { TracesQuerySchema, TraceIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
+import { computeRed } from '../services/trace-red.js';
+
+const RedQuerySchema = z.object({
+  from: z.string().datetime(),
+  to: z.string().datetime(),
+  bucket: z.enum(['1m', '5m', '1h']).default('5m'),
+  groupBy: z.enum(['service', 'route', 'container', 'namespace']).default('service'),
+  service: z.string().optional(),
+  route: z.string().optional(),
+  container: z.string().optional(),
+});
 
 type TraceFilters = {
   from?: string;
@@ -574,5 +586,25 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       services: summary?.services ?? 0,
       sourceCounts,
     };
+  });
+
+  // RED metrics aggregate (rate / errors / duration) across `spans`.
+  fastify.get('/api/traces/red', {
+    schema: {
+      tags: ['Traces'],
+      summary: 'Aggregate RED metrics (rate, errors, duration) for the given window',
+      security: [{ bearerAuth: [] }],
+      querystring: RedQuerySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request) => {
+    const q = request.query as z.infer<typeof RedQuerySchema>;
+    return computeRed({
+      from: new Date(q.from),
+      to: new Date(q.to),
+      bucket: q.bucket,
+      groupBy: q.groupBy,
+      filters: { service: q.service, route: q.route, container: q.container },
+    });
   });
 }
