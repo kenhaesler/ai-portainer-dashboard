@@ -23,13 +23,7 @@ services:
       - DASHBOARD_EXTERNAL_URL=${DASHBOARD_EXTERNAL_URL:-}
       - DASHBOARD_USERNAME=${DASHBOARD_USERNAME:?DASHBOARD_USERNAME is required}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?DASHBOARD_PASSWORD is required}
-      # JWT_SECRET resolution order (see packages/core/src/config/secrets.ts):
-      #   1. /run/secrets/jwt_secret (Docker Secrets — preferred for production)
-      #   2. JWT_SECRET env var (legacy / dev fallback)
-      # The env var is left interpolation-optional so the secret-file path works
-      # standalone. The schema enforces min 32 chars on the resolved value and
-      # rejects known weak defaults in production (NODE_ENV=production).
-      - JWT_SECRET=${JWT_SECRET:-}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required (min 32 chars)}
       - PORTAINER_API_URL=${PORTAINER_API_URL:-http://host.docker.internal:9000}
       - PORTAINER_API_KEY=${PORTAINER_API_KEY:-}
       - PORTAINER_VERIFY_SSL=${PORTAINER_VERIFY_SSL:-false}
@@ -50,16 +44,8 @@ services:
       - ANOMALY_MIN_SAMPLES=${ANOMALY_MIN_SAMPLES:-10}
       - CACHE_ENABLED=${CACHE_ENABLED:-true}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-900}
-      # REDIS_URL: dev/legacy fallback. When REDIS_HOST (below) is set, the
-      # backend assembles the URL from components + the resolved REDIS_PASSWORD
-      # (Docker Secrets file > env var) — see #1187. The component path keeps
-      # the password out of compose-time env-var interpolation entirely.
-      - REDIS_URL=${REDIS_URL:-}
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
-      # REDIS_PASSWORD: same resolution order as JWT_SECRET — file > env. Schema
-      # treats it as optional so the secret-file path works standalone.
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-aidash:cache:}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       # Packet Capture (PCAP)
@@ -73,32 +59,10 @@ services:
       - TRACES_INGESTION_ENABLED=${TRACES_INGESTION_ENABLED:-false}
       - TRACES_INGESTION_API_KEY=${TRACES_INGESTION_API_KEY:-}
       # App PostgreSQL (replaces SQLite for app data)
-      # #1187: the connection URL is assembled INSIDE the backend from the
-      # component env vars below + the password resolved from
-      # /run/secrets/postgres_app_password (or POSTGRES_APP_PASSWORD env-var
-      # fallback). The password is no longer reconstructed by compose-time
-      # interpolation, so `docker inspect` and `/proc/<pid>/environ` no
-      # longer expose it via the URL. POSTGRES_APP_URL is kept as an empty
-      # default so the dev/legacy single-string path still works when the
-      # operator sets it explicitly.
-      - POSTGRES_APP_URL=${POSTGRES_APP_URL:-}
-      - POSTGRES_APP_HOST=${POSTGRES_APP_HOST:-postgres-app}
-      - POSTGRES_APP_PORT=${POSTGRES_APP_PORT:-5432}
-      - POSTGRES_APP_USER=${POSTGRES_APP_USER:-app_user}
-      - POSTGRES_APP_DATABASE=${POSTGRES_APP_DATABASE:-portainer_dashboard}
-      # POSTGRES_APP_PASSWORD: file > env, same resolution order as JWT_SECRET.
-      # Operators should leave this empty in compose and rely on the secret
-      # file at /run/secrets/postgres_app_password.
-      - POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD:-}
+      - POSTGRES_APP_URL=postgresql://app_user:${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}@postgres-app:5432/portainer_dashboard
       - POSTGRES_APP_MAX_CONNECTIONS=${POSTGRES_APP_MAX_CONNECTIONS:-20}
-      # TimescaleDB Metrics Storage — same component pattern as POSTGRES_APP_*
-      # above. Password resolved from /run/secrets/timescale_password.
-      - TIMESCALE_URL=${TIMESCALE_URL:-}
-      - TIMESCALE_HOST=${TIMESCALE_HOST:-timescaledb}
-      - TIMESCALE_PORT=${TIMESCALE_PORT:-5432}
-      - TIMESCALE_USER=${TIMESCALE_USER:-metrics_user}
-      - TIMESCALE_DATABASE=${TIMESCALE_DATABASE:-metrics}
-      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-}
+      # TimescaleDB Metrics Storage
+      - TIMESCALE_URL=postgresql://metrics_user:${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}@timescaledb:5432/metrics
       - TIMESCALE_MAX_CONNECTIONS=${TIMESCALE_MAX_CONNECTIONS:-20}
       - METRICS_RAW_RETENTION_DAYS=${METRICS_RAW_RETENTION_DAYS:-7}
       - METRICS_ROLLUP_5MIN_RETENTION_DAYS=${METRICS_ROLLUP_5MIN_RETENTION_DAYS:-30}
@@ -126,15 +90,6 @@ services:
         condition: service_healthy
     networks:
       - dashboard-net
-    # Docker Secrets (#1121) — files mount at /run/secrets/<name> with mode 0400
-    # owned by the container's uid. The `readSecret()` helper in
-    # packages/core/src/config/secrets.ts reads these files when the
-    # corresponding env var is empty, falling back to the env var otherwise.
-    secrets:
-      - jwt_secret
-      - postgres_app_password
-      - timescale_password
-      - redis_password
     restart: unless-stopped
     labels:
       traefik.enable: "true"
@@ -216,27 +171,17 @@ services:
     mem_limit: 768M
     mem_reservation: 256M
     cpus: "0.5"
-    # Docker Secrets (#1121): the official Redis image entrypoint does NOT
-    # honour REDIS_PASSWORD_FILE the way postgres honours POSTGRES_PASSWORD_FILE.
-    # We work around this with a shell wrapper that reads the secret file at
-    # startup and feeds it to --requirepass. The file is mounted at
-    # /run/secrets/redis_password by the top-level secrets: block; operators
-    # using the env-var path can write the env value to that file (see
-    # docker/.env.example). REDISCLI_AUTH is set the same way for healthcheck
-    # auth without exposing the password via a CLI flag in the process table.
-    command:
-      - sh
-      - -c
-      - |
-        REDIS_PASS="$$(cat /run/secrets/redis_password)"
-        export REDISCLI_AUTH="$$REDIS_PASS"
-        exec redis-server \
-          --maxmemory ${REDIS_MAXMEMORY:-512mb} \
-          --maxmemory-policy allkeys-lru \
-          --maxmemory-samples 5 \
-          --save "" \
-          --appendonly no \
-          --requirepass "$$REDIS_PASS"
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --maxmemory-samples 5
+      --save ""
+      --appendonly no
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    environment:
+      # REDISCLI_AUTH avoids exposing password via -a flag in process table
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 15s
@@ -252,8 +197,6 @@ services:
           cpus: "0.25"
     networks:
       - dashboard-net
-    secrets:
-      - redis_password
 
   postgres-app:
     image: postgres:17-alpine
@@ -273,15 +216,7 @@ services:
     environment:
       POSTGRES_DB: portainer_dashboard
       POSTGRES_USER: app_user
-      # Docker Secrets (#1121): the official postgres image natively reads
-      # POSTGRES_PASSWORD_FILE. Operators must populate
-      # ./secrets/postgres_app_password.txt before `compose up` — the file is
-      # always mounted (top-level `secrets:` block points at it). For env-var
-      # workflows, write the env value to that file instead, e.g.:
-      #   echo -n "$POSTGRES_APP_PASSWORD" > ./secrets/postgres_app_password.txt
-      # POSTGRES_PASSWORD and POSTGRES_PASSWORD_FILE are mutually exclusive in
-      # the postgres entrypoint — setting both causes startup to abort.
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_app_password
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app_user -d portainer_dashboard"]
       interval: 15s
@@ -292,8 +227,6 @@ services:
       - postgres-app-data:/var/lib/postgresql/data
     networks:
       - dashboard-net
-    secrets:
-      - postgres_app_password
     deploy:
       resources:
         limits:
@@ -322,13 +255,7 @@ services:
     environment:
       POSTGRES_DB: metrics
       POSTGRES_USER: metrics_user
-      # Docker Secrets (#1121): TimescaleDB inherits postgres' entrypoint, so
-      # POSTGRES_PASSWORD_FILE is honoured natively. See postgres-app block
-      # above for the operator workflow.
-      POSTGRES_PASSWORD_FILE: /run/secrets/timescale_password
-      # POSTGRES_APP_PASSWORD is consumed by ./init-pg-databases.sh (mounted
-      # below) when seeding the second database. Init scripts run only on
-      # first start; the env-var path is retained for that one-shot use.
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U metrics_user -d metrics"]
@@ -341,8 +268,6 @@ services:
       - ./init-pg-databases.sh:/docker-entrypoint-initdb.d/02-create-app-db.sh:ro
     networks:
       - dashboard-net
-    secrets:
-      - timescale_password
 
   timescale-backup:
     image: prodrigestivill/postgres-backup-local:17
@@ -354,12 +279,7 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: metrics
       POSTGRES_USER: metrics_user
-      # #1187: prodrigestivill/postgres-backup-local natively reads
-      # POSTGRES_PASSWORD_FILE — the env.sh entrypoint copies the trimmed
-      # file contents into PGPASSWORD before invoking pg_dump. Mounting the
-      # same secret file the timescaledb service uses keeps the backup
-      # password in lockstep with the source DB password.
-      POSTGRES_PASSWORD_FILE: /run/secrets/timescale_password
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:?TIMESCALE_PASSWORD is required}
       POSTGRES_EXTRA_OPTS: ${TIMESCALE_BACKUP_EXTRA_OPTS:--Z6 --no-comments}
       SCHEDULE: ${TIMESCALE_BACKUP_SCHEDULE:-0 3 * * *}
       BACKUP_KEEP_DAYS: ${TIMESCALE_BACKUP_KEEP_DAYS:-7}
@@ -379,8 +299,6 @@ services:
         condition: service_healthy
     networks:
       - dashboard-net
-    secrets:
-      - timescale_password
     deploy:
       resources:
         limits:
@@ -414,27 +332,6 @@ volumes:
   postgres-app-data:
   timescale-data:
   timescale-backups:
-
-# Docker Secrets (#1121) — file-backed secrets mount at /run/secrets/<name>
-# inside containers that reference them. Operators MUST create these files
-# before `docker compose up` (see docker/.env.example for the one-time setup):
-#
-#   mkdir -p secrets && chmod 700 secrets
-#   for s in jwt_secret postgres_app_password timescale_password redis_password; do
-#     openssl rand -hex 32 > secrets/$s.txt
-#   done
-#   chmod 600 secrets/*.txt
-#
-# The `secrets/` directory is .gitignored. Never commit secret files.
-secrets:
-  jwt_secret:
-    file: ./secrets/jwt_secret.txt
-  postgres_app_password:
-    file: ./secrets/postgres_app_password.txt
-  timescale_password:
-    file: ./secrets/timescale_password.txt
-  redis_password:
-    file: ./secrets/redis_password.txt
 
 networks:
   dashboard-net:

@@ -1,5 +1,4 @@
 import { z } from 'zod/v4';
-import { readSecret } from './secrets.js';
 
 /** Optional URL that treats empty strings as undefined (common in Docker Compose env defaults). */
 const optionalUrl = z.preprocess(
@@ -7,32 +6,11 @@ const optionalUrl = z.preprocess(
   z.string().url().optional(),
 );
 
-/**
- * Build a Zod preprocessor that resolves a sensitive value from Docker Secrets
- * (`/run/secrets/<secretName>`) and falls back to the env value Zod was given.
- *
- * We do not pass `envVarName` to `readSecret` because Zod already extracted
- * the env value into `envValue`; we just want the file to take precedence
- * when present. Falling back to `envValue` (rather than re-reading
- * `process.env`) preserves Zod's normal hydration order — including any
- * test-time `process.env` overrides — so the validation surface is
- * unchanged when no secret file exists.
- */
-function preprocessSecret(secretName: string) {
-  return (envValue: unknown): unknown => {
-    const fromFile = readSecret(secretName, '');
-    if (fromFile !== undefined && fromFile !== '') return fromFile;
-    return envValue;
-  };
-}
-
 export const envSchema = z.object({
   // Auth
   DASHBOARD_USERNAME: z.string().min(1),
   DASHBOARD_PASSWORD: z.string().min(12),
-  // JWT_SECRET: prefers /run/secrets/jwt_secret (Docker Secrets), falls back to
-  // the JWT_SECRET env var. Min-length validation runs against the resolved value.
-  JWT_SECRET: z.preprocess(preprocessSecret('jwt_secret'), z.string().min(32)),
+  JWT_SECRET: z.string().min(32),
   // JWT signing algorithm: HS256 (symmetric, default), RS256 or ES256 (asymmetric).
   // HS256 is appropriate for single-service architectures. Switch to RS256/ES256 if:
   //   - Multiple backend services need to verify tokens independently
@@ -182,56 +160,17 @@ export const envSchema = z.object({
   // Cache
   CACHE_ENABLED: z.coerce.boolean().default(true),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(10).default(900),
-  // REDIS_URL is the dev/legacy single-string fallback. When the component
-  // env vars below (REDIS_HOST/REDIS_PORT/...) are set, the config layer
-  // assembles the URL from those components + the resolved REDIS_PASSWORD
-  // (which may come from /run/secrets/redis_password). See #1187.
   REDIS_URL: z.string().url().optional(),
-  // REDIS_PASSWORD: prefers /run/secrets/redis_password (Docker Secrets),
-  // falls back to the REDIS_PASSWORD env var. Optional — only required when
-  // the Redis server is configured with --requirepass (production default).
-  REDIS_PASSWORD: z.preprocess(preprocessSecret('redis_password'), z.string().optional()),
+  REDIS_PASSWORD: z.string().optional(),
   REDIS_KEY_PREFIX: z.string().default('aidash:cache:'),
-  // Redis URL components (#1187) — when set, the config layer builds REDIS_URL
-  // from these + the resolved REDIS_PASSWORD instead of relying on env-var
-  // interpolation in compose. All optional for backwards compatibility.
-  REDIS_HOST: z.string().optional(),
-  REDIS_PORT: z.coerce.number().int().min(1).max(65535).optional(),
-  REDIS_USER: z.string().optional(),
-  REDIS_DATABASE: z.string().optional(),
 
   // App PostgreSQL
-  // POSTGRES_APP_URL is the dev/legacy single-string fallback. When the
-  // component env vars below are set, the config layer assembles the URL
-  // from those components + the resolved POSTGRES_APP_PASSWORD (which may
-  // come from /run/secrets/postgres_app_password). See #1187.
   POSTGRES_APP_URL: z.string().default('postgresql://app_user:changeme@localhost:5433/portainer_dashboard'),
   POSTGRES_APP_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(20),
-  // App PostgreSQL URL components (#1187) — see POSTGRES_APP_URL note above.
-  POSTGRES_APP_HOST: z.string().optional(),
-  POSTGRES_APP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
-  POSTGRES_APP_USER: z.string().optional(),
-  POSTGRES_APP_DATABASE: z.string().optional(),
-  // POSTGRES_APP_PASSWORD: prefers /run/secrets/postgres_app_password,
-  // falls back to env. Only consumed when the URL is assembled from
-  // components above; otherwise the password lives inside POSTGRES_APP_URL.
-  POSTGRES_APP_PASSWORD: z.preprocess(preprocessSecret('postgres_app_password'), z.string().optional()),
 
   // TimescaleDB (metrics + KPI storage)
-  // TIMESCALE_URL is the dev/legacy single-string fallback. When the
-  // component env vars below are set, the config layer assembles the URL
-  // from those components + the resolved TIMESCALE_PASSWORD. See #1187.
   TIMESCALE_URL: z.string().default('postgresql://metrics_user:changeme@localhost:5432/metrics'),
   TIMESCALE_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(200).default(50),
-  // TimescaleDB URL components (#1187) — see TIMESCALE_URL note above.
-  TIMESCALE_HOST: z.string().optional(),
-  TIMESCALE_PORT: z.coerce.number().int().min(1).max(65535).optional(),
-  TIMESCALE_USER: z.string().optional(),
-  TIMESCALE_DATABASE: z.string().optional(),
-  // TIMESCALE_PASSWORD: prefers /run/secrets/timescale_password, falls back
-  // to env. Only consumed when the URL is assembled from components above;
-  // otherwise the password lives inside TIMESCALE_URL.
-  TIMESCALE_PASSWORD: z.preprocess(preprocessSecret('timescale_password'), z.string().optional()),
   TIMESCALE_REPORTS_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(50).default(5),
   METRICS_RAW_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
   METRICS_ROLLUP_5MIN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
