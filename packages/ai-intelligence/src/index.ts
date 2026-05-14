@@ -76,3 +76,5 @@ export { autoConnectAll, disconnectAll } from './services/mcp-manager.js';
 export { detectAnomaly } from './services/anomaly-detector.js';
 export { detectAnomalyAdaptive, detectAnomaliesBatch } from './services/adaptive-anomaly-detector.js';
 export { correlateInsights } from './services/incident-correlator.js';
+export { runTraceAnomalyCycle } from './services/trace-anomaly.js';
+export type { ComputeRedFn, TraceAnomalyDeps, RedResult as TraceAnomalyRedResult } from './services/trace-anomaly.js';

@@ -8,8 +8,9 @@ import {
   chatStream,
   buildInfrastructureContext,
   getEffectivePrompt,
+  runTraceAnomalyCycle,
 } from '@dashboard/ai';
-import type { MonitoringDeps } from '@dashboard/ai';
+import type { MonitoringDeps, ComputeRedFn } from '@dashboard/ai';
 import {
   getLatestMetrics,
   getMetrics,
@@ -18,6 +19,7 @@ import {
   getCapacityForecasts,
   generateForecast,
   findSimilarInsights,
+  computeRed,
 } from '@dashboard/observability';
 import { scanContainer } from '@dashboard/security';
 import { notifyInsight, suggestAction } from '@dashboard/operations';
@@ -62,11 +64,16 @@ export function buildMetricsAdapter(): MetricsInterface {
 
 /** Build the monitoring service with all cross-domain deps wired via DI. */
 export function buildMonitoringService(metricsAdapter?: MetricsInterface) {
+  // The ai-intelligence package is forbidden from importing observability
+  // directly. The trace-anomaly cycle therefore consumes computeRed via DI
+  // here; the cast narrows the surface to what the cycle actually uses.
+  const traceComputeRed: ComputeRedFn = computeRed as unknown as ComputeRedFn;
   const monitoringDeps: MonitoringDeps = {
     scanner: { scanContainer },
     metrics: metricsAdapter ?? buildMetricsAdapter(),
     notifications: { notifyInsight },
     operations: { suggestAction },
+    runTraceAnomalyCycle: () => runTraceAnomalyCycle({ computeRed: traceComputeRed }),
   };
   return createMonitoringService(monitoringDeps);
 }
