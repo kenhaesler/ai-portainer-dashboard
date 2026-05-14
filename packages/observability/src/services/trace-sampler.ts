@@ -57,6 +57,12 @@ interface PerSourceState {
 
 const WARN_INTERVAL_MS = 60_000;
 
+// Cap the per-source state Map so an adversarial agent sending random
+// service.namespace values can't grow memory without bound. JS Maps preserve
+// insertion order, so dropping the oldest key gives FIFO eviction in O(1).
+// 1024 distinct sources is far more than any realistic fleet.
+const MAX_SOURCES = 1024;
+
 function sourceKey(span: SpanForSampler): string {
   return span.service_namespace || span.service_name || 'unknown';
 }
@@ -87,6 +93,13 @@ export function createSampler(cfg: SamplerConfig): Sampler {
         dropped: 0,
         lastWarnedAt: 0,
       };
+      // FIFO eviction: when the Map fills up, drop the oldest entry. This
+      // bounds memory under a hostile or buggy producer that emits random
+      // service.namespace values.
+      if (sources.size >= MAX_SOURCES) {
+        const oldest = sources.keys().next().value;
+        if (oldest !== undefined) sources.delete(oldest);
+      }
       sources.set(key, s);
     }
     return s;

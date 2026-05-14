@@ -84,6 +84,28 @@ describe('computeRed', () => {
     expect(row.p95Ms).toBeCloseTo(95, 0);
     expect(row.p99Ms).toBeCloseTo(99, 0);
     expect(row.errorRate).toBe(0);
+    // 100 calls within a 1h bucket = 100 / 3600 ≈ 0.0278 req/s.
+    expect(row.rate).toBeCloseTo(100 / 3600, 3);
+  });
+
+  it('rate is per-bucket, not per-window — independent of window length', async () => {
+    // 60 spans inside a single 1m bucket. The window is 1h (large vs bucket).
+    // If rate divided by window length we'd see 60/3600 = 0.0167.
+    // With the bucket divisor we should see 60/60 = 1.0 req/s.
+    const now = new Date('2026-05-14T12:00:30Z');
+    for (let i = 0; i < 60; i++) {
+      await insertTestSpan({ service_name: 'api', duration_ms: 5, start_time: now, status: 'ok' });
+    }
+    const result = await computeRed({
+      from: new Date('2026-05-14T11:00:00Z'),
+      to: new Date('2026-05-14T13:00:00Z'),
+      bucket: '1m',
+      groupBy: 'service',
+    });
+    const allRows = result.buckets.flatMap((b) => b.rows);
+    const row = allRows.find((r) => r.group === 'api')!;
+    expect(row.callCount).toBe(60);
+    expect(row.rate).toBeCloseTo(1.0, 2);
   });
 
   it('errorRate counts only status=error', async () => {
