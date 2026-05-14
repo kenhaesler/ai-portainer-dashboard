@@ -77,7 +77,10 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     // Validate event types
     for (const evt of body.events) {
       if (!VALID_EVENT_TYPES.includes(evt) && !evt.endsWith('.*')) {
-        return reply.status(400).send({ error: `Invalid event type: ${evt}` });
+        return reply.status(400).send({
+          error: 'Invalid event type',
+          code: 'invalid_event_type',
+        });
       }
     }
     const urlValidationError = validateOutboundWebhookUrl(body.url);
@@ -129,7 +132,10 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     if (body.events) {
       for (const evt of body.events) {
         if (!VALID_EVENT_TYPES.includes(evt) && !evt.endsWith('.*')) {
-          return reply.status(400).send({ error: `Invalid event type: ${evt}` });
+          return reply.status(400).send({
+            error: 'Invalid event type',
+            code: 'invalid_event_type',
+          });
         }
       }
     }
