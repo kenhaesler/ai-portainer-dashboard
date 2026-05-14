@@ -100,7 +100,11 @@ class ApiClient {
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       const fallback = describeHttpError(response.status);
-      throw new ApiError(response.status, body.error || fallback, requestId);
+      // Fastify default error shape is { statusCode, error: 'Internal Server Error', message: 'actual cause' }.
+      // Prefer body.message so the underlying cause surfaces instead of the generic class name.
+      // Custom routes that send { error: 'msg' } still work via the fallback.
+      const detail = body.message || body.error || fallback;
+      throw new ApiError(response.status, detail, requestId);
     }
 
     return response.json();

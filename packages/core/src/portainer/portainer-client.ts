@@ -89,9 +89,18 @@ class PortainerError extends Error {
  * Only 5xx and network errors should trip the circuit breaker.
  * 4xx errors (auth, not-found, rate-limit) are client-side issues
  * and should NOT count as infrastructure failures.
+ *
+ * Special case: Portainer returns HTTP 500 "Unable to get the active tunnel"
+ * when an Edge Agent's reverse tunnel isn't open yet — this is a transient,
+ * per-endpoint condition (the agent opens the tunnel on its next poll), not
+ * an infrastructure failure with Portainer itself. Excluding it prevents one
+ * sleepy Edge Agent from tripping the breaker for the entire endpoint.
  */
 function isPortainerFailure(error: unknown): boolean {
   if (error instanceof PortainerError) {
+    if (error.message.toLowerCase().includes('unable to get the active tunnel')) {
+      return false;
+    }
     return error.kind === 'server' || error.kind === 'network';
   }
   // Non-PortainerError exceptions are network-level failures (ECONNREFUSED, etc.)
@@ -385,7 +394,9 @@ async function portainerFetchInner<T>(
           await sleep(delay);
           continue;
         }
-        throw new PortainerError(`HTTP ${res.status}: ${res.statusText}`, kind, res.status);
+        const detail = await readErrorBody(res);
+        const base = `HTTP ${res.status}: ${res.statusText}`;
+        throw new PortainerError(detail ? `${base} — ${detail}` : base, kind, res.status);
       }
 
       return await res.json() as T;
@@ -417,6 +428,63 @@ export async function getEndpoints(): Promise<Endpoint[]> {
 export async function getEndpoint(id: number): Promise<Endpoint> {
   const raw = await portainerFetch<unknown>(`/api/endpoints/${id}`);
   return EndpointSchema.parse(raw);
+}
+
+/**
+ * Cheap reachability check for an endpoint's Docker daemon via Portainer.
+ * Returns true if the proxy responds OK, false otherwise. For Edge Agent
+ * Standard endpoints, the first call signals the agent to open its reverse
+ * tunnel — subsequent calls succeed once the agent has polled.
+ */
+export async function pingEndpointDocker(endpointId: number): Promise<{ ok: boolean; error?: string }> {
+  const url = buildApiUrl(`/api/endpoints/${endpointId}/docker/_ping`);
+  const headers = buildApiHeaders(false);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await undiciFetch(url, {
+      headers,
+      dispatcher: getDispatcher(),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) return { ok: true };
+    const body = await readErrorBody(res);
+    return { ok: false, error: body || `HTTP ${res.status}` };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Wait for an Edge Agent's reverse tunnel to come up by polling Docker /_ping
+ * through Portainer. The first ping signals the agent on its next poll cycle
+ * (default 30s); we then keep checking until the tunnel responds or the budget
+ * expires.
+ *
+ * Returns true if the tunnel is up, false if the budget ran out.
+ * Non-tunnel errors (auth, network) short-circuit and return false immediately.
+ */
+export async function waitForEdgeTunnel(
+  endpointId: number,
+  options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? 45000;
+  const pollIntervalMs = options.pollIntervalMs ?? 3000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (true) {
+    const result = await pingEndpointDocker(endpointId);
+    if (result.ok) return true;
+    // Anything other than the tunnel-not-active condition means the agent
+    // is genuinely unreachable — no point waiting.
+    if (!result.error || !result.error.toLowerCase().includes('unable to get the active tunnel')) {
+      return false;
+    }
+    if (Date.now() + pollIntervalMs >= deadline) return false;
+    await sleep(pollIntervalMs);
+  }
 }
 
 // Containers

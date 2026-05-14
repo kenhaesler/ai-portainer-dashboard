@@ -370,6 +370,26 @@ describe('ebpf-coverage routes', () => {
       });
     });
 
+    it('POST /api/ebpf/deploy/:endpointId returns 503 with actionable message when Edge tunnel is down', async () => {
+      // Portainer returns 500 with "Unable to get the active tunnel" when the Edge Agent
+      // hasn't established its reverse tunnel yet. Surface this as a retryable 503.
+      mockedDeployBeyla.mockRejectedValueOnce(
+        new Error('HTTP 500: Internal Server Error — Unable to get the active tunnel'),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/5',
+        payload: {},
+        headers: { host: 'dashboard.example.com' },
+      });
+
+      expect(response.statusCode).toBe(503);
+      const body = response.json();
+      expect(body.error).toMatch(/Edge Agent tunnel is not active/);
+      expect(body.error).toMatch(/retry/i);
+    });
+
     it('POST /api/ebpf/deploy/:endpointId accepts OTLP endpoint from request body', async () => {
       const response = await app.inject({
         method: 'POST',

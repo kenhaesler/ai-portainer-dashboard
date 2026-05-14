@@ -331,7 +331,7 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
       body: DeployBodySchema,
     },
     preHandler: [fastify.authenticate, fastify.requireRole('admin')],
-  }, async (request) => {
+  }, async (request, reply) => {
     const { endpointId } = request.params as z.infer<typeof EndpointIdParamsSchema>;
     const body = request.body as z.infer<typeof DeployBodySchema>;
     const config = getConfig();
@@ -351,11 +351,25 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
       await setEndpointOtlpOverride(endpointId, requestedOtlpEndpoint);
     }
 
-    const result = await deployBeyla(endpointId, {
-      otlpEndpoint: resolvedOtlpEndpoint,
-      tracesApiKey: config.TRACES_INGESTION_API_KEY,
-      recreateExisting: Boolean(requestedOtlpEndpoint),
-    });
+    let result;
+    try {
+      result = await deployBeyla(endpointId, {
+        otlpEndpoint: resolvedOtlpEndpoint,
+        tracesApiKey: config.TRACES_INGESTION_API_KEY,
+        recreateExisting: Boolean(requestedOtlpEndpoint),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Portainer signals the Edge Agent on its next poll to open the tunnel; the request
+      // itself fails until that happens. Return 503 with a clear, retryable message.
+      if (msg.toLowerCase().includes('unable to get the active tunnel')) {
+        log.warn({ endpointId, err: msg }, 'Beyla deploy failed: Edge Agent tunnel not active');
+        return reply.code(503).send({
+          error: 'Edge Agent tunnel is not active. Portainer has signalled the agent to open it; retry in 30–60 seconds (or shorten the Edge check-in interval on the agent).',
+        });
+      }
+      throw err;
+    }
 
     writeAuditLog({
       user_id: request.user?.sub,

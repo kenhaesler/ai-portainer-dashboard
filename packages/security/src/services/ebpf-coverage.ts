@@ -8,6 +8,7 @@ import {
   startContainer,
   stopContainer,
   removeContainer,
+  waitForEdgeTunnel,
 } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -264,6 +265,52 @@ function detectionToCoverageStatus(result: DetectionResult): CoverageStatus {
 
 export async function deployBeyla(endpointId: number, options: DeployBeylaOptions): Promise<BeylaActionResult> {
   const endpoint = await getEndpoint(endpointId);
+
+  // Edge Agent Standard (type 4) uses a reverse tunnel that's only opened on demand.
+  // Pre-flight the tunnel so subsequent Docker calls don't fail with
+  // "Unable to get the active tunnel" while the agent is still polling.
+  if (endpoint.Type === 4) {
+    const checkInIntervalSec = endpoint.EdgeCheckinInterval && endpoint.EdgeCheckinInterval > 0
+      ? endpoint.EdgeCheckinInterval
+      : 30; // Portainer default
+    const lastCheckInSec = endpoint.LastCheckInDate ?? 0;
+    const ageSec = lastCheckInSec > 0 ? (Date.now() / 1000) - lastCheckInSec : Infinity;
+
+    // If the agent hasn't checked in within 3× its interval, the tunnel signal
+    // won't be picked up — fail fast with a specific message instead of waiting.
+    if (ageSec > checkInIntervalSec * 3 && lastCheckInSec > 0) {
+      throw new Error(
+        `Edge Agent '${endpoint.Name}' has not checked in for ${Math.round(ageSec)}s (interval ${checkInIntervalSec}s). The agent appears offline — verify it is running and can reach Portainer.`,
+      );
+    }
+    if (lastCheckInSec === 0) {
+      throw new Error(
+        `Edge Agent '${endpoint.Name}' has never checked in. Verify the agent is deployed, running, and configured with the correct Portainer URL and EDGE_KEY.`,
+      );
+    }
+
+    // Wait budget: enough time for the agent to receive the tunnel-open signal
+    // on its next poll plus headroom. Capped at 5 minutes to bound user wait.
+    const budgetMs = Math.min(checkInIntervalSec * 2 * 1000 + 15000, 5 * 60 * 1000);
+    const pollIntervalMs = Math.min(Math.max(checkInIntervalSec * 1000 / 4, 1000), 10000);
+
+    log.info({
+      endpointId,
+      endpointName: endpoint.Name,
+      checkInIntervalSec,
+      lastCheckInAgeSec: Math.round(ageSec),
+      budgetMs,
+    }, 'Pre-flighting Edge Agent tunnel before deploy');
+
+    const tunnelUp = await waitForEdgeTunnel(endpointId, { timeoutMs: budgetMs, pollIntervalMs });
+    if (!tunnelUp) {
+      throw new Error(
+        `Edge Agent tunnel for '${endpoint.Name}' did not open within ${Math.round(budgetMs / 1000)}s (agent check-in interval: ${checkInIntervalSec}s). The agent may be offline or the interval is too long — try again, or shorten the Edge poll interval in Portainer's Edge Compute settings.`,
+      );
+    }
+    log.info({ endpointId, endpointName: endpoint.Name }, 'Edge Agent tunnel is up; proceeding with deploy');
+  }
+
   const existing = await findBeylaContainer(endpointId);
   const shouldRecreate = options.recreateExisting === true;
 
