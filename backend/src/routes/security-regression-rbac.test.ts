@@ -396,6 +396,34 @@ describe('PCAP Admin RBAC Enforcement', () => {
 
     expect(res.statusCode).not.toBe(403);
   });
+
+  // #1240 — Observed Destinations endpoint is admin-only.
+  it('denies GET /api/security/observed-destinations for non-admin users (#1240)', async () => {
+    currentRole = 'viewer';
+    const viewerRes = await app.inject({
+      method: 'GET',
+      url: '/api/security/observed-destinations',
+    });
+    expect(viewerRes.statusCode).toBe(403);
+
+    currentRole = 'operator';
+    const operatorRes = await app.inject({
+      method: 'GET',
+      url: '/api/security/observed-destinations',
+    });
+    expect(operatorRes.statusCode).toBe(403);
+  });
+
+  it('allows admin to GET /api/security/observed-destinations (#1240)', async () => {
+    currentRole = 'admin';
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/security/observed-destinations',
+    });
+    // 200 if DB reachable, 5xx if not; either way, RBAC must not block it.
+    expect(res.statusCode).not.toBe(403);
+    expect(res.statusCode).not.toBe(401);
+  });
 });
 
 // =====================================================================

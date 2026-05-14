@@ -4,6 +4,7 @@ import { useSecurityAudit } from '@/features/security/hooks/use-security-audit';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { cn } from '@/shared/lib/utils';
+import { ObservedDestinationsPanel } from '@/features/security/components/observed-destinations-panel';
 
 const severityOptions = [
   { value: 'all', label: 'All Severities' },
@@ -269,6 +270,11 @@ export default function SecurityAuditPage() {
           </div>
         )}
       </section>
+
+      {/* Observed Destinations (#1240) — outbound traffic captured by Beyla */}
+      <ObservedDestinationsPanel
+        endpointId={selectedEndpoint === 'all' ? undefined : Number(selectedEndpoint)}
+      />
     </div>
   );
 }

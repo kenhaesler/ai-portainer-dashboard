@@ -29,5 +29,9 @@ export { cleanupOldCaptures, cleanupOrphanedSidecars } from './services/pcap-ser
 // Image staleness
 export { runStalenessChecks, getStalenessRecords, getStalenessSummary, parseImageRef } from './services/image-staleness.js';
 
+// Observed destinations (Beyla outbound traffic classification)
+export { aggregateObservedDestinations } from './services/observed-destinations.js';
+export type { ObservedDestination, Verdict } from './services/observed-destinations.js';
+
 // Route registration — import directly from ./routes/index.js in app.ts
 // Not re-exported here to avoid eager loading of route deps at barrel import time.
