@@ -275,6 +275,13 @@ export const envSchema = z.object({
   // Recent error-rate (percent) above which a service is flagged regardless
   // of baseline. Set to a very high number (e.g. 100) to disable.
   TRACES_ANOMALY_ERROR_RATE_PCT: z.coerce.number().min(0).max(100).default(5),
+  // Comma-separated hostnames of upstream LLM providers. The frontend asks
+  // /api/traces?netPeerName=<host> for each entry to render the LLM latency
+  // breakdown panel; the backend includes the matching `x-trace-correlation-id`
+  // on every outbound LLM call so the panel can split network vs model time.
+  LLM_PEER_HOSTNAMES: z
+    .string()
+    .default('api.anthropic.com,api.openai.com,api.mistral.ai,api.deepseek.com,api.groq.com'),
 
   // OpenTelemetry Span Export (OTLP/HTTP JSON)
   OTEL_EXPORTER_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
