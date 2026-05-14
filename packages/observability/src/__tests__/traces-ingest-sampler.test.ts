@@ -7,6 +7,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify, { FastifyInstance, FastifyRequest } from 'fastify';
+import { validatorCompiler, serializerCompiler } from 'fastify-type-provider-zod';
 import { getTestDb, getTestPool, truncateTestTables, closeTestDb } from '@dashboard/core/db/test-db-helper.js';
 import type { AppDb } from '@dashboard/core/db/app-db.js';
 import { tracesIngestRoutes, __resetSamplerForTests } from '../routes/traces-ingest.js';
@@ -18,20 +19,20 @@ vi.mock('@dashboard/core/db/app-db-router.js', () => ({
   getDbForDomain: () => appDb,
 }));
 
-// Route imports getConfig() to construct the sampler. Stub it to a permissive
-// "reject all" config for the first test and a "no-op" config for admin-role
-// check (admin/non-admin separation comes from the test app's auth decorator).
+// Route imports getConfig() to construct the sampler. Stub it directly so the
+// test env doesn't need to satisfy the full production env schema (JWT_SECRET,
+// DASHBOARD_USERNAME, etc.).
 let configOverride: Record<string, unknown> = {};
-vi.mock('@dashboard/core/config/index.js', async (orig) => {
-  const real = (await orig()) as { getConfig: () => Record<string, unknown> };
-  return {
-    ...real,
-    getConfig: () => ({
-      ...real.getConfig(),
-      ...configOverride,
-    }),
-  };
-});
+vi.mock('@dashboard/core/config/index.js', () => ({
+  getConfig: () => ({
+    TRACES_INGESTION_ENABLED: true,
+    TRACES_INGESTION_API_KEY: 'k',
+    TRACES_SAMPLE_RATE: 1.0,
+    TRACES_INGEST_MAX_SPANS_PER_SEC: 0,
+    ...configOverride,
+  }),
+}));
+
 
 beforeAll(async () => {
   appDb = await getTestDb();
@@ -49,6 +50,8 @@ beforeEach(async () => {
 function buildApp(opts: { isAdmin: boolean }): Promise<FastifyInstance> {
   return (async () => {
     const app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
     // Trace ingest is body-parsed; default JSON parser is fine.
     app.decorate('authenticate', async (req: FastifyRequest) => {
       // Stamp a user object so requireRole can see a role.
