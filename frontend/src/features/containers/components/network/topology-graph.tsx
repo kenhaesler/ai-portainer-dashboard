@@ -44,6 +44,19 @@ export interface NetworkRate {
   txBytesPerSec: number;
 }
 
+/**
+ * RPC edge observed from Beyla/OTLP traces. `source`/`target` are service
+ * names (as returned by `/api/traces/service-map`). The topology graph maps
+ * them to container nodes by matching `container.name === service`.
+ */
+export interface RpcEdgeInput {
+  source: string;
+  target: string;
+  callCount: number;
+  errorRate?: number;
+  avgDuration?: number;
+}
+
 interface TopologyGraphProps {
   containers: ContainerData[];
   networks: NetworkData[];
@@ -51,7 +64,52 @@ interface TopologyGraphProps {
   networkRates?: Record<string, NetworkRate>;
   selectedNodeId?: string;
   relatedNodeIds?: string[];
+  /** When true, overlay observed RPC edges (#1233). */
+  showObservedTraffic?: boolean;
+  /** Observed RPC edges from `/api/traces/service-map`. */
+  observedEdges?: RpcEdgeInput[];
 }
+
+// --- RPC overlay helpers (pure, exported for testing) ---
+
+const RPC_MIN_WIDTH = 1.5;
+const RPC_MAX_WIDTH = 10;
+const RPC_EDGE_CAP = 100;
+
+/**
+ * Map an edge errorRate (0..1) to a colour: green < 1% < amber < 5% < red.
+ * Undefined errorRate is treated as zero (no observed errors).
+ */
+export function getRpcEdgeColor(errorRate: number | undefined): string {
+  const er = errorRate ?? 0;
+  if (er < 0.01) return '#10b981'; // green
+  if (er < 0.05) return '#eab308'; // amber
+  return '#ef4444';                // red
+}
+
+/**
+ * Compute the visual width of an RPC edge from its call count using
+ * `log1p` so a small handful of calls is visible but high-volume edges
+ * don't dominate the canvas. Clamped to [RPC_MIN_WIDTH, RPC_MAX_WIDTH].
+ */
+export function getRpcEdgeWidth(callCount: number): number {
+  const w = RPC_MIN_WIDTH + Math.log1p(Math.max(0, callCount));
+  return Math.min(RPC_MAX_WIDTH, Math.max(RPC_MIN_WIDTH, w));
+}
+
+/**
+ * Drop self-edges, sort by callCount desc, and cap at `RPC_EDGE_CAP` so the
+ * canvas stays legible.
+ */
+export function capAndSortRpcEdges(edges: RpcEdgeInput[]): RpcEdgeInput[] {
+  return edges
+    .filter((e) => e.source !== e.target)
+    .slice()
+    .sort((a, b) => b.callCount - a.callCount)
+    .slice(0, RPC_EDGE_CAP);
+}
+
+// --- End RPC overlay helpers ---
 
 // --- Sorting helpers (pure functions, exported for testing) ---
 
@@ -249,6 +307,8 @@ export function TopologyGraph({
   networkRates,
   selectedNodeId,
   relatedNodeIds,
+  showObservedTraffic = false,
+  observedEdges,
 }: TopologyGraphProps) {
   const potatoMode = useUiStore((state) => state.potatoMode);
   const relatedSet = useMemo(() => new Set(relatedNodeIds ?? []), [relatedNodeIds]);
@@ -472,6 +532,9 @@ export function TopologyGraph({
         const edgeStyle = getEdgeStyle(container.id, container.state, networkRates);
         const rate = networkRates?.[container.id];
         const edgeLabel = rate ? `↓${formatRate(rate.rxBytesPerSec)} ↑${formatRate(rate.txBytesPerSec)}` : undefined;
+        // Fade structural edges when the RPC overlay is on so observed
+        // traffic reads as the primary signal.
+        const structuralOpacity = showObservedTraffic ? 0.2 : 0.7;
         edges.push({
           id: `e-${container.id}-${net.id}`,
           source: sourceId,
@@ -479,11 +542,11 @@ export function TopologyGraph({
           sourceHandle: handles.sourceHandle,
           targetHandle: handles.targetHandle,
           type: 'smoothstep',
-          animated: !potatoMode && container.state === 'running',
+          animated: !potatoMode && !showObservedTraffic && container.state === 'running',
           style: {
             stroke: edgeStyle.stroke,
             strokeWidth: edgeStyle.strokeWidth,
-            opacity: 0.7,
+            opacity: structuralOpacity,
           },
           label: edgeLabel,
           labelStyle: { fontSize: 10, fill: 'var(--color-muted-foreground)' },
@@ -494,8 +557,60 @@ export function TopologyGraph({
       }
     }
 
+    // Observed RPC overlay edges (#1233). Service names from spans are
+    // matched to container nodes by `container.name`.
+    if (showObservedTraffic && observedEdges && observedEdges.length > 0) {
+      const containerByName = new Map<string, ContainerData>();
+      for (const c of containers) containerByName.set(c.name, c);
+
+      const capped = capAndSortRpcEdges(observedEdges);
+      for (const rpc of capped) {
+        const src = containerByName.get(rpc.source);
+        const tgt = containerByName.get(rpc.target);
+        if (!src || !tgt) continue;
+        const sourceId = `container-${src.id}`;
+        const targetId = `container-${tgt.id}`;
+        const sourcePos = nodeAbsolutePositions.get(sourceId);
+        const targetPos = nodeAbsolutePositions.get(targetId);
+        const handles = sourcePos && targetPos
+          ? getBestHandles(sourcePos, targetPos)
+          : { sourceHandle: 'right' as HandleDirection, targetHandle: 'left' as HandleDirection };
+        const stroke = getRpcEdgeColor(rpc.errorRate);
+        const width = getRpcEdgeWidth(rpc.callCount);
+        const tooltip = [
+          `${rpc.source} → ${rpc.target}`,
+          `${rpc.callCount.toLocaleString()} calls`,
+          rpc.avgDuration !== undefined ? `${rpc.avgDuration.toFixed(1)} ms avg` : null,
+          rpc.errorRate !== undefined ? `${(rpc.errorRate * 100).toFixed(2)}% errors` : null,
+        ].filter(Boolean).join(' · ');
+        edges.push({
+          id: `rpc-${rpc.source}-${rpc.target}`,
+          source: sourceId,
+          target: targetId,
+          sourceHandle: handles.sourceHandle,
+          targetHandle: handles.targetHandle,
+          type: 'smoothstep',
+          animated: !potatoMode,
+          style: { stroke, strokeWidth: width, opacity: 0.9 },
+          data: {
+            kind: 'rpc',
+            callCount: rpc.callCount,
+            errorRate: rpc.errorRate,
+            avgDuration: rpc.avgDuration,
+            tooltip,
+          },
+          label: tooltip,
+          labelStyle: { fontSize: 10, fill: 'var(--color-foreground)' },
+          labelBgStyle: { fill: 'var(--color-card)', opacity: 0.95 },
+          labelBgPadding: [4, 2],
+          labelBgBorderRadius: 4,
+          markerEnd: { type: 'arrowclosed' as never, color: stroke },
+        });
+      }
+    }
+
     return { nodes, edges };
-  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId, potatoMode]);
+  }, [blueprints, externalNets, layoutPositions, containers, networks, networkRates, relatedSet, selectedNodeId, potatoMode, showObservedTraffic, observedEdges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);

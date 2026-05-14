@@ -730,6 +730,19 @@ The trace store is exposed through the following authenticated endpoints:
 | `GET /api/traces/red` | user | RED metrics (rate / errors / p50-p95-p99 duration) bucketed by service, route, container, or namespace. Backs the "Calls", "Topology RPC overlay", and "Workloads" page integrations. |
 | `GET /api/traces/ingest-stats` | **admin** | Cumulative sampler counters (accepted / dropped totals + per-source breakdown). |
 
+### Consumer pages
+
+The following frontend pages consume the Read API. Each renders a shared
+`NoTraceDataCallout` (with a CTA to `/ebpf-coverage`) whenever its query
+returns no rows, so an un-instrumented endpoint always shows a clear next
+step instead of a blank panel.
+
+| Page | Endpoint(s) used | What it shows |
+|---|---|---|
+| **Network Topology** (`/topology`, #1233) | `GET /api/traces/service-map` (last 24h) | "Observed traffic" overlay: directional RPC edges between container nodes. Edge thickness scales with `log1p(callCount)`; colour is bucketed by errorRate (green < 1% < amber < 5% < red). Cap of 100 edges sorted by callCount. Header toggle defaults on when the service-map returns any edges. |
+| **Container Detail → Calls tab** (`/containers/:endpointId/:containerId?tab=calls`, #1235) | `GET /api/traces/red` (1h + 1m windows), `GET /api/traces?containerName=…` | Four panels: RED summary (rate, error rate, p50/p95/p99), Top outgoing calls, Top incoming calls, and a Recharts p50/p95-and-error-rate timeline (1m bucket). Each trace row deep-links to `/traces?trace=<id>`. |
+| **Workload Explorer** (`/workloads`, #1237) | `GET /api/traces/red?groupBy=service` (5m bucket) | Three sortable columns — Rate (/s), Errors, p95 — keyed by `service_name`. Performance: ONE batched fetch per page render, not N. Empty cell renders `–`; an explicit 0-traffic row renders `0.00`. Each cell deep-links to `/traces?service=…&from=…&to=…`. |
+
 ## Sampling & rate-limit
 
 The ingest path runs two pure-CPU stages between OTLP transform and DB insert:

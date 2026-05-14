@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi, PhoneCall } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/features/containers/hooks/use-container-detail';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
@@ -10,6 +10,7 @@ import { FavoriteButton } from '@/shared/components/ui/favorite-button';
 import { ContainerOverview } from '@/features/containers/components/container/container-overview';
 import { ContainerLogsViewer } from '@/features/containers/components/container/container-logs-viewer';
 import { ContainerMetricsViewer } from '@/features/containers/components/container/container-metrics-viewer';
+import { ContainerTracesTab } from '@/features/containers/components/container-traces-tab';
 import { useEndpoints, useEndpointCapabilities } from '@/features/containers/hooks/use-endpoints';
 
 const TIME_RANGES = [
@@ -223,6 +224,13 @@ export default function ContainerDetailPage() {
             <Activity className="h-4 w-4" />
             Metrics
           </Tabs.Trigger>
+          <Tabs.Trigger
+            value="calls"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors hover:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary"
+          >
+            <PhoneCall className="h-4 w-4" />
+            Calls
+          </Tabs.Trigger>
         </Tabs.List>
 
         <Tabs.Content value="overview" className="focus:outline-none">
@@ -234,6 +242,13 @@ export default function ContainerDetailPage() {
             endpointId={container.endpointId}
             containerId={container.id}
             isEdgeAsync={isEdgeAsync}
+          />
+        </Tabs.Content>
+
+        <Tabs.Content value="calls" className="focus:outline-none">
+          <ContainerTracesTab
+            containerName={container.name}
+            endpointId={container.endpointId}
           />
         </Tabs.Content>
 
