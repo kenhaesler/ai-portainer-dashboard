@@ -26,6 +26,8 @@ import {
   stopBreakerPruning,
   startContainer,
   stopContainer,
+  restartContainer,
+  getEndpoints,
   isEdgeTunnelNotActive,
   EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
 } from './portainer-client.js';
@@ -318,5 +320,99 @@ describe('startContainer / stopContainer — 304 idempotency (#1230)', () => {
       buildResponse({ status: 500, statusText: 'Internal Server Error' }),
     );
     await expect(stopContainer(1, 'abc123')).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+// =====================================================================
+//  portainerFetch parse guard — #1232
+//
+//  Docker lifecycle endpoints (/start, /stop, /restart, /remove) reply
+//  204 No Content. Previously portainerFetchInner called res.json()
+//  unconditionally, which threw SyntaxError on empty bodies and dragged
+//  the call through 1-7s of exponential-backoff retries. The fix is to
+//  bypass JSON parsing when the response is 204 or has an empty body.
+//
+//  The helper below mirrors the real undici behavior more closely than
+//  buildResponse above: a 204 response has an empty body, so text()
+//  resolves to '' and json() throws — exactly what the production fix
+//  must absorb.
+// =====================================================================
+
+function buildEmptyBodyResponse(status: number, statusText: string) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText,
+    json: async () => {
+      throw new SyntaxError('Unexpected end of JSON input');
+    },
+    text: async () => '',
+    headers: new Headers(),
+  } as unknown as Response;
+}
+
+function buildJsonResponse(status: number, statusText: string, body: unknown) {
+  const serialized = JSON.stringify(body);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText,
+    json: async () => JSON.parse(serialized),
+    text: async () => serialized,
+    headers: new Headers(),
+  } as unknown as Response;
+}
+
+describe('portainerFetch parse guard (#1232)', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    _resetClientState();
+  });
+
+  it('resolves to undefined on 204 No Content without exercising the retry path', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    // restartContainer doesn't catch the 304 idempotency error, so any retry
+    // (which would happen if json() were called and threw) would surface
+    // either as additional fetch calls or as a thrown PortainerError.
+    await expect(restartContainer(1, 'abc123')).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('resolves to undefined on 200 with an empty body without retrying', async () => {
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(200, 'OK'));
+    await expect(restartContainer(1, 'abc123')).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('parses a normal 200 JSON body (happy path regression)', async () => {
+    // getEndpoints calls portainerFetch<unknown[]>('/api/endpoints').
+    // Use a minimal Endpoint shape so EndpointArraySchema.parse succeeds.
+    const endpoints = [
+      {
+        Id: 1,
+        Name: 'local',
+        Type: 1,
+        URL: 'unix:///var/run/docker.sock',
+        Status: 1,
+      },
+    ];
+    mockFetch.mockResolvedValueOnce(buildJsonResponse(200, 'OK', endpoints));
+    const result = await getEndpoints();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.Id).toBe(1);
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('startContainer completes without retrying when Docker returns a real 204 (empty body)', async () => {
+    // Regression for #1232: previously this triggered SyntaxError on
+    // res.json() and looped through 1s + 2s + 4s of retries before
+    // failing. With the fix, exactly one fetch call is made.
+    mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
+    await expect(startContainer(1, 'abc123')).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 });
