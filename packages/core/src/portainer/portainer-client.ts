@@ -424,7 +424,7 @@ async function portainerFetchInner<T>(
         return undefined as unknown as T;
       }
       const text = await res.text();
-      if (text.length === 0) {
+      if (text.trim().length === 0) {
         return undefined as unknown as T;
       }
       return JSON.parse(text) as T;
