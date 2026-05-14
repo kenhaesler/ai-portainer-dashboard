@@ -8,7 +8,7 @@ import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/port
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
 import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry } from '@dashboard/ai';
-import { collectMetrics, insertMetrics, cleanOldMetrics, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
+import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
 import { startElasticsearchLogForwarder, stopElasticsearchLogForwarder } from '@dashboard/infrastructure';
@@ -324,6 +324,16 @@ export async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'Metrics cleanup failed');
+  }
+
+  try {
+    const config = getConfig();
+    const { deleted } = await cleanOldSpans(config.TRACES_RETENTION_DAYS);
+    if (deleted > 0) {
+      log.info({ deleted, retentionDays: config.TRACES_RETENTION_DAYS }, 'Old spans cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Spans cleanup failed');
   }
 
   try {

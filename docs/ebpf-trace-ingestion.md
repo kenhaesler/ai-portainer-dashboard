@@ -717,6 +717,17 @@ OTEL_EXPORTER_HEADERS={"DD-API-KEY":"your-datadog-api-key"}
 
 When `OTEL_EXPORTER_ENABLED=false` (the default), the exporter singleton is never initialized. `queueSpanForExport()` is a no-op — no buffer allocation, no timers, no network calls.
 
+## Retention
+
+Spans are retained for `TRACES_RETENTION_DAYS` (default `7`). A daily cleanup
+job (in the existing `runCleanup()` scheduler block) calls `cleanOldSpans()`,
+which deletes rows in 10,000-row batches to keep DELETE locks short. The job
+logs the number of deleted rows when non-zero.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TRACES_RETENTION_DAYS` | `7` | Number of days of `spans` data to keep before cleanup. |
+
 ## Test Coverage
 
 | Test File | Tests | Description |

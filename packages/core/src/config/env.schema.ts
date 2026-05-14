@@ -257,6 +257,9 @@ export const envSchema = z.object({
   // eBPF Trace Ingestion (Grafana Beyla)
   TRACES_INGESTION_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
   TRACES_INGESTION_API_KEY: z.string().default(''),
+  // How many days of spans to retain. Daily cleanup runs alongside
+  // METRICS_RETENTION_DAYS in scheduler.runCleanup().
+  TRACES_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
 
   // OpenTelemetry Span Export (OTLP/HTTP JSON)
   OTEL_EXPORTER_ENABLED: z.string().default('false').transform((v) => v === 'true' || v === '1'),
