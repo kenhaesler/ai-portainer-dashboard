@@ -8,6 +8,7 @@ import { useContainers, type Container } from '@/features/containers/hooks/use-c
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
+import { useRed, type RedRow } from '@/features/observability/hooks/use-red';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
@@ -103,6 +104,33 @@ export default function WorkloadExplorerPage() {
   const { data: endpoints } = useEndpoints();
   const { data: stacks } = useStacks();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
+
+  // ── RED columns (#1237) — ONE fetch per page render, server-side groupBy=service.
+  // Window is the most recent 5-minute bucket, rounded so React Query can
+  // dedupe across renders within the same 5-minute window.
+  const redWindow = useMemo(() => {
+    const to = new Date();
+    to.setSeconds(0, 0);
+    to.setMinutes(Math.floor(to.getMinutes() / 5) * 5);
+    const from = new Date(to.getTime() - 5 * 60 * 1000);
+    return { from, to };
+  }, []);
+  const { data: redData } = useRed({
+    from: redWindow.from,
+    to: redWindow.to,
+    bucket: '5m',
+    groupBy: 'service',
+  });
+  // Flatten across buckets, keyed by group (= service_name).
+  const redByService = useMemo(() => {
+    const map = new Map<string, RedRow>();
+    for (const b of redData?.buckets ?? []) {
+      for (const row of b.rows) {
+        map.set(row.group, row);
+      }
+    }
+    return map;
+  }, [redData]);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
@@ -380,6 +408,100 @@ export default function WorkloadExplorerPage() {
       },
     },
     {
+      id: 'rate',
+      header: 'Rate (/s)',
+      enableSorting: true,
+      accessorFn: (row: Container) => redByService.get(row.name)?.rate ?? Number.NEGATIVE_INFINITY,
+      cell: ({ row }) => {
+        const r = redByService.get(row.original.name);
+        if (!r) {
+          return <span className="text-xs text-muted-foreground/50">–</span>;
+        }
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(
+                `/traces?service=${encodeURIComponent(row.original.name)}`
+                  + `&from=${encodeURIComponent(redWindow.from.toISOString())}`
+                  + `&to=${encodeURIComponent(redWindow.to.toISOString())}`,
+              );
+            }}
+            className="font-mono text-xs hover:text-primary"
+            title="Open in Trace Explorer"
+          >
+            {r.rate.toFixed(2)}/s
+          </button>
+        );
+      },
+    },
+    {
+      id: 'errorRate',
+      header: 'Errors',
+      enableSorting: true,
+      accessorFn: (row: Container) => redByService.get(row.name)?.errorRate ?? Number.NEGATIVE_INFINITY,
+      cell: ({ row }) => {
+        const r = redByService.get(row.original.name);
+        if (!r) {
+          return <span className="text-xs text-muted-foreground/50">–</span>;
+        }
+        const pct = r.errorRate * 100;
+        const colorClass = pct >= 5
+          ? 'text-red-600 dark:text-red-400'
+          : pct >= 1
+            ? 'text-amber-600 dark:text-amber-400'
+            : 'text-emerald-600 dark:text-emerald-400';
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(
+                `/traces?service=${encodeURIComponent(row.original.name)}`
+                  + `&status=error`
+                  + `&from=${encodeURIComponent(redWindow.from.toISOString())}`
+                  + `&to=${encodeURIComponent(redWindow.to.toISOString())}`,
+              );
+            }}
+            className={`font-mono text-xs hover:underline ${colorClass}`}
+            title="Open error traces in Trace Explorer"
+          >
+            {pct.toFixed(2)}%
+          </button>
+        );
+      },
+    },
+    {
+      id: 'p95Ms',
+      header: 'p95 (ms)',
+      enableSorting: true,
+      accessorFn: (row: Container) => redByService.get(row.name)?.p95Ms ?? Number.NEGATIVE_INFINITY,
+      cell: ({ row }) => {
+        const r = redByService.get(row.original.name);
+        if (!r) {
+          return <span className="text-xs text-muted-foreground/50">–</span>;
+        }
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(
+                `/traces?service=${encodeURIComponent(row.original.name)}`
+                  + `&from=${encodeURIComponent(redWindow.from.toISOString())}`
+                  + `&to=${encodeURIComponent(redWindow.to.toISOString())}`,
+              );
+            }}
+            className="font-mono text-xs hover:text-primary"
+            title="Open in Trace Explorer"
+          >
+            {r.p95Ms.toFixed(0)} ms
+          </button>
+        );
+      },
+    },
+    {
       id: 'age',
       header: 'Age',
       accessorKey: 'created',
@@ -451,7 +573,7 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState]);
+  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState, redByService, redWindow]);
 
   if (isError) {
     return (
