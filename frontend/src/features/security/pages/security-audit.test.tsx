@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import SecurityAuditPage from './security-audit';
+
+function renderWithClient(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const mockEntries = [
   {
@@ -49,7 +56,7 @@ vi.mock('@/features/security/hooks/use-security-audit', () => ({
 
 describe('SecurityAuditPage', () => {
   it('renders audit table and findings', () => {
-    render(<SecurityAuditPage />);
+    renderWithClient(<SecurityAuditPage />);
 
     expect(screen.getByText('Security Audit')).toBeInTheDocument();
     expect(screen.getByText('api')).toBeInTheDocument();
@@ -58,12 +65,12 @@ describe('SecurityAuditPage', () => {
   });
 
   it('renders the search input', () => {
-    render(<SecurityAuditPage />);
+    renderWithClient(<SecurityAuditPage />);
     expect(screen.getByPlaceholderText('Search containers by name or image...')).toBeInTheDocument();
   });
 
   it('filters containers by name when searching', () => {
-    render(<SecurityAuditPage />);
+    renderWithClient(<SecurityAuditPage />);
 
     expect(screen.getByText('api')).toBeInTheDocument();
     expect(screen.getByText('redis-cache')).toBeInTheDocument();
@@ -75,7 +82,7 @@ describe('SecurityAuditPage', () => {
   });
 
   it('filters containers by image when searching', () => {
-    render(<SecurityAuditPage />);
+    renderWithClient(<SecurityAuditPage />);
 
     fireEvent.change(screen.getByPlaceholderText('Search containers by name or image...'), { target: { value: 'alpine' } });
 
@@ -84,7 +91,7 @@ describe('SecurityAuditPage', () => {
   });
 
   it('shows empty state when search matches nothing', () => {
-    render(<SecurityAuditPage />);
+    renderWithClient(<SecurityAuditPage />);
 
     fireEvent.change(screen.getByPlaceholderText('Search containers by name or image...'), { target: { value: 'nonexistent' } });
 
