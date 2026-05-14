@@ -732,3 +732,21 @@ describe('Users route — assertUser defensive fail-loud (issue #1110)', () => {
     expect(res.statusCode).toBeLessThan(600);
   });
 });
+
+// =====================================================================
+//  TRACE INGEST-STATS ADMIN RBAC ENFORCEMENT (issue #1242)
+// =====================================================================
+// Per-source sampler counters can reveal which services/namespaces exist on
+// the box, so the endpoint must require the admin role at the route source.
+describe('Trace ingest-stats Admin RBAC Enforcement', () => {
+  it('GET /api/traces/ingest-stats route source must include requireRole admin', () => {
+    const file = path.resolve(process.cwd(), '..', 'packages', 'observability', 'src', 'routes', 'traces.ts');
+    const content = readFileSync(file, 'utf8');
+
+    const statsBlock = content.match(
+      /get\s*\(\s*'\/api\/traces\/ingest-stats'[\s\S]*?preHandler:\s*\[([^\]]+)\]/,
+    );
+    expect(statsBlock).not.toBeNull();
+    expect(statsBlock![1]).toContain("requireRole('admin')");
+  });
+});

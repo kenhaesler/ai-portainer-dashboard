@@ -28,8 +28,8 @@ export interface SamplerConfig {
 
 export interface SpanForSampler {
   trace_id: string;
-  service_name?: string;
-  service_namespace?: string;
+  service_name?: string | null;
+  service_namespace?: string | null;
 }
 
 export interface SamplerStats {

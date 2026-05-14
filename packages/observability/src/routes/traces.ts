@@ -5,6 +5,7 @@ import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { TracesQuerySchema, TraceIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { computeRed } from '../services/trace-red.js';
+import { getSamplerStats } from './traces-ingest.js';
 
 const RedQuerySchema = z.object({
   from: z.string().datetime(),
@@ -607,4 +608,15 @@ export async function tracesRoutes(fastify: FastifyInstance) {
       filters: { service: q.service, route: q.route, container: q.container },
     });
   });
+
+  // Sampler stats — admin-only because per-source counts can reveal which
+  // services/namespaces exist on the box.
+  fastify.get('/api/traces/ingest-stats', {
+    schema: {
+      tags: ['Traces'],
+      summary: 'Trace ingest sampler counters (admin)',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async () => getSamplerStats());
 }
