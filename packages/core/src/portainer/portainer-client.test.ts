@@ -1,6 +1,49 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats, buildApiUrl, buildApiHeaders, pruneStaleBreakers, startBreakerPruning, stopBreakerPruning } from './portainer-client.js';
+import { decodeDockerLogPayload, sanitizeContainerLabels, _resetClientState, getCircuitBreakerStats, buildApiUrl, buildApiHeaders, pruneStaleBreakers, startBreakerPruning, stopBreakerPruning, isEdgeTunnelNotActive, EDGE_TUNNEL_NOT_ACTIVE_TOKEN } from './portainer-client.js';
 import pLimit from 'p-limit';
+
+describe('isEdgeTunnelNotActive', () => {
+  // SNAPSHOT: this is the exact substring our predicate matches against
+  // Portainer's HTTP 500 body when an Edge Agent's reverse tunnel hasn't
+  // opened yet. Three call sites in this codebase branch on it (circuit
+  // breaker, waitForEdgeTunnel poll loop, eBPF deploy route's 503 path).
+  // If Portainer changes the wording in a future release, this assertion
+  // is the canary — without it the predicate silently starts returning
+  // false, the breaker trips on cold Edge Agents, and the 503 path stops
+  // catching the condition.
+  it('matches against the exact Portainer 500 body literal', () => {
+    expect(EDGE_TUNNEL_NOT_ACTIVE_TOKEN).toBe('unable to get the active tunnel');
+  });
+
+  it('matches the full HTTP 500 wrapper that portainerFetchInner emits', () => {
+    // portainerFetchInner builds: `HTTP 500: Internal Server Error — <body>`
+    const wrapped = new Error('HTTP 500: Internal Server Error — Unable to get the active tunnel');
+    expect(isEdgeTunnelNotActive(wrapped)).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isEdgeTunnelNotActive(new Error('UNABLE TO GET THE ACTIVE TUNNEL'))).toBe(true);
+    expect(isEdgeTunnelNotActive(new Error('Unable to get the Active Tunnel'))).toBe(true);
+  });
+
+  it('accepts plain strings (used by pingEndpointDocker result.error)', () => {
+    expect(isEdgeTunnelNotActive('unable to get the active tunnel')).toBe(true);
+    expect(isEdgeTunnelNotActive('Unable to get the active tunnel: endpoint 5')).toBe(true);
+  });
+
+  it('returns false for unrelated errors', () => {
+    expect(isEdgeTunnelNotActive(new Error('ECONNREFUSED'))).toBe(false);
+    expect(isEdgeTunnelNotActive(new Error('HTTP 401: Unauthorized'))).toBe(false);
+    expect(isEdgeTunnelNotActive('agent offline')).toBe(false);
+  });
+
+  it('returns false for non-error, non-string inputs', () => {
+    expect(isEdgeTunnelNotActive(null)).toBe(false);
+    expect(isEdgeTunnelNotActive(undefined)).toBe(false);
+    expect(isEdgeTunnelNotActive(500)).toBe(false);
+    expect(isEdgeTunnelNotActive({ message: 'unable to get the active tunnel' })).toBe(false);
+  });
+});
 
 describe('sanitizeContainerLabels', () => {
   it('redacts known path-disclosing Docker labels', () => {

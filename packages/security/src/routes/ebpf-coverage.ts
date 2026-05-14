@@ -23,6 +23,7 @@ import {
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import { getConfig } from '@dashboard/core/config/index.js';
+import { isEdgeTunnelNotActive } from '@dashboard/core/portainer/portainer-client.js';
 
 const log = createChildLogger('ebpf-coverage-route');
 
@@ -410,10 +411,10 @@ export async function ebpfCoverageRoutes(fastify: FastifyInstance) {
         recreateExisting: Boolean(requestedOtlpEndpoint),
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
       // Portainer signals the Edge Agent on its next poll to open the tunnel; the request
       // itself fails until that happens. Return 503 with a clear, retryable message.
-      if (msg.toLowerCase().includes('unable to get the active tunnel')) {
+      if (isEdgeTunnelNotActive(err)) {
+        const msg = err instanceof Error ? err.message : String(err);
         log.warn({ endpointId, err: msg }, 'Beyla deploy failed: Edge Agent tunnel not active');
         return reply.code(503).send({
           error: 'Edge Agent tunnel is not active. Portainer has signalled the agent to open it; retry in 30–60 seconds (or shorten the Edge check-in interval on the agent).',

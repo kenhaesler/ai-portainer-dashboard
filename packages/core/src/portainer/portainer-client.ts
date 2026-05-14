@@ -86,19 +86,40 @@ class PortainerError extends Error {
 }
 
 /**
+ * Portainer signals "the Edge Agent's reverse tunnel isn't open yet" via a
+ * specific HTTP 500 body. This is a transient per-endpoint condition (the
+ * agent opens the tunnel on its next poll), NOT an infrastructure failure
+ * with Portainer itself — three call sites in this codebase branch on it:
+ *
+ *   • the circuit-breaker classifier (don't trip the breaker)
+ *   • the waitForEdgeTunnel poll loop (keep polling vs. give up)
+ *   • the eBPF deploy route's catch (return 503 with a retryable message)
+ *
+ * Centralised here so a Portainer wording change has exactly one place to
+ * update — and so the snapshot test below catches any drift.
+ */
+export const EDGE_TUNNEL_NOT_ACTIVE_TOKEN = 'unable to get the active tunnel';
+
+export function isEdgeTunnelNotActive(input: unknown): boolean {
+  let text: string | null = null;
+  if (input instanceof Error) text = input.message;
+  else if (typeof input === 'string') text = input;
+  if (text === null) return false;
+  return text.toLowerCase().includes(EDGE_TUNNEL_NOT_ACTIVE_TOKEN);
+}
+
+/**
  * Only 5xx and network errors should trip the circuit breaker.
  * 4xx errors (auth, not-found, rate-limit) are client-side issues
  * and should NOT count as infrastructure failures.
  *
- * Special case: Portainer returns HTTP 500 "Unable to get the active tunnel"
- * when an Edge Agent's reverse tunnel isn't open yet — this is a transient,
- * per-endpoint condition (the agent opens the tunnel on its next poll), not
- * an infrastructure failure with Portainer itself. Excluding it prevents one
- * sleepy Edge Agent from tripping the breaker for the entire endpoint.
+ * Special case: the Edge-tunnel-not-active condition (see
+ * isEdgeTunnelNotActive above) is excluded so one sleepy Edge Agent
+ * cannot trip the breaker for an entire endpoint.
  */
 function isPortainerFailure(error: unknown): boolean {
   if (error instanceof PortainerError) {
-    if (error.message.toLowerCase().includes('unable to get the active tunnel')) {
+    if (isEdgeTunnelNotActive(error)) {
       return false;
     }
     return error.kind === 'server' || error.kind === 'network';
@@ -479,7 +500,7 @@ export async function waitForEdgeTunnel(
     if (result.ok) return true;
     // Anything other than the tunnel-not-active condition means the agent
     // is genuinely unreachable — no point waiting.
-    if (!result.error || !result.error.toLowerCase().includes('unable to get the active tunnel')) {
+    if (!isEdgeTunnelNotActive(result.error)) {
       return false;
     }
     if (Date.now() + pollIntervalMs >= deadline) return false;
