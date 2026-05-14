@@ -136,7 +136,9 @@ export function useDeployBeyla() {
       api.post(
         `/api/ebpf/deploy/${endpointId}`,
         otlpEndpoint ? { otlpEndpoint } : {},
-        { timeoutMs: 60000 },
+        // Edge Agent Standard endpoints wait up to ~45s for the tunnel to open,
+        // then pull the Beyla image (can be 10-30s on first run); allow 120s total.
+        { timeoutMs: 120000 },
       ),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['ebpf', 'coverage'] });

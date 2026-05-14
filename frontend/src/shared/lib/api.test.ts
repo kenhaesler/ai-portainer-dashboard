@@ -224,6 +224,33 @@ describe('ApiClient', () => {
       await expect(api.get('/api/broken')).rejects.toThrow('Internal Server Error');
     });
 
+    it('should prefer descriptive message over Fastify generic error class', async () => {
+      // Fastify default error shape: { statusCode, error: 'Internal Server Error', message: 'actual cause' }
+      // Without this, eBPF deploy failures surface only as "Internal Server Error" instead of the underlying Portainer error.
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: 'HTTP 502: Bad Gateway',
+        }),
+      });
+
+      await expect(api.post('/api/ebpf/deploy/3')).rejects.toThrow('HTTP 502: Bad Gateway');
+    });
+
+    it('should fall back to body.error when no message field is present', async () => {
+      // Custom routes use reply.code(X).send({ error: 'descriptive' }) without a message field.
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ error: 'Coverage record not found' }),
+      });
+
+      await expect(api.delete('/api/ebpf/coverage/99')).rejects.toThrow('Coverage record not found');
+    });
+
     it('should handle error response without body', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,

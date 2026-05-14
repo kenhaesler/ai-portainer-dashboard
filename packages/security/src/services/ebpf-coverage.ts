@@ -8,6 +8,7 @@ import {
   startContainer,
   stopContainer,
   removeContainer,
+  waitForEdgeTunnel,
 } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -167,16 +168,29 @@ function isBeylaContainer(container: { Image: string; Labels?: Record<string, st
   );
 }
 
-async function findBeylaContainer(endpointId: number): Promise<{
+/**
+ * Look up the Beyla container on an endpoint.
+ *
+ * For read paths (status, detection) we use SWR caching to keep the coverage
+ * page snappy. For *write* paths (deploy, enable, disable, remove) we need
+ * authoritative state — a stale cache can make us miss an orphaned container
+ * from a prior failed deploy and then hit a 409 Conflict on createContainer.
+ */
+async function findBeylaContainer(
+  endpointId: number,
+  options: { forceFresh?: boolean } = {},
+): Promise<{
   containerId: string;
   running: boolean;
   managed: boolean;
 } | null> {
-  const containers = await cachedFetchSWR(
-    getCacheKey('containers', endpointId),
-    TTL.CONTAINERS,
-    () => getContainers(endpointId, true),
-  );
+  const containers = options.forceFresh
+    ? await getContainers(endpointId, true)
+    : await cachedFetchSWR(
+      getCacheKey('containers', endpointId),
+      TTL.CONTAINERS,
+      () => getContainers(endpointId, true),
+    );
   const beyla = containers.find(isBeylaContainer);
 
   if (!beyla) {
@@ -188,6 +202,11 @@ async function findBeylaContainer(endpointId: number): Promise<{
     running: beyla.State === 'running',
     managed: beyla.Labels?.['managed-by'] === DASHBOARD_MANAGED_BY,
   };
+}
+
+function isConflictError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return message.includes('409') || message.includes('conflict');
 }
 
 async function updateLifecycleCoverage(
@@ -264,7 +283,55 @@ function detectionToCoverageStatus(result: DetectionResult): CoverageStatus {
 
 export async function deployBeyla(endpointId: number, options: DeployBeylaOptions): Promise<BeylaActionResult> {
   const endpoint = await getEndpoint(endpointId);
-  const existing = await findBeylaContainer(endpointId);
+
+  // Edge Agent Standard (type 4) uses a reverse tunnel that's only opened on demand.
+  // Pre-flight the tunnel so subsequent Docker calls don't fail with
+  // "Unable to get the active tunnel" while the agent is still polling.
+  if (endpoint.Type === 4) {
+    const checkInIntervalSec = endpoint.EdgeCheckinInterval && endpoint.EdgeCheckinInterval > 0
+      ? endpoint.EdgeCheckinInterval
+      : 30; // Portainer default
+    const lastCheckInSec = endpoint.LastCheckInDate ?? 0;
+    const ageSec = lastCheckInSec > 0 ? (Date.now() / 1000) - lastCheckInSec : Infinity;
+
+    // If the agent hasn't checked in within 3× its interval, the tunnel signal
+    // won't be picked up — fail fast with a specific message instead of waiting.
+    if (ageSec > checkInIntervalSec * 3 && lastCheckInSec > 0) {
+      throw new Error(
+        `Edge Agent '${endpoint.Name}' has not checked in for ${Math.round(ageSec)}s (interval ${checkInIntervalSec}s). The agent appears offline — verify it is running and can reach Portainer.`,
+      );
+    }
+    if (lastCheckInSec === 0) {
+      throw new Error(
+        `Edge Agent '${endpoint.Name}' has never checked in. Verify the agent is deployed, running, and configured with the correct Portainer URL and EDGE_KEY.`,
+      );
+    }
+
+    // Wait budget: enough time for the agent to receive the tunnel-open signal
+    // on its next poll plus headroom. Capped at 5 minutes to bound user wait.
+    const budgetMs = Math.min(checkInIntervalSec * 2 * 1000 + 15000, 5 * 60 * 1000);
+    const pollIntervalMs = Math.min(Math.max(checkInIntervalSec * 1000 / 4, 1000), 10000);
+
+    log.info({
+      endpointId,
+      endpointName: endpoint.Name,
+      checkInIntervalSec,
+      lastCheckInAgeSec: Math.round(ageSec),
+      budgetMs,
+    }, 'Pre-flighting Edge Agent tunnel before deploy');
+
+    const tunnelUp = await waitForEdgeTunnel(endpointId, { timeoutMs: budgetMs, pollIntervalMs });
+    if (!tunnelUp) {
+      throw new Error(
+        `Edge Agent tunnel for '${endpoint.Name}' did not open within ${Math.round(budgetMs / 1000)}s (agent check-in interval: ${checkInIntervalSec}s). The agent may be offline or the interval is too long — try again, or shorten the Edge poll interval in Portainer's Edge Compute settings.`,
+      );
+    }
+    log.info({ endpointId, endpointName: endpoint.Name }, 'Edge Agent tunnel is up; proceeding with deploy');
+  }
+
+  // Deploy is a write path — read authoritative container state so we don't
+  // miss an orphan from a prior failed deploy and hit a 409 on createContainer.
+  const existing = await findBeylaContainer(endpointId, { forceFresh: true });
   const shouldRecreate = options.recreateExisting === true;
 
   if (existing && shouldRecreate) {
@@ -333,33 +400,58 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     env.push(`OTEL_EXPORTER_OTLP_HEADERS=X-API-Key=${options.tracesApiKey}`);
   }
 
-  const created = await createContainer(
-    endpointId,
-    {
-      Image: BEYLA_IMAGE,
-      Env: env,
-      Labels: {
-        'managed-by': DASHBOARD_MANAGED_BY,
-        component: BEYLA_COMPONENT_LABEL,
-      },
-      HostConfig: {
-        Privileged: true,
-        PidMode: 'host',
-        Init: true,
-        Binds: [
-          '/sys/fs/cgroup:/sys/fs/cgroup',
-          '/sys/kernel/security:/sys/kernel/security',
-        ],
-        RestartPolicy: { Name: 'unless-stopped' },
-      },
+  const containerPayload = {
+    Image: BEYLA_IMAGE,
+    Env: env,
+    Labels: {
+      'managed-by': DASHBOARD_MANAGED_BY,
+      component: BEYLA_COMPONENT_LABEL,
     },
-    `beyla-${endpointId}`,
-  );
+    HostConfig: {
+      Privileged: true,
+      PidMode: 'host',
+      Init: true,
+      Binds: [
+        '/sys/fs/cgroup:/sys/fs/cgroup',
+        '/sys/kernel/security:/sys/kernel/security',
+      ],
+      RestartPolicy: { Name: 'unless-stopped' },
+    },
+  };
+
+  let created: { Id: string };
+  try {
+    created = await createContainer(endpointId, containerPayload, `beyla-${endpointId}`);
+  } catch (err) {
+    // 409 means a container with the target name already exists — usually an
+    // orphan from a previous failed deploy that our fresh container list
+    // somehow missed (race, filtered out, etc.). Recover by removing it and
+    // retrying once.
+    if (!isConflictError(err)) throw err;
+    log.warn({ endpointId, err: err instanceof Error ? err.message : String(err) },
+      'createContainer returned 409; reconciling orphan and retrying');
+    const orphan = await findBeylaContainer(endpointId, { forceFresh: true });
+    if (orphan) {
+      if (orphan.running) {
+        try { await stopContainer(endpointId, orphan.containerId); }
+        catch (e) { if (!isNotFoundError(e)) throw e; }
+      }
+      try { await removeContainer(endpointId, orphan.containerId, true); }
+      catch (e) { if (!isNotFoundError(e)) throw e; }
+    }
+    created = await createContainer(endpointId, containerPayload, `beyla-${endpointId}`);
+  }
 
   try {
     await startContainer(endpointId, created.Id);
   } catch (err) {
-    if (!isNotFoundError(err)) throw err;
+    if (!isNotFoundError(err)) {
+      // Roll back the just-created container so the next deploy doesn't 409.
+      log.warn({ endpointId, containerId: created.Id, err: err instanceof Error ? err.message : String(err) },
+        'startContainer failed; removing just-created container to avoid orphan');
+      try { await removeContainer(endpointId, created.Id, true); } catch { /* best-effort */ }
+      throw err;
+    }
     const postCheck = await detectBeylaOnEndpoint(endpointId, endpoint.Type);
     if (postCheck !== 'deployed') throw err;
   }

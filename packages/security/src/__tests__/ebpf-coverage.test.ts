@@ -404,6 +404,203 @@ describe('ebpf-coverage service', () => {
       expect(mockStartContainer).toHaveBeenCalledWith(1, 'beyla-1');
     });
 
+    it('deployBeyla pre-flights the Edge Agent tunnel for type 4 endpoints', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 4,
+        Name: 'edge-1',
+        Type: 4,
+        URL: 'tcp://edge',
+        Status: 1,
+        Snapshots: [],
+        EdgeCheckinInterval: 30,
+        LastCheckInDate: nowSec - 10,
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-edge' });
+      const waitSpy = vi.spyOn(portainerClient, 'waitForEdgeTunnel').mockResolvedValueOnce(true);
+
+      const result = await deployBeyla(4, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+
+      expect(waitSpy).toHaveBeenCalledWith(4, expect.objectContaining({ timeoutMs: expect.any(Number) }));
+      expect(result.status).toBe('deployed');
+    });
+
+    it('deployBeyla scales tunnel budget to 2x EdgeCheckinInterval + 15s', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 4,
+        Name: 'edge-slow',
+        Type: 4,
+        URL: 'tcp://edge',
+        Status: 1,
+        Snapshots: [],
+        EdgeCheckinInterval: 60,
+        LastCheckInDate: nowSec - 5,
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-slow' });
+      const waitSpy = vi.spyOn(portainerClient, 'waitForEdgeTunnel').mockResolvedValueOnce(true);
+
+      await deployBeyla(4, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+
+      // 60s interval → 2*60*1000 + 15000 = 135000ms budget
+      expect(waitSpy).toHaveBeenCalledWith(4, expect.objectContaining({ timeoutMs: 135000 }));
+    });
+
+    it('deployBeyla fails fast when Edge Agent has never checked in', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 4,
+        Name: 'edge-fresh',
+        Type: 4,
+        URL: 'tcp://edge',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      const waitSpy = vi.spyOn(portainerClient, 'waitForEdgeTunnel');
+
+      await expect(
+        deployBeyla(4, {
+          otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+          tracesApiKey: 'abc123',
+        }),
+      ).rejects.toThrow(/has never checked in/);
+      // Pre-flight skipped entirely — no wait, no Docker calls
+      expect(waitSpy).not.toHaveBeenCalled();
+      expect(mockGetContainers).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla fails fast when Edge Agent last check-in is stale (>3x interval)', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 4,
+        Name: 'srv-edge-01',
+        Type: 4,
+        URL: 'tcp://edge',
+        Status: 1,
+        Snapshots: [],
+        EdgeCheckinInterval: 30,
+        LastCheckInDate: nowSec - 148300, // ~41h ago, matches the real-world incident
+      } as any);
+      const waitSpy = vi.spyOn(portainerClient, 'waitForEdgeTunnel');
+
+      await expect(
+        deployBeyla(4, {
+          otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+          tracesApiKey: 'abc123',
+        }),
+      ).rejects.toThrow(/has not checked in for \d+s.*appears offline/);
+      expect(waitSpy).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla throws actionable error when Edge tunnel never opens within budget', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 4,
+        Name: 'edge-offline',
+        Type: 4,
+        URL: 'tcp://edge',
+        Status: 1,
+        Snapshots: [],
+        EdgeCheckinInterval: 30,
+        LastCheckInDate: nowSec - 10,
+      } as any);
+      vi.spyOn(portainerClient, 'waitForEdgeTunnel').mockResolvedValueOnce(false);
+
+      await expect(
+        deployBeyla(4, {
+          otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+          tracesApiKey: 'abc123',
+        }),
+      ).rejects.toThrow(/tunnel for 'edge-offline' did not open/);
+      // Must not attempt any Docker calls if pre-flight fails
+      expect(mockGetContainers).not.toHaveBeenCalled();
+      expect(mockPullImage).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla skips tunnel pre-flight for non-Edge endpoints', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'standalone',
+        Type: 1,
+        URL: 'tcp://localhost',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+      const waitSpy = vi.spyOn(portainerClient, 'waitForEdgeTunnel');
+
+      await deployBeyla(1, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+
+      expect(waitSpy).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla recovers from 409 Conflict by removing the orphan and retrying', async () => {
+      // First create fails (409 — leftover from previous failed deploy),
+      // subsequent reconciliation lookup finds the orphan, removes it, retry succeeds.
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'standalone',
+        Type: 1,
+        URL: 'tcp://localhost',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      // Initial fresh check sees no Beyla (caller missed the orphan somehow)
+      mockGetContainers.mockResolvedValueOnce([]);
+      // Reconciliation lookup after 409 finds the orphan
+      mockGetContainers.mockResolvedValueOnce([
+        { Id: 'orphan-beyla', Image: 'grafana/beyla:latest', State: 'exited', Labels: {} },
+      ] as any);
+      mockCreateContainer
+        .mockRejectedValueOnce(new Error('HTTP 409: Conflict — container name "/beyla-1" is already in use'))
+        .mockResolvedValueOnce({ Id: 'fresh-beyla' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+
+      expect(mockRemoveContainer).toHaveBeenCalledWith(1, 'orphan-beyla', true);
+      expect(mockCreateContainer).toHaveBeenCalledTimes(2);
+      expect(result.containerId).toBe('fresh-beyla');
+      expect(result.status).toBe('deployed');
+    });
+
+    it('deployBeyla rolls back the new container if startContainer fails', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'standalone',
+        Type: 1,
+        URL: 'tcp://localhost',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'fresh-beyla' });
+      mockStartContainer.mockRejectedValueOnce(new Error('HTTP 500: container runtime error'));
+
+      await expect(
+        deployBeyla(1, {
+          otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+          tracesApiKey: 'abc123',
+        }),
+      ).rejects.toThrow(/container runtime error/);
+
+      // The just-created container must be removed so the next deploy doesn't 409.
+      expect(mockRemoveContainer).toHaveBeenCalledWith(1, 'fresh-beyla', true);
+    });
+
     it('deployBeyla recreates existing container when recreateExisting=true', async () => {
       mockGetEndpoint.mockResolvedValueOnce({
         Id: 1,

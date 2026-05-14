@@ -86,12 +86,42 @@ class PortainerError extends Error {
 }
 
 /**
+ * Portainer signals "the Edge Agent's reverse tunnel isn't open yet" via a
+ * specific HTTP 500 body. This is a transient per-endpoint condition (the
+ * agent opens the tunnel on its next poll), NOT an infrastructure failure
+ * with Portainer itself — three call sites in this codebase branch on it:
+ *
+ *   • the circuit-breaker classifier (don't trip the breaker)
+ *   • the waitForEdgeTunnel poll loop (keep polling vs. give up)
+ *   • the eBPF deploy route's catch (return 503 with a retryable message)
+ *
+ * Centralised here so a Portainer wording change has exactly one place to
+ * update — and so the snapshot test below catches any drift.
+ */
+export const EDGE_TUNNEL_NOT_ACTIVE_TOKEN = 'unable to get the active tunnel';
+
+export function isEdgeTunnelNotActive(input: unknown): boolean {
+  let text: string | null = null;
+  if (input instanceof Error) text = input.message;
+  else if (typeof input === 'string') text = input;
+  if (text === null) return false;
+  return text.toLowerCase().includes(EDGE_TUNNEL_NOT_ACTIVE_TOKEN);
+}
+
+/**
  * Only 5xx and network errors should trip the circuit breaker.
  * 4xx errors (auth, not-found, rate-limit) are client-side issues
  * and should NOT count as infrastructure failures.
+ *
+ * Special case: the Edge-tunnel-not-active condition (see
+ * isEdgeTunnelNotActive above) is excluded so one sleepy Edge Agent
+ * cannot trip the breaker for an entire endpoint.
  */
 function isPortainerFailure(error: unknown): boolean {
   if (error instanceof PortainerError) {
+    if (isEdgeTunnelNotActive(error)) {
+      return false;
+    }
     return error.kind === 'server' || error.kind === 'network';
   }
   // Non-PortainerError exceptions are network-level failures (ECONNREFUSED, etc.)
@@ -385,7 +415,9 @@ async function portainerFetchInner<T>(
           await sleep(delay);
           continue;
         }
-        throw new PortainerError(`HTTP ${res.status}: ${res.statusText}`, kind, res.status);
+        const detail = await readErrorBody(res);
+        const base = `HTTP ${res.status}: ${res.statusText}`;
+        throw new PortainerError(detail ? `${base} — ${detail}` : base, kind, res.status);
       }
 
       return await res.json() as T;
@@ -417,6 +449,63 @@ export async function getEndpoints(): Promise<Endpoint[]> {
 export async function getEndpoint(id: number): Promise<Endpoint> {
   const raw = await portainerFetch<unknown>(`/api/endpoints/${id}`);
   return EndpointSchema.parse(raw);
+}
+
+/**
+ * Cheap reachability check for an endpoint's Docker daemon via Portainer.
+ * Returns true if the proxy responds OK, false otherwise. For Edge Agent
+ * Standard endpoints, the first call signals the agent to open its reverse
+ * tunnel — subsequent calls succeed once the agent has polled.
+ */
+export async function pingEndpointDocker(endpointId: number): Promise<{ ok: boolean; error?: string }> {
+  const url = buildApiUrl(`/api/endpoints/${endpointId}/docker/_ping`);
+  const headers = buildApiHeaders(false);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await undiciFetch(url, {
+      headers,
+      dispatcher: getDispatcher(),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) return { ok: true };
+    const body = await readErrorBody(res);
+    return { ok: false, error: body || `HTTP ${res.status}` };
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Wait for an Edge Agent's reverse tunnel to come up by polling Docker /_ping
+ * through Portainer. The first ping signals the agent on its next poll cycle
+ * (default 30s); we then keep checking until the tunnel responds or the budget
+ * expires.
+ *
+ * Returns true if the tunnel is up, false if the budget ran out.
+ * Non-tunnel errors (auth, network) short-circuit and return false immediately.
+ */
+export async function waitForEdgeTunnel(
+  endpointId: number,
+  options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? 45000;
+  const pollIntervalMs = options.pollIntervalMs ?? 3000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (true) {
+    const result = await pingEndpointDocker(endpointId);
+    if (result.ok) return true;
+    // Anything other than the tunnel-not-active condition means the agent
+    // is genuinely unreachable — no point waiting.
+    if (!isEdgeTunnelNotActive(result.error)) {
+      return false;
+    }
+    if (Date.now() + pollIntervalMs >= deadline) return false;
+    await sleep(pollIntervalMs);
+  }
 }
 
 // Containers
@@ -480,19 +569,64 @@ export async function pullImage(endpointId: number, image: string, tag = 'latest
   const url = buildApiUrl(path);
   const headers = buildApiHeaders(false);
 
-  const res = await undiciFetch(url, {
-    method: 'POST',
-    headers,
-    dispatcher: getDispatcher(),
-  });
+  // Docker's /images/create is a streaming endpoint: it responds 200 OK as soon
+  // as the request is accepted, then streams newline-delimited JSON status frames
+  // (one per layer/progress event) until the pull finishes — or errors with a
+  // frame like {"errorDetail":{"message":"..."},"error":"..."}. If we don't
+  // consume the body the pull is interrupted and the image never lands, leading
+  // to a "No such image" error on the next createContainer call. Pulls can take
+  // a while on slow links so allow a generous timeout.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+  let res;
+  try {
+    res = await undiciFetch(url, {
+      method: 'POST',
+      headers,
+      dispatcher: getDispatcher(),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new PortainerError(`Image pull failed: ${msg}`, 'network');
+  }
 
   if (!res.ok) {
+    clearTimeout(timer);
     const errorBody = await readErrorBody(res);
     throw new PortainerError(
       errorBody || `Image pull failed: ${res.status}`,
       classifyError(res.status),
       res.status,
     );
+  }
+
+  let body: string;
+  try {
+    body = await res.text();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new PortainerError(`Image pull stream interrupted: ${msg}`, 'network');
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Each line is a JSON status frame. Look for an error frame at the end of the
+  // stream — Docker reports pull failures (auth, not found, daemon errors) here
+  // with a 200 status on the HTTP response itself.
+  const lines = body.split('\n').filter((l) => l.trim().length > 0);
+  for (const line of lines) {
+    let frame: { error?: string; errorDetail?: { message?: string } };
+    try {
+      frame = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (frame.error || frame.errorDetail?.message) {
+      const detail = frame.errorDetail?.message || frame.error || 'unknown';
+      throw new PortainerError(`Image pull failed: ${detail}`, 'server', 500);
+    }
   }
 }
 

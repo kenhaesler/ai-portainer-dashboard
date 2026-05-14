@@ -370,6 +370,26 @@ describe('ebpf-coverage routes', () => {
       });
     });
 
+    it('POST /api/ebpf/deploy/:endpointId returns 503 with actionable message when Edge tunnel is down', async () => {
+      // Portainer returns 500 with "Unable to get the active tunnel" when the Edge Agent
+      // hasn't established its reverse tunnel yet. Surface this as a retryable 503.
+      mockedDeployBeyla.mockRejectedValueOnce(
+        new Error('HTTP 500: Internal Server Error — Unable to get the active tunnel'),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/5',
+        payload: {},
+        headers: { host: 'dashboard.example.com' },
+      });
+
+      expect(response.statusCode).toBe(503);
+      const body = response.json();
+      expect(body.error).toMatch(/Edge Agent tunnel is not active/);
+      expect(body.error).toMatch(/retry/i);
+    });
+
     it('POST /api/ebpf/deploy/:endpointId accepts OTLP endpoint from request body', async () => {
       const response = await app.inject({
         method: 'POST',
@@ -466,6 +486,91 @@ describe('ebpf-coverage routes', () => {
         tracesApiKey: 'ingest-key',
         recreateExisting: false,
       });
+    });
+
+    it('POST /api/ebpf/deploy/:endpointId skips Docker bridge IPs when resolving LAN address', async () => {
+      // Simulates the dashboard running inside a Docker compose stack: only
+      // interface is a 172.x bridge IP. Without the fix, the agent would
+      // receive that unreachable address; with the fix, the deploy rejects
+      // with a clear 400 instead.
+      mockedNetworkInterfaces.mockReturnValueOnce({
+        eth0: [{ address: '172.19.0.6', family: 'IPv4', internal: false }],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        payload: {},
+        headers: { host: 'localhost:3051' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = response.json();
+      expect(body.error).toMatch(/DASHBOARD_EXTERNAL_URL/);
+      expect(body.error).toMatch(/Deploy dialog/);
+      expect(mockedDeployBeyla).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/ebpf/deploy/:endpointId prefers real LAN IP over Docker bridge IP', async () => {
+      // Both Docker bridge and real LAN interface present (e.g. host-network mode).
+      mockedNetworkInterfaces.mockReturnValueOnce({
+        docker0: [{ address: '172.17.0.1', family: 'IPv4', internal: false }],
+        en0: [{ address: '192.168.178.20', family: 'IPv4', internal: false }],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        payload: {},
+        headers: { host: 'localhost:3051' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeyla).toHaveBeenCalledWith(1, expect.objectContaining({
+        otlpEndpoint: 'http://192.168.178.20:3051/api/traces/otlp',
+      }));
+    });
+
+    it('POST /api/ebpf/deploy/:endpointId accepts host-only override even when LAN detection fails', async () => {
+      // Host-only override must not require DASHBOARD_EXTERNAL_URL nor a usable
+      // LAN IP — the whole point of the override is the operator telling us
+      // exactly which address Beyla should use. Earlier the host-only path
+      // called resolveDefaultOtlpEndpoint to borrow a scheme and 500'd.
+      mockedNetworkInterfaces.mockReturnValueOnce({
+        eth0: [{ address: '172.19.0.6', family: 'IPv4', internal: false }],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        payload: { otlpEndpoint: 'mbp.local:8080' },
+        headers: { host: 'localhost:3051' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeyla).toHaveBeenCalledWith(1, expect.objectContaining({
+        otlpEndpoint: 'http://mbp.local:8080/api/traces/otlp',
+      }));
+    });
+
+    it('POST /api/ebpf/deploy/:endpointId accepts explicit OTLP override even when LAN detection fails', async () => {
+      // User worked around the resolution failure by typing an address into
+      // the Deploy dialog — that should always win.
+      mockedNetworkInterfaces.mockReturnValueOnce({
+        eth0: [{ address: '172.19.0.6', family: 'IPv4', internal: false }],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ebpf/deploy/1',
+        payload: { otlpEndpoint: 'http://dashboard.example.com:3051/api/traces/otlp' },
+        headers: { host: 'localhost:3051' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedDeployBeyla).toHaveBeenCalledWith(1, expect.objectContaining({
+        otlpEndpoint: 'http://dashboard.example.com:3051/api/traces/otlp',
+      }));
     });
 
     it('POST /api/ebpf/deploy/:endpointId respects forwarded https host when behind reverse proxy', async () => {
