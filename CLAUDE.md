@@ -95,11 +95,7 @@ Branch: `dev` → `feature/<issue#>-<desc>`. PRs: `feature/* → dev` (CI runs).
 
 ## Environment
 
-Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `LLM_API_URL` (OpenAI-compatible base URL — `/v1/chat/completions` is auto-appended), `LLM_API_TOKEN`, `LLM_MODEL` (default `gpt-4o-mini`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. Harbor (optional): `HARBOR_API_URL`, `HARBOR_ROBOT_NAME`, `HARBOR_ROBOT_SECRET`, `HARBOR_VERIFY_SSL` (default `true`), `HARBOR_SYNC_ENABLED` (default `false`), `HARBOR_SYNC_INTERVAL_MINUTES` (default `30`), `HARBOR_CONCURRENCY` (default `5`). Harbor can also be configured via Settings UI (stored in PostgreSQL, takes precedence over env vars).
-
-Component-based DB URLs (#1187): `POSTGRES_APP_HOST`/`PORT`/`USER`/`DATABASE`, `TIMESCALE_HOST`/`PORT`/`USER`/`DATABASE`, `REDIS_HOST`/`PORT` are optional. When set, the backend assembles the connection URL from these + the password resolved via `readSecret()` (Docker Secrets file > env), instead of relying on env-var interpolation in compose. Backwards compatible: existing `*_URL` env vars still work when components are not set.
-
-See `.env.example` for full list.
+Copy `.env.example` to `.env`. Key vars: `PORTAINER_API_URL`, `PORTAINER_API_KEY`, `DASHBOARD_USERNAME`, `DASHBOARD_PASSWORD`, `LLM_API_URL` (OpenAI-compatible base URL — `/v1/chat/completions` is auto-appended), `LLM_API_TOKEN`, `LLM_MODEL` (default `gpt-4o-mini`), `REDIS_URL`, `JWT_SECRET` (32+ chars), `POSTGRES_APP_PASSWORD`, `TIMESCALE_PASSWORD`. Harbor (optional): `HARBOR_API_URL`, `HARBOR_ROBOT_NAME`, `HARBOR_ROBOT_SECRET`, `HARBOR_VERIFY_SSL` (default `true`), `HARBOR_SYNC_ENABLED` (default `false`), `HARBOR_SYNC_INTERVAL_MINUTES` (default `30`), `HARBOR_CONCURRENCY` (default `5`). Harbor can also be configured via Settings UI (stored in PostgreSQL, takes precedence over env vars). See `.env.example` for full list.
 
 ## Issue Templates
 
