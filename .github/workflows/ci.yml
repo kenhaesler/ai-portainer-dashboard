@@ -173,13 +173,18 @@ jobs:
         run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w @dashboard/foundation
 
       - name: Run workspace package tests (parallel)
+        # `security` and `observability` both run integration tests against the
+        # shared test Postgres and both call truncateTestTables('spans') in
+        # beforeEach. Running them concurrently leads to an intermittent race
+        # where one workspace truncates the table mid-test for the other.
+        # Chain them with `&&` so they're sequential within their slot;
+        # everything else stays parallel.
         run: >
-          npx concurrently --kill-others-on-fail --names contracts,core,infra,security,obs,ops,ai,foundation,server
+          npx concurrently --kill-others-on-fail --names contracts,core,infra,db-spans,ops,ai,foundation,server
           "npm run test -w @dashboard/contracts"
           "npm run test -w @dashboard/core"
           "npm run test -w @dashboard/infrastructure"
-          "npm run test -w @dashboard/security"
-          "npm run test -w @dashboard/observability"
+          "npm run test -w @dashboard/security && npm run test -w @dashboard/observability"
           "npm run test -w @dashboard/operations"
           "npm run test -w @dashboard/ai"
           "npm run test -w @dashboard/foundation"
