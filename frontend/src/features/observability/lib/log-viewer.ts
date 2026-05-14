@@ -143,3 +143,20 @@ export function buildSearchMatcher(pattern: string): ((text: string) => boolean)
   const needle = trimmed.toLowerCase();
   return (text: string) => text.toLowerCase().includes(needle);
 }
+
+/**
+ * Filter parsed log entries to those whose raw text contains the given trace
+ * id (case-insensitive substring match). When `trace` is empty/undefined,
+ * returns the input unchanged.
+ *
+ * Pure helper used by the trace ↔ logs correlation flow in the log viewer.
+ */
+export function filterLines(
+  lines: ParsedLogEntry[],
+  opts: { trace?: string },
+): ParsedLogEntry[] {
+  const trace = opts.trace?.trim();
+  if (!trace) return lines;
+  const needle = trace.toLowerCase();
+  return lines.filter((line) => line.raw.toLowerCase().includes(needle));
+}

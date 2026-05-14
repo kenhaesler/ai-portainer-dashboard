@@ -30,6 +30,16 @@ export { decimateLTTB } from './services/lttb-decimator.js';
 // Services — trace retention
 export { cleanOldSpans } from './services/trace-retention.js';
 
+// Services — trace RED metrics
+export { computeRed } from './services/trace-red.js';
+export type {
+  RedQuery,
+  RedResult,
+  RedRow,
+  RedBucket,
+  RedGroupBy,
+} from './services/trace-red.js';
+
 // Services — KPI
 export type { KpiSnapshot } from './services/kpi-store.js';
 export {

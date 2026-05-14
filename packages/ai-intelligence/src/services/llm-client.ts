@@ -231,11 +231,17 @@ async function chatStreamInner(
   let fullResponse = '';
   const chatUrl = resolveChatCompletionsUrl(llmConfig.apiUrl);
 
+  // Stable correlation id per LLM call (#1239). Sent on the outbound request
+  // as `x-trace-correlation-id` so the Beyla-captured client span and the
+  // llm_traces row can be joined for the LLM latency-breakdown panel.
+  const correlationId = randomUUID();
+
   try {
     const response = await llmFetch(chatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-trace-correlation-id': correlationId,
         ...getAuthHeaders(llmConfig.apiToken, llmConfig.authType),
       },
       body: JSON.stringify({
@@ -300,7 +306,7 @@ async function chatStreamInner(
 
     try {
       await insertLlmTrace({
-        trace_id: randomUUID(),
+        trace_id: correlationId,
         model: llmConfig.model,
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
@@ -314,13 +320,26 @@ async function chatStreamInner(
       log.warn({ err: traceErr }, 'Failed to record LLM trace');
     }
 
-    log.debug({ model: llmConfig.model, responseLength: fullResponse.length }, 'Chat stream completed');
+    // Debug-level so a chatty deployment doesn't flood info logs on every
+    // successful chat. The correlation id is included for operators who
+    // turn on debug while troubleshooting the LLM latency-breakdown panel.
+    log.debug(
+      {
+        correlation_id: correlationId,
+        model: llmConfig.model,
+        model_latency_ms: latencyMs,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        responseLength: fullResponse.length,
+      },
+      'LLM chat stream completed',
+    );
     return fullResponse;
   } catch (err) {
     const latencyMs = Date.now() - startTime;
     try {
       await insertLlmTrace({
-        trace_id: randomUUID(),
+        trace_id: correlationId,
         model: llmConfig.model,
         prompt_tokens: estimateTokens(fullMessages.map((m) => m.content).join('')),
         completion_tokens: 0,
@@ -334,7 +353,7 @@ async function chatStreamInner(
       log.warn({ err: traceErr }, 'Failed to record LLM error trace');
     }
 
-    log.error({ err }, 'LLM chat stream failed');
+    log.error({ err, correlation_id: correlationId, model_latency_ms: latencyMs }, 'LLM chat stream failed');
     throw err;
   }
 }

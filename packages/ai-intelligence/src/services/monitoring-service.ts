@@ -46,6 +46,12 @@ export interface MonitoringDeps {
   metrics: MetricsInterface;
   notifications: NotificationInterface;
   operations: OperationsInterface;
+  /**
+   * Optional: run trace-driven anomaly detection each cycle. Injected by the
+   * composition root so this package stays free of `@dashboard/observability`
+   * imports (see packages/ai-intelligence/src/CLAUDE.md).
+   */
+  runTraceAnomalyCycle?: () => Promise<void>;
 }
 
 // Per-container+metric cooldown tracker: key = `${containerId}:${metricType}`, value = timestamp (ms)
@@ -759,6 +765,16 @@ export function createMonitoringService(deps: MonitoringDeps) {
           }
         } catch (err) {
           log.warn({ err }, 'Alert correlation failed');
+        }
+      }
+
+      // 9. Trace-driven anomaly detection (optional, injected from server).
+      // Failures here must not break the cycle.
+      if (deps.runTraceAnomalyCycle) {
+        try {
+          await deps.runTraceAnomalyCycle();
+        } catch (err) {
+          log.warn({ err }, 'Trace anomaly cycle failed');
         }
       }
 

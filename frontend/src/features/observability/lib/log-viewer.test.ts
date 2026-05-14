@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildSearchMatcher, detectLevel, lintLogLine, parseLogs, sanitizeLogLine, sortByTimestamp, toLocalTimestamp } from './log-viewer';
+import { buildSearchMatcher, detectLevel, filterLines, lintLogLine, parseLogs, sanitizeLogLine, sortByTimestamp, toLocalTimestamp } from './log-viewer';
+import type { ParsedLogEntry } from './log-viewer';
 
 describe('log-viewer utilities', () => {
   it('detects log level from line text', () => {
@@ -144,5 +145,40 @@ describe('buildSearchMatcher (ReDoS-safe)', () => {
     const elapsed = performance.now() - start;
     // String.includes should complete nearly instantly even on large input
     expect(elapsed).toBeLessThan(100);
+  });
+});
+
+describe('filterLines (trace correlation)', () => {
+  const make = (id: string, raw: string): ParsedLogEntry => ({
+    id,
+    containerId: 'c1',
+    containerName: 'api',
+    timestamp: '2026-05-14T11:00:00Z',
+    level: 'info',
+    message: raw,
+    raw,
+  });
+
+  it('returns input unchanged when trace is undefined or blank', () => {
+    const lines = [make('1', 'hello world'), make('2', 'trace=abc123')];
+    expect(filterLines(lines, {})).toBe(lines);
+    expect(filterLines(lines, { trace: '   ' })).toBe(lines);
+  });
+
+  it('substring-filters lines by trace id', () => {
+    const lines = [
+      make('1', '2026-05-14T11:00:00Z INFO trace=abcdef123456 op=GET'),
+      make('2', '2026-05-14T11:00:01Z INFO trace=zzz999 op=GET'),
+      make('3', '2026-05-14T11:00:02Z INFO no trace here'),
+    ];
+    const result = filterLines(lines, { trace: 'abcdef' });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('1');
+  });
+
+  it('matches case-insensitively', () => {
+    const lines = [make('1', 'TRACE=ABCDEF op=x')];
+    const result = filterLines(lines, { trace: 'abcdef' });
+    expect(result).toHaveLength(1);
   });
 });

@@ -173,15 +173,25 @@ jobs:
         run: npm run build -w @dashboard/contracts && npm run build -w @dashboard/core && npm run build -w @dashboard/infrastructure && npm run build -w @dashboard/security && npm run build -w @dashboard/observability && npm run build -w @dashboard/operations && npm run build -w @dashboard/ai && npm run build -w @dashboard/foundation
 
       - name: Run workspace package tests (parallel)
+        # `security`, `observability`, and `ai` all run integration tests
+        # against the shared test Postgres and truncate shared tables
+        # (`spans`, `insights`) in beforeEach. Running them concurrently
+        # produces intermittent races where one workspace's TRUNCATE wipes
+        # another workspace's seeded rows mid-test (observed on PR #1246 —
+        # traces-red-route saw callCount=21 instead of 50, then
+        # prometheus-route saw insights_total with no labelled rows).
+        #
+        # Chain the three with `&&` inside one concurrently slot so they run
+        # sequentially relative to each other; non-DB workspaces stay parallel.
+        # A more robust long-term fix is per-test transactions or per-workspace
+        # test databases.
         run: >
-          npx concurrently --kill-others-on-fail --names contracts,core,infra,security,obs,ops,ai,foundation,server
+          npx concurrently --kill-others-on-fail --names contracts,core,infra,db-shared,ops,foundation,server
           "npm run test -w @dashboard/contracts"
           "npm run test -w @dashboard/core"
           "npm run test -w @dashboard/infrastructure"
-          "npm run test -w @dashboard/security"
-          "npm run test -w @dashboard/observability"
+          "npm run test -w @dashboard/security && npm run test -w @dashboard/observability && npm run test -w @dashboard/ai"
           "npm run test -w @dashboard/operations"
-          "npm run test -w @dashboard/ai"
           "npm run test -w @dashboard/foundation"
           "npm run test -w @dashboard/server"
         env:

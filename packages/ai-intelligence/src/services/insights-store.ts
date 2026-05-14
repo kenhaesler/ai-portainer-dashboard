@@ -18,7 +18,7 @@ export interface InsightInsert {
   title: string;
   description: string;
   suggested_action: string | null;
-  metric_type?: 'cpu' | 'memory' | 'disk' | 'network' | 'restart';
+  metric_type?: 'cpu' | 'memory' | 'disk' | 'network' | 'restart' | 'latency_p95' | 'error_rate';
   detection_method?: 'threshold' | 'ml-anomaly' | 'prediction' | 'health-check' | 'log-pattern' | 'security-scan';
 }
 

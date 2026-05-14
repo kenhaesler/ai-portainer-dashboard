@@ -11,6 +11,7 @@ import {
   Filter,
   Layers,
   Timer,
+  ScrollText,
 } from 'lucide-react';
 import { useTraces, useTrace, useServiceMap, useTraceSummary } from '@/features/observability/hooks/use-traces';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
@@ -1651,6 +1652,28 @@ export default function TraceExplorerPage() {
                           <p className="font-medium">{formatDate(selectedSpan.startTime)} / {selectedSpan.endTime ? formatDate(selectedSpan.endTime) : 'unknown'}</p>
                         </div>
                       </div>
+
+                      {/* Trace ↔ logs correlation (#1238) — deep-link to the logs viewer
+                          pre-filtered by trace id and time window. */}
+                      {selectedSpan.traceId && selectedSpan.containerId && selectedSpan.containerId !== 'unknown' && (
+                        <div className="pt-2">
+                          <a
+                            href={`/logs?${new URLSearchParams({
+                              containerId: selectedSpan.containerId,
+                              trace: selectedSpan.traceId,
+                              from: selectedSpan.startTime,
+                              to: new Date(
+                                (selectedSpan.endTime ? new Date(selectedSpan.endTime).getTime() : new Date(selectedSpan.startTime).getTime() + selectedSpan.duration) + 2000,
+                              ).toISOString(),
+                            }).toString()}`}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-200 hover:bg-blue-500/20"
+                            data-testid="view-logs-link"
+                          >
+                            <ScrollText className="h-3.5 w-3.5" aria-hidden="true" />
+                            View logs for this span
+                          </a>
+                        </div>
+                      )}
 
                       {selectedSpan.attributes && Object.keys(selectedSpan.attributes).length > 0 && (
                         <div>

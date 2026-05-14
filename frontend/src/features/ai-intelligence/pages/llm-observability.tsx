@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LlmLatencyBreakdown } from '@/features/ai-intelligence/components/llm-latency-breakdown';
 import { useLlmTraces, useLlmStats, type LlmTrace } from '@/features/ai-intelligence/hooks/use-llm-observability';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
@@ -263,6 +264,15 @@ export default function LlmObservabilityPage() {
           )}
         </div>
       )}
+
+      {/* LLM Latency Breakdown (#1239) — Network vs Model split per provider */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Activity className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Latency Breakdown</h2>
+        </div>
+        <LlmLatencyBreakdown />
+      </div>
 
       {/* Recent Traces */}
       <div>
