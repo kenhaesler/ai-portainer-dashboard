@@ -27,6 +27,7 @@ import {
 import type { CoverageRecord } from '@/features/security/hooks/use-ebpf-coverage';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { formatDate } from '@/shared/lib/utils';
 
 /** Human-readable labels for coverage statuses */
@@ -79,9 +80,10 @@ function SummaryBar() {
   const missing = summary.total - summary.deployed;
 
   return (
+    <SpotlightCard>
     <div
       data-testid="coverage-summary"
-      className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4"
+      className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-6 shadow-sm"
     >
       <div className="flex items-center gap-2">
         <Radio className="h-5 w-5 text-primary" />
@@ -118,6 +120,7 @@ function SummaryBar() {
         </>
       )}
     </div>
+    </SpotlightCard>
   );
 }
 

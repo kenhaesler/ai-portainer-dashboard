@@ -18,6 +18,7 @@ import { DataTable } from '@/shared/components/tables/data-table';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/layout/motion-page';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
 import { spring } from '@/shared/lib/motion-tokens';
 import { formatBytes, truncate } from '@/shared/lib/utils';
 
@@ -263,29 +264,35 @@ export default function ImageFootprintPage() {
       {stalenessData && stalenessData.summary.total > 0 && (
         <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
           <MotionReveal className="h-full">
-            <KpiCard
-              label="Checked"
-              value={stalenessData.summary.total}
-              icon={<Layers className="h-5 w-5" />}
-            />
+            <TiltCard>
+              <KpiCard
+                label="Checked"
+                value={stalenessData.summary.total}
+                icon={<Layers className="h-5 w-5" />}
+              />
+            </TiltCard>
           </MotionReveal>
           <MotionReveal className="h-full">
-            <KpiCard
-              label="Up to Date"
-              value={stalenessData.summary.upToDate}
-              icon={<CheckCircle2 className="h-5 w-5" />}
-              trend="up"
-              trendValue={`of ${stalenessData.summary.total} checked`}
-            />
+            <TiltCard>
+              <KpiCard
+                label="Up to Date"
+                value={stalenessData.summary.upToDate}
+                icon={<CheckCircle2 className="h-5 w-5" />}
+                trend="up"
+                trendValue={`of ${stalenessData.summary.total} checked`}
+              />
+            </TiltCard>
           </MotionReveal>
           <MotionReveal className="h-full">
-            <KpiCard
-              label="Stale"
-              value={stalenessData.summary.stale}
-              icon={<AlertTriangle className="h-5 w-5" />}
-              trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
-              trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
-            />
+            <TiltCard>
+              <KpiCard
+                label="Stale"
+                value={stalenessData.summary.stale}
+                icon={<AlertTriangle className="h-5 w-5" />}
+                trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
+                trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
+              />
+            </TiltCard>
           </MotionReveal>
         </MotionStagger>
       )}

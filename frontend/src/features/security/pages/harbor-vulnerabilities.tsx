@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import {
   useHarborStatus,
   useHarborVulnerabilities,
@@ -103,7 +104,8 @@ export default function HarborVulnerabilitiesPage() {
           <h1 className="text-3xl font-bold tracking-tight">Vulnerability Management</h1>
           <p className="text-muted-foreground">Harbor Registry integration for image vulnerability tracking.</p>
         </div>
-        <div className="rounded-xl border bg-card/75 p-8 backdrop-blur text-center">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
           <ShieldAlert className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <h2 className="text-xl font-semibold mb-2">Harbor Not Configured</h2>
           <p className="text-muted-foreground max-w-md mx-auto">
@@ -113,6 +115,7 @@ export default function HarborVulnerabilitiesPage() {
             variables to connect to your Harbor registry.
           </p>
         </div>
+        </SpotlightCard>
       </div>
     );
   }
@@ -182,7 +185,8 @@ export default function HarborVulnerabilitiesPage() {
       )}
 
       {/* Filters */}
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard>
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -214,6 +218,7 @@ export default function HarborVulnerabilitiesPage() {
           </label>
         </div>
       </section>
+      </SpotlightCard>
 
       {/* Connection error banner */}
       {status && !status.connected && status.configured && (
@@ -239,7 +244,8 @@ export default function HarborVulnerabilitiesPage() {
 
       {/* Vulnerability table */}
       {!isLoading && !isError && (
-        <section className="rounded-xl border bg-card/75 backdrop-blur overflow-hidden">
+        <SpotlightCard>
+        <section className="rounded-lg border bg-card shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -281,6 +287,7 @@ export default function HarborVulnerabilitiesPage() {
             </div>
           )}
         </section>
+        </SpotlightCard>
       )}
     </div>
   );
@@ -306,25 +313,27 @@ function SummaryCard({
   gif?: string;
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-xl border bg-card/75 p-4 backdrop-blur',
-        highlight && 'border-red-500/30 bg-red-500/5',
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <Icon className={cn('h-4 w-4', className)} />
-            <span className="text-xs text-muted-foreground">{label}</span>
-          </div>
-          <div className={cn('mt-1 text-2xl font-bold', className)}>{value.toLocaleString()}</div>
-        </div>
-        {gif && (
-          <img src={gif} alt="" aria-hidden="true" className="h-12 w-12 rounded object-cover shrink-0" />
+    <SpotlightCard className="h-full">
+      <div
+        className={cn(
+          'h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
+          highlight && 'border-red-500/30 bg-red-500/5',
         )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">{label}</p>
+              <Icon className={cn('h-5 w-5', className)} />
+            </div>
+            <p className={cn('mt-2 text-3xl font-bold tracking-tight', className)}>{value.toLocaleString()}</p>
+          </div>
+          {gif && (
+            <img src={gif} alt="" aria-hidden="true" className="h-12 w-12 rounded object-cover shrink-0" />
+          )}
+        </div>
       </div>
-    </div>
+    </SpotlightCard>
   );
 }
 
