@@ -5,6 +5,8 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import {
@@ -189,34 +191,43 @@ export default function LlmObservabilityPage() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-4">
-          <KpiCard
-            label="Total Queries"
-            value={stats?.totalQueries ?? 0}
-            icon={<MessageSquare className="h-5 w-5" />}
-          />
-          <KpiCard
-            label="Total Tokens"
-            value={stats?.totalTokens ?? 0}
-            icon={<Hash className="h-5 w-5" />}
-          />
-          <KpiCard
-            label="Avg Latency"
-            value={`${Math.round(stats?.avgLatencyMs ?? 0)}ms`}
-            icon={<Zap className="h-5 w-5" />}
-          />
-          <KpiCard
-            label="Error Rate"
-            value={`${((stats?.errorRate ?? 0) * 100).toFixed(1)}%`}
-            icon={<AlertTriangle className="h-5 w-5" />}
-            trend={(stats?.errorRate ?? 0) > 0.05 ? 'down' : undefined}
-            trendValue={(stats?.errorRate ?? 0) > 0.05 ? 'Above 5%' : undefined}
-          />
+          <TiltCard>
+            <KpiCard
+              label="Total Queries"
+              value={stats?.totalQueries ?? 0}
+              icon={<MessageSquare className="h-5 w-5" />}
+            />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Total Tokens"
+              value={stats?.totalTokens ?? 0}
+              icon={<Hash className="h-5 w-5" />}
+            />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Avg Latency"
+              value={`${Math.round(stats?.avgLatencyMs ?? 0)}ms`}
+              icon={<Zap className="h-5 w-5" />}
+            />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Error Rate"
+              value={`${((stats?.errorRate ?? 0) * 100).toFixed(1)}%`}
+              icon={<AlertTriangle className="h-5 w-5" />}
+              trend={(stats?.errorRate ?? 0) > 0.05 ? 'down' : undefined}
+              trendValue={(stats?.errorRate ?? 0) > 0.05 ? 'Above 5%' : undefined}
+            />
+          </TiltCard>
         </div>
       )}
 
       {/* Model Breakdown */}
       {stats && (
-        <div className="rounded-lg border bg-card p-6">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <h2 className="text-lg font-semibold mb-4">Model Breakdown</h2>
           {modelBreakdown.length === 0 ? (
             <p className="text-sm text-muted-foreground">No model data available.</p>
@@ -263,25 +274,30 @@ export default function LlmObservabilityPage() {
             </div>
           )}
         </div>
+        </SpotlightCard>
       )}
 
       {/* LLM Latency Breakdown (#1239) — Network vs Model split per provider */}
-      <div>
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Activity className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold">Latency Breakdown</h2>
         </div>
         <LlmLatencyBreakdown />
       </div>
+      </SpotlightCard>
 
       {/* Recent Traces */}
-      <div>
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Activity className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold">Recent Traces</h2>
         </div>
         <TracesTable traces={traces ?? []} isLoading={showTracesSkeleton} privacyMode={privacyMode} />
       </div>
+      </SpotlightCard>
     </div>
   );
 }

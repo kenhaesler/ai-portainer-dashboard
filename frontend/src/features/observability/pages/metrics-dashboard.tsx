@@ -31,6 +31,7 @@ import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffi
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { InlineChatPanel } from '@/features/ai-intelligence/components/metrics/inline-chat-panel';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
 import { cn } from '@/shared/lib/utils';
@@ -496,7 +497,8 @@ export default function MetricsDashboardPage() {
       </div>
 
       {hasSelection && (
-        <div className="rounded-lg border bg-card p-4 md:p-5">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Network className="h-5 w-5 text-blue-500" />
@@ -562,6 +564,7 @@ export default function MetricsDashboardPage() {
             </div>
           )}
         </div>
+        </SpotlightCard>
       )}
 
       {/* Loading State */}
@@ -589,35 +592,43 @@ export default function MetricsDashboardPage() {
           {/* Container Info & Stats */}
           {selectedContainerData && (
             <div className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Container</p>
-                <p className="text-lg font-semibold truncate">{selectedContainerData.name}</p>
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Avg CPU</p>
-                <p className="text-lg font-semibold">{stats.cpu.avg.toFixed(1)}%</p>
-                <AnomalySparkline
-                  values={cpuData.map((d) => d.value)}
-                  anomalyIndices={cpuAnomalyIndices}
-                  className="mt-2"
-                />
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Avg Memory</p>
-                <p className="text-lg font-semibold">{stats.memory.avg.toFixed(1)}%</p>
-                <AnomalySparkline
-                  values={memoryData.map((d) => d.value)}
-                  anomalyIndices={memoryAnomalyIndices}
-                  className="mt-2"
-                />
-              </div>
-              <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Peak Memory</p>
-                <p className="text-lg font-semibold">{stats.memoryBytes.max.toFixed(1)} MB</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Min: {stats.memoryBytes.min.toFixed(1)} MB
-                </p>
-              </div>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-6 shadow-sm">
+                  <p className="text-sm font-medium text-muted-foreground">Container</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight truncate">{selectedContainerData.name}</p>
+                </div>
+              </SpotlightCard>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-6 shadow-sm">
+                  <p className="text-sm font-medium text-muted-foreground">Avg CPU</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight">{stats.cpu.avg.toFixed(1)}%</p>
+                  <AnomalySparkline
+                    values={cpuData.map((d) => d.value)}
+                    anomalyIndices={cpuAnomalyIndices}
+                    className="mt-2"
+                  />
+                </div>
+              </SpotlightCard>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-6 shadow-sm">
+                  <p className="text-sm font-medium text-muted-foreground">Avg Memory</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memory.avg.toFixed(1)}%</p>
+                  <AnomalySparkline
+                    values={memoryData.map((d) => d.value)}
+                    anomalyIndices={memoryAnomalyIndices}
+                    className="mt-2"
+                  />
+                </div>
+              </SpotlightCard>
+              <SpotlightCard>
+                <div className="rounded-lg border bg-card p-6 shadow-sm">
+                  <p className="text-sm font-medium text-muted-foreground">Peak Memory</p>
+                  <p className="mt-2 text-3xl font-bold tracking-tight">{stats.memoryBytes.max.toFixed(1)} MB</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Min: {stats.memoryBytes.min.toFixed(1)} MB
+                  </p>
+                </div>
+              </SpotlightCard>
             </div>
           )}
 
@@ -660,7 +671,8 @@ export default function MetricsDashboardPage() {
           ) : (
             <div className="space-y-6">
               {/* CPU Chart */}
-              <div className="rounded-lg border bg-card p-6">
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Cpu className="h-5 w-5 text-blue-500" />
@@ -690,9 +702,11 @@ export default function MetricsDashboardPage() {
                   </div>
                 )}
               </div>
+              </SpotlightCard>
 
               {/* Memory Chart */}
-              <div className="rounded-lg border bg-card p-6">
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <MemoryStick className="h-5 w-5 text-purple-500" />
@@ -722,9 +736,11 @@ export default function MetricsDashboardPage() {
                   </div>
                 )}
               </div>
+              </SpotlightCard>
 
               {/* Memory Bytes Chart */}
-              <div className="rounded-lg border bg-card p-6">
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <MemoryStick className="h-5 w-5 text-cyan-500" />
@@ -750,6 +766,7 @@ export default function MetricsDashboardPage() {
                   height={300 * zoomLevel}
                 />
               </div>
+              </SpotlightCard>
             </div>
           )}
 
@@ -788,7 +805,8 @@ export default function MetricsDashboardPage() {
 
           {/* Anomaly Summary */}
           {anomaliesData && (
-            <div className="rounded-lg border bg-card p-6">
+            <SpotlightCard>
+            <div className="rounded-lg border bg-card p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
                 <h3 className="text-lg font-semibold">Recent Anomalies</h3>
@@ -807,6 +825,7 @@ export default function MetricsDashboardPage() {
                 </div>
               </div>
             </div>
+            </SpotlightCard>
           )}
         </>
       )}
@@ -821,7 +840,8 @@ export default function MetricsDashboardPage() {
       )}
 
       {/* Forecast Overview */}
-      <div className="rounded-lg border bg-card p-6">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold">Forecast Overview (Next 24h)</h2>
@@ -918,6 +938,7 @@ export default function MetricsDashboardPage() {
           </div>
         )}
       </div>
+      </SpotlightCard>
 
       {/* Inline Chat Panel */}
       {selectedContainerData && selectedEndpoint && (
@@ -999,7 +1020,8 @@ function ForecastCard({
   const projectionStartIdx = chartData.findIndex((d) => d.isProjected);
 
   return (
-    <div className="rounded-lg border bg-card p-5 shadow-sm">
+    <SpotlightCard>
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -1120,5 +1142,6 @@ function ForecastCard({
         </div>
       )}
     </div>
+    </SpotlightCard>
   );
 }

@@ -706,7 +706,7 @@ export default function WorkloadExplorerPage() {
         <>
           {/* Filter pane: dropdowns + status summary */}
           <SpotlightCard>
-          <div className="rounded-lg border bg-card p-4 shadow-sm space-y-3">
+          <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
                 <label htmlFor="endpoint-select" className="text-sm font-medium">

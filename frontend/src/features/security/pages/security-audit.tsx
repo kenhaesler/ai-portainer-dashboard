@@ -5,6 +5,7 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { cn } from '@/shared/lib/utils';
 import { ObservedDestinationsPanel } from '@/features/security/components/observed-destinations-panel';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 const severityOptions = [
   { value: 'all', label: 'All Severities' },
@@ -105,7 +106,8 @@ export default function SecurityAuditPage() {
         <p className="text-muted-foreground">Container capability posture across endpoints with ignore-list visibility.</p>
       </div>
 
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard>
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -161,6 +163,7 @@ export default function SecurityAuditPage() {
           </label>
         </div>
       </section>
+      </SpotlightCard>
 
       {isError && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6">
@@ -175,7 +178,8 @@ export default function SecurityAuditPage() {
         </div>
       )}
 
-      <section className="rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard>
+      <section className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="mb-3 text-sm text-muted-foreground">
           {filteredEntries.length} containers shown ({entries.filter((entry) => entry.findings.length > 0).length} with findings total)
         </div>
@@ -270,6 +274,7 @@ export default function SecurityAuditPage() {
           </div>
         )}
       </section>
+      </SpotlightCard>
 
       {/* Observed Destinations (#1240) — outbound traffic captured by Beyla */}
       <ObservedDestinationsPanel
