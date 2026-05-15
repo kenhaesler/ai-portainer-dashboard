@@ -28,7 +28,7 @@ export interface EndpointHealthOctagonsProps {
 const HEALTH_COLORS = {
   good: { fill: 'rgba(16,185,129,0.85)', stroke: 'rgba(52,211,153,0.4)', text: 'text-white', shadow: 'rgba(16,185,129,0.35)' },
   warning: { fill: 'rgba(245,158,11,0.85)', stroke: 'rgba(251,191,36,0.4)', text: 'text-white', shadow: 'rgba(245,158,11,0.35)' },
-  critical: { fill: 'rgba(239,68,68,0.85)', stroke: 'rgba(248,113,113,0.4)', text: 'text-white', shadow: 'rgba(248,113,113,0.4)', shadowExt: 'rgba(239,68,68,0.35)' },
+  critical: { fill: 'rgba(239,68,68,0.85)', stroke: 'rgba(248,113,113,0.4)', text: 'text-white', shadow: 'rgba(239,68,68,0.35)' },
   offline: { fill: 'rgba(100,116,139,0.85)', stroke: 'rgba(148,163,184,0.5)', text: 'text-white', shadow: 'rgba(100,116,139,0.35)' },
   unavailable: { fill: 'rgba(120,113,108,0.7)', stroke: 'rgba(168,162,158,0.5)', text: 'text-white', shadow: 'rgba(120,113,108,0.3)' },
   empty: { fill: 'rgba(148,163,184,0.6)', stroke: 'rgba(203,213,225,0.3)', text: 'text-white', shadow: 'rgba(148,163,184,0.2)' },

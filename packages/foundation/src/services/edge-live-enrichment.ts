@@ -14,10 +14,7 @@
  * `snapshotSource: 'unavailable'`) so one bad agent never breaks the
  * dashboard for the rest of the fleet.
  */
-import {
-  fetchEdgeLiveDockerInfo,
-  type EdgeLiveQueryConfig as _EdgeLiveQueryConfig,
-} from '@dashboard/core/portainer/edge-live-query.js';
+import { fetchEdgeLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
 import {
   applyLiveDockerInfo,
   endpointNeedsLiveFallback,
