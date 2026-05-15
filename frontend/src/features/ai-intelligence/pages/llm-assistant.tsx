@@ -410,10 +410,18 @@ export default function LlmAssistantPage() {
 
 function ThinkingIndicator({ statusMessage, onCancel }: { statusMessage: string | null; onCancel: () => void }) {
   const [elapsed, setElapsed] = useState(0);
+  const [showCancel, setShowCancel] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setElapsed((prev) => prev + 1), 1000);
-    return () => clearInterval(interval);
+    // Delay the cancel button so it doesn't flash red for sub-second responses.
+    // Only reveal it once the wait is long enough that the user might actually
+    // want to abort.
+    const cancelTimer = setTimeout(() => setShowCancel(true), 800);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(cancelTimer);
+    };
   }, []);
 
   const displayStatus = statusMessage || 'Thinking...';
@@ -439,13 +447,15 @@ function ThinkingIndicator({ statusMessage, onCancel }: { statusMessage: string 
             </p>
           )}
         </div>
-        <button
-          onClick={onCancel}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors"
-        >
-          <X className="h-3 w-3" />
-          Cancel
-        </button>
+        {showCancel && (
+          <button
+            onClick={onCancel}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors animate-in fade-in duration-200"
+          >
+            <X className="h-3 w-3" />
+            Cancel
+          </button>
+        )}
       </div>
     </div>
   );
