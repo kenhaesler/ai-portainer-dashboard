@@ -14,8 +14,21 @@ vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) =
     cachedFetchSWR: <T>(_key: string, _ttl: number, fn: () => Promise<T>) => fn(),
   };
 });
+// Stub the edge live-query boundary so the route test can drive enrichment
+// outcomes without a real Portainer tunnel (issue #1249). The settings-store
+// is also stubbed so getEffectiveEdgeLiveQueryConfig doesn't try to hit the DB.
+vi.mock('@dashboard/core/portainer/edge-live-query.js', () => ({
+  fetchEdgeLiveDockerInfo: vi.fn(),
+}));
+vi.mock('@dashboard/core/services/settings-store.js', () => ({
+  getEffectiveEdgeLiveQueryConfig: vi.fn().mockResolvedValue({
+    enabled: true, concurrency: 2, intervalSeconds: 60, timeoutMs: 5000,
+  }),
+}));
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
+import { fetchEdgeLiveDockerInfo } from '@dashboard/core/portainer/edge-live-query.js';
+const mockEdgeFetch = vi.mocked(fetchEdgeLiveDockerInfo);
 
 const fakeEndpoint = (id: number, name: string, type = 1, status = 1) => ({
   Id: id,
@@ -50,6 +63,7 @@ describe('Endpoints Routes', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockEdgeFetch.mockReset();
   });
 
   describe('GET /api/endpoints', () => {
@@ -122,6 +136,82 @@ describe('Endpoints Routes', () => {
       });
 
       expect(response.statusCode).toBe(502);
+    });
+
+    // Issue #1249 — end-to-end: an Edge Standard endpoint with empty Snapshots[]
+    // must surface live counts via the enrichment path, not 0/0/0.
+    it('enriches Edge Standard endpoints with empty Snapshots[] via the live fallback', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+        {
+          Id: 7,
+          Name: 'srv-edge-01',
+          Type: 4,
+          Status: 1,
+          Snapshots: [],
+          EdgeID: 'edge-abc',
+          // Recent check-in keeps the normalizer's heartbeat check happy
+          LastCheckInDate: Math.floor(Date.now() / 1000) - 5,
+          EdgeCheckinInterval: 5,
+        } as any,
+      ]);
+      mockEdgeFetch.mockResolvedValueOnce({
+        containers: 12, containersRunning: 9, containersStopped: 3, fetchedAt: 1_700_000_000_000,
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/endpoints',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body).toHaveLength(1);
+      expect(body[0].id).toBe(7);
+      expect(body[0].snapshotSource).toBe('live');
+      expect(body[0].containersRunning).toBe(9);
+      expect(body[0].containersStopped).toBe(3);
+      expect(body[0].totalContainers).toBe(12);
+      expect(body[0].snapshotFetchedAt).toBe(1_700_000_000_000);
+      expect(mockEdgeFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks an Edge Standard endpoint as unavailable when live fetch returns null', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+        {
+          Id: 8, Name: 'srv-edge-broken', Type: 4, Status: 1, Snapshots: [],
+          EdgeID: 'edge-broken',
+          LastCheckInDate: Math.floor(Date.now() / 1000) - 5,
+          EdgeCheckinInterval: 5,
+        } as any,
+      ]);
+      mockEdgeFetch.mockResolvedValueOnce(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/endpoints',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body[0].snapshotSource).toBe('unavailable');
+      expect(body[0].containersRunning).toBe(0);
+      expect(body[0].totalContainers).toBe(0);
+    });
+
+    it('does not call the live fetcher for non-Edge endpoints', async () => {
+      vi.spyOn(portainerClient, 'getEndpoints').mockResolvedValue([
+        { Id: 1, Name: 'local', Type: 1, Status: 1, Snapshots: [], EdgeID: null } as any,
+      ]);
+
+      await app.inject({
+        method: 'GET',
+        url: '/api/endpoints',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(mockEdgeFetch).not.toHaveBeenCalled();
     });
 
     it('requires authentication', async () => {

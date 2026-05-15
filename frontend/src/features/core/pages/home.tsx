@@ -49,6 +49,9 @@ export default function HomePage() {
       running: ep.containersRunning,
       stopped: ep.containersStopped,
       total: ep.totalContainers,
+      status: ep.status,
+      snapshotSource: ep.snapshotSource,
+      snapshotFetchedAt: ep.snapshotFetchedAt,
     }));
   }, [endpoints]);
 

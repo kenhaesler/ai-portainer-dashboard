@@ -62,7 +62,38 @@ describe('EndpointHealthOctagons', () => {
     renderWithWidth(<EndpointHealthOctagons endpoints={ENDPOINTS} />);
     expect(screen.getByText('Production')).toBeInTheDocument();
     expect(screen.getByText('9/10 running')).toBeInTheDocument();
-    expect(screen.getByText('No containers')).toBeInTheDocument();
+    // The Empty endpoint (total=0) now reads "Awaiting snapshot" instead of "No containers" —
+    // it's the same gray hexagon but the label distinguishes "we haven't seen data yet"
+    // from "we tried and failed" (issue #1249).
+    expect(screen.getByText('Awaiting snapshot')).toBeInTheDocument();
+  });
+
+  it('renders "Offline" inside the hexagon when status=down', () => {
+    const down = [{ id: 9, name: 'DeadNode', running: 0, stopped: 0, total: 0, status: 'down' as const }];
+    renderWithWidth(<EndpointHealthOctagons endpoints={down} />);
+    const hex = screen.getByTestId('octagon-DeadNode');
+    expect(hex.textContent).toContain('Offline');
+  });
+
+  it('renders "Data unavailable" when snapshotSource=unavailable (issue #1249)', () => {
+    const unavail = [{ id: 10, name: 'EdgeStandard', running: 0, stopped: 0, total: 0, status: 'up' as const, snapshotSource: 'unavailable' as const }];
+    renderWithWidth(<EndpointHealthOctagons endpoints={unavail} />);
+    const hex = screen.getByTestId('octagon-EdgeStandard');
+    expect(hex.textContent).toContain('Data unavailable');
+    expect(hex.textContent).not.toContain('Awaiting snapshot');
+  });
+
+  it('shows live counts and includes refresh age in the tooltip when snapshotSource=live', () => {
+    const tenSecondsAgo = Date.now() - 10_000;
+    const live = [{
+      id: 11, name: 'LiveEdge', running: 4, stopped: 1, total: 5,
+      status: 'up' as const, snapshotSource: 'live' as const, snapshotFetchedAt: tenSecondsAgo,
+    }];
+    renderWithWidth(<EndpointHealthOctagons endpoints={live} />);
+    const hex = screen.getByTestId('octagon-LiveEdge');
+    expect(hex.textContent).toContain('4/5 running');
+    // Tooltip lives on the title attribute — surfaced to screen readers via aria-label.
+    expect(hex.getAttribute('title')).toMatch(/live, refreshed \d+s ago/);
   });
 
   it('handles empty endpoints array', () => {
@@ -116,5 +147,20 @@ describe('getHealthLevel', () => {
 
   it('returns empty when total is 0', () => {
     expect(getHealthLevel_testable(0, 0)).toBe('empty');
+  });
+
+  it('returns offline when status is down regardless of counts (issue #1249)', () => {
+    expect(getHealthLevel_testable(0, 0, 'down')).toBe('offline');
+    expect(getHealthLevel_testable(5, 10, 'down')).toBe('offline');
+    expect(getHealthLevel_testable(10, 10, 'down')).toBe('offline');
+  });
+
+  it('returns unavailable when snapshotSource is unavailable (issue #1249)', () => {
+    expect(getHealthLevel_testable(0, 0, 'up', 'unavailable')).toBe('unavailable');
+  });
+
+  it('uses container ratio when status=up and snapshotSource=live', () => {
+    expect(getHealthLevel_testable(9, 10, 'up', 'live')).toBe('good');
+    expect(getHealthLevel_testable(0, 0, 'up', 'live')).toBe('empty');
   });
 });

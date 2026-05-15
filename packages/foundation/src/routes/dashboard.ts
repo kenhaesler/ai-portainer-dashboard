@@ -4,6 +4,7 @@ import pLimit from 'p-limit';
 import * as portainer from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { normalizeEndpoint, normalizeContainer } from '@dashboard/core/portainer/portainer-normalizers.js';
+import { enrichEdgeStandardWithLiveInfo } from '../services/edge-live-enrichment.js';
 import { isDockerEndpoint } from '@dashboard/core/models/portainer.js';
 import { getKpiHistory, getLatestMetricsBatch } from '@dashboard/observability';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -60,6 +61,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     }
 
     const normalized = endpoints.map(normalizeEndpoint);
+    // Fill Edge Standard endpoints with live counts before the totals reduce
+    // (issue #1249) — otherwise KPI cards under-report running container totals.
+    await enrichEdgeStandardWithLiveInfo(normalized);
 
     const totals = normalized.reduce(
       (acc, ep) => ({
@@ -154,6 +158,8 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     }
 
     const normalized = endpoints.map(normalizeEndpoint);
+    // Live-fetch for Edge Standard endpoints with empty Snapshots[] (issue #1249).
+    await enrichEdgeStandardWithLiveInfo(normalized);
     const upEndpoints = normalized.filter((e) => e.status === 'up');
     // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
     const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));
@@ -355,6 +361,9 @@ export async function dashboardRoutes(fastify: FastifyInstance) {
     rawEndpoints = endpointTiming.result;
 
     const normalized = rawEndpoints.map(normalizeEndpoint);
+    // Live-fetch for Edge Standard endpoints with empty Snapshots[] (issue #1249).
+    // Run before container fan-out so totals/KPIs reflect live container counts.
+    await timed('edge-live', () => enrichEdgeStandardWithLiveInfo(normalized));
     const upEndpoints = normalized.filter((e) => e.status === 'up');
     // Only fetch Docker containers — K8s pods are served by /api/kubernetes/ routes
     const upDockerEndpoints = upEndpoints.filter((e) => isDockerEndpoint(e.type));

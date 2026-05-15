@@ -82,6 +82,47 @@ export async function getEffectiveHarborConfig() {
   return { enabled, apiUrl, robotName, robotSecret, verifySsl, syncIntervalMinutes };
 }
 
+/**
+ * Edge Standard live-fetch fallback (issue #1249).
+ *
+ * Read at the top of each endpoints/dashboard request so operators can dial
+ * concurrency / interval / timeout from the Settings UI without restarting.
+ * DB values override env defaults; clamped on read so a bad DB value never
+ * crashes the request path.
+ */
+export interface EdgeLiveQueryConfig {
+  enabled: boolean;
+  concurrency: number;
+  intervalSeconds: number;
+  timeoutMs: number;
+}
+
+function clampInt(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
+export async function getEffectiveEdgeLiveQueryConfig(): Promise<EdgeLiveQueryConfig> {
+  const cfg = getConfig();
+  const enabledRow = await getSetting('edge.live_query_enabled');
+  const enabled = enabledRow ? enabledRow.value === 'true' : cfg.EDGE_LIVE_QUERY_ENABLED;
+
+  const concurrency = clampInt(
+    parseInt((await getSetting('edge.live_query_concurrency'))?.value || '', 10) || cfg.EDGE_LIVE_QUERY_CONCURRENCY,
+    1, 20, cfg.EDGE_LIVE_QUERY_CONCURRENCY,
+  );
+  const intervalSeconds = clampInt(
+    parseInt((await getSetting('edge.live_query_interval_seconds'))?.value || '', 10) || cfg.EDGE_LIVE_QUERY_INTERVAL_SECONDS,
+    15, 3600, cfg.EDGE_LIVE_QUERY_INTERVAL_SECONDS,
+  );
+  const timeoutMs = clampInt(
+    parseInt((await getSetting('edge.live_query_timeout_ms'))?.value || '', 10) || cfg.EDGE_LIVE_QUERY_TIMEOUT_MS,
+    1000, 30000, cfg.EDGE_LIVE_QUERY_TIMEOUT_MS,
+  );
+
+  return { enabled, concurrency, intervalSeconds, timeoutMs };
+}
+
 // ── Monitoring scheduler config ──────────────────────────────────────────────
 
 /**
