@@ -296,13 +296,18 @@ export default function LlmAssistantPage() {
               />
             ))}
 
-            {/* Loading indicator - shown while waiting for response */}
-            {isSending && !isStreaming && (
+            {/* Loading indicator — shown whenever we're waiting for visible
+                output: before the first chunk, between tool iterations, and
+                while a tool call is being parsed/executed. Hidden once the
+                tool-call indicator or streaming response has something to
+                show. */}
+            {(isSending || isStreaming) && !currentResponse && activeToolCalls.length === 0 && (
               <ThinkingIndicator
                 statusMessage={statusMessage}
                 onCancel={() => {
                   setIsSending(false);
-                  llmSocket?.emit('chat:cancel');
+                  if (isStreaming) cancelGeneration();
+                  else llmSocket?.emit('chat:cancel');
                 }}
               />
             )}

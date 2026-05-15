@@ -114,6 +114,170 @@ export class ThinkingBlockFilter {
   }
 }
 
+// ─── Tool-call stream suppressor ─────────────────────────────────────
+
+/**
+ * Streaming filter that hides tool-call JSON from the client mid-stream.
+ *
+ * Some models (notably local ones like Qwen) emit tool calls as inline JSON
+ * in the assistant content rather than via a native `tool_calls` field. Without
+ * this filter the user sees the raw JSON typed out token-by-token, then wiped
+ * via `chat:tool_response_pending` once the iteration finishes — the "writing
+ * then removing" visual glitch.
+ *
+ * Strategy: once a chunk starts looking like a tool-call payload (a `{` or
+ * code fence at the start of unsent content), buffer further tokens. If a
+ * `"tool_calls"` / `"tool_call"` / `"function":{` marker appears inside,
+ * permanently suppress until reset. If the structure closes without a marker,
+ * flush it as normal content.
+ */
+export class ToolCallStreamFilter {
+  private buffer = '';
+  private state: 'streaming' | 'buffering' | 'suppressing' = 'streaming';
+
+  /** Process a streaming chunk. Returns text safe to emit (may be empty). */
+  process(chunk: string): string {
+    if (this.state === 'suppressing') return '';
+
+    this.buffer += chunk;
+
+    if (this.state === 'streaming') {
+      // Find earliest trigger that switches us into buffering.
+      // Triggers: a code fence (```), or a `{` at the start of unsent content
+      // (start-of-buffer or after a newline). A `{` mid-line is treated as
+      // natural prose to avoid suppressing legitimate inline JSON examples.
+      const fenceIdx = this.buffer.indexOf('```');
+      const braceMatch = /(?:^|\n)\s*\{/.exec(this.buffer);
+      const braceIdx = braceMatch ? braceMatch.index + braceMatch[0].length - 1 : -1;
+
+      let triggerIdx = -1;
+      if (fenceIdx >= 0 && braceIdx >= 0) triggerIdx = Math.min(fenceIdx, braceIdx);
+      else if (fenceIdx >= 0) triggerIdx = fenceIdx;
+      else if (braceIdx >= 0) triggerIdx = braceIdx;
+
+      if (triggerIdx < 0) {
+        // No trigger yet. Hold back a tail that could be a partial trigger
+        // (backticks or a brace) so the trigger isn't missed when split
+        // across chunks.
+        const safeLen = this.computeSafeEmitLength(this.buffer);
+        const out = this.buffer.slice(0, safeLen);
+        this.buffer = this.buffer.slice(safeLen);
+        return out;
+      }
+
+      const preTrigger = this.buffer.slice(0, triggerIdx);
+      this.buffer = this.buffer.slice(triggerIdx);
+      this.state = 'buffering';
+      return preTrigger + this.evaluateBuffer();
+    }
+
+    // state === 'buffering'
+    return this.evaluateBuffer();
+  }
+
+  /** Flush remaining buffer at end of stream. */
+  flush(): string {
+    if (this.state === 'suppressing') {
+      this.buffer = '';
+      this.state = 'streaming';
+      return '';
+    }
+    const out = this.buffer;
+    this.buffer = '';
+    this.state = 'streaming';
+    return out;
+  }
+
+  /** Reset state between tool-call iterations. */
+  reset(): void {
+    this.buffer = '';
+    this.state = 'streaming';
+  }
+
+  /**
+   * Decide what to do with the currently-buffered content.
+   * Returns text to emit (empty while still buffering or suppressing).
+   */
+  private evaluateBuffer(): string {
+    // Confirmed tool-call payload — suppress permanently for this iteration.
+    if (
+      /"tool_calls?"\s*:/i.test(this.buffer) ||
+      /"function"\s*:\s*\{/i.test(this.buffer)
+    ) {
+      this.state = 'suppressing';
+      this.buffer = '';
+      return '';
+    }
+
+    // Buffered content has closed without a tool-call marker — it's just
+    // regular JSON or a code block; release it back into the stream.
+    if (this.bufferedStructureClosed()) {
+      const out = this.buffer;
+      this.buffer = '';
+      this.state = 'streaming';
+      return out;
+    }
+
+    // Safety valve: cap buffering so a malformed/long structure can't stall
+    // streaming indefinitely.
+    if (this.buffer.length > 4096) {
+      const out = this.buffer;
+      this.buffer = '';
+      this.state = 'streaming';
+      return out;
+    }
+
+    return '';
+  }
+
+  /**
+   * True when the buffered code fence or JSON object has fully closed without
+   * containing a tool-call marker.
+   */
+  private bufferedStructureClosed(): boolean {
+    if (this.buffer.startsWith('```')) {
+      // Closing fence appears after the opening one
+      const afterOpen = this.buffer.slice(3);
+      const closingIdx = afterOpen.indexOf('```');
+      return closingIdx >= 0;
+    }
+    if (this.buffer.startsWith('{')) {
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      for (let i = 0; i < this.buffer.length; i++) {
+        const c = this.buffer[i];
+        if (escape) { escape = false; continue; }
+        if (inString) {
+          if (c === '\\') escape = true;
+          else if (c === '"') inString = false;
+          continue;
+        }
+        if (c === '"') inString = true;
+        else if (c === '{') depth++;
+        else if (c === '}') {
+          depth--;
+          if (depth === 0) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * When no trigger is found, hold back a small tail so a trigger split
+   * across chunks ("``" + "`json") is still detected.
+   */
+  private computeSafeEmitLength(buf: string): number {
+    // Hold up to the last 3 chars if they could form the start of "```".
+    for (let len = Math.min(3, buf.length); len >= 1; len--) {
+      const tail = buf.slice(-len);
+      if ('```'.startsWith(tail)) return buf.length - len;
+    }
+    return buf.length;
+  }
+}
+
 // ─── Chat types ──────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -711,10 +875,15 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
         let plainRetryAttempted = false;
         let lastToolResults: ToolCallResult[] = [];
 
-        // Filter that suppresses <think>...</think> blocks during streaming
+        // Filter chain that suppresses `<think>...</think>` blocks and tool-call
+        // JSON payloads during streaming. The tool-call filter sits after the
+        // think filter so its trigger detection sees post-think text.
         const thinkFilter = new ThinkingBlockFilter();
+        const toolCallFilter = new ToolCallStreamFilter();
         const emitChunk = (text: string) => {
-          const filtered = thinkFilter.process(text);
+          const afterThink = thinkFilter.process(text);
+          if (!afterThink) return;
+          const filtered = toolCallFilter.process(afterThink);
           if (filtered) socket.emit('chat:chunk', filtered);
         };
 
@@ -778,6 +947,7 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
               plainRetryAttempted = true;
               if (failedToolAttempt) {
                 // Clear the raw JSON that was already streamed to the frontend
+                toolCallFilter.reset();
                 socket.emit('chat:tool_response_pending');
               }
               const retryAssembly = assembleBudgetedMessages({
@@ -806,7 +976,11 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
             break;
           }
 
-          // Tool calls detected — clear the streamed tool-call JSON from the frontend
+          // Tool calls detected. The stream filter usually suppresses the
+          // raw JSON before it ever reaches the client, but emit a clear in
+          // case a partial payload leaked through (e.g. older models that
+          // mix prose with tool JSON, or a filter safety-valve flush).
+          toolCallFilter.reset();
           socket.emit('chat:tool_response_pending');
 
           // Execute tool calls
@@ -891,9 +1065,14 @@ export function setupLlmNamespace(ns: Namespace, infraLogs: InfrastructureLogsIn
           }
         }
 
-        // Flush any buffered content from the thinking filter
-        const flushed = thinkFilter.flush();
-        if (flushed) socket.emit('chat:chunk', flushed);
+        // Flush any buffered content from the streaming filters
+        const flushedThink = thinkFilter.flush();
+        if (flushedThink) {
+          const flushed = toolCallFilter.process(flushedThink);
+          if (flushed) socket.emit('chat:chunk', flushed);
+        }
+        const flushedTool = toolCallFilter.flush();
+        if (flushedTool) socket.emit('chat:chunk', flushedTool);
 
         // Strip thinking blocks from the full response (covers non-streaming
         // paths and ensures the final content sent via chat:end is clean)

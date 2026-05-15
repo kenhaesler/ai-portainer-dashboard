@@ -198,6 +198,44 @@ describe('LlmAssistantPage', () => {
     expect(select).toHaveProperty('disabled', true);
   });
 
+  it('keeps the thinking indicator visible while streaming with no chunks or tool calls yet', () => {
+    // Reproduces the "blank gap" bug: after chat:start, isStreaming=true but
+    // currentResponse and activeToolCalls are both empty. The indicator must
+    // stay visible so the user always sees progress.
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [
+        { id: '1', role: 'user', content: 'Show running containers', timestamp: new Date().toISOString() },
+      ],
+      isStreaming: true,
+      currentResponse: '',
+      activeToolCalls: [],
+      statusMessage: 'Generating response with results...',
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+    expect(screen.getByTestId('thinking-indicator')).toBeTruthy();
+    expect(screen.getByText('Generating response with results...')).toBeTruthy();
+  });
+
+  it('hides the thinking indicator once streamed content arrives', () => {
+    vi.mocked(useLlmChat).mockReturnValue({
+      messages: [],
+      isStreaming: true,
+      currentResponse: 'Here is the answer',
+      activeToolCalls: [],
+      statusMessage: null,
+      sendMessage: vi.fn(),
+      cancelGeneration: vi.fn(),
+      clearHistory: vi.fn(),
+    } as any);
+
+    renderPage();
+    expect(screen.queryByTestId('thinking-indicator')).toBeNull();
+  });
+
   it('shows stop button during streaming', () => {
     vi.mocked(useLlmChat).mockReturnValue({
       messages: [],

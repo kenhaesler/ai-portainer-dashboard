@@ -93,6 +93,7 @@ import {
   formatChatContext,
   setupLlmNamespace,
   ThinkingBlockFilter,
+  ToolCallStreamFilter,
   chatThrottle,
   CHAT_THROTTLE_MS,
   assembleBudgetedMessages,
@@ -379,6 +380,112 @@ describe('ThinkingBlockFilter', () => {
     output += filter.flush();
     // "<t" + "ext" = "<text" which is not a think tag, so it should be emitted
     expect(output).toContain('Hello');
+  });
+});
+
+// ── ToolCallStreamFilter unit tests ──
+
+describe('ToolCallStreamFilter', () => {
+  it('passes through plain prose unchanged', () => {
+    const filter = new ToolCallStreamFilter();
+    expect(filter.process('Here are your containers: ')).toBe('Here are your containers: ');
+    expect(filter.process('all healthy.')).toBe('all healthy.');
+    expect(filter.flush()).toBe('');
+  });
+
+  it('suppresses a fenced tool-call JSON streamed token-by-token', () => {
+    const filter = new ToolCallStreamFilter();
+    const tokens = [
+      '```', 'json', '\n', '{"tool', '_calls', '": [{"', 'tool":"', 'query_containers',
+      '","arg', 'uments":', '{"state":"running"}', '}]}\n', '```',
+    ];
+    let output = '';
+    for (const t of tokens) output += filter.process(t);
+    output += filter.flush();
+    expect(output).toBe('');
+  });
+
+  it('suppresses bare-object tool-call JSON', () => {
+    const filter = new ToolCallStreamFilter();
+    const tokens = ['{"tool_calls":', ' [{"tool":', '"list_insights"', ',"arguments":{}}]', '}'];
+    let output = '';
+    for (const t of tokens) output += filter.process(t);
+    output += filter.flush();
+    expect(output).toBe('');
+  });
+
+  it('emits prose that precedes a tool call', () => {
+    const filter = new ToolCallStreamFilter();
+    let output = '';
+    output += filter.process('Let me check.\n');
+    output += filter.process('```json\n');
+    output += filter.process('{"tool_calls": [{"tool":"x","arguments":{}}]}\n```');
+    output += filter.flush();
+    expect(output).toBe('Let me check.\n');
+  });
+
+  it('releases a code fence that turns out not to be a tool call', () => {
+    const filter = new ToolCallStreamFilter();
+    let output = '';
+    output += filter.process('```bash\necho hi\n```');
+    output += filter.flush();
+    expect(output).toBe('```bash\necho hi\n```');
+  });
+
+  it('releases a closed JSON object that is not a tool call', () => {
+    const filter = new ToolCallStreamFilter();
+    let output = '';
+    output += filter.process('\n{"example": "value"}');
+    output += filter.flush();
+    expect(output).toBe('\n{"example": "value"}');
+  });
+
+  it('keeps streaming after reset between iterations', () => {
+    const filter = new ToolCallStreamFilter();
+    let output = '';
+    output += filter.process('```json\n{"tool_calls": [');
+    output += filter.process('{"tool":"x","arguments":{}}]}\n```');
+    expect(output).toBe('');
+    filter.reset();
+    output += filter.process('Here is the answer.');
+    output += filter.flush();
+    expect(output).toBe('Here is the answer.');
+  });
+
+  it('handles a fence trigger split across chunks', () => {
+    const filter = new ToolCallStreamFilter();
+    let output = '';
+    output += filter.process('``');
+    output += filter.process('`json\n{"tool_calls": [{}]}\n```');
+    output += filter.flush();
+    expect(output).toBe('');
+  });
+
+  it('does not suppress mid-sentence inline JSON in prose', () => {
+    const filter = new ToolCallStreamFilter();
+    // Inline `{` mid-line should not trigger buffering — release as prose.
+    let output = '';
+    output += filter.process('The config is {key: value} for now.');
+    output += filter.flush();
+    expect(output).toBe('The config is {key: value} for now.');
+  });
+
+  it('suppresses OpenAI-style function tool calls', () => {
+    const filter = new ToolCallStreamFilter();
+    let output = '';
+    output += filter.process('```json\n[{"function": {"name": "x", "arguments": "{}"}}]\n```');
+    output += filter.flush();
+    expect(output).toBe('');
+  });
+
+  it('flushes oversized buffers to avoid stalling streams', () => {
+    const filter = new ToolCallStreamFilter();
+    const large = '```\n' + 'x'.repeat(5000);
+    let output = '';
+    output += filter.process(large);
+    output += filter.flush();
+    // No tool-call marker → eventually released
+    expect(output).toContain('xxxxx');
   });
 });
 
