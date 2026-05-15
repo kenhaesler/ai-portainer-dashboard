@@ -4,6 +4,7 @@ import { cachedFetch, getCacheKey, TTL } from '@dashboard/core/portainer/portain
 import { normalizeEndpoint } from '@dashboard/core/portainer/portainer-normalizers.js';
 import { EndpointIdParamsSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import { enrichEdgeStandardWithLiveInfo } from '../services/edge-live-enrichment.js';
 
 const log = createChildLogger('route:endpoints');
 
@@ -27,7 +28,10 @@ export async function endpointsRoutes(fastify: FastifyInstance) {
         TTL.ENDPOINTS,
         () => portainer.getEndpoints(),
       );
-      return endpoints.map(normalizeEndpoint);
+      const normalized = endpoints.map(normalizeEndpoint);
+      // Fill in live container counts for Edge Standard endpoints whose
+      // Portainer Snapshots[] never gets populated (issue #1249).
+      return await enrichEdgeStandardWithLiveInfo(normalized);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to fetch endpoints from Portainer');

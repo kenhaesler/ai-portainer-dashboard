@@ -32,6 +32,17 @@ export interface NormalizedEndpoint {
   capabilities: EdgeCapabilities;
   agentVersion?: string;
   lastCheckIn?: number;
+  /**
+   * Where the container counts came from (issue #1249).
+   * - `snapshot`: read from Portainer's persisted `Snapshots[0]` (the normal path).
+   * - `live`: fetched live via `/docker/info` through the chisel tunnel — used for
+   *   Edge Standard endpoints whose Snapshots[] never gets populated.
+   * - `unavailable`: live-fetch was attempted but failed/timed out. Counts are 0/0/0
+   *   and the UI should label this distinctly from a genuinely empty endpoint.
+   */
+  snapshotSource: 'snapshot' | 'live' | 'unavailable';
+  /** Epoch millis of when the counts were last refreshed. Set when `snapshotSource` is `live`. */
+  snapshotFetchedAt?: number;
 }
 
 export interface NormalizedContainer {
@@ -167,7 +178,64 @@ export function normalizeEndpoint(ep: Endpoint): NormalizedEndpoint {
     capabilities: buildCapabilities(edgeMode),
     agentVersion: ep.Agent?.Version,
     lastCheckIn: ep.LastCheckInDate,
+    // Without a live merge, the source is whatever the snapshot lookup yielded.
+    // `applyLiveDockerInfo` / `markLiveUnavailable` flip this for Edge endpoints
+    // whose Snapshots[] is empty.
+    snapshotSource: 'snapshot',
   };
+}
+
+/**
+ * True when the normalizer produced 0/0/0 because Portainer has no snapshot
+ * (the Edge Standard case from issue #1249). Use this to decide whether a
+ * live `/docker/info` fallback should be attempted.
+ */
+export function endpointNeedsLiveFallback(ep: NormalizedEndpoint): boolean {
+  return (
+    ep.isEdge &&
+    ep.edgeMode === 'standard' &&
+    ep.status === 'up' &&
+    ep.totalContainers === 0 &&
+    ep.containersRunning === 0 &&
+    ep.containersStopped === 0
+  );
+}
+
+/** Live `/docker/info` payload shape — narrow enough to keep this file zero-dependency. */
+export interface LiveDockerInfoCounts {
+  containers: number;
+  containersRunning: number;
+  containersStopped: number;
+  containersPaused?: number;
+  fetchedAt: number;
+}
+
+/**
+ * Overlay live Docker-info counts onto a normalized endpoint and mark the
+ * snapshot source as `live`. Returns the updated endpoint (mutated in place,
+ * since the caller owns it from `endpoints.map(normalizeEndpoint)`).
+ */
+export function applyLiveDockerInfo(
+  ep: NormalizedEndpoint,
+  info: LiveDockerInfoCounts,
+): NormalizedEndpoint {
+  ep.containersRunning = info.containersRunning;
+  ep.containersStopped = info.containersStopped;
+  ep.totalContainers = info.containers;
+  ep.snapshotSource = 'live';
+  ep.snapshotFetchedAt = info.fetchedAt;
+  return ep;
+}
+
+/**
+ * Mark a normalized endpoint as `unavailable` — used when the live-fetch
+ * fallback was attempted but failed/timed out. Counts stay 0/0/0; the
+ * frontend uses the marker to render a distinct "data unavailable" state
+ * instead of a misleading "no containers".
+ */
+export function markLiveUnavailable(ep: NormalizedEndpoint): NormalizedEndpoint {
+  ep.snapshotSource = 'unavailable';
+  return ep;
 }
 
 /** Extract Docker health check status from the Status string (e.g. "Up 2 hours (healthy)"). */

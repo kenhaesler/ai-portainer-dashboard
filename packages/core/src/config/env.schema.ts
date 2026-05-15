@@ -42,6 +42,13 @@ export const envSchema = z.object({
   PORTAINER_MAX_CONNECTIONS: z.coerce.number().int().min(1).max(100).default(20),
   PORTAINER_CB_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(50).default(5),
   PORTAINER_CB_RESET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(30000),
+
+  // Edge Standard live-fetch fallback (issue #1249) — fills container counts for
+  // Edge Agent Standard endpoints whose Portainer Snapshots[] never gets populated.
+  EDGE_LIVE_QUERY_ENABLED: z.string().default('true').transform((v) => v === 'true' || v === '1'),
+  EDGE_LIVE_QUERY_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
+  EDGE_LIVE_QUERY_INTERVAL_SECONDS: z.coerce.number().int().min(15).max(3600).default(60),
+  EDGE_LIVE_QUERY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(5000),
   // Public/external dashboard URL used by remote agents/endpoints to call back into the API.
   DASHBOARD_EXTERNAL_URL: optionalUrl,
 

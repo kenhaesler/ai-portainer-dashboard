@@ -11,6 +11,16 @@ export interface EndpointHealthOctagonsProps {
     running: number;
     stopped: number;
     total: number;
+    /** Endpoint connectivity status — `'down'` flips the hexagon to slate "Offline". */
+    status?: 'up' | 'down';
+    /**
+     * Where the counts came from (issue #1249). `'unavailable'` renders distinctly
+     * from "no containers" so an operator can tell whether Portainer is just empty
+     * vs the live-fallback fetch failed.
+     */
+    snapshotSource?: 'snapshot' | 'live' | 'unavailable';
+    /** Epoch millis of last live refresh (only set when source === 'live'). */
+    snapshotFetchedAt?: number;
   }>;
   isLoading?: boolean;
 }
@@ -18,13 +28,33 @@ export interface EndpointHealthOctagonsProps {
 const HEALTH_COLORS = {
   good: { fill: 'rgba(16,185,129,0.85)', stroke: 'rgba(52,211,153,0.4)', text: 'text-white', shadow: 'rgba(16,185,129,0.35)' },
   warning: { fill: 'rgba(245,158,11,0.85)', stroke: 'rgba(251,191,36,0.4)', text: 'text-white', shadow: 'rgba(245,158,11,0.35)' },
-  critical: { fill: 'rgba(239,68,68,0.85)', stroke: 'rgba(248,113,113,0.4)', text: 'text-white', shadow: 'rgba(239,68,68,0.35)' },
+  critical: { fill: 'rgba(239,68,68,0.85)', stroke: 'rgba(248,113,113,0.4)', text: 'text-white', shadow: 'rgba(248,113,113,0.4)', shadowExt: 'rgba(239,68,68,0.35)' },
+  offline: { fill: 'rgba(100,116,139,0.85)', stroke: 'rgba(148,163,184,0.5)', text: 'text-white', shadow: 'rgba(100,116,139,0.35)' },
+  unavailable: { fill: 'rgba(120,113,108,0.7)', stroke: 'rgba(168,162,158,0.5)', text: 'text-white', shadow: 'rgba(120,113,108,0.3)' },
   empty: { fill: 'rgba(148,163,184,0.6)', stroke: 'rgba(203,213,225,0.3)', text: 'text-white', shadow: 'rgba(148,163,184,0.2)' },
 } as const;
 
 type HealthLevel = keyof typeof HEALTH_COLORS;
 
-function getHealthLevel(running: number, total: number): HealthLevel {
+/**
+ * Map endpoint state to a hexagon color level.
+ *
+ * Precedence (top wins):
+ * 1. `status === 'down'` → `offline` (slate) regardless of counts.
+ * 2. `snapshotSource === 'unavailable'` → `unavailable` (stone) — live fallback
+ *    was attempted but failed; distinct from an empty endpoint.
+ * 3. `total === 0` → `empty` (gray) — endpoint is up with no containers yet,
+ *    or snapshot data hasn't arrived yet.
+ * 4. Otherwise, ratio buckets: >80% good, 50-80% warning, <50% critical.
+ */
+function getHealthLevel(
+  running: number,
+  total: number,
+  status?: 'up' | 'down',
+  snapshotSource?: 'snapshot' | 'live' | 'unavailable',
+): HealthLevel {
+  if (status === 'down') return 'offline';
+  if (snapshotSource === 'unavailable') return 'unavailable';
   if (total === 0) return 'empty';
   const ratio = running / total;
   if (ratio > 0.8) return 'good';
@@ -118,13 +148,62 @@ interface HexagonCardProps {
   running: number;
   total: number;
   level: HealthLevel;
+  snapshotSource?: 'snapshot' | 'live' | 'unavailable';
+  snapshotFetchedAt?: number;
   onClick: () => void;
   index: number;
 }
 
-function HexagonCard({ name, running, total, level, onClick }: HexagonCardProps) {
+/** Inner label shown under the endpoint name. */
+function getStatusLabel(
+  level: HealthLevel,
+  running: number,
+  total: number,
+): string {
+  if (level === 'offline') return 'Offline';
+  if (level === 'unavailable') return 'Data unavailable';
+  if (level === 'empty') return 'Awaiting snapshot';
+  return `${running}/${total} running`;
+}
+
+/** Hover/aria title — same string for screen readers and tooltip. */
+function getCardTitle(
+  name: string,
+  level: HealthLevel,
+  running: number,
+  total: number,
+  snapshotSource?: 'snapshot' | 'live' | 'unavailable',
+  snapshotFetchedAt?: number,
+): string {
+  if (level === 'offline') {
+    return `${name} — offline`;
+  }
+  if (level === 'unavailable') {
+    return `${name} — data unavailable (live fetch failed)`;
+  }
+  if (level === 'empty') {
+    return `${name} — awaiting snapshot`;
+  }
+  const counts = `${running}/${total} running`;
+  if (snapshotSource === 'live' && snapshotFetchedAt) {
+    const seconds = Math.max(0, Math.round((Date.now() - snapshotFetchedAt) / 1000));
+    return `${name} — ${counts} (live, refreshed ${seconds}s ago)`;
+  }
+  return `${name} — ${counts}`;
+}
+
+function HexagonCard({
+  name,
+  running,
+  total,
+  level,
+  snapshotSource,
+  snapshotFetchedAt,
+  onClick,
+}: HexagonCardProps) {
   const colors = HEALTH_COLORS[level];
   const blurId = `hex-blur-${level}`;
+  const title = getCardTitle(name, level, running, total, snapshotSource, snapshotFetchedAt);
 
   return (
     <motion.div
@@ -133,7 +212,8 @@ function HexagonCard({ name, running, total, level, onClick }: HexagonCardProps)
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
       role="button"
       tabIndex={0}
-      aria-label={`${name} endpoint - ${running}/${total} running`}
+      title={title}
+      aria-label={title}
       className="octagon-button absolute focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer select-none [-webkit-user-select:none] [-webkit-tap-highlight-color:transparent] hover:!bg-transparent"
       data-testid={`octagon-${name}`}
       style={{
@@ -189,7 +269,7 @@ function HexagonCard({ name, running, total, level, onClick }: HexagonCardProps)
             {name}
           </span>
           <span className="text-[10px] mt-0.5 opacity-80 font-medium">
-            {total > 0 ? `${running}/${total} running` : 'No containers'}
+            {getStatusLabel(level, running, total)}
           </span>
         </div>
       </div>
@@ -266,7 +346,7 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
   const items = useMemo(() => {
     return endpoints.map((ep) => ({
       ...ep,
-      level: getHealthLevel(ep.running, ep.total),
+      level: getHealthLevel(ep.running, ep.total, ep.status, ep.snapshotSource),
     }));
   }, [endpoints]);
 
@@ -326,6 +406,8 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
                   running={ep.running}
                   total={ep.total}
                   level={ep.level}
+                  snapshotSource={ep.snapshotSource}
+                  snapshotFetchedAt={ep.snapshotFetchedAt}
                   onClick={handleClick}
                   index={i}
                 />
@@ -336,7 +418,7 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
       </div>
 
       {/* Legend */}
-      <div className="flex justify-center gap-5 pt-3 shrink-0">
+      <div className="flex justify-center gap-5 pt-3 shrink-0 flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
           <span className="text-xs text-muted-foreground">&gt;80% healthy</span>
@@ -348,6 +430,18 @@ export const EndpointHealthOctagons = memo(function EndpointHealthOctagons({
         <div className="flex items-center gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
           <span className="text-xs text-muted-foreground">&lt;50%</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+          <span className="text-xs text-muted-foreground">Offline</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-stone-500" />
+          <span className="text-xs text-muted-foreground">Unavailable</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+          <span className="text-xs text-muted-foreground">No data</span>
         </div>
       </div>
     </div>

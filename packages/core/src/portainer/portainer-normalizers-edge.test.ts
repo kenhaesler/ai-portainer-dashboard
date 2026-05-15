@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { normalizeEndpoint } from './portainer-normalizers.js';
+import {
+  normalizeEndpoint,
+  endpointNeedsLiveFallback,
+  applyLiveDockerInfo,
+  markLiveUnavailable,
+} from './portainer-normalizers.js';
 import type { Endpoint } from '../models/portainer.js';
 
 function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
@@ -266,6 +271,117 @@ describe('normalizeEndpoint — Edge Agent fields', () => {
 
       const down = makeEndpoint({ Type: 1, Status: 2 });
       expect(normalizeEndpoint(down).status).toBe('down');
+    });
+  });
+
+  // Issue #1249 — live Docker-info fallback for Edge Standard endpoints whose
+  // Portainer Snapshots[] is permanently empty.
+  describe('Live fallback helpers (issue #1249)', () => {
+    it('normalizeEndpoint defaults snapshotSource to "snapshot"', () => {
+      const result = normalizeEndpoint(makeEndpoint());
+      expect(result.snapshotSource).toBe('snapshot');
+      expect(result.snapshotFetchedAt).toBeUndefined();
+    });
+
+    it('endpointNeedsLiveFallback returns true for Edge Standard with empty counts', () => {
+      // Edge Standard up, with no Snapshots → normalizer yields 0/0/0 counts.
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-empty',
+        Status: 1,
+        Snapshots: [],
+      });
+      const normalized = normalizeEndpoint(ep);
+      expect(normalized.totalContainers).toBe(0);
+      expect(endpointNeedsLiveFallback(normalized)).toBe(true);
+    });
+
+    it('endpointNeedsLiveFallback returns false for Edge Standard that has snapshot data', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-with-snapshot',
+        Status: 1,
+      });
+      const normalized = normalizeEndpoint(ep);
+      // makeEndpoint provides a populated Snapshots[] by default → counts > 0
+      expect(endpointNeedsLiveFallback(normalized)).toBe(false);
+    });
+
+    it('endpointNeedsLiveFallback returns false for non-Edge endpoints regardless of counts', () => {
+      const ep = makeEndpoint({ Type: 1, Snapshots: [] });
+      const normalized = normalizeEndpoint(ep);
+      expect(normalized.isEdge).toBe(false);
+      expect(endpointNeedsLiveFallback(normalized)).toBe(false);
+    });
+
+    it('endpointNeedsLiveFallback returns false when endpoint is down', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-down',
+        Status: 2,
+        Snapshots: [],
+        // no LastCheckInDate → normalizer marks status='down'
+      });
+      const normalized = normalizeEndpoint(ep);
+      expect(normalized.status).toBe('down');
+      expect(endpointNeedsLiveFallback(normalized)).toBe(false);
+    });
+
+    it('endpointNeedsLiveFallback returns false for Async Edge (only Standard uses this fallback)', () => {
+      // Async edge agents push their own snapshots — Portainer never proxies
+      // through a tunnel for them, so the live /docker/info path would fail.
+      const ep = makeEndpoint({
+        Type: 7,
+        EdgeID: 'edge-async',
+        Status: 1,
+        Snapshots: [],
+      });
+      const normalized = normalizeEndpoint(ep);
+      expect(normalized.edgeMode).toBe('async');
+      expect(endpointNeedsLiveFallback(normalized)).toBe(false);
+    });
+
+    it('applyLiveDockerInfo overrides counts and flips snapshotSource to "live"', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-merge',
+        Status: 1,
+        Snapshots: [],
+      });
+      const normalized = normalizeEndpoint(ep);
+      const fetchedAt = Date.now();
+
+      const result = applyLiveDockerInfo(normalized, {
+        containers: 5,
+        containersRunning: 4,
+        containersStopped: 1,
+        fetchedAt,
+      });
+
+      expect(result.containersRunning).toBe(4);
+      expect(result.containersStopped).toBe(1);
+      expect(result.totalContainers).toBe(5);
+      expect(result.snapshotSource).toBe('live');
+      expect(result.snapshotFetchedAt).toBe(fetchedAt);
+      // Same reference (mutated in place — caller owns it after .map())
+      expect(result).toBe(normalized);
+    });
+
+    it('markLiveUnavailable flips snapshotSource without changing counts', () => {
+      const ep = makeEndpoint({
+        Type: 4,
+        EdgeID: 'edge-unavailable',
+        Status: 1,
+        Snapshots: [],
+      });
+      const normalized = normalizeEndpoint(ep);
+      const before = { ...normalized };
+
+      const result = markLiveUnavailable(normalized);
+      expect(result.snapshotSource).toBe('unavailable');
+      expect(result.containersRunning).toBe(before.containersRunning);
+      expect(result.containersStopped).toBe(before.containersStopped);
+      expect(result.totalContainers).toBe(before.totalContainers);
     });
   });
 });
