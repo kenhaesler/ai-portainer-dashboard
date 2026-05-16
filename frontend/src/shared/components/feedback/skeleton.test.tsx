@@ -59,3 +59,38 @@ describe('SkeletonKpi', () => {
     expect(container.firstChild).toHaveClass('h-full');
   });
 });
+
+describe('SkeletonTableRow', () => {
+  it('renders the requested number of cells', () => {
+    const { container } = render(
+      <table>
+        <tbody>
+          <SkeletonTableRow columns={5} />
+        </tbody>
+      </table>,
+    );
+    expect(container.querySelectorAll('tr > td')).toHaveLength(5);
+  });
+
+  it('puts a pulsing bar inside each cell', () => {
+    const { container } = render(
+      <table>
+        <tbody>
+          <SkeletonTableRow columns={3} />
+        </tbody>
+      </table>,
+    );
+    expect(container.querySelectorAll('td > .animate-pulse')).toHaveLength(3);
+  });
+
+  it('defaults to 4 columns when no count is provided', () => {
+    const { container } = render(
+      <table>
+        <tbody>
+          <SkeletonTableRow />
+        </tbody>
+      </table>,
+    );
+    expect(container.querySelectorAll('td')).toHaveLength(4);
+  });
+});

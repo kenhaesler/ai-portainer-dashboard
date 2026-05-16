@@ -25,6 +25,23 @@ export function SkeletonText({ lines = 3, className }: SkeletonTextProps) {
   );
 }
 
+export interface SkeletonTableRowProps {
+  columns?: number;
+  className?: string;
+}
+
+export function SkeletonTableRow({ columns = 4, className }: SkeletonTableRowProps) {
+  return (
+    <tr className={className}>
+      {Array.from({ length: columns }).map((_, i) => (
+        <td key={i} className="px-3 py-2">
+          <div className={cn(PULSE, 'h-3 w-full')} />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
 export interface SkeletonKpiProps {
   className?: string;
 }
