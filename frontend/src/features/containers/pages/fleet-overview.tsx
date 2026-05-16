@@ -15,7 +15,8 @@ import { DataTable } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonText, SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { FilterChipBar, type FilterChip } from '@/shared/components/ui/filter-chip-bar';
 import { useUiStore } from '@/stores/ui-store';
@@ -851,17 +852,20 @@ export default function InfrastructurePage() {
 
       {/* Error state */}
       {hasError && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-          <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-4 font-medium text-destructive">Failed to load infrastructure data</p>
-          <p className="mt-1 text-sm text-muted-foreground">{errorMessage}</p>
+        <>
+          <EmptyState
+            variant="error"
+            icon={AlertTriangle}
+            title="Failed to load infrastructure data"
+            description={errorMessage}
+          />
           <button
             onClick={handleRefresh}
             className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
           >
             Try again
           </button>
-        </div>
+        </>
       )}
 
       {/* Tabbed sections */}
@@ -974,31 +978,23 @@ export default function InfrastructurePage() {
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="h-[120px]" />
+              <SkeletonText key={i} lines={2} />
             ))}
           </div>
         ) : filteredEndpoints.length === 0 && endpoints && endpoints.length > 0 ? (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
-            <Server className="mx-auto h-10 w-10 text-muted-foreground" />
-            <p className="mt-4 font-medium">No endpoints match filters</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Adjust your filters to see endpoints
-            </p>
-          </div>
-          </SpotlightCard>
+          <EmptyState
+            icon={Server}
+            title="No endpoints match filters"
+            description="Adjust your filters to see endpoints."
+          />
         ) : fleetViewMode === 'grid' ? (
           <>
             {paginatedEndpoints.length === 0 && endpointSearchQuery ? (
-              <SpotlightCard>
-              <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
-                <Search className="mx-auto h-10 w-10 text-muted-foreground" />
-                <p className="mt-4 font-medium">No endpoints match your search</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try a different query or clear the search
-                </p>
-              </div>
-              </SpotlightCard>
+              <EmptyState
+                icon={Search}
+                title="No endpoints match your search"
+                description="Try a different query or clear the search."
+              />
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {paginatedEndpoints.map((endpoint) => (
@@ -1157,28 +1153,24 @@ export default function InfrastructurePage() {
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} className="h-[100px]" />
+              <SkeletonText key={i} lines={1} />
             ))}
           </div>
         ) : filteredStacks.length === 0 ? (
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
-            <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
+          <>
             {stackSearchQuery ? (
-              <>
-                <p className="mt-4 font-medium">No stacks match your search</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try a different query or clear the search
-                </p>
-              </>
+              <EmptyState icon={Search} title="No stacks match your search" description="Try a different query or clear the search." />
             ) : hasActiveStackFilter ? (
               <>
-                <p className="mt-4 font-medium">No stacks match filters</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {stackEndpointFilterParam !== ALL_FILTER
-                    ? 'The selected endpoint has no Docker Stacks or Compose projects'
-                    : 'Adjust your filters to see stacks'}
-                </p>
+                <EmptyState
+                  icon={Layers}
+                  title="No stacks match filters"
+                  description={
+                    stackEndpointFilterParam !== ALL_FILTER
+                      ? 'The selected endpoint has no Docker Stacks or Compose projects'
+                      : 'Adjust your filters to see stacks'
+                  }
+                />
                 <button
                   onClick={() => {
                     setFleetFilters(endpointStatusFilter, endpointTypeFilter, ALL_FILTER, ALL_FILTER);
@@ -1189,15 +1181,14 @@ export default function InfrastructurePage() {
                 </button>
               </>
             ) : (
-              <>
-                <p className="mt-4 font-medium">No stacks or compose projects detected</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  There are no Docker Stacks or Compose projects deployed across your endpoints
-                </p>
-              </>
+              <EmptyState
+                variant="not-configured"
+                icon={Layers}
+                title="No stacks or compose projects detected"
+                description="There are no Docker Stacks or Compose projects deployed across your endpoints."
+              />
             )}
-          </div>
-          </SpotlightCard>
+          </>
         ) : stacksViewMode === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredStacks.map((stack) => (
@@ -1258,7 +1249,7 @@ export default function InfrastructurePage() {
         {k8sPodsLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} />
+              <SkeletonChart key={i} size="md" />
             ))}
           </div>
         ) : (
