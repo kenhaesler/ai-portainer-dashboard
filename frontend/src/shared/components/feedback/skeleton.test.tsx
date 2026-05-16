@@ -121,3 +121,27 @@ describe('SkeletonChart', () => {
     expect(container.firstChild).toHaveClass('mt-2');
   });
 });
+
+describe('SkeletonList', () => {
+  it('renders the default number of rows (4)', () => {
+    const { container } = render(<SkeletonList />);
+    expect(container.querySelectorAll('[data-skeleton-row]')).toHaveLength(4);
+  });
+
+  it('renders the requested number of rows', () => {
+    const { container } = render(<SkeletonList rows={7} />);
+    expect(container.querySelectorAll('[data-skeleton-row]')).toHaveLength(7);
+  });
+
+  it('renders an avatar circle plus two text bars per row', () => {
+    const { container } = render(<SkeletonList rows={1} />);
+    const row = container.querySelector('[data-skeleton-row]');
+    expect(row?.querySelector('.rounded-full')).toBeInTheDocument();
+    expect(row?.querySelectorAll('.animate-pulse')).toHaveLength(3);
+  });
+
+  it('exposes a status role with loading label', () => {
+    render(<SkeletonList />);
+    expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument();
+  });
+});
