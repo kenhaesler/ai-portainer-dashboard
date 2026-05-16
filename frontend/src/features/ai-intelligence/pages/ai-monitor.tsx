@@ -11,7 +11,8 @@ import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { cn } from '@/shared/lib/utils';
 import {
@@ -387,19 +388,18 @@ export default function AiMonitorPage() {
             Fleet health analysis and real-time AI-powered insights
           </p>
         </div>
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-          <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-4 font-medium text-destructive">Failed to load insights</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'An unexpected error occurred'}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Try again
-          </button>
-        </div>
+        <EmptyState
+          variant="error"
+          icon={AlertTriangle}
+          title="Failed to load insights"
+          description={error instanceof Error ? error.message : 'An unexpected error occurred'}
+        />
+        <button
+          onClick={() => refetch()}
+          className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Try again
+        </button>
       </div>
     );
   }
@@ -563,9 +563,9 @@ export default function AiMonitorPage() {
           </div>
           {correlatedLoading ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <SkeletonCard className="h-[180px]" />
-              <SkeletonCard className="h-[180px]" />
-              <SkeletonCard className="h-[180px]" />
+              <SkeletonChart size="md" />
+              <SkeletonChart size="md" />
+              <SkeletonChart size="md" />
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -608,19 +608,19 @@ export default function AiMonitorPage() {
       <SpotlightCard>
         <div className="rounded-lg border bg-card p-6 shadow-sm">
         {isLoading ? (
-          <SkeletonCard className="h-[400px]" />
+          <SkeletonList rows={6} />
         ) : filteredInsights.length === 0 ? (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-            <Activity className="mx-auto h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-4 text-lg font-semibold">No insights</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {acknowledgementFilter === 'unacknowledged'
+          <EmptyState
+            icon={Activity}
+            title="No insights"
+            description={
+              acknowledgementFilter === 'unacknowledged'
                 ? 'No unacknowledged insights match the current filters.'
                 : severityFilter === 'all'
                   ? 'AI monitoring has not generated any insights yet. Check back soon.'
-                  : `No ${severityFilter} insights found. Try a different filter.`}
-            </p>
-          </div>
+                  : `No ${severityFilter} insights found. Try a different filter.`
+            }
+          />
         ) : (
           <div className="space-y-3">
             {filteredInsights.map((insight) => (
