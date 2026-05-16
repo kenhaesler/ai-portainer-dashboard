@@ -24,7 +24,7 @@ import { api } from '@/shared/lib/api';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonText } from '@/shared/components/feedback/skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -503,9 +503,11 @@ export default function EdgeAgentLogsPage() {
       {/* Loading State */}
       {isLoading && (
         <div className="space-y-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-6 shadow-sm">
+              <SkeletonText lines={3} />
+            </div>
+          ))}
         </div>
       )}
 

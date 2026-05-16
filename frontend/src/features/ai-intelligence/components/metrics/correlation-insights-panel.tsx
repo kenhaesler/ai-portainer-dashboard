@@ -3,6 +3,7 @@ import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react'
 import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/features/observability/hooks/use-correlations';
 import { cn } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 
 interface CorrelationInsightsPanelProps {
   llmAvailable: boolean;
@@ -185,15 +186,11 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
       </div>
 
       {pairs.length === 0 ? (
-        <div className="flex h-[120px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-6 text-center">
-          <div>
-            <ArrowUpDown className="mx-auto h-8 w-8 text-muted-foreground" />
-            <p className="mt-2 font-medium">No strong correlations detected</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Correlations appear when containers share workload patterns over time.
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          icon={ArrowUpDown}
+          title="No strong correlations detected"
+          description="Correlations appear when containers share workload patterns over time."
+        />
       ) : (
         <div className="space-y-4">
           {/* Correlation pair cards */}

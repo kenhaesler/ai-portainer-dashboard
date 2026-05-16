@@ -13,7 +13,7 @@ import { ImageSunburst } from '@/shared/components/charts/image-sunburst';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { MotionPage, MotionReveal, MotionStagger } from '@/shared/components/layout/motion-page';
@@ -300,8 +300,8 @@ export default function ImageFootprintPage() {
       {/* Content */}
       {showSkeleton ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <SkeletonCard className="h-[500px]" />
-          <SkeletonCard className="h-[500px]" />
+          <SkeletonChart size="lg" className="h-[500px]" />
+          <SkeletonChart size="lg" className="h-[500px]" />
         </div>
       ) : images && images.length > 0 ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.05}>

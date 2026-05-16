@@ -1,5 +1,5 @@
 import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Info, XCircle } from 'lucide-react';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
 export interface HealthStats {
@@ -120,7 +120,7 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
   insightStats?: InsightStats;
 }) {
   if (isLoading || !stats) {
-    return <SkeletonCard className="h-44" />;
+    return <SkeletonChart size="md" className="h-44" />;
   }
 
   const healthScore = calculateHealthScore(stats);

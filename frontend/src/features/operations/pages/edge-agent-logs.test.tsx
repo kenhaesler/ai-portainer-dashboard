@@ -53,10 +53,10 @@ describe('EdgeAgentLogsPage', () => {
         screen.getByRole('heading', { name: 'Edge Agent Logs' }),
       ).toBeInTheDocument();
 
-      // SkeletonCard renders with role="status" + aria-label="Loading"
+      // SkeletonText renders with role="status" + aria-label="Loading"
       await waitFor(() => {
         const loadingNodes = screen.getAllByRole('status', { name: 'Loading' });
-        // edge-agent-logs renders three SkeletonCards stacked while loading
+        // edge-agent-logs renders three SkeletonText panes stacked while loading
         expect(loadingNodes.length).toBeGreaterThan(0);
       });
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Cpu, HardDrive, Network } from 'lucide-react';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { useContainerMetrics, useNetworkRates } from '@/features/observability/hooks/use-metrics';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
@@ -154,14 +155,11 @@ export function ContainerMetricsViewer({
           <h3 className="text-lg font-semibold">Network RX/TX by Network</h3>
         </div>
         {!containerNetworks.length ? (
-          <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-6 text-center">
-            <div>
-              <p className="font-medium">No connected networks found for this container</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Attach the container to a network to see RX/TX distribution.
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            icon={Network}
+            title="No connected networks found for this container"
+            description="Attach the container to a network to see RX/TX distribution."
+          />
         ) : networkRatesLoading ? (
           <div className="flex h-[300px] items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

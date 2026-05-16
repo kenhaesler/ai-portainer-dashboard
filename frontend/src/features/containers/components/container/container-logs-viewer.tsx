@@ -5,7 +5,7 @@ import { useContainerLogs, type ContainerLogsError } from '@/features/containers
 import { useEdgeAsyncLogs } from '@/features/operations/hooks/use-edge-async-logs';
 import { useStreamingLogs, type StreamStatus } from '@/features/observability/hooks/use-streaming-logs';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 
 export type TailCount = 100 | 500 | 1000 | -1;
 
@@ -591,7 +591,7 @@ function StandardLogsViewer({
       {/* Log Viewer */}
       {!isLive && logsLoading ? (
         <div className="relative">
-          <SkeletonCard className="h-[600px]" />
+          <SkeletonChart size="lg" className="h-[600px]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <Radio className="h-8 w-8 text-muted-foreground animate-pulse" />
             <p className="mt-2 text-sm text-muted-foreground">Loading logs...</p>

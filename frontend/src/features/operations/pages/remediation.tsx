@@ -27,7 +27,8 @@ import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { useSockets } from '@/providers/socket-provider';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -646,17 +647,15 @@ export default function RemediationPage() {
 
       {/* Actions Table */}
       {isLoading ? (
-        <SkeletonCard className="h-[400px]" />
+        <SkeletonChart size="lg" className="h-[400px]" />
       ) : actions.length === 0 ? (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <Box className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">No remediation actions</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {statusFilter === 'all'
-              ? 'AI monitoring has not suggested any remediation actions yet.'
-              : `No actions with status "${statusFilter}" found.`}
-          </p>
-        </div>
+        <EmptyState
+          icon={Box}
+          title="No remediation actions"
+          description={statusFilter === 'all'
+            ? 'AI monitoring has not suggested any remediation actions yet.'
+            : `No actions with status "${statusFilter}" found.`}
+        />
       ) : (
         <SpotlightCard>
         <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
