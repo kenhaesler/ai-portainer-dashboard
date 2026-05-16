@@ -7,7 +7,7 @@ import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/p
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
-import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry } from '@dashboard/ai';
+import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
@@ -667,6 +667,26 @@ export async function startScheduler(runMonitoringCycle: () => Promise<void>): P
   );
   sessionCleanupInterval.unref();
   intervals.push(sessionCleanupInterval);
+
+  // Hourly dedup-engine telemetry (issue #1200). Writes one row per signature
+  // to monitoring_dedup_metrics so the next round of dedup tuning is
+  // data-driven. Cheap (two indexed aggregates over the 7-day insight window)
+  // and bounded (~10 distinct signatures × 24 rows/day).
+  const dedupTelemetryInterval = setInterval(
+    () => runWithTraceContext({ source: 'scheduler' }, async () => {
+      try {
+        const result = await runDedupTelemetryCycle();
+        if (result.collected > 0) {
+          log.info(result, 'Dedup telemetry snapshot written');
+        }
+      } catch (err) {
+        log.error({ err }, 'Hourly dedup telemetry failed');
+      }
+    }),
+    60 * 60 * 1000,
+  );
+  dedupTelemetryInterval.unref();
+  intervals.push(dedupTelemetryInterval);
   // Run once shortly after startup so a freshly-restarted server clears
   // sessions left over from before the restart promptly.
   setTimeout(() => {

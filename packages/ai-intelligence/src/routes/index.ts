@@ -4,6 +4,7 @@ export { investigationRoutes } from './investigations.js';
 export { incidentsRoutes } from './incidents.js';
 export { correlationRoutes } from './correlations.js';
 export type { CorrelationRoutesOpts, CorrelationPair, CorrelationInsight, Queryable } from './correlations.js';
+export { dedupTelemetryRoutes } from './dedup-telemetry.js';
 export { llmRoutes } from './llm.js';
 export { llmObservabilityRoutes } from './llm-observability.js';
 export { llmFeedbackRoutes } from './llm-feedback.js';
