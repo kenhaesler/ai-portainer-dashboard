@@ -25,6 +25,23 @@ export function SkeletonText({ lines = 3, className }: SkeletonTextProps) {
   );
 }
 
+export interface SkeletonChartProps {
+  size?: 'md' | 'lg';
+  className?: string;
+}
+
+export function SkeletonChart({ size = 'md', className }: SkeletonChartProps) {
+  return (
+    <div
+      className={cn(PULSE, 'w-full', size === 'lg' ? 'h-80' : 'h-48', className)}
+      role="status"
+      aria-label="Loading"
+    >
+      <span className="sr-only">Loading…</span>
+    </div>
+  );
+}
+
 export interface SkeletonTableRowProps {
   columns?: number;
   className?: string;

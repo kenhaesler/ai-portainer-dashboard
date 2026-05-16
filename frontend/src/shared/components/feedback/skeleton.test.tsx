@@ -94,3 +94,30 @@ describe('SkeletonTableRow', () => {
     expect(container.querySelectorAll('td')).toHaveLength(4);
   });
 });
+
+describe('SkeletonChart', () => {
+  it('renders a single pulsing block', () => {
+    const { container } = render(<SkeletonChart />);
+    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(1);
+  });
+
+  it('defaults to medium height (h-48)', () => {
+    const { container } = render(<SkeletonChart />);
+    expect(container.firstChild).toHaveClass('h-48');
+  });
+
+  it('uses h-80 for large size', () => {
+    const { container } = render(<SkeletonChart size="lg" />);
+    expect(container.firstChild).toHaveClass('h-80');
+  });
+
+  it('exposes status role with loading label', () => {
+    render(<SkeletonChart />);
+    expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument();
+  });
+
+  it('applies a custom className', () => {
+    const { container } = render(<SkeletonChart className="mt-2" />);
+    expect(container.firstChild).toHaveClass('mt-2');
+  });
+});
