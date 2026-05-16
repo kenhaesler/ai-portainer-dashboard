@@ -1698,12 +1698,12 @@ export default function TraceExplorerPage() {
               </div>
               </SpotlightCard>
             ) : (
-              <div className="flex h-[600px] items-center justify-center rounded-lg border border-dashed bg-muted/20">
-                <div className="text-center">
-                  <ChevronRight className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <p className="mt-2 text-sm text-muted-foreground">Select a trace to view details</p>
-                </div>
-              </div>
+              <EmptyState
+                icon={ChevronRight}
+                title="Select a trace to view details"
+                description="Pick a trace from the list to inspect its spans, timing, and metadata."
+                className="h-[600px] justify-center"
+              />
             )}
           </div>
         </div>
