@@ -46,6 +46,7 @@ import {
   investigationRoutes,
   incidentsRoutes,
   correlationRoutes,
+  dedupTelemetryRoutes,
   llmRoutes,
   llmObservabilityRoutes,
   llmFeedbackRoutes,
@@ -227,6 +228,7 @@ export async function buildApp() {
     findCorrelatedContainers,
     isUndefinedTableError,
   });
+  await app.register(dedupTelemetryRoutes);
   await app.register(mcpRoutes);
   await app.register(promptProfileRoutes);
   await app.register(llmFeedbackRoutes);

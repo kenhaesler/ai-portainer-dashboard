@@ -6,6 +6,7 @@ export {
   investigationRoutes,
   incidentsRoutes,
   correlationRoutes,
+  dedupTelemetryRoutes,
   llmRoutes,
   llmObservabilityRoutes,
   llmFeedbackRoutes,
@@ -47,6 +48,10 @@ export { isLlmAvailable, chatStream, buildInfrastructureContext } from './servic
 
 // Services — insights
 export { cleanupOldInsights } from './services/insights-store.js';
+
+// Services — dedup-engine telemetry (#1200)
+export { runDedupTelemetryCycle, collectDedupMetrics, cleanupOldDedupMetrics } from './services/dedup-telemetry.js';
+export type { DedupMetricRow, DedupTelemetryCycleResult } from './services/dedup-telemetry.js';
 
 // Services — prompt store
 export { PROMPT_FEATURES, DEFAULT_PROMPTS, getEffectivePrompt } from './services/prompt-store.js';
