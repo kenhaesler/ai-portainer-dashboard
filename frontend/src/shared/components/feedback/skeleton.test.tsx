@@ -35,3 +35,27 @@ describe('SkeletonText', () => {
     expect(container.firstChild).toHaveClass('mt-4');
   });
 });
+
+describe('SkeletonKpi', () => {
+  it('renders three stacked bars (label, big number, sublabel)', () => {
+    const { container } = render(<SkeletonKpi />);
+    expect(container.querySelectorAll('.animate-pulse')).toHaveLength(3);
+  });
+
+  it('renders the big number bar taller than the label bar', () => {
+    const { container } = render(<SkeletonKpi />);
+    const bars = container.querySelectorAll('.animate-pulse');
+    expect(bars[1]).toHaveClass('h-8');
+    expect(bars[0]).toHaveClass('h-3');
+  });
+
+  it('exposes status role with loading label', () => {
+    render(<SkeletonKpi />);
+    expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument();
+  });
+
+  it('applies a custom className', () => {
+    const { container } = render(<SkeletonKpi className="h-full" />);
+    expect(container.firstChild).toHaveClass('h-full');
+  });
+});
