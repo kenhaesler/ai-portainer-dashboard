@@ -55,6 +55,8 @@ Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered anim
 
 **Status colors:** Green=healthy, Yellow=warning, Orange=critical, Red=error, Blue=info, Gray=inactive, Purple=AI insight.
 
+**Empty / loading / error states:** Use `<EmptyState>` (variants: `empty` / `error` / `not-configured`) and the skeleton primitives (`SkeletonText`, `SkeletonKpi`, `SkeletonTableRow`, `SkeletonChart`, `SkeletonList`) in `frontend/src/shared/components/feedback/`. Skeletons live inside the caller's pane chrome — they do not wrap themselves in cards. `EmptyState` is purely informational; render any retry / settings action in the parent pane's header. See `@docs/superpowers/specs/2026-05-16-empty-loading-states-design.md` for the full rationale.
+
 For detailed specs (animation durations, easing curves, glass override patterns, layout patterns), see `@docs/ai-instructions/ui-design-system.md`.
 
 ## Testing & Mocks

@@ -7,24 +7,22 @@ const mockDelete = vi.fn();
 const mockTest = vi.fn();
 const mockRefetch = vi.fn();
 
+const { useWebhooksMock } = vi.hoisted(() => ({ useWebhooksMock: vi.fn() }));
+
+const defaultWebhook = {
+  id: 'wh-1',
+  name: 'Alerts Hook',
+  url: 'https://hooks.example.com/alerts',
+  secret: 'abcd1234...',
+  events: ['insight.created'],
+  enabled: 1,
+  description: null,
+  created_at: '2026-02-06T10:00:00Z',
+  updated_at: '2026-02-06T10:00:00Z',
+};
+
 vi.mock('@/features/core/hooks/use-webhooks', () => ({
-  useWebhooks: () => ({
-    data: [
-      {
-        id: 'wh-1',
-        name: 'Alerts Hook',
-        url: 'https://hooks.example.com/alerts',
-        secret: 'abcd1234...',
-        events: ['insight.created'],
-        enabled: 1,
-        description: null,
-        created_at: '2026-02-06T10:00:00Z',
-        updated_at: '2026-02-06T10:00:00Z',
-      },
-    ],
-    isLoading: false,
-    refetch: mockRefetch,
-  }),
+  useWebhooks: useWebhooksMock,
   useWebhookEventTypes: () => ({
     data: [
       { type: '*', description: 'All events' },
@@ -65,6 +63,19 @@ import { WebhooksPanel } from './webhooks';
 describe('WebhooksPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useWebhooksMock.mockReturnValue({
+      data: [defaultWebhook],
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+  });
+
+  it('shows the empty state when no webhooks exist', () => {
+    useWebhooksMock.mockReturnValue({ data: [], isLoading: false, refetch: mockRefetch });
+    render(<WebhooksPanel />);
+    expect(screen.getByText('No webhooks configured yet')).toBeInTheDocument();
+    expect(screen.getByTestId('empty-state-card')).toBeInTheDocument();
+    expect(screen.queryByText('No webhooks match the current filter.')).not.toBeInTheDocument();
   });
 
   it('renders webhook list, delivery monitor, and add button', () => {
