@@ -215,12 +215,16 @@ export function WebhooksPanel() {
 
           {webhooksQuery.isLoading ? (
             <SkeletonText lines={3} />
-          ) : filteredWebhooks.length === 0 ? (
+          ) : (webhooksQuery.data?.length ?? 0) === 0 ? (
             <EmptyState
               icon={WebhookIcon}
               title="No webhooks configured yet"
               description="Create a webhook to receive events for this dashboard."
             />
+          ) : filteredWebhooks.length === 0 ? (
+            <p className="rounded-md p-6 text-center text-sm text-muted-foreground">
+              No webhooks match the current filter.
+            </p>
           ) : (
             <div className="space-y-2">
               {filteredWebhooks.map((webhook) => (
