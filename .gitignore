@@ -71,3 +71,4 @@ frontend/vite.config.d.ts
 # Screenshots dropped at the repo root — developer scratch, not assets.
 # `/` anchors to repo root only, leaving frontend/public/*.png tracked.
 /*.png
+.superpowers/
