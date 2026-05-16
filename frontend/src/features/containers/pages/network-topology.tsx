@@ -239,7 +239,7 @@ export default function NetworkTopologyPage() {
 
             {/* Side Panel */}
             {selectedNode && (
-              <div className="w-1/3 rounded-lg border bg-card p-6 space-y-4 overflow-y-auto">
+              <div className="w-1/3 rounded-lg border bg-card p-6 shadow-sm space-y-4 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">
                     {selectedNode.type === 'container' ? 'Container Details' : 'Network Details'}

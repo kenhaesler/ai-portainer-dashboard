@@ -5,6 +5,7 @@ import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type UserRole } from '@/features/core/hooks/use-users';
 import { cn, formatDate } from '@/shared/lib/utils';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 interface UserForm {
   username: string;
@@ -140,7 +141,8 @@ export function UsersPanel() {
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-5">
-        <section className="rounded-lg border bg-card p-4 lg:col-span-3">
+        <SpotlightCard className="lg:col-span-3">
+        <section className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <input
               value={search}
@@ -222,11 +224,13 @@ export function UsersPanel() {
             </div>
           )}
         </section>
+        </SpotlightCard>
 
+        <SpotlightCard className="lg:col-span-2">
         <section
           ref={formSectionRef}
           className={cn(
-            'rounded-lg border bg-card p-4 lg:col-span-2 transition-all duration-300',
+            'rounded-lg border bg-card p-6 shadow-sm transition-all duration-300',
             editHighlight && 'ring-2 ring-primary/60 shadow-md shadow-primary/10',
           )}
         >
@@ -294,6 +298,7 @@ export function UsersPanel() {
             </div>
           </div>
         </section>
+        </SpotlightCard>
       </div>
 
       <ConfirmDialog

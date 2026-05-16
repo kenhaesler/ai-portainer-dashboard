@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Bot, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAiMetricsSummary } from '@/features/ai-intelligence/hooks/use-ai-metrics-summary';
 import { cn } from '@/shared/lib/utils';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 interface AiMetricsSummaryProps {
   endpointId: number | undefined;
@@ -23,7 +24,8 @@ export const AiMetricsSummary = memo(function AiMetricsSummary({ endpointId, con
   if (!endpointId || !containerId) return null;
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <SpotlightCard>
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-purple-500" />
@@ -66,5 +68,6 @@ export const AiMetricsSummary = memo(function AiMetricsSummary({ endpointId, con
         </p>
       )}
     </div>
+    </SpotlightCard>
   );
 });

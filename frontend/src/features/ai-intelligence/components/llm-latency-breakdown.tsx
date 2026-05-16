@@ -150,7 +150,7 @@ export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdo
   }
 
   return (
-    <section className="rounded-xl border bg-card/75 p-4 backdrop-blur" data-testid="llm-latency-breakdown">
+    <section data-testid="llm-latency-breakdown">
       <h3 className="text-base font-semibold tracking-tight">LLM latency breakdown</h3>
       <p className="text-sm text-muted-foreground">
         Network roundtrip vs estimated model latency per upstream provider, last 1h.

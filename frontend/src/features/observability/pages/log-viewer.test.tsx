@@ -97,7 +97,10 @@ describe('LogViewerPage', () => {
 
     const filterSection = container.querySelector('section.z-20');
     expect(filterSection).toBeInTheDocument();
-    expect(filterSection).toHaveClass('backdrop-blur');
+    // Canonical card pattern (no backdrop-blur) — verify the pane uses the
+    // shared rounded-lg/border/shadow-sm aesthetic instead.
+    expect(filterSection).toHaveClass('rounded-lg');
+    expect(filterSection).toHaveClass('shadow-sm');
 
     const logSection = container.querySelector('section.z-10');
     expect(logSection).toBeInTheDocument();

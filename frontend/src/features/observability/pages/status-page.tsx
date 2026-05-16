@@ -61,7 +61,7 @@ const PARTICLES = [
 ];
 
 const GLASS_CARD =
-  'rounded-xl border bg-card/80 backdrop-blur-xl shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5';
+  'rounded-lg border bg-card shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5';
 
 const STATUS_CONFIG = {
   operational: {
@@ -334,7 +334,7 @@ export default function StatusPage() {
           <MotionReveal>
             <div
               className={cn(
-                'rounded-xl border p-8 text-center backdrop-blur-xl',
+                'rounded-lg border p-6 text-center shadow-sm',
                 statusConf.bg,
               )}
               data-testid="status-banner"

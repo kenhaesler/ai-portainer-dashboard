@@ -805,7 +805,7 @@ function McpServersSection() {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+    <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Plug className="h-5 w-5 text-purple-500" />

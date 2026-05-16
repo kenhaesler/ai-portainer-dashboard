@@ -978,23 +978,27 @@ export default function InfrastructurePage() {
             ))}
           </div>
         ) : filteredEndpoints.length === 0 && endpoints && endpoints.length > 0 ? (
-          <div className="rounded-lg border bg-card p-8 text-center">
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
             <Server className="mx-auto h-10 w-10 text-muted-foreground" />
             <p className="mt-4 font-medium">No endpoints match filters</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Adjust your filters to see endpoints
             </p>
           </div>
+          </SpotlightCard>
         ) : fleetViewMode === 'grid' ? (
           <>
             {paginatedEndpoints.length === 0 && endpointSearchQuery ? (
-              <div className="rounded-lg border bg-card p-8 text-center">
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
                 <Search className="mx-auto h-10 w-10 text-muted-foreground" />
                 <p className="mt-4 font-medium">No endpoints match your search</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Try a different query or clear the search
                 </p>
               </div>
+              </SpotlightCard>
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {paginatedEndpoints.map((endpoint) => (
@@ -1157,7 +1161,8 @@ export default function InfrastructurePage() {
             ))}
           </div>
         ) : filteredStacks.length === 0 ? (
-          <div className="rounded-lg border bg-card p-8 text-center">
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
             <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
             {stackSearchQuery ? (
               <>
@@ -1192,6 +1197,7 @@ export default function InfrastructurePage() {
               </>
             )}
           </div>
+          </SpotlightCard>
         ) : stacksViewMode === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredStacks.map((stack) => (
@@ -1224,7 +1230,8 @@ export default function InfrastructurePage() {
         <h2 id="k8s-heading" className="sr-only">Kubernetes Resources</h2>
 
         {/* K8s summary bar */}
-        <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-3 shadow-sm text-sm">
+        <SpotlightCard>
+        <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-6 shadow-sm text-sm">
           <span className="font-medium">Kubernetes</span>
           <span className="text-muted-foreground">
             {k8sPods?.length ?? 0} pods
@@ -1245,6 +1252,7 @@ export default function InfrastructurePage() {
             />
           </div>
         </div>
+        </SpotlightCard>
 
         {/* Pods table */}
         {k8sPodsLoading ? (

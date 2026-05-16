@@ -22,6 +22,9 @@ import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { KpiCard } from '@/shared/components/data-display/kpi-card';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 function formatDuration(ms: number): string {
   if (ms < 1) return '<1ms';
@@ -825,22 +828,18 @@ export default function TraceExplorerPage() {
       {summary && (
         <>
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Total Traces</p>
-              <p className="text-2xl font-bold">{summary.totalTraces}</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Avg Duration</p>
-              <p className="text-2xl font-bold">{formatDuration(summary.avgDuration)}</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Error Rate</p>
-              <p className="text-2xl font-bold">{(summary.errorRate * 100).toFixed(1)}%</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Services</p>
-              <p className="text-2xl font-bold">{summary.services}</p>
-            </div>
+            <TiltCard>
+              <KpiCard label="Total Traces" value={summary.totalTraces} />
+            </TiltCard>
+            <TiltCard>
+              <KpiCard label="Avg Duration" value={formatDuration(summary.avgDuration)} />
+            </TiltCard>
+            <TiltCard>
+              <KpiCard label="Error Rate" value={`${(summary.errorRate * 100).toFixed(1)}%`} />
+            </TiltCard>
+            <TiltCard>
+              <KpiCard label="Services" value={summary.services} />
+            </TiltCard>
           </div>
           <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-xs">
             <span className="font-medium text-muted-foreground">Source counters:</span>
@@ -853,7 +852,8 @@ export default function TraceExplorerPage() {
         </>
       )}
 
-      <div className="space-y-3 rounded-lg border bg-card p-4">
+      <SpotlightCard>
+      <div className="space-y-3 rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-4">
           <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1395,12 +1395,15 @@ export default function TraceExplorerPage() {
           </div>
         )}
       </div>
+      </SpotlightCard>
 
       {showServiceMap && (
-        <div className="rounded-lg border bg-card p-4">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <h3 className="mb-4 text-lg font-semibold">Service Dependency Map</h3>
           <ServiceMap serviceNodes={serviceMapNodes} serviceEdges={serviceMapEdges} />
         </div>
+        </SpotlightCard>
       )}
 
       {isLoading ? (
@@ -1447,7 +1450,8 @@ export default function TraceExplorerPage() {
 
           <div className="lg:col-span-2">
             {selectedTraceId && selectedTrace ? (
-              <div className="rounded-lg border bg-card">
+              <SpotlightCard>
+              <div className="rounded-lg border bg-card shadow-sm">
                 <div className="border-b p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1692,6 +1696,7 @@ export default function TraceExplorerPage() {
                   </div>
                 )}
               </div>
+              </SpotlightCard>
             ) : (
               <div className="flex h-[600px] items-center justify-center rounded-lg border border-dashed bg-muted/20">
                 <div className="text-center">

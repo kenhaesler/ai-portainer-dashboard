@@ -271,9 +271,11 @@ describe('StatusPage', () => {
     expect(fetchSpy).toHaveBeenCalledWith('/api/status');
   });
 
-  it('uses glassmorphic card styling', async () => {
+  it('uses canonical card styling', async () => {
     await renderPage();
-    const cards = document.querySelectorAll('.backdrop-blur-xl');
+    // Card style normalized to canonical pattern (rounded-lg border bg-card shadow-sm)
+    // matching Home/Workload-Explorer aesthetic across the app.
+    const cards = document.querySelectorAll('.rounded-lg.border.bg-card.shadow-sm');
     expect(cards.length).toBeGreaterThan(0);
   });
 
