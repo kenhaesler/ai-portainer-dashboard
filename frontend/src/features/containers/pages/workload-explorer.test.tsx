@@ -171,10 +171,6 @@ vi.mock('@/shared/components/ui/favorite-button', () => ({
   FavoriteButton: () => <button type="button">Favorite</button>,
 }));
 
-vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
-  SkeletonCard: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-}));
-
 vi.mock('@/shared/components/layout/selection-action-bar', () => ({
   SelectionActionBar: ({
     selectedCount,

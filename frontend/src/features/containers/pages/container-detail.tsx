@@ -3,7 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Info, ScrollText, Activity, Clock, Wifi, PhoneCall } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useContainerDetail } from '@/features/containers/hooks/use-container-detail';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
@@ -85,7 +85,7 @@ export default function ContainerDetailPage() {
             View detailed information about a container
           </p>
         </div>
-        <SkeletonCard className="h-[600px]" />
+        <SkeletonChart size="lg" className="h-[600px]" />
       </div>
     );
   }

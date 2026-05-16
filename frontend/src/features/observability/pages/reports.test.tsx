@@ -225,12 +225,6 @@ vi.mock('@/shared/components/charts/metrics-line-chart', () => ({
   MetricsLineChart: () => <div data-testid="metrics-line-chart" />,
 }));
 
-vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
-  SkeletonCard: ({ className }: { className?: string }) => (
-    <div data-testid="skeleton" className={className} />
-  ),
-}));
-
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },

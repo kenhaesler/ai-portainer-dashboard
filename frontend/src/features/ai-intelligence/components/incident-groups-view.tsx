@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Layers, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Layers, Loader2, Inbox } from 'lucide-react';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { useIncidentInsights } from '../hooks/use-incident-insights';
 import { InsightCard } from './insight-card';
 import { useIncidentGroups, type IncidentGroup } from '../hooks/use-incident-groups';
@@ -211,11 +212,13 @@ export function IncidentGroupsView({ search = '' }: { search?: string }) {
 
   if (data.groups.length === 0 || (searchLower && visibleGroups.length === 0)) {
     return (
-      <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-        {searchLower && visibleGroups.length === 0
+      <EmptyState
+        icon={Inbox}
+        title={searchLower && visibleGroups.length === 0 ? 'No matching incidents' : 'No active incidents'}
+        description={searchLower && visibleGroups.length === 0
           ? 'No incidents match the current search.'
           : 'No active incidents in this view.'}
-      </div>
+      />
     );
   }
 

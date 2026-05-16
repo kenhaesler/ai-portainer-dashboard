@@ -91,8 +91,8 @@ vi.mock('@/shared/components/ui/refresh-button', () => ({
   RefreshButton: () => <button type="button">Refresh</button>,
 }));
 
-vi.mock('@/shared/components/feedback/loading-skeleton', () => ({
-  SkeletonCard: () => <div data-testid="skeleton-card" />,
+vi.mock('@/shared/components/feedback/skeleton', () => ({
+  SkeletonChart: () => <div data-testid="skeleton-card" />,
 }));
 
 vi.mock('@/shared/lib/motion-tokens', () => ({

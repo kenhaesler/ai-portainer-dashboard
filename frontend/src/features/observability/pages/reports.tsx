@@ -26,7 +26,8 @@ import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { Container } from '@/features/containers/hooks/use-containers';
 import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonKpi } from '@/shared/components/feedback/skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { cn } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -917,10 +918,11 @@ export default function ReportsPage() {
 
       {isLoading && (
         <div className="grid gap-4 md:grid-cols-4">
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
-          <SkeletonCard className="h-24" />
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-6 shadow-sm">
+              <SkeletonKpi />
+            </div>
+          ))}
         </div>
       )}
 
@@ -1074,13 +1076,11 @@ export default function ReportsPage() {
 
       {/* Empty State */}
       {report && report.containers.length === 0 && !isLoading && (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <FileBarChart className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">No Data Available</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            No metrics found for the selected time range. Metrics are collected every 60 seconds from monitored containers.
-          </p>
-        </div>
+        <EmptyState
+          icon={FileBarChart}
+          title="No data available"
+          description="No metrics found for the selected time range. Metrics are collected every 60 seconds from monitored containers."
+        />
       )}
     </div>
   );

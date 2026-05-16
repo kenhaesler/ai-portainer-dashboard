@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useNetworks, type Network } from '@/features/containers/hooks/use-networks';
@@ -11,7 +11,8 @@ import { useServiceMap } from '@/features/observability/hooks/use-service-map';
 import { TopologyGraph, type RpcEdgeInput } from '@/features/containers/components/network/topology-graph';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { formatDate } from '@/shared/lib/utils';
 import { useUiStore } from '@/stores/ui-store';
@@ -208,21 +209,21 @@ export default function NetworkTopologyPage() {
       {/* Graph Container — fills remaining height */}
       <div className="relative flex-1 min-h-0 mt-4">
         {isLoading ? (
-          <SkeletonCard className="h-full" />
+          <SkeletonChart size="lg" className="h-full" />
         ) : isError ? (
-          <div className="flex h-full items-center justify-center rounded-lg border bg-card p-8">
-            <div className="text-center">
-              <p className="text-lg font-semibold text-destructive">Error loading topology</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Failed to load containers or networks. Please try again.
-              </p>
-              <button
-                onClick={handleRefresh}
-                className="mt-4 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                Retry
-              </button>
-            </div>
+          <div className="flex h-full flex-col items-center justify-center">
+            <EmptyState
+              variant="error"
+              icon={AlertTriangle}
+              title="Error loading topology"
+              description="Failed to load containers or networks. Please try again."
+            />
+            <button
+              onClick={handleRefresh}
+              className="mt-4 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <div className="flex gap-4 h-full">

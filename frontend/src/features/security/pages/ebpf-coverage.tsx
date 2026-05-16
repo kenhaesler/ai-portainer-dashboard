@@ -26,7 +26,7 @@ import {
 } from '@/features/security/hooks/use-ebpf-coverage';
 import type { CoverageRecord } from '@/features/security/hooks/use-ebpf-coverage';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonText, SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { formatDate } from '@/shared/lib/utils';
 
@@ -74,7 +74,7 @@ function SummaryBar() {
   const { data: summary, isLoading } = useEbpfCoverageSummary();
 
   if (isLoading || !summary) {
-    return <SkeletonCard className="h-16" />;
+    return <SkeletonText lines={2} />;
   }
 
   const missing = summary.total - summary.deployed;
@@ -399,7 +399,7 @@ export default function EbpfCoveragePage() {
 
       {/* Coverage table */}
       {isLoading ? (
-        <SkeletonCard className="h-64" />
+        <SkeletonChart size="md" className="h-64" />
       ) : (
         <SpotlightCard>
         <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">

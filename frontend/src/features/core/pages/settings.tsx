@@ -16,7 +16,7 @@ import {
 import { useSettings, useUpdateSetting } from '@/features/core/hooks/use-settings';
 import { useAuth } from '@/providers/auth-provider';
 import { useThemeStore } from '@/stores/theme-store';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonText } from '@/shared/components/feedback/skeleton';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
 
@@ -306,9 +306,11 @@ export default function SettingsPage() {
           <p className="text-muted-foreground">Loading settings...</p>
         </div>
         <div className="grid gap-6">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-6 shadow-sm">
+              <SkeletonText lines={4} />
+            </div>
+          ))}
         </div>
       </div>
     );

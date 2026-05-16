@@ -220,7 +220,7 @@ describe('NetworkTopologyPage', () => {
 
     // Topology graph should not render in the loading state
     expect(screen.queryByTestId('topology-graph')).not.toBeInTheDocument();
-    // SkeletonCard renders a status node with aria-label="Loading"
+    // SkeletonChart renders a status node with aria-label="Loading"
     expect(
       screen.getByRole('status', { name: 'Loading' }),
     ).toBeInTheDocument();
