@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw } from 'lucide-react';
+import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw, Webhook as WebhookIcon } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonText } from '@/shared/components/feedback/skeleton';
 import {
   useCreateWebhook,
   useDeleteWebhook,
@@ -212,14 +214,13 @@ export function WebhooksPanel() {
           </div>
 
           {webhooksQuery.isLoading ? (
-            <div className="space-y-2">
-              <div className="h-10 animate-pulse rounded bg-muted" />
-              <div className="h-10 animate-pulse rounded bg-muted" />
-            </div>
+            <SkeletonText lines={3} />
           ) : filteredWebhooks.length === 0 ? (
-            <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-              No webhooks configured yet.
-            </div>
+            <EmptyState
+              icon={WebhookIcon}
+              title="No webhooks configured yet"
+              description="Create a webhook to receive events for this dashboard."
+            />
           ) : (
             <div className="space-y-2">
               {filteredWebhooks.map((webhook) => (
