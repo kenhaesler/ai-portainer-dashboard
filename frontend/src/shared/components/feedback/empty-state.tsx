@@ -1,64 +1,47 @@
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { Inbox, Search, AlertCircle, FileQuestion } from 'lucide-react';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
-type EmptyStateVariant = 'default' | 'search' | 'error' | 'no-data';
+export type EmptyStateVariant = 'empty' | 'error' | 'not-configured';
 
-const variantIcons = {
-  default: Inbox,
-  search: Search,
-  error: AlertCircle,
-  'no-data': FileQuestion,
-};
-
-const variantColors = {
-  default: 'text-muted-foreground',
-  search: 'text-blue-500',
-  error: 'text-destructive',
-  'no-data': 'text-amber-500',
-};
-
-interface EmptyStateProps {
+export interface EmptyStateProps {
+  variant?: EmptyStateVariant;
+  icon: LucideIcon;
   title: string;
   description?: string;
-  variant?: EmptyStateVariant;
-  icon?: React.ReactNode;
-  action?: React.ReactNode;
   className?: string;
 }
 
+const iconTintByVariant: Record<EmptyStateVariant, string> = {
+  empty: 'text-muted-foreground',
+  error: 'text-destructive/80',
+  'not-configured': 'text-amber-500/80',
+};
+
 export function EmptyState({
+  variant = 'empty',
+  icon: Icon,
   title,
   description,
-  variant = 'default',
-  icon,
-  action,
   className,
 }: EmptyStateProps) {
-  const Icon = variantIcons[variant];
-  const iconColor = variantColors[variant];
-
   return (
-    <div
-      className={cn(
-        'flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 p-12 text-center',
-        className
-      )}
-    >
+    <SpotlightCard>
       <div
+        data-testid="empty-state-card"
         className={cn(
-          'flex h-16 w-16 items-center justify-center rounded-full bg-muted/50',
-          iconColor
+          'flex flex-col items-center justify-center rounded-lg border bg-card p-8 text-center shadow-sm',
+          className,
         )}
       >
-        {icon || <Icon className="h-8 w-8" />}
+        <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted/40">
+          <Icon className={cn('h-6 w-6', iconTintByVariant[variant])} />
+        </div>
+        <h3 className="text-sm font-semibold text-foreground/80">{title}</h3>
+        {description && (
+          <p className="mt-1 max-w-sm text-xs text-muted-foreground">{description}</p>
+        )}
       </div>
-      <h3 className="mt-4 text-lg font-semibold">{title}</h3>
-      {description && (
-        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-          {description}
-        </p>
-      )}
-      {action && <div className="mt-6">{action}</div>}
-    </div>
+    </SpotlightCard>
   );
 }
