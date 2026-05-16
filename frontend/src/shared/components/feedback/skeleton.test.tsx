@@ -93,6 +93,13 @@ describe('SkeletonTableRow', () => {
     );
     expect(container.querySelectorAll('td')).toHaveLength(4);
   });
+
+  it('applies a custom className to the tr', () => {
+    const { container } = render(
+      <table><tbody><SkeletonTableRow className="bg-muted" /></tbody></table>,
+    );
+    expect(container.querySelector('tr')).toHaveClass('bg-muted');
+  });
 });
 
 describe('SkeletonChart', () => {
@@ -143,5 +150,10 @@ describe('SkeletonList', () => {
   it('exposes a status role with loading label', () => {
     render(<SkeletonList />);
     expect(screen.getByRole('status', { name: /loading/i })).toBeInTheDocument();
+  });
+
+  it('applies a custom className to the wrapper', () => {
+    const { container } = render(<SkeletonList className="p-4" />);
+    expect(container.firstChild).toHaveClass('p-4');
   });
 });
