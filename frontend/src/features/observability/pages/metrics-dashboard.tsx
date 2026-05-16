@@ -10,7 +10,6 @@ import {
   Clock,
   Server,
   Box,
-  RefreshCw,
   ZoomIn,
   ZoomOut,
   TrendingUp,
@@ -30,7 +29,8 @@ import { AnomalySparkline } from '@/shared/components/charts/anomaly-sparkline';
 import { NetworkTrafficTooltip } from '@/shared/components/charts/network-traffic-tooltip';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { InlineChatPanel } from '@/features/ai-intelligence/components/metrics/inline-chat-panel';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
@@ -519,14 +519,11 @@ export default function MetricsDashboardPage() {
           </div>
 
           {networkTrafficData.length === 0 ? (
-            <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed bg-muted/20 p-8 text-center">
-              <div>
-                <p className="font-medium">No connected networks found for this container</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Select a different container or check container network attachments.
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              icon={Network}
+              title="No connected networks found"
+              description="Select a different container or check container network attachments."
+            />
           ) : (
             <div className="space-y-3">
               <div className="h-[320px]">
@@ -570,20 +567,18 @@ export default function MetricsDashboardPage() {
       {/* Loading State */}
       {isLoading && (
         <div className="space-y-4">
-          <SkeletonCard className="h-[350px]" />
-          <SkeletonCard className="h-[350px]" />
+          <SkeletonChart size="lg" />
+          <SkeletonChart size="lg" />
         </div>
       )}
 
       {/* No Selection State */}
       {!isLoading && !hasSelection && (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <Server className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">Select a Container</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Choose an endpoint and container to view metrics
-          </p>
-        </div>
+        <EmptyState
+          icon={Server}
+          title="Select a container"
+          description="Choose an endpoint and container to view metrics."
+        />
       )}
 
       {/* Metrics Content */}
@@ -634,7 +629,7 @@ export default function MetricsDashboardPage() {
 
           {/* AI Summary */}
           {showSecondaryPanels ? (
-            <Suspense fallback={<SkeletonCard className="h-[120px]" />}>
+            <Suspense fallback={<SkeletonText lines={2} />}>
               <LazyAiMetricsSummary
                 endpointId={selectedEndpoint ?? undefined}
                 containerId={selectedContainer ?? undefined}
@@ -642,32 +637,21 @@ export default function MetricsDashboardPage() {
               />
             </Suspense>
           ) : (
-            <SkeletonCard className="h-[120px]" />
+            <SkeletonText lines={2} />
           )}
 
           {/* Charts */}
           {metricsLoading ? (
             <div className="space-y-4">
-              <SkeletonCard className="h-[350px]" />
-              <SkeletonCard className="h-[350px]" />
+              <SkeletonChart size="lg" />
+              <SkeletonChart size="lg" />
             </div>
           ) : allMetricsEmpty ? (
-            <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center">
-              <Clock className="mx-auto h-10 w-10 text-muted-foreground" />
-              <h4 className="mt-3 font-semibold">No Metrics Data Available</h4>
-              <p className="mt-2 text-sm text-muted-foreground max-w-lg mx-auto">
-                No metrics have been recorded for this container in the selected time range.
-                This can happen when:
-              </p>
-              <ul className="mt-3 text-sm text-muted-foreground space-y-1 max-w-md mx-auto text-left list-disc list-inside">
-                <li>The container was recently started and metrics collection hasn&apos;t run yet (runs every 60 seconds)</li>
-                <li>The container is stopped or paused</li>
-                <li>The selected time range doesn&apos;t overlap with when the container was running</li>
-              </ul>
-              <p className="mt-4 text-xs text-muted-foreground">
-                Try selecting a wider time range or wait for the next collection cycle.
-              </p>
-            </div>
+            <EmptyState
+              icon={Clock}
+              title="No metrics data available"
+              description="No metrics have been recorded for this container in the selected time range. Containers record metrics every 60 seconds — try a wider time range or wait for collection."
+            />
           ) : (
             <div className="space-y-6">
               {/* CPU Chart */}
@@ -788,18 +772,12 @@ export default function MetricsDashboardPage() {
                 )}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center">
-                <Clock className="mx-auto h-10 w-10 text-muted-foreground" />
-                <h4 className="mt-3 font-semibold">Collecting Metrics Data</h4>
-                <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
-                  Capacity forecasts require at least <span className="font-medium text-foreground">5 minutes</span> of
-                  metrics history. For higher confidence predictions, keep the container running
-                  for <span className="font-medium text-foreground">20+ minutes</span>.
-                </p>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Metrics are collected every 60 seconds. The longer the container runs, the more accurate the forecast.
-                </p>
-              </div>
+              <EmptyState
+                variant="not-configured"
+                icon={Clock}
+                title="Collecting metrics data"
+                description="Capacity forecasts require at least 5 minutes of metrics history. For higher confidence predictions, keep the container running for 20+ minutes."
+              />
             )}
           </div>
 
@@ -832,11 +810,11 @@ export default function MetricsDashboardPage() {
 
       {/* Cross-Container Correlation Insights */}
       {showSecondaryPanels ? (
-        <Suspense fallback={<SkeletonCard className="h-[260px]" />}>
+        <Suspense fallback={<SkeletonChart size="md" />}>
           <LazyCorrelationInsightsPanel llmAvailable={llmAvailable} hours={24} selectedContainerId={selectedContainer} />
         </Suspense>
       ) : (
-        <SkeletonCard className="h-[260px]" />
+        <SkeletonChart size="md" />
       )}
 
       {/* Forecast Overview */}
@@ -863,25 +841,28 @@ export default function MetricsDashboardPage() {
         </div>
 
         {forecastOverviewQuery.isLoading ? (
-          <div className="mt-4 space-y-2">
-            <div className="h-10 animate-pulse rounded bg-muted" />
-            <div className="h-10 animate-pulse rounded bg-muted" />
-            <div className="h-10 animate-pulse rounded bg-muted" />
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[880px] text-sm">
+              <tbody>
+                <SkeletonTableRow columns={8} />
+                <SkeletonTableRow columns={8} />
+                <SkeletonTableRow columns={8} />
+              </tbody>
+            </table>
           </div>
         ) : forecastOverviewQuery.error ? (
-          <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 p-4">
-            <p className="font-medium text-destructive">Failed to load forecast overview</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {forecastOverviewQuery.error instanceof Error ? forecastOverviewQuery.error.message : 'Unexpected error'}
-            </p>
-          </div>
+          <EmptyState
+            variant="error"
+            icon={AlertTriangle}
+            title="Failed to load forecast overview"
+            description={forecastOverviewQuery.error instanceof Error ? forecastOverviewQuery.error.message : 'Try again in a moment.'}
+          />
         ) : rankedForecasts.length === 0 ? (
-          <div className="mt-4 rounded-md border border-dashed bg-muted/20 p-6 text-center">
-            <p className="font-medium">No forecast data available</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Keep metrics collection running to build cross-container forecast insights.
-            </p>
-          </div>
+          <EmptyState
+            icon={Clock}
+            title="No forecast data available"
+            description="Keep metrics collection running to build cross-container forecast insights."
+          />
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[880px] text-sm">
