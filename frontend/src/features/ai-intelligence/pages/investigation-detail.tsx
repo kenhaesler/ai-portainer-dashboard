@@ -10,6 +10,32 @@ import { formatDate } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { TiltCard } from '@/shared/components/data-display/tilt-card';
 
+function StatTile({
+  label,
+  icon: Icon,
+  value,
+  variant = 'numeric',
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  value: string;
+  variant?: 'numeric' | 'text';
+}) {
+  return (
+    <TiltCard>
+      <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <Icon className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <p className={variant === 'numeric' ? 'mt-2 text-3xl font-bold tracking-tight' : 'mt-2 text-sm font-medium'}>
+          {value}
+        </p>
+      </div>
+    </TiltCard>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     pending: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -98,46 +124,18 @@ export default function InvestigationDetailPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <TiltCard>
-          <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Created</p>
-              <Clock className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="mt-2 text-sm font-medium">{formatDate(investigation.created_at)}</p>
-          </div>
-        </TiltCard>
-        <TiltCard>
-          <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Confidence</p>
-              <Brain className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="mt-2 text-3xl font-bold tracking-tight">
-              {investigation.confidence_score != null ? `${Math.round(investigation.confidence_score * 100)}%` : 'N/A'}
-            </p>
-          </div>
-        </TiltCard>
-        <TiltCard>
-          <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Duration</p>
-              <Loader2 className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="mt-2 text-3xl font-bold tracking-tight">
-              {investigation.analysis_duration_ms != null ? `${(investigation.analysis_duration_ms / 1000).toFixed(1)}s` : 'N/A'}
-            </p>
-          </div>
-        </TiltCard>
-        <TiltCard>
-          <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Model</p>
-              <Database className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="mt-2 text-sm font-medium">{investigation.llm_model ?? 'Unknown'}</p>
-          </div>
-        </TiltCard>
+        <StatTile label="Created" icon={Clock} value={formatDate(investigation.created_at)} variant="text" />
+        <StatTile
+          label="Confidence"
+          icon={Brain}
+          value={investigation.confidence_score != null ? `${Math.round(investigation.confidence_score * 100)}%` : 'N/A'}
+        />
+        <StatTile
+          label="Duration"
+          icon={Loader2}
+          value={investigation.analysis_duration_ms != null ? `${(investigation.analysis_duration_ms / 1000).toFixed(1)}s` : 'N/A'}
+        />
+        <StatTile label="Model" icon={Database} value={investigation.llm_model ?? 'Unknown'} variant="text" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -33,7 +33,7 @@ export function SpotlightCard({ children, className }: SpotlightCardProps) {
   return (
     <div
       ref={containerRef}
-      className={cn('spotlight-card rounded-xl', className)}
+      className={cn('spotlight-card rounded-lg', className)}
       onMouseMove={handleMouseMove}
     >
       {children}
