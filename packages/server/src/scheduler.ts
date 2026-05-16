@@ -7,7 +7,7 @@ import { cachedFetch, cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/p
 import { normalizeEndpoint, type NormalizedEndpoint } from '@dashboard/core/portainer/index.js';
 import { getSetting, getEffectiveHarborConfig, getEffectiveMonitoringSchedulerConfig, cleanExpiredSessions, cleanExpiredStreamTickets } from '@dashboard/core/services/index.js';
 import { runWithTraceContext } from '@dashboard/core/tracing/index.js';
-import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle } from '@dashboard/ai';
+import { startCooldownSweep, stopCooldownSweep, cleanupOldInsights, pruneCanaryRegistry, runDedupTelemetryCycle, cleanupOldDedupMetrics } from '@dashboard/ai';
 import { collectMetrics, insertMetrics, cleanOldMetrics, cleanOldSpans, type MetricInsert, recordNetworkSample, insertKpiSnapshot, cleanOldKpiSnapshots, pruneStaleEntries } from '@dashboard/observability';
 import { cleanupOldCaptures, cleanupOrphanedSidecars, runStalenessChecks, runHarborSync, isHarborSyncRunning, isHarborConfiguredAsync, cleanupOldVulnerabilities } from '@dashboard/security';
 import { createPortainerBackup, cleanupOldPortainerBackups, startWebhookListener, stopWebhookListener, processRetries } from '@dashboard/operations';
@@ -380,6 +380,15 @@ export async function runCleanup(): Promise<void> {
     }
   } catch (err) {
     log.error({ err }, 'Insights cleanup failed');
+  }
+
+  try {
+    const dedupMetricsDeleted = await cleanupOldDedupMetrics(90);
+    if (dedupMetricsDeleted > 0) {
+      log.info({ deleted: dedupMetricsDeleted }, 'Old dedup telemetry rows cleaned up');
+    }
+  } catch (err) {
+    log.error({ err }, 'Dedup telemetry cleanup failed');
   }
 
   try {

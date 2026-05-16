@@ -50,7 +50,7 @@ export { isLlmAvailable, chatStream, buildInfrastructureContext } from './servic
 export { cleanupOldInsights } from './services/insights-store.js';
 
 // Services — dedup-engine telemetry (#1200)
-export { runDedupTelemetryCycle, collectDedupMetrics } from './services/dedup-telemetry.js';
+export { runDedupTelemetryCycle, collectDedupMetrics, cleanupOldDedupMetrics } from './services/dedup-telemetry.js';
 export type { DedupMetricRow, DedupTelemetryCycleResult } from './services/dedup-telemetry.js';
 
 // Services — prompt store

@@ -81,16 +81,19 @@ describe('GET /api/dedup-telemetry', () => {
     expect(body.rows[0].signature).toBe('anomaly:threshold:cpu');
   });
 
-  it('honours the signature query param', async () => {
+  it('honours the signature query param and binds it in the first positional slot', async () => {
     mockQuery.mockResolvedValueOnce([]);
     const res = await adminApp.inject({
       method: 'GET',
       url: '/api/dedup-telemetry?signature=anomaly:threshold:cpu',
     });
     expect(res.statusCode).toBe(200);
-    // The mock was called with the signature filter and a default limit.
+    // Verify positional binding, not just presence — a future bug that swaps
+    // positions would still pass a `.toContain` check.
     const lastCall = mockQuery.mock.calls.at(-1)!;
-    expect(lastCall[1]).toContain('anomaly:threshold:cpu');
+    const sql = lastCall[0] as string;
+    expect(sql).toMatch(/WHERE signature = \?/);
+    expect((lastCall[1] as unknown[])[0]).toBe('anomaly:threshold:cpu');
   });
 
   it('rejects viewer-role callers with 403', async () => {

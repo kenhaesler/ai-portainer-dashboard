@@ -41,6 +41,11 @@ interface IncidentAggRow {
 
 const WINDOW_HOURS_DEFAULT = 24 * 7;
 
+// CASE expression mirrors services/signature.ts deriveSignature + TITLE_RULES.
+// Order matters — ml-anomaly must come before the bare "anomalous … usage"
+// rule, otherwise the threshold variant would win for ML-tagged titles.
+// Keep this in lock-step with signature.ts; the unit test
+// `signature-sql-parity` in dedup-telemetry.test.ts pins the parity.
 const INSIGHTS_AGG_SQL = `
   WITH derived AS (
     SELECT
@@ -50,6 +55,18 @@ const INSIGHTS_AGG_SQL = `
         WHEN category = 'security'     THEN 'security:scan'
         WHEN category = 'log-analysis' THEN 'log:pattern'
         WHEN category = 'ai-analysis'  THEN 'ai:analysis'
+        WHEN title ~* 'predicted\\s+(cpu|memory|disk)\\s+exhaustion'
+          THEN 'predictive:prediction:' || lower((regexp_match(title, 'predicted\\s+(cpu|memory|disk)\\s+exhaustion', 'i'))[1])
+        WHEN title ~* 'anomalous\\s+(cpu|memory|disk)\\s+usage[^()]*\\(ml-detected\\)'
+          THEN 'anomaly:ml-anomaly:' || lower((regexp_match(title, 'anomalous\\s+(cpu|memory|disk)', 'i'))[1])
+        WHEN title ~* 'anomalous\\s+(cpu|memory|disk)\\s+usage'
+          THEN 'anomaly:threshold:' || lower((regexp_match(title, 'anomalous\\s+(cpu|memory|disk)', 'i'))[1])
+        WHEN title ~* 'high\\s+(cpu|memory|disk)\\s+usage'
+          THEN 'anomaly:threshold:' || lower((regexp_match(title, 'high\\s+(cpu|memory|disk)', 'i'))[1])
+        WHEN title ~* 'no health check (configured|defined)|missing health check'
+          THEN 'config:health-check:missing'
+        WHEN title ~* 'host network mode'
+          THEN 'config:network:host-mode'
         ELSE category || ':unknown'
       END AS signature,
       container_name
@@ -76,12 +93,17 @@ const INCIDENTS_AGG_SQL = `
   GROUP BY signature
 `;
 
+// ON CONFLICT DO NOTHING pairs with the UNIQUE(signature, collected_at)
+// constraint added in migration 033. Two scheduler firings in the same
+// millisecond would otherwise produce duplicate rows that subtly inflate
+// week-over-week aggregations.
 const INSERT_SQL = `
   INSERT INTO monitoring_dedup_metrics (
     collected_at, window_hours, signature,
     total_insights, distinct_containers, alerts_per_container,
     total_incidents, avg_insights_per_incident
   ) VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT (signature, collected_at) DO NOTHING
 `;
 
 /**
@@ -149,6 +171,25 @@ export async function insertDedupMetrics(
       row.avg_insights_per_incident,
     ]);
   }
+}
+
+/**
+ * Daily retention sweep for `monitoring_dedup_metrics`. The hourly job writes
+ * one row per signature per snapshot, so the table grows linearly forever
+ * unless something prunes it. 90 days of history is enough to compare the
+ * dedup engine's behaviour week-over-week through a release cycle; older
+ * data is rarely consulted and can be reconstructed from the raw insights
+ * if needed. Returns the number of rows deleted so the scheduler can log.
+ */
+export async function cleanupOldDedupMetrics(days: number = 90): Promise<number> {
+  if (!Number.isFinite(days) || days <= 0) return 0;
+  const db = getDbForDomain('monitoring');
+  const result = await db.execute(
+    `DELETE FROM monitoring_dedup_metrics
+     WHERE collected_at < NOW() - make_interval(days => ?)`,
+    [days],
+  );
+  return result.changes;
 }
 
 export interface DedupTelemetryCycleResult {

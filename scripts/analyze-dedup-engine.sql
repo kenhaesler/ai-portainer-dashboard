@@ -22,12 +22,27 @@
 \echo
 WITH derived AS (
   SELECT
+    -- Mirrors services/signature.ts deriveSignature + TITLE_RULES so this script
+    -- reports the same signatures the runtime correlator does. Order matters:
+    -- the ml-detected branch must come before the bare anomalous-usage rule.
     CASE
       WHEN metric_type IS NOT NULL AND detection_method IS NOT NULL
         THEN category || ':' || detection_method || ':' || metric_type
       WHEN category = 'security'     THEN 'security:scan'
       WHEN category = 'log-analysis' THEN 'log:pattern'
       WHEN category = 'ai-analysis'  THEN 'ai:analysis'
+      WHEN title ~* 'predicted\s+(cpu|memory|disk)\s+exhaustion'
+        THEN 'predictive:prediction:' || lower((regexp_match(title, 'predicted\s+(cpu|memory|disk)\s+exhaustion', 'i'))[1])
+      WHEN title ~* 'anomalous\s+(cpu|memory|disk)\s+usage[^()]*\(ml-detected\)'
+        THEN 'anomaly:ml-anomaly:' || lower((regexp_match(title, 'anomalous\s+(cpu|memory|disk)', 'i'))[1])
+      WHEN title ~* 'anomalous\s+(cpu|memory|disk)\s+usage'
+        THEN 'anomaly:threshold:' || lower((regexp_match(title, 'anomalous\s+(cpu|memory|disk)', 'i'))[1])
+      WHEN title ~* 'high\s+(cpu|memory|disk)\s+usage'
+        THEN 'anomaly:threshold:' || lower((regexp_match(title, 'high\s+(cpu|memory|disk)', 'i'))[1])
+      WHEN title ~* 'no health check (configured|defined)|missing health check'
+        THEN 'config:health-check:missing'
+      WHEN title ~* 'host network mode'
+        THEN 'config:network:host-mode'
       ELSE category || ':unknown'
     END AS signature,
     container_name
@@ -75,12 +90,25 @@ ORDER BY total DESC;
 \echo
 WITH derived AS (
   SELECT
+    -- Same signature derivation as Q1 above. Keep in sync with both.
     CASE
       WHEN metric_type IS NOT NULL AND detection_method IS NOT NULL
         THEN category || ':' || detection_method || ':' || metric_type
       WHEN category = 'security'     THEN 'security:scan'
       WHEN category = 'log-analysis' THEN 'log:pattern'
       WHEN category = 'ai-analysis'  THEN 'ai:analysis'
+      WHEN title ~* 'predicted\s+(cpu|memory|disk)\s+exhaustion'
+        THEN 'predictive:prediction:' || lower((regexp_match(title, 'predicted\s+(cpu|memory|disk)\s+exhaustion', 'i'))[1])
+      WHEN title ~* 'anomalous\s+(cpu|memory|disk)\s+usage[^()]*\(ml-detected\)'
+        THEN 'anomaly:ml-anomaly:' || lower((regexp_match(title, 'anomalous\s+(cpu|memory|disk)', 'i'))[1])
+      WHEN title ~* 'anomalous\s+(cpu|memory|disk)\s+usage'
+        THEN 'anomaly:threshold:' || lower((regexp_match(title, 'anomalous\s+(cpu|memory|disk)', 'i'))[1])
+      WHEN title ~* 'high\s+(cpu|memory|disk)\s+usage'
+        THEN 'anomaly:threshold:' || lower((regexp_match(title, 'high\s+(cpu|memory|disk)', 'i'))[1])
+      WHEN title ~* 'no health check (configured|defined)|missing health check'
+        THEN 'config:health-check:missing'
+      WHEN title ~* 'host network mode'
+        THEN 'config:network:host-mode'
       ELSE category || ':unknown'
     END AS signature,
     category,

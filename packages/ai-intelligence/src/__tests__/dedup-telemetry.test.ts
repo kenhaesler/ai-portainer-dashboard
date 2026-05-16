@@ -23,7 +23,9 @@ import {
   collectDedupMetrics,
   insertDedupMetrics,
   runDedupTelemetryCycle,
+  cleanupOldDedupMetrics,
 } from '../services/dedup-telemetry.js';
+import { deriveSignatureFromTitle } from '../services/signature.js';
 
 interface MetricRow {
   signature: string;
@@ -41,19 +43,21 @@ async function seedInsight(opts: {
   metric_type?: string | null;
   detection_method?: string | null;
   hours_ago?: number;
+  title?: string;
 }): Promise<void> {
   await testDb.execute(
     `INSERT INTO insights (
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, is_acknowledged,
       created_at, metric_type, detection_method
-    ) VALUES (?, 1, 'e', ?, ?, 'warning', ?, 't', 'd', false,
+    ) VALUES (?, 1, 'e', ?, ?, 'warning', ?, ?, 'd', false,
               NOW() - make_interval(hours => ?), ?, ?)`,
     [
       opts.id,
       'cid-' + opts.container_name,
       opts.container_name,
       opts.category,
+      opts.title ?? 't',
       opts.hours_ago ?? 1,
       opts.metric_type ?? null,
       opts.detection_method ?? null,
@@ -198,6 +202,104 @@ describe('insertDedupMetrics', () => {
     expect(persisted[0].total_insights).toBe(100);
     expect(persisted[0].alerts_per_container).toBeCloseTo(10, 1);
     expect(persisted[0].window_hours).toBe(168);
+  });
+});
+
+describe('collectDedupMetrics — title-rule parity with signature.ts', () => {
+  // The SQL CASE in services/dedup-telemetry.ts mirrors the TITLE_RULES in
+  // services/signature.ts. These cases pin the parity so a future edit to
+  // one side breaks loudly.
+  const cases: Array<{ name: string; title: string; category: string }> = [
+    { name: 'predicted memory exhaustion',  title: 'Predicted memory exhaustion on "x"',           category: 'predictive' },
+    { name: 'predicted cpu exhaustion',     title: 'Predicted cpu exhaustion on "y"',              category: 'predictive' },
+    { name: 'predicted disk exhaustion',    title: 'Predicted disk exhaustion on "z"',             category: 'predictive' },
+    { name: 'anomalous cpu (ML-detected)',  title: 'Anomalous cpu usage on "x" (ML-detected)',     category: 'anomaly' },
+    { name: 'anomalous memory threshold',   title: 'Anomalous memory usage on "x"',                category: 'anomaly' },
+    { name: 'high cpu usage threshold',     title: 'High cpu usage on "x"',                        category: 'anomaly' },
+    { name: 'missing health check',         title: 'No health check configured for "x"',           category: 'config' },
+    { name: 'host network mode',            title: 'Container "x" uses host network mode',         category: 'config' },
+  ];
+
+  it.each(cases)('SQL derives the same signature as deriveSignatureFromTitle: $name', async ({ title }) => {
+    await seedInsight({
+      id: 'ttl-' + Math.random().toString(36).slice(2),
+      category: 'unknown-cat', // forces fall-through to title rules
+      container_name: 'c',
+      title,
+    });
+
+    const rows = await collectDedupMetrics(testDb);
+    const expected = deriveSignatureFromTitle(title);
+    const got = rows.map((r) => r.signature);
+
+    expect(got).toContain(expected);
+  });
+});
+
+describe('cleanupOldDedupMetrics', () => {
+  it('deletes rows older than the given retention window and keeps recent ones', async () => {
+    // Insert one old and one recent row by hand so we can control collected_at.
+    await testDb.execute(
+      `INSERT INTO monitoring_dedup_metrics
+         (collected_at, window_hours, signature, total_insights, distinct_containers,
+          alerts_per_container, total_incidents, avg_insights_per_incident)
+       VALUES
+         (NOW() - INTERVAL '120 days', 168, 'anomaly:threshold:cpu', 10, 1, 10, 0, 0),
+         (NOW() - INTERVAL '30 days',  168, 'anomaly:threshold:cpu', 20, 1, 20, 0, 0)`,
+    );
+
+    const deleted = await cleanupOldDedupMetrics(90);
+    expect(deleted).toBe(1);
+
+    const remaining = await testDb.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM monitoring_dedup_metrics`,
+    );
+    expect(remaining[0].count).toBe(1);
+  });
+
+  it('is a no-op on an empty table', async () => {
+    expect(await cleanupOldDedupMetrics(90)).toBe(0);
+  });
+
+  it('refuses non-positive day counts and returns 0', async () => {
+    expect(await cleanupOldDedupMetrics(0)).toBe(0);
+    expect(await cleanupOldDedupMetrics(-1)).toBe(0);
+  });
+});
+
+describe('insertDedupMetrics — ON CONFLICT DO NOTHING', () => {
+  it('silently drops a second insert with the same (signature, collected_at)', async () => {
+    // Manually insert a row at a fixed timestamp so we can collide with it.
+    const ts = '2026-05-16 18:00:00+00';
+    await testDb.execute(
+      `INSERT INTO monitoring_dedup_metrics
+         (collected_at, window_hours, signature, total_insights, distinct_containers,
+          alerts_per_container, total_incidents, avg_insights_per_incident)
+       VALUES (?, 168, 'anomaly:threshold:cpu', 100, 5, 20, 1, 100)`,
+      [ts],
+    );
+
+    // Insert the same (signature, collected_at) again — should be a no-op,
+    // not an error.
+    await expect(
+      testDb.execute(
+        `INSERT INTO monitoring_dedup_metrics
+           (collected_at, window_hours, signature, total_insights, distinct_containers,
+            alerts_per_container, total_incidents, avg_insights_per_incident)
+         VALUES (?, 168, 'anomaly:threshold:cpu', 999, 999, 999, 999, 999)
+         ON CONFLICT (signature, collected_at) DO NOTHING`,
+        [ts],
+      ),
+    ).resolves.toBeDefined();
+
+    // Only the original row survives.
+    const rows = await testDb.query<{ total_insights: number }>(
+      `SELECT total_insights FROM monitoring_dedup_metrics
+       WHERE signature = 'anomaly:threshold:cpu' AND collected_at = ?::timestamptz`,
+      [ts],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].total_insights).toBe(100);
   });
 });
 
