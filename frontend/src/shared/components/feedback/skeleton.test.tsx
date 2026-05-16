@@ -14,6 +14,17 @@ describe('SkeletonText', () => {
     expect(container.querySelectorAll('.animate-pulse')).toHaveLength(3);
   });
 
+  it('disables the pulse animation under prefers-reduced-motion', () => {
+    // The `motion-reduce:animate-none` Tailwind utility maps to a class that
+    // resolves to `animation: none` inside `@media (prefers-reduced-motion:
+    // reduce)`. jsdom can't evaluate the media query, so we assert the class
+    // is present on each pulsing bar; the CSS handles the rest.
+    const { container } = render(<SkeletonText />);
+    const bars = container.querySelectorAll('.animate-pulse');
+    expect(bars.length).toBeGreaterThan(0);
+    bars.forEach((bar) => expect(bar).toHaveClass('motion-reduce:animate-none'));
+  });
+
   it('renders the requested number of lines', () => {
     const { container } = render(<SkeletonText lines={6} />);
     expect(container.querySelectorAll('.animate-pulse')).toHaveLength(6);

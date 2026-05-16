@@ -197,7 +197,7 @@ describe('MetricsDashboardPage', () => {
 
   it('shows select container prompt when no selection', () => {
     renderPage();
-    expect(screen.getByText('Select a Container')).toBeTruthy();
+    expect(screen.getByText('Select a container')).toBeTruthy();
   });
 
   it('renders endpoint selector', () => {

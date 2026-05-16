@@ -19,7 +19,8 @@ import { ServiceMap } from '@/shared/components/charts/service-map';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonChart, SkeletonList } from '@/shared/components/feedback/skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
@@ -795,19 +796,18 @@ export default function TraceExplorerPage() {
           <h1 className="text-3xl font-bold tracking-tight">Trace Explorer</h1>
           <p className="text-muted-foreground">Distributed trace visualization with service map</p>
         </div>
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-          <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-4 font-medium text-destructive">Failed to load traces</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'An unexpected error occurred'}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Try again
-          </button>
-        </div>
+        <EmptyState
+          variant="error"
+          icon={AlertTriangle}
+          title="Failed to load traces"
+          description={error instanceof Error ? error.message : 'An unexpected error occurred'}
+        />
+        <button
+          onClick={() => refetch()}
+          className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Try again
+        </button>
       </div>
     );
   }
@@ -1408,21 +1408,21 @@ export default function TraceExplorerPage() {
 
       {isLoading ? (
         <div className="grid gap-6 lg:grid-cols-3">
-          <SkeletonCard className="h-[600px]" />
+          <SkeletonList rows={4} className="h-[600px]" />
           <div className="lg:col-span-2">
-            <SkeletonCard className="h-[600px]" />
+            <SkeletonChart size="lg" className="h-[600px]" />
           </div>
         </div>
       ) : filteredTraces.length === 0 ? (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-          <GitBranch className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">No traces found</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {searchQuery || serviceFilter || sourceFilter || hasAdvancedFiltersApplied
+        <EmptyState
+          icon={GitBranch}
+          title="No traces found"
+          description={
+            searchQuery || serviceFilter || sourceFilter || hasAdvancedFiltersApplied
               ? 'Try adjusting your search or filter criteria.'
-              : 'No distributed traces have been collected yet.'}
-          </p>
-        </div>
+              : 'No distributed traces have been collected yet.'
+          }
+        />
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="max-h-[600px] space-y-3 overflow-y-auto pr-2">
@@ -1698,12 +1698,12 @@ export default function TraceExplorerPage() {
               </div>
               </SpotlightCard>
             ) : (
-              <div className="flex h-[600px] items-center justify-center rounded-lg border border-dashed bg-muted/20">
-                <div className="text-center">
-                  <ChevronRight className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <p className="mt-2 text-sm text-muted-foreground">Select a trace to view details</p>
-                </div>
-              </div>
+              <EmptyState
+                icon={ChevronRight}
+                title="Select a trace to view details"
+                description="Pick a trace from the list to inspect its spans, timing, and metadata."
+                className="h-[600px] justify-center"
+              />
             )}
           </div>
         </div>

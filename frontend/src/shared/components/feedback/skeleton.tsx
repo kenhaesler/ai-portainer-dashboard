@@ -1,6 +1,6 @@
 import { cn } from '@/shared/lib/utils';
 
-const PULSE = 'animate-pulse rounded bg-muted/40';
+const PULSE = 'animate-pulse motion-reduce:animate-none rounded bg-muted/40';
 
 export interface SkeletonTextProps {
   lines?: number;

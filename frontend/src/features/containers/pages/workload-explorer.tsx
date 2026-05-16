@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
+import { AlertTriangle, Boxes, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
@@ -15,7 +15,8 @@ import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { FavoriteButton } from '@/shared/components/ui/favorite-button';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/features/containers/lib/system-container-grouping';
@@ -584,19 +585,18 @@ export default function WorkloadExplorerPage() {
             Browse and manage containers across all endpoints
           </p>
         </div>
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-          <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-4 font-medium text-destructive">Failed to load containers</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'An unexpected error occurred'}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Try again
-          </button>
-        </div>
+        <EmptyState
+          variant="error"
+          icon={AlertTriangle}
+          title="Failed to load containers"
+          description={error instanceof Error ? error.message : 'An unexpected error occurred'}
+        />
+        <button
+          onClick={() => refetch()}
+          className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Try again
+        </button>
       </div>
     );
   }
@@ -665,7 +665,7 @@ export default function WorkloadExplorerPage() {
                 containers?.find((c) => c.id === containerId && c.endpointId === endpointId))
               .filter((c): c is Container => c !== undefined);
 
-            if (isLoading) return <SkeletonCard className="h-[300px]" />;
+            if (isLoading) return <SkeletonChart size="md" />;
 
             if (compared.length < 2) {
               const heading = compared.length === 0
@@ -675,9 +675,12 @@ export default function WorkloadExplorerPage() {
                 ? 'Pick at least 2 containers from Workload Explorer to compare them.'
                 : 'Add another container from Workload Explorer to compare.';
               return (
-                <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-                  <h2 className="text-lg font-semibold">{heading}</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+                <>
+                  <EmptyState
+                    icon={Boxes}
+                    title={heading}
+                    description={body}
+                  />
                   <button
                     type="button"
                     onClick={exitCompareMode}
@@ -685,7 +688,7 @@ export default function WorkloadExplorerPage() {
                   >
                     ← Back to list
                   </button>
-                </div>
+                </>
               );
             }
 
@@ -801,7 +804,7 @@ export default function WorkloadExplorerPage() {
 
           {/* Table pane: filter chips + search + table */}
           {isLoading ? (
-            <SkeletonCard className="h-[500px]" />
+            <SkeletonChart size="lg" />
           ) : filteredContainers ? (
             <SpotlightCard>
             <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
