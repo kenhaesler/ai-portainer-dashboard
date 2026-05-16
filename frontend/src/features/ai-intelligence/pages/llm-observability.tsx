@@ -280,10 +280,6 @@ export default function LlmObservabilityPage() {
       {/* LLM Latency Breakdown (#1239) — Network vs Model split per provider */}
       <SpotlightCard>
       <div className="rounded-lg border bg-card p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <Activity className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Latency Breakdown</h2>
-        </div>
         <LlmLatencyBreakdown />
       </div>
       </SpotlightCard>

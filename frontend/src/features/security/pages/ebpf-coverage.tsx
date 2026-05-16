@@ -401,7 +401,8 @@ export default function EbpfCoveragePage() {
       {isLoading ? (
         <SkeletonCard className="h-64" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <SpotlightCard>
+        <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
           <table className="w-full text-left" data-testid="coverage-table">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -440,6 +441,7 @@ export default function EbpfCoveragePage() {
             </tbody>
           </table>
         </div>
+        </SpotlightCard>
       )}
     </div>
   );

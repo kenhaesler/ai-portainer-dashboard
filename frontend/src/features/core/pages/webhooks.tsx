@@ -14,6 +14,7 @@ import {
   type Webhook,
 } from '@/features/core/hooks/use-webhooks';
 import { formatDate } from '@/shared/lib/utils';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 interface FormState {
   name: string;
@@ -187,7 +188,8 @@ export function WebhooksPanel() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">
-        <section className="rounded-lg border bg-card p-4 lg:col-span-3">
+        <SpotlightCard className="lg:col-span-3">
+        <section className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <label className="text-sm text-muted-foreground">Filter</label>
             <ThemedSelect
@@ -282,8 +284,10 @@ export function WebhooksPanel() {
             </div>
           )}
         </section>
+        </SpotlightCard>
 
-        <section className="rounded-lg border bg-card p-4 lg:col-span-2">
+        <SpotlightCard className="lg:col-span-2">
+        <section className="rounded-lg border bg-card p-6 shadow-sm">
           <h2 className="text-base font-semibold">{editingId ? 'Edit Webhook' : 'Create Webhook'}</h2>
           <div className="mt-3 space-y-3 text-sm">
             <label className="block">
@@ -371,10 +375,12 @@ export function WebhooksPanel() {
             </div>
           </div>
         </section>
+        </SpotlightCard>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-lg border bg-card p-4">
+        <SpotlightCard>
+        <section className="rounded-lg border bg-card p-6 shadow-sm">
           <h2 className="text-base font-semibold">Delivery Monitor</h2>
           {!selectedWebhookId ? (
             <p className="mt-3 text-sm text-muted-foreground">Select a webhook to view delivery history.</p>
@@ -413,8 +419,10 @@ export function WebhooksPanel() {
             </div>
           )}
         </section>
+        </SpotlightCard>
 
-        <section className="rounded-lg border bg-card p-4">
+        <SpotlightCard>
+        <section className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold">Live Event Feed</h2>
             <Radio className="h-4 w-4 text-primary" />
@@ -435,6 +443,7 @@ export function WebhooksPanel() {
             )}
           </div>
         </section>
+        </SpotlightCard>
       </div>
 
       <ConfirmDialog

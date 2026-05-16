@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { Link2, Bot, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react';
 import { useCorrelations, useCorrelationInsights, type CorrelationPair } from '@/features/observability/hooks/use-correlations';
 import { cn } from '@/shared/lib/utils';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 interface CorrelationInsightsPanelProps {
   llmAvailable: boolean;
@@ -146,7 +147,8 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
 
   if (pairsLoading) {
     return (
-      <div className="rounded-lg border bg-card p-6">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Link2 className="h-5 w-5 text-blue-500" />
           <h3 className="text-lg font-semibold">Cross-Container Correlation Insights</h3>
@@ -156,11 +158,13 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
           <div className="h-16 animate-pulse rounded bg-muted" />
         </div>
       </div>
+      </SpotlightCard>
     );
   }
 
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <SpotlightCard>
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <Link2 className="h-5 w-5 text-blue-500" />
@@ -269,5 +273,6 @@ export const CorrelationInsightsPanel = memo(function CorrelationInsightsPanel({
         </div>
       )}
     </div>
+    </SpotlightCard>
   );
 });

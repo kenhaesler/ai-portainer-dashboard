@@ -27,6 +27,9 @@ import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
+import { KpiCard } from '@/shared/components/data-display/kpi-card';
 
 // Log levels with colors
 const LOG_LEVELS = [
@@ -169,7 +172,8 @@ function LogRow({ log, isExpanded, onToggle }: LogRowProps) {
 
 function NotConfiguredState() {
   return (
-    <div className="rounded-lg border bg-card p-8">
+    <SpotlightCard>
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex flex-col items-center text-center max-w-md mx-auto">
         <div className="rounded-full bg-amber-500/10 p-4 mb-4">
           <Settings className="h-8 w-8 text-amber-500" />
@@ -219,6 +223,7 @@ function NotConfiguredState() {
         </a>
       </div>
     </div>
+    </SpotlightCard>
   );
 }
 
@@ -378,7 +383,8 @@ export default function EdgeAgentLogsPage() {
       </div>
 
       {/* Search and Filters */}
-      <div className="rounded-lg border bg-card p-4">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <form onSubmit={handleSearch} className="flex gap-3 flex-wrap">
           {/* Search Input */}
           <div className="relative flex-1 min-w-[300px]">
@@ -454,38 +460,43 @@ export default function EdgeAgentLogsPage() {
           )}
         </form>
       </div>
+      </SpotlightCard>
 
       {/* Stats Cards */}
       {logs.length > 0 && (
         <div className="grid gap-4 md:grid-cols-5">
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total Logs</p>
-            <p className="text-2xl font-bold">{logsData?.total || logs.length}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <XCircle className="h-3 w-3 text-red-500" /> Errors
-            </p>
-            <p className="text-2xl font-bold text-red-500">{stats.error || 0}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <AlertCircle className="h-3 w-3 text-amber-500" /> Warnings
-            </p>
-            <p className="text-2xl font-bold text-amber-500">{(stats.warn || 0) + (stats.warning || 0)}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <Info className="h-3 w-3 text-blue-500" /> Info
-            </p>
-            <p className="text-2xl font-bold text-blue-500">{stats.info || 0}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3 text-emerald-500" /> Debug
-            </p>
-            <p className="text-2xl font-bold text-emerald-500">{stats.debug || 0}</p>
-          </div>
+          <TiltCard>
+            <KpiCard label="Total Logs" value={logsData?.total || logs.length} />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Errors"
+              value={stats.error || 0}
+              icon={<XCircle className="h-5 w-5 text-red-500" />}
+              trend={(stats.error || 0) > 0 ? 'down' : 'neutral'}
+            />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Warnings"
+              value={(stats.warn || 0) + (stats.warning || 0)}
+              icon={<AlertCircle className="h-5 w-5 text-amber-500" />}
+            />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Info"
+              value={stats.info || 0}
+              icon={<Info className="h-5 w-5 text-blue-500" />}
+            />
+          </TiltCard>
+          <TiltCard>
+            <KpiCard
+              label="Debug"
+              value={stats.debug || 0}
+              icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
+            />
+          </TiltCard>
         </div>
       )}
 
@@ -519,7 +530,8 @@ export default function EdgeAgentLogsPage() {
 
       {/* Empty State */}
       {!isLoading && !isError && logs.length === 0 && (
-        <div className="rounded-lg border bg-card p-8 text-center">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm text-center">
           <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-semibold mb-2">No logs found</h3>
           <p className="text-muted-foreground mb-4">
@@ -536,11 +548,13 @@ export default function EdgeAgentLogsPage() {
             </ul>
           </div>
         </div>
+        </SpotlightCard>
       )}
 
       {/* Results Table */}
       {!isLoading && !isError && logs.length > 0 && (
-        <div className="rounded-lg border bg-card">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card shadow-sm">
           <div className="border-b border-border p-4 flex items-center justify-between">
             <h3 className="font-semibold">
               Log Results
@@ -563,6 +577,7 @@ export default function EdgeAgentLogsPage() {
             ))}
           </div>
         </div>
+        </SpotlightCard>
       )}
     </div>
   );

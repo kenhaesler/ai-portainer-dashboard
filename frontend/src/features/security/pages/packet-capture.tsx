@@ -36,6 +36,7 @@ import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { buildStackGroupedContainerOptions, NO_STACK_LABEL, resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -164,7 +165,8 @@ export default function PacketCapture() {
       )}
 
       {/* New Capture Form */}
-      <div className="rounded-lg border bg-card p-6">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold">New Capture</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {/* Endpoint */}
@@ -282,6 +284,7 @@ export default function PacketCapture() {
           </div>
         </div>
       </div>
+      </SpotlightCard>
 
       {/* Active Captures */}
       {activeCaptures.length > 0 && (
@@ -323,13 +326,16 @@ export default function PacketCapture() {
         </div>
 
         {captures.length === 0 ? (
-          <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm text-center text-muted-foreground">
             <Radio className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="font-medium">No captures found</p>
             <p className="text-sm">Start a new capture above to begin monitoring network traffic.</p>
           </div>
+          </SpotlightCard>
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
+          <SpotlightCard>
+          <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/50">
                 <tr>
@@ -365,6 +371,7 @@ export default function PacketCapture() {
               </tbody>
             </table>
           </div>
+          </SpotlightCard>
         )}
       </div>
     </div>
@@ -381,7 +388,8 @@ function ActiveCaptureCard({
   isStopping: boolean;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <SpotlightCard>
+    <div className="rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex items-start justify-between">
         <div>
           <p className="font-medium">{capture.container_name}</p>
@@ -411,6 +419,7 @@ function ActiveCaptureCard({
         </button>
       </div>
     </div>
+    </SpotlightCard>
   );
 }
 
@@ -486,7 +495,8 @@ function FindingCard({ finding }: { finding: PcapFinding }) {
 
 function AnalysisPanel({ analysis, onReanalyze, isAnalyzing }: { analysis: PcapAnalysisResult; onReanalyze: () => void; isAnalyzing: boolean }) {
   return (
-    <div className="space-y-3 rounded-lg border bg-card/50 p-4">
+    <SpotlightCard>
+    <div className="space-y-3 rounded-lg border bg-card p-6 shadow-sm">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <HealthBadge status={analysis.health_status} />
@@ -514,6 +524,7 @@ function AnalysisPanel({ analysis, onReanalyze, isAnalyzing }: { analysis: PcapA
         </div>
       )}
     </div>
+    </SpotlightCard>
   );
 }
 

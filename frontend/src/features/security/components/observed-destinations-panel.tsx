@@ -3,6 +3,7 @@ import { Globe } from 'lucide-react';
 import { api } from '@/shared/lib/api';
 import { cn } from '@/shared/lib/utils';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 export type Verdict = 'allow' | 'warn' | 'deny';
 
@@ -59,7 +60,8 @@ export function ObservedDestinationsPanel({ endpointId }: Props) {
   const destinations = data?.destinations ?? [];
 
   return (
-    <section className="rounded-xl border bg-card/75 p-4 backdrop-blur" data-testid="observed-destinations-panel">
+    <SpotlightCard>
+    <section className="rounded-lg border bg-card p-6 shadow-sm" data-testid="observed-destinations-panel">
       <div className="mb-3 flex items-center gap-2">
         <Globe className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <h2 className="text-lg font-semibold">Observed Destinations</h2>
@@ -126,5 +128,6 @@ export function ObservedDestinationsPanel({ endpointId }: Props) {
         </div>
       )}
     </section>
+    </SpotlightCard>
   );
 }

@@ -13,6 +13,7 @@ import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useUiStore } from '@/stores/ui-store';
 import { usePageVisibility } from '@/shared/hooks/use-page-visibility';
 import { useLogStream } from '@/features/observability/hooks/use-log-stream';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 
 const FALLBACK_POLL_INTERVAL_MS = 5000;
 const BUFFER_OPTIONS = [500, 1000, 2000] as const;
@@ -138,7 +139,7 @@ function VirtualizedLogView({
   );
 
   return (
-    <section className="relative z-10 overflow-hidden rounded-xl border bg-slate-950">
+    <section className="relative z-10 overflow-hidden rounded-lg border bg-slate-950 shadow-sm">
       {!autoScroll && (
         <button
           onClick={() => {
@@ -395,7 +396,8 @@ export default function LogViewerPage() {
         </div>
       )}
 
-      <section className="relative z-20 rounded-xl border bg-card/75 p-4 backdrop-blur">
+      <SpotlightCard>
+      <section className="relative z-20 rounded-lg border bg-card p-6 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Endpoint</span>
@@ -511,6 +513,7 @@ export default function LogViewerPage() {
           {filteredEntries.length} lines | {searchMatches} search matches
         </div>
       </section>
+      </SpotlightCard>
 
       <VirtualizedLogView
         scrollRef={scrollRef}

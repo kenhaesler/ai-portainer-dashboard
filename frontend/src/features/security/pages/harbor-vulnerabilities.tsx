@@ -236,7 +236,7 @@ export default function HarborVulnerabilitiesPage() {
       )}
 
       {isError && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           Failed to load vulnerability data: {error instanceof Error ? error.message : 'Unknown error'}
           <button onClick={() => refetch()} className="ml-2 underline">Retry</button>
         </div>

@@ -29,6 +29,9 @@ import { MetricsLineChart } from '@/shared/components/charts/metrics-line-chart'
 import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
 import { cn } from '@/shared/lib/utils';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
+import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import {
   MANAGEMENT_PDF_THEMES,
@@ -65,22 +68,24 @@ function StatCard({
   trend?: 'up' | 'down' | 'neutral';
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="mt-2 flex items-baseline gap-1">
-        <p className="text-2xl font-bold">{value.toFixed(1)}</p>
-        <span className="text-sm text-muted-foreground">{unit}</span>
-      </div>
-      {trend && trend !== 'neutral' && (
-        <div className={cn('mt-1 flex items-center gap-1 text-xs', trend === 'up' ? 'text-red-500' : 'text-green-500')}>
-          {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-          <span>{trend === 'up' ? 'Increasing' : 'Decreasing'}</span>
+    <SpotlightCard className="h-full">
+      <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
-      )}
-    </div>
+        <div className="mt-2 flex items-baseline gap-1">
+          <p className="text-3xl font-bold tracking-tight">{value.toFixed(1)}</p>
+          <span className="text-sm text-muted-foreground">{unit}</span>
+        </div>
+        {trend && trend !== 'neutral' && (
+          <div className={cn('mt-1 flex items-center gap-1 text-xs', trend === 'up' ? 'text-red-500' : 'text-green-500')}>
+            {trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            <span>{trend === 'up' ? 'Increasing' : 'Decreasing'}</span>
+          </div>
+        )}
+      </div>
+    </SpotlightCard>
   );
 }
 
@@ -207,40 +212,27 @@ export function DienststellenOverview({
     <div className="space-y-4">
       {/* Dienststellen KPIs */}
       <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Total Dienststellen</p>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{totalDienststellen}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Total Containers</p>
-            <Box className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{totalContainers}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Departments</p>
-            <Tag className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{uniqueDepartments.size}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Avg Containers / Dienststelle</p>
-            <Server className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">
-            {totalDienststellen > 0 ? (totalContainers / totalDienststellen).toFixed(1) : '0'}
-          </p>
-        </div>
+        <TiltCard>
+          <KpiCard label="Total Dienststellen" value={totalDienststellen} icon={<Building2 className="h-5 w-5" />} />
+        </TiltCard>
+        <TiltCard>
+          <KpiCard label="Total Containers" value={totalContainers} icon={<Box className="h-5 w-5" />} />
+        </TiltCard>
+        <TiltCard>
+          <KpiCard label="Departments" value={uniqueDepartments.size} icon={<Tag className="h-5 w-5" />} />
+        </TiltCard>
+        <TiltCard>
+          <KpiCard
+            label="Avg Containers / Dienststelle"
+            value={totalDienststellen > 0 ? (totalContainers / totalDienststellen).toFixed(1) : '0'}
+            icon={<Server className="h-5 w-5" />}
+          />
+        </TiltCard>
       </div>
 
       {/* Grouped table */}
-      <div className="rounded-lg border bg-card">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card shadow-sm">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
@@ -363,6 +355,7 @@ export function DienststellenOverview({
           })}
         </div>
       </div>
+      </SpotlightCard>
     </div>
   );
 }
@@ -731,7 +724,8 @@ export default function ReportsPage() {
       </div>
 
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-4">
+      <SpotlightCard>
+      <div className="flex flex-wrap items-center gap-4 rounded-lg border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2">
           <Server className="h-4 w-4 text-muted-foreground" />
           <ThemedSelect
@@ -774,9 +768,11 @@ export default function ReportsPage() {
           Exclude infrastructure services
         </label>
       </div>
+      </SpotlightCard>
 
       {showPdfOptions && (
-        <div className="relative z-20 space-y-4 rounded-lg border bg-card p-4 pointer-events-auto">
+        <SpotlightCard>
+        <div className="relative z-20 space-y-4 rounded-lg border bg-card p-6 shadow-sm pointer-events-auto">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold">Management PDF Export</h2>
@@ -913,6 +909,7 @@ export default function ReportsPage() {
             )}
           </div>
         </div>
+        </SpotlightCard>
       )}
 
       {/* Dienststellen Overview */}
@@ -968,7 +965,8 @@ export default function ReportsPage() {
       {/* Trend Charts */}
       {trends && (cpuTrendData.length > 0 || memTrendData.length > 0) && (
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-lg border bg-card p-6">
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <Cpu className="h-5 w-5 text-blue-500" />
               <h3 className="text-lg font-semibold">CPU Trend (Fleet Avg)</h3>
@@ -988,8 +986,10 @@ export default function ReportsPage() {
               )}
             </div>
           </div>
+          </SpotlightCard>
 
-          <div className="rounded-lg border bg-card p-6">
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <MemoryStick className="h-5 w-5 text-purple-500" />
               <h3 className="text-lg font-semibold">Memory Trend (Fleet Avg)</h3>
@@ -1009,12 +1009,14 @@ export default function ReportsPage() {
               )}
             </div>
           </div>
+          </SpotlightCard>
         </div>
       )}
 
       {/* Recommendations */}
       {report && report.recommendations.length > 0 && (
-        <div className="rounded-lg border bg-card p-6">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <Lightbulb className="h-5 w-5 text-amber-500" />
             <h3 className="text-lg font-semibold">Right-Sizing Recommendations</h3>
@@ -1038,12 +1040,14 @@ export default function ReportsPage() {
             ))}
           </div>
         </div>
+        </SpotlightCard>
       )}
 
       {/* Container Utilization Table */}
       {report && report.containers.length > 0 && (
         <div className="space-y-4">
-          <div className="rounded-lg border bg-card">
+          <SpotlightCard>
+          <div className="rounded-lg border bg-card shadow-sm">
             <div className="p-4 border-b">
               <h3 className="text-lg font-semibold">Application Services</h3>
             </div>
@@ -1053,14 +1057,17 @@ export default function ReportsPage() {
               <div className="p-4 text-sm text-muted-foreground">No application services for the selected scope.</div>
             )}
           </div>
+          </SpotlightCard>
 
           {infrastructureContainers.length > 0 && (
-            <div className="rounded-lg border bg-card">
+            <SpotlightCard>
+            <div className="rounded-lg border bg-card shadow-sm">
               <div className="p-4 border-b">
                 <h3 className="text-lg font-semibold">Infrastructure Services</h3>
               </div>
               {renderContainerTable(infrastructureContainers)}
             </div>
+            </SpotlightCard>
           )}
         </div>
       )}

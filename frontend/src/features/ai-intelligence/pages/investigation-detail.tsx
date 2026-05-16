@@ -7,6 +7,34 @@ import {
   type RecommendedAction,
 } from '@/features/ai-intelligence/hooks/use-investigations';
 import { formatDate } from '@/shared/lib/utils';
+import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
+import { TiltCard } from '@/shared/components/data-display/tilt-card';
+
+function StatTile({
+  label,
+  icon: Icon,
+  value,
+  variant = 'numeric',
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  value: string;
+  variant?: 'numeric' | 'text';
+}) {
+  return (
+    <TiltCard>
+      <div className="h-full rounded-lg border bg-card p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <Icon className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <p className={variant === 'numeric' ? 'mt-2 text-3xl font-bold tracking-tight' : 'mt-2 text-sm font-medium'}>
+          {value}
+        </p>
+      </div>
+    </TiltCard>
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -96,42 +124,23 @@ export default function InvestigationDetailPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm">Created</span>
-            <Clock className="h-4 w-4" />
-          </div>
-          <p className="mt-2 text-sm font-medium">{formatDate(investigation.created_at)}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm">Confidence</span>
-            <Brain className="h-4 w-4" />
-          </div>
-          <p className="mt-2 text-lg font-semibold">
-            {investigation.confidence_score != null ? `${Math.round(investigation.confidence_score * 100)}%` : 'N/A'}
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm">Duration</span>
-            <Loader2 className="h-4 w-4" />
-          </div>
-          <p className="mt-2 text-lg font-semibold">
-            {investigation.analysis_duration_ms != null ? `${(investigation.analysis_duration_ms / 1000).toFixed(1)}s` : 'N/A'}
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-sm">Model</span>
-            <Database className="h-4 w-4" />
-          </div>
-          <p className="mt-2 text-sm font-medium">{investigation.llm_model ?? 'Unknown'}</p>
-        </div>
+        <StatTile label="Created" icon={Clock} value={formatDate(investigation.created_at)} variant="text" />
+        <StatTile
+          label="Confidence"
+          icon={Brain}
+          value={investigation.confidence_score != null ? `${Math.round(investigation.confidence_score * 100)}%` : 'N/A'}
+        />
+        <StatTile
+          label="Duration"
+          icon={Loader2}
+          value={investigation.analysis_duration_ms != null ? `${(investigation.analysis_duration_ms / 1000).toFixed(1)}s` : 'N/A'}
+        />
+        <StatTile label="Model" icon={Database} value={investigation.llm_model ?? 'Unknown'} variant="text" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border bg-card p-5">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Timeline</h2>
           <div className="mt-4 space-y-3">
             {timeline.map((item, index) => (
@@ -146,8 +155,10 @@ export default function InvestigationDetailPage() {
             ))}
           </div>
         </div>
+        </SpotlightCard>
 
-        <div className="rounded-lg border bg-card p-5">
+        <SpotlightCard>
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Related Artifacts</h2>
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex items-center gap-2">
@@ -178,9 +189,11 @@ export default function InvestigationDetailPage() {
             )}
           </div>
         </div>
+        </SpotlightCard>
       </div>
 
-      <div className="rounded-lg border bg-card p-5">
+      <SpotlightCard>
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Findings</h2>
         <div className="mt-4 space-y-4">
           {investigation.root_cause && (
@@ -221,6 +234,7 @@ export default function InvestigationDetailPage() {
           )}
         </div>
       </div>
+      </SpotlightCard>
     </div>
   );
 }
