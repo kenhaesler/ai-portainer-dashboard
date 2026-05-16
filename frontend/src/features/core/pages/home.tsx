@@ -6,7 +6,8 @@ import { useFavoriteContainers } from '@/features/containers/hooks/use-container
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { SkeletonKpi, SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
@@ -112,19 +113,18 @@ export default function HomePage() {
             Dashboard overview with KPIs and charts
           </p>
         </div>
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center">
-          <AlertTriangle className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-4 font-medium text-destructive">Failed to load dashboard</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'An unexpected error occurred'}
-          </p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Try again
-          </button>
-        </div>
+        <EmptyState
+          variant="error"
+          icon={AlertTriangle}
+          title="Failed to load dashboard"
+          description={error instanceof Error ? error.message : 'An unexpected error occurred'}
+        />
+        <button
+          onClick={() => refetch()}
+          className="mt-4 inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Try again
+        </button>
       </MotionPage>
     );
   }
@@ -149,7 +149,7 @@ export default function HomePage() {
       {isLoading ? (
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
-            <SkeletonCard key={i} />
+            <SkeletonKpi key={i} />
           ))}
         </div>
       ) : data ? (
@@ -268,7 +268,7 @@ export default function HomePage() {
 
       {/* Endpoint Health — full width, dynamic height */}
       {isLoading ? (
-        <SkeletonCard className="h-[300px]" />
+        <SkeletonChart size="lg" />
       ) : data ? (
         <MotionReveal>
           <SpotlightCard>
@@ -287,8 +287,8 @@ export default function HomePage() {
       {/* Top Workloads + Fleet Summary */}
       {isLoading || isLoadingResources ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <SkeletonCard className="h-[520px] lg:col-span-2" />
-          <SkeletonCard className="h-[520px]" />
+          <SkeletonChart size="lg" className="lg:col-span-2" />
+          <SkeletonChart size="lg" />
         </div>
       ) : data && resourcesData ? (
         <MotionStagger className="grid grid-cols-1 gap-4 lg:grid-cols-3" stagger={0.05}>
