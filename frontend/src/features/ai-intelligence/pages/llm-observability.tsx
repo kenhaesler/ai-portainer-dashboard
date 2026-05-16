@@ -7,7 +7,8 @@ import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { TiltCard } from '@/shared/components/data-display/tilt-card';
-import { SkeletonCard } from '@/shared/components/feedback/loading-skeleton';
+import { SkeletonKpi, SkeletonList } from '@/shared/components/feedback/skeleton';
+import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { cn, formatDate } from '@/shared/lib/utils';
 import {
   Activity,
@@ -46,23 +47,16 @@ function StatusBadge({ status }: { status: string }) {
 
 function TracesTable({ traces, isLoading, privacyMode }: { traces: LlmTrace[]; isLoading: boolean; privacyMode: boolean }) {
   if (isLoading) {
-    return (
-      <div className="grid gap-4 md:grid-cols-2">
-        <SkeletonCard />
-        <SkeletonCard />
-      </div>
-    );
+    return <SkeletonList rows={4} />;
   }
 
   if (traces.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed bg-muted/20 p-12 text-center">
-        <MessageSquare className="mx-auto h-12 w-12 text-muted-foreground" />
-        <h3 className="mt-4 text-lg font-semibold">No LLM traces yet</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          LLM interactions will appear here once the assistant is used.
-        </p>
-      </div>
+      <EmptyState
+        icon={MessageSquare}
+        title="No LLM traces yet"
+        description="LLM interactions will appear here once the assistant is used."
+      />
     );
   }
 
@@ -184,10 +178,10 @@ export default function LlmObservabilityPage() {
       {/* KPI Cards */}
       {showStatsSkeleton ? (
         <div className="grid gap-4 md:grid-cols-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
+          <SkeletonKpi />
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-4">
