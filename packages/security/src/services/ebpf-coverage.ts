@@ -57,6 +57,20 @@ function kernelMeetsFloor(
   return actual.minor >= floor.minor;
 }
 
+/**
+ * Thrown by `deployBeyla` when the target host's kernel is below
+ * BEYLA_MIN_KERNEL. Identified by class (not message string) so the catch
+ * arm in `deployBeyla` can re-throw it reliably even if the human-readable
+ * wording changes in the future.
+ */
+export class BeylaKernelTooOldError extends Error {
+  readonly code = 'BEYLA_KERNEL_TOO_OLD' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'BeylaKernelTooOldError';
+  }
+}
+
 /** Detection result from checking a single endpoint for Beyla */
 export type DetectionResult = 'deployed' | 'failed' | 'not_found' | 'unreachable' | 'incompatible';
 
@@ -375,8 +389,11 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     const info = await getDockerInfo(endpointId);
     const parsed = parseKernelVersion(info.KernelVersion);
     if (parsed && !kernelMeetsFloor(parsed, BEYLA_MIN_KERNEL)) {
-      const osPart = info.OperatingSystem ? `${info.OperatingSystem} (${info.KernelVersion})` : info.KernelVersion;
-      throw new Error(
+      // Defence-in-depth: cap OperatingSystem in case a hostile/buggy daemon
+      // returns a megabyte-long string that ends up in the operator's UI.
+      const osDisplay = info.OperatingSystem?.slice(0, 200);
+      const osPart = osDisplay ? `${osDisplay} (${info.KernelVersion})` : info.KernelVersion;
+      throw new BeylaKernelTooOldError(
         `Host '${endpoint.Name}' runs ${osPart} — Beyla requires Linux kernel ${BEYLA_MIN_KERNEL.major}.${BEYLA_MIN_KERNEL.minor} or newer for eBPF auto-instrumentation. Upgrade the kernel or exclude this host from eBPF coverage.`,
       );
     }
@@ -387,9 +404,10 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
       );
     }
   } catch (err) {
-    // Re-throw our own actionable error; tolerate /info fetch failures so a
-    // transient daemon hiccup doesn't masquerade as an incompatibility.
-    if (err instanceof Error && err.message.startsWith(`Host '${endpoint.Name}'`)) throw err;
+    // Re-throw the actionable error (identified by class — survives wording
+    // changes). Tolerate /info fetch failures so a transient daemon hiccup
+    // doesn't masquerade as an incompatibility.
+    if (err instanceof BeylaKernelTooOldError) throw err;
     log.warn(
       { endpointId, endpointName: endpoint.Name, err: err instanceof Error ? err.message : String(err) },
       'Kernel pre-flight failed to query /docker/info; proceeding with deploy (best-effort)',

@@ -36,6 +36,7 @@ import {
   removeBeylaFromEndpoint,
   parseKernelVersion,
   BEYLA_MIN_KERNEL,
+  BeylaKernelTooOldError,
 } from '../services/ebpf-coverage.js';
 
 let mockGetContainers: any;
@@ -484,6 +485,22 @@ describe('ebpf-coverage service', () => {
         OperatingSystem: 'Red Hat Enterprise Linux 8.10 (Ootpa)',
       } as any);
 
+      // Asserts on the error class (not just message wording) so future
+      // wording changes can't silently regress the dispatch path.
+      await expect(
+        deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' }),
+      ).rejects.toBeInstanceOf(BeylaKernelTooOldError);
+
+      // Re-run to inspect the message — vitest doesn't expose the rejected
+      // value from rejects.toBeInstanceOf, so we re-trigger with another
+      // mock cycle.
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'docker-v001', Type: 1, URL: 'tcp://docker-v001', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '4.18.0-553.el8.x86_64',
+        OperatingSystem: 'Red Hat Enterprise Linux 8.10 (Ootpa)',
+      } as any);
       await expect(
         deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' }),
       ).rejects.toThrow(/docker-v001.*Red Hat Enterprise Linux 8\.10.*4\.18\.0.*5\.8 or newer/);
@@ -491,6 +508,56 @@ describe('ebpf-coverage service', () => {
       // Must short-circuit before any container is created.
       expect(mockPullImage).not.toHaveBeenCalled();
       expect(mockCreateContainer).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla accepts kernel exactly at the floor (5.8.0)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'boundary-host', Type: 1, URL: 'tcp://boundary', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '5.8.0-generic', OperatingSystem: 'Linux',
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k',
+      });
+      expect(result.status).toBe('deployed');
+    });
+
+    it('deployBeyla rejects kernel one minor below the floor (5.7.99)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'just-below', Type: 1, URL: 'tcp://just-below', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '5.7.99-generic', OperatingSystem: 'Linux',
+      } as any);
+
+      await expect(
+        deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' }),
+      ).rejects.toBeInstanceOf(BeylaKernelTooOldError);
+      expect(mockPullImage).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla caps OperatingSystem at 200 chars in the error message (untrusted daemon defence)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'hostile', Type: 1, URL: 'tcp://h', Status: 1, Snapshots: [],
+      } as any);
+      const huge = 'X'.repeat(2000);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '4.0.0', OperatingSystem: huge,
+      } as any);
+
+      try {
+        await deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' });
+        throw new Error('should have rejected');
+      } catch (err) {
+        expect(err).toBeInstanceOf(BeylaKernelTooOldError);
+        // OS portion appears once and is capped; total error stays well under 1 KB.
+        expect((err as Error).message.length).toBeLessThan(1024);
+        expect((err as Error).message).not.toContain('X'.repeat(201));
+      }
     });
 
     it('deployBeyla proceeds on kernel >= 5.8', async () => {
