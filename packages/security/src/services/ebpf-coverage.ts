@@ -9,6 +9,7 @@ import {
   stopContainer,
   removeContainer,
   waitForEdgeTunnel,
+  getDockerInfo,
 } from '@dashboard/core/portainer/portainer-client.js';
 import { cachedFetchSWR, getCacheKey, TTL } from '@dashboard/core/portainer/portainer-cache.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -21,6 +22,40 @@ export type CoverageStatus = 'planned' | 'deployed' | 'excluded' | 'failed' | 'u
 
 /** Portainer endpoint types compatible with Beyla eBPF tracing (Docker Standalone=1, Swarm=2, Edge Agent Standard=4, Edge Agent Async=7) */
 export const BEYLA_COMPATIBLE_TYPES = new Set([1, 2, 4, 7]);
+
+/**
+ * Minimum Linux kernel version required by Beyla for eBPF auto-instrumentation
+ * (CO-RE + BTF features). Deploys below this floor crashloop with
+ * "kernel version X.Y not supported. Minimum required version is 5.8" — we
+ * pre-flight to fail fast with an actionable error instead.
+ * Tracks https://grafana.com/docs/beyla/latest/setup/requirements/.
+ */
+export const BEYLA_MIN_KERNEL = { major: 5, minor: 8 } as const;
+
+/**
+ * Parse a Docker /info KernelVersion string (e.g. "5.15.0-25-generic",
+ * "4.18.0-553.el8.x86_64", "6.1.0-rc1+") into a major/minor pair.
+ * Returns null for unrecognised strings so callers can fall back to
+ * best-effort behaviour rather than blocking deploys on parsing edge cases.
+ */
+export function parseKernelVersion(version: string | undefined): { major: number; minor: number } | null {
+  if (!version) return null;
+  const match = version.match(/^(\d+)\.(\d+)/);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return null;
+  return { major, minor };
+}
+
+/** Compare two version pairs; returns true when `actual` >= `floor`. */
+function kernelMeetsFloor(
+  actual: { major: number; minor: number },
+  floor: { major: number; minor: number },
+): boolean {
+  if (actual.major !== floor.major) return actual.major > floor.major;
+  return actual.minor >= floor.minor;
+}
 
 /** Detection result from checking a single endpoint for Beyla */
 export type DetectionResult = 'deployed' | 'failed' | 'not_found' | 'unreachable' | 'incompatible';
@@ -327,6 +362,38 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
       );
     }
     log.info({ endpointId, endpointName: endpoint.Name }, 'Edge Agent tunnel is up; proceeding with deploy');
+  }
+
+  // Kernel-version pre-flight. Beyla needs Linux >= 5.8 for its eBPF probes;
+  // deploying on older kernels (e.g. 4.18 / RHEL 7-era hosts) yields a 1-minute
+  // crashloop with `can't start Beyla: kernel version X.Y not supported`.
+  // Block here so the operator sees an actionable error instead of having to
+  // chase the container logs. Best-effort: if /info is missing KernelVersion
+  // or returns an unrecognised format, we proceed rather than block a
+  // working-but-weird daemon.
+  try {
+    const info = await getDockerInfo(endpointId);
+    const parsed = parseKernelVersion(info.KernelVersion);
+    if (parsed && !kernelMeetsFloor(parsed, BEYLA_MIN_KERNEL)) {
+      const osPart = info.OperatingSystem ? `${info.OperatingSystem} (${info.KernelVersion})` : info.KernelVersion;
+      throw new Error(
+        `Host '${endpoint.Name}' runs ${osPart} — Beyla requires Linux kernel ${BEYLA_MIN_KERNEL.major}.${BEYLA_MIN_KERNEL.minor} or newer for eBPF auto-instrumentation. Upgrade the kernel or exclude this host from eBPF coverage.`,
+      );
+    }
+    if (!parsed) {
+      log.warn(
+        { endpointId, endpointName: endpoint.Name, kernelVersion: info.KernelVersion },
+        'Could not parse kernel version from /docker/info; proceeding with deploy (best-effort)',
+      );
+    }
+  } catch (err) {
+    // Re-throw our own actionable error; tolerate /info fetch failures so a
+    // transient daemon hiccup doesn't masquerade as an incompatibility.
+    if (err instanceof Error && err.message.startsWith(`Host '${endpoint.Name}'`)) throw err;
+    log.warn(
+      { endpointId, endpointName: endpoint.Name, err: err instanceof Error ? err.message : String(err) },
+      'Kernel pre-flight failed to query /docker/info; proceeding with deploy (best-effort)',
+    );
   }
 
   // Deploy is a write path — read authoritative container state so we don't
