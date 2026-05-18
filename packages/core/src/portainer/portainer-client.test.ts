@@ -30,6 +30,7 @@ import {
   getEndpoints,
   isEdgeTunnelNotActive,
   EDGE_TUNNEL_NOT_ACTIVE_TOKEN,
+  getDockerInfo,
 } from './portainer-client.js';
 import pLimit from 'p-limit';
 
@@ -414,5 +415,65 @@ describe('portainerFetch parse guard (#1232)', () => {
     mockFetch.mockResolvedValueOnce(buildEmptyBodyResponse(204, 'No Content'));
     await expect(startContainer(1, 'abc123')).resolves.toBeUndefined();
     expect(mockFetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe('getDockerInfo — narrow slice + defensive narrowing', () => {
+  beforeEach(() => {
+    _resetClientState();
+    mockFetch.mockReset();
+  });
+
+  it('returns the four expected fields when Docker /info reports them as strings', async () => {
+    mockFetch.mockResolvedValueOnce(buildResponse({
+      status: 200, statusText: 'OK', body: {
+        KernelVersion: '5.15.0-25-generic',
+        OperatingSystem: 'Ubuntu 22.04 LTS',
+        OSType: 'linux',
+        Architecture: 'x86_64',
+        // Extra fields we don't care about must not leak into our narrow type.
+        Containers: 42, ServerVersion: '24.0.5',
+      },
+    }));
+    const info = await getDockerInfo(7);
+    expect(info).toEqual({
+      KernelVersion: '5.15.0-25-generic',
+      OperatingSystem: 'Ubuntu 22.04 LTS',
+      OSType: 'linux',
+      Architecture: 'x86_64',
+    });
+    // Sanity: extras must not appear on the returned object.
+    expect((info as Record<string, unknown>).Containers).toBeUndefined();
+  });
+
+  it('coerces non-string fields to undefined (defensive — hostile/buggy daemon)', async () => {
+    mockFetch.mockResolvedValueOnce(buildResponse({
+      status: 200, statusText: 'OK', body: {
+        KernelVersion: 12345,        // number instead of string
+        OperatingSystem: null,        // null
+        OSType: { nested: 'linux' },  // object
+        Architecture: ['x86_64'],     // array
+      },
+    }));
+    const info = await getDockerInfo(7);
+    expect(info).toEqual({
+      KernelVersion: undefined,
+      OperatingSystem: undefined,
+      OSType: undefined,
+      Architecture: undefined,
+    });
+  });
+
+  it('returns all-undefined when /info omits the fields entirely', async () => {
+    mockFetch.mockResolvedValueOnce(buildResponse({
+      status: 200, statusText: 'OK', body: { Containers: 0 },
+    }));
+    const info = await getDockerInfo(7);
+    expect(info).toEqual({
+      KernelVersion: undefined,
+      OperatingSystem: undefined,
+      OSType: undefined,
+      Architecture: undefined,
+    });
   });
 });

@@ -53,7 +53,7 @@ Auto-instrument applications running on Portainer-managed containers using kerne
 
 | Requirement | Detail |
 |---|---|
-| Linux kernel | 5.8+ with BTF support |
+| Linux kernel | 5.8+ with BTF support (enforced — deploys on older kernels are rejected pre-flight with an actionable error) |
 | Docker privileges | `--privileged` or `SYS_ADMIN` + `SYS_PTRACE` capabilities |
 | macOS/Windows | Works inside Docker Desktop's Linux VM but cannot instrument host processes |
 | Dashboard env | `TRACES_INGESTION_ENABLED=true` and `TRACES_INGESTION_API_KEY` set |

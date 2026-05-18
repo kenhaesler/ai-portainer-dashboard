@@ -34,6 +34,9 @@ import {
   disableBeyla,
   enableBeyla,
   removeBeylaFromEndpoint,
+  parseKernelVersion,
+  BEYLA_MIN_KERNEL,
+  BeylaKernelTooOldError,
 } from '../services/ebpf-coverage.js';
 
 let mockGetContainers: any;
@@ -44,6 +47,7 @@ let mockCreateContainer: any;
 let mockStartContainer: any;
 let mockStopContainer: any;
 let mockRemoveContainer: any;
+let mockGetDockerInfo: any;
 
 beforeAll(async () => {
   await cache.clear();
@@ -73,6 +77,11 @@ describe('ebpf-coverage service', () => {
     mockStartContainer = vi.spyOn(portainerClient, 'startContainer').mockResolvedValue(undefined as any);
     mockStopContainer = vi.spyOn(portainerClient, 'stopContainer').mockResolvedValue(undefined as any);
     mockRemoveContainer = vi.spyOn(portainerClient, 'removeContainer').mockResolvedValue(undefined as any);
+    // Default to a compatible kernel; individual tests override.
+    mockGetDockerInfo = vi.spyOn(portainerClient, 'getDockerInfo').mockResolvedValue({
+      KernelVersion: '5.15.0-25-generic',
+      OperatingSystem: 'Ubuntu 22.04 LTS',
+    } as any);
     mockExecute.mockResolvedValue({ changes: 1 });
     mockQuery.mockResolvedValue([]);
     mockQueryOne.mockResolvedValue(null);
@@ -90,6 +99,34 @@ describe('ebpf-coverage service', () => {
       expect(BEYLA_COMPATIBLE_TYPES.has(3)).toBe(false);
       expect(BEYLA_COMPATIBLE_TYPES.has(5)).toBe(false);
       expect(BEYLA_COMPATIBLE_TYPES.has(6)).toBe(false);
+    });
+  });
+
+  describe('parseKernelVersion', () => {
+    it('parses standard Ubuntu-style strings', () => {
+      expect(parseKernelVersion('5.15.0-25-generic')).toEqual({ major: 5, minor: 15 });
+    });
+
+    it('parses RHEL/CentOS suffixed strings', () => {
+      expect(parseKernelVersion('4.18.0-553.el8.x86_64')).toEqual({ major: 4, minor: 18 });
+    });
+
+    it('parses RC and patched strings', () => {
+      expect(parseKernelVersion('6.1.0-rc1+')).toEqual({ major: 6, minor: 1 });
+    });
+
+    it('returns null for undefined / empty input', () => {
+      expect(parseKernelVersion(undefined)).toBeNull();
+      expect(parseKernelVersion('')).toBeNull();
+    });
+
+    it('returns null for unrecognised strings (avoids blocking weird-but-working daemons)', () => {
+      expect(parseKernelVersion('linux-version-unknown')).toBeNull();
+      expect(parseKernelVersion('5')).toBeNull();
+    });
+
+    it('exposes the minimum kernel as 5.8', () => {
+      expect(BEYLA_MIN_KERNEL).toEqual({ major: 5, minor: 8 });
     });
   });
 
@@ -432,6 +469,144 @@ describe('ebpf-coverage service', () => {
         }),
         expect.any(String),
       );
+    });
+
+    it('deployBeyla rejects hosts running a kernel below 5.8 with an actionable error (OS + version)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'docker-v001',
+        Type: 1,
+        URL: 'tcp://docker-v001',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '4.18.0-553.el8.x86_64',
+        OperatingSystem: 'Red Hat Enterprise Linux 8.10 (Ootpa)',
+      } as any);
+
+      // Asserts on the error class (not just message wording) so future
+      // wording changes can't silently regress the dispatch path.
+      await expect(
+        deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' }),
+      ).rejects.toBeInstanceOf(BeylaKernelTooOldError);
+
+      // Re-run to inspect the message — vitest doesn't expose the rejected
+      // value from rejects.toBeInstanceOf, so we re-trigger with another
+      // mock cycle.
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'docker-v001', Type: 1, URL: 'tcp://docker-v001', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '4.18.0-553.el8.x86_64',
+        OperatingSystem: 'Red Hat Enterprise Linux 8.10 (Ootpa)',
+      } as any);
+      await expect(
+        deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' }),
+      ).rejects.toThrow(/docker-v001.*Red Hat Enterprise Linux 8\.10.*4\.18\.0.*5\.8 or newer/);
+
+      // Must short-circuit before any container is created.
+      expect(mockPullImage).not.toHaveBeenCalled();
+      expect(mockCreateContainer).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla accepts kernel exactly at the floor (5.8.0)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'boundary-host', Type: 1, URL: 'tcp://boundary', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '5.8.0-generic', OperatingSystem: 'Linux',
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k',
+      });
+      expect(result.status).toBe('deployed');
+    });
+
+    it('deployBeyla rejects kernel one minor below the floor (5.7.99)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'just-below', Type: 1, URL: 'tcp://just-below', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '5.7.99-generic', OperatingSystem: 'Linux',
+      } as any);
+
+      await expect(
+        deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' }),
+      ).rejects.toBeInstanceOf(BeylaKernelTooOldError);
+      expect(mockPullImage).not.toHaveBeenCalled();
+    });
+
+    it('deployBeyla caps OperatingSystem at 200 chars in the error message (untrusted daemon defence)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'hostile', Type: 1, URL: 'tcp://h', Status: 1, Snapshots: [],
+      } as any);
+      const huge = 'X'.repeat(2000);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '4.0.0', OperatingSystem: huge,
+      } as any);
+
+      try {
+        await deployBeyla(1, { otlpEndpoint: 'http://x/api/traces/otlp', tracesApiKey: 'k' });
+        throw new Error('should have rejected');
+      } catch (err) {
+        expect(err).toBeInstanceOf(BeylaKernelTooOldError);
+        // OS portion appears once and is capped; total error stays well under 1 KB.
+        expect((err as Error).message.length).toBeLessThan(1024);
+        expect((err as Error).message).not.toContain('X'.repeat(201));
+      }
+    });
+
+    it('deployBeyla proceeds on kernel >= 5.8', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'modern-host', Type: 1, URL: 'tcp://modern', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({
+        KernelVersion: '5.10.0-30-amd64',
+        OperatingSystem: 'Debian GNU/Linux 11 (bullseye)',
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://x/api/traces/otlp',
+        tracesApiKey: 'k',
+      });
+      expect(result.status).toBe('deployed');
+      expect(mockCreateContainer).toHaveBeenCalled();
+    });
+
+    it('deployBeyla proceeds when /docker/info is unreachable (best-effort fallback)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'flaky-host', Type: 1, URL: 'tcp://flaky', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockRejectedValueOnce(new Error('connection reset'));
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://x/api/traces/otlp',
+        tracesApiKey: 'k',
+      });
+      expect(result.status).toBe('deployed');
+    });
+
+    it('deployBeyla proceeds when KernelVersion is missing from /docker/info (best-effort fallback)', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1, Name: 'weird-daemon', Type: 1, URL: 'tcp://weird', Status: 1, Snapshots: [],
+      } as any);
+      mockGetDockerInfo.mockResolvedValueOnce({ OperatingSystem: 'CustomOS' } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      const result = await deployBeyla(1, {
+        otlpEndpoint: 'http://x/api/traces/otlp',
+        tracesApiKey: 'k',
+      });
+      expect(result.status).toBe('deployed');
     });
 
     it('deployBeyla pre-flights the Edge Agent tunnel for type 4 endpoints', async () => {

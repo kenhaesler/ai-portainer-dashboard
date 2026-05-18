@@ -861,6 +861,31 @@ export async function getImages(endpointId: number): Promise<DockerImage[]> {
   return ImageArraySchema.parse(raw);
 }
 
+/** Narrow slice of Docker /info — fields used by pre-flight checks. */
+export interface DockerSystemInfo {
+  KernelVersion?: string;
+  OperatingSystem?: string;
+  OSType?: string;
+  Architecture?: string;
+}
+
+/**
+ * Fetch Docker daemon /info for an endpoint. Used by pre-flight checks
+ * (e.g. Beyla kernel-version gate). Returns a narrow slice of the full
+ * response so callers don't depend on Docker's full ServerInfo shape.
+ */
+export async function getDockerInfo(endpointId: number): Promise<DockerSystemInfo> {
+  const raw = await portainerFetch<Record<string, unknown>>(
+    `/api/endpoints/${endpointId}/docker/info`,
+  );
+  return {
+    KernelVersion: typeof raw.KernelVersion === 'string' ? raw.KernelVersion : undefined,
+    OperatingSystem: typeof raw.OperatingSystem === 'string' ? raw.OperatingSystem : undefined,
+    OSType: typeof raw.OSType === 'string' ? raw.OSType : undefined,
+    Architecture: typeof raw.Architecture === 'string' ? raw.Architecture : undefined,
+  };
+}
+
 // Exec (for packet capture and other read-only operations)
 export async function createExec(
   endpointId: number,
