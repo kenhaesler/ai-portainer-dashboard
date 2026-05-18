@@ -58,6 +58,8 @@ Auto-instrument applications running on Portainer-managed containers using kerne
 | macOS/Windows | Works inside Docker Desktop's Linux VM but cannot instrument host processes |
 | Dashboard env | `TRACES_INGESTION_ENABLED=true` and `TRACES_INGESTION_API_KEY` set |
 
+> **User-namespace remap:** Beyla is deployed with `UsernsMode=host` (and `userns_mode: "host"` in the compose overlays). Required on daemons running with `--userns-remap` — Docker otherwise rejects `Privileged: true` with HTTP 400. Side-effect: the Beyla container runs as real root on the host, even when the daemon remaps other workloads. This matches the existing reality of `Privileged: true` + `PidMode: host` (the userns mapping was never effective for those containers) and is by design.
+
 ## Quick Start
 
 ### 1. Enable trace ingestion on the dashboard

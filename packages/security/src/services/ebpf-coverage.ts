@@ -410,11 +410,8 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     HostConfig: {
       Privileged: true,
       PidMode: 'host',
-      // Required when the target Docker daemon runs with --userns-remap:
-      // Docker refuses Privileged=true unless the container opts out of
-      // user-namespace isolation. No-op on daemons without userns-remap.
-      // Beyla already uses PidMode=host + Privileged, so userns isolation
-      // was never effective anyway — this just makes the contract explicit.
+      // Docker refuses Privileged=true on --userns-remap daemons unless
+      // the container opts out via UsernsMode=host. No-op without remap.
       UsernsMode: 'host',
       Init: true,
       Binds: [
