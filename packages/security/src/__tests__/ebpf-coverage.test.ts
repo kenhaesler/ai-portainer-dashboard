@@ -404,6 +404,36 @@ describe('ebpf-coverage service', () => {
       expect(mockStartContainer).toHaveBeenCalledWith(1, 'beyla-1');
     });
 
+    it('deployBeyla payload pins host namespaces (Privileged + PidMode + UsernsMode) for userns-remap daemons', async () => {
+      mockGetEndpoint.mockResolvedValueOnce({
+        Id: 1,
+        Name: 'prod-1',
+        Type: 1,
+        URL: 'tcp://prod-1',
+        Status: 1,
+        Snapshots: [],
+      } as any);
+      mockGetContainers.mockResolvedValueOnce([]);
+      mockCreateContainer.mockResolvedValueOnce({ Id: 'beyla-1' });
+
+      await deployBeyla(1, {
+        otlpEndpoint: 'http://dashboard.local/api/traces/otlp',
+        tracesApiKey: 'abc123',
+      });
+
+      expect(mockCreateContainer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          HostConfig: expect.objectContaining({
+            Privileged: true,
+            PidMode: 'host',
+            UsernsMode: 'host',
+          }),
+        }),
+        expect.any(String),
+      );
+    });
+
     it('deployBeyla pre-flights the Edge Agent tunnel for type 4 endpoints', async () => {
       const nowSec = Math.floor(Date.now() / 1000);
       mockGetEndpoint.mockResolvedValueOnce({

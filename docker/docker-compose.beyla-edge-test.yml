@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     privileged: true
     pid: "host"
+    # Docker rejects privileged: true on daemons running with --userns-remap
+    # unless the container opts out of the user namespace. No-op without remap.
+    userns_mode: "host"
     init: true
     environment:
       # Capture common app ports; adjust for your workloads.

@@ -410,6 +410,9 @@ export async function deployBeyla(endpointId: number, options: DeployBeylaOption
     HostConfig: {
       Privileged: true,
       PidMode: 'host',
+      // Docker refuses Privileged=true on --userns-remap daemons unless
+      // the container opts out via UsernsMode=host. No-op without remap.
+      UsernsMode: 'host',
       Init: true,
       Binds: [
         '/sys/fs/cgroup:/sys/fs/cgroup',
