@@ -1,7 +1,17 @@
 import * as client from 'openid-client';
 import { getDbForDomain } from '../db/app-db-router.js';
+import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Role } from './user-store.js';
+
+export const OIDC_CALLBACK_PATH = '/auth/callback';
+
+export type RedirectUriSource = 'env' | 'setting' | 'none';
+
+export interface EffectiveRedirectUri {
+  redirectUri: string;
+  source: RedirectUriSource;
+}
 
 const log = createChildLogger('oidc');
 
@@ -97,6 +107,31 @@ export async function getOIDCConfig(): Promise<OIDCConfig> {
     group_role_mappings: groupRoleMappings,
     auto_provision: settings['oidc.auto_provision'] !== 'false',
   };
+}
+
+/**
+ * Compute the effective OIDC redirect URI.
+ *
+ * Precedence:
+ *   1. `DASHBOARD_EXTERNAL_URL` env var → `${baseUrl}/auth/callback`
+ *   2. `oidc.redirect_uri` setting (manual override / legacy)
+ *   3. Empty string (caller should treat as not configured)
+ *
+ * The env var wins by design — operators set their public URL once and the
+ * OIDC flow inherits it automatically, removing a footgun where a forgotten
+ * Settings field broke SSO after a deployment URL change.
+ */
+export function getEffectiveRedirectUri(manualSetting: string): EffectiveRedirectUri {
+  const externalUrl = getConfig().DASHBOARD_EXTERNAL_URL;
+  if (externalUrl) {
+    const base = externalUrl.replace(/\/+$/, '');
+    return { redirectUri: `${base}${OIDC_CALLBACK_PATH}`, source: 'env' };
+  }
+  const trimmed = manualSetting.trim();
+  if (trimmed) {
+    return { redirectUri: trimmed, source: 'setting' };
+  }
+  return { redirectUri: '', source: 'none' };
 }
 
 /**
