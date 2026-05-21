@@ -260,22 +260,25 @@ export function GroupRoleMappingEditor({ value, onChange, disabled, discoveredGr
     emitChange(updated);
   };
 
-  const buildItems = (excludeIndex: number): AutocompleteItem[] => {
-    const map = new Map<string, AutocompleteItem>();
-    for (const g of discoveredGroups ?? []) {
-      map.set(g.group_name, {
+  const baseItems = useMemo<AutocompleteItem[]>(
+    () =>
+      (discoveredGroups ?? []).map((g) => ({
         name: g.group_name,
         user_count: g.user_count,
         last_seen_at: g.last_seen_at,
-      });
-    }
-    for (const existing of extractExistingGroups(rows, excludeIndex)) {
-      if (!map.has(existing)) {
-        map.set(existing, { name: existing });
-      }
-    }
-    return [...map.values()];
-  };
+      })),
+    [discoveredGroups],
+  );
+
+  const itemsByRow = useMemo<AutocompleteItem[][]>(() => {
+    const baseNames = new Set(baseItems.map((item) => item.name));
+    return rows.map((_, index) => {
+      const extras = extractExistingGroups(rows, index)
+        .filter((name) => !baseNames.has(name))
+        .map<AutocompleteItem>((name) => ({ name }));
+      return extras.length === 0 ? baseItems : [...baseItems, ...extras];
+    });
+  }, [baseItems, rows]);
 
   return (
     <div className="rounded-lg border bg-card" data-testid="group-role-mapping-editor">
@@ -326,7 +329,7 @@ export function GroupRoleMappingEditor({ value, onChange, disabled, discoveredGr
                   value={row.group}
                   onChange={(val) => updateRow(index, 'group', val)}
                   disabled={disabled}
-                  items={buildItems(index)}
+                  items={itemsByRow[index]}
                   placeholder="e.g., Dashboard-Admins or *"
                   testId={`mapping-group-${index}`}
                 />

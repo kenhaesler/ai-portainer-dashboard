@@ -112,11 +112,11 @@ export async function oidcRoutes(fastify: FastifyInstance) {
 
     try {
       const claims = await exchangeCode(callbackUrl, state);
-      try {
-        await syncUserGroups(claims.sub, claims.groups ?? []);
-      } catch (err) {
+      // Fire-and-forget: tracking is a UX affordance, not a security control,
+      // so we don't block login latency on the DB write.
+      void syncUserGroups(claims.sub, claims.groups ?? []).catch((err) => {
         log.warn({ err, sub: claims.sub }, 'Failed to sync OIDC user groups — login continuing');
-      }
+      });
       const username = claims.email || claims.name || claims.sub;
       const oidcConfig = await getOIDCConfig();
 
