@@ -207,4 +207,76 @@ describe('GroupRoleMappingEditor', () => {
       expect(options.filter((t) => t === 'Same')).toHaveLength(1);
     });
   });
+
+  it('renders discovered groups with user count and last-seen metadata', async () => {
+    const discoveredGroups = [
+      { group_name: 'Dashboard-Admins', user_count: 3, last_seen_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() },
+      { group_name: 'Viewers',          user_count: 1, last_seen_at: new Date(Date.now() - 60 * 1000).toISOString() },
+    ];
+
+    render(
+      <GroupRoleMappingEditor
+        value={JSON.stringify({ ExistingGroup: 'admin' })}
+        onChange={vi.fn()}
+        discoveredGroups={discoveredGroups}
+      />,
+    );
+
+    fireEvent.focus(screen.getByTestId('mapping-group-0'));
+
+    expect(screen.getByText('Dashboard-Admins')).toBeInTheDocument();
+    expect(screen.getByText(/3 users/)).toBeInTheDocument();
+    expect(screen.getByText(/2d ago/)).toBeInTheDocument();
+    expect(screen.getByText('Viewers')).toBeInTheDocument();
+    expect(screen.getByText(/1 user(?!s)/)).toBeInTheDocument(); // singular
+  });
+
+  it('still allows typing a brand-new group name not in discoveredGroups', () => {
+    const onChange = vi.fn();
+    render(
+      <GroupRoleMappingEditor
+        value="{}"
+        onChange={onChange}
+        discoveredGroups={[{ group_name: 'Existing', user_count: 1, last_seen_at: new Date().toISOString() }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Add Mapping'));
+
+    const input = screen.getByTestId('mapping-group-0');
+    fireEvent.change(input, { target: { value: 'BrandNewGroup' } });
+
+    expect(onChange).toHaveBeenLastCalledWith(JSON.stringify({ BrandNewGroup: 'viewer' }));
+  });
+
+  it('falls back to existing-rows-only suggestions when discoveredGroups is empty', () => {
+    render(
+      <GroupRoleMappingEditor
+        value={JSON.stringify({ A: 'admin', B: 'viewer' })}
+        onChange={vi.fn()}
+        discoveredGroups={[]}
+      />,
+    );
+
+    fireEvent.focus(screen.getByTestId('mapping-group-0'));
+    expect(screen.getByText('B')).toBeInTheDocument();
+  });
+
+  it('merges discovered groups with existing rows, deduping by name', () => {
+    render(
+      <GroupRoleMappingEditor
+        value={JSON.stringify({ Admins: 'admin' })}
+        onChange={vi.fn()}
+        discoveredGroups={[
+          { group_name: 'Admins', user_count: 5, last_seen_at: new Date(Date.now() - 60_000).toISOString() },
+          { group_name: 'Devs',   user_count: 2, last_seen_at: new Date(Date.now() - 60_000).toISOString() },
+        ]}
+      />,
+    );
+
+    fireEvent.focus(screen.getByTestId('mapping-group-0'));
+    const adminsLabels = screen.getAllByText('Admins');
+    expect(adminsLabels.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/5 users/)).toBeInTheDocument();
+  });
 });
