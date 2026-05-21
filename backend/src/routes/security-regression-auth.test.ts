@@ -82,7 +82,6 @@ vi.mock('@dashboard/core/services/oidc.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@dashboard/core/services/oidc.js')>();
   return {
     ...actual,
-    isOIDCEnabled: vi.fn(() => false),
     getOIDCConfig: vi.fn(() => null),
     generateAuthorizationUrl: vi.fn().mockResolvedValue(''),
     exchangeCode: vi.fn().mockResolvedValue(null),

@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS = {
     { key: 'oidc.issuer_url', label: 'Issuer URL', description: 'OIDC provider issuer URL (e.g., https://auth.example.com/realms/master)', type: 'string', defaultValue: '' },
     { key: 'oidc.client_id', label: 'Client ID', description: 'OIDC client identifier registered with your provider', type: 'string', defaultValue: '' },
     { key: 'oidc.client_secret', label: 'Client Secret', description: 'OIDC client secret for server-side authentication', type: 'password', defaultValue: '' },
-    { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL (e.g., http://localhost:5273/auth/callback)', type: 'string', defaultValue: '' },
+    { key: 'oidc.redirect_uri', label: 'Redirect URI', description: 'Callback URL registered with your IdP. Leave blank to inherit from DASHBOARD_EXTERNAL_URL — when that env var is set, it takes precedence and the value here is ignored.', type: 'string', defaultValue: '' },
     { key: 'oidc.scopes', label: 'Scopes', description: 'Space-separated OIDC scopes to request', type: 'string', defaultValue: 'openid profile email' },
     { key: 'oidc.local_auth_enabled', label: 'Keep Local Auth Enabled', description: 'Allow username/password login alongside SSO', type: 'boolean', defaultValue: 'true' },
     { key: 'oidc.groups_claim', label: 'Groups Claim', description: 'ID token claim name containing group membership (e.g., groups, roles, or a custom claim)', type: 'string', defaultValue: 'groups' },
@@ -282,6 +282,11 @@ interface SettingsSectionProps {
   onChange: (key: string, value: string) => void;
   requiresRestart?: boolean;
   disabled?: boolean;
+  // Per-key disabled overrides. A row is disabled if the section is disabled
+  // OR its key is present here — used when a value is being supplied from
+  // outside the DB (env var, computed default) and editing would have no
+  // effect.
+  disabledKeys?: ReadonlySet<string>;
   footerContent?: React.ReactNode;
   status?: 'configured' | 'not-configured';
   statusLabel?: string;
@@ -297,6 +302,7 @@ export function SettingsSection({
   onChange,
   requiresRestart,
   disabled,
+  disabledKeys,
   footerContent,
   status,
   statusLabel,
@@ -341,7 +347,7 @@ export function SettingsSection({
             value={values[setting.key] ?? setting.defaultValue}
             onChange={(value) => onChange(setting.key, value)}
             hasChanges={values[setting.key] !== originalValues[setting.key]}
-            disabled={disabled}
+            disabled={disabled || disabledKeys?.has(setting.key)}
           />
         ))}
       </div>

@@ -1,10 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups } from '@dashboard/core/services/oidc.js';
+import { getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups, getEffectiveRedirectUri, isOIDCConfigEnabled } from '@dashboard/core/services/oidc.js';
 import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { upsertOIDCUser, getUserById } from '@dashboard/core/services/user-store.js';
-import { OidcStatusResponseSchema, OidcCallbackBodySchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import { OidcStatusResponseSchema, OidcCallbackBodySchema, OidcEffectiveRedirectUriResponseSchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
@@ -24,14 +24,10 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (_request, reply) => {
-    if (!(await isOIDCEnabled())) {
-      return { enabled: false };
-    }
-
     try {
       const oidcConfig = await getOIDCConfig();
-      const redirectUri = oidcConfig.redirect_uri;
-      if (!redirectUri) {
+      const { redirectUri } = getEffectiveRedirectUri(oidcConfig.redirect_uri);
+      if (!isOIDCConfigEnabled(oidcConfig, redirectUri)) {
         return { enabled: false };
       }
 
@@ -41,6 +37,24 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       fastify.log.error({ err }, 'Failed to generate OIDC authorization URL');
       return reply.code(500).send({ error: 'Failed to initialize OIDC' });
     }
+  });
+
+  // Effective redirect URI (admin-only) — surfaces the value the backend will
+  // actually use, so the Settings UI can show the env-derived URI as a hint
+  // even when no manual value is stored.
+  fastify.get('/api/auth/oidc/effective-redirect-uri', {
+    schema: {
+      tags: ['Auth'],
+      summary: 'Get the effective OIDC redirect URI (env or manual setting)',
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: OidcEffectiveRedirectUriResponseSchema,
+      },
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async () => {
+    const oidcConfig = await getOIDCConfig();
+    return getEffectiveRedirectUri(oidcConfig.redirect_uri);
   });
 
   // OIDC callback (public — no auth required)

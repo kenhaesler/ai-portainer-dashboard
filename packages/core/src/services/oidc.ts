@@ -1,11 +1,21 @@
 import * as client from 'openid-client';
 import { getDbForDomain } from '../db/app-db-router.js';
+import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import type { Role } from './user-store.js';
 
+export const OIDC_CALLBACK_PATH = '/auth/callback';
+
+export type RedirectUriSource = 'env' | 'setting' | 'none';
+
+export interface EffectiveRedirectUri {
+  redirectUri: string;
+  source: RedirectUriSource;
+}
+
 const log = createChildLogger('oidc');
 
-interface OIDCConfig {
+export interface OIDCConfig {
   enabled: boolean;
   issuer_url: string;
   client_id: string;
@@ -100,11 +110,51 @@ export async function getOIDCConfig(): Promise<OIDCConfig> {
 }
 
 /**
- * Check if OIDC is enabled and has required fields configured.
+ * Compute the effective OIDC redirect URI.
+ *
+ * Precedence:
+ *   1. `DASHBOARD_EXTERNAL_URL` env var → `${origin}${basePath}/auth/callback`
+ *   2. `oidc.redirect_uri` setting (manual override / legacy)
+ *   3. Empty string (caller should treat as not configured)
+ *
+ * The env var wins by design — operators set their public URL once and the
+ * OIDC flow inherits it automatically, removing a footgun where a forgotten
+ * Settings field broke SSO after a deployment URL change.
+ *
+ * The env URL is parsed via `new URL()` so any query string or fragment is
+ * dropped and the callback path is appended to the URL's own path (supporting
+ * sub-path deployments like `https://example.com/dashboard`).
  */
-export async function isOIDCEnabled(): Promise<boolean> {
-  const config = await getOIDCConfig();
-  return config.enabled && !!config.issuer_url && !!config.client_id && !!config.client_secret;
+export function getEffectiveRedirectUri(manualSetting: string): EffectiveRedirectUri {
+  const externalUrl = getConfig().DASHBOARD_EXTERNAL_URL;
+  if (externalUrl) {
+    const parsed = new URL(externalUrl);
+    const basePath = parsed.pathname.replace(/\/+$/, '');
+    return {
+      redirectUri: `${parsed.origin}${basePath}${OIDC_CALLBACK_PATH}`,
+      source: 'env',
+    };
+  }
+  const trimmed = manualSetting.trim();
+  if (trimmed) {
+    return { redirectUri: trimmed, source: 'setting' };
+  }
+  return { redirectUri: '', source: 'none' };
+}
+
+/**
+ * Pure variant: check if a previously-loaded OIDC config + resolved redirect
+ * URI represent a fully-enabled setup. Use this when you already have both
+ * values in hand to avoid a second DB read.
+ */
+export function isOIDCConfigEnabled(config: OIDCConfig, resolvedRedirectUri: string): boolean {
+  return (
+    config.enabled &&
+    !!config.issuer_url &&
+    !!config.client_id &&
+    !!config.client_secret &&
+    !!resolvedRedirectUri
+  );
 }
 
 /**

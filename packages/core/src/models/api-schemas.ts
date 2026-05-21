@@ -62,6 +62,16 @@ export const OidcCallbackBodySchema = z.object({
   state: z.string(),
 });
 
+// Returned by GET /api/auth/oidc/effective-redirect-uri (admin-only).
+// `source` lets the Settings UI explain to the operator where the value comes
+// from: 'env' means DASHBOARD_EXTERNAL_URL is taking precedence and the
+// per-setting field is being ignored; 'setting' means only the manual value
+// applies; 'none' means neither is configured.
+export const OidcEffectiveRedirectUriResponseSchema = z.object({
+  redirectUri: z.string(),
+  source: z.enum(['env', 'setting', 'none']),
+});
+
 // ─── Health schemas ─────────────────────────────────────────────────
 export const HealthResponseSchema = z.object({
   status: z.string(),

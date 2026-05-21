@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
-import { Loader2, Shield } from 'lucide-react';
+import { Info, Loader2, Shield } from 'lucide-react';
 import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/features/security/hooks/use-security-audit';
+import { useOIDCEffectiveRedirectUri } from '@/features/core/hooks/use-oidc';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
 import { GroupRoleMappingEditor } from './group-role-mapping-editor';
 import { cn } from '@/shared/lib/utils';
@@ -16,6 +17,12 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
   );
 
   const isOIDCEnabled = editedValues['oidc.enabled'] === 'true';
+  const { data: effectiveRedirect } = useOIDCEffectiveRedirectUri();
+  const envOverridesRedirectUri = effectiveRedirect?.source === 'env';
+  const disabledAuthKeys = useMemo(
+    () => (envOverridesRedirectUri ? new Set(['oidc.redirect_uri']) : undefined),
+    [envOverridesRedirectUri],
+  );
 
   return (
     <div className="space-y-6">
@@ -30,8 +37,29 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
         onChange={onChange}
         requiresRestart
         disabled={isSaving}
+        disabledKeys={disabledAuthKeys}
         status={isOIDCEnabled ? 'configured' : 'not-configured'}
         statusLabel={isOIDCEnabled ? 'Enabled' : 'Disabled'}
+        footerContent={
+          effectiveRedirect && effectiveRedirect.source !== 'none' ? (
+            <div className="flex items-start gap-2 rounded-md border border-blue-200/60 bg-blue-50/50 p-3 text-sm dark:border-blue-900/50 dark:bg-blue-950/30">
+              <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+              <div className="space-y-1">
+                <p className="font-medium">
+                  Effective Redirect URI:{' '}
+                  <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
+                    {effectiveRedirect.redirectUri}
+                  </code>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {effectiveRedirect.source === 'env'
+                    ? 'Derived from the DASHBOARD_EXTERNAL_URL environment variable. The Redirect URI field above is ignored while this env var is set. Register this exact URL with your IdP.'
+                    : 'Derived from the Redirect URI field above. Set DASHBOARD_EXTERNAL_URL to inherit it from the dashboard’s public URL automatically.'}
+                </p>
+              </div>
+            </div>
+          ) : null
+        }
       />
 
       {/* Group-to-Role Mapping Editor (only visible when OIDC is enabled) */}
