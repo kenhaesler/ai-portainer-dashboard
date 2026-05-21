@@ -216,7 +216,7 @@ describe('GroupRoleMappingEditor', () => {
 
     render(
       <GroupRoleMappingEditor
-        value={JSON.stringify({ ExistingGroup: 'admin' })}
+        value={JSON.stringify({ '': 'admin' })}
         onChange={vi.fn()}
         discoveredGroups={discoveredGroups}
       />,
@@ -252,7 +252,7 @@ describe('GroupRoleMappingEditor', () => {
   it('falls back to existing-rows-only suggestions when discoveredGroups is empty', () => {
     render(
       <GroupRoleMappingEditor
-        value={JSON.stringify({ A: 'admin', B: 'viewer' })}
+        value={JSON.stringify({ '': 'admin', B: 'viewer' })}
         onChange={vi.fn()}
         discoveredGroups={[]}
       />,
