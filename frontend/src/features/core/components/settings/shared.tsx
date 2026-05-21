@@ -282,6 +282,11 @@ interface SettingsSectionProps {
   onChange: (key: string, value: string) => void;
   requiresRestart?: boolean;
   disabled?: boolean;
+  // Per-key disabled overrides. A row is disabled if the section is disabled
+  // OR its key is present here — used when a value is being supplied from
+  // outside the DB (env var, computed default) and editing would have no
+  // effect.
+  disabledKeys?: ReadonlySet<string>;
   footerContent?: React.ReactNode;
   status?: 'configured' | 'not-configured';
   statusLabel?: string;
@@ -297,6 +302,7 @@ export function SettingsSection({
   onChange,
   requiresRestart,
   disabled,
+  disabledKeys,
   footerContent,
   status,
   statusLabel,
@@ -341,7 +347,7 @@ export function SettingsSection({
             value={values[setting.key] ?? setting.defaultValue}
             onChange={(value) => onChange(setting.key, value)}
             hasChanges={values[setting.key] !== originalValues[setting.key]}
-            disabled={disabled}
+            disabled={disabled || disabledKeys?.has(setting.key)}
           />
         ))}
       </div>

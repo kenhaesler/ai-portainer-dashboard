@@ -9,7 +9,6 @@ vi.mock('@dashboard/core/services/oidc.js', async (importOriginal) => {
   return {
     ...real,
     getOIDCConfig: vi.fn(),
-    isOIDCEnabled: vi.fn(),
     generateAuthorizationUrl: vi.fn(),
   };
 });
@@ -19,7 +18,6 @@ import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { oidcRoutes } from '../routes/oidc.js';
 
 const mockedGetConfig = vi.mocked(oidcService.getOIDCConfig);
-const mockedIsEnabled = vi.mocked(oidcService.isOIDCEnabled);
 const mockedGenerateAuthUrl = vi.mocked(oidcService.generateAuthorizationUrl);
 
 const baseOidcConfig = {
@@ -58,7 +56,6 @@ describe('OIDC Routes', () => {
 
   beforeEach(() => {
     mockedGetConfig.mockReset();
-    mockedIsEnabled.mockReset();
     mockedGenerateAuthUrl.mockReset();
   });
 
@@ -119,7 +116,6 @@ describe('OIDC Routes', () => {
   describe('GET /api/auth/oidc/status', () => {
     it('passes the env-derived URI to generateAuthorizationUrl', async () => {
       setConfigForTest({ DASHBOARD_EXTERNAL_URL: 'https://dashboard.example.com' });
-      mockedIsEnabled.mockResolvedValue(true);
       mockedGetConfig.mockResolvedValue({ ...baseOidcConfig, redirect_uri: 'http://localhost:5173/auth/callback' });
       mockedGenerateAuthUrl.mockResolvedValue({ url: 'https://idp.example.com/authz?state=xyz', state: 'xyz' });
 
@@ -142,7 +138,6 @@ describe('OIDC Routes', () => {
 
     it('uses the manual setting when env is unset', async () => {
       setConfigForTest({ DASHBOARD_EXTERNAL_URL: undefined });
-      mockedIsEnabled.mockResolvedValue(true);
       mockedGetConfig.mockResolvedValue({ ...baseOidcConfig, redirect_uri: 'https://manual.example.com/auth/callback' });
       mockedGenerateAuthUrl.mockResolvedValue({ url: 'https://idp.example.com/authz', state: 's' });
 
@@ -157,8 +152,18 @@ describe('OIDC Routes', () => {
 
     it('reports disabled when redirect URI cannot be resolved', async () => {
       setConfigForTest({ DASHBOARD_EXTERNAL_URL: undefined });
-      mockedIsEnabled.mockResolvedValue(true);
       mockedGetConfig.mockResolvedValue({ ...baseOidcConfig, redirect_uri: '' });
+
+      const response = await app.inject({ method: 'GET', url: '/api/auth/oidc/status' });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ enabled: false });
+      expect(mockedGenerateAuthUrl).not.toHaveBeenCalled();
+    });
+
+    it('reports disabled when enabled flag is off, even with a resolvable URI', async () => {
+      setConfigForTest({ DASHBOARD_EXTERNAL_URL: 'https://dashboard.example.com' });
+      mockedGetConfig.mockResolvedValue({ ...baseOidcConfig, enabled: false });
 
       const response = await app.inject({ method: 'GET', url: '/api/auth/oidc/status' });
 

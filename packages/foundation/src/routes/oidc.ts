@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { isOIDCEnabled, getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups, getEffectiveRedirectUri } from '@dashboard/core/services/oidc.js';
+import { getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups, getEffectiveRedirectUri, isOIDCConfigEnabled } from '@dashboard/core/services/oidc.js';
 import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
@@ -24,14 +24,10 @@ export async function oidcRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (_request, reply) => {
-    if (!(await isOIDCEnabled())) {
-      return { enabled: false };
-    }
-
     try {
       const oidcConfig = await getOIDCConfig();
       const { redirectUri } = getEffectiveRedirectUri(oidcConfig.redirect_uri);
-      if (!redirectUri) {
+      if (!isOIDCConfigEnabled(oidcConfig, redirectUri)) {
         return { enabled: false };
       }
 

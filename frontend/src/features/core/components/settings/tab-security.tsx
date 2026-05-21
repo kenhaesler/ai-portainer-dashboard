@@ -18,6 +18,11 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
 
   const isOIDCEnabled = editedValues['oidc.enabled'] === 'true';
   const { data: effectiveRedirect } = useOIDCEffectiveRedirectUri();
+  const envOverridesRedirectUri = effectiveRedirect?.source === 'env';
+  const disabledAuthKeys = useMemo(
+    () => (envOverridesRedirectUri ? new Set(['oidc.redirect_uri']) : undefined),
+    [envOverridesRedirectUri],
+  );
 
   return (
     <div className="space-y-6">
@@ -32,6 +37,7 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
         onChange={onChange}
         requiresRestart
         disabled={isSaving}
+        disabledKeys={disabledAuthKeys}
         status={isOIDCEnabled ? 'configured' : 'not-configured'}
         statusLabel={isOIDCEnabled ? 'Enabled' : 'Disabled'}
         footerContent={
