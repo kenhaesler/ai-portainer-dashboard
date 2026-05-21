@@ -277,4 +277,40 @@ describe('OIDC Routes', () => {
       expect(mockedSyncUserGroups).toHaveBeenCalledWith('user-44', []);
     });
   });
+
+  describe('GET /api/auth/oidc/discovered-groups', () => {
+    it('returns aggregated groups from listDiscoveredGroups', async () => {
+      vi.mocked(groupTracking.listDiscoveredGroups).mockResolvedValueOnce([
+        { group_name: 'Admins', user_count: 3, last_seen_at: '2026-05-20T10:00:00.000Z' },
+        { group_name: 'Devs',   user_count: 1, last_seen_at: '2026-05-19T09:00:00.000Z' },
+      ]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/auth/oidc/discovered-groups',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        groups: [
+          { group_name: 'Admins', user_count: 3, last_seen_at: '2026-05-20T10:00:00.000Z' },
+          { group_name: 'Devs',   user_count: 1, last_seen_at: '2026-05-19T09:00:00.000Z' },
+        ],
+      });
+    });
+
+    it('returns an empty array when no groups have been observed', async () => {
+      vi.mocked(groupTracking.listDiscoveredGroups).mockResolvedValueOnce([]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/auth/oidc/discovered-groups',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ groups: [] });
+    });
+  });
 });
