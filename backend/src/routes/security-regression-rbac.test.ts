@@ -115,6 +115,22 @@ vi.mock('@dashboard/core/services/user-store.js', () => ({
   hasMinRole: vi.fn(() => false),
 }));
 
+vi.mock('@dashboard/core/services/oidc.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dashboard/core/services/oidc.js')>();
+  return {
+    ...actual,
+    getOIDCConfig: vi.fn(() => null),
+    generateAuthorizationUrl: vi.fn().mockResolvedValue({ url: '', state: '' }),
+    exchangeCode: vi.fn().mockResolvedValue(null),
+    getEffectiveRedirectUri: vi.fn(() => ({ redirectUri: 'http://localhost/auth/callback', source: 'env' })),
+  };
+});
+
+vi.mock('@dashboard/core/services/oidc-group-tracking.js', () => ({
+  syncUserGroups: vi.fn().mockResolvedValue(undefined),
+  listDiscoveredGroups: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
 vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
 
@@ -190,7 +206,7 @@ vi.mock('@dashboard/ai', async (importOriginal) => {
 import { remediationRoutes } from '@dashboard/operations';
 import { securityRoutes } from '@dashboard/security/routes/index.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
-import { imagesRoutes, userRoutes } from '@dashboard/foundation';
+import { imagesRoutes, userRoutes, oidcRoutes } from '@dashboard/foundation';
 import { notificationRoutes } from '@dashboard/operations';
 import { incidentsRoutes } from '@dashboard/ai';
 import type { LLMInterface } from '@dashboard/contracts';
@@ -776,5 +792,96 @@ describe('Trace ingest-stats Admin RBAC Enforcement', () => {
     );
     expect(statsBlock).not.toBeNull();
     expect(statsBlock![1]).toContain("requireRole('admin')");
+  });
+});
+
+// =====================================================================
+//  OIDC DISCOVERED-GROUPS ADMIN RBAC ENFORCEMENT (issue #1281)
+// =====================================================================
+// The `/api/auth/oidc/discovered-groups` endpoint backs the searchable
+// group-to-role mapping editor and exposes group identifiers observed from
+// past OIDC logins. The list is sensitive directory information, so the
+// route must require the admin role — viewer/operator callers must get
+// 403, and anonymous callers must be blocked by `authenticate`.
+describe('OIDC Discovered Groups Admin RBAC Enforcement', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin' | null;
+
+  beforeAll(async () => {
+    currentRole = 'admin';
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    // `authenticate` rejects anonymous callers (no role) with 401, matching
+    // the production decorator behaviour.
+    app.decorate('authenticate', async (request, reply) => {
+      if (currentRole === null) {
+        reply.code(401).send({ error: 'Unauthorized' });
+      }
+    });
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      if (currentRole !== null) {
+        request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
+      }
+    });
+    await app.register(oidcRoutes);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('denies GET /api/auth/oidc/discovered-groups for anonymous callers', async () => {
+    currentRole = null;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/oidc/discovered-groups',
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('denies GET /api/auth/oidc/discovered-groups for viewer role', async () => {
+    currentRole = 'viewer';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/oidc/discovered-groups',
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies GET /api/auth/oidc/discovered-groups for operator role', async () => {
+    currentRole = 'operator';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/oidc/discovered-groups',
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('allows GET /api/auth/oidc/discovered-groups for admin role', async () => {
+    currentRole = 'admin';
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/oidc/discovered-groups',
+    });
+
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
   });
 });
