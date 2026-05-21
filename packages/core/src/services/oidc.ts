@@ -26,6 +26,11 @@ export interface OIDCConfig {
   groups_claim: string;
   group_role_mappings: Record<string, Role>;
   auto_provision: boolean;
+  // Opt-in: allow openid-client to talk to a plain-HTTP issuer. Disabled by
+  // default; enable only for local dev/staging where TLS is not yet wired up.
+  // The library normally refuses non-HTTPS discovery and token-exchange to
+  // prevent leaking auth codes, access tokens, and ID tokens over plaintext.
+  allow_insecure_transport: boolean;
 }
 
 interface StateEntry {
@@ -106,6 +111,7 @@ export async function getOIDCConfig(): Promise<OIDCConfig> {
     groups_claim: settings['oidc.groups_claim'] || 'groups',
     group_role_mappings: groupRoleMappings,
     auto_provision: settings['oidc.auto_provision'] !== 'false',
+    allow_insecure_transport: settings['oidc.allow_insecure_transport'] === 'true',
   };
 }
 
@@ -167,15 +173,33 @@ async function getOrCreateConfiguration(): Promise<client.Configuration> {
     return cachedConfig;
   }
 
-  log.info({ issuer: oidcConfig.issuer_url }, 'Discovering OIDC configuration');
+  log.info(
+    { issuer: oidcConfig.issuer_url, allow_insecure_transport: oidcConfig.allow_insecure_transport },
+    'Discovering OIDC configuration',
+  );
+  if (oidcConfig.allow_insecure_transport) {
+    log.warn(
+      'OIDC allow_insecure_transport is ENABLED — auth codes and tokens will travel in plaintext. Use only for local development.',
+    );
+  }
 
   const issuerUrl = new URL(oidcConfig.issuer_url);
+  // `execute: [client.allowInsecureRequests]` permits HTTP for the discovery
+  // request itself; calling allowInsecureRequests(config) on the returned
+  // Configuration extends the permission to subsequent token-exchange calls.
+  const discoveryOptions = oidcConfig.allow_insecure_transport
+    ? { execute: [client.allowInsecureRequests] }
+    : undefined;
   cachedConfig = await client.discovery(
     issuerUrl,
     oidcConfig.client_id,
     oidcConfig.client_secret,
-    client.ClientSecretBasic(oidcConfig.client_secret)
+    client.ClientSecretBasic(oidcConfig.client_secret),
+    discoveryOptions,
   );
+  if (oidcConfig.allow_insecure_transport) {
+    client.allowInsecureRequests(cachedConfig);
+  }
 
   cachedConfigExpiry = Date.now() + CONFIG_CACHE_TTL_MS;
   log.info('OIDC configuration discovered and cached');

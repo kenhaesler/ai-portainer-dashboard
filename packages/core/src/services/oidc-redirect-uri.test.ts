@@ -17,6 +17,7 @@ const fullConfig: OIDCConfig = {
   groups_claim: 'groups',
   group_role_mappings: {},
   auto_provision: true,
+  allow_insecure_transport: false,
 };
 
 describe('getEffectiveRedirectUri', () => {

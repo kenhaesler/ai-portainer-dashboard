@@ -10,8 +10,21 @@ vi.mock('@dashboard/core/services/oidc.js', async (importOriginal) => {
     ...real,
     getOIDCConfig: vi.fn(),
     generateAuthorizationUrl: vi.fn(),
+    exchangeCode: vi.fn(),
   };
 });
+// All user/session/audit boundaries stubbed so the callback test is hermetic.
+vi.mock('@dashboard/core/services/user-store.js', () => ({
+  upsertOIDCUser: vi.fn().mockResolvedValue({ roleChanged: false }),
+  getUserById: vi.fn().mockResolvedValue(null),
+  getUserDefaultLandingPage: vi.fn().mockResolvedValue('/dashboard'),
+}));
+vi.mock('@dashboard/core/services/session-store.js', () => ({
+  createSession: vi.fn().mockResolvedValue({ id: 'sess-1', expires_at: '2099-01-01T00:00:00Z' }),
+  invalidateSession: vi.fn(),
+}));
+vi.mock('@dashboard/core/services/audit-logger.js', () => ({ writeAuditLog: vi.fn() }));
+vi.mock('@dashboard/core/utils/crypto.js', () => ({ signJwt: vi.fn().mockResolvedValue('signed.jwt.token') }));
 
 import * as oidcService from '@dashboard/core/services/oidc.js';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
@@ -19,6 +32,7 @@ import { oidcRoutes } from '../routes/oidc.js';
 
 const mockedGetConfig = vi.mocked(oidcService.getOIDCConfig);
 const mockedGenerateAuthUrl = vi.mocked(oidcService.generateAuthorizationUrl);
+const mockedExchangeCode = vi.mocked(oidcService.exchangeCode);
 
 const baseOidcConfig = {
   enabled: true,
@@ -31,6 +45,7 @@ const baseOidcConfig = {
   groups_claim: 'groups',
   group_role_mappings: {},
   auto_provision: true,
+  allow_insecure_transport: false,
 };
 
 describe('OIDC Routes', () => {
@@ -170,6 +185,35 @@ describe('OIDC Routes', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ enabled: false });
       expect(mockedGenerateAuthUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/auth/oidc/callback', () => {
+    it('returns a LoginResponse including defaultLandingPage (regression for serialization)', async () => {
+      setConfigForTest({ DASHBOARD_EXTERNAL_URL: undefined });
+      mockedGetConfig.mockResolvedValue({ ...baseOidcConfig, redirect_uri: 'https://x/auth/callback' });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'kc-admin-sub',
+        email: 'kc-admin@example.com',
+        name: 'kc-admin',
+        groups: ['Dashboard-Admins'],
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/auth/callback?code=abc&state=xyz', state: 'xyz' },
+        headers: { 'content-type': 'application/json' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body).toEqual({
+        token: 'signed.jwt.token',
+        username: 'kc-admin@example.com',
+        expiresAt: '2099-01-01T00:00:00Z',
+        defaultLandingPage: '/dashboard',
+      });
     });
   });
 });

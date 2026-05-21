@@ -3,7 +3,7 @@ import { getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromG
 import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
-import { upsertOIDCUser, getUserById } from '@dashboard/core/services/user-store.js';
+import { upsertOIDCUser, getUserById, getUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
 import { OidcStatusResponseSchema, OidcCallbackBodySchema, OidcEffectiveRedirectUriResponseSchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -148,6 +148,7 @@ export async function oidcRoutes(fastify: FastifyInstance) {
         token,
         username,
         expiresAt: session.expires_at,
+        defaultLandingPage: await getUserDefaultLandingPage(claims.sub),
       };
     } catch (err) {
       fastify.log.error({ err }, 'OIDC callback failed');
