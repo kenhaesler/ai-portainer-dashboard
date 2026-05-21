@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Kept: openid-client mock — external dependency
 vi.mock('openid-client', () => ({}));
 
-import { resolveRoleFromGroups, extractGroups } from './oidc.js';
+import { resolveRoleFromGroups, extractGroups, stripGroupPrefix } from './oidc.js';
 
 describe('resolveRoleFromGroups', () => {
   it('should return undefined when groups array is empty', () => {
@@ -113,6 +113,135 @@ describe('resolveRoleFromGroups', () => {
       },
     );
     expect(result).toBe('operator');
+  });
+
+  describe('with URI-prefixed group claims', () => {
+    it('should match bare mapping key against urn-prefixed group claim', () => {
+      const result = resolveRoleFromGroups(
+        ['urn:pingidentity.com:groups:G-Admin'],
+        { 'G-Admin': 'admin' },
+      );
+      expect(result).toBe('admin');
+    });
+
+    it('should match bare mapping key against multi-segment urn-prefixed group claim', () => {
+      const result = resolveRoleFromGroups(
+        ['urn:vendor:product:groups:G-Admin'],
+        { 'G-Admin': 'admin' },
+      );
+      expect(result).toBe('admin');
+    });
+
+    it('should match bare mapping key against https-prefixed group claim', () => {
+      const result = resolveRoleFromGroups(
+        ['https://idp.example.com/groups/G-Admin'],
+        { 'G-Admin': 'admin' },
+      );
+      expect(result).toBe('admin');
+    });
+
+    it('should match URI-form mapping key against bare group claim (back-compat)', () => {
+      const result = resolveRoleFromGroups(
+        ['G-Admin'],
+        { 'urn:pingidentity.com:groups:G-Admin': 'admin' },
+      );
+      expect(result).toBe('admin');
+    });
+
+    it('should match URI-form mapping key against URI-prefixed group claim (back-compat)', () => {
+      const result = resolveRoleFromGroups(
+        ['urn:pingidentity.com:groups:G-Admin'],
+        { 'urn:pingidentity.com:groups:G-Admin': 'admin' },
+      );
+      expect(result).toBe('admin');
+    });
+
+    it('should preserve wildcard mapping verbatim (no stripping applied)', () => {
+      const result = resolveRoleFromGroups(
+        ['urn:pingidentity.com:groups:Unknown'],
+        { 'G-Admin': 'admin', '*': 'viewer' },
+      );
+      expect(result).toBe('viewer');
+    });
+
+    it('should still pick highest-privilege role across URI-prefixed groups', () => {
+      const result = resolveRoleFromGroups(
+        [
+          'urn:pingidentity.com:groups:G-Viewer',
+          'urn:pingidentity.com:groups:G-Admin',
+        ],
+        { 'G-Viewer': 'viewer', 'G-Admin': 'admin' },
+      );
+      expect(result).toBe('admin');
+    });
+
+    it('should ignore mapping keys whose role is invalid even when key matches', () => {
+      const result = resolveRoleFromGroups(
+        ['urn:pingidentity.com:groups:G-Bad', 'G-Good'],
+        {
+          'G-Bad': 'superadmin' as never,
+          'G-Good': 'operator',
+        },
+      );
+      expect(result).toBe('operator');
+    });
+  });
+});
+
+describe('stripGroupPrefix', () => {
+  it('strips urn:vendor:groups: prefix', () => {
+    expect(stripGroupPrefix('urn:pingidentity.com:groups:G-Foo')).toBe('G-Foo');
+  });
+
+  it('strips multi-segment urn:vendor:product:groups: prefix', () => {
+    expect(stripGroupPrefix('urn:vendor:product:groups:G-Foo')).toBe('G-Foo');
+  });
+
+  it('strips https://host/groups/ prefix', () => {
+    expect(stripGroupPrefix('https://idp.example.com/groups/G-Foo')).toBe('G-Foo');
+  });
+
+  it('strips http://host/groups/ prefix', () => {
+    expect(stripGroupPrefix('http://idp.example.com/groups/G-Foo')).toBe('G-Foo');
+  });
+
+  it('returns bare names unchanged', () => {
+    expect(stripGroupPrefix('G-Foo')).toBe('G-Foo');
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(stripGroupPrefix('  G-Foo  ')).toBe('G-Foo');
+    expect(stripGroupPrefix('  urn:pingidentity.com:groups:G-Foo  ')).toBe('G-Foo');
+  });
+
+  it('returns empty string for empty / whitespace-only input', () => {
+    expect(stripGroupPrefix('')).toBe('');
+    expect(stripGroupPrefix('   ')).toBe('');
+  });
+
+  it('leaves prefix-only inputs untouched (no group name after prefix)', () => {
+    expect(stripGroupPrefix('urn:pingidentity.com:groups:')).toBe(
+      'urn:pingidentity.com:groups:',
+    );
+    expect(stripGroupPrefix('https://idp.example.com/groups/')).toBe(
+      'https://idp.example.com/groups/',
+    );
+  });
+
+  it('does not strip URLs that point at sub-paths other than /groups/', () => {
+    expect(stripGroupPrefix('https://idp.example.com/users/Alice')).toBe(
+      'https://idp.example.com/users/Alice',
+    );
+  });
+
+  it('does not strip arbitrary colon-separated identifiers that are not group URNs', () => {
+    expect(stripGroupPrefix('CN=Admins,OU=Groups,DC=corp,DC=local')).toBe(
+      'CN=Admins,OU=Groups,DC=corp,DC=local',
+    );
+  });
+
+  it('preserves wildcard sentinel verbatim', () => {
+    expect(stripGroupPrefix('*')).toBe('*');
   });
 });
 

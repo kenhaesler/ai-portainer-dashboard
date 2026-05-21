@@ -262,25 +262,29 @@ const ROLE_PRIORITY: Record<Role, number> = {
 /**
  * Strip common OIDC provider URI prefixes from group names.
  *
- * Providers like PingFederate wrap group names in URIs:
- *   urn:pingidentity.com:groups:G-MyGroup   →  G-MyGroup
- *   https://provider.com/groups/G-MyGroup   →  G-MyGroup
+ * Providers like PingFederate / Auth0 / Keycloak wrap group names in URIs:
+ *   urn:pingidentity.com:groups:G-MyGroup        →  G-MyGroup
+ *   urn:vendor:product:groups:G-MyGroup          →  G-MyGroup
+ *   https://provider.com/groups/G-MyGroup        →  G-MyGroup
  *
- * This lets operators configure mappings using bare group names.
+ * Applied to BOTH incoming group claims and configured mapping keys so that
+ * existing mappings stored in URI form continue to match after upgrade.
  */
 export function stripGroupPrefix(group: string): string {
   const trimmed = group.trim();
   if (!trimmed) return trimmed;
-  const withoutPrefix = trimmed.replace(
-    /^(?:urn:[^:]+:groups:|https?:\/\/[^/]+\/groups\/)(.+)$/,
+  return trimmed.replace(
+    /^(?:urn:.+?:groups:|https?:\/\/[^/]+\/groups\/)(.+)$/,
     '$1',
   );
-  return withoutPrefix;
 }
 
 /**
  * Resolve the highest-privilege role from a user's groups using the configured mappings.
  * Returns undefined if no mapping matches (including wildcard).
+ *
+ * Prefix-stripping is applied symmetrically to incoming groups AND mapping keys so
+ * operators who still have URI-form keys in DB (pre-1281 config) keep working.
  */
 export function resolveRoleFromGroups(
   groups: string[],
@@ -290,15 +294,29 @@ export function resolveRoleFromGroups(
     return undefined;
   }
 
+  // Build a normalized lookup so URI-form mapping keys still match bare group names.
+  // Wildcard ('*') is preserved verbatim. On collision, last-write-wins matches the
+  // pre-existing Object.entries iteration semantics.
+  const normalizedMappings: Record<string, Role> = {};
+  for (const [key, role] of Object.entries(mappings)) {
+    if (!VALID_ROLES.has(role)) continue;
+    if (key === '*') {
+      normalizedMappings['*'] = role;
+      continue;
+    }
+    const normalizedKey = stripGroupPrefix(key);
+    if (normalizedKey) normalizedMappings[normalizedKey] = role;
+  }
+
   let bestRole: Role | undefined;
   let bestPriority = -1;
 
   for (const group of groups) {
-    const sanitized = stripGroupPrefix(group.trim());
+    const sanitized = stripGroupPrefix(group);
     if (!sanitized) continue;
 
-    const mappedRole = mappings[sanitized];
-    if (mappedRole && VALID_ROLES.has(mappedRole)) {
+    const mappedRole = normalizedMappings[sanitized];
+    if (mappedRole) {
       const priority = ROLE_PRIORITY[mappedRole];
       if (priority > bestPriority) {
         bestRole = mappedRole;
@@ -308,8 +326,8 @@ export function resolveRoleFromGroups(
   }
 
   // Check wildcard fallback only if no explicit match
-  if (!bestRole && '*' in mappings && VALID_ROLES.has(mappings['*'])) {
-    bestRole = mappings['*'];
+  if (!bestRole && normalizedMappings['*']) {
+    bestRole = normalizedMappings['*'];
   }
 
   return bestRole;

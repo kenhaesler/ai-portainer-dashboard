@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { Plus, Search, Trash2, Users } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
@@ -45,11 +45,14 @@ function serializeMappings(rows: MappingRow[]): string {
   return JSON.stringify(obj);
 }
 
-function extractExistingGroups(rows: MappingRow[]): string[] {
-  return rows
-    .map((r) => r.group.trim())
-    .filter((g) => g.length > 0)
-    .sort();
+function extractExistingGroups(rows: MappingRow[], excludeIndex?: number): string[] {
+  const seen = new Set<string>();
+  for (let i = 0; i < rows.length; i += 1) {
+    if (i === excludeIndex) continue;
+    const trimmed = rows[i].group.trim();
+    if (trimmed) seen.add(trimmed);
+  }
+  return [...seen].sort();
 }
 
 function GroupNameAutocomplete({
@@ -58,15 +61,21 @@ function GroupNameAutocomplete({
   disabled,
   existingGroups,
   placeholder,
+  testId,
 }: {
   value: string;
   onChange: (val: string) => void;
   disabled?: boolean;
   existingGroups: string[];
   placeholder?: string;
+  testId?: string;
 }) {
   const [show, setShow] = useState(false);
   const [query, setQuery] = useState(value);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
+  const optionIdPrefix = useId();
+  const listboxRef = useRef<HTMLDivElement | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -78,7 +87,21 @@ function GroupNameAutocomplete({
     setQuery(value);
   }, [value]);
 
-  const handleSelect = (group: string) => {
+  // Reset highlight whenever the filtered set changes or the dropdown re-opens.
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [filtered, show]);
+
+  // Keep the highlighted option scrolled into view.
+  useEffect(() => {
+    if (activeIndex < 0 || !listboxRef.current) return;
+    const optionEl = listboxRef.current.querySelector<HTMLElement>(
+      `[data-option-index="${activeIndex}"]`,
+    );
+    optionEl?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
+
+  const commit = (group: string) => {
     setQuery(group);
     onChange(group);
     setShow(false);
@@ -93,11 +116,35 @@ function GroupNameAutocomplete({
       setShow(false);
       return;
     }
+    if (e.key === 'ArrowDown') {
+      if (filtered.length === 0) return;
+      e.preventDefault();
+      setShow(true);
+      setActiveIndex((i) => (i + 1) % filtered.length);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      if (filtered.length === 0) return;
+      e.preventDefault();
+      setShow(true);
+      setActiveIndex((i) => (i <= 0 ? filtered.length - 1 : i - 1));
+      return;
+    }
     if (e.key === 'Enter') {
-      onChange(query);
-      setShow(false);
+      e.preventDefault();
+      if (show && activeIndex >= 0 && activeIndex < filtered.length) {
+        commit(filtered[activeIndex]);
+      } else {
+        onChange(query);
+        setShow(false);
+      }
     }
   };
+
+  const activeDescendant =
+    show && activeIndex >= 0 && activeIndex < filtered.length
+      ? `${optionIdPrefix}-${activeIndex}`
+      : undefined;
 
   return (
     <div className="relative">
@@ -105,6 +152,11 @@ function GroupNameAutocomplete({
         <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <input
           type="text"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={show && filtered.length > 0}
+          aria-controls={listboxId}
+          aria-activedescendant={activeDescendant}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -117,29 +169,40 @@ function GroupNameAutocomplete({
           disabled={disabled}
           placeholder={placeholder}
           className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          data-testid="mapping-group-input"
+          data-testid={testId}
           autoComplete="off"
         />
       </div>
       {show && filtered.length > 0 && (
-        <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-lg">
-          {filtered.map((group) => (
-            <div
-              key={group}
-              className={cn(
-                'px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground',
-                group === query
-                  ? 'bg-accent text-accent-foreground'
-                  : '',
-              )}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                handleSelect(group);
-              }}
-            >
-              {group}
-            </div>
-          ))}
+        <div
+          ref={listboxRef}
+          id={listboxId}
+          role="listbox"
+          className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+        >
+          {filtered.map((group, index) => {
+            const isActive = index === activeIndex;
+            return (
+              <div
+                key={group}
+                id={`${optionIdPrefix}-${index}`}
+                role="option"
+                aria-selected={isActive}
+                data-option-index={index}
+                className={cn(
+                  'px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground',
+                  isActive ? 'bg-accent text-accent-foreground' : '',
+                )}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(group);
+                }}
+              >
+                {group}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -148,7 +211,6 @@ function GroupNameAutocomplete({
 
 export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleMappingEditorProps) {
   const [rows, setRows] = useState<MappingRow[]>(() => parseMappings(value));
-  const allGroups = useMemo(() => extractExistingGroups(rows), [rows]);
 
   // Sync from parent when value changes externally
   useEffect(() => {
@@ -228,8 +290,9 @@ export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleM
                   value={row.group}
                   onChange={(val) => updateRow(index, 'group', val)}
                   disabled={disabled}
-                  existingGroups={allGroups}
+                  existingGroups={extractExistingGroups(rows, index)}
                   placeholder="e.g., Dashboard-Admins or *"
+                  testId={`mapping-group-${index}`}
                 />
                 <select
                   value={row.role}
