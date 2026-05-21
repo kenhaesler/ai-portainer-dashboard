@@ -72,6 +72,20 @@ export const OidcEffectiveRedirectUriResponseSchema = z.object({
   source: z.enum(['env', 'setting', 'none']),
 });
 
+// Returned by GET /api/auth/oidc/discovered-groups (admin-only).
+// Powers the searchable dropdown in the group-to-role mapping editor.
+// user_count is COUNT(DISTINCT user_sub) for the group; last_seen_at is the
+// max last_seen_at across all rows for that group.
+export const DiscoveredOidcGroupsResponseSchema = z.object({
+  groups: z.array(
+    z.object({
+      group_name: z.string(),
+      user_count: z.number().int().nonnegative(),
+      last_seen_at: z.string(),
+    }),
+  ),
+});
+
 // ─── Health schemas ─────────────────────────────────────────────────
 export const HealthResponseSchema = z.object({
   status: z.string(),
