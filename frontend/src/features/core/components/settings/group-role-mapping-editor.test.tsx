@@ -42,7 +42,7 @@ describe('GroupRoleMappingEditor', () => {
     const value = JSON.stringify({ 'OldName': 'admin' });
     render(<GroupRoleMappingEditor value={value} onChange={onChange} />);
 
-    const input = screen.getByTestId('mapping-group-0');
+    const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'NewName' } });
 
     expect(onChange).toHaveBeenCalledWith(JSON.stringify({ 'NewName': 'admin' }));
@@ -80,7 +80,8 @@ describe('GroupRoleMappingEditor', () => {
     const value = JSON.stringify({ 'Admins': 'admin' });
     render(<GroupRoleMappingEditor value={value} onChange={vi.fn()} disabled />);
 
-    expect(screen.getByTestId('mapping-group-0')).toBeDisabled();
+    const input = screen.getByRole('textbox');
+    expect(input).toBeDisabled();
     expect(screen.getByTestId('mapping-role-0')).toBeDisabled();
     expect(screen.getByText('Add Mapping')).toBeDisabled();
   });
@@ -91,7 +92,7 @@ describe('GroupRoleMappingEditor', () => {
     render(<GroupRoleMappingEditor value={value} onChange={onChange} />);
 
     // Change the group name to empty
-    const input = screen.getByTestId('mapping-group-0');
+    const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: '' } });
 
     expect(onChange).toHaveBeenCalledWith('{}');
