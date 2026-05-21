@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Info, Loader2, Shield } from 'lucide-react';
 import { useSecurityIgnoreList, useUpdateSecurityIgnoreList } from '@/features/security/hooks/use-security-audit';
 import { useOIDCEffectiveRedirectUri } from '@/features/core/hooks/use-oidc';
+import { useAuth } from '@/providers/auth-provider';
+import { useDiscoveredOidcGroups } from '@/features/core/hooks/use-discovered-oidc-groups';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
 import { GroupRoleMappingEditor } from './group-role-mapping-editor';
 import { cn } from '@/shared/lib/utils';
@@ -17,6 +19,10 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
   );
 
   const isOIDCEnabled = editedValues['oidc.enabled'] === 'true';
+  const { role } = useAuth();
+  const { data: discoveredGroups } = useDiscoveredOidcGroups({
+    enabled: isOIDCEnabled && role === 'admin',
+  });
   const { data: effectiveRedirect } = useOIDCEffectiveRedirectUri();
   const envOverridesRedirectUri = effectiveRedirect?.source === 'env';
   const disabledAuthKeys = useMemo(
@@ -68,6 +74,7 @@ export function SecurityTab({ editedValues, originalValues, onChange, isSaving }
           value={editedValues['oidc.group_role_mappings'] ?? '{}'}
           onChange={(val) => onChange('oidc.group_role_mappings', val)}
           disabled={isSaving}
+          discoveredGroups={discoveredGroups}
         />
       )}
 

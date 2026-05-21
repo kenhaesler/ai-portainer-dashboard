@@ -25,14 +25,20 @@ vi.mock('@dashboard/core/services/session-store.js', () => ({
 }));
 vi.mock('@dashboard/core/services/audit-logger.js', () => ({ writeAuditLog: vi.fn() }));
 vi.mock('@dashboard/core/utils/crypto.js', () => ({ signJwt: vi.fn().mockResolvedValue('signed.jwt.token') }));
+vi.mock('@dashboard/core/services/oidc-group-tracking.js', () => ({
+  syncUserGroups: vi.fn().mockResolvedValue(undefined),
+  listDiscoveredGroups: vi.fn().mockResolvedValue([]),
+}));
 
 import * as oidcService from '@dashboard/core/services/oidc.js';
+import * as groupTracking from '@dashboard/core/services/oidc-group-tracking.js';
 import { setConfigForTest, resetConfig } from '@dashboard/core/config/index.js';
 import { oidcRoutes } from '../routes/oidc.js';
 
 const mockedGetConfig = vi.mocked(oidcService.getOIDCConfig);
 const mockedGenerateAuthUrl = vi.mocked(oidcService.generateAuthorizationUrl);
 const mockedExchangeCode = vi.mocked(oidcService.exchangeCode);
+const mockedSyncUserGroups = vi.mocked(groupTracking.syncUserGroups);
 
 const baseOidcConfig = {
   enabled: true,
@@ -72,6 +78,8 @@ describe('OIDC Routes', () => {
   beforeEach(() => {
     mockedGetConfig.mockReset();
     mockedGenerateAuthUrl.mockReset();
+    mockedSyncUserGroups.mockReset();
+    mockedSyncUserGroups.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -214,6 +222,95 @@ describe('OIDC Routes', () => {
         expiresAt: '2099-01-01T00:00:00Z',
         defaultLandingPage: '/dashboard',
       });
+    });
+  });
+
+  describe('POST /api/auth/oidc/callback group tracking', () => {
+    it('calls syncUserGroups with sub + raw groups from the ID token', async () => {
+      mockedGetConfig.mockResolvedValue({ ...baseOidcConfig, group_role_mappings: { Admins: 'admin' } });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'user-42',
+        email: 'a@b.com',
+        name: 'A B',
+        groups: ['Admins', 'Devs'],
+      } as any);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockedSyncUserGroups).toHaveBeenCalledTimes(1);
+      expect(mockedSyncUserGroups).toHaveBeenCalledWith('user-42', ['Admins', 'Devs']);
+    });
+
+    it('does NOT fail the login when syncUserGroups rejects', async () => {
+      mockedGetConfig.mockResolvedValue({ ...baseOidcConfig });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'user-43', email: 'x@y.com', name: 'X', groups: ['Admins'],
+      } as any);
+      mockedSyncUserGroups.mockRejectedValueOnce(new Error('db down'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('calls syncUserGroups with empty array when no groups claim is present', async () => {
+      mockedGetConfig.mockResolvedValue({ ...baseOidcConfig });
+      mockedExchangeCode.mockResolvedValue({
+        sub: 'user-44', email: 'e@f.com', name: 'E', groups: [],
+      } as any);
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/oidc/callback',
+        payload: { callbackUrl: 'https://x/callback?code=c&state=s', state: 's' },
+      });
+
+      expect(mockedSyncUserGroups).toHaveBeenCalledWith('user-44', []);
+    });
+  });
+
+  describe('GET /api/auth/oidc/discovered-groups', () => {
+    it('returns aggregated groups from listDiscoveredGroups', async () => {
+      vi.mocked(groupTracking.listDiscoveredGroups).mockResolvedValueOnce([
+        { group_name: 'Admins', user_count: 3, last_seen_at: '2026-05-20T10:00:00.000Z' },
+        { group_name: 'Devs',   user_count: 1, last_seen_at: '2026-05-19T09:00:00.000Z' },
+      ]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/auth/oidc/discovered-groups',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        groups: [
+          { group_name: 'Admins', user_count: 3, last_seen_at: '2026-05-20T10:00:00.000Z' },
+          { group_name: 'Devs',   user_count: 1, last_seen_at: '2026-05-19T09:00:00.000Z' },
+        ],
+      });
+    });
+
+    it('returns an empty array when no groups have been observed', async () => {
+      vi.mocked(groupTracking.listDiscoveredGroups).mockResolvedValueOnce([]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/auth/oidc/discovered-groups',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ groups: [] });
     });
   });
 });

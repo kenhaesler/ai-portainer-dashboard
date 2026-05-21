@@ -1,10 +1,23 @@
 import { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { Plus, Search, Trash2, Users } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { formatRelativeTime } from '@/shared/lib/format-relative-time';
 
 interface MappingRow {
   group: string;
   role: 'viewer' | 'operator' | 'admin';
+}
+
+export interface DiscoveredGroupOption {
+  group_name: string;
+  user_count: number;
+  last_seen_at: string;
+}
+
+interface AutocompleteItem {
+  name: string;
+  user_count?: number;
+  last_seen_at?: string;
 }
 
 const ROLES = [
@@ -17,6 +30,7 @@ interface GroupRoleMappingEditorProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  discoveredGroups?: DiscoveredGroupOption[];
 }
 
 function parseMappings(json: string): MappingRow[] {
@@ -59,14 +73,14 @@ function GroupNameAutocomplete({
   value,
   onChange,
   disabled,
-  existingGroups,
+  items,
   placeholder,
   testId,
 }: {
   value: string;
   onChange: (val: string) => void;
   disabled?: boolean;
-  existingGroups: string[];
+  items: AutocompleteItem[];
   placeholder?: string;
   testId?: string;
 }) {
@@ -79,20 +93,18 @@ function GroupNameAutocomplete({
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return existingGroups;
-    return existingGroups.filter((g) => g.toLowerCase().includes(q));
-  }, [query, existingGroups]);
+    if (!q) return items;
+    return items.filter((item) => item.name.toLowerCase().includes(q));
+  }, [query, items]);
 
   useEffect(() => {
     setQuery(value);
   }, [value]);
 
-  // Reset highlight whenever the filtered set changes or the dropdown re-opens.
   useEffect(() => {
     setActiveIndex(-1);
   }, [filtered, show]);
 
-  // Keep the highlighted option scrolled into view.
   useEffect(() => {
     if (activeIndex < 0 || !listboxRef.current) return;
     const optionEl = listboxRef.current.querySelector<HTMLElement>(
@@ -133,7 +145,7 @@ function GroupNameAutocomplete({
     if (e.key === 'Enter') {
       e.preventDefault();
       if (show && activeIndex >= 0 && activeIndex < filtered.length) {
-        commit(filtered[activeIndex]);
+        commit(filtered[activeIndex].name);
       } else {
         onChange(query);
         setShow(false);
@@ -178,13 +190,14 @@ function GroupNameAutocomplete({
           ref={listboxRef}
           id={listboxId}
           role="listbox"
-          className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
         >
-          {filtered.map((group, index) => {
+          {filtered.map((item, index) => {
             const isActive = index === activeIndex;
+            const hasMetadata = typeof item.user_count === 'number';
             return (
               <div
-                key={group}
+                key={item.name}
                 id={`${optionIdPrefix}-${index}`}
                 role="option"
                 aria-selected={isActive}
@@ -196,10 +209,16 @@ function GroupNameAutocomplete({
                 onMouseEnter={() => setActiveIndex(index)}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  commit(group);
+                  commit(item.name);
                 }}
               >
-                {group}
+                <div>{item.name}</div>
+                {hasMetadata && (
+                  <div className="text-xs text-muted-foreground">
+                    {item.user_count} {item.user_count === 1 ? 'user' : 'users'}
+                    {item.last_seen_at && ` · last seen ${formatRelativeTime(item.last_seen_at)}`}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -209,7 +228,7 @@ function GroupNameAutocomplete({
   );
 }
 
-export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleMappingEditorProps) {
+export function GroupRoleMappingEditor({ value, onChange, disabled, discoveredGroups }: GroupRoleMappingEditorProps) {
   const [rows, setRows] = useState<MappingRow[]>(() => parseMappings(value));
 
   // Sync from parent when value changes externally
@@ -240,6 +259,26 @@ export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleM
     );
     emitChange(updated);
   };
+
+  const baseItems = useMemo<AutocompleteItem[]>(
+    () =>
+      (discoveredGroups ?? []).map((g) => ({
+        name: g.group_name,
+        user_count: g.user_count,
+        last_seen_at: g.last_seen_at,
+      })),
+    [discoveredGroups],
+  );
+
+  const itemsByRow = useMemo<AutocompleteItem[][]>(() => {
+    const baseNames = new Set(baseItems.map((item) => item.name));
+    return rows.map((_, index) => {
+      const extras = extractExistingGroups(rows, index)
+        .filter((name) => !baseNames.has(name))
+        .map<AutocompleteItem>((name) => ({ name }));
+      return extras.length === 0 ? baseItems : [...baseItems, ...extras];
+    });
+  }, [baseItems, rows]);
 
   return (
     <div className="rounded-lg border bg-card" data-testid="group-role-mapping-editor">
@@ -290,7 +329,7 @@ export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleM
                   value={row.group}
                   onChange={(val) => updateRow(index, 'group', val)}
                   disabled={disabled}
-                  existingGroups={extractExistingGroups(rows, index)}
+                  items={itemsByRow[index]}
                   placeholder="e.g., Dashboard-Admins or *"
                   testId={`mapping-group-${index}`}
                 />
