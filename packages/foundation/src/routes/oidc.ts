@@ -1,11 +1,19 @@
 import { FastifyInstance } from 'fastify';
 import { getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups, getEffectiveRedirectUri, isOIDCConfigEnabled } from '@dashboard/core/services/oidc.js';
-import { syncUserGroups } from '@dashboard/core/services/oidc-group-tracking.js';
+import { syncUserGroups, listDiscoveredGroups } from '@dashboard/core/services/oidc-group-tracking.js';
 import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
 import { upsertOIDCUser, getUserById, getUserDefaultLandingPage } from '@dashboard/core/services/user-store.js';
-import { OidcStatusResponseSchema, OidcCallbackBodySchema, OidcEffectiveRedirectUriResponseSchema, LoginResponseSchema, ErrorResponseSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
+import {
+  OidcStatusResponseSchema,
+  OidcCallbackBodySchema,
+  OidcEffectiveRedirectUriResponseSchema,
+  DiscoveredOidcGroupsResponseSchema,
+  LoginResponseSchema,
+  ErrorResponseSchema,
+  SuccessResponseSchema,
+} from '@dashboard/core/models/api-schemas.js';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 
@@ -56,6 +64,24 @@ export async function oidcRoutes(fastify: FastifyInstance) {
   }, async () => {
     const oidcConfig = await getOIDCConfig();
     return getEffectiveRedirectUri(oidcConfig.redirect_uri);
+  });
+
+  // Discovered OIDC groups (admin-only) — backs the searchable dropdown in the
+  // Settings → Security group-to-role mapping editor. Aggregates the
+  // oidc_user_groups table observed across all past OIDC logins.
+  fastify.get('/api/auth/oidc/discovered-groups', {
+    schema: {
+      tags: ['Auth'],
+      summary: 'List OIDC groups observed via past logins (admin-only)',
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: DiscoveredOidcGroupsResponseSchema,
+      },
+    },
+    preHandler: [fastify.authenticate, fastify.requireRole('admin')],
+  }, async () => {
+    const groups = await listDiscoveredGroups();
+    return { groups };
   });
 
   // OIDC callback (public — no auth required)
