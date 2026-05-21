@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { getOIDCConfig, generateAuthorizationUrl, exchangeCode, resolveRoleFromGroups, getEffectiveRedirectUri, isOIDCConfigEnabled } from '@dashboard/core/services/oidc.js';
+import { syncUserGroups } from '@dashboard/core/services/oidc-group-tracking.js';
 import { createSession, invalidateSession } from '@dashboard/core/services/session-store.js';
 import { signJwt } from '@dashboard/core/utils/crypto.js';
 import { writeAuditLog } from '@dashboard/core/services/audit-logger.js';
@@ -85,6 +86,11 @@ export async function oidcRoutes(fastify: FastifyInstance) {
 
     try {
       const claims = await exchangeCode(callbackUrl, state);
+      try {
+        await syncUserGroups(claims.sub, claims.groups ?? []);
+      } catch (err) {
+        log.warn({ err, sub: claims.sub }, 'Failed to sync OIDC user groups — login continuing');
+      }
       const username = claims.email || claims.name || claims.sub;
       const oidcConfig = await getOIDCConfig();
 
