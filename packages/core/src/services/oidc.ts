@@ -158,16 +158,6 @@ export function isOIDCConfigEnabled(config: OIDCConfig, resolvedRedirectUri: str
 }
 
 /**
- * Check if OIDC is enabled and fully configured — that includes a resolvable
- * redirect URI (either env-derived or set manually).
- */
-export async function isOIDCEnabled(): Promise<boolean> {
-  const config = await getOIDCConfig();
-  const { redirectUri } = getEffectiveRedirectUri(config.redirect_uri);
-  return isOIDCConfigEnabled(config, redirectUri);
-}
-
-/**
  * Get or create the OIDC discovery configuration, cached for 1 hour.
  */
 async function getOrCreateConfiguration(): Promise<client.Configuration> {
