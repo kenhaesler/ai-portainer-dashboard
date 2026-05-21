@@ -1,13 +1,23 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { getTestDb, truncateTestTables, closeTestDb } from '../db/test-db-helper.js';
 import type { AppDb } from '../db/app-db.js';
-import { syncUserGroups, listDiscoveredGroups } from './oidc-group-tracking.js';
+
+// Route getDbForDomain to the test PostgreSQL pool so the service under test
+// doesn't try to authenticate against the production app DB (whose credentials
+// may differ in CI). Mirrors the pattern in session-store.integration.test.ts.
+let testDb: AppDb;
+vi.mock('../db/app-db-router.js', () => ({
+  getDbForDomain: () => testDb,
+}));
+
+const { syncUserGroups, listDiscoveredGroups } = await import('./oidc-group-tracking.js');
 
 describe('oidc-group-tracking', () => {
   let db: AppDb;
 
   beforeAll(async () => {
-    db = await getTestDb();
+    testDb = await getTestDb();
+    db = testDb;
   });
 
   afterAll(async () => {
