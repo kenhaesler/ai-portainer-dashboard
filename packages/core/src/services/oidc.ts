@@ -260,25 +260,6 @@ const ROLE_PRIORITY: Record<Role, number> = {
 };
 
 /**
- * Strip common OIDC provider URI prefixes from group names.
- *
- * Providers like PingFederate wrap group names in URIs:
- *   urn:pingidentity.com:groups:G-MyGroup   →  G-MyGroup
- *   https://provider.com/groups/G-MyGroup   →  G-MyGroup
- *
- * This lets operators configure mappings using bare group names.
- */
-export function stripGroupPrefix(group: string): string {
-  const trimmed = group.trim();
-  if (!trimmed) return trimmed;
-  const withoutPrefix = trimmed.replace(
-    /^(?:urn:[^:]+:groups:|https?:\/\/[^/]+\/groups\/)(.+)$/,
-    '$1',
-  );
-  return withoutPrefix;
-}
-
-/**
  * Resolve the highest-privilege role from a user's groups using the configured mappings.
  * Returns undefined if no mapping matches (including wildcard).
  */
@@ -294,7 +275,7 @@ export function resolveRoleFromGroups(
   let bestPriority = -1;
 
   for (const group of groups) {
-    const sanitized = stripGroupPrefix(group.trim());
+    const sanitized = group.trim();
     if (!sanitized) continue;
 
     const mappedRole = mappings[sanitized];
