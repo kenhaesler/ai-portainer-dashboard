@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Plus, Trash2, Users } from 'lucide-react';
+import { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import { Plus, Search, Trash2, Users } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 interface MappingRow {
@@ -43,6 +43,170 @@ function serializeMappings(rows: MappingRow[]): string {
     }
   }
   return JSON.stringify(obj);
+}
+
+function extractExistingGroups(rows: MappingRow[], excludeIndex?: number): string[] {
+  const seen = new Set<string>();
+  for (let i = 0; i < rows.length; i += 1) {
+    if (i === excludeIndex) continue;
+    const trimmed = rows[i].group.trim();
+    if (trimmed) seen.add(trimmed);
+  }
+  return [...seen].sort();
+}
+
+function GroupNameAutocomplete({
+  value,
+  onChange,
+  disabled,
+  existingGroups,
+  placeholder,
+  testId,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+  existingGroups: string[];
+  placeholder?: string;
+  testId?: string;
+}) {
+  const [show, setShow] = useState(false);
+  const [query, setQuery] = useState(value);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
+  const optionIdPrefix = useId();
+  const listboxRef = useRef<HTMLDivElement | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return existingGroups;
+    return existingGroups.filter((g) => g.toLowerCase().includes(q));
+  }, [query, existingGroups]);
+
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  // Reset highlight whenever the filtered set changes or the dropdown re-opens.
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [filtered, show]);
+
+  // Keep the highlighted option scrolled into view.
+  useEffect(() => {
+    if (activeIndex < 0 || !listboxRef.current) return;
+    const optionEl = listboxRef.current.querySelector<HTMLElement>(
+      `[data-option-index="${activeIndex}"]`,
+    );
+    optionEl?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
+
+  const commit = (group: string) => {
+    setQuery(group);
+    onChange(group);
+    setShow(false);
+  };
+
+  const handleBlur = () => {
+    setShow(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setShow(false);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      if (filtered.length === 0) return;
+      e.preventDefault();
+      setShow(true);
+      setActiveIndex((i) => (i + 1) % filtered.length);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      if (filtered.length === 0) return;
+      e.preventDefault();
+      setShow(true);
+      setActiveIndex((i) => (i <= 0 ? filtered.length - 1 : i - 1));
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (show && activeIndex >= 0 && activeIndex < filtered.length) {
+        commit(filtered[activeIndex]);
+      } else {
+        onChange(query);
+        setShow(false);
+      }
+    }
+  };
+
+  const activeDescendant =
+    show && activeIndex >= 0 && activeIndex < filtered.length
+      ? `${optionIdPrefix}-${activeIndex}`
+      : undefined;
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={show && filtered.length > 0}
+          aria-controls={listboxId}
+          aria-activedescendant={activeDescendant}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setShow(true);
+            onChange(e.target.value);
+          }}
+          onFocus={() => setShow(true)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          placeholder={placeholder}
+          className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          data-testid={testId}
+          autoComplete="off"
+        />
+      </div>
+      {show && filtered.length > 0 && (
+        <div
+          ref={listboxRef}
+          id={listboxId}
+          role="listbox"
+          className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+        >
+          {filtered.map((group, index) => {
+            const isActive = index === activeIndex;
+            return (
+              <div
+                key={group}
+                id={`${optionIdPrefix}-${index}`}
+                role="option"
+                aria-selected={isActive}
+                data-option-index={index}
+                className={cn(
+                  'px-3 py-2 text-sm cursor-pointer hover:bg-accent hover:text-accent-foreground',
+                  isActive ? 'bg-accent text-accent-foreground' : '',
+                )}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(group);
+                }}
+              >
+                {group}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleMappingEditorProps) {
@@ -101,8 +265,10 @@ export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleM
       <div className="p-4 space-y-2">
         <p className="text-sm text-muted-foreground mb-3">
           Map IdP group names to dashboard roles. If a user belongs to multiple groups,
-          the <strong>highest-privilege</strong> role is assigned. Use <code>*</code> as
-          a wildcard fallback for unmatched groups.
+          the <strong>highest-privilege</strong> role is assigned. URI prefixes (e.g.,{' '}
+          <code>urn:pingidentity.com:groups:</code>) are stripped automatically — enter
+          the group name only. Use <code>*</code> as a wildcard fallback for unmatched
+          groups.
         </p>
 
         {rows.length === 0 ? (
@@ -120,14 +286,13 @@ export function GroupRoleMappingEditor({ value, onChange, disabled }: GroupRoleM
 
             {rows.map((row, index) => (
               <div key={index} className="grid grid-cols-[1fr_160px_40px] gap-2 items-center">
-                <input
-                  type="text"
+                <GroupNameAutocomplete
                   value={row.group}
-                  onChange={(e) => updateRow(index, 'group', e.target.value)}
+                  onChange={(val) => updateRow(index, 'group', val)}
                   disabled={disabled}
+                  existingGroups={extractExistingGroups(rows, index)}
                   placeholder="e.g., Dashboard-Admins or *"
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                  data-testid={`mapping-group-${index}`}
+                  testId={`mapping-group-${index}`}
                 />
                 <select
                   value={row.role}
