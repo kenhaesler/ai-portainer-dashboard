@@ -58,6 +58,7 @@ export const DEFAULT_SETTINGS = {
     { key: 'oidc.groups_claim', label: 'Groups Claim', description: 'ID token claim name containing group membership (e.g., groups, roles, or a custom claim)', type: 'string', defaultValue: 'groups' },
     { key: 'oidc.group_role_mappings', label: 'Group-to-Role Mappings', description: 'JSON mapping of IdP group names to dashboard roles. Use * as a wildcard fallback.', type: 'string', defaultValue: '{}' },
     { key: 'oidc.auto_provision', label: 'Auto-Provision OIDC Users', description: 'Automatically create user records for new OIDC-authenticated users', type: 'boolean', defaultValue: 'true' },
+    { key: 'oidc.allow_insecure_transport', label: 'Allow Insecure Transport (HTTP)', description: '⚠ Permit plain-HTTP OIDC discovery and token exchange. Auth codes and tokens travel unencrypted — enable ONLY for local development against an HTTP-only IdP. Never enable in production.', type: 'boolean', defaultValue: 'false' },
   ],
   webhooks: [
     { key: 'webhooks.enabled', label: 'Enable Webhooks', description: 'Enable outbound webhook event delivery', type: 'boolean', defaultValue: 'false' },
