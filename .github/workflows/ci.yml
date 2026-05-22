@@ -118,6 +118,9 @@ jobs:
       - name: Run backend tests
         run: npm run test -w backend -- --coverage
         env:
+          DASHBOARD_USERNAME: admin
+          DASHBOARD_PASSWORD: changeme12345
+          JWT_SECRET: test-secret-ci-e2e-do-not-use-in-prod-0123456789ab
           POSTGRES_TEST_URL: postgresql://app_user:changeme-postgres-app@localhost:5433/portainer_dashboard_test
           REDIS_URL: redis://localhost:6379
 

@@ -343,8 +343,8 @@ describe('extractGroups - nested claim paths', () => {
     expect(extractGroups(claims, 'groups')).toEqual(['FallbackGroup']);
   });
 
-  it('should not fall back when flat groups is an empty array', () => {
-    const claims = { groups: [], realm_access: { roles: ['FallbackGroup'] } };
-    expect(extractGroups(claims, 'groups')).toEqual([]);
+  it('should fall back to realm_access.roles when flat groups is an empty array', () => {
+    const claims = { groups: [], realm_access: { roles: ['G-Konzern-Docker-Portainer-Admin'] } };
+    expect(extractGroups(claims, 'groups')).toEqual(['G-Konzern-Docker-Portainer-Admin']);
   });
 });
