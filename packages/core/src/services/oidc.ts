@@ -439,13 +439,28 @@ export async function exchangeCode(
   }
 
   const oidcConfig = await getOIDCConfig();
+  const claimsObj = claims as unknown as Record<string, unknown>;
+  
+  // Debug: log all claims for troubleshooting (mask sensitive fields)
+  const maskedClaims: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(claimsObj)) {
+    if (key.toLowerCase().includes('secret') || key.toLowerCase().includes('token')) {
+      maskedClaims[key] = '[REDACTED]';
+    } else {
+      maskedClaims[key] = value;
+    }
+  }
+  log.info({ sub: claims.sub, all_claims: maskedClaims, groups_claim: oidcConfig.groups_claim }, 'OIDC token claims');
+
   const groups = extractGroups(
-    claims as unknown as Record<string, unknown>,
+    claimsObj,
     oidcConfig.groups_claim,
   );
 
   if (groups.length > 0) {
     log.info({ groups, claim: oidcConfig.groups_claim }, 'Extracted groups from ID token');
+  } else {
+    log.warn({ sub: claims.sub, groups_claim: oidcConfig.groups_claim, groups }, 'No groups extracted from ID token');
   }
 
   return {
