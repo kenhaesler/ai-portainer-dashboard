@@ -861,7 +861,6 @@ describe('OIDC Group-to-Role Mapping Security', () => {
     // Explicit match 'viewer' should be used; wildcard is only for unmatched groups
     expect(result).toBe('viewer');
   });
-});
 
   // ─── Nested Group Claim Security (Regression for issue: groups always empty) ──
   // Ensures extractGroups handles nested claim paths and the realm_access.roles
@@ -904,3 +903,57 @@ describe('OIDC Group-to-Role Mapping Security', () => {
       expect(role).toBeUndefined();
     });
   });
+
+  // ─── Nested Group Claim Security (Regression for issue: groups always empty) ──
+  // Ensures extractGroups handles nested claim paths and the realm_access.roles
+  // fallback without crashing or silently dropping groups.
+  describe('OIDC Nested Group Claim Extraction', () => {
+    it('should extract groups from realm_access.roles when groups_claim is realm_access.roles', () => {
+      const claims = { realm_access: { roles: ['G-Konzern-Docker-Portainer-Admin'] } };
+      const groups = extractGroups(claims as Record<string, unknown>, 'realm_access.roles');
+      expect(groups).toEqual(['G-Konzern-Docker-Portainer-Admin']);
+    });
+
+    it('should fall back to realm_access.roles when groups_claim is groups and flat claim is missing', () => {
+      const claims = { realm_access: { roles: ['G-Konzern-Docker-Portainer-Admin'] } };
+      const groups = extractGroups(claims, 'groups');
+      expect(groups).toEqual(['G-Konzern-Docker-Portainer-Admin']);
+    });
+
+    it('should fall back to realm_access.roles when flat groups claim is an empty array', () => {
+      const claims = { groups: [], realm_access: { roles: ['SomeGroup'] } };
+      const groups = extractGroups(claims, 'groups');
+      expect(groups).toEqual(['SomeGroup']);
+    });
+
+    it('should extract G-Konzern-Docker-Portainer-Admin from realm_access.roles when groups is empty (Airlock IDP)', () => {
+      const claims = {
+        groups: [],
+        realm_access: { roles: ['G-Konzern-Docker-Portainer-Admin'] },
+      };
+      const groups = extractGroups(claims, 'groups');
+      expect(groups).toEqual(['G-Konzern-Docker-Portainer-Admin']);
+      const role = resolveRoleFromGroups(groups, { 'G-Konzern-Docker-Portainer-Admin': 'admin' });
+      expect(role).toBe('admin');
+    });
+
+    it('should support arbitrary dot-notation nested paths', () => {
+      const claims = { deep: { nested: { path: ['Group-A', 'Group-B'] } } };
+      const groups = extractGroups(claims as Record<string, unknown>, 'deep.nested.path');
+      expect(groups).toEqual(['Group-A', 'Group-B']);
+    });
+
+    it('should safely handle nested path where intermediate value is not an object', () => {
+      const claims = { realm_access: 'not-an-object' };
+      const groups = extractGroups(claims as Record<string, unknown>, 'realm_access.roles');
+      expect(groups).toEqual([]);
+    });
+
+    it('should not allow nested group extraction to bypass role validation', () => {
+      const claims = { realm_access: { roles: ['G-Admin'] } };
+      const groups = extractGroups(claims, 'realm_access.roles');
+      const role = resolveRoleFromGroups(groups, { 'G-Admin': 'superadmin' as never });
+      expect(role).toBeUndefined();
+    });
+  });
+});
