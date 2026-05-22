@@ -1,4 +1,5 @@
 import * as client from 'openid-client';
+import { fetchUserInfo as fetchOidcUserInfo } from 'openid-client';
 import { getDbForDomain } from '../db/app-db-router.js';
 import { getConfig } from '../config/index.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -441,21 +442,24 @@ export async function exchangeCode(
   const oidcConfig = await getOIDCConfig();
   const claimsObj = claims as unknown as Record<string, unknown>;
   
-  // Debug: log all claims for troubleshooting (mask sensitive fields)
-  const maskedClaims: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(claimsObj)) {
-    if (key.toLowerCase().includes('secret') || key.toLowerCase().includes('token')) {
-      maskedClaims[key] = '[REDACTED]';
-    } else {
-      maskedClaims[key] = value;
+  // Some IdPs (e.g. PingFederate at idp.lu.ch) do NOT include the 'group'
+  // claim in the ID Token. Per the IdP specification, 'group' is only
+  // available from the UserInfo endpoint.  We call UserInfo when groups are
+  // missing from the ID Token so that group-based role mapping still works.
+  let groups = extractGroups(claimsObj, oidcConfig.groups_claim);
+
+  if (groups.length === 0) {
+    try {
+      const userInfo = await fetchOidcUserInfo(config, tokens.access_token, claims.sub);
+      const userInfoGroups = extractGroups(userInfo as unknown as Record<string, unknown>, oidcConfig.groups_claim);
+      if (userInfoGroups.length > 0) {
+        groups = userInfoGroups;
+        log.info({ groups, sub: claims.sub }, 'Extracted groups from UserInfo endpoint');
+      }
+    } catch (err) {
+      log.warn({ err: (err as Error).message, sub: claims.sub }, 'Failed to fetch UserInfo for groups (continuing with ID Token claims only)');
     }
   }
-  log.info({ sub: claims.sub, all_claims: maskedClaims, groups_claim: oidcConfig.groups_claim }, 'OIDC token claims');
-
-  const groups = extractGroups(
-    claimsObj,
-    oidcConfig.groups_claim,
-  );
 
   if (groups.length > 0) {
     log.info({ groups, claim: oidcConfig.groups_claim }, 'Extracted groups from ID token');
