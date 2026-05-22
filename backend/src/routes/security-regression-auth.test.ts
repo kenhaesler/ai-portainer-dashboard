@@ -861,7 +861,6 @@ describe('OIDC Group-to-Role Mapping Security', () => {
     // Explicit match 'viewer' should be used; wildcard is only for unmatched groups
     expect(result).toBe('viewer');
   });
-});
 
   // ─── Nested Group Claim Security (Regression for issue: groups always empty) ──
   // Ensures extractGroups handles nested claim paths and the realm_access.roles
@@ -904,3 +903,4 @@ describe('OIDC Group-to-Role Mapping Security', () => {
       expect(role).toBeUndefined();
     });
   });
+});
