@@ -387,9 +387,9 @@ export function extractGroups(
     return flatGroups;
   }
 
-  // Keycloak-style fallback: when looking for 'groups' at top level fails,
-  // check realm_access.roles as a last resort.
-  if (groupsClaim === 'groups') {
+  // Keycloak-style fallback: when looking for 'groups' (or 'group') at top
+  // level fails, check realm_access.roles as a last resort.
+  if (groupsClaim === 'groups' || groupsClaim === 'group') {
     const realmAccess = claims['realm_access'];
     if (typeof realmAccess === 'object' && realmAccess !== null && !Array.isArray(realmAccess)) {
       const nestedRaw = (realmAccess as Record<string, unknown>).roles;
