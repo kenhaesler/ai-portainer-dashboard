@@ -286,3 +286,65 @@ describe('extractGroups', () => {
     expect(extractGroups(claims, 'roles')).toEqual(['viewer']);
   });
 });
+
+describe('extractGroups - nested claim paths', () => {
+  it('should extract groups from realm_access.roles when groupsClaim is realm_access.roles', () => {
+    const claims = { realm_access: { roles: ['Admins', 'Users'] } };
+    expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual(['Admins', 'Users']);
+  });
+
+  it('should extract groups from realm_access.roles as groups_claim fallback', () => {
+    const claims = { realm_access: { roles: ['Admins'] } };
+    expect(extractGroups(claims, 'groups')).toEqual(['Admins']);
+  });
+
+  it('should NOT use realm_access.roles fallback when groups_claim is something else', () => {
+    const claims = { roles: ['Admins'], realm_access: { roles: ['Users'] } };
+    expect(extractGroups(claims as Record<string, unknown>, 'roles')).toEqual(['Admins']);
+  });
+
+  it('should handle deep nested paths', () => {
+    const claims = { a: { b: { c: ['G1', 'G2'] } } };
+    expect(extractGroups(claims as Record<string, unknown>, 'a.b.c')).toEqual(['G1', 'G2']);
+  });
+
+  it('should return empty when nested path does not exist', () => {
+    const claims = { realm_access: {} };
+    expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual([]);
+  });
+
+  it('should return empty when nested path points to non-array', () => {
+    const claims = { realm_access: { roles: 'not-an-array' } };
+    expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual([]);
+  });
+
+  it('should filter non-string values from nested claim', () => {
+    const claims = { realm_access: { roles: ['Admins', 42, null, 'Users'] } };
+    expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual(['Admins', 'Users']);
+  });
+
+  it('should handle flat groups claim alongside nested realm_access.roles (flat takes priority)', () => {
+    const claims = { groups: ['FlatGroup'], realm_access: { roles: ['NestedGroup'] } };
+    expect(extractGroups(claims, 'groups')).toEqual(['FlatGroup']);
+  });
+
+  it('should handle undefined nested path gracefully', () => {
+    const claims = { sub: 'user1' };
+    expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual([]);
+  });
+
+  it('should handle nested path where intermediate value is not an object', () => {
+    const claims = { realm_access: 'string-not-object' };
+    expect(extractGroups(claims as Record<string, unknown>, 'realm_access.roles')).toEqual([]);
+  });
+
+  it('should fall back to realm_access.roles only when flat groups is not an array', () => {
+    const claims = { groups: 'not-an-array', realm_access: { roles: ['FallbackGroup'] } };
+    expect(extractGroups(claims, 'groups')).toEqual(['FallbackGroup']);
+  });
+
+  it('should not fall back when flat groups is an empty array', () => {
+    const claims = { groups: [], realm_access: { roles: ['FallbackGroup'] } };
+    expect(extractGroups(claims, 'groups')).toEqual([]);
+  });
+});
