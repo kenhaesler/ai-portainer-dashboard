@@ -334,19 +334,63 @@ export function resolveRoleFromGroups(
 }
 
 /**
+ * Resolve a dot-notation path into a value inside a nested object.
+ * e.g. 'realm_access.roles' on { realm_access: { roles: [...] } } -> [...]
+ */
+function resolveNestedPath(
+  obj: Record<string, unknown>,
+  path: string,
+): unknown {
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
  * Extract groups from ID token claims using the configured claim name.
- * Validates that the claim value is an array of strings.
+ * Supports dot-notation for nested claims:
+ *   - 'groups' -> claims.groups (flat, with realm_access.roles fallback)
+ *   - 'realm_access.roles' -> claims.realm_access.roles (nested)
+ *   - 'custom.nested.groups' -> claims.custom.nested.groups (arbitrary nesting)
  */
 export function extractGroups(
   claims: Record<string, unknown>,
   groupsClaim: string,
 ): string[] {
-  const raw = claims[groupsClaim];
-  if (!Array.isArray(raw)) {
+  // If the claim path contains dots, resolve via nested path lookup
+  if (groupsClaim.includes('.')) {
+    const raw = resolveNestedPath(claims, groupsClaim);
+    if (Array.isArray(raw)) {
+      return raw.filter((item): item is string => typeof item === 'string');
+    }
     return [];
   }
 
-  return raw.filter((item): item is string => typeof item === 'string');
+  // Flat lookup for simple claim names
+  const raw = claims[groupsClaim];
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is string => typeof item === 'string');
+  }
+
+  // Keycloak-style fallback: when looking for 'groups' at top level fails,
+  // check realm_access.roles as a last resort.
+  if (groupsClaim === 'groups') {
+    const realmAccess = claims['realm_access'];
+    if (typeof realmAccess === 'object' && realmAccess !== null && !Array.isArray(realmAccess)) {
+      const nestedRaw = (realmAccess as Record<string, unknown>).roles;
+      if (Array.isArray(nestedRaw)) {
+        return nestedRaw.filter((item): item is string => typeof item === 'string');
+      }
+    }
+  }
+
+  return [];
 }
 
 /**
