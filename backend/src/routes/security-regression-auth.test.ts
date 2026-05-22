@@ -909,6 +909,15 @@ describe('OIDC Group-to-Role Mapping Security', () => {
   // Ensures extractGroups handles nested claim paths and the realm_access.roles
   // fallback without crashing or silently dropping groups.
   describe('OIDC Nested Group Claim Extraction', () => {
+    let resolveRoleFromGroups: typeof import('@dashboard/core/services/oidc.js').resolveRoleFromGroups;
+    let extractGroups: typeof import('@dashboard/core/services/oidc.js').extractGroups;
+
+    beforeAll(async () => {
+      const oidc = await import('@dashboard/core/services/oidc.js');
+      resolveRoleFromGroups = oidc.resolveRoleFromGroups;
+      extractGroups = oidc.extractGroups;
+    });
+
     it('should extract groups from realm_access.roles when groups_claim is realm_access.roles', () => {
       const claims = { realm_access: { roles: ['G-Konzern-Docker-Portainer-Admin'] } };
       const groups = extractGroups(claims as Record<string, unknown>, 'realm_access.roles');
@@ -921,10 +930,21 @@ describe('OIDC Group-to-Role Mapping Security', () => {
       expect(groups).toEqual(['G-Konzern-Docker-Portainer-Admin']);
     });
 
-    it('should not use realm_access.roles fallback when flat groups claim is an empty array', () => {
+    it('should fall back to realm_access.roles when flat groups claim is an empty array', () => {
       const claims = { groups: [], realm_access: { roles: ['SomeGroup'] } };
       const groups = extractGroups(claims, 'groups');
-      expect(groups).toEqual([]);
+      expect(groups).toEqual(['SomeGroup']);
+    });
+
+    it('should extract G-Konzern-Docker-Portainer-Admin from realm_access.roles when groups is empty (Airlock IDP)', () => {
+      const claims = {
+        groups: [],
+        realm_access: { roles: ['G-Konzern-Docker-Portainer-Admin'] },
+      };
+      const groups = extractGroups(claims, 'groups');
+      expect(groups).toEqual(['G-Konzern-Docker-Portainer-Admin']);
+      const role = resolveRoleFromGroups(groups, { 'G-Konzern-Docker-Portainer-Admin': 'admin' });
+      expect(role).toBe('admin');
     });
 
     it('should support arbitrary dot-notation nested paths', () => {

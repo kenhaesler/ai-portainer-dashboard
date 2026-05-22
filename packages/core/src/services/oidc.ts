@@ -374,8 +374,17 @@ export function extractGroups(
 
   // Flat lookup for simple claim names
   const raw = claims[groupsClaim];
-  if (Array.isArray(raw)) {
-    return raw.filter((item): item is string => typeof item === 'string');
+  const flatGroups = Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === 'string')
+    : undefined;
+
+  // If the flat claim resolved to a non-empty array, use it directly.
+  // Otherwise fall through to the realm_access.roles fallback (when
+  // groupsClaim is 'groups') so that IdPs (e.g. Airlock, Keycloak) that
+  // return an empty groups array alongside realm_access.roles still get
+  // their groups extracted and mapped to roles.
+  if (flatGroups?.length) {
+    return flatGroups;
   }
 
   // Keycloak-style fallback: when looking for 'groups' at top level fails,
