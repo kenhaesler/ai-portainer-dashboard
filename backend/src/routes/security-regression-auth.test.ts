@@ -89,7 +89,10 @@ vi.mock('@dashboard/core/services/oidc.js', async (importOriginal) => {
 });
 
 vi.mock('@dashboard/core/portainer/portainer-client.js', async (importOriginal) => await importOriginal());
-vi.mock('@dashboard/core/portainer/portainer-cache.js', async (importOriginal) => await importOriginal());
+vi.mock('@dashboard/core/portainer/portainer-cache.js', () => ({
+  cache: { clear: vi.fn().mockResolvedValue(undefined), getMemoryWithStaleInfo: vi.fn(() => []) },
+  waitForInFlight: vi.fn(),
+}));
 
 vi.mock('@dashboard/core/services/settings-store.js', () => ({
   getEffectiveLlmConfig: vi.fn(() => ({
