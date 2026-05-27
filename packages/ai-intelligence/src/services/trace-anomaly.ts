@@ -62,10 +62,17 @@ const lastLoggedAt = new Map<string, number>();
 const COOLDOWN_MS = 10 * 60 * 1000;
 const lastInsertedAt = new Map<string, number>();
 
+// Per-service rate limit (#1294, fix 7). A single noisy service must not be
+// able to emit two anomalies (e.g. latency_p95 *and* error_rate) back to back
+// — the per-key cooldown above is per-(service,metric_type), so without this
+// ceiling a service flapping on both signals doubles its alert volume.
+const lastServiceInsertAt = new Map<string, number>();
+
 /** Test hook: clear log throttle and cooldown state between tests. */
 export function __resetTraceAnomalyLogState(): void {
   lastLoggedAt.clear();
   lastInsertedAt.clear();
+  lastServiceInsertAt.clear();
 }
 
 function shouldLog(seriesKey: string): boolean {
@@ -82,8 +89,17 @@ function inCooldown(seriesKey: string): boolean {
   return Date.now() - last < COOLDOWN_MS;
 }
 
-function markInserted(seriesKey: string): void {
-  lastInsertedAt.set(seriesKey, Date.now());
+function inServiceRateLimit(service: string, windowMs: number): boolean {
+  if (windowMs <= 0) return false;
+  const last = lastServiceInsertAt.get(service);
+  if (last === undefined) return false;
+  return Date.now() - last < windowMs;
+}
+
+function markInserted(seriesKey: string, service: string): void {
+  const now = Date.now();
+  lastInsertedAt.set(seriesKey, now);
+  lastServiceInsertAt.set(service, now);
 }
 
 function meanAndStd(values: number[]): { mean: number; std: number } {
@@ -129,8 +145,15 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
   const config = getConfig();
   // Defensive defaults — if config was cached before these vars existed
   // (older tests / hot-reload), fall back to the canonical defaults.
-  const zThreshold = config.TRACES_ANOMALY_P95_ZSCORE ?? 2.5;
+  const zThreshold = config.TRACES_ANOMALY_P95_ZSCORE ?? 3.0;
   const errorRatePct = config.TRACES_ANOMALY_ERROR_RATE_PCT ?? 5;
+  // Per-service rate limit (#1294, fix 7). 0 = disabled.
+  const perServiceWindowMs =
+    (config.TRACES_ANOMALY_PER_SERVICE_MIN ?? 5) * 60 * 1000;
+  // Trace-path min-baseline sample count (#1294, fix 8) — mirror of
+  // ANOMALY_MIN_SAMPLES on the metric path so brand-new services with
+  // sparse baselines do not fire on their first few buckets.
+  const minBaselineSamples = config.TRACES_ANOMALY_MIN_SAMPLES ?? 10;
 
   let recent: RedResult;
   let baseline: RedResult;
@@ -157,7 +180,12 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
   for (const [service, row] of latest) {
     // ─── Latency p95 ─────────────────────────────────────────────────────
     const p95Series = p95Baselines.get(service) ?? [];
-    if (p95Series.length >= 3) {
+    // Fix 8 (#1294): require a minimum baseline sample count before
+    // evaluating. The previous floor of 3 buckets meant a brand-new service
+    // could fire on its first hour of data. We keep `>= 3` as a hard floor
+    // for safety and additionally require `>= minBaselineSamples` (default 10,
+    // mirroring ANOMALY_MIN_SAMPLES).
+    if (p95Series.length >= Math.max(3, minBaselineSamples)) {
       const { mean, std } = meanAndStd(p95Series);
       // When std == 0 (perfectly stable baseline) z-score is undefined; use a
       // relative deviation rule instead — flag if recent is > 2x baseline mean
@@ -180,8 +208,8 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             'trace latency p95 anomaly',
           );
         }
-        if (!inCooldown(seriesKey)) {
-          markInserted(seriesKey);
+        if (!inCooldown(seriesKey) && !inServiceRateLimit(service, perServiceWindowMs)) {
+          markInserted(seriesKey, service);
           insights.push({
             id: uuidv4(),
             endpoint_id: null,
@@ -210,6 +238,11 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
 
     // ─── Error rate ──────────────────────────────────────────────────────
     const errSeries = errorBaselines.get(service) ?? [];
+    // Fix 8 (#1294): same warm-up enforcement as the latency branch — skip
+    // services that have not accumulated a usable baseline yet.
+    if (errSeries.length < minBaselineSamples) {
+      continue;
+    }
     const recentRatePct = row.errorRate * 100;
     if (recentRatePct >= errorRatePct) {
       // Compare against the baseline mean as well — only flag if it's clearly
@@ -225,8 +258,8 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             'trace error-rate anomaly',
           );
         }
-        if (!inCooldown(seriesKey)) {
-          markInserted(seriesKey);
+        if (!inCooldown(seriesKey) && !inServiceRateLimit(service, perServiceWindowMs)) {
+          markInserted(seriesKey, service);
           insights.push({
             id: uuidv4(),
             endpoint_id: null,

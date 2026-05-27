@@ -242,9 +242,11 @@ describe('config validation', () => {
       expect(getConfig().ANOMALY_MIN_SAMPLES).toBe(10);
     });
 
-    it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 20', async () => {
+    it('defaults ANOMALY_MOVING_AVERAGE_WINDOW to 60', async () => {
+      // Raised 20 → 60 in #1294 (epic #1291): the previous ~20-min window
+      // over-reacted to traffic ramps and short-lived bursts.
       const { getConfig } = await import('./index.js');
-      expect(getConfig().ANOMALY_MOVING_AVERAGE_WINDOW).toBe(20);
+      expect(getConfig().ANOMALY_MOVING_AVERAGE_WINDOW).toBe(60);
     });
 
     it('defaults ANOMALY_COOLDOWN_MINUTES to 30', async () => {
@@ -272,9 +274,12 @@ describe('config validation', () => {
       expect(getConfig().ANOMALY_EXPLANATION_MAX_PER_CYCLE).toBe(5);
     });
 
-    it('defaults ISOLATION_FOREST_CONTAMINATION to 0.15', async () => {
+    it('defaults ISOLATION_FOREST_CONTAMINATION to 0.05', async () => {
+      // Lowered 0.15 → 0.05 in #1294 (epic #1291): the previous value
+      // forced ~15% of every stable workload's readings into the anomaly
+      // class by construction.
       const { getConfig } = await import('./index.js');
-      expect(getConfig().ISOLATION_FOREST_CONTAMINATION).toBe(0.15);
+      expect(getConfig().ISOLATION_FOREST_CONTAMINATION).toBe(0.05);
     });
 
     it('defaults INVESTIGATION_COOLDOWN_MINUTES to 20', async () => {

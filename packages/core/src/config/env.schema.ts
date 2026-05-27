@@ -82,7 +82,12 @@ export const envSchema = z.object({
 
   // Anomaly Detection
   ANOMALY_ZSCORE_THRESHOLD: z.coerce.number().min(0.5).default(3.5),
-  ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(20),
+  // Raised 20 → 60 in #1294 (epic #1291). The previous 20-sample window
+  // (~20 min at 1-min cadence) reacted too strongly to short-lived spikes
+  // such as morning traffic ramps, producing false-positive anomalies for
+  // services with daily cycles. 60 samples (~1h) smooths short bursts while
+  // preserving sensitivity to sustained shifts.
+  ANOMALY_MOVING_AVERAGE_WINDOW: z.coerce.number().int().min(5).default(60),
   ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(3).default(10),
   ANOMALY_DETECTION_METHOD: z.enum(['zscore', 'bollinger', 'adaptive']).default('adaptive'),
   ANOMALY_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(30),
@@ -108,7 +113,13 @@ export const envSchema = z.object({
   ISOLATION_FOREST_ENABLED: z.coerce.boolean().default(true),
   ISOLATION_FOREST_TREES: z.coerce.number().int().min(10).max(500).default(100),
   ISOLATION_FOREST_SAMPLE_SIZE: z.coerce.number().int().min(32).max(512).default(256),
-  ISOLATION_FOREST_CONTAMINATION: z.coerce.number().min(0.01).max(0.5).default(0.15),
+  // Lowered 0.15 → 0.05 in #1294 (epic #1291). The Isolation Forest threshold
+  // is calibrated so the top `contamination` fraction of training points are
+  // labelled "anomalous"; 0.15 meant ~15% of every stable workload's readings
+  // would be flagged by design, double-counting with the z-score detectors.
+  // 0.05 aligns with the broader 2.5–3σ z-score regime used elsewhere
+  // (~1–2.5% true tail on Gaussian noise).
+  ISOLATION_FOREST_CONTAMINATION: z.coerce.number().min(0.01).max(0.5).default(0.05),
   ISOLATION_FOREST_RETRAIN_HOURS: z.coerce.number().int().min(1).default(6),
 
   // NLP Log Analysis (LLM)
@@ -276,12 +287,27 @@ export const envSchema = z.object({
   // trace store from a single chatty fleet.
   TRACES_INGEST_MAX_SPANS_PER_SEC: z.coerce.number().int().min(0).default(0),
   // Trace-driven anomaly detector (runs alongside the metric-anomaly cycle).
-  // Z-score threshold for recent p95 vs 24h baseline; the default 2.5σ
-  // matches the metric-anomaly defaults. Lower = more sensitive.
-  TRACES_ANOMALY_P95_ZSCORE: z.coerce.number().min(0).default(2.5),
+  // Z-score threshold for recent p95 vs 24h baseline. Raised 2.5 → 3.0 in
+  // #1294 (epic #1291): at 2.5σ a Gaussian baseline produces ~1.2% false-
+  // positive samples (≈17/day for a 1-sample-per-min service); 3.0σ drops
+  // that to ~0.27% (≈4/day) and aligns with the metric-detector's stricter
+  // posture. Lower = more sensitive.
+  TRACES_ANOMALY_P95_ZSCORE: z.coerce.number().min(0).default(3.0),
   // Recent error-rate (percent) above which a service is flagged regardless
   // of baseline. Set to a very high number (e.g. 100) to disable.
   TRACES_ANOMALY_ERROR_RATE_PCT: z.coerce.number().min(0).max(100).default(5),
+  // Per-service rate limit for trace anomalies (#1294 / epic #1291, fix 7).
+  // The existing 10-min per-(service,metric_type) cooldown still applies; this
+  // adds an additional ceiling of at most one new anomaly per service per
+  // TRACES_ANOMALY_PER_SERVICE_MIN minutes — so a single noisy service cannot
+  // emit one latency + one error-rate anomaly + another latency anomaly back
+  // to back. Set to 0 to disable.
+  TRACES_ANOMALY_PER_SERVICE_MIN: z.coerce.number().int().min(0).default(5),
+  // Minimum recent-sample count required before a service is eligible for
+  // trace anomaly detection (#1294 / epic #1291, fix 8). Mirrors
+  // ANOMALY_MIN_SAMPLES on the metric path so brand-new services with sparse
+  // baselines do not fire on their first few buckets.
+  TRACES_ANOMALY_MIN_SAMPLES: z.coerce.number().int().min(1).default(10),
   // Comma-separated hostnames of upstream LLM providers. The frontend asks
   // /api/traces?netPeerName=<host> for each entry to render the LLM latency
   // breakdown panel; the backend includes the matching `x-trace-correlation-id`

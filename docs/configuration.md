@@ -96,14 +96,18 @@ Approved external access pattern (when needed):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ANOMALY_ZSCORE_THRESHOLD` | Z-score threshold for anomaly flag | `2.5` |
-| `ANOMALY_MOVING_AVERAGE_WINDOW` | Moving average window size | `20` |
+| `ANOMALY_ZSCORE_THRESHOLD` | Z-score threshold for anomaly flag | `3.5` |
+| `ANOMALY_MOVING_AVERAGE_WINDOW` | Moving average window size (samples). Raised 20 → 60 in #1294. | `60` |
 | `ANOMALY_MIN_SAMPLES` | Minimum samples before detection | `10` |
 | `ISOLATION_FOREST_ENABLED` | Enable Isolation Forest ML anomaly detection | `true` |
 | `ISOLATION_FOREST_TREES` | Number of trees in the forest (10-500) | `100` |
 | `ISOLATION_FOREST_SAMPLE_SIZE` | Subsample size per tree (32-512) | `256` |
-| `ISOLATION_FOREST_CONTAMINATION` | Expected anomaly proportion (0.01-0.5) | `0.1` |
+| `ISOLATION_FOREST_CONTAMINATION` | Expected anomaly proportion (0.01-0.5). Lowered 0.15 → 0.05 in #1294. | `0.05` |
 | `ISOLATION_FOREST_RETRAIN_HOURS` | Hours between model retraining | `6` |
+| `TRACES_ANOMALY_P95_ZSCORE` | Trace-path z-score threshold (p95 vs 24h baseline). Raised 2.5 → 3.0 in #1294. | `3.0` |
+| `TRACES_ANOMALY_ERROR_RATE_PCT` | Trace-path absolute error-rate floor (percent) | `5` |
+| `TRACES_ANOMALY_PER_SERVICE_MIN` | Per-service rate limit (minutes) layered on top of the 10-min per-key cooldown (#1294). 0 = disabled. | `5` |
+| `TRACES_ANOMALY_MIN_SAMPLES` | Minimum recent-sample count required before the trace detector evaluates a service (#1294). Mirrors `ANOMALY_MIN_SAMPLES`. | `10` |
 
 ## NLP Log Analysis
 
