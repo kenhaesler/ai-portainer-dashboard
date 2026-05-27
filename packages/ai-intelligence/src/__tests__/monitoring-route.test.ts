@@ -150,6 +150,43 @@ describe('monitoring insights cursor pagination', () => {
     expect(body.total).toBe(1);
   });
 
+  it('counts a correlated multi-dimension record as ONE insight (#1296)', async () => {
+    // Simulate a single row that carries both signals via `dimensions` —
+    // this is the post-#1296 collapsed shape. Aggregates (totals) must
+    // still count it as one anomaly, not two.
+    mockQuery.mockResolvedValueOnce([
+      {
+        id: 'corr-1',
+        severity: 'critical',
+        category: 'anomaly',
+        title: 'Correlated anomaly on service "api" (error_rate + latency_p95)',
+        description: 'Recent p95: 800ms ... Recent error rate: 8%',
+        container_name: 'api',
+        created_at: '2025-01-05T00:00:00Z',
+        metric_type: 'latency_p95',
+        detection_method: 'ml-anomaly',
+        dimensions: [
+          { type: 'latency_p95', value: 800, baseline: 21, zScore: 4.3, severity: 'critical' },
+          { type: 'error_rate', value: 0.08, baseline: 0.004, zScore: 1.6, severity: 'warning' },
+        ],
+      },
+    ]);
+    mockQueryOne.mockResolvedValueOnce({ count: 1 });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/insights?limit=10',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.insights).toHaveLength(1);
+    expect(body.total).toBe(1);
+    // Dimensions surface unchanged so the UI can render both signals.
+    expect(body.insights[0].dimensions).toHaveLength(2);
+  });
+
   it('acknowledges an insight', async () => {
     const response = await app.inject({
       method: 'POST',

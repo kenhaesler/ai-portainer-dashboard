@@ -193,6 +193,46 @@ describe('insights-store', () => {
       expect(insertedIds).toBeInstanceOf(Set);
       expect(insertedIds.size).toBe(0);
     });
+
+    it('persists the `dimensions` JSONB payload for correlated anomalies (#1296)', async () => {
+      const correlated: InsightInsert = makeInsight({
+        id: 'corr-1',
+        container_id: 'svc-api',
+        container_name: 'api',
+        title: 'Correlated anomaly on service "api" (error_rate + latency_p95)',
+        metric_type: 'latency_p95',
+        detection_method: 'ml-anomaly',
+        dimensions: [
+          { type: 'latency_p95', value: 820, baseline: 21, zScore: 4.3, severity: 'critical' },
+          { type: 'error_rate', value: 0.08, baseline: 0.004, zScore: 1.6, severity: 'warning' },
+        ],
+      });
+
+      const insertedIds = await insertInsights([correlated]);
+      expect(insertedIds.has('corr-1')).toBe(true);
+
+      const rows = await testDb.query<{ dimensions: unknown }>(
+        'SELECT dimensions FROM insights WHERE id = ?',
+        ['corr-1'],
+      );
+      expect(rows).toHaveLength(1);
+      // pg driver decodes JSONB into a JS object; normalise to compare.
+      const raw = rows[0].dimensions;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      expect(parsed).toEqual([
+        { type: 'latency_p95', value: 820, baseline: 21, zScore: 4.3, severity: 'critical' },
+        { type: 'error_rate', value: 0.08, baseline: 0.004, zScore: 1.6, severity: 'warning' },
+      ]);
+    });
+
+    it('stores NULL `dimensions` for legacy single-dimension records', async () => {
+      await insertInsights([makeInsight({ id: 'legacy-1' })]);
+      const rows = await testDb.query<{ dimensions: unknown }>(
+        'SELECT dimensions FROM insights WHERE id = ?',
+        ['legacy-1'],
+      );
+      expect(rows[0].dimensions).toBeNull();
+    });
   });
 
   describe('getRecentInsights', () => {

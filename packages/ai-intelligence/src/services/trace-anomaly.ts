@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import type { AnomalyDimension } from '@dashboard/core/models/monitoring.js';
 import * as insightsStore from './insights-store.js';
 import type { InsightInsert } from './insights-store.js';
 import { classifyCv, cvThresholdMultiplier, meanAndStd } from './anomaly-stats.js';
@@ -74,9 +75,20 @@ export interface TraceAnomalyDeps {
 const LOG_THROTTLE_MS = 60_000;
 const lastLoggedAt = new Map<string, number>();
 
-// Suppress duplicate anomaly inserts for the same (service, metric_type) when
-// the underlying problem is persistent. 10 minutes mirrors the cooldown the
-// existing metric anomaly detector uses for ongoing conditions.
+// Suppress duplicate anomaly inserts when the underlying problem is
+// persistent. 10 minutes mirrors the cooldown the existing metric anomaly
+// detector uses for ongoing conditions.
+//
+// Cooldown key semantics (#1296):
+//   • Single-dimension record  → `<metric_type>:<service>` (e.g.
+//     `latency_p95:api`). One cooldown per (service, dimension) — a service
+//     with persistent latency does NOT block a fresh error-rate alert.
+//   • Correlated (multi-dim) record → `correlated:<service>:<minuteEpoch>`
+//     AND, on insert, the per-dimension keys above are also marked so a
+//     second cycle in the same 10-minute window cannot fire either an
+//     individual or a re-correlated alert. The minute bucket is part of
+//     the key so the next minute's correlation can still flag a NEW
+//     incident if the cooldown has elapsed.
 const COOLDOWN_MS = 10 * 60 * 1000;
 const lastInsertedAt = new Map<string, number>();
 
@@ -165,7 +177,9 @@ function collectHourlyBaselineSeries(
   return out;
 }
 
-function latestBucketOfRecent(recent: RedResult): { hour: number; rows: RedRow[] } | null {
+function latestBucketOfRecent(
+  recent: RedResult,
+): { hour: number; rows: RedRow[]; bucketStart: string } | null {
   // Buckets come back ordered by bucket_start ASC; the trailing bucket is the
   // most recent 1-minute observation. We deliberately inspect ONLY that
   // trailing bucket — older buckets in the 1h recent window are intentionally
@@ -182,11 +196,19 @@ function latestBucketOfRecent(recent: RedResult): { hour: number; rows: RedRow[]
   //      check by a minute or two rather than dropping the anomaly.
   //   2. The hour-of-day baseline now needs a single observation hour to look
   //      up, not a smear across 60 minutes.
+  //
+  // Correlated suppression note (#1296): the `bucketStart` we return here
+  // becomes the `minuteKey` for ALL candidates emitted this cycle, so two
+  // dimensions (latency + error-rate) that fire on the same trailing minute
+  // collapse into a single correlated insight. Because `latestBucketOfRecent`
+  // already restricts evaluation to one bucket, correlated suppression
+  // operates strictly within that trailing minute — which matches the spec's
+  // "same minute" requirement.
   const last = recent.buckets[recent.buckets.length - 1];
   if (!last) return null;
   const hour = new Date(last.bucketStart).getUTCHours();
   if (Number.isNaN(hour)) return null;
-  return { hour, rows: last.rows };
+  return { hour, rows: last.rows, bucketStart: last.bucketStart };
 }
 
 interface BaselineDecision {
@@ -213,6 +235,37 @@ export function pickBaselineSeries(opts: {
     return { series: hourSeries, usedHourOfDay: true };
   }
   return { series: opts.flat.get(opts.service) ?? [], usedHourOfDay: false };
+}
+
+/**
+ * Truncate an ISO timestamp to the minute boundary (UTC). Used as the
+ * correlation key so two signals that fire from the same minute-bucket get
+ * collapsed into a single insight.
+ */
+function minuteEpoch(bucketStart: string): number {
+  return Math.floor(new Date(bucketStart).getTime() / 60_000);
+}
+
+/**
+ * Candidate anomaly emitted by the detection pass before correlated
+ * suppression collapses same-minute signals into a single insight.
+ */
+interface AnomalyCandidate {
+  service: string;
+  minuteKey: number;
+  dimension: AnomalyDimension;
+  /**
+   * Severity for the final insight if this candidate ends up being the
+   * sole signal. Correlated records compute severity as the max across
+   * dimensions.
+   */
+  severity: 'critical' | 'warning';
+  /** Per-dimension human-readable title for single-dim insights. */
+  title: string;
+  /** Per-dimension human-readable description for single-dim insights. */
+  description: string;
+  /** Per-dimension suggested operator action for single-dim insights. */
+  suggestedAction: string;
 }
 
 /**
@@ -264,7 +317,22 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
   const hourlyP95 = collectHourlyBaselineSeries(baseline, 'p95Ms');
   const hourlyErr = collectHourlyBaselineSeries(baseline, 'errorRate');
 
-  const insights: InsightInsert[] = [];
+  // ─── Phase 1: detection ──────────────────────────────────────────────
+  // Build a list of (service, dimension) candidates BEFORE deciding what to
+  // persist. Correlated suppression (#1296) needs to see both dimensions at
+  // once so it can collapse same-minute pairs into a single insight.
+  const candidatesByService = new Map<string, AnomalyCandidate[]>();
+
+  function pushCandidate(c: AnomalyCandidate): void {
+    const arr = candidatesByService.get(c.service);
+    if (arr) arr.push(c);
+    else candidatesByService.set(c.service, [c]);
+  }
+
+  // All candidates emitted this cycle share the trailing-bucket minute key:
+  // `latestBucketOfRecent` restricts us to a single 1m bucket, so the
+  // correlated-suppression scope is "same minute" by construction (#1296).
+  const mKey = minuteEpoch(latest.bucketStart);
 
   for (const row of latest.rows) {
     const service = row.group;
@@ -289,10 +357,9 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
       const regime = classifyCv(mean, std);
       const scaledZThreshold = zThreshold * cvThresholdMultiplier(regime);
 
-
       // When std == 0 (perfectly stable baseline) z-score is undefined; use a
-      // relative deviation rule instead — flag if recent is > 2x baseline mean
-      // and at least 50ms above it (avoids tiny-value noise).
+      // relative deviation rule instead — flag if recent is > 2x baseline
+      // mean and at least 50ms above it (avoids tiny-value noise).
       let zScore: number;
       let isAnomalous: boolean;
       if (std > 0) {
@@ -320,32 +387,32 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             'trace latency p95 anomaly',
           );
         }
-        if (!inCooldown(seriesKey) && !inServiceRateLimit(service, perServiceWindowMs)) {
-          markInserted(seriesKey, service);
-          insights.push({
-            id: uuidv4(),
-            endpoint_id: null,
-            endpoint_name: null,
-            container_id: null,
-            // Project the service name into container_name so existing
-            // dashboard correlation that groups insights by container surfaces
-            // these anomalies alongside metric-driven ones (#1236 AC).
-            container_name: service,
-            severity: zScore > scaledZThreshold * 2 ? 'critical' : 'warning',
-            category: 'anomaly',
-            title: `High latency p95 on service "${service}"`,
-            description:
-              `Recent p95: ${row.p95Ms.toFixed(1)}ms ` +
-              `(baseline mean: ${mean.toFixed(1)}ms, std: ${std.toFixed(1)}ms, ` +
-              `z-score: ${zScore.toFixed(2)}, threshold: ${scaledZThreshold.toFixed(2)}, ` +
-              `cv-regime: ${regime}, baseline: ${p95Decision.usedHourOfDay ? 'hour-of-day' : 'flat'}). ` +
-              `Latency is ${Math.abs(zScore).toFixed(1)} standard deviations above the baseline.`,
-            suggested_action:
-              'Inspect the Calls tab for the affected service to identify slow endpoints, and check downstream dependencies.',
-            metric_type: 'latency_p95',
-            detection_method: 'ml-anomaly',
-          });
-        }
+        // Severity threshold uses the CV-scaled `scaledZThreshold` (#1295)
+        // so critical/warning splits move in lock-step with the gating
+        // threshold above.
+        const severity: 'critical' | 'warning' =
+          zScore > scaledZThreshold * 2 ? 'critical' : 'warning';
+        pushCandidate({
+          service,
+          minuteKey: mKey,
+          dimension: {
+            type: 'latency_p95',
+            value: row.p95Ms,
+            baseline: mean,
+            zScore,
+            severity,
+          },
+          severity,
+          title: `High latency p95 on service "${service}"`,
+          description:
+            `Recent p95: ${row.p95Ms.toFixed(1)}ms ` +
+            `(baseline mean: ${mean.toFixed(1)}ms, std: ${std.toFixed(1)}ms, ` +
+            `z-score: ${zScore.toFixed(2)}, threshold: ${scaledZThreshold.toFixed(2)}, ` +
+            `cv-regime: ${regime}, baseline: ${p95Decision.usedHourOfDay ? 'hour-of-day' : 'flat'}). ` +
+            `Latency is ${Math.abs(zScore).toFixed(1)} standard deviations above the baseline.`,
+          suggestedAction:
+            'Inspect the Calls tab for the affected service to identify slow endpoints, and check downstream dependencies.',
+        });
       }
     }
 
@@ -366,8 +433,8 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
     }
     const recentRatePct = row.errorRate * 100;
     if (recentRatePct >= errorRatePct) {
-      // Compare against the baseline mean as well — only flag if it's clearly
-      // worse than what the service usually emits.
+      // Compare against the baseline mean as well — only flag if it's
+      // clearly worse than what the service usually emits.
       const baselineMeanPct = errSeries.length > 0
         ? (errSeries.reduce((a, b) => a + b, 0) / errSeries.length) * 100
         : 0;
@@ -379,29 +446,143 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             'trace error-rate anomaly',
           );
         }
-        if (!inCooldown(seriesKey) && !inServiceRateLimit(service, perServiceWindowMs)) {
-          markInserted(seriesKey, service);
-          insights.push({
-            id: uuidv4(),
-            endpoint_id: null,
-            endpoint_name: null,
-            container_id: null,
-            // Same correlation projection as latency_p95 above.
-            container_name: service,
-            severity: recentRatePct >= errorRatePct * 2 ? 'critical' : 'warning',
-            category: 'anomaly',
-            title: `Elevated error rate on service "${service}"`,
-            description:
-              `Recent error rate: ${recentRatePct.toFixed(2)}% ` +
-              `(baseline: ${baselineMeanPct.toFixed(2)}%, threshold: ${errorRatePct}%, ` +
-              `baseline-source: ${errDecision.usedHourOfDay ? 'hour-of-day' : 'flat'}).`,
-            suggested_action:
-              'Open the Trace Explorer for this service and inspect failed spans for the root cause.',
-            metric_type: 'error_rate',
-            detection_method: 'ml-anomaly',
-          });
-        }
+        const severity: 'critical' | 'warning' =
+          recentRatePct >= errorRatePct * 2 ? 'critical' : 'warning';
+        // Z-score-like deviation in percentage-point units, normalised by
+        // the floor threshold. Lets multi-dim records carry a comparable
+        // "how bad" number per dimension without needing a real std.
+        const deviationZ = Math.max(0, (recentRatePct - baselineMeanPct) / errorRatePct);
+        pushCandidate({
+          service,
+          minuteKey: mKey,
+          dimension: {
+            type: 'error_rate',
+            value: row.errorRate,
+            baseline: baselineMeanPct / 100,
+            zScore: deviationZ,
+            severity,
+          },
+          severity,
+          title: `Elevated error rate on service "${service}"`,
+          description:
+            `Recent error rate: ${recentRatePct.toFixed(2)}% ` +
+            `(baseline: ${baselineMeanPct.toFixed(2)}%, threshold: ${errorRatePct}%, ` +
+            `baseline-source: ${errDecision.usedHourOfDay ? 'hour-of-day' : 'flat'}).`,
+          suggestedAction:
+            'Open the Trace Explorer for this service and inspect failed spans for the root cause.',
+        });
       }
+    }
+  }
+
+  // ─── Phase 2: correlated suppression + cooldown gating ───────────────
+  // When two candidates share the same (service, minute) bucket, collapse
+  // them into a single insight whose `dimensions` array carries both
+  // signals. Single-dimension candidates flow through unchanged.
+  const insights: InsightInsert[] = [];
+
+  for (const [service, candidates] of candidatesByService) {
+    if (candidates.length === 0) continue;
+
+    // Bucket candidates by minute. In practice the recent query uses 1m
+    // buckets and `latestRowPerGroup` keeps the most-recent row only, so
+    // every candidate for a given service shares the same minute key — but
+    // the grouping is defensive in case that ever changes.
+    const byMinute = new Map<number, AnomalyCandidate[]>();
+    for (const c of candidates) {
+      const arr = byMinute.get(c.minuteKey);
+      if (arr) arr.push(c);
+      else byMinute.set(c.minuteKey, [c]);
+    }
+
+    for (const [minuteKey, group] of byMinute) {
+      // Per-service rate limit (#1294, fix 7): regardless of how many
+      // dimensions fire, a single service must not emit more than one
+      // anomaly inside the configured window. Layered on top of the
+      // per-(service, metric_type) cooldown below; the correlated path
+      // additionally relies on this to prevent rapid back-to-back inserts
+      // when multiple minute-keys queue up for the same service.
+      if (inServiceRateLimit(service, perServiceWindowMs)) continue;
+
+      if (group.length === 1) {
+        // ── Single-dimension path (unchanged behaviour) ───────────────
+        const [c] = group;
+        const dimKey = `${c.dimension.type}:${service}`;
+        if (inCooldown(dimKey) || inCooldown(`correlated:${service}:${minuteKey}`)) continue;
+        markInserted(dimKey, service);
+        insights.push({
+          id: uuidv4(),
+          endpoint_id: null,
+          endpoint_name: null,
+          container_id: null,
+          // Project the service name into container_name so existing
+          // dashboard correlation that groups insights by container
+          // surfaces these anomalies alongside metric-driven ones (#1236).
+          container_name: service,
+          severity: c.severity,
+          category: 'anomaly',
+          title: c.title,
+          description: c.description,
+          suggested_action: c.suggestedAction,
+          metric_type: c.dimension.type,
+          detection_method: 'ml-anomaly',
+        });
+        continue;
+      }
+
+      // ── Correlated path (#1296) ─────────────────────────────────────
+      // Cooldown: skip if EITHER the per-minute correlated key OR any of
+      // the per-dimension keys is hot — a recent single-dim insert for
+      // the same service shouldn't be immediately followed by a
+      // correlated one in the next cycle.
+      const correlatedKey = `correlated:${service}:${minuteKey}`;
+      if (inCooldown(correlatedKey)) continue;
+      if (group.some((c) => inCooldown(`${c.dimension.type}:${service}`))) continue;
+
+      // Pick the more severe dimension as the "primary" — its metric_type
+      // drives signature derivation and the title carries both signals.
+      const sortedBySeverity = [...group].sort((a, b) => {
+        if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+        return Math.abs(b.dimension.zScore) - Math.abs(a.dimension.zScore);
+      });
+      const primary = sortedBySeverity[0];
+      const overallSeverity: 'critical' | 'warning' = sortedBySeverity.some(
+        (c) => c.severity === 'critical',
+      )
+        ? 'critical'
+        : 'warning';
+
+      const dimensions = group.map((c) => c.dimension);
+      const dimensionsLabel = group
+        .map((c) => c.dimension.type)
+        .sort()
+        .join(' + ');
+      const combinedDescription = group.map((c) => c.description).join(' ');
+
+      // The correlated insert also bumps the per-service rate-limit clock
+      // via `markInserted(key, service)` — any subsequent single-dim or
+      // correlated firing on the same service is suppressed until the
+      // window elapses.
+      markInserted(correlatedKey, service);
+      // Also mark per-dimension keys so any out-of-band single-dim
+      // detection later in the cooldown window is suppressed.
+      for (const c of group) markInserted(`${c.dimension.type}:${service}`, service);
+
+      insights.push({
+        id: uuidv4(),
+        endpoint_id: null,
+        endpoint_name: null,
+        container_id: null,
+        container_name: service,
+        severity: overallSeverity,
+        category: 'anomaly',
+        title: `Correlated anomaly on service "${service}" (${dimensionsLabel})`,
+        description: combinedDescription,
+        suggested_action: primary.suggestedAction,
+        metric_type: primary.dimension.type,
+        detection_method: 'ml-anomaly',
+        dimensions,
+      });
     }
   }
 
