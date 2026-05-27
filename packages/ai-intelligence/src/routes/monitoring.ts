@@ -531,9 +531,13 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         // (the denominator only counts correlated IDs that received any
         // feedback, while the numerator counts every vote, so two
         // operators marking the same correlated anomaly contributes 2/1).
-        // Clamp the displayed rate to [0, 1] so the UI badge doesn't
-        // render values like 200%. The raw counts remain available to
-        // any caller that wants the underlying signal.
+        // The same can happen on the insight_rates branch in fleet mode:
+        // the numerator (COUNT(DISTINCT f.id), PK-distinct so effectively
+        // per-row) divided by the denominator (COUNT(DISTINCT i.id), per
+        // insight) can exceed 1 when multiple users file feedback on the
+        // same persisted insight. Clamp the displayed rate to [0, 1] so
+        // the UI badge doesn't render values like 200%. The raw counts
+        // remain available to any caller that wants the underlying signal.
         const rawRate = row.anomalies > 0 ? row.false_positives / row.anomalies : 0;
         return {
           detector: row.detector,
