@@ -5,6 +5,13 @@ import { FastifyInstance } from 'fastify';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
+import {
+  SensitivityPutBodySchema,
+  getUserPreset,
+  setUserPreset,
+  shouldIncludeAnomaly,
+  getDefaultThresholds,
+} from '../services/sensitivity-preset.js';
 
 const log = createChildLogger('route:monitoring');
 
@@ -92,9 +99,32 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         ? `${lastItem.created_at}|${lastItem.id}`
         : null;
 
+      // Per-user Sensitivity post-filter (issue #1297).
+      // Detectors write every anomaly to the shared table; the read path
+      // hides records below the user's effective z-score threshold. Items
+      // without a parseable z-score (e.g. predictive forecasts) always
+      // pass through.
+      const userId = request.user?.sub;
+      const preset = userId ? await getUserPreset(userId) : 'default';
+      const defaults = getDefaultThresholds();
+      const filteredItems = items.filter((i) =>
+        shouldIncludeAnomaly(
+          { description: String(i.description ?? ''), category: i.category as string | null | undefined },
+          preset,
+          defaults,
+        ),
+      );
+
       return {
-        insights: items,
+        insights: filteredItems,
+        // `total` keeps its original DB-count semantics so existing
+        // pagination clients aren't surprised. `visibleTotal` reflects the
+        // count after the per-user Sensitivity preset post-filter on this
+        // page — different presets should produce different visible counts
+        // on the same data (issue #1297 AC).
         total: total?.count ?? 0,
+        visibleTotal: filteredItems.length,
+        sensitivity: preset,
         limit,
         offset,
         nextCursor,
@@ -167,8 +197,18 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         LIMIT 50
       `, [...params]);
 
+      // Per-user Sensitivity post-filter (issue #1297) — drop anomaly
+      // explanations below the user's effective z-score threshold before
+      // returning. Non-anomaly rows (no parseable z-score) pass through.
+      const userId = request.user?.sub;
+      const preset = userId ? await getUserPreset(userId) : 'default';
+      const defaults = getDefaultThresholds();
+      const visibleRows = rows.filter((row) =>
+        shouldIncludeAnomaly({ description: row.description, category: row.category }, preset, defaults),
+      );
+
       // Parse out AI Analysis from description field
-      const explanations = rows.map((row) => {
+      const explanations = visibleRows.map((row) => {
         const aiSplit = row.description.split('\n\nAI Analysis: ');
         return {
           id: row.id,
@@ -182,7 +222,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         };
       });
 
-      return { explanations };
+      return { explanations, sensitivity: preset };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, containerId }, 'Failed to query container insights');
@@ -297,6 +337,62 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err }, 'Failed to update security ignore list');
       return reply.code(500).send({ error: 'Failed to update security ignore list', details: msg });
+    }
+  });
+
+  // ─── Per-user Sensitivity preset (issue #1297) ─────────────────────────
+  // Personal preference — `authenticate` only, no `requireRole('admin')`.
+  // GET returns the calling user's preset (default 'default' when unset);
+  // PUT updates it after Zod-validating the body.
+
+  fastify.get('/api/monitoring/sensitivity', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Get the calling user\'s anomaly sensitivity preset',
+      security: [{ bearerAuth: [] }],
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const userId = request.user?.sub;
+    if (!userId) {
+      // Defence-in-depth: authenticate hook should have set request.user
+      // before this handler runs. If it didn't, treat as auth failure.
+      return reply.code(401).send({ error: 'Not authenticated' });
+    }
+    try {
+      const preset = await getUserPreset(userId);
+      return { preset };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, userId }, 'Failed to read sensitivity preset');
+      return reply.code(500).send({ error: 'Failed to read sensitivity preset', details: msg });
+    }
+  });
+
+  fastify.put('/api/monitoring/sensitivity', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Update the calling user\'s anomaly sensitivity preset',
+      security: [{ bearerAuth: [] }],
+      body: SensitivityPutBodySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const userId = request.user?.sub;
+    if (!userId) {
+      return reply.code(401).send({ error: 'Not authenticated' });
+    }
+    const parsed = SensitivityPutBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid body', details: parsed.error.message });
+    }
+    try {
+      await setUserPreset(userId, parsed.data.preset);
+      return { preset: parsed.data.preset };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, userId }, 'Failed to update sensitivity preset');
+      return reply.code(500).send({ error: 'Failed to update sensitivity preset', details: msg });
     }
   });
 }
