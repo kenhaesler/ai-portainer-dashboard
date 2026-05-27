@@ -328,11 +328,13 @@ export function createMonitoringService(deps: MonitoringDeps) {
         }
       }
 
-      // Run batch anomaly detection
+      // Run batch anomaly detection (hour-of-day baseline injected when the
+      // metrics adapter exposes it — issue #1295).
       const batchResults = await detectAnomaliesBatch(
         batchItems,
         monCfg.anomalyDetectionMethod,
         deps.metrics.getMovingAverage,
+        deps.metrics.getMovingAverageByHourOfDay,
       );
 
       // Process batch results with cooldown checks

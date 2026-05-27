@@ -85,14 +85,26 @@ describe('adaptive-anomaly-detector', () => {
       expect(result!.method).toBe('adaptive');
     });
 
-    it('widens threshold for low variance adaptive mode', async () => {
-      // cv = 5/100 = 0.05 -> low variance -> threshold = 2.5 * 1.2 = 3.0
+    it('applies 1.2× multiplier for medium CV (0.1 ≤ CV < 0.3) adaptive mode', async () => {
+      // Issue #1295: medium-CV regime widens the threshold by 1.2×.
+      // cv = 10/50 = 0.2 → medium → threshold = 2.5 * 1.2 = 3.0.
+      mockGetMovingAverage.mockResolvedValue({ mean: 50, std_dev: 10, sample_count: 25 });
+      // z-score = (78 - 50) / 10 = 2.8 → not anomalous against widened threshold
+      const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 78, 'adaptive', mockGetMovingAverage);
+      expect(result).not.toBeNull();
+      expect(result!.threshold).toBeCloseTo(3.0, 6);
+      expect(result!.is_anomalous).toBe(false);
+    });
+
+    it('keeps the base threshold for low CV (< 0.1) adaptive mode', async () => {
+      // Issue #1295 — CV-based variance scaling: low-CV regime uses the
+      // unmodified base threshold (1.0× multiplier). cv = 5/100 = 0.05.
       mockGetMovingAverage.mockResolvedValue({ mean: 100, std_dev: 5, sample_count: 25 });
-      // z-score = (114 - 100) / 5 = 2.8 -> not anomalous with widened threshold
+      // z-score = (114 - 100) / 5 = 2.8 > 2.5 → anomalous at the base threshold
       const result = await detectAnomalyAdaptive('c1', 'web', 'cpu', 114, 'adaptive', mockGetMovingAverage);
       expect(result).not.toBeNull();
-      expect(result!.threshold).toBe(3);
-      expect(result!.is_anomalous).toBe(false);
+      expect(result!.threshold).toBe(2.5);
+      expect(result!.is_anomalous).toBe(true);
     });
 
     it('handles zero standard deviation', async () => {

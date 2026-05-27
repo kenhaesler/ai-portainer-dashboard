@@ -5,27 +5,100 @@ import type { MovingAverageResult } from '@dashboard/contracts';
 
 const log = createChildLogger('anomaly-detector');
 
+export type GetMovingAverageFn = (
+  containerId: string,
+  metricType: string,
+  windowSize: number,
+) => Promise<MovingAverageResult | null>;
+
+export type GetMovingAverageByHourOfDayFn = (
+  containerId: string,
+  metricType: string,
+  hourOfDay: number,
+  lookbackDays: number,
+) => Promise<MovingAverageResult | null>;
+
+/**
+ * Resolve the baseline distribution for the current hour-of-day, falling back
+ * to the flat rolling-window baseline when:
+ *   • no hour-of-day fetcher was injected, or
+ *   • the hour-of-day bucket has fewer than `minHourSamples` samples
+ *     (warm-up window — issue #1295).
+ *
+ * The fallback is the historical (flat 24h) behavior, so existing callers
+ * preserve their semantics until the hour bucket warms up.
+ *
+ * Exported so that the trace detector and tests can reuse the same warm-up
+ * policy.
+ */
+export async function resolveBaseline(opts: {
+  containerId: string;
+  metricType: string;
+  windowSize: number;
+  /** UTC hour, 0..23. Pass the hour of the sample being evaluated. */
+  hourOfDay: number;
+  lookbackDays: number;
+  minHourSamples: number;
+  getMovingAverage: GetMovingAverageFn;
+  getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn;
+}): Promise<{ stats: MovingAverageResult | null; usedHourOfDay: boolean }> {
+  if (opts.getMovingAverageByHourOfDay) {
+    const hourly = await opts.getMovingAverageByHourOfDay(
+      opts.containerId,
+      opts.metricType,
+      opts.hourOfDay,
+      opts.lookbackDays,
+    );
+    if (hourly && hourly.sample_count >= opts.minHourSamples) {
+      return { stats: hourly, usedHourOfDay: true };
+    }
+  }
+  const flat = await opts.getMovingAverage(
+    opts.containerId,
+    opts.metricType,
+    opts.windowSize,
+  );
+  return { stats: flat, usedHourOfDay: false };
+}
+
 /**
  * @param getMovingAverage - injected dependency to avoid @dashboard/observability import
+ * @param getMovingAverageByHourOfDay - optional hour-of-day baseline fetcher.
+ *   When supplied AND the hour bucket has enough samples, supersedes the flat
+ *   rolling-window baseline (issue #1295 — fix 3, metric path).
+ * @param now - optional clock injection (test-only). Defaults to `new Date()`.
  */
 export async function detectAnomaly(
   containerId: string,
   containerName: string,
   metricType: string,
   currentValue: number,
-  getMovingAverage?: (containerId: string, metricType: string, windowSize: number) => Promise<MovingAverageResult | null>,
+  getMovingAverage?: GetMovingAverageFn,
+  getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn,
+  now: Date = new Date(),
 ): Promise<AnomalyDetection | null> {
   const config = getConfig();
   const threshold = config.ANOMALY_ZSCORE_THRESHOLD;
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
+  const lookbackDays = config.ANOMALY_HOUROFDAY_LOOKBACK_DAYS;
+  const minHourSamples = config.ANOMALY_HOUROFDAY_MIN_SAMPLES;
 
   if (!getMovingAverage) {
     log.debug({ containerId, metricType }, 'No getMovingAverage provided, skipping anomaly detection');
     return null;
   }
 
-  const stats = await getMovingAverage(containerId, metricType, windowSize);
+  const { stats, usedHourOfDay } = await resolveBaseline({
+    containerId,
+    metricType,
+    windowSize,
+    hourOfDay: now.getUTCHours(),
+    lookbackDays,
+    minHourSamples,
+    getMovingAverage,
+    getMovingAverageByHourOfDay,
+  });
 
   if (!stats || stats.sample_count < minSamples) {
     log.debug(
@@ -49,7 +122,7 @@ export async function detectAnomaly(
       z_score: isAnomalous ? Infinity : 0,
       is_anomalous: isAnomalous,
       threshold,
-      timestamp: new Date().toISOString(),
+      timestamp: now.toISOString(),
       method: 'zscore' as const,
     };
   }
@@ -59,7 +132,7 @@ export async function detectAnomaly(
 
   if (isAnomalous) {
     log.warn(
-      { containerId, metricType, currentValue, mean: stats.mean, zScore, threshold },
+      { containerId, metricType, currentValue, mean: stats.mean, zScore, threshold, usedHourOfDay },
       'Anomaly detected',
     );
   }
@@ -74,7 +147,7 @@ export async function detectAnomaly(
     z_score: Math.round(zScore * 100) / 100,
     is_anomalous: isAnomalous,
     threshold,
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     method: 'zscore' as const,
   };
 }

@@ -94,6 +94,17 @@ export const envSchema = z.object({
   ANOMALY_THRESHOLD_PCT: z.coerce.number().min(50).max(100).default(85),
   ANOMALY_HARD_THRESHOLD_ENABLED: z.coerce.boolean().default(true),
   BOLLINGER_BANDS_ENABLED: z.coerce.boolean().default(true),
+  // Hour-of-day baseline (issue #1295): compare the recent sample against the
+  // baseline for the same hour-of-day across the last N days, rather than a
+  // flat 24h baseline. Eliminates false positives during diurnal ramps
+  // (morning traffic, nightly batch). Default 14 days mirrors the production
+  // observability literature; lower windows are more reactive but noisier.
+  ANOMALY_HOUROFDAY_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(60).default(14),
+  // Minimum number of samples required in a given hour-of-day bucket before
+  // the per-hour baseline kicks in. Below this, the detector falls back to
+  // the legacy flat-baseline behavior. Prevents erratic alerts during the
+  // warm-up window.
+  ANOMALY_HOUROFDAY_MIN_SAMPLES: z.coerce.number().int().min(1).max(100).default(3),
 
   // Predictive Alerting
   PREDICTIVE_ALERTING_ENABLED: z.coerce.boolean().default(true),

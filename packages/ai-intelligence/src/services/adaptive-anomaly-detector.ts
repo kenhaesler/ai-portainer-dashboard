@@ -2,6 +2,12 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import type { AnomalyDetection } from '@dashboard/core/models/metrics.js';
 import type { MovingAverageResult } from '@dashboard/contracts';
+import {
+  resolveBaseline,
+  type GetMovingAverageByHourOfDayFn,
+  type GetMovingAverageFn,
+} from './anomaly-detector.js';
+import { classifyCv, cvThresholdMultiplier } from './anomaly-stats.js';
 
 const log = createChildLogger('adaptive-anomaly');
 
@@ -37,9 +43,14 @@ export function calculateBollingerBands(
  * Adaptive detection that selects the best method based on data characteristics.
  * - Low variance → use Bollinger bands (more sensitive to outliers)
  * - High variance → use wider z-score threshold (avoid false positives)
- * - Time-of-day aware → adjusts baseline based on hour patterns (future)
+ * - Hour-of-day baseline (issue #1295 — fix 3): when `getMovingAverageByHourOfDay`
+ *   is supplied and the current hour-of-day bucket has enough samples, the
+ *   baseline distribution comes from that bucket rather than the flat
+ *   rolling-window. Warm-up falls back to the legacy flat baseline.
  *
  * @param getMovingAverage - injected dependency to avoid @dashboard/observability import
+ * @param getMovingAverageByHourOfDay - optional hour-of-day baseline fetcher
+ * @param now - optional clock injection (test-only). Defaults to `new Date()`.
  */
 export async function detectAnomalyAdaptive(
   containerId: string,
@@ -47,18 +58,31 @@ export async function detectAnomalyAdaptive(
   metricType: string,
   currentValue: number,
   method?: DetectionMethod,
-  getMovingAverage?: (containerId: string, metricType: string, windowSize: number) => Promise<MovingAverageResult | null>,
+  getMovingAverage?: GetMovingAverageFn,
+  getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn,
+  now: Date = new Date(),
 ): Promise<AnomalyDetection | null> {
   const config = getConfig();
   const windowSize = config.ANOMALY_MOVING_AVERAGE_WINDOW;
   const minSamples = config.ANOMALY_MIN_SAMPLES;
+  const lookbackDays = config.ANOMALY_HOUROFDAY_LOOKBACK_DAYS;
+  const minHourSamples = config.ANOMALY_HOUROFDAY_MIN_SAMPLES;
 
   if (!getMovingAverage) {
     log.debug({ containerId, metricType }, 'No getMovingAverage provided, skipping adaptive detection');
     return null;
   }
 
-  const stats = await getMovingAverage(containerId, metricType, windowSize);
+  const { stats, usedHourOfDay } = await resolveBaseline({
+    containerId,
+    metricType,
+    windowSize,
+    hourOfDay: now.getUTCHours(),
+    lookbackDays,
+    minHourSamples,
+    getMovingAverage,
+    getMovingAverageByHourOfDay,
+  });
 
   if (!stats || stats.sample_count < minSamples) {
     log.debug(
@@ -85,14 +109,13 @@ export async function detectAnomalyAdaptive(
     threshold = 2; // band multiplier
     zScore = stats.std_dev > 0 ? (currentValue - stats.mean) / stats.std_dev : 0;
   } else if (selectedMethod === 'adaptive') {
-    // Adaptive: use coefficient of variation to scale the threshold
-    const cv = stats.mean > 0 ? stats.std_dev / stats.mean : 0;
-    // Higher variance → wider threshold to avoid false positives
-    const adaptiveThreshold = cv > 0.5
-      ? config.ANOMALY_ZSCORE_THRESHOLD * 1.5
-      : cv > 0.2
-        ? config.ANOMALY_ZSCORE_THRESHOLD
-        : config.ANOMALY_ZSCORE_THRESHOLD * 1.2;
+    // Adaptive (issue #1295 — fix 2): scale the threshold by the coefficient
+    // of variation of the baseline window. Low / Medium / High CV regimes
+    // map to 1.0× / 1.2× / 1.5× multipliers respectively. Naturally noisy
+    // services therefore stop tripping the detector when they wobble inside
+    // their normal envelope.
+    const regime = classifyCv(stats.mean, stats.std_dev);
+    const adaptiveThreshold = config.ANOMALY_ZSCORE_THRESHOLD * cvThresholdMultiplier(regime);
 
     zScore = stats.std_dev > 0 ? (currentValue - stats.mean) / stats.std_dev : 0;
     isAnomalous = Math.abs(zScore) > adaptiveThreshold;
@@ -118,7 +141,7 @@ export async function detectAnomalyAdaptive(
 
   if (isAnomalous) {
     log.warn(
-      { containerId, metricType, method: selectedMethod, currentValue, mean: stats.mean, zScore, threshold },
+      { containerId, metricType, method: selectedMethod, currentValue, mean: stats.mean, zScore, threshold, usedHourOfDay },
       'Anomaly detected (adaptive)',
     );
   }
@@ -133,7 +156,7 @@ export async function detectAnomalyAdaptive(
     z_score: Math.round(zScore * 100) / 100,
     is_anomalous: isAnomalous,
     threshold,
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     method: selectedMethod,
   };
 }
@@ -168,11 +191,14 @@ export interface BatchDetectionItem {
  * using Promise.allSettled. Returns a Map keyed by `containerId:metricType`.
  *
  * @param getMovingAverage - injected dependency to avoid @dashboard/observability import
+ * @param getMovingAverageByHourOfDay - optional hour-of-day baseline fetcher
+ *   (issue #1295 — fix 3)
  */
 export async function detectAnomaliesBatch(
   items: BatchDetectionItem[],
   method?: DetectionMethod,
-  getMovingAverage?: (containerId: string, metricType: string, windowSize: number) => Promise<MovingAverageResult | null>,
+  getMovingAverage?: GetMovingAverageFn,
+  getMovingAverageByHourOfDay?: GetMovingAverageByHourOfDayFn,
 ): Promise<Map<string, AnomalyDetection>> {
   const results = new Map<string, AnomalyDetection>();
   if (items.length === 0) return results;
@@ -186,6 +212,7 @@ export async function detectAnomaliesBatch(
         item.currentValue,
         method,
         getMovingAverage,
+        getMovingAverageByHourOfDay,
       );
       return { key: `${item.containerId}:${item.metricType}`, detection };
     }),
@@ -211,3 +238,6 @@ function resolveDetectionMethod(
   }
   return requestedMethod;
 }
+
+// Re-export the contract type so consumers don't need a second import.
+export type { MovingAverageResult };

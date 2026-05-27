@@ -14,6 +14,7 @@ export {
   insertMetrics,
   getMetrics,
   getMovingAverage,
+  getMovingAverageByHourOfDay,
   cleanOldMetrics,
   getLatestMetrics,
   getLatestMetricsBatch,
