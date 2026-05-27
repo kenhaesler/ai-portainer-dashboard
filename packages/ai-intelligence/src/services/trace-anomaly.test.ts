@@ -541,11 +541,15 @@ describe('runTraceAnomalyCycle', () => {
         if (q.bucket === '1h') return variedBaseline(baselineP95);
         // recent spike — both signals critical, with raw zScores chosen so
         // that latency's RAW zScore exceeds error_rate's RAW one but the
-        // NORMALISED error_rate wins:
-        //   latency p95 = 32 → zScore = (32-20)/2 = 6   → critical (>5)
-        //                                normalised = 6 / 2.5 = 2.4
-        //   error rate  = 15% → deviationZ = (15-0.1)/5 ≈ 2.98 → critical (>=10%)
-        //                                normalised = 2.98 (already in threshold units)
+        // NORMALISED error_rate wins. Sizing accounts for:
+        //   • TRACES_ANOMALY_P95_ZSCORE = 3.0 (raised from 2.5 in #1294)
+        //   • CV scaling (#1295): baseline mean=20, std=2 → CV=0.1 → medium
+        //     regime → 1.2× → scaledZThreshold = 3.6 → critical cut = 7.2
+        //
+        //   latency p95 = 38 → zScore = (38-20)/2 = 9     → critical (>7.2)
+        //                                  normalised = 9 / 3.0 = 3.0
+        //   error rate  = 22% → deviationZ = (22-0.1)/5 ≈ 4.38 → critical (>=10%)
+        //                                  normalised = 4.38 (already in threshold units)
         const recent: RedResult = {
           buckets: [
             {
@@ -554,10 +558,10 @@ describe('runTraceAnomalyCycle', () => {
                 {
                   group: 'api',
                   rate: 10,
-                  errorRate: 0.15,
-                  p50Ms: 16,
-                  p95Ms: 32,
-                  p99Ms: 35,
+                  errorRate: 0.22,
+                  p50Ms: 19,
+                  p95Ms: 38,
+                  p99Ms: 42,
                   callCount: 100,
                 },
               ],
