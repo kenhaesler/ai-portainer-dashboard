@@ -1,7 +1,7 @@
 /**
  * Per-user key/value preferences (issue #1297).
  *
- * Backs the `user_settings` table introduced in migration 035. Each row is
+ * Backs the `user_settings` table introduced in migration 036. Each row is
  * scoped to a single user; nothing here is admin-readable across users —
  * that's a deliberate isolation (callers always look up the row for the
  * current request.user.sub, never another user's id).
