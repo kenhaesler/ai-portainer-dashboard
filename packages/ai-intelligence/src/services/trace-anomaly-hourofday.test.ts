@@ -125,7 +125,7 @@ describe('trace-anomaly — CV variance scaling (#1295 fix 2)', () => {
   });
 
   it('low-CV (stable baseline): a 3.0σ spike trips the unmodified threshold', async () => {
-    // Seed 0xC0FFEE-low — low-CV baseline at mean ≈ 100ms, noise σ ≈ 3ms (cv ≈ 0.03).
+    // Seed 0xC0FFEE (+ 0) — low-CV baseline at mean ≈ 100ms, noise σ ≈ 3ms (cv ≈ 0.03).
     const rng = mulberry32(0xc0ffee);
     const gauss = gaussianFactory(rng);
     const buckets: RedBucket[] = [];
@@ -157,7 +157,7 @@ describe('trace-anomaly — CV variance scaling (#1295 fix 2)', () => {
   });
 
   it('high-CV (naturally noisy baseline): a 3.0σ spike no longer trips the detector', async () => {
-    // Seed 0xC0FFEE-high — mean ≈ 100ms, noise σ ≈ 35ms → cv ≈ 0.35 (high regime).
+    // Seed 0xC0FFEE + 1 — mean ≈ 100ms, noise σ ≈ 35ms → cv ≈ 0.35 (high regime).
     // Effective threshold: 2.5 × 1.5 = 3.75σ. We craft a spike at ≈ 3.0σ which
     // would have tripped the old (flat-multiplier) detector but must NOT trip
     // the CV-scaled one.
@@ -202,7 +202,7 @@ describe('trace-anomaly — CV variance scaling (#1295 fix 2)', () => {
   });
 
   it('medium-CV: a 3.0σ spike trips the base threshold but a 1.5σ spike does not', async () => {
-    // Seed 0xC0FFEE-med — mean ≈ 100ms, noise σ ≈ 20ms → cv ≈ 0.20 (medium).
+    // Seed 0xC0FFEE + 2 — mean ≈ 100ms, noise σ ≈ 20ms → cv ≈ 0.20 (medium).
     // Effective threshold: 2.5 × 1.2 = 3.0σ.
     const rng = mulberry32(0xc0ffee + 2);
     const gauss = gaussianFactory(rng);

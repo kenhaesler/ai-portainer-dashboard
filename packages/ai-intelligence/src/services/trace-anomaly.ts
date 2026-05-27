@@ -167,9 +167,21 @@ function collectHourlyBaselineSeries(
 
 function latestBucketOfRecent(recent: RedResult): { hour: number; rows: RedRow[] } | null {
   // Buckets come back ordered by bucket_start ASC; the trailing bucket is the
-  // most recent observation. Picking the last bucket (rather than scanning
-  // every row) preserves the previous "last occurrence wins" semantics but
-  // also exposes the hour we should look up.
+  // most recent 1-minute observation. We deliberately inspect ONLY that
+  // trailing bucket — older buckets in the 1h recent window are intentionally
+  // skipped to bias toward fresh data and to give us a single, well-defined
+  // hour-of-day key for the baseline lookup.
+  //
+  // Behavioural shift from the pre-#1302 detector: the previous
+  // `latestRowPerGroup` scanned every recent bucket and kept the
+  // last-occurrence row per service, so a service that emitted traffic 20
+  // minutes ago but is now silent would still be evaluated. That fallback is
+  // gone — silent services in the trailing minute are simply not evaluated
+  // this cycle, which is acceptable because:
+  //   1. The cycle re-runs frequently, so a transient gap just defers the
+  //      check by a minute or two rather than dropping the anomaly.
+  //   2. The hour-of-day baseline now needs a single observation hour to look
+  //      up, not a smear across 60 minutes.
   const last = recent.buckets[recent.buckets.length - 1];
   if (!last) return null;
   const hour = new Date(last.bucketStart).getUTCHours();

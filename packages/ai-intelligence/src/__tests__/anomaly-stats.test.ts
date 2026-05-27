@@ -49,6 +49,32 @@ describe('cvThresholdMultiplier', () => {
   });
 });
 
+describe('CV bucket boundaries (regression pin — #1302)', () => {
+  // Pin the post-#1302 mapping so a future change to the boundaries fails
+  // loudly. Each row represents an operator-visible behavioural contract;
+  // changing it requires updating the release-notes comment block at the top
+  // of `services/anomaly-stats.ts` AND the PR description.
+  const cases: ReadonlyArray<{
+    cv: number;
+    regime: 'low' | 'medium' | 'high';
+    multiplier: number;
+    mean: number;
+    std: number;
+  }> = [
+    // cv = 0.05 — previously got 1.2× (legacy: cv ≤ 0.2 → 1.2×). Now gets 1.0×.
+    { cv: 0.05, regime: 'low', multiplier: 1.0, mean: 100, std: 5 },
+    // cv = 0.2 — previously got 1.0× (legacy: cv > 0.2 was the base case). Now gets 1.2×.
+    { cv: 0.2, regime: 'medium', multiplier: 1.2, mean: 100, std: 20 },
+    // cv = 0.4 — previously got 1.0× (legacy fell into the cv > 0.2 base band). Now gets 1.5×.
+    { cv: 0.4, regime: 'high', multiplier: 1.5, mean: 100, std: 40 },
+  ];
+
+  it.each(cases)('cv=$cv → regime=$regime, multiplier=$multiplier', ({ regime, multiplier, mean, std }) => {
+    expect(classifyCv(mean, std)).toBe(regime);
+    expect(cvThresholdMultiplier(regime)).toBe(multiplier);
+  });
+});
+
 describe('scaledThresholdForCv', () => {
   it('composes classify + multiplier for a base threshold of 2.5', () => {
     expect(scaledThresholdForCv(2.5, 100, 5)).toMatchObject({
