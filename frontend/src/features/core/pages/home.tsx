@@ -2,9 +2,11 @@ import { lazy, Suspense, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
-import { useFavoriteContainers } from '@/features/containers/hooks/use-containers';
+import { useContainers, useFavoriteContainers } from '@/features/containers/hooks/use-containers';
+import { calculateHealthStats } from '@/shared/lib/health-score';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
+import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonKpi, SkeletonChart } from '@/shared/components/feedback/skeleton';
@@ -41,6 +43,18 @@ export default function HomePage() {
   const { data: favoriteContainers = [] } = useFavoriteContainers(favoriteIds);
   // KPI history is included in the unified /api/dashboard/full response — no separate call needed
   const kpiHistory = fullData?.kpiHistory;
+
+  // Containers feed the Overall Health Score row (row 2). Uses the same
+  // helpers as the Health & Monitoring page so the two views never disagree.
+  const {
+    data: containers,
+    isLoading: isLoadingContainers,
+    isError: isContainersError,
+  } = useContainers();
+  const healthStats = useMemo(() => {
+    if (!containers) return null;
+    return calculateHealthStats(containers);
+  }, [containers]);
 
   const endpointChartData = useMemo(() => {
     if (!endpoints) return [];
@@ -225,6 +239,32 @@ export default function HomePage() {
                 />
               </button>
             </TiltCard>
+          </MotionReveal>
+        </MotionStagger>
+      ) : null}
+
+      {/* Overall Health Score — single hero row that answers "is everything OK?"
+          without a click. Same component as Health & Monitoring so the two
+          pages can never drift apart. */}
+      {isContainersError ? (
+        <EmptyState
+          variant="error"
+          icon={AlertTriangle}
+          title="Failed to load fleet health"
+          description="Could not compute the Overall Health Score from container data."
+        />
+      ) : isLoadingContainers ? (
+        <div data-testid="health-score-skeleton">
+          <SkeletonKpi />
+        </div>
+      ) : healthStats ? (
+        <MotionStagger stagger={0.05}>
+          <MotionReveal>
+            <SpotlightCard>
+              <div className="rounded-lg border bg-card p-6 shadow-sm">
+                <HealthScoreCard stats={healthStats} />
+              </div>
+            </SpotlightCard>
           </MotionReveal>
         </MotionStagger>
       ) : null}

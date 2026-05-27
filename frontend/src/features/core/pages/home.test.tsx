@@ -35,6 +35,7 @@ vi.mock('@/features/core/hooks/use-dashboard-full', () => ({
 
 vi.mock('@/features/containers/hooks/use-containers', () => ({
   useFavoriteContainers: () => ({ data: [] }),
+  useContainers: vi.fn(),
 }));
 
 vi.mock('@/features/containers/hooks/use-endpoints', () => ({
@@ -107,9 +108,29 @@ vi.mock('@/features/ai-intelligence/hooks/use-nl-query', () => ({
 }));
 
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
+import { useContainers } from '@/features/containers/hooks/use-containers';
 import type { DashboardSummary } from '@/features/core/hooks/use-dashboard';
+import type { Container } from '@/features/containers/hooks/use-containers';
 
 const mockUseDashboardFull = vi.mocked(useDashboardFull);
+const mockUseContainers = vi.mocked(useContainers);
+
+function makeContainer(overrides: Partial<Container>): Container {
+  return {
+    id: 'c',
+    name: 'c',
+    image: 'nginx',
+    state: 'running',
+    status: 'Up 1 hour',
+    endpointId: 1,
+    endpointName: 'local',
+    ports: [],
+    created: 0,
+    labels: {},
+    networks: [],
+    ...overrides,
+  };
+}
 
 function makeDashboardData() {
   return {
@@ -157,6 +178,13 @@ function renderPage() {
 describe('HomePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: containers query is idle / empty. Individual tests override
+    // this when they need a specific fleet shape (e.g. 9 healthy / 1 unhealthy).
+    mockUseContainers.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as any);
   });
 
   it('renders KPI cards when data is loaded', () => {
@@ -223,6 +251,36 @@ describe('HomePage', () => {
 
     // KPI cards should not be visible while loading
     expect(screen.queryByText('Endpoints')).not.toBeInTheDocument();
+  });
+
+  it('renders the Overall Health Score card on row 2 with 9 healthy / 1 unhealthy (green)', () => {
+    mockUseDashboardFull.mockReturnValue({
+      data: makeDashboardData(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+
+    // 9 healthy + 1 unhealthy → score = 90.0% → green band (>= 80%)
+    const healthy = Array.from({ length: 9 }, (_, i) =>
+      makeContainer({ id: `h${i}`, name: `h${i}`, healthStatus: 'healthy' }),
+    );
+    const unhealthy = [makeContainer({ id: 'u0', name: 'u0', healthStatus: 'unhealthy' })];
+    mockUseContainers.mockReturnValue({
+      data: [...healthy, ...unhealthy],
+      isLoading: false,
+      isError: false,
+    } as any);
+
+    renderPage();
+
+    expect(screen.getByTestId('health-score-card')).toBeInTheDocument();
+    expect(screen.getByTestId('health-score')).toHaveTextContent('90.0%');
+    // ≥80% renders the green CheckCircle2 icon.
+    expect(screen.getByTestId('health-score-icon-green')).toBeInTheDocument();
+    expect(screen.getByText('9 of 10 reporting healthy')).toBeInTheDocument();
   });
 
   it('renders the page subtitle without mentioning recent containers', () => {

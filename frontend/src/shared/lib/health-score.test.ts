@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Container } from '@/features/containers/hooks/use-containers';
-import { calculateHealthScore, calculateHealthStats } from './fleet-health-summary';
+import { calculateHealthScore, calculateHealthStats } from './health-score';
 
 function makeContainer(overrides: Partial<Container> = {}): Container {
   return {
