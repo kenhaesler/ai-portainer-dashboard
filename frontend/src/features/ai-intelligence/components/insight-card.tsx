@@ -20,6 +20,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import type { AnomalyDimension } from '@dashboard/contracts';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { safeParseJson } from '@/features/ai-intelligence/hooks/use-investigations';
 import type { Investigation, RecommendedAction } from '@/features/ai-intelligence/hooks/use-investigations';
@@ -41,11 +42,72 @@ export interface InsightCardProps {
     suggested_action: string | null;
     is_acknowledged: number;
     created_at: string;
+    /**
+     * Optional multi-signal payload — present when correlated suppression
+     * collapsed co-occurring anomalies (e.g. latency p95 + error rate) for
+     * the same `(service, minute)` window into a single insight (#1296).
+     * When non-empty, the card renders a per-dimension breakdown mirroring
+     * `CorrelatedAnomalyCard`'s z-score bars so operators can see each
+     * underlying signal at a glance.
+     */
+    dimensions?: AnomalyDimension[];
   };
   investigation?: Investigation;
   onAcknowledge: (insightId: string) => void;
   isAcknowledging: boolean;
   acknowledgeErrorMessage?: string;
+}
+
+/**
+ * Per-dimension z-score / value / baseline breakdown for a correlated
+ * anomaly insight. Visual language deliberately mirrors
+ * `CorrelatedAnomalyCard` on the AI monitor page (z-bar widths capped at
+ * z=5, severity colour bands red ≥ 3 / amber ≥ 2 / blue < 2) so the two
+ * surfaces feel like the same product. Renders nothing when the array is
+ * empty so single-dimension insights keep their existing look.
+ */
+export function InsightDimensionBreakdown({ dimensions }: { dimensions: AnomalyDimension[] }) {
+  if (dimensions.length === 0) return null;
+  return (
+    <div>
+      <h4 className="text-sm font-medium mb-2">Correlated Signals</h4>
+      <div className="space-y-1.5" data-testid="insight-dimension-bars">
+        {dimensions.map((d) => {
+          const absZ = Math.abs(d.zScore);
+          const widthPct = Math.min((absZ / 5) * 100, 100);
+          // Match CorrelatedAnomalyCard's severity bands (ai-monitor.tsx
+          // lines 58-79): red ≥ 3, amber ≥ 2, blue < 2.
+          const barColor = absZ >= 3 ? 'bg-red-500' : absZ >= 2 ? 'bg-amber-500' : 'bg-blue-500';
+
+          return (
+            <div key={d.type} className="flex items-center gap-2" data-testid={`insight-dimension-${d.type}`}>
+              <span className="text-xs text-muted-foreground w-24 truncate font-mono">{d.type}</span>
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn('h-full rounded-full transition-all', barColor)}
+                  style={{ width: `${widthPct}%` }}
+                />
+              </div>
+              <span className="text-xs tabular-nums text-muted-foreground w-12 text-right" title="z-score">
+                {d.zScore.toFixed(1)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-3">
+        {dimensions.map((d) => (
+          <div key={`${d.type}-detail`} className="flex flex-col">
+            <dt className="font-mono">{d.type}</dt>
+            <dd className="tabular-nums">
+              <span className="font-medium text-foreground">{d.value.toFixed(2)}</span>
+              <span className="ml-1">(baseline {d.baseline.toFixed(2)})</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 /**
@@ -405,6 +467,15 @@ export function InsightCard({
                 {insight.description}
               </p>
             </div>
+
+            {/*
+              Render the correlated-signal breakdown for multi-dimension
+              insights (#1296). Hidden when `dimensions` is missing or
+              empty so single-signal records keep their existing layout.
+            */}
+            {insight.dimensions && insight.dimensions.length > 0 && (
+              <InsightDimensionBreakdown dimensions={insight.dimensions} />
+            )}
 
             {insight.suggested_action && (
               <div>

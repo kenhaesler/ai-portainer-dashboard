@@ -496,5 +496,144 @@ describe('runTraceAnomalyCycle', () => {
       expect(newInsights).toHaveLength(1);
       expect(newInsights[0].dimensions).toHaveLength(2);
     });
+
+    it('correlated primary picks the dimension with the larger NORMALISED anomaly score when severities tie (#1306 review)', async () => {
+      // Tie-breaker regression: when both candidates land in the same
+      // severity bucket, the comparator must compare them on a common
+      // "threshold units" scale — NOT the raw zScore, since latency_p95
+      // carries a std-dev z-score while error_rate carries an already-
+      // normalised deviation/threshold ratio. We construct a scenario in
+      // which the RAW latency zScore beats the RAW error_rate one, but
+      // the NORMALISED error_rate score wins — and assert the persisted
+      // record's `metric_type` (primary) is `error_rate`.
+
+      const inserted: insightsStore.InsightInsert[] = [];
+      vi.spyOn(insightsStore, 'insertInsights').mockImplementation(async (rows) => {
+        inserted.push(...rows);
+        return new Set(rows.map((r) => r.id));
+      });
+
+      // Build a baseline whose p95 values have non-zero std so the
+      // latency path takes the real-zscore branch (not the std=0 fallback).
+      // We alternate p95 between 18 and 22 → mean=20, std=2.
+      function variedBaseline(p95Values: number[]): RedResult {
+        const buckets: RedBucket[] = p95Values.map((p95, i) => ({
+          bucketStart: new Date(Date.UTC(2026, 4, 13, i)).toISOString(),
+          rows: [
+            {
+              group: 'api',
+              rate: 10,
+              errorRate: 0.001,
+              p50Ms: p95 * 0.5,
+              p95Ms: p95,
+              p99Ms: p95 * 1.1,
+              callCount: 100,
+            },
+          ],
+        }));
+        return { buckets, truncated: false };
+      }
+      // 24 alternating buckets → mean=20, variance=4, std=2
+      const baselineP95 = Array.from({ length: 24 }, (_, i) => (i % 2 === 0 ? 18 : 22));
+
+      const minute = new Date(Date.UTC(2026, 4, 14, 13, 0)).toISOString();
+      const computeRed = vi.fn(async (q: { bucket: string }) => {
+        if (q.bucket === '1h') return variedBaseline(baselineP95);
+        // recent spike — both signals critical, with raw zScores chosen so
+        // that latency's RAW zScore exceeds error_rate's RAW one but the
+        // NORMALISED error_rate wins:
+        //   latency p95 = 32 → zScore = (32-20)/2 = 6   → critical (>5)
+        //                                normalised = 6 / 2.5 = 2.4
+        //   error rate  = 15% → deviationZ = (15-0.1)/5 ≈ 2.98 → critical (>=10%)
+        //                                normalised = 2.98 (already in threshold units)
+        const recent: RedResult = {
+          buckets: [
+            {
+              bucketStart: minute,
+              rows: [
+                {
+                  group: 'api',
+                  rate: 10,
+                  errorRate: 0.15,
+                  p50Ms: 16,
+                  p95Ms: 32,
+                  p99Ms: 35,
+                  callCount: 100,
+                },
+              ],
+            },
+          ],
+          truncated: false,
+        };
+        return recent;
+      });
+
+      await runTraceAnomalyCycle({ computeRed: computeRed as never });
+
+      expect(inserted).toHaveLength(1);
+      const [record] = inserted;
+      expect(record.dimensions).toHaveLength(2);
+      // Both dimensions are critical — severity tie.
+      const severitiesByType = Object.fromEntries(
+        record.dimensions!.map((d) => [d.type, d.severity]),
+      );
+      expect(severitiesByType.latency_p95).toBe('critical');
+      expect(severitiesByType.error_rate).toBe('critical');
+      // With the normalised comparator, error_rate wins the tie and
+      // becomes the primary metric_type.
+      expect(record.metric_type).toBe('error_rate');
+    });
+
+    it('fires a fresh correlated alert AFTER the 10-minute cooldown window elapses (#1306 review)', async () => {
+      // Without fake timers the 10-minute cooldown can never elapse during
+      // a unit test — so the existing "block during cooldown" check is
+      // only half the story. This test exercises the documented escape
+      // hatch: once the cooldown window has expired, the next correlated
+      // (service, minute) trigger DOES produce a new insight.
+      vi.useFakeTimers();
+      try {
+        const inserted: insightsStore.InsightInsert[] = [];
+        vi.spyOn(insightsStore, 'insertInsights').mockImplementation(async (rows) => {
+          inserted.push(...rows);
+          return new Set(rows.map((r) => r.id));
+        });
+
+        const minute1 = new Date(Date.UTC(2026, 4, 14, 13, 0)).toISOString();
+        const minute2 = new Date(Date.UTC(2026, 4, 14, 13, 30)).toISOString();
+        // Each cycle's "current minute" is decided by the bucket passed in,
+        // so we can flip between minute1 and minute2 by call index.
+        const computeRed = vi.fn(async (q: { bucket: string }) => {
+          if (q.bucket === '1h') return buildBaseline('api', 20, 0.001, 24);
+          // First cycle (two computeRed calls, baseline + recent) uses
+          // minute1; subsequent calls use minute2 so the correlated
+          // minute-bucket key flips.
+          const recentCalls = computeRed.mock.calls.filter((c) => c[0].bucket === '1m').length;
+          const bucket = recentCalls <= 1 ? minute1 : minute2;
+          return spikedRecent(800, 0.08, bucket);
+        });
+
+        // Cycle 1 — produces the first correlated record.
+        await runTraceAnomalyCycle({ computeRed: computeRed as never });
+        expect(inserted).toHaveLength(1);
+        expect(inserted[0].dimensions).toHaveLength(2);
+
+        // Advance the clock past the 10-minute cooldown (11 minutes to be
+        // safely past). The internal `lastInsertedAt` map reads `Date.now()`
+        // when checking cooldown, so fake timers fully control the gate.
+        vi.advanceTimersByTime(11 * 60 * 1000);
+
+        // Cycle 2 — same service, different minute, both signals still
+        // spiked. With the cooldown expired this MUST fire a fresh
+        // correlated record (escape hatch documented inline on
+        // `trace-anomaly.ts`).
+        await runTraceAnomalyCycle({ computeRed: computeRed as never });
+
+        expect(inserted).toHaveLength(2);
+        expect(inserted[1].dimensions).toHaveLength(2);
+        expect(inserted[1].title.toLowerCase()).toContain('correlated');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

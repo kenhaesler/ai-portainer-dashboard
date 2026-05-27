@@ -249,23 +249,41 @@ function minuteEpoch(bucketStart: string): number {
 /**
  * Candidate anomaly emitted by the detection pass before correlated
  * suppression collapses same-minute signals into a single insight.
+ *
+ * Severity lives ONLY on `dimension.severity` (single source of truth); the
+ * outer severity used to persist the record is derived from it at insert time
+ * — see `pushCandidate` / the correlated path below.
  */
 interface AnomalyCandidate {
   service: string;
   minuteKey: number;
   dimension: AnomalyDimension;
-  /**
-   * Severity for the final insight if this candidate ends up being the
-   * sole signal. Correlated records compute severity as the max across
-   * dimensions.
-   */
-  severity: 'critical' | 'warning';
   /** Per-dimension human-readable title for single-dim insights. */
   title: string;
   /** Per-dimension human-readable description for single-dim insights. */
   description: string;
   /** Per-dimension suggested operator action for single-dim insights. */
   suggestedAction: string;
+}
+
+/**
+ * Normalised "how anomalous is this" score in threshold units. A value of
+ * 1.0 means the signal just crossed threshold; 2.0 means twice the threshold;
+ * etc. Used by correlated-suppression tie-breaking so latency (z-score in
+ * std-deviation units) and error-rate (deviation in error-rate-pct units)
+ * compare on the same scale (#1306 review).
+ */
+function normalisedSignalScore(
+  dim: AnomalyDimension,
+  zThreshold: number,
+): number {
+  if (dim.type === 'latency_p95') {
+    return zThreshold > 0 ? Math.abs(dim.zScore) / zThreshold : Math.abs(dim.zScore);
+  }
+  // For `error_rate`, `zScore` is already
+  //   (recentRatePct - baselineMeanPct) / errorRatePct
+  // i.e. already expressed in threshold units, so use it directly.
+  return Math.abs(dim.zScore);
 }
 
 /**
@@ -402,7 +420,6 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             zScore,
             severity,
           },
-          severity,
           title: `High latency p95 on service "${service}"`,
           description:
             `Recent p95: ${row.p95Ms.toFixed(1)}ms ` +
@@ -462,7 +479,6 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             zScore: deviationZ,
             severity,
           },
-          severity,
           title: `Elevated error rate on service "${service}"`,
           description:
             `Recent error rate: ${recentRatePct.toFixed(2)}% ` +
@@ -519,7 +535,8 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
           // dashboard correlation that groups insights by container
           // surfaces these anomalies alongside metric-driven ones (#1236).
           container_name: service,
-          severity: c.severity,
+          // Severity is sourced from the dimension — single source of truth.
+          severity: c.dimension.severity,
           category: 'anomaly',
           title: c.title,
           description: c.description,
@@ -541,13 +558,26 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
 
       // Pick the more severe dimension as the "primary" — its metric_type
       // drives signature derivation and the title carries both signals.
+      //
+      // Tie-breaker (#1306 review): when both candidates share the same
+      // severity bucket we compare them on a NORMALISED scale (each signal's
+      // anomaly score divided by its own threshold). Without normalisation,
+      // latency_p95 carries a real std-dev z-score while error_rate carries
+      // a deviation-in-percentage-points/threshold ratio, so a raw
+      // `Math.abs(zScore)` comparison mixed apples and oranges. Normalising
+      // to "threshold units" makes the comparison meaningful.
       const sortedBySeverity = [...group].sort((a, b) => {
-        if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
-        return Math.abs(b.dimension.zScore) - Math.abs(a.dimension.zScore);
+        if (a.dimension.severity !== b.dimension.severity) {
+          return a.dimension.severity === 'critical' ? -1 : 1;
+        }
+        return (
+          normalisedSignalScore(b.dimension, zThreshold) -
+          normalisedSignalScore(a.dimension, zThreshold)
+        );
       });
       const primary = sortedBySeverity[0];
       const overallSeverity: 'critical' | 'warning' = sortedBySeverity.some(
-        (c) => c.severity === 'critical',
+        (c) => c.dimension.severity === 'critical',
       )
         ? 'critical'
         : 'warning';

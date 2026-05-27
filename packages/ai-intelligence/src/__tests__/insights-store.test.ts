@@ -63,6 +63,53 @@ describe('insights-store', () => {
       expect(rows[0].suggested_action).toBe('Scale up');
       expect(rows[0].is_acknowledged).toBe(false);
     });
+
+    it('round-trips the `dimensions` JSONB payload through the singular insertInsight path (#1306 review parity)', async () => {
+      // Parity with the batch `insertInsights` test — `insertInsight`
+      // (singular) was also updated to accept `dimensions`, but the batch
+      // path was the only one that had explicit coverage. This test
+      // exercises the singular path end-to-end against the real DB so
+      // any future divergence (e.g. forgetting to cast `?::jsonb`) is
+      // caught immediately.
+      const correlated: InsightInsert = makeInsight({
+        id: 'singular-corr-1',
+        container_id: 'svc-api',
+        container_name: 'api',
+        title: 'Correlated anomaly on service "api" (error_rate + latency_p95)',
+        metric_type: 'latency_p95',
+        detection_method: 'ml-anomaly',
+        dimensions: [
+          { type: 'latency_p95', value: 950, baseline: 22, zScore: 4.8, severity: 'critical' },
+          { type: 'error_rate', value: 0.12, baseline: 0.005, zScore: 2.3, severity: 'warning' },
+        ],
+      });
+
+      await insertInsight(correlated);
+
+      const rows = await testDb.query<{ dimensions: unknown }>(
+        'SELECT dimensions FROM insights WHERE id = ?',
+        ['singular-corr-1'],
+      );
+      expect(rows).toHaveLength(1);
+      const raw = rows[0].dimensions;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      expect(parsed).toEqual([
+        { type: 'latency_p95', value: 950, baseline: 22, zScore: 4.8, severity: 'critical' },
+        { type: 'error_rate', value: 0.12, baseline: 0.005, zScore: 2.3, severity: 'warning' },
+      ]);
+    });
+
+    it('singular insertInsight stores NULL `dimensions` for legacy single-dimension records (#1306 review parity)', async () => {
+      // Inverse of the parity test above: confirms the legacy single-
+      // dimension path doesn't accidentally persist a stringified `null`
+      // or other surprise through the singular writer.
+      await insertInsight(makeInsight({ id: 'singular-legacy-1' }));
+      const rows = await testDb.query<{ dimensions: unknown }>(
+        'SELECT dimensions FROM insights WHERE id = ?',
+        ['singular-legacy-1'],
+      );
+      expect(rows[0].dimensions).toBeNull();
+    });
   });
 
   describe('insertInsights (batch)', () => {
