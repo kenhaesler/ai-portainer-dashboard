@@ -1,5 +1,6 @@
-import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Info, XCircle } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Info } from 'lucide-react';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
+import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
 import type { Container } from '@/features/containers/hooks/use-containers';
 
 export interface HealthStats {
@@ -124,8 +125,6 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
   }
 
   const healthScore = calculateHealthScore(stats);
-  const reporting = stats.healthy + stats.unhealthy;
-  const issueCount = stats.unhealthy + stats.stopped;
 
   return (
     <div
@@ -134,48 +133,7 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
     >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         {/* Hero — score + issue count */}
-        <div className="flex items-center gap-5 min-w-0">
-          <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-full border-8 border-primary/20 bg-muted/30">
-            {healthScore === null ? (
-              <HelpCircle className="h-12 w-12 text-muted-foreground" />
-            ) : healthScore >= 80 ? (
-              <CheckCircle2 className="h-12 w-12 text-emerald-500" />
-            ) : healthScore >= 50 ? (
-              <AlertCircle className="h-12 w-12 text-amber-500" />
-            ) : (
-              <XCircle className="h-12 w-12 text-red-500" />
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-muted-foreground">Overall Health Score</p>
-            {healthScore === null ? (
-              <>
-                <p className="text-2xl font-semibold text-muted-foreground" data-testid="health-score-na">
-                  No healthchecks configured
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {stats.total} containers tracked. Configure Docker healthchecks to enable scoring.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-4xl font-bold tabular-nums leading-none mt-1" data-testid="health-score">
-                  {healthScore.toFixed(1)}%
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {stats.healthy} of {reporting} reporting healthy
-                  {stats.noHealthcheck > 0 && ` · ${stats.noHealthcheck} without healthcheck`}
-                </p>
-              </>
-            )}
-            {issueCount > 0 && (
-              <p className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 dark:text-red-400">
-                <AlertTriangle className="h-4 w-4" />
-                {issueCount} container{issueCount === 1 ? '' : 's'} need{issueCount === 1 ? 's' : ''} attention
-              </p>
-            )}
-          </div>
-        </div>
+        <HealthScoreCard stats={stats} score={healthScore} />
 
         {/* Compact status strip — container stats on row 1, insights stats on
             row 2 (when supplied). Two rows of 4 tiles inside the same hero. */}
