@@ -208,7 +208,7 @@ import { securityRoutes } from '@dashboard/security/routes/index.js';
 import { edgeJobsRoutes } from '@dashboard/infrastructure/routes/index.js';
 import { imagesRoutes, userRoutes, oidcRoutes } from '@dashboard/foundation';
 import { notificationRoutes } from '@dashboard/operations';
-import { incidentsRoutes } from '@dashboard/ai';
+import { incidentsRoutes, monitoringRoutes, type MonitoringRoutesOpts } from '@dashboard/ai';
 import type { LLMInterface } from '@dashboard/contracts';
 
 import * as portainerClient from '@dashboard/core/portainer/portainer-client.js';
@@ -997,5 +997,164 @@ describe('Monitoring Sensitivity Preset RBAC (#1297)', () => {
       headers: { 'content-type': 'application/json' },
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+// =====================================================================
+//  ANOMALY FEEDBACK ROUTES — AUTH + ADMIN SCOPE GATING (issue #1298)
+// =====================================================================
+//
+// POST /api/monitoring/anomaly-feedback must reject anonymous callers
+// (any authenticated user — viewer/operator/admin — can file feedback
+// on their own behalf, but unauthenticated requests must 401).
+//
+// GET /api/monitoring/anomaly-feedback/rates must reject anonymous
+// callers and is caller-scoped by default. The scope=fleet widening
+// is admin-only: viewer/operator passing scope=fleet must be silently
+// downgraded to caller scope (no fleet data may leak).
+describe('Anomaly Feedback Routes — Auth + Admin Scope Gating (issue #1298)', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin' | null;
+
+  const monitoringOpts: MonitoringRoutesOpts = {
+    getSecurityAudit: vi.fn().mockResolvedValue([]),
+    getSecurityAuditIgnoreList: vi.fn().mockResolvedValue([]),
+    setSecurityAuditIgnoreList: vi.fn().mockResolvedValue([]),
+    defaultSecurityAuditIgnorePatterns: [],
+    securityAuditIgnoreKey: 'test-ignore-key',
+  };
+
+  beforeAll(async () => {
+    currentRole = 'operator';
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    // `authenticate` rejects anonymous callers (no role) with 401, matching
+    // the production decorator behaviour.
+    app.decorate('authenticate', async (request, reply) => {
+      if (currentRole === null) {
+        reply.code(401).send({ error: 'Unauthorized' });
+      }
+    });
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      if (currentRole !== null) {
+        request.user = { sub: 'u1', username: 'user', sessionId: 's1', role: currentRole };
+      }
+    });
+    await app.register(monitoringRoutes, monitoringOpts);
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('denies POST /api/monitoring/anomaly-feedback for anonymous callers', async () => {
+    currentRole = null;
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/monitoring/anomaly-feedback',
+      payload: { anomalyId: 'a-1' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('denies GET /api/monitoring/anomaly-feedback/rates for anonymous callers', async () => {
+    currentRole = null;
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/monitoring/anomaly-feedback/rates',
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('allows POST for any authenticated role (viewer/operator/admin) — RBAC contract', async () => {
+    // POST must NOT require admin — any authenticated user can file
+    // feedback on their own behalf. We assert "not 401, not 403" rather
+    // than 200 because the mocked DB will return its own error code.
+    for (const role of ['viewer', 'operator', 'admin'] as const) {
+      currentRole = role;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/monitoring/anomaly-feedback',
+        payload: { anomalyId: 'a-1' },
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+    }
+  });
+
+  it('GET /rates reaches the handler for any authenticated role', async () => {
+    // The handler itself enforces the scope-widening guard
+    // (viewer/operator with ?scope=fleet must NOT receive fleet data).
+    // RBAC layer must not reject viewer/operator here — they're allowed
+    // to query their own rate scope by default.
+    for (const role of ['viewer', 'operator', 'admin'] as const) {
+      currentRole = role;
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/monitoring/anomaly-feedback/rates',
+      });
+      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).not.toBe(403);
+    }
+  });
+
+  // Source-level guard: the routes file must use `fastify.authenticate`
+  // on both routes. If a future refactor accidentally drops the
+  // preHandler, this assertion fires.
+  it('monitoring routes source must include fastify.authenticate on the anomaly-feedback routes', () => {
+    const file = path.resolve(
+      process.cwd(),
+      '..',
+      'packages',
+      'ai-intelligence',
+      'src',
+      'routes',
+      'monitoring.ts',
+    );
+    const content = readFileSync(file, 'utf8');
+
+    const postBlock = content.match(
+      /post\s*\(\s*'\/api\/monitoring\/anomaly-feedback'[\s\S]*?preHandler:\s*\[([^\]]+)\]/,
+    );
+    expect(postBlock).not.toBeNull();
+    expect(postBlock![1]).toContain('fastify.authenticate');
+
+    const getBlock = content.match(
+      /get\s*\(\s*'\/api\/monitoring\/anomaly-feedback\/rates'[\s\S]*?preHandler:\s*\[([^\]]+)\]/,
+    );
+    expect(getBlock).not.toBeNull();
+    expect(getBlock![1]).toContain('fastify.authenticate');
+  });
+
+  // Source-level guard: the rates handler must distinguish admin from
+  // non-admin to enforce the scope-widening contract.
+  it('rates handler source must branch on role === \'admin\' to enforce scope-widening', () => {
+    const file = path.resolve(
+      process.cwd(),
+      '..',
+      'packages',
+      'ai-intelligence',
+      'src',
+      'routes',
+      'monitoring.ts',
+    );
+    const content = readFileSync(file, 'utf8');
+
+    // The handler resolves the calling user's role and only widens to
+    // fleet when role === 'admin'. Match either the explicit comparison
+    // or a derived `isAdmin` boolean.
+    expect(content).toMatch(/role\s*===\s*'admin'/);
   });
 });

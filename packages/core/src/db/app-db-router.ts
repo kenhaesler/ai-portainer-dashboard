@@ -18,7 +18,7 @@
  * - 'incidents': incidents
  * - 'webhooks': webhooks, webhook_deliveries
  * - 'pcap': pcap_captures
- * - 'feedback': llm_feedback, llm_prompt_suggestions
+ * - 'feedback': llm_feedback, llm_prompt_suggestions, anomaly_feedback
  * - 'mcp': mcp_servers
  * - 'prompts': prompt_profiles
  * - 'ebpf': ebpf_coverage

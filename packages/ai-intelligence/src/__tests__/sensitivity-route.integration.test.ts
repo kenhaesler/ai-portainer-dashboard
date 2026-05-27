@@ -58,12 +58,18 @@ let app: FastifyInstance;
 
 beforeAll(async () => {
   testDb = await getTestDb();
-  // Seed two test users so user_settings' FK references resolve.
+  // Seed two test users so user_settings' FK references resolve. Defensively
+  // delete any leftover rows from a previous interrupted run — the original
+  // `ON CONFLICT (id) DO NOTHING` only covered the id constraint, but the
+  // `users.username` unique constraint can still trip if a row was left
+  // behind under a different id (or if afterAll did not run cleanly).
   const pool = await getTestPool();
+  await pool.query(
+    "DELETE FROM users WHERE id IN ('u-alice', 'u-bob') OR username IN ('alice', 'bob')",
+  );
   await pool.query(`
     INSERT INTO users (id, username, password_hash, role)
     VALUES ('u-alice', 'alice', 'x', 'viewer'), ('u-bob', 'bob', 'x', 'viewer')
-    ON CONFLICT (id) DO NOTHING
   `);
   app = await buildApp(() => userId);
 });

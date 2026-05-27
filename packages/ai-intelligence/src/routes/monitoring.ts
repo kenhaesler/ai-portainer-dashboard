@@ -2,6 +2,7 @@ import '@dashboard/core/plugins/auth.js';
 import '@dashboard/core/plugins/request-tracing.js';
 import '@fastify/swagger';
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod/v4';
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { InsightsQuerySchema, InsightIdParamsSchema, SuccessResponseSchema } from '@dashboard/core/models/api-schemas.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
@@ -14,6 +15,68 @@ import {
 } from '../services/sensitivity-preset.js';
 
 const log = createChildLogger('route:monitoring');
+
+// ── Anomaly feedback Zod schemas — issue #1298 ─────────────────────
+// Currently only 'false-positive' is accepted at the API surface; the
+// DB CHECK constraint reserves 'true-positive' and 'unsure' for future
+// dispositions so they can be added without another migration.
+//
+// Allowlist of detector identifiers a client may submit. Mirrors:
+//   * the persisted detector enum from `packages/core/src/models/monitoring.ts`
+//     (`detection_method`: 'threshold' | 'ml-anomaly' | 'prediction' |
+//     'health-check' | 'log-pattern' | 'security-scan'), plus
+//   * the in-memory detectors that produce correlated anomalies
+//     (`correlated-zscore` for `detectCorrelatedAnomalies`, and the
+//     `isolation-forest` raw detector used by the trace/IF service).
+// Restricting the column to this allowlist prevents callers polluting
+// the per-detector rate breakdown with attacker-supplied labels.
+export const ANOMALY_FEEDBACK_DETECTORS = [
+  'threshold',
+  'ml-anomaly',
+  'prediction',
+  'health-check',
+  'log-pattern',
+  'security-scan',
+  'correlated-zscore',
+  'isolation-forest',
+] as const;
+
+const AnomalyFeedbackBodySchema = z.object({
+  anomalyId: z.string().min(1).max(200),
+  disposition: z.literal('false-positive').optional().default('false-positive'),
+  // Detector source — denormalised onto the feedback row so the rate
+  // calculation works for correlated anomalies (which never appear in
+  // the `insights` table). Optional: caller may omit when the
+  // anomalyId matches an insights.id and the detector can be JOINed.
+  // Constrained to a known allowlist (see ANOMALY_FEEDBACK_DETECTORS).
+  detector: z.enum(ANOMALY_FEEDBACK_DETECTORS).optional(),
+});
+
+const AnomalyFeedbackResponseSchema = z.object({
+  success: z.boolean(),
+  anomalyId: z.string(),
+  disposition: z.string(),
+  duplicate: z.boolean(),
+});
+
+const AnomalyFeedbackRatesQuerySchema = z.object({
+  // Admins can opt back into caller-scoped mode by passing scope=mine.
+  // Non-admins always get caller-scoped data regardless of the value.
+  scope: z.enum(['mine', 'fleet']).optional(),
+});
+
+interface RateRow {
+  detector: string;
+  anomalies: number;
+  false_positives: number;
+}
+
+interface DetectorRate {
+  detector: string;
+  anomalies: number;
+  falsePositives: number;
+  rate: number;
+}
 
 export interface MonitoringRoutesOpts {
   /** Get security audit entries, optionally filtered by endpoint ID */
@@ -258,6 +321,237 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
       const msg = err instanceof Error ? err.message : 'Unknown error';
       log.error({ err, insightId: id }, 'Failed to acknowledge insight');
       return (reply as any).code(500).send({ error: 'Failed to acknowledge insight', details: msg });
+    }
+  });
+
+  // ── Anomaly feedback (issue #1298) ───────────────────────────────
+  //
+  // POST /api/monitoring/anomaly-feedback
+  //   Records one feedback row per (anomaly, user). Idempotent on
+  //   resubmission via ON CONFLICT DO NOTHING — the existing row's
+  //   created_at is preserved and `duplicate: true` is returned so
+  //   the caller can hide the "submitted" toast on retry.
+  fastify.post('/api/monitoring/anomaly-feedback', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Record false-positive (or future disposition) feedback for an anomaly',
+      security: [{ bearerAuth: [] }],
+      body: AnomalyFeedbackBodySchema,
+      response: { 200: AnomalyFeedbackResponseSchema },
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const userId = request.user?.sub;
+    if (!userId) {
+      return (reply as any).code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { anomalyId, disposition, detector } = request.body as z.infer<typeof AnomalyFeedbackBodySchema>;
+
+    try {
+      const db = getDbForDomain('feedback');
+      // ON CONFLICT (anomaly_id, user_id) DO NOTHING enforces the "one
+      // disposition per user per anomaly" rule from the migration. The
+      // `RETURNING id` clause is the race-free way to detect whether
+      // this request actually inserted a row: PostgreSQL returns the
+      // id when the row was newly inserted and zero rows when the
+      // ON CONFLICT branch fired. Comparing wall-clock to created_at
+      // (the previous approach) was prone to GC pauses, clock skew,
+      // and slow round-trips flipping the duplicate flag in either
+      // direction.
+      const inserted = await db.query<{ id: number }>(
+        `INSERT INTO anomaly_feedback (anomaly_id, user_id, disposition, detector)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (anomaly_id, user_id) DO NOTHING
+         RETURNING id`,
+        [anomalyId, userId, disposition, detector ?? null],
+      );
+
+      // For the duplicate case we still need the persisted disposition
+      // (the API contract returns whatever the DB has, not whatever
+      // the client sent on the second attempt). Only the duplicate
+      // branch needs a follow-up SELECT.
+      let persistedDisposition = disposition;
+      const duplicate = inserted.length === 0;
+      if (duplicate) {
+        const existing = await db.queryOne<{ disposition: string }>(
+          `SELECT disposition FROM anomaly_feedback
+           WHERE anomaly_id = ? AND user_id = ?`,
+          [anomalyId, userId],
+        );
+        if (!existing) {
+          // Structurally impossible: ON CONFLICT fired (row existed)
+          // yet the SELECT returns nothing. Could only happen if the
+          // row was cascade-deleted between the two queries (e.g.
+          // user deletion mid-request) — surface as 500 rather than
+          // masking with success.
+          log.error({ anomalyId, userId }, 'Feedback row missing after conflict');
+          return (reply as any).code(500).send({ error: 'Failed to record feedback' });
+        }
+        persistedDisposition = existing.disposition as typeof disposition;
+      }
+
+      return {
+        success: true,
+        anomalyId,
+        disposition: persistedDisposition,
+        duplicate,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, anomalyId, userId }, 'Failed to record anomaly feedback');
+      return (reply as any).code(500).send({ error: 'Failed to record anomaly feedback', details: msg });
+    }
+  });
+
+  // GET /api/monitoring/anomaly-feedback/rates
+  //   Returns per-detector false-positive rate. Caller-scoped by default;
+  //   admins receive fleet-wide data and may opt back into caller-scope
+  //   via ?scope=mine. Non-admins are always scoped to their own
+  //   feedback regardless of the `scope` parameter (privacy guarantee).
+  //
+  //   Admin fleet-wide aggregate exposes counts per detector only —
+  //   never individual user dispositions.
+  fastify.get('/api/monitoring/anomaly-feedback/rates', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Per-detector anomaly false-positive rates (caller-scoped; admins see fleet-wide)',
+      security: [{ bearerAuth: [] }],
+      querystring: AnomalyFeedbackRatesQuerySchema,
+    },
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    const userId = request.user?.sub;
+    const role = request.user?.role;
+    if (!userId) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const { scope } = request.query as z.infer<typeof AnomalyFeedbackRatesQuerySchema>;
+    const isAdmin = role === 'admin';
+    // Non-admins are forced to caller scope. Admins default to fleet
+    // unless they explicitly request scope=mine.
+    const fleetWide = isAdmin && scope !== 'mine';
+
+    try {
+      const db = getDbForDomain('feedback');
+
+      // The rate has two contributing sources:
+      //
+      //   1. Insights-backed: rows in the `insights` table where
+      //      `category IN ('anomaly', 'predictive')`. The detector is
+      //      `insights.detection_method` (migration 030). Feedback
+      //      rows linked by `anomaly_id = insights.id`.
+      //
+      //   2. Correlated anomalies: results from the in-memory
+      //      `detectCorrelatedAnomalies` service. These have no
+      //      `insights` row, so feedback carries the detector tag
+      //      itself (`anomaly_feedback.detector`).
+      //
+      // We compute the rate as a UNION of both sources, grouped by
+      // detector. `anomalies` is the count of distinct anomaly IDs
+      // referenced by feedback rows + the count of un-flagged
+      // insights, by detector.
+      //
+      // For caller-scoped mode we filter feedback by `user_id = ?`;
+      // for fleet mode we count every user's feedback. We never
+      // restrict the `insights` denominator by user — operators all
+      // see the same anomaly stream — but we DO restrict the
+      // numerator (false_positives) to the calling user when caller-
+      // scoped, so the rate reflects "of the anomalies I saw, how
+      // many did I personally mark false?".
+      const userClause = fleetWide ? '' : 'AND f.user_id = ?';
+      const userParam = fleetWide ? [] : [userId];
+
+      const rows = await db.query<RateRow>(
+        `WITH insights_anomalies AS (
+           SELECT
+             id,
+             COALESCE(detection_method, 'unknown') AS detector
+           FROM insights
+           WHERE category IN ('anomaly', 'predictive')
+         ),
+         insight_rates AS (
+           SELECT
+             i.detector,
+             COUNT(DISTINCT i.id)::integer AS anomalies,
+             COUNT(DISTINCT f.id)::integer AS false_positives
+           FROM insights_anomalies i
+           LEFT JOIN anomaly_feedback f
+             ON f.anomaly_id = i.id
+             AND f.disposition = 'false-positive'
+             ${userClause}
+           GROUP BY i.detector
+         ),
+         correlated_rates AS (
+           -- Feedback rows whose anomaly_id is NOT in the insights
+           -- table — these are correlated anomalies, which are
+           -- computed on demand and never persisted, so there is no
+           -- "denominator of all surfaced anomalies" available
+           -- server-side. We approximate the rate from feedback alone:
+           --   * denominator = COUNT(DISTINCT anomaly_id) — unique
+           --     correlated anomalies that received any feedback,
+           --   * numerator   = COUNT(*) — total false-positive votes,
+           --     including the multi-user "two operators flag the
+           --     same correlated anomaly" case.
+           -- Dropping DISTINCT on the numerator means rate > 1 is
+           -- possible when multiple users mark the same correlated
+           -- anomaly; the JS layer clamps the surfaced rate to [0, 1]
+           -- (raw counts remain accurate). This is intentional — it
+           -- preserves the "stronger signal when multiple operators
+           -- agree" semantic instead of always yielding the trivial
+           -- rate=1 the previous COUNT(DISTINCT)/COUNT(DISTINCT)
+           -- formulation produced.
+           SELECT
+             COALESCE(f.detector, 'unknown') AS detector,
+             COUNT(DISTINCT f.anomaly_id)::integer AS anomalies,
+             COUNT(*)::integer AS false_positives
+           FROM anomaly_feedback f
+           WHERE f.disposition = 'false-positive'
+             AND NOT EXISTS (SELECT 1 FROM insights i WHERE i.id = f.anomaly_id)
+             ${userClause}
+           GROUP BY COALESCE(f.detector, 'unknown')
+         )
+         SELECT
+           detector,
+           SUM(anomalies)::integer AS anomalies,
+           SUM(false_positives)::integer AS false_positives
+         FROM (
+           SELECT * FROM insight_rates
+           UNION ALL
+           SELECT * FROM correlated_rates
+         ) combined
+         GROUP BY detector
+         ORDER BY detector`,
+        [...userParam, ...userParam],
+      );
+
+      const rates: DetectorRate[] = rows.map((row) => {
+        // Correlated-anomaly rows can produce false_positives > anomalies
+        // (the denominator only counts correlated IDs that received any
+        // feedback, while the numerator counts every vote, so two
+        // operators marking the same correlated anomaly contributes 2/1).
+        // The same can happen on the insight_rates branch in fleet mode:
+        // the numerator (COUNT(DISTINCT f.id), PK-distinct so effectively
+        // per-row) divided by the denominator (COUNT(DISTINCT i.id), per
+        // insight) can exceed 1 when multiple users file feedback on the
+        // same persisted insight. Clamp the displayed rate to [0, 1] so
+        // the UI badge doesn't render values like 200%. The raw counts
+        // remain available to any caller that wants the underlying signal.
+        const rawRate = row.anomalies > 0 ? row.false_positives / row.anomalies : 0;
+        return {
+          detector: row.detector,
+          anomalies: row.anomalies,
+          falsePositives: row.false_positives,
+          rate: Math.min(rawRate, 1),
+        };
+      });
+
+      return { rates, scope: fleetWide ? 'fleet' : 'mine' };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.error({ err, userId }, 'Failed to compute anomaly feedback rates');
+      return reply.code(500).send({ error: 'Failed to compute anomaly feedback rates', details: msg });
     }
   });
 
