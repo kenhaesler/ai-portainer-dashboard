@@ -484,4 +484,63 @@ describe('DataTable', () => {
       expect(screen.getByTestId('table-row-0').className).not.toContain('bg-primary/5');
     });
   });
+
+  describe('windowScroll mode (#1288)', () => {
+    it('renders the window-scroll container instead of the virtual or pagination one', () => {
+      const data = makeRows(200);
+      render(<DataTable columns={testColumns} data={data} windowScroll />);
+
+      expect(screen.getByTestId('window-scroll-container')).toBeInTheDocument();
+      expect(screen.queryByTestId('virtual-scroll-container')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Page \d+ of \d+/)).not.toBeInTheDocument();
+    });
+
+    it('renders every row at once (no pagination, no virtualization)', () => {
+      const data = makeRows(75);
+      render(<DataTable columns={testColumns} data={data} windowScroll />);
+
+      expect(screen.getByText('container-1')).toBeInTheDocument();
+      expect(screen.getByText('container-75')).toBeInTheDocument();
+    });
+
+    it('still renders the themed checkboxes when row selection is enabled', () => {
+      const data = makeRows(60);
+      render(
+        <DataTable columns={testColumns} data={data} windowScroll enableRowSelection />,
+      );
+
+      expect(screen.getByTestId('select-all-checkbox')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-0')).toBeInTheDocument();
+    });
+  });
+
+  describe('themed checkbox (#1288)', () => {
+    it('header checkbox uses the themed primitive (input + adjacent indicator icon)', () => {
+      render(
+        <DataTable columns={testColumns} data={makeRows(3)} enableRowSelection />,
+      );
+      const selectAll = screen.getByTestId('select-all-checkbox');
+      // The native input is preserved (so click/keyboard semantics work) …
+      expect(selectAll.tagName).toBe('INPUT');
+      // … but it now lives inside a themed wrapper (relative inline-flex span).
+      const wrapper = selectAll.parentElement;
+      expect(wrapper?.tagName).toBe('SPAN');
+      expect(wrapper?.className).toContain('inline-flex');
+    });
+
+    it('themed row checkbox is clickable and still bubbles its change', () => {
+      const onSelectionChange = vi.fn();
+      const data = makeRows(2);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          enableRowSelection
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+      expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+    });
+  });
 });

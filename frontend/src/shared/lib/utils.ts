@@ -60,6 +60,19 @@ export function truncate(str: string, length: number): string {
 }
 
 /**
+ * Return only the segment after the last `/` of an OCI image reference.
+ *
+ * `registry.example.com/team/api-service:1.4.2` → `api-service:1.4.2`.
+ * Strings without a `/` (or empty inputs) are returned unchanged. Tag and
+ * digest suffixes are preserved.
+ */
+export function getImageShortName(image: string | null | undefined): string {
+  if (!image) return '';
+  const slash = image.lastIndexOf('/');
+  return slash === -1 ? image : image.slice(slash + 1);
+}
+
+/**
  * Escape special regex characters in a string so it can be safely used
  * inside `new RegExp()` without risk of ReDoS (CWE-1333).
  *

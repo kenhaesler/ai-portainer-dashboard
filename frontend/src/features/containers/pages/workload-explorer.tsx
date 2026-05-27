@@ -8,7 +8,6 @@ import { useContainers, type Container } from '@/features/containers/hooks/use-c
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
 import { useStacks } from '@/features/containers/hooks/use-stacks';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
-import { useRed, type RedRow } from '@/features/observability/hooks/use-red';
 import { DataTable } from '@/shared/components/tables/data-table';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
 import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
@@ -20,7 +19,7 @@ import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/features/containers/lib/system-container-grouping';
-import { cn, formatDate, truncate, formatRelativeAge } from '@/shared/lib/utils';
+import { cn, formatDate, getImageShortName, truncate, formatRelativeAge } from '@/shared/lib/utils';
 import { transition } from '@/shared/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/shared/components/forms/workload-smart-search';
 import { SelectionActionBar } from '@/shared/components/layout/selection-action-bar';
@@ -106,32 +105,6 @@ export default function WorkloadExplorerPage() {
   const { data: stacks } = useStacks();
   const { data: containers, isLoading, isError, error, refetch, isFetching } = useContainers(selectedEndpoint !== undefined ? { endpointId: selectedEndpoint } : undefined);
 
-  // ── RED columns (#1237) — ONE fetch per page render, server-side groupBy=service.
-  // Window is the most recent 5-minute bucket, rounded so React Query can
-  // dedupe across renders within the same 5-minute window.
-  const redWindow = useMemo(() => {
-    const to = new Date();
-    to.setSeconds(0, 0);
-    to.setMinutes(Math.floor(to.getMinutes() / 5) * 5);
-    const from = new Date(to.getTime() - 5 * 60 * 1000);
-    return { from, to };
-  }, []);
-  const { data: redData } = useRed({
-    from: redWindow.from,
-    to: redWindow.to,
-    bucket: '5m',
-    groupBy: 'service',
-  });
-  // Flatten across buckets, keyed by group (= service_name).
-  const redByService = useMemo(() => {
-    const map = new Map<string, RedRow>();
-    for (const b of redData?.buckets ?? []) {
-      for (const row of b.rows) {
-        map.set(row.group, row);
-      }
-    }
-    return map;
-  }, [redData]);
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', refetch);
   const { interval, setInterval } = useAutoRefresh(30);
 
@@ -325,14 +298,14 @@ export default function WorkloadExplorerPage() {
       cell: ({ row, getValue }) => {
         const container = row.original;
         return (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 whitespace-nowrap">
             <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 navigate(`/containers/${container.endpointId}/${container.id}`);
               }}
-              className="inline-flex items-center rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
+              className="inline-flex items-center whitespace-nowrap rounded-lg bg-primary/10 px-3 py-1 text-sm font-medium text-primary transition-all duration-200 hover:bg-primary/20 hover:shadow-sm hover:ring-1 hover:ring-primary/20"
             >
               {truncate(getValue<string>(), 45)}
             </button>
@@ -341,18 +314,59 @@ export default function WorkloadExplorerPage() {
       },
     },
     {
-      accessorKey: 'image',
-      header: 'Image',
-      cell: ({ getValue }) => (
-        <span className="inline-flex items-center rounded-md bg-muted/50 px-2 py-0.5 text-xs font-mono text-muted-foreground">
-          {truncate(getValue<string>(), 50)}
-        </span>
-      ),
+      id: 'stack',
+      header: 'Stackname',
+      size: 160,
+      cell: ({ row }) => {
+        const stackName = resolveContainerStackName(row.original, knownStackNames);
+        if (!stackName) {
+          return <span className="text-muted-foreground/50 text-xs">—</span>;
+        }
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedStack(stackName);
+            }}
+            className="inline-flex items-center whitespace-nowrap rounded-md bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 transition-colors hover:bg-purple-200 hover:ring-1 hover:ring-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+            title={`Filter by stack: ${stackName}`}
+          >
+            {truncate(stackName, 25)}
+          </button>
+        );
+      },
     },
     {
       accessorKey: 'state',
       header: 'State',
       cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
+    },
+    {
+      accessorKey: 'endpointName',
+      header: 'Endpoint',
+      cell: ({ row }) => {
+        const container = row.original;
+        return (
+          <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+            {container.endpointName}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'image',
+      header: 'Imagename',
+      cell: ({ getValue }) => {
+        const full = getValue<string>();
+        return (
+          <span
+            className="inline-flex items-center rounded-md bg-muted/50 px-2 py-0.5 text-xs font-mono text-muted-foreground"
+            title={full}
+          >
+            {truncate(getImageShortName(full), 50)}
+          </span>
+        );
+      },
     },
     {
       id: 'group',
@@ -369,170 +383,6 @@ export default function WorkloadExplorerPage() {
             }
           >
             {label}
-          </span>
-        );
-      },
-    },
-    {
-      id: 'stack',
-      header: 'Stack',
-      size: 160,
-      cell: ({ row }) => {
-        const stackName = resolveContainerStackName(row.original, knownStackNames);
-        if (!stackName) {
-          return <span className="text-muted-foreground/50 text-xs">—</span>;
-        }
-        return (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedStack(stackName);
-            }}
-            className="inline-flex items-center rounded-md bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800 transition-colors hover:bg-purple-200 hover:ring-1 hover:ring-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-            title={`Filter by stack: ${stackName}`}
-          >
-            {truncate(stackName, 25)}
-          </button>
-        );
-      },
-    },
-    {
-      accessorKey: 'endpointName',
-      header: 'Endpoint',
-      cell: ({ row }) => {
-        const container = row.original;
-        return (
-          <span className="inline-flex items-center rounded-md bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-            {container.endpointName}
-          </span>
-        );
-      },
-    },
-    {
-      id: 'rate',
-      header: 'Rate (/s)',
-      enableSorting: true,
-      accessorFn: (row: Container) => redByService.get(row.name)?.rate ?? Number.NEGATIVE_INFINITY,
-      cell: ({ row }) => {
-        const r = redByService.get(row.original.name);
-        if (!r) {
-          return <span className="text-xs text-muted-foreground/50">–</span>;
-        }
-        return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(
-                `/traces?service=${encodeURIComponent(row.original.name)}`
-                  + `&from=${encodeURIComponent(redWindow.from.toISOString())}`
-                  + `&to=${encodeURIComponent(redWindow.to.toISOString())}`,
-              );
-            }}
-            className="font-mono text-xs hover:text-primary"
-            title="Open in Trace Explorer"
-          >
-            {r.rate.toFixed(2)}/s
-          </button>
-        );
-      },
-    },
-    {
-      id: 'errorRate',
-      header: 'Errors',
-      enableSorting: true,
-      accessorFn: (row: Container) => redByService.get(row.name)?.errorRate ?? Number.NEGATIVE_INFINITY,
-      cell: ({ row }) => {
-        const r = redByService.get(row.original.name);
-        if (!r) {
-          return <span className="text-xs text-muted-foreground/50">–</span>;
-        }
-        const pct = r.errorRate * 100;
-        const colorClass = pct >= 5
-          ? 'text-red-600 dark:text-red-400'
-          : pct >= 1
-            ? 'text-amber-600 dark:text-amber-400'
-            : 'text-emerald-600 dark:text-emerald-400';
-        return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(
-                `/traces?service=${encodeURIComponent(row.original.name)}`
-                  + `&status=error`
-                  + `&from=${encodeURIComponent(redWindow.from.toISOString())}`
-                  + `&to=${encodeURIComponent(redWindow.to.toISOString())}`,
-              );
-            }}
-            className={`font-mono text-xs hover:underline ${colorClass}`}
-            title="Open error traces in Trace Explorer"
-          >
-            {pct.toFixed(2)}%
-          </button>
-        );
-      },
-    },
-    {
-      id: 'p95Ms',
-      header: 'p95 (ms)',
-      enableSorting: true,
-      accessorFn: (row: Container) => redByService.get(row.name)?.p95Ms ?? Number.NEGATIVE_INFINITY,
-      cell: ({ row }) => {
-        const r = redByService.get(row.original.name);
-        if (!r) {
-          return <span className="text-xs text-muted-foreground/50">–</span>;
-        }
-        return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigate(
-                `/traces?service=${encodeURIComponent(row.original.name)}`
-                  + `&from=${encodeURIComponent(redWindow.from.toISOString())}`
-                  + `&to=${encodeURIComponent(redWindow.to.toISOString())}`,
-              );
-            }}
-            className="font-mono text-xs hover:text-primary"
-            title="Open in Trace Explorer"
-          >
-            {r.p95Ms.toFixed(0)} ms
-          </button>
-        );
-      },
-    },
-    {
-      id: 'age',
-      header: 'Age',
-      accessorKey: 'created',
-      cell: ({ row }) => {
-        const container = row.original;
-        const age = formatRelativeAge(container.created);
-        const absoluteDate = formatDate(new Date(container.created * 1000));
-        const state = container.state;
-
-        let prefix = '';
-        let colorClass = 'text-muted-foreground';
-
-        if (state === 'running') {
-          colorClass = 'text-emerald-600 dark:text-emerald-400';
-        } else if (state === 'exited' || state === 'stopped') {
-          prefix = state === 'exited' ? 'Exited ' : 'Stopped ';
-          colorClass = 'text-muted-foreground';
-        } else if (state === 'paused') {
-          prefix = 'Paused ';
-          colorClass = 'text-amber-600 dark:text-amber-400';
-        } else if (state === 'dead') {
-          prefix = 'Dead ';
-          colorClass = 'text-red-600 dark:text-red-400';
-        }
-
-        const display = state === 'running' ? age : `${prefix}${age} ago`;
-
-        return (
-          <span className={`text-xs ${colorClass}`} title={absoluteDate}>
-            {display}
           </span>
         );
       },
@@ -574,7 +424,7 @@ export default function WorkloadExplorerPage() {
         );
       },
     },
-  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState, redByService, redWindow]);
+  ], [navigate, knownStackNames, selectedEndpoint, selectedGroup, selectedState]);
 
   if (isError) {
     return (
@@ -860,6 +710,7 @@ export default function WorkloadExplorerPage() {
                 data={searchFilteredContainers ?? filteredContainers}
                 hideSearch
                 pageSize={15}
+                windowScroll
                 enableRowSelection
                 maxSelection={MAX_COMPARE}
                 onSelectionChange={handleSelectionChange}

@@ -14,6 +14,7 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { cn } from '@/shared/lib/utils';
+import { Checkbox } from '@/shared/components/ui/checkbox';
 import { ArrowUpDown, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react';
 
 const ROW_HEIGHT = 48;
@@ -46,6 +47,12 @@ interface DataTableProps<T> {
   getRowId?: (row: T) => string;
   /** Controlled selection state — pass an empty object to clear all checkboxes */
   selectedRowIds?: RowSelectionState;
+  /**
+   * Render the full list with the document as the scroll container (no inner
+   * scrollbar, no pagination). Disables virtualization — use only when the
+   * dataset is bounded to a few hundred rows.
+   */
+  windowScroll?: boolean;
 }
 
 export function DataTable<T>({
@@ -64,6 +71,7 @@ export function DataTable<T>({
   onSelectionChange,
   getRowId: getRowIdProp,
   selectedRowIds,
+  windowScroll,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -80,7 +88,10 @@ export function DataTable<T>({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isServerPaginated = !!serverPagination;
-  const useVirtual = !isServerPaginated && (virtualScrolling ?? data.length > VIRTUAL_THRESHOLD);
+  const useWindowScroll = !!windowScroll && !isServerPaginated;
+  const useVirtual = !useWindowScroll
+    && !isServerPaginated
+    && (virtualScrolling ?? data.length > VIRTUAL_THRESHOLD);
 
   // Build the checkbox column when row selection is enabled
   const selectionColumn = useMemo<ColumnDef<T, any> | null>(() => {
@@ -93,16 +104,12 @@ export function DataTable<T>({
         const allPageSelected = tbl.getIsAllPageRowsSelected();
         const somePageSelected = tbl.getIsSomePageRowsSelected();
         return (
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid="select-all-checkbox"
             aria-label="Select all on page"
             checked={allPageSelected}
-            ref={(el) => {
-              if (el) el.indeterminate = somePageSelected && !allPageSelected;
-            }}
+            indeterminate={somePageSelected && !allPageSelected}
             onChange={tbl.getToggleAllPageRowsSelectedHandler()}
-            className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
           />
         );
       },
@@ -111,8 +118,7 @@ export function DataTable<T>({
         const isSelected = row.getIsSelected();
         const isDisabled = !isSelected && maxSelection !== undefined && selectedCount >= maxSelection;
         return (
-          <input
-            type="checkbox"
+          <Checkbox
             data-testid={`row-checkbox-${row.id}`}
             aria-label={`Select row ${row.id}`}
             checked={isSelected}
@@ -120,7 +126,6 @@ export function DataTable<T>({
             title={isDisabled ? `Maximum of ${maxSelection} containers can be compared at once` : undefined}
             onChange={row.getToggleSelectedHandler()}
             onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           />
         );
       },
@@ -138,7 +143,7 @@ export function DataTable<T>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    ...(useVirtual || isServerPaginated ? {} : { getPaginationRowModel: getPaginationRowModel() }),
+    ...(useVirtual || isServerPaginated || useWindowScroll ? {} : { getPaginationRowModel: getPaginationRowModel() }),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     ...(enableRowSelection
@@ -156,7 +161,7 @@ export function DataTable<T>({
       columnFilters,
       ...(enableRowSelection ? { rowSelection } : {}),
     },
-    ...(useVirtual || isServerPaginated ? {} : { initialState: { pagination: { pageSize } } }),
+    ...(useVirtual || isServerPaginated || useWindowScroll ? {} : { initialState: { pagination: { pageSize } } }),
     ...(getRowIdProp ? { getRowId: (row: T) => getRowIdProp(row) } : {}),
   });
 
@@ -334,7 +339,24 @@ export function DataTable<T>({
         </div>
       )}
 
-      {useVirtual ? (
+      {useWindowScroll ? (
+        <div className="rounded-md border" data-testid="window-scroll-container">
+          <table className="w-full caption-bottom text-sm">
+            {renderHeader()}
+            <tbody className="[&_tr:last-child]:border-0">
+              {rows.length ? (
+                rows.map((row) => renderRow(row))
+              ) : (
+                <tr>
+                  <td colSpan={allColumns.length} className="h-24 text-center text-muted-foreground">
+                    No results.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : useVirtual ? (
         <div className="relative rounded-md border">
           <div
             ref={scrollContainerRef}
