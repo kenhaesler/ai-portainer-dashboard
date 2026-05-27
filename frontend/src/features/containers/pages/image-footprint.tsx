@@ -262,35 +262,41 @@ export default function ImageFootprintPage() {
 
       {/* Staleness Summary */}
       {stalenessData && stalenessData.summary.total > 0 && (
-        <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
+        <MotionStagger
+          className="staleness-summary-grid grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
+          stagger={0.05}
+        >
           <MotionReveal className="h-full">
-            <TiltCard>
+            <TiltCard intensity="subtle">
               <KpiCard
                 label="Checked"
                 value={stalenessData.summary.total}
                 icon={<Layers className="h-5 w-5" />}
+                disableHoverLift
               />
             </TiltCard>
           </MotionReveal>
           <MotionReveal className="h-full">
-            <TiltCard>
+            <TiltCard intensity="subtle">
               <KpiCard
                 label="Up to Date"
                 value={stalenessData.summary.upToDate}
                 icon={<CheckCircle2 className="h-5 w-5" />}
                 trend="up"
                 trendValue={`of ${stalenessData.summary.total} checked`}
+                disableHoverLift
               />
             </TiltCard>
           </MotionReveal>
           <MotionReveal className="h-full">
-            <TiltCard>
+            <TiltCard intensity="subtle">
               <KpiCard
                 label="Stale"
                 value={stalenessData.summary.stale}
                 icon={<AlertTriangle className="h-5 w-5" />}
                 trend={stalenessData.summary.stale > 0 ? 'down' : 'neutral'}
                 trendValue={stalenessData.summary.stale > 0 ? `${stalenessData.summary.stale} outdated` : 'none'}
+                disableHoverLift
               />
             </TiltCard>
           </MotionReveal>

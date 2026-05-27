@@ -140,4 +140,38 @@ describe('KpiCard', () => {
     );
     expect(hoverDetailTexts).toHaveLength(0);
   });
+
+  describe('disableHoverLift', () => {
+    // Stub matchMedia with reduce=false so the `!potatoMode` hover utilities
+    // are actually applied. Under reduce=true the underlying CSS classes are
+    // still attached (Tailwind classes don't react to matchMedia), but being
+    // explicit guards against future changes that gate them on motion prefs.
+    beforeEach(() => stubMatchMedia(false));
+
+    it('applies hover:-translate-y-0.5 by default', () => {
+      const { container } = render(<KpiCard label="Default lift" value={1} />);
+
+      // The inner card div is the one carrying hover utilities.
+      const innerCard = container.querySelector(
+        '.rounded-lg.border.bg-card',
+      ) as HTMLElement | null;
+      expect(innerCard).not.toBeNull();
+      expect(innerCard!.className).toContain('hover:-translate-y-0.5');
+    });
+
+    it('drops hover:-translate-y-0.5 when disableHoverLift is set', () => {
+      const { container } = render(
+        <KpiCard label="No lift" value={1} disableHoverLift />,
+      );
+
+      const innerCard = container.querySelector(
+        '.rounded-lg.border.bg-card',
+      ) as HTMLElement | null;
+      expect(innerCard).not.toBeNull();
+      expect(innerCard!.className).not.toContain('hover:-translate-y-0.5');
+      // Other hover affordances are preserved so the card still feels alive.
+      expect(innerCard!.className).toContain('hover:shadow-md');
+      expect(innerCard!.className).toContain('hover:border-primary/20');
+    });
+  });
 });

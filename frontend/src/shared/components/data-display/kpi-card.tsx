@@ -21,6 +21,13 @@ interface KpiCardProps {
   sparklineColor?: string;
   /** Detail stats shown on hover: e.g., "Last hour: +3 | Peak: 52 | Avg: 45" */
   hoverDetail?: string;
+  /**
+   * Skip the inner `hover:-translate-y-0.5` lift. Set this when a parent
+   * (e.g. {@link TiltCard}) is already applying a hover transform — stacking
+   * both transforms makes the card's bounding rect spill into neighbouring
+   * grid cells. The shadow + border-color hover hints are preserved.
+   */
+  disableHoverLift?: boolean;
 }
 
 export function KpiCard({
@@ -33,6 +40,7 @@ export function KpiCard({
   sparklineData,
   sparklineColor,
   hoverDetail,
+  disableHoverLift = false,
 }: KpiCardProps) {
   const reducedMotion = useReducedMotion();
   const potatoMode = useUiStore((state) => state.potatoMode);
@@ -59,7 +67,8 @@ export function KpiCard({
       <div
         className={cn(
           'h-full rounded-lg border bg-card p-6 shadow-sm transition-all duration-200',
-          !potatoMode && 'hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20',
+          !potatoMode && 'hover:shadow-md hover:border-primary/20',
+          !potatoMode && !disableHoverLift && 'hover:-translate-y-0.5',
           className,
         )}
       >
