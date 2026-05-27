@@ -248,13 +248,59 @@ describe('runTraceAnomalyCycle', () => {
     expect(inserted).toHaveLength(1);
   });
 
+  // ─── Fix 7 upper-bound — burst clears once the rate-limit window expires ──
+  it('per-service rate limit releases after TRACES_ANOMALY_PER_SERVICE_MIN expires', async () => {
+    // Lower-bound twin of the burst test above: after the per-service window
+    // (5 min for this test) elapses, the next anomalous cycle MUST fire again.
+    // Uses fake timers to advance Date.now() past the rate-limit window without
+    // sleeping. The 10-min per-(service, metric_type) cooldown is also keyed on
+    // Date.now() so we advance well past it (10 min + buffer).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 14, 13, 0, 0)));
+
+    const inserted: insightsStore.InsightInsert[] = [];
+    vi.spyOn(insightsStore, 'insertInsights').mockImplementation(async (rows) => {
+      inserted.push(...rows);
+      return new Set(rows.map((r) => r.id));
+    });
+
+    const computeRed = vi.fn(async (q: { bucket: string }) => {
+      if (q.bucket === '1h') return buildBaseline('api', 20, 0.001, 24);
+      const recent = buildRecent('api', 20, 0.001, 5);
+      recent.buckets.push({
+        bucketStart: new Date(Date.UTC(2026, 4, 14, 13, 0)).toISOString(),
+        rows: [{ group: 'api', rate: 10, errorRate: 0.08, p50Ms: 400, p95Ms: 800, p99Ms: 900, callCount: 100 }],
+      });
+      return recent;
+    });
+
+    // First cycle fires once (latency or error; either is fine for the bound).
+    await runTraceAnomalyCycle({ computeRed: computeRed as never });
+    expect(inserted.length).toBeGreaterThanOrEqual(1);
+    const firstCount = inserted.length;
+
+    // Second cycle still inside the window — suppressed.
+    await runTraceAnomalyCycle({ computeRed: computeRed as never });
+    expect(inserted).toHaveLength(firstCount);
+
+    // Advance past both the per-service window (5 min) and the per-key cooldown
+    // (10 min). 11 minutes is comfortably past both.
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+
+    await runTraceAnomalyCycle({ computeRed: computeRed as never });
+    // Upper-bound: at least one fresh anomaly must have fired after the window.
+    expect(inserted.length).toBeGreaterThan(firstCount);
+
+    vi.useRealTimers();
+  });
+
   // ─── Fix 8 regression — trace-path baseline warm-up (#1294) ─────────────
   it('skips a brand-new service with < TRACES_ANOMALY_MIN_SAMPLES baseline buckets', async () => {
     // Warm-up scenario: a freshly-deployed service has only 5 baseline
     // buckets — below the 10-sample floor configured above. Even though the
     // recent reading is a clear spike that *would* have been flagged with
     // 24 buckets of baseline, the warm-up gate must suppress it entirely.
-    const spy = vi.spyOn(insightsStore, 'insertInsights').mockResolvedValue(new Set());
+    const insertSpy = vi.spyOn(insightsStore, 'insertInsights').mockResolvedValue(new Set());
 
     const computeRed = vi.fn(async (q: { bucket: string }) => {
       if (q.bucket === '1h') {
@@ -272,10 +318,12 @@ describe('runTraceAnomalyCycle', () => {
 
     await runTraceAnomalyCycle({ computeRed: computeRed as never });
 
-    // Either not called or called with empty array — never persists.
-    for (const call of spy.mock.calls) {
-      expect(call[0]).toEqual([]);
-    }
+    // Warm-up branch reached: computeRed was queried for both buckets, but
+    // because baseline samples are below the floor the SUT never reaches the
+    // store. runTraceAnomalyCycle short-circuits on `insights.length === 0`,
+    // so `insertInsights` must not be called at all (cf. trace-anomaly.ts:286).
+    expect(computeRed).toHaveBeenCalled();
+    expect(insertSpy).not.toHaveBeenCalled();
   });
 
   it('returns gracefully when computeRed throws', async () => {
