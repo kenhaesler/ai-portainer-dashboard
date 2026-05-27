@@ -1,7 +1,12 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useMonitoring } from '@/features/ai-intelligence/hooks/use-monitoring';
 import { useInvestigations } from '@/features/ai-intelligence/hooks/use-investigations';
 import { useCorrelatedAnomalies, type CorrelatedAnomaly } from '@/features/observability/hooks/use-correlated-anomalies';
+import {
+  useMarkFalsePositive,
+  useAnomalyFeedbackRates,
+  deriveCorrelatedAnomalyId,
+} from '@/features/ai-intelligence/hooks/use-anomaly-feedback';
 import { useContainers } from '@/features/containers/hooks/use-containers';
 import { FleetHealthSummary, calculateHealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
 import { IncidentGroupsView } from '@/features/ai-intelligence/components/incident-groups-view';
@@ -29,10 +34,19 @@ import {
   Brain,
   Layers,
   Zap,
+  ThumbsDown,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
+function CorrelatedAnomalyCard({
+  anomaly,
+  onMarkFalsePositive,
+  isPending,
+}: {
+  anomaly: CorrelatedAnomaly;
+  onMarkFalsePositive: (anomaly: CorrelatedAnomaly) => void;
+  isPending: boolean;
+}) {
   const patternDescription = anomaly.pattern?.includes(':')
     ? anomaly.pattern.split(':').slice(1).join(':').trim()
     : null;
@@ -82,6 +96,28 @@ function CorrelatedAnomalyCard({ anomaly }: { anomaly: CorrelatedAnomaly }) {
         {patternDescription && (
           <p className="mt-2 text-xs text-muted-foreground">{patternDescription}</p>
         )}
+
+        {/* False-positive feedback affordance (#1298). Optimistic dismissal
+            is owned by the parent so multiple cards don't fight over the
+            same set. We disable the button while the mutation is in flight
+            so a rapid double-click doesn't trigger two requests. */}
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => onMarkFalsePositive(anomaly)}
+            disabled={isPending}
+            aria-label={`Mark anomaly for ${anomaly.containerName} as false positive`}
+            data-testid="mark-false-positive"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors',
+              'hover:bg-muted hover:text-foreground',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+            )}
+          >
+            <ThumbsDown className="h-3 w-3" />
+            Mark as false positive
+          </button>
+        </div>
       </div>
     </SpotlightCard>
   );
@@ -294,6 +330,53 @@ export default function AiMonitorPage() {
   const { getInvestigationForInsight } = useInvestigations();
   const { data: correlatedAnomalies, isLoading: correlatedLoading } = useCorrelatedAnomalies();
 
+  // ── False-positive feedback (#1298) ────────────────────────────
+  // Locally dismissed anomaly IDs are kept in component state. The
+  // optimistic update hides the card immediately; if the network
+  // request fails we revert the dismissal via the hook's
+  // onRevertDismiss callback. We don't persist this set to URL or
+  // localStorage — dismissals are remembered server-side as soon as
+  // the mutation succeeds, and refetching the correlated-anomalies
+  // query will exclude the marked anomaly via the rate badge.
+  const [dismissedAnomalyIds, setDismissedAnomalyIds] = useState<Set<string>>(new Set());
+
+  const markFalsePositive = useMarkFalsePositive({
+    onOptimisticDismiss: (anomalyId) => {
+      setDismissedAnomalyIds((prev) => {
+        const next = new Set(prev);
+        next.add(anomalyId);
+        return next;
+      });
+    },
+    onRevertDismiss: (anomalyId) => {
+      setDismissedAnomalyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(anomalyId);
+        return next;
+      });
+    },
+  });
+
+  // Per-detector false-positive rate, rendered as a badge row in the
+  // Health & Monitoring header. Defaults to caller scope; admins
+  // automatically receive fleet-wide data from the backend.
+  const { data: feedbackRates } = useAnomalyFeedbackRates();
+
+  const handleMarkFalsePositive = useCallback(
+    (anomaly: CorrelatedAnomaly) => {
+      // Correlated anomalies have no persisted id — derive a stable
+      // one from (containerId, timestamp). The detector tag is
+      // 'correlated-zscore' to match how the service surfaces them
+      // (multivariate composite of per-metric z-scores).
+      const anomalyId = deriveCorrelatedAnomalyId({
+        containerId: anomaly.containerId,
+        timestamp: anomaly.timestamp,
+      });
+      markFalsePositive.mutate({ anomalyId, detector: 'correlated-zscore' });
+    },
+    [markFalsePositive],
+  );
+
   // Fleet health data
   const { data: containers, isLoading: containersLoading, refetch: containerRefetch, isFetching: containersFetching } = useContainers();
   const { forceRefresh, isForceRefreshing } = useForceRefresh('containers', containerRefetch);
@@ -353,14 +436,23 @@ export default function AiMonitorPage() {
   }, [acknowledgementFilter, insights, severityFilter, searchLower]);
 
   // Apply search to anomalies + health issues so the search box covers every
-  // list on the page consistently.
+  // list on the page consistently. Dismissed anomalies are hidden via the
+  // optimistic-update set; we filter them here so all downstream renders
+  // (count, grid) agree.
   const filteredCorrelatedAnomalies = useMemo(() => {
     if (!correlatedAnomalies) return correlatedAnomalies;
-    if (!searchLower) return correlatedAnomalies;
-    return correlatedAnomalies.filter((a) =>
+    const visible = correlatedAnomalies.filter((a) => {
+      const id = deriveCorrelatedAnomalyId({
+        containerId: a.containerId,
+        timestamp: a.timestamp,
+      });
+      return !dismissedAnomalyIds.has(id);
+    });
+    if (!searchLower) return visible;
+    return visible.filter((a) =>
       matchesSearch([a.containerName, a.pattern, ...a.metrics.map((m) => m.type)]),
     );
-  }, [correlatedAnomalies, searchLower]);
+  }, [correlatedAnomalies, searchLower, dismissedAnomalyIds]);
 
   const filteredHealthIssues = useMemo(() => {
     if (!searchLower) return healthIssues;
@@ -424,6 +516,57 @@ export default function AiMonitorPage() {
           />
         </div>
       </div>
+
+      {/* Per-detector false-positive rate badges (#1298). Rendered in
+          the Health & Monitoring header (location decision: header
+          rather than Settings — operators making feedback decisions
+          benefit from seeing the rate next to the anomalies they're
+          rating, not buried in a settings panel they rarely open).
+          Hidden when no detectors have data yet so we don't render an
+          empty row of placeholders. */}
+      {feedbackRates && feedbackRates.rates.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="anomaly-feedback-rate-row"
+          aria-label={`Per-detector false-positive rates (${feedbackRates.scope === 'fleet' ? 'fleet-wide' : 'your feedback only'})`}
+        >
+          <span className="text-xs text-muted-foreground">
+            False-positive rate ({feedbackRates.scope === 'fleet' ? 'fleet' : 'mine'}):
+          </span>
+          {feedbackRates.rates.map((r) => {
+            // Empty state ("no feedback yet") collapses to "—" so the
+            // badge is still visible but doesn't imply 0% confidence.
+            const noData = r.anomalies === 0;
+            const pct = noData ? null : Math.round(r.rate * 100);
+            const tone =
+              noData
+                ? 'bg-muted text-muted-foreground'
+                : r.rate >= 0.5
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  : r.rate >= 0.2
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+            return (
+              <span
+                key={r.detector}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  tone,
+                )}
+                title={
+                  noData
+                    ? `${r.detector}: no anomalies recorded yet`
+                    : `${r.detector}: ${r.falsePositives} of ${r.anomalies} marked false positive`
+                }
+                data-testid={`anomaly-feedback-rate-${r.detector}`}
+              >
+                <span className="font-mono">{r.detector}</span>
+                <span className="tabular-nums">{pct === null ? '—' : `${pct}%`}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Fleet Health Summary — includes insight counts (Total / Critical /
           Warning / Info) as a second row of stat tiles inside the same hero. */}
@@ -576,9 +719,26 @@ export default function AiMonitorPage() {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {(filteredCorrelatedAnomalies ?? []).map((anomaly) => (
-                <CorrelatedAnomalyCard key={anomaly.containerId} anomaly={anomaly} />
-              ))}
+              {(filteredCorrelatedAnomalies ?? []).map((anomaly) => {
+                const anomalyId = deriveCorrelatedAnomalyId({
+                  containerId: anomaly.containerId,
+                  timestamp: anomaly.timestamp,
+                });
+                // Each card knows whether _it_ is the one being marked
+                // by comparing the in-flight mutation's variables —
+                // simple per-card pending state without a per-row map.
+                const isPending =
+                  markFalsePositive.isPending &&
+                  markFalsePositive.variables?.anomalyId === anomalyId;
+                return (
+                  <CorrelatedAnomalyCard
+                    key={anomaly.containerId}
+                    anomaly={anomaly}
+                    onMarkFalsePositive={handleMarkFalsePositive}
+                    isPending={isPending}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

@@ -75,7 +75,7 @@ Cross-domain communication is resolved via dependency injection in `packages/ser
 
 | Directory | Purpose |
 |-----------|---------|
-| `routes/` | LLM query, LLM observability, feedback, monitoring (incl. per-user `/api/monitoring/sensitivity` GET/PUT), investigations, incidents, correlations, MCP, prompt profiles |
+| `routes/` | LLM query, LLM observability, feedback, monitoring (incl. per-user `/api/monitoring/sensitivity` GET/PUT — #1297, anomaly-feedback false-positive loop — #1298), investigations, incidents, correlations, MCP, prompt profiles |
 | `services/` | LLM client, prompt guard (3-layer), anomaly detector (statistical + isolation forest), sensitivity preset (per-user post-filter, #1297), monitoring orchestration, investigation, incident correlator, MCP manager |
 | `sockets/` | `/llm` namespace (real-time chat), `/monitoring` namespace (real-time insights) |
 

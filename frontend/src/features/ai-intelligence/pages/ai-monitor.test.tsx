@@ -68,6 +68,24 @@ vi.mock('@/features/observability/hooks/use-correlated-anomalies', () => ({
   }),
 }));
 
+vi.mock('@/features/ai-intelligence/hooks/use-anomaly-feedback', async (importOriginal) => {
+  // Keep deriveCorrelatedAnomalyId pure so the page-level filter logic
+  // can use it; mock the network hooks.
+  const actual = await importOriginal<typeof import('@/features/ai-intelligence/hooks/use-anomaly-feedback')>();
+  return {
+    ...actual,
+    useMarkFalsePositive: vi.fn().mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      variables: undefined,
+    }),
+    useAnomalyFeedbackRates: vi.fn().mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    }),
+  };
+});
+
 vi.mock('@/features/containers/hooks/use-containers', () => ({
   useContainers: vi.fn().mockReturnValue({
     data: [],
@@ -632,5 +650,98 @@ describe('AiMonitorPage — IncidentGroupsView integration', () => {
   it('renders IncidentGroupsView in place of the legacy flat list', () => {
     renderPage();
     expect(screen.getByTestId('igv-marker')).toBeTruthy();
+  });
+});
+
+// ── False-positive feedback + per-detector rate badge (#1298) ───────
+
+describe('AiMonitorPage — false-positive feedback (#1298)', () => {
+  it('renders a "Mark as false positive" button on each CorrelatedAnomalyCard', () => {
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+      data: [
+        {
+          containerId: 'c1',
+          containerName: 'web-server',
+          metrics: [{ type: 'cpu', currentValue: 95, mean: 40, zScore: 3.5 }],
+          compositeScore: 3.5,
+          pattern: null,
+          severity: 'high' as const,
+          timestamp: '2025-01-15T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCorrelatedAnomalies>);
+
+    renderPage();
+    expect(screen.getByTestId('mark-false-positive')).toBeTruthy();
+  });
+
+  it('invokes the mutation with the derived correlated anomaly id and detector tag', async () => {
+    const mutate = vi.fn();
+    const { useMarkFalsePositive } = await import('@/features/ai-intelligence/hooks/use-anomaly-feedback');
+    vi.mocked(useMarkFalsePositive).mockReturnValue({
+      mutate,
+      isPending: false,
+      variables: undefined,
+    } as unknown as ReturnType<typeof useMarkFalsePositive>);
+
+    vi.mocked(useCorrelatedAnomalies).mockReturnValue({
+      data: [
+        {
+          containerId: 'c-abc',
+          containerName: 'web-server',
+          metrics: [{ type: 'cpu', currentValue: 95, mean: 40, zScore: 3.5 }],
+          compositeScore: 3.5,
+          pattern: null,
+          severity: 'high' as const,
+          timestamp: '2025-01-15T10:00:00Z',
+        },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useCorrelatedAnomalies>);
+
+    renderPage();
+
+    const btn = screen.getByTestId('mark-false-positive');
+    fireEvent.click(btn);
+
+    expect(mutate).toHaveBeenCalledWith({
+      anomalyId: 'correlated:c-abc:2025-01-15T10:00:00Z',
+      detector: 'correlated-zscore',
+    });
+  });
+
+  it('renders a per-detector rate badge when feedback rates are available', async () => {
+    const { useAnomalyFeedbackRates } = await import('@/features/ai-intelligence/hooks/use-anomaly-feedback');
+    vi.mocked(useAnomalyFeedbackRates).mockReturnValue({
+      data: {
+        rates: [
+          { detector: 'threshold', anomalies: 10, falsePositives: 2, rate: 0.2 },
+          { detector: 'ml-anomaly', anomalies: 0, falsePositives: 0, rate: 0 },
+        ],
+        scope: 'mine',
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAnomalyFeedbackRates>);
+
+    renderPage();
+
+    expect(screen.getByTestId('anomaly-feedback-rate-row')).toBeTruthy();
+    expect(screen.getByTestId('anomaly-feedback-rate-threshold')).toBeTruthy();
+    // 20% rendered for threshold
+    expect(screen.getByTestId('anomaly-feedback-rate-threshold').textContent).toContain('20%');
+    // Empty-state "—" rendered for ml-anomaly (zero anomalies recorded)
+    expect(screen.getByTestId('anomaly-feedback-rate-ml-anomaly').textContent).toContain('—');
+  });
+
+  it('hides the rate badge row when no detectors have data yet', async () => {
+    const { useAnomalyFeedbackRates } = await import('@/features/ai-intelligence/hooks/use-anomaly-feedback');
+    vi.mocked(useAnomalyFeedbackRates).mockReturnValue({
+      data: { rates: [], scope: 'mine' },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAnomalyFeedbackRates>);
+
+    renderPage();
+    expect(screen.queryByTestId('anomaly-feedback-rate-row')).toBeNull();
   });
 });
