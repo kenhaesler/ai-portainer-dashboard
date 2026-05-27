@@ -852,6 +852,9 @@ aside[data-animated-bg] nav {
  * Cascade note: this block intentionally sits BEFORE the `aside nav` rule
  * below so the sidebar's transparent-on-idle hover-reveal scrollbar still
  * wins (same-specificity rules — later one wins).
+ * WARNING: must precede the `aside nav` block below (lines ~898-904) — if
+ * moved after, the sidebar's transparent idle thumb would be overridden by
+ * the global rule.
  */
 html,
 body,
