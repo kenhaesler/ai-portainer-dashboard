@@ -71,4 +71,36 @@ describe('TiltCard', () => {
     // When tilt is disabled, the motion div with data-testid="tilt-card" is not rendered
     expect(screen.queryByTestId('tilt-card')).not.toBeInTheDocument();
   });
+
+  describe('intensity', () => {
+    it('defaults to the "default" intensity preset', () => {
+      render(
+        <TiltCard>
+          <p>Default intensity</p>
+        </TiltCard>,
+      );
+
+      const tilt = screen.getByTestId('tilt-card');
+      expect(tilt.getAttribute('data-intensity')).toBe('default');
+      // Default preset still uses the historical 50px Z translation.
+      const inner = tilt.firstElementChild as HTMLElement;
+      expect(inner.style.transform).toBe('translateZ(50px)');
+    });
+
+    it('uses a smaller Z translation when intensity="subtle"', () => {
+      render(
+        <TiltCard intensity="subtle">
+          <p>Subtle intensity</p>
+        </TiltCard>,
+      );
+
+      const tilt = screen.getByTestId('tilt-card');
+      expect(tilt.getAttribute('data-intensity')).toBe('subtle');
+      // Smaller Z keeps the transformed footprint inside the grid track —
+      // jsdom can't measure the actual bounding rect, but reading the inline
+      // transform is a reliable proxy.
+      const inner = tilt.firstElementChild as HTMLElement;
+      expect(inner.style.transform).toBe('translateZ(12px)');
+    });
+  });
 });
