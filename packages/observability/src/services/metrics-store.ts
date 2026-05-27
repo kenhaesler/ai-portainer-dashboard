@@ -113,6 +113,56 @@ export async function getMovingAverage(
   };
 }
 
+/**
+ * Hour-of-day baseline statistics for a container metric (issue #1295).
+ *
+ * Aggregates samples whose timestamp falls in the supplied UTC hour-of-day
+ * (0..23) across the last `lookbackDays` days. Returns null when no samples
+ * are available; callers should then fall back to the flat-window baseline.
+ *
+ * The aggregation uses Postgres `date_part('hour', timestamp AT TIME ZONE
+ * 'UTC')` so the bucket boundary is fixed and not influenced by the server
+ * local timezone.
+ */
+export async function getMovingAverageByHourOfDay(
+  containerId: string,
+  metricType: string,
+  hourOfDay: number,
+  lookbackDays: number,
+): Promise<MovingAverageResult | null> {
+  if (!Number.isInteger(hourOfDay) || hourOfDay < 0 || hourOfDay > 23) {
+    return null;
+  }
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+    return null;
+  }
+  const db = await getMetricsDb();
+
+  const { rows } = await db.query(
+    `SELECT
+       AVG(value) as mean,
+       STDDEV_POP(value) as std_dev,
+       COUNT(*)::int as sample_count
+     FROM metrics
+     WHERE container_id = $1
+       AND metric_type = $2
+       AND timestamp >= NOW() - ($3::int * INTERVAL '1 day')
+       AND date_part('hour', timestamp AT TIME ZONE 'UTC') = $4`,
+    [containerId, metricType, lookbackDays, hourOfDay],
+  );
+
+  const result = rows[0];
+  if (!result || result.sample_count === 0 || result.mean === null) {
+    return null;
+  }
+
+  return {
+    mean: Number(result.mean),
+    std_dev: Number(result.std_dev ?? 0),
+    sample_count: result.sample_count,
+  };
+}
+
 export async function cleanOldMetrics(retentionDays: number): Promise<number> {
   // TimescaleDB retention is handled by policies, but this provides manual cleanup
   const db = await getMetricsDb();

@@ -33,6 +33,23 @@ export interface MetricsInterface {
     windowSize: number,
   ): Promise<MovingAverageResult | null>;
 
+  /**
+   * Compute the baseline distribution for a container metric at a specific
+   * hour-of-day, aggregated over the last N days. Powers the hour-of-day
+   * baseline that supersedes the flat 24h window for metrics with strong
+   * diurnal patterns (issue #1295).
+   *
+   * @param hourOfDay  - 0..23 (UTC)
+   * @param lookbackDays - number of days to scan back from now
+   * @returns null when no samples were found
+   */
+  getMovingAverageByHourOfDay?(
+    containerId: string,
+    metricType: string,
+    hourOfDay: number,
+    lookbackDays: number,
+  ): Promise<MovingAverageResult | null>;
+
   /** Retrieve top-N capacity forecasts sorted by urgency. */
   getCapacityForecasts(topN: number): Promise<CapacityForecast[]>;
 

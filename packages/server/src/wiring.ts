@@ -16,6 +16,7 @@ import {
   getMetrics,
   getLatestMetricsBatch,
   getMovingAverage,
+  getMovingAverageByHourOfDay,
   getCapacityForecasts,
   generateForecast,
   findSimilarInsights,
@@ -56,6 +57,7 @@ export function buildMetricsAdapter(): MetricsInterface {
     detectAnomalies: async () => [],  // stub — not needed in Phase 3
     getLatestMetricsBatch,
     getMovingAverage,
+    getMovingAverageByHourOfDay,
     getCapacityForecasts,
     generateForecast,
     findSimilarInsights,

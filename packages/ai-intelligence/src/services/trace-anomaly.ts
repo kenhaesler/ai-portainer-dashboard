@@ -3,13 +3,29 @@ import { getConfig } from '@dashboard/core/config/index.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
 import * as insightsStore from './insights-store.js';
 import type { InsightInsert } from './insights-store.js';
+import { classifyCv, cvThresholdMultiplier, meanAndStd } from './anomaly-stats.js';
 
 const log = createChildLogger('trace-anomaly');
 
 /**
  * Trace-driven anomaly detection — flags latency (p95) and error-rate
- * regressions per service using a recent (1m bucket) vs baseline (1h bucket
- * over 24h) comparison.
+ * regressions per service.
+ *
+ * Two algorithmic improvements (issue #1295):
+ *
+ *   • Fix 2 — CV-based variance scaling. The effective z-score threshold for
+ *     the latency-p95 signal is scaled by the coefficient of variation of
+ *     the baseline window. Naturally noisy services (CV ≥ 0.3) get a 1.5×
+ *     headroom; medium-CV (0.1–0.3) get 1.2×; stable series (CV < 0.1) keep
+ *     the base threshold. See `anomaly-stats.ts`.
+ *
+ *   • Fix 3 — Hour-of-day baseline. Instead of a single flat 24h baseline,
+ *     the detector now compares the recent observation against the baseline
+ *     for the **same hour-of-day** computed over the last N days
+ *     (configurable via ANOMALY_HOUROFDAY_LOOKBACK_DAYS, default 14). The
+ *     flat 24h baseline survives as a warm-up fallback: when the hour
+ *     bucket has fewer than ANOMALY_HOUROFDAY_MIN_SAMPLES samples we
+ *     gracefully degrade to the legacy behaviour rather than flag noise.
  *
  * @remarks
  * The ai-intelligence package is forbidden from importing observability
@@ -50,6 +66,8 @@ export type ComputeRedFn = (q: ComputeRedQuery) => Promise<RedResult>;
 
 export interface TraceAnomalyDeps {
   computeRed: ComputeRedFn;
+  /** Test-only clock injection. Defaults to `new Date()`. */
+  now?: () => Date;
 }
 
 // Rate-limit log lines: at most 1 per series per minute.
@@ -102,15 +120,6 @@ function markInserted(seriesKey: string, service: string): void {
   lastServiceInsertAt.set(service, now);
 }
 
-function meanAndStd(values: number[]): { mean: number; std: number } {
-  if (values.length === 0) return { mean: 0, std: 0 };
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  if (values.length === 1) return { mean, std: 0 };
-  const variance =
-    values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length;
-  return { mean, std: Math.sqrt(variance) };
-}
-
 function collectBaselineSeries(
   baseline: RedResult,
   field: 'p95Ms' | 'errorRate',
@@ -126,15 +135,84 @@ function collectBaselineSeries(
   return out;
 }
 
-function latestRowPerGroup(recent: RedResult): Map<string, RedRow> {
-  const out = new Map<string, RedRow>();
-  // Buckets come back ordered by bucket_start ASC; last occurrence wins.
-  for (const bucket of recent.buckets) {
+/**
+ * Index a baseline result by service and hour-of-day so the detector can pick
+ * the correct distribution for the recent observation.
+ *
+ * Bucket boundary is UTC. The `bucketStart` from `computeRed` is already a
+ * date_bin output, so parsing as ISO + `getUTCHours()` gives a stable key
+ * independent of the server local timezone.
+ */
+function collectHourlyBaselineSeries(
+  baseline: RedResult,
+  field: 'p95Ms' | 'errorRate',
+): Map<string, Map<number, number[]>> {
+  const out = new Map<string, Map<number, number[]>>();
+  for (const bucket of baseline.buckets) {
+    const hour = new Date(bucket.bucketStart).getUTCHours();
+    if (Number.isNaN(hour)) continue;
     for (const row of bucket.rows) {
-      out.set(row.group, row);
+      let perService = out.get(row.group);
+      if (!perService) {
+        perService = new Map();
+        out.set(row.group, perService);
+      }
+      const arr = perService.get(hour) ?? [];
+      arr.push(row[field]);
+      perService.set(hour, arr);
     }
   }
   return out;
+}
+
+function latestBucketOfRecent(recent: RedResult): { hour: number; rows: RedRow[] } | null {
+  // Buckets come back ordered by bucket_start ASC; the trailing bucket is the
+  // most recent 1-minute observation. We deliberately inspect ONLY that
+  // trailing bucket — older buckets in the 1h recent window are intentionally
+  // skipped to bias toward fresh data and to give us a single, well-defined
+  // hour-of-day key for the baseline lookup.
+  //
+  // Behavioural shift from the pre-#1302 detector: the previous
+  // `latestRowPerGroup` scanned every recent bucket and kept the
+  // last-occurrence row per service, so a service that emitted traffic 20
+  // minutes ago but is now silent would still be evaluated. That fallback is
+  // gone — silent services in the trailing minute are simply not evaluated
+  // this cycle, which is acceptable because:
+  //   1. The cycle re-runs frequently, so a transient gap just defers the
+  //      check by a minute or two rather than dropping the anomaly.
+  //   2. The hour-of-day baseline now needs a single observation hour to look
+  //      up, not a smear across 60 minutes.
+  const last = recent.buckets[recent.buckets.length - 1];
+  if (!last) return null;
+  const hour = new Date(last.bucketStart).getUTCHours();
+  if (Number.isNaN(hour)) return null;
+  return { hour, rows: last.rows };
+}
+
+interface BaselineDecision {
+  series: number[];
+  usedHourOfDay: boolean;
+}
+
+/**
+ * Resolve the baseline series for a (service, hour) cell with warm-up
+ * fallback. Returns `usedHourOfDay: true` when the per-hour bucket is used,
+ * `false` when we fell back to the flat 24h window.
+ *
+ * Exported for tests.
+ */
+export function pickBaselineSeries(opts: {
+  hourly: Map<string, Map<number, number[]>>;
+  flat: Map<string, number[]>;
+  service: string;
+  hour: number;
+  minHourSamples: number;
+}): BaselineDecision {
+  const hourSeries = opts.hourly.get(opts.service)?.get(opts.hour) ?? [];
+  if (hourSeries.length >= opts.minHourSamples) {
+    return { series: hourSeries, usedHourOfDay: true };
+  }
+  return { series: opts.flat.get(opts.service) ?? [], usedHourOfDay: false };
 }
 
 /**
@@ -154,13 +232,20 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
   // ANOMALY_MIN_SAMPLES on the metric path so brand-new services with
   // sparse baselines do not fire on their first few buckets.
   const minBaselineSamples = config.TRACES_ANOMALY_MIN_SAMPLES ?? 10;
+  // Hour-of-day baseline window (#1295, fix 3).
+  const lookbackDays = config.ANOMALY_HOUROFDAY_LOOKBACK_DAYS ?? 14;
+  const minHourSamples = config.ANOMALY_HOUROFDAY_MIN_SAMPLES ?? 3;
 
   let recent: RedResult;
   let baseline: RedResult;
   try {
-    const now = new Date();
+    const now = (deps.now ?? (() => new Date()))();
     const recentFrom = new Date(now.getTime() - 60 * 60 * 1000); // 1h window, 1m buckets
-    const baselineFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24h window, 1h buckets
+    // Hour-of-day baseline: pull the last `lookbackDays` days bucketed by the
+    // hour so we can build per-hour distributions across services. We still
+    // request `1h` buckets — `date_bin` aligns each bucket on the hour, and
+    // the bucket_start carries the UTC hour we need to key by.
+    const baselineFrom = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
 
     [recent, baseline] = await Promise.all([
       deps.computeRed({ from: recentFrom, to: now, bucket: '1m', groupBy: 'service' }),
@@ -171,22 +256,40 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
     return;
   }
 
-  const latest = latestRowPerGroup(recent);
-  const p95Baselines = collectBaselineSeries(baseline, 'p95Ms');
-  const errorBaselines = collectBaselineSeries(baseline, 'errorRate');
+  const latest = latestBucketOfRecent(recent);
+  if (!latest) return;
+
+  const flatP95 = collectBaselineSeries(baseline, 'p95Ms');
+  const flatErr = collectBaselineSeries(baseline, 'errorRate');
+  const hourlyP95 = collectHourlyBaselineSeries(baseline, 'p95Ms');
+  const hourlyErr = collectHourlyBaselineSeries(baseline, 'errorRate');
 
   const insights: InsightInsert[] = [];
 
-  for (const [service, row] of latest) {
+  for (const row of latest.rows) {
+    const service = row.group;
+
     // ─── Latency p95 ─────────────────────────────────────────────────────
-    const p95Series = p95Baselines.get(service) ?? [];
+    const p95Decision = pickBaselineSeries({
+      hourly: hourlyP95,
+      flat: flatP95,
+      service,
+      hour: latest.hour,
+      minHourSamples,
+    });
     // Fix 8 (#1294): require a minimum baseline sample count before
-    // evaluating. The previous floor of 3 buckets meant a brand-new service
-    // could fire on its first hour of data. We keep `>= 3` as a hard floor
-    // for safety and additionally require `>= minBaselineSamples` (default 10,
-    // mirroring ANOMALY_MIN_SAMPLES).
-    if (p95Series.length >= Math.max(3, minBaselineSamples)) {
-      const { mean, std } = meanAndStd(p95Series);
+    // evaluating. We keep `>= 3` as a hard floor for safety and additionally
+    // require `>= minBaselineSamples` (default 10, mirroring
+    // ANOMALY_MIN_SAMPLES). Applies regardless of which baseline (#1295
+    // hour-of-day vs flat fallback) `pickBaselineSeries` chose.
+    if (p95Decision.series.length >= Math.max(3, minBaselineSamples)) {
+      const { mean, std } = meanAndStd(p95Decision.series);
+      // Fix 2 (#1295): scale the z-score threshold by CV regime so naturally
+      // noisy services do not trip the detector inside their normal envelope.
+      const regime = classifyCv(mean, std);
+      const scaledZThreshold = zThreshold * cvThresholdMultiplier(regime);
+
+
       // When std == 0 (perfectly stable baseline) z-score is undefined; use a
       // relative deviation rule instead — flag if recent is > 2x baseline mean
       // and at least 50ms above it (avoids tiny-value noise).
@@ -194,7 +297,7 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
       let isAnomalous: boolean;
       if (std > 0) {
         zScore = (row.p95Ms - mean) / std;
-        isAnomalous = zScore > zThreshold;
+        isAnomalous = zScore > scaledZThreshold;
       } else {
         const tolerance = Math.max(mean * 0.5, 50);
         zScore = mean > 0 ? (row.p95Ms - mean) / Math.max(tolerance, 1) : 0;
@@ -204,7 +307,16 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
         const seriesKey = `latency_p95:${service}`;
         if (shouldLog(seriesKey)) {
           log.warn(
-            { service, p95Ms: row.p95Ms, baselineMean: mean, baselineStd: std, zScore },
+            {
+              service,
+              p95Ms: row.p95Ms,
+              baselineMean: mean,
+              baselineStd: std,
+              zScore,
+              cvRegime: regime,
+              threshold: scaledZThreshold,
+              usedHourOfDay: p95Decision.usedHourOfDay,
+            },
             'trace latency p95 anomaly',
           );
         }
@@ -219,14 +331,15 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             // dashboard correlation that groups insights by container surfaces
             // these anomalies alongside metric-driven ones (#1236 AC).
             container_name: service,
-            severity: zScore > zThreshold * 2 ? 'critical' : 'warning',
+            severity: zScore > scaledZThreshold * 2 ? 'critical' : 'warning',
             category: 'anomaly',
             title: `High latency p95 on service "${service}"`,
             description:
               `Recent p95: ${row.p95Ms.toFixed(1)}ms ` +
               `(baseline mean: ${mean.toFixed(1)}ms, std: ${std.toFixed(1)}ms, ` +
-              `z-score: ${zScore.toFixed(2)}). Latency is ${Math.abs(zScore).toFixed(1)} ` +
-              `standard deviations above the 24h baseline.`,
+              `z-score: ${zScore.toFixed(2)}, threshold: ${scaledZThreshold.toFixed(2)}, ` +
+              `cv-regime: ${regime}, baseline: ${p95Decision.usedHourOfDay ? 'hour-of-day' : 'flat'}). ` +
+              `Latency is ${Math.abs(zScore).toFixed(1)} standard deviations above the baseline.`,
             suggested_action:
               'Inspect the Calls tab for the affected service to identify slow endpoints, and check downstream dependencies.',
             metric_type: 'latency_p95',
@@ -237,9 +350,17 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
     }
 
     // ─── Error rate ──────────────────────────────────────────────────────
-    const errSeries = errorBaselines.get(service) ?? [];
-    // Fix 8 (#1294): same warm-up enforcement as the latency branch — skip
-    // services that have not accumulated a usable baseline yet.
+    const errDecision = pickBaselineSeries({
+      hourly: hourlyErr,
+      flat: flatErr,
+      service,
+      hour: latest.hour,
+      minHourSamples,
+    });
+    const errSeries = errDecision.series;
+    // Fix 8 (#1294): warm-up enforcement on the error-rate branch — skip
+    // services that have not accumulated a usable baseline yet, regardless
+    // of which baseline (#1295 hour-of-day vs flat fallback) was chosen.
     if (errSeries.length < minBaselineSamples) {
       continue;
     }
@@ -254,7 +375,7 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
         const seriesKey = `error_rate:${service}`;
         if (shouldLog(seriesKey)) {
           log.warn(
-            { service, errorRate: row.errorRate, baselineMeanPct },
+            { service, errorRate: row.errorRate, baselineMeanPct, usedHourOfDay: errDecision.usedHourOfDay },
             'trace error-rate anomaly',
           );
         }
@@ -272,7 +393,8 @@ export async function runTraceAnomalyCycle(deps: TraceAnomalyDeps): Promise<void
             title: `Elevated error rate on service "${service}"`,
             description:
               `Recent error rate: ${recentRatePct.toFixed(2)}% ` +
-              `(baseline: ${baselineMeanPct.toFixed(2)}%, threshold: ${errorRatePct}%).`,
+              `(baseline: ${baselineMeanPct.toFixed(2)}%, threshold: ${errorRatePct}%, ` +
+              `baseline-source: ${errDecision.usedHourOfDay ? 'hour-of-day' : 'flat'}).`,
             suggested_action:
               'Open the Trace Explorer for this service and inspect failed spans for the root cause.',
             metric_type: 'error_rate',
