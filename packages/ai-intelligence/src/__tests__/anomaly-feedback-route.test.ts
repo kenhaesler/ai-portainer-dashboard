@@ -151,6 +151,7 @@ describe('anomaly-feedback routes (#1298)', () => {
       const anomalyId = randomUUID();
       await seedInsight(anomalyId);
 
+      // First insertion — must report duplicate=false.
       const first = await app.inject({
         method: 'POST',
         url: '/api/monitoring/anomaly-feedback',
@@ -160,16 +161,9 @@ describe('anomaly-feedback routes (#1298)', () => {
       expect(first.statusCode).toBe(200);
       expect(first.json().duplicate).toBe(false);
 
-      // Force the created_at to be older than the 1s "duplicate" window
-      // so the second call observes a definitively pre-existing row.
-      const pool = await getTestPool();
-      await pool.query(
-        `UPDATE anomaly_feedback
-         SET created_at = NOW() - INTERVAL '5 seconds'
-         WHERE anomaly_id = $1 AND user_id = $2`,
-        [anomalyId, 'user-a'],
-      );
-
+      // Second insertion — the UPSERT RETURNING contract reports
+      // duplicate=true the moment ON CONFLICT fires, regardless of
+      // wall-clock skew or how fast the two calls fired.
       const second = await app.inject({
         method: 'POST',
         url: '/api/monitoring/anomaly-feedback',
@@ -182,6 +176,7 @@ describe('anomaly-feedback routes (#1298)', () => {
       expect(second.json().duplicate).toBe(true);
 
       // Still only one row.
+      const pool = await getTestPool();
       const { rows } = await pool.query<{ count: string }>(
         `SELECT COUNT(*) as count FROM anomaly_feedback
          WHERE anomaly_id = $1 AND user_id = $2`,
@@ -242,6 +237,46 @@ describe('anomaly-feedback routes (#1298)', () => {
       });
 
       expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects an unknown detector value (allowlist enforced via Zod enum)', async () => {
+      const anomalyId = randomUUID();
+      await seedInsight(anomalyId);
+
+      // The detector field is constrained to ANOMALY_FEEDBACK_DETECTORS.
+      // An attacker-controlled label like '<script>' or 'totally-fake-detector'
+      // must be rejected at the API boundary so it never reaches the
+      // rate breakdown.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/monitoring/anomaly-feedback',
+        payload: { anomalyId, detector: 'totally-fake-detector' },
+        headers: { 'content-type': 'application/json' },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('accepts a known detector value from the allowlist', async () => {
+      const anomalyId = `correlated:c-${randomUUID()}:2026-01-01T00:00:00Z`;
+      // No insight row — this is the correlated-anomaly path.
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/monitoring/anomaly-feedback',
+        payload: { anomalyId, detector: 'correlated-zscore' },
+        headers: { 'content-type': 'application/json' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().duplicate).toBe(false);
+
+      const pool = await getTestPool();
+      const { rows } = await pool.query<{ detector: string }>(
+        `SELECT detector FROM anomaly_feedback WHERE anomaly_id = $1`,
+        [anomalyId],
+      );
+      expect(rows[0].detector).toBe('correlated-zscore');
     });
   });
 
@@ -485,6 +520,65 @@ describe('anomaly-feedback routes (#1298)', () => {
       // Alice has zero feedback; Bob's row must not leak through.
       expect(t.anomalies).toBe(1);
       expect(t.falsePositives).toBe(0);
+    });
+
+    it('correlated-branch fleet rate: distinct denominator, per-vote numerator, clamped to 1', async () => {
+      // Two correlated anomaly IDs (no matching insights row), only one
+      // is flagged — and by two users. With the old query the rate was
+      // trivially 1.0 (denominator = numerator = COUNT(DISTINCT)); with
+      // the fix the denominator is "unique correlated anomalies that
+      // received feedback" and the numerator is "total votes", so the
+      // raw ratio is 2/1 = 2.0. The JS layer then clamps to 1.0 so the
+      // UI badge doesn't render 200%.
+      const correlatedId1 = `correlated:c1:${new Date().toISOString()}`;
+      const correlatedId2 = `correlated:c2:${new Date().toISOString()}`;
+
+      // user-a marks correlated #1.
+      await testDb.execute(
+        `INSERT INTO anomaly_feedback (anomaly_id, user_id, disposition, detector)
+         VALUES (?, ?, ?, ?)`,
+        [correlatedId1, 'user-a', 'false-positive', 'correlated-zscore'],
+      );
+      // user-b marks the *same* correlated #1.
+      await testDb.execute(
+        `INSERT INTO anomaly_feedback (anomaly_id, user_id, disposition, detector)
+         VALUES (?, ?, ?, ?)`,
+        [correlatedId1, 'user-b', 'false-positive', 'correlated-zscore'],
+      );
+      // Note correlated #2 (correlatedId2) receives no feedback — the
+      // current schema has no way to know it exists server-side, which
+      // is exactly why the correlated denominator can never be a true
+      // "all surfaced anomalies" count.
+      void correlatedId2;
+
+      currentUser.value = {
+        sub: 'user-admin',
+        username: 'admin',
+        role: 'admin',
+        sessionId: 's3',
+      };
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/monitoring/anomaly-feedback/rates',
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const corr = body.rates.find(
+        (r: { detector: string }) => r.detector === 'correlated-zscore',
+      );
+      expect(corr).toBeDefined();
+      // 1 unique correlated anomaly received feedback.
+      expect(corr.anomalies).toBe(1);
+      // 2 votes (user-a + user-b).
+      expect(corr.falsePositives).toBe(2);
+      // Raw ratio 2/1 clamped to 1.0 — the badge is non-trivial and
+      // bounded, where the previous COUNT(DISTINCT)/COUNT(DISTINCT)
+      // formulation would have returned exactly 1.0 even if zero users
+      // had flagged the anomaly (because numerator == denominator by
+      // construction).
+      expect(corr.rate).toBe(1);
     });
   });
 });

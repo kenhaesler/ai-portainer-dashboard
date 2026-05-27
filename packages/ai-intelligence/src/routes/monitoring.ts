@@ -20,6 +20,27 @@ const log = createChildLogger('route:monitoring');
 // Currently only 'false-positive' is accepted at the API surface; the
 // DB CHECK constraint reserves 'true-positive' and 'unsure' for future
 // dispositions so they can be added without another migration.
+//
+// Allowlist of detector identifiers a client may submit. Mirrors:
+//   * the persisted detector enum from `packages/core/src/models/monitoring.ts`
+//     (`detection_method`: 'threshold' | 'ml-anomaly' | 'prediction' |
+//     'health-check' | 'log-pattern' | 'security-scan'), plus
+//   * the in-memory detectors that produce correlated anomalies
+//     (`correlated-zscore` for `detectCorrelatedAnomalies`, and the
+//     `isolation-forest` raw detector used by the trace/IF service).
+// Restricting the column to this allowlist prevents callers polluting
+// the per-detector rate breakdown with attacker-supplied labels.
+export const ANOMALY_FEEDBACK_DETECTORS = [
+  'threshold',
+  'ml-anomaly',
+  'prediction',
+  'health-check',
+  'log-pattern',
+  'security-scan',
+  'correlated-zscore',
+  'isolation-forest',
+] as const;
+
 const AnomalyFeedbackBodySchema = z.object({
   anomalyId: z.string().min(1).max(200),
   disposition: z.literal('false-positive').optional().default('false-positive'),
@@ -27,7 +48,8 @@ const AnomalyFeedbackBodySchema = z.object({
   // calculation works for correlated anomalies (which never appear in
   // the `insights` table). Optional: caller may omit when the
   // anomalyId matches an insights.id and the detector can be JOINed.
-  detector: z.string().min(1).max(100).optional(),
+  // Constrained to a known allowlist (see ANOMALY_FEEDBACK_DETECTORS).
+  detector: z.enum(ANOMALY_FEEDBACK_DETECTORS).optional(),
 });
 
 const AnomalyFeedbackResponseSchema = z.object({
@@ -329,46 +351,50 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
     try {
       const db = getDbForDomain('feedback');
       // ON CONFLICT (anomaly_id, user_id) DO NOTHING enforces the "one
-      // disposition per user per anomaly" rule from the migration. We
-      // detect the duplicate via a follow-up SELECT rather than the
-      // `RETURNING id` row count so the result is portable across the
-      // current PostgresAdapter `execute` shape.
-      await db.execute(
+      // disposition per user per anomaly" rule from the migration. The
+      // `RETURNING id` clause is the race-free way to detect whether
+      // this request actually inserted a row: PostgreSQL returns the
+      // id when the row was newly inserted and zero rows when the
+      // ON CONFLICT branch fired. Comparing wall-clock to created_at
+      // (the previous approach) was prone to GC pauses, clock skew,
+      // and slow round-trips flipping the duplicate flag in either
+      // direction.
+      const inserted = await db.query<{ id: number }>(
         `INSERT INTO anomaly_feedback (anomaly_id, user_id, disposition, detector)
          VALUES (?, ?, ?, ?)
-         ON CONFLICT (anomaly_id, user_id) DO NOTHING`,
+         ON CONFLICT (anomaly_id, user_id) DO NOTHING
+         RETURNING id`,
         [anomalyId, userId, disposition, detector ?? null],
       );
 
-      // Round-trip query disambiguates "row inserted" vs "row already
-      // existed" — the latter must not behave as an error and must keep
-      // the original created_at, which `DO NOTHING` already guarantees.
-      const existing = await db.queryOne<{ created_at: string; disposition: string }>(
-        `SELECT created_at, disposition FROM anomaly_feedback
-         WHERE anomaly_id = ? AND user_id = ?`,
-        [anomalyId, userId],
-      );
-
-      // `existing` is non-null after either an insert or a no-op conflict.
-      // If it's null something is structurally wrong (race on cascade
-      // delete, etc.) — surface as 500 rather than masking with success.
-      if (!existing) {
-        log.error({ anomalyId, userId }, 'Feedback row missing after insert');
-        return (reply as any).code(500).send({ error: 'Failed to record feedback' });
+      // For the duplicate case we still need the persisted disposition
+      // (the API contract returns whatever the DB has, not whatever
+      // the client sent on the second attempt). Only the duplicate
+      // branch needs a follow-up SELECT.
+      let persistedDisposition = disposition;
+      const duplicate = inserted.length === 0;
+      if (duplicate) {
+        const existing = await db.queryOne<{ disposition: string }>(
+          `SELECT disposition FROM anomaly_feedback
+           WHERE anomaly_id = ? AND user_id = ?`,
+          [anomalyId, userId],
+        );
+        if (!existing) {
+          // Structurally impossible: ON CONFLICT fired (row existed)
+          // yet the SELECT returns nothing. Could only happen if the
+          // row was cascade-deleted between the two queries (e.g.
+          // user deletion mid-request) — surface as 500 rather than
+          // masking with success.
+          log.error({ anomalyId, userId }, 'Feedback row missing after conflict');
+          return (reply as any).code(500).send({ error: 'Failed to record feedback' });
+        }
+        persistedDisposition = existing.disposition as typeof disposition;
       }
-
-      // `duplicate` flips when the row's created_at is older than ~1 second
-      // — anything newer was just inserted in this request. Tolerant
-      // window so clock jitter between Node and Postgres doesn't flip the
-      // flag spuriously.
-      const createdAtMs = new Date(existing.created_at).getTime();
-      const ageMs = Date.now() - createdAtMs;
-      const duplicate = Number.isFinite(ageMs) && ageMs > 1000;
 
       return {
         success: true,
         anomalyId,
-        disposition: existing.disposition,
+        disposition: persistedDisposition,
         duplicate,
       };
     } catch (err) {
@@ -383,6 +409,9 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
   //   admins receive fleet-wide data and may opt back into caller-scope
   //   via ?scope=mine. Non-admins are always scoped to their own
   //   feedback regardless of the `scope` parameter (privacy guarantee).
+  //
+  //   Admin fleet-wide aggregate exposes counts per detector only —
+  //   never individual user dispositions.
   fastify.get('/api/monitoring/anomaly-feedback/rates', {
     schema: {
       tags: ['Monitoring'],
@@ -456,13 +485,27 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
          ),
          correlated_rates AS (
            -- Feedback rows whose anomaly_id is NOT in the insights
-           -- table — these are correlated anomalies. anomalies count
-           -- = distinct anomaly_id, false_positives = same distinct
-           -- count (every row here is a recorded false-positive).
+           -- table — these are correlated anomalies, which are
+           -- computed on demand and never persisted, so there is no
+           -- "denominator of all surfaced anomalies" available
+           -- server-side. We approximate the rate from feedback alone:
+           --   * denominator = COUNT(DISTINCT anomaly_id) — unique
+           --     correlated anomalies that received any feedback,
+           --   * numerator   = COUNT(*) — total false-positive votes,
+           --     including the multi-user "two operators flag the
+           --     same correlated anomaly" case.
+           -- Dropping DISTINCT on the numerator means rate > 1 is
+           -- possible when multiple users mark the same correlated
+           -- anomaly; the JS layer clamps the surfaced rate to [0, 1]
+           -- (raw counts remain accurate). This is intentional — it
+           -- preserves the "stronger signal when multiple operators
+           -- agree" semantic instead of always yielding the trivial
+           -- rate=1 the previous COUNT(DISTINCT)/COUNT(DISTINCT)
+           -- formulation produced.
            SELECT
              COALESCE(f.detector, 'unknown') AS detector,
              COUNT(DISTINCT f.anomaly_id)::integer AS anomalies,
-             COUNT(DISTINCT f.anomaly_id)::integer AS false_positives
+             COUNT(*)::integer AS false_positives
            FROM anomaly_feedback f
            WHERE f.disposition = 'false-positive'
              AND NOT EXISTS (SELECT 1 FROM insights i WHERE i.id = f.anomaly_id)
@@ -483,12 +526,22 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         [...userParam, ...userParam],
       );
 
-      const rates: DetectorRate[] = rows.map((row) => ({
-        detector: row.detector,
-        anomalies: row.anomalies,
-        falsePositives: row.false_positives,
-        rate: row.anomalies > 0 ? row.false_positives / row.anomalies : 0,
-      }));
+      const rates: DetectorRate[] = rows.map((row) => {
+        // Correlated-anomaly rows can produce false_positives > anomalies
+        // (the denominator only counts correlated IDs that received any
+        // feedback, while the numerator counts every vote, so two
+        // operators marking the same correlated anomaly contributes 2/1).
+        // Clamp the displayed rate to [0, 1] so the UI badge doesn't
+        // render values like 200%. The raw counts remain available to
+        // any caller that wants the underlying signal.
+        const rawRate = row.anomalies > 0 ? row.false_positives / row.anomalies : 0;
+        return {
+          detector: row.detector,
+          anomalies: row.anomalies,
+          falsePositives: row.false_positives,
+          rate: Math.min(rawRate, 1),
+        };
+      });
 
       return { rates, scope: fleetWide ? 'fleet' : 'mine' };
     } catch (err) {

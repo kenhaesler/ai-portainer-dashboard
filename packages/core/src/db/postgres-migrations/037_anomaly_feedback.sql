@@ -28,6 +28,11 @@
 -- `user_id` references users(id) with ON DELETE CASCADE so a deleted
 -- user's feedback is removed with them. (Keeping this FK is safe — users
 -- table is the canonical authority and is queried on every request.)
+--
+-- Rollback: this repo has no `down.sql` convention; the migration runner
+-- is forward-only. To revert manually, drop the table (the indexes are
+-- removed by CASCADE):
+--   DROP TABLE IF EXISTS anomaly_feedback;
 
 CREATE TABLE IF NOT EXISTS anomaly_feedback (
   id SERIAL PRIMARY KEY,
