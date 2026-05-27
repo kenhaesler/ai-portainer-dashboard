@@ -306,13 +306,17 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
   });
 
   it('returns null aiExplanation when no AI analysis in description', async () => {
+    // NOTE: description deliberately has no parseable z-score — the
+    // Sensitivity post-filter (#1297) would otherwise drop this record under
+    // the Default preset (env-default threshold is 3.5, this is below).
+    // The aiExplanation parsing logic is what's under test here.
     mockQuery.mockResolvedValueOnce([
       {
         id: 'a2',
         severity: 'warning',
         category: 'anomaly',
         title: 'Memory anomaly detected',
-        description: 'Memory at 85% (z-score: 3.2)',
+        description: 'Memory at 85% sustained over 30 minutes',
         suggested_action: null,
         created_at: '2025-01-01T14:35:00Z',
       },
@@ -325,7 +329,7 @@ describe('GET /api/monitoring/insights/container/:containerId', () => {
 
     const body = response.json();
     expect(body.explanations[0].aiExplanation).toBeNull();
-    expect(body.explanations[0].description).toBe('Memory at 85% (z-score: 3.2)');
+    expect(body.explanations[0].description).toBe('Memory at 85% sustained over 30 minutes');
   });
 
   it('returns empty explanations when no insights exist', async () => {

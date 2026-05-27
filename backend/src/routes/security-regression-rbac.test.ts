@@ -885,3 +885,117 @@ describe('OIDC Discovered Groups Admin RBAC Enforcement', () => {
     expect(res.statusCode).not.toBe(403);
   });
 });
+
+// =====================================================================
+//  MONITORING SENSITIVITY PRESET (issue #1297)
+// =====================================================================
+// The per-user Sensitivity preset is a personal preference: every
+// authenticated user can read and update their own value (viewer +
+// operator + admin all allowed). Anonymous callers must be rejected.
+// This guards against accidental promotion to an admin-only route in a
+// future refactor (it must NOT be gated by requireRole('admin')).
+describe('Monitoring Sensitivity Preset RBAC (#1297)', () => {
+  let app: FastifyInstance;
+  let currentRole: 'viewer' | 'operator' | 'admin' | null;
+  // Note: `@dashboard/core/db/app-db-router.js` is already mocked at the
+  // top of this file to return a no-op DB. That's enough for the routes
+  // to succeed without touching real Postgres — `getUserPreset` falls
+  // back to 'default' on a null row and `setUserPreset` is a no-op write.
+
+  beforeAll(async () => {
+    currentRole = 'viewer';
+    const { monitoringRoutes } = await import('@dashboard/ai');
+
+    app = Fastify({ logger: false });
+    app.setValidatorCompiler(validatorCompiler);
+    app.setSerializerCompiler(serializerCompiler);
+    app.decorate('authenticate', async (request, reply) => {
+      if (currentRole === null) {
+        reply.code(401).send({ error: 'Unauthorized' });
+      }
+    });
+    app.decorate('requireRole', (minRole: 'viewer' | 'operator' | 'admin') => async (request, reply) => {
+      const rank = { viewer: 0, operator: 1, admin: 2 };
+      const userRole = request.user?.role ?? 'viewer';
+      if (rank[userRole] < rank[minRole]) {
+        reply.code(403).send({ error: 'Insufficient permissions' });
+      }
+    });
+    app.decorateRequest('user', undefined);
+    app.addHook('preHandler', async (request) => {
+      if (currentRole !== null) {
+        request.user = { sub: 'u-pref', username: 'user', sessionId: 's-pref', role: currentRole };
+      }
+    });
+
+    await app.register(monitoringRoutes, {
+      getSecurityAudit: vi.fn().mockResolvedValue([]),
+      getSecurityAuditIgnoreList: vi.fn().mockResolvedValue([]),
+      setSecurityAuditIgnoreList: vi.fn().mockResolvedValue([]),
+      defaultSecurityAuditIgnorePatterns: [],
+      securityAuditIgnoreKey: 'security_audit_ignore',
+    });
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('rejects anonymous GET /api/monitoring/sensitivity (authenticate enforced)', async () => {
+    currentRole = null;
+    const res = await app.inject({ method: 'GET', url: '/api/monitoring/sensitivity' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects anonymous PUT /api/monitoring/sensitivity (authenticate enforced)', async () => {
+    currentRole = null;
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/monitoring/sensitivity',
+      payload: { preset: 'high' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('allows GET for viewer role (per-user preference, no admin gate)', async () => {
+    currentRole = 'viewer';
+    const res = await app.inject({ method: 'GET', url: '/api/monitoring/sensitivity' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ preset: 'default' });
+  });
+
+  it('allows PUT for viewer role (per-user preference, no admin gate)', async () => {
+    // The mutating PUT MUST be reachable by a viewer (issue #1297 AC: PUT
+    // does NOT require admin — it's a personal preference). If a future
+    // refactor accidentally gates this with `requireRole('admin')`, this
+    // assertion fails immediately.
+    currentRole = 'viewer';
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/monitoring/sensitivity',
+      payload: { preset: 'high' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ preset: 'high' });
+  });
+
+  it('allows GET for operator role (per-user preference, no admin gate)', async () => {
+    currentRole = 'operator';
+    const res = await app.inject({ method: 'GET', url: '/api/monitoring/sensitivity' });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('PUT rejects invalid preset values with 400', async () => {
+    currentRole = 'viewer';
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/monitoring/sensitivity',
+      payload: { preset: 'EXTREME' },
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

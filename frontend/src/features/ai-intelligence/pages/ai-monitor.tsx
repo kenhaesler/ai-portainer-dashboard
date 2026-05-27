@@ -6,6 +6,7 @@ import { useContainers } from '@/features/containers/hooks/use-containers';
 import { FleetHealthSummary, calculateHealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
 import { IncidentGroupsView } from '@/features/ai-intelligence/components/incident-groups-view';
 import { InsightCard } from '@/features/ai-intelligence/components/insight-card';
+import { SensitivityControl } from '@/features/ai-intelligence/components/sensitivity-control';
 import type { Severity } from '@/features/ai-intelligence/components/insight-card';
 import { useForceRefresh } from '@/shared/hooks/use-force-refresh';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
@@ -543,6 +544,12 @@ export default function AiMonitorPage() {
             >
               Unacknowledged
             </button>
+            {/* Per-user Sensitivity preset (#1297) — adjusts the anomaly
+                post-filter without altering anything in the DB. Pushed to
+                the right of the severity/acknowledgement controls. */}
+            <div className="ml-auto">
+              <SensitivityControl />
+            </div>
           </div>
         </div>
       </SpotlightCard>
