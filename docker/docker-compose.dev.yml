@@ -3,7 +3,11 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile.dev
-    command: ["npx", "tsx", "watch", "packages/server/src/index.ts"]
+    # npm 11 with workspaces does not hoist `tsx` from backend/devDependencies
+    # to the root `node_modules/.bin/`, so a bare `npx tsx` from WORKDIR=/app
+    # fails with "tsx: not found". Use `npm exec --workspace=backend` so npm
+    # finds the workspace-installed binary regardless of hoisting outcome.
+    command: ["npm", "exec", "--workspace=backend", "--", "tsx", "watch", "/app/packages/server/src/index.ts"]
     ports:
       # Publish backend API on all host interfaces so edge nodes can reach OTLP ingest.
       - "0.0.0.0:3051:3051"
