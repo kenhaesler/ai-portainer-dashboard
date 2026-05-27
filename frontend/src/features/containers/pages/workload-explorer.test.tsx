@@ -907,7 +907,7 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     );
   });
 
-  it('Name cell applies whitespace-nowrap on the tag wrapper and tag button', () => {
+  it('Name cell tag button is single-line (whitespace-nowrap)', () => {
     render(<WorkloadExplorerPage />);
     const nameCol = mockColumns?.find((c) => c.accessorKey === 'name');
     expect(nameCol).toBeDefined();
@@ -916,11 +916,9 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
       getValue: () => 'workers-api-1',
     });
     const { container } = render(cellResult);
-    const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper?.className).toContain('whitespace-nowrap');
     // The name tag button is the one that links to the container detail page
     // (the FavoriteButton mock is a separate <button>). Find it by its bg class.
-    const tagButton = wrapper?.querySelector('button.bg-primary\\/10');
+    const tagButton = container.querySelector('button.bg-primary\\/10');
     expect(tagButton).not.toBeNull();
     expect(tagButton?.className).toContain('whitespace-nowrap');
   });

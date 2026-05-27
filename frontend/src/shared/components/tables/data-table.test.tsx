@@ -512,6 +512,12 @@ describe('DataTable', () => {
       expect(screen.getByTestId('select-all-checkbox')).toBeInTheDocument();
       expect(screen.getByTestId('row-checkbox-0')).toBeInTheDocument();
     });
+
+    it('renders the "No results." empty row when there are no rows', () => {
+      render(<DataTable columns={testColumns} data={[]} windowScroll />);
+      expect(screen.getByTestId('window-scroll-container')).toBeInTheDocument();
+      expect(screen.getByText('No results.')).toBeInTheDocument();
+    });
   });
 
   describe('themed checkbox (#1288)', () => {

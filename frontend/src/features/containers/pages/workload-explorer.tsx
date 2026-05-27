@@ -298,7 +298,7 @@ export default function WorkloadExplorerPage() {
       cell: ({ row, getValue }) => {
         const container = row.original;
         return (
-          <div className="flex items-center gap-1 whitespace-nowrap">
+          <div className="flex items-center gap-1">
             <FavoriteButton size="sm" endpointId={container.endpointId} containerId={container.id} />
             <button
               onClick={(e) => {
