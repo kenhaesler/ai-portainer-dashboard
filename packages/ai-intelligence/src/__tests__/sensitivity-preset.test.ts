@@ -76,6 +76,54 @@ describe('extractZScore', () => {
   it('returns null on empty description', () => {
     expect(extractZScore('')).toBeNull();
   });
+
+  // Finding #2 follow-up: description format is load-bearing. These tests
+  // lock in the contract for each branch shouldIncludeAnomaly relies on.
+  it('returns null when the z-score value is non-numeric (malformed: "z-score: abc")', () => {
+    expect(extractZScore('cpu spike (z-score: abc)')).toBeNull();
+  });
+
+  it('returns null when the z-score regex matches NaN/Infinity sentinels', () => {
+    // "z-score: NaN" / "z-score: Infinity" — the numeric regex won't even
+    // match these tokens, so extraction returns null and the row passes
+    // through the filter (treated as a non-anomaly insight).
+    expect(extractZScore('cpu (z-score: NaN)')).toBeNull();
+    expect(extractZScore('cpu (z-score: Infinity)')).toBeNull();
+  });
+});
+
+// Finding #2 regression tests — the three branches the filter relies on
+// (no z-score → pass, current format → multiplier applied, malformed →
+// pass). If the detector ever changes its description format, these tests
+// will fail loudly rather than silently no-op-ing the feature.
+describe('shouldIncludeAnomaly — description format regression (issue #1297 finding 2)', () => {
+  it('predictive forecast (no parseable z-score) passes through every preset', () => {
+    const row = {
+      description: 'Memory usage forecast indicates threshold breach in 6h',
+      category: 'predictive',
+    };
+    expect(shouldIncludeAnomaly(row, 'low', DEFAULTS)).toBe(true);
+    expect(shouldIncludeAnomaly(row, 'default', DEFAULTS)).toBe(true);
+    expect(shouldIncludeAnomaly(row, 'high', DEFAULTS)).toBe(true);
+  });
+
+  it('insight matching the current "z-score: X.YZ" format has the preset multiplier applied', () => {
+    // z = 3.0 fails Default (3.5) but passes High (2.975) — proves the
+    // multiplier is wired in via the description-string path.
+    const row = { description: 'cpu spike (mean: 40.0%, z-score: 3.00)' };
+    expect(shouldIncludeAnomaly(row, 'default', DEFAULTS)).toBe(false);
+    expect(shouldIncludeAnomaly(row, 'high', DEFAULTS)).toBe(true);
+  });
+
+  it('malformed "z-score: abc" description falls back to pass-through (no parseable value)', () => {
+    const row = { description: 'cpu spike (z-score: abc)' };
+    // No parseable z-score → treated like a non-anomaly insight → visible
+    // under every preset. This is the conservative failure mode for the
+    // description-string contract being broken.
+    expect(shouldIncludeAnomaly(row, 'low', DEFAULTS)).toBe(true);
+    expect(shouldIncludeAnomaly(row, 'default', DEFAULTS)).toBe(true);
+    expect(shouldIncludeAnomaly(row, 'high', DEFAULTS)).toBe(true);
+  });
 });
 
 describe('shouldIncludeAnomaly', () => {

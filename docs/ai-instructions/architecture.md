@@ -69,7 +69,7 @@ Cross-domain communication is resolved via dependency injection in `packages/ser
 | `plugins/` | Fastify plugins: auth, CORS, rate-limit, tracing, compression, Socket.IO, Swagger, security headers, cache control, static |
 | `portainer/` | Portainer API client, Redis cache, normalizers (standard + edge), circuit breaker |
 | `tracing/` | Distributed tracing context, span storage, OTLP export/transform |
-| `services/` | Auth stores (session, user), global + per-user settings (`user_settings` k/v from migration 035), audit logger, typed event bus, OIDC |
+| `services/` | Auth stores (session, user), global + per-user settings (`user_settings` k/v from migration 036), audit logger, typed event bus, OIDC |
 
 ### @dashboard/ai — AI Intelligence
 

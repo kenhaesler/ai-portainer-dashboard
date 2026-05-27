@@ -24,10 +24,29 @@ interface PresetMeta {
   description: string;
 }
 
+// Tooltip text. The "Filters z-score-based anomalies. Predictive forecasts
+// are always shown." suffix mirrors finding #3 of the PR #1304 review —
+// preset only narrows z-score-based anomalies; predictive forecasts (which
+// have no parseable z-score) always pass through the post-filter.
+const PASSTHROUGH_SUFFIX =
+  'Filters z-score-based anomalies. Predictive forecasts are always shown.';
+
 const PRESETS: PresetMeta[] = [
-  { value: 'low', label: 'Low', description: 'Stricter — fewer alerts' },
-  { value: 'default', label: 'Default', description: "Today's behaviour" },
-  { value: 'high', label: 'High', description: 'Looser — more alerts' },
+  {
+    value: 'low',
+    label: 'Low',
+    description: `Stricter — fewer alerts. ${PASSTHROUGH_SUFFIX}`,
+  },
+  {
+    value: 'default',
+    label: 'Default',
+    description: `Today's behaviour. ${PASSTHROUGH_SUFFIX}`,
+  },
+  {
+    value: 'high',
+    label: 'High',
+    description: `Looser — more alerts. ${PASSTHROUGH_SUFFIX}`,
+  },
 ];
 
 export function SensitivityControl() {

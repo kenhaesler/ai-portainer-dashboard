@@ -87,6 +87,13 @@ export async function setUserPreset(userId: string, preset: SensitivityPreset): 
  * "Current cpu: 95.0% (mean: 40.0%, z-score: 3.50)".
  * Returns null if no z-score is present (non-anomaly insights like
  * predictive forecasts won't have one).
+ *
+ * WARNING — the detector description format is LOAD-BEARING for this regex.
+ * If the detectors ever change their wording (e.g. "z=3.50", localisation,
+ * structured metadata), the entire per-user Sensitivity preset feature
+ * silently degrades to a pass-through. The follow-up plan (issue #1308) is
+ * to persist the z-score as a typed/JSONB column on `insights` so the
+ * filter no longer depends on description-string parsing.
  */
 export function extractZScore(description: string): number | null {
   // Tolerate negative, decimal, and scientific notation. The detectors round

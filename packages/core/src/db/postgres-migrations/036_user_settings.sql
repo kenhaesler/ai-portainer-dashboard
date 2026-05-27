@@ -1,4 +1,6 @@
--- Migration 035: per-user settings (key-value)
+-- Migration 036: per-user settings (key-value)
+-- Renumbered from 035 per epic #1291 merge order (#1306 keeps 035, this PR
+-- takes 036, #1305 takes 037).
 --
 -- Rationale: issue #1297 needs a place to store a per-user anomaly
 -- "Sensitivity" preset (Low / Default / High). No existing user_settings

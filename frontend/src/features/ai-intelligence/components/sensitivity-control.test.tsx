@@ -112,6 +112,22 @@ describe('SensitivityControl', () => {
     expect(screen.getByTestId('sensitivity-high').getAttribute('aria-pressed')).toBe('false');
   });
 
+  // Finding #3 (PR #1304 review): tooltip on each preset segment must call
+  // out that the filter only applies to z-score-based anomalies, so users
+  // know predictive forecasts are always shown.
+  it('tooltips explain that predictive forecasts are always shown', async () => {
+    apiGet.mockResolvedValue({ preset: 'default' });
+    render(<SensitivityControl />, { wrapper: wrapper() });
+
+    await waitFor(() => screen.getByTestId('sensitivity-default'));
+
+    const passthrough =
+      'Filters z-score-based anomalies. Predictive forecasts are always shown.';
+    expect(screen.getByTestId('sensitivity-low').getAttribute('title')).toContain(passthrough);
+    expect(screen.getByTestId('sensitivity-default').getAttribute('title')).toContain(passthrough);
+    expect(screen.getByTestId('sensitivity-high').getAttribute('title')).toContain(passthrough);
+  });
+
   it('does not call PUT when clicking the already-active segment', async () => {
     apiGet.mockResolvedValue({ preset: 'high' });
     render(<SensitivityControl />, { wrapper: wrapper() });

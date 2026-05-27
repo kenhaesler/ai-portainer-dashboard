@@ -122,6 +122,15 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
         // count after the per-user Sensitivity preset post-filter on this
         // page — different presets should produce different visible counts
         // on the same data (issue #1297 AC).
+        //
+        // Finding #5 (PR #1304 review): trade-off — because the Sensitivity
+        // post-filter runs AFTER pagination, `filteredItems.length` on a
+        // given page can be less than `limit` even when more pages exist.
+        // Clients MUST drive pagination from `hasMore` / `nextCursor` (and
+        // not from `insights.length < limit`). Verified at this commit:
+        // no consumer derives end-of-list from the page length —
+        // `frontend/.../use-monitoring.ts` reads `total`/`insights`, and
+        // settings cursor-pagination drives off `nextCursor`.
         total: total?.count ?? 0,
         visibleTotal: filteredItems.length,
         sensitivity: preset,
@@ -369,6 +378,7 @@ export async function monitoringRoutes(fastify: FastifyInstance, opts: Monitorin
     }
   });
 
+  // Bearer-token auth via Authorization header — CSRF not a concern.
   fastify.put('/api/monitoring/sensitivity', {
     schema: {
       tags: ['Monitoring'],
