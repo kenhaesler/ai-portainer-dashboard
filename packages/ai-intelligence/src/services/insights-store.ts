@@ -1,6 +1,6 @@
 import { getDbForDomain } from '@dashboard/core/db/app-db-router.js';
 import { createChildLogger } from '@dashboard/core/utils/logger.js';
-import type { Insight } from '@dashboard/core/models/monitoring.js';
+import type { Insight, AnomalyDimension } from '@dashboard/core/models/monitoring.js';
 
 const log = createChildLogger('insights-store');
 
@@ -20,6 +20,13 @@ export interface InsightInsert {
   suggested_action: string | null;
   metric_type?: 'cpu' | 'memory' | 'disk' | 'network' | 'restart' | 'latency_p95' | 'error_rate';
   detection_method?: 'threshold' | 'ml-anomaly' | 'prediction' | 'health-check' | 'log-pattern' | 'security-scan';
+  /**
+   * Multi-signal payload for correlated anomalies (e.g. trace-anomaly's
+   * `(service, minute)` collapse of p95 latency + error rate — see #1296).
+   * `undefined` for single-dimension records; the legacy `metric_type`
+   * column continues to hold the primary signal for those rows.
+   */
+  dimensions?: AnomalyDimension[];
 }
 
 export async function insertInsight(insight: InsightInsert): Promise<void> {
@@ -28,9 +35,9 @@ export async function insertInsight(insight: InsightInsert): Promise<void> {
     `INSERT INTO insights (
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, suggested_action,
-      metric_type, detection_method,
+      metric_type, detection_method, dimensions,
       is_acknowledged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, false, NOW())`,
     [
       insight.id,
       insight.endpoint_id,
@@ -44,6 +51,7 @@ export async function insertInsight(insight: InsightInsert): Promise<void> {
       insight.suggested_action,
       insight.metric_type ?? null,
       insight.detection_method ?? null,
+      insight.dimensions ? JSON.stringify(insight.dimensions) : null,
     ],
   );
 
@@ -129,9 +137,9 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
     INSERT INTO insights (
       id, endpoint_id, endpoint_name, container_id, container_name,
       severity, category, title, description, suggested_action,
-      metric_type, detection_method,
+      metric_type, detection_method, dimensions,
       is_acknowledged, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, false, NOW())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, false, NOW())
   `;
 
   // Two dedup queries: structured for insights that carry metric_type +
@@ -196,6 +204,7 @@ export async function insertInsights(insights: InsightInsert[]): Promise<Set<str
         insight.suggested_action,
         insight.metric_type ?? null,
         insight.detection_method ?? null,
+        insight.dimensions ? JSON.stringify(insight.dimensions) : null,
       ]);
       ids.add(insight.id);
     }
