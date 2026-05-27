@@ -1,5 +1,5 @@
 import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, XCircle } from 'lucide-react';
-import type { HealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
+import { calculateHealthScore, type HealthStats } from '@/shared/lib/health-score';
 
 /**
  * Presentational tile that surfaces the Overall Health Score. Extracted from
@@ -7,19 +7,17 @@ import type { HealthStats } from '@/features/ai-intelligence/components/fleet-he
  * stay in sync — both render through this component and reuse the shared
  * `calculateHealthStats` / `calculateHealthScore` helpers for the formula and
  * color-band thresholds (≥80% green, ≥50% amber, <50% red, null = gray).
+ *
+ * The score is derived internally from `stats` via `calculateHealthScore` so
+ * callers can't accidentally pass a score that disagrees with the stats.
  */
 export interface HealthScoreCardProps {
   /** Aggregated container health stats from `calculateHealthStats`. */
   stats: HealthStats;
-  /**
-   * Score from `calculateHealthScore(stats)`. `null` indicates no container
-   * reports a health signal — rendered as the gray "No healthchecks
-   * configured" state.
-   */
-  score: number | null;
 }
 
-export function HealthScoreCard({ stats, score }: HealthScoreCardProps) {
+export function HealthScoreCard({ stats }: HealthScoreCardProps) {
+  const score = calculateHealthScore(stats);
   const reporting = stats.healthy + stats.unhealthy;
   const issueCount = stats.unhealthy + stats.stopped;
 

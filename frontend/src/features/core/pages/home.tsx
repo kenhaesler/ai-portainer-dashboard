@@ -3,10 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Server, Boxes, PackageOpen, Layers, AlertTriangle, Star, ShieldAlert } from 'lucide-react';
 import { useDashboardFull } from '@/features/core/hooks/use-dashboard-full';
 import { useContainers, useFavoriteContainers } from '@/features/containers/hooks/use-containers';
-import {
-  calculateHealthScore,
-  calculateHealthStats,
-} from '@/features/ai-intelligence/components/fleet-health-summary';
+import { calculateHealthStats } from '@/shared/lib/health-score';
 import { useAutoRefresh } from '@/shared/hooks/use-auto-refresh';
 import { KpiCard } from '@/shared/components/data-display/kpi-card';
 import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
@@ -58,10 +55,6 @@ export default function HomePage() {
     if (!containers) return null;
     return calculateHealthStats(containers);
   }, [containers]);
-  const healthScore = useMemo(() => {
-    if (!healthStats) return null;
-    return calculateHealthScore(healthStats);
-  }, [healthStats]);
 
   const endpointChartData = useMemo(() => {
     if (!endpoints) return [];
@@ -269,7 +262,7 @@ export default function HomePage() {
           <MotionReveal>
             <SpotlightCard>
               <div className="rounded-lg border bg-card p-6 shadow-sm">
-                <HealthScoreCard stats={healthStats} score={healthScore} />
+                <HealthScoreCard stats={healthStats} />
               </div>
             </SpotlightCard>
           </MotionReveal>

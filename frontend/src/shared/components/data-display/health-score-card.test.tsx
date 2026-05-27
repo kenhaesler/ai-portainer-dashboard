@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { HealthScoreCard } from './health-score-card';
-import type { HealthStats } from '@/features/ai-intelligence/components/fleet-health-summary';
+import type { HealthStats } from '@/shared/lib/health-score';
 
 function makeStats(overrides: Partial<HealthStats> = {}): HealthStats {
   return {
@@ -22,7 +22,6 @@ describe('HealthScoreCard', () => {
     render(
       <HealthScoreCard
         stats={makeStats({ total: 10, healthy: 9, unhealthy: 1, running: 10 })}
-        score={90}
       />,
     );
 
@@ -35,7 +34,6 @@ describe('HealthScoreCard', () => {
     render(
       <HealthScoreCard
         stats={makeStats({ total: 4, healthy: 2, unhealthy: 2, running: 4 })}
-        score={50}
       />,
     );
 
@@ -46,7 +44,6 @@ describe('HealthScoreCard', () => {
     render(
       <HealthScoreCard
         stats={makeStats({ total: 4, healthy: 1, unhealthy: 3, running: 4 })}
-        score={25}
       />,
     );
 
@@ -57,7 +54,6 @@ describe('HealthScoreCard', () => {
     render(
       <HealthScoreCard
         stats={makeStats({ total: 3, running: 3, noHealthcheck: 3, unknown: 3 })}
-        score={null}
       />,
     );
 
@@ -73,7 +69,6 @@ describe('HealthScoreCard', () => {
     render(
       <HealthScoreCard
         stats={makeStats({ total: 5, healthy: 3, unhealthy: 1, stopped: 1, running: 4 })}
-        score={75}
       />,
     );
 
@@ -92,7 +87,6 @@ describe('HealthScoreCard', () => {
           noHealthcheck: 2,
           unknown: 2,
         })}
-        score={100}
       />,
     );
 

@@ -1,63 +1,17 @@
 import { Activity, AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, Info } from 'lucide-react';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { HealthScoreCard } from '@/shared/components/data-display/health-score-card';
-import type { Container } from '@/features/containers/hooks/use-containers';
+import {
+  calculateHealthStats,
+  calculateHealthScore,
+  type HealthStats,
+} from '@/shared/lib/health-score';
 
-export interface HealthStats {
-  total: number;
-  running: number;
-  stopped: number;
-  paused: number;
-  unhealthy: number;
-  healthy: number;
-  unknown: number;
-  /**
-   * Running containers without a Docker healthcheck configured. These are
-   * excluded from the health-score denominator (score = healthy / (healthy +
-   * unhealthy)) so the operator's choice not to configure a healthcheck
-   * doesn't artificially deflate the fleet health number.
-   */
-  noHealthcheck: number;
-}
-
-export function calculateHealthStats(containers: Container[]): HealthStats {
-  const stats: HealthStats = {
-    total: containers.length,
-    running: 0,
-    stopped: 0,
-    paused: 0,
-    unhealthy: 0,
-    healthy: 0,
-    unknown: 0,
-    noHealthcheck: 0,
-  };
-
-  containers.forEach((container) => {
-    if (container.state === 'running') stats.running++;
-    else if (container.state === 'exited') stats.stopped++;
-    else if (container.state === 'paused') stats.paused++;
-
-    if (container.healthStatus === 'unhealthy') stats.unhealthy++;
-    else if (container.healthStatus === 'healthy') stats.healthy++;
-    else {
-      stats.unknown++;
-      if (container.state === 'running') stats.noHealthcheck++;
-    }
-  });
-
-  return stats;
-}
-
-/**
- * Score = healthy / (healthy + unhealthy). Containers without a healthcheck
- * are excluded so the operator's choice not to configure one doesn't drag
- * the score down. Returns null when no container reports a health signal.
- */
-export function calculateHealthScore(stats: HealthStats): number | null {
-  const reporting = stats.healthy + stats.unhealthy;
-  if (reporting === 0) return null;
-  return (stats.healthy / reporting) * 100;
-}
+// Re-export the shared helpers so existing imports from this module keep
+// working. The canonical home for the types and calculators is
+// `@/shared/lib/health-score` — see that file for the score formula.
+export { calculateHealthStats, calculateHealthScore };
+export type { HealthStats };
 
 /**
  * Compact horizontal stat tile used in the Fleet Vitals strip. Replaces the
@@ -124,8 +78,6 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
     return <SkeletonChart size="md" className="h-44" />;
   }
 
-  const healthScore = calculateHealthScore(stats);
-
   return (
     <div
       className="rounded-lg border bg-card p-6 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 hover:border-primary/20"
@@ -133,7 +85,7 @@ export function FleetHealthSummary({ stats, isLoading, insightStats }: {
     >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         {/* Hero — score + issue count */}
-        <HealthScoreCard stats={stats} score={healthScore} />
+        <HealthScoreCard stats={stats} />
 
         {/* Compact status strip — container stats on row 1, insights stats on
             row 2 (when supplied). Two rows of 4 tiles inside the same hero. */}
