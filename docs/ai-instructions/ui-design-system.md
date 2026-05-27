@@ -30,6 +30,8 @@ Detailed design specifications for the AI Portainer Dashboard. Referenced from C
 
 Each theme defines: semantic colors, sidebar colors, 5 chart colors, border radius, spacing tokens. Theme transitions: 300ms on color/background properties.
 
+**Global scrollbar treatment.** A single themed scrollbar in `frontend/src/index.css` (search for `GLOBAL THEMED SCROLLBAR`) applies to `html`, `body`, and any nested overflow container that opts in via the `.scrollbar-themed` utility class. Both WebKit (`::-webkit-scrollbar*`) and Firefox (`scrollbar-width`, `scrollbar-color`) are covered; the thumb reads `color-mix(in srgb, var(--color-foreground) 25%, transparent)` at idle and `40%` on hover, so it adapts across all 16 themes without per-theme overrides. The sidebar's hover-reveal scrollbar (`aside nav`) is intentionally placed after the global block in `index.css` so its transparent-on-idle behavior still wins via cascade order.
+
 ## Dashboard Background (Animated)
 
 17 modes: `none`, `gradient-mesh`, `gradient-mesh-particles`, 10 mesh variants (Aurora, Ocean, Sunset, Nebula, Emerald, Glacier, Emberstorm, Noctis, Cotton Candy, Chaos), and 4 retro variants (70s, Arcade, Terminal, Vaporwave). Configured in Settings > Appearance.

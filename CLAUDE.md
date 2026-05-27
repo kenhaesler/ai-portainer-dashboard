@@ -51,7 +51,7 @@ For the full checklist, see `@docs/ai-instructions/security-checklist.md`.
 
 ## UI/UX Design
 
-Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 16 themes (Glass Light/Dark, Nordic Frost, Sandstone Dusk, Obsidian Ink, Forest Night, Hyperpop Chaos, 4 Retro, 4 Catppuccin, System). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`.
+Premium glassmorphic dashboard: bento grids, backdrop blur cards, staggered animations, 16 themes (Glass Light/Dark, Nordic Frost, Sandstone Dusk, Obsidian Ink, Forest Night, Hyperpop Chaos, 4 Retro, 4 Catppuccin, System). Motion via Framer Motion (`LazyMotion`), charts via Recharts, primitives via Radix UI. Animated gradient mesh background (configurable). All animations respect `prefers-reduced-motion`. A global themed scrollbar in `frontend/src/index.css` (page + `.scrollbar-themed` opt-in utility) reads theme tokens via `color-mix` and applies to every overflow container; the sidebar keeps its hover-reveal scrollbar via cascade order.
 
 **Status colors:** Green=healthy, Yellow=warning, Orange=critical, Red=error, Blue=info, Gray=inactive, Purple=AI insight.
 
