@@ -82,11 +82,11 @@ async function seedInsight(
 
 describe('anomaly-feedback routes (#1298)', () => {
   let app: FastifyInstance;
-  const currentUser = {
+  const currentUser: { value: TestUser } = {
     value: {
       sub: 'user-a',
       username: 'alice',
-      role: 'operator' as const,
+      role: 'operator',
       sessionId: 's1',
     },
   };
