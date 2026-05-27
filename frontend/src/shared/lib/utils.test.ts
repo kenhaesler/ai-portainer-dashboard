@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeRegExp, formatBytes, formatDuration, formatRelativeAge, truncate, cn } from './utils';
+import { escapeRegExp, formatBytes, formatDuration, formatRelativeAge, getImageShortName, truncate, cn } from './utils';
 
 describe('formatBytes', () => {
   it('should return "0 B" for 0 bytes', () => {
@@ -178,6 +178,39 @@ describe('escapeRegExp', () => {
     const re = new RegExp(escapeRegExp(input));
     expect(re.test('file.log')).toBe(true);
     expect(re.test('filexlog')).toBe(false);
+  });
+});
+
+describe('getImageShortName', () => {
+  it('strips a Harbor-style multi-segment path', () => {
+    expect(getImageShortName('registry.harbor.example.com/library/team-x/api-service:1.4.2')).toBe(
+      'api-service:1.4.2',
+    );
+  });
+
+  it('strips a Docker Hub library prefix', () => {
+    expect(getImageShortName('library/nginx:latest')).toBe('nginx:latest');
+  });
+
+  it('returns unscoped images unchanged', () => {
+    expect(getImageShortName('alpine')).toBe('alpine');
+    expect(getImageShortName('alpine:3.19')).toBe('alpine:3.19');
+  });
+
+  it('preserves digest suffix', () => {
+    expect(
+      getImageShortName('ghcr.io/owner/repo/app@sha256:abc123'),
+    ).toBe('app@sha256:abc123');
+  });
+
+  it('handles empty / null / undefined inputs', () => {
+    expect(getImageShortName('')).toBe('');
+    expect(getImageShortName(null)).toBe('');
+    expect(getImageShortName(undefined)).toBe('');
+  });
+
+  it('returns empty segment if the image ends with a slash', () => {
+    expect(getImageShortName('foo/')).toBe('');
   });
 });
 

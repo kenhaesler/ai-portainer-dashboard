@@ -94,13 +94,6 @@ vi.mock('@/shared/hooks/use-auto-refresh', () => ({
   }),
 }));
 
-// ─── RED hook mock — single source of truth for #1237 ────────────────────────
-let mockRedData: { buckets: { bucketStart: string; rows: Array<{ group: string; rate: number; errorRate: number; p50Ms: number; p95Ms: number; p99Ms: number; callCount: number }> }[]; truncated: boolean } | undefined;
-const mockUseRed = vi.fn(() => ({ data: mockRedData }));
-vi.mock('@/features/observability/hooks/use-red', () => ({
-  useRed: (...args: unknown[]) => mockUseRed(...args),
-}));
-
 vi.mock('@/shared/hooks/use-force-refresh', () => ({
   useForceRefresh: () => ({
     forceRefresh: vi.fn(),
@@ -130,6 +123,7 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onSelectionChange,
     selectedRowIds,
     onRowClick,
+    windowScroll,
   }: {
     columns?: any[];
     data: Array<{ name: string }>;
@@ -138,6 +132,7 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
     selectedRowIds?: Record<string, boolean>;
     onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
+    windowScroll?: boolean;
   }) => {
     mockOnSelectionChange = onSelectionChange;
     mockColumns = columns;
@@ -148,6 +143,7 @@ vi.mock('@/shared/components/tables/data-table', () => ({
         data-max-selection={maxSelection}
         data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
         data-has-row-click={onRowClick ? 'true' : undefined}
+        data-window-scroll={windowScroll ? 'true' : undefined}
       >
         {data.map((container) => container.name).join(',')}
       </div>
@@ -851,133 +847,92 @@ describe('WorkloadExplorerPage — header Compare button', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RED metrics columns (#1237)
+// Column set, ordering, and cell rendering (#1288)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('WorkloadExplorerPage — RED columns (#1237)', () => {
+describe('WorkloadExplorerPage — columns (#1288)', () => {
   beforeEach(() => {
     mockQueryString = 'endpoint=1';
     mockSetSearchParams.mockReset();
     mockNavigate.mockReset();
     mockUseContainers.mockReturnValue(defaultContainersMock);
-    mockUseRed.mockClear();
-    mockRedData = undefined;
+    mockColumns = undefined;
   });
 
-  function findColumn(id: string) {
-    return mockColumns?.find((c) => c.id === id || c.accessorKey === id);
+  function columnHeader(col: any): string | undefined {
+    return typeof col?.header === 'string' ? col.header : undefined;
   }
 
-  function renderCell(col: any, row: any) {
-    return col.cell({
-      row: { original: row },
+  it('renders columns in order Name, Stackname, State, Endpoint, Imagename, Group, Actions', () => {
+    render(<WorkloadExplorerPage />);
+    const ids = mockColumns?.map((c) => c.id ?? c.accessorKey);
+    expect(ids).toEqual(['name', 'stack', 'state', 'endpointName', 'image', 'group', 'actions']);
+  });
+
+  it('renames the stack and image headers to Stackname and Imagename', () => {
+    render(<WorkloadExplorerPage />);
+    const stack = mockColumns?.find((c) => c.id === 'stack');
+    const image = mockColumns?.find((c) => c.accessorKey === 'image');
+    expect(columnHeader(stack)).toBe('Stackname');
+    expect(columnHeader(image)).toBe('Imagename');
+  });
+
+  it('omits the rate, errorRate, p95Ms, and age columns', () => {
+    render(<WorkloadExplorerPage />);
+    const ids = new Set(mockColumns?.map((c) => c.id ?? c.accessorKey));
+    expect(ids.has('rate')).toBe(false);
+    expect(ids.has('errorRate')).toBe(false);
+    expect(ids.has('p95Ms')).toBe(false);
+    expect(ids.has('age')).toBe(false);
+  });
+
+  it('passes windowScroll to the DataTable', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-window-scroll', 'true');
+  });
+
+  it('Imagename cell renders only the segment after the last "/" with the full path on title', () => {
+    render(<WorkloadExplorerPage />);
+    const imageCol = mockColumns?.find((c) => c.accessorKey === 'image');
+    expect(imageCol).toBeDefined();
+    const cellResult = imageCol.cell({
+      row: { original: defaultContainersMock.data[0] },
+      getValue: () => 'registry.harbor.example.com/library/team-x/api-service:1.4.2',
+    });
+    const { container } = render(cellResult);
+    const span = container.querySelector('span');
+    expect(span?.textContent).toBe('api-service:1.4.2');
+    expect(span?.getAttribute('title')).toBe(
+      'registry.harbor.example.com/library/team-x/api-service:1.4.2',
+    );
+  });
+
+  it('Name cell tag button is single-line (whitespace-nowrap)', () => {
+    render(<WorkloadExplorerPage />);
+    const nameCol = mockColumns?.find((c) => c.accessorKey === 'name');
+    expect(nameCol).toBeDefined();
+    const cellResult = nameCol.cell({
+      row: { original: defaultContainersMock.data[0] },
+      getValue: () => 'workers-api-1',
+    });
+    const { container } = render(cellResult);
+    // The name tag button is the one that links to the container detail page
+    // (the FavoriteButton mock is a separate <button>). Find it by its bg class.
+    const tagButton = container.querySelector('button.bg-primary\\/10');
+    expect(tagButton).not.toBeNull();
+    expect(tagButton?.className).toContain('whitespace-nowrap');
+  });
+
+  it('Stackname cell renders the stack tag with whitespace-nowrap', () => {
+    render(<WorkloadExplorerPage />);
+    const stackCol = mockColumns?.find((c) => c.id === 'stack');
+    const cellResult = stackCol.cell({
+      row: { original: defaultContainersMock.data[0] },
       getValue: () => undefined,
     });
-  }
-
-  it('issues a single useRed call per render with groupBy="service"', () => {
-    render(<WorkloadExplorerPage />);
-    expect(mockUseRed).toHaveBeenCalled();
-    const optsAll = mockUseRed.mock.calls.map((c) => c[0] as { groupBy: string; bucket: string });
-    // All calls use groupBy=service — proves we are not calling per-row.
-    for (const opts of optsAll) {
-      expect(opts.groupBy).toBe('service');
-      expect(opts.bucket).toBe('5m');
-    }
-    // And there's only one distinct fetch shape — meaning ONE batched query.
-    const distinct = new Set(optsAll.map((o) => JSON.stringify(o)));
-    expect(distinct.size).toBe(1);
-  });
-
-  it('adds Rate / Errors / p95 columns to the table', () => {
-    render(<WorkloadExplorerPage />);
-    expect(findColumn('rate')).toBeDefined();
-    expect(findColumn('errorRate')).toBeDefined();
-    expect(findColumn('p95Ms')).toBeDefined();
-  });
-
-  function cellText(col: any, row: any): string {
-    const el = renderCell(col, row);
-    const { container } = render(el);
-    const text = container.textContent ?? '';
-    container.remove();
-    return text;
-  }
-
-  it('renders RED values for containers with matching service_name rows', () => {
-    mockRedData = {
-      truncated: false,
-      buckets: [
-        {
-          bucketStart: '2026-05-14T11:55:00.000Z',
-          rows: [
-            {
-              group: 'workers-api-1',
-              rate: 2.5,
-              errorRate: 0.03,
-              p50Ms: 8,
-              p95Ms: 42,
-              p99Ms: 95,
-              callCount: 750,
-            },
-          ],
-        },
-      ],
-    };
-    render(<WorkloadExplorerPage />);
-
-    const rateCol = findColumn('rate');
-    const errorCol = findColumn('errorRate');
-    const p95Col = findColumn('p95Ms');
-
-    const container = defaultContainersMock.data[0]; // workers-api-1
-    expect(cellText(rateCol, container)).toMatch(/2\.50/);
-    expect(cellText(errorCol, container)).toMatch(/3\.00%/);
-    expect(cellText(p95Col, container)).toMatch(/42/);
-  });
-
-  it('renders en-dash for workloads with NO matching RED row (not "0")', () => {
-    mockRedData = {
-      truncated: false,
-      buckets: [
-        {
-          bucketStart: '2026-05-14T11:55:00.000Z',
-          rows: [
-            // Only workers-api-1 has data; billing-api-1 / beyla have none
-            {
-              group: 'workers-api-1',
-              rate: 1, errorRate: 0,
-              p50Ms: 1, p95Ms: 2, p99Ms: 3, callCount: 10,
-            },
-          ],
-        },
-      ],
-    };
-    render(<WorkloadExplorerPage />);
-
-    const rateCol = findColumn('rate');
-    const beyla = defaultContainersMock.data.find((c) => c.name === 'beyla')!;
-    // En-dash (–) for "no data", not "0"
-    expect(cellText(rateCol, beyla)).toBe('–');
-  });
-
-  it('renders "0" for workloads with explicit zero-traffic RED rows', () => {
-    mockRedData = {
-      truncated: false,
-      buckets: [
-        {
-          bucketStart: '2026-05-14T11:55:00.000Z',
-          rows: [
-            { group: 'beyla', rate: 0, errorRate: 0, p50Ms: 0, p95Ms: 0, p99Ms: 0, callCount: 0 },
-          ],
-        },
-      ],
-    };
-    render(<WorkloadExplorerPage />);
-
-    const rateCol = findColumn('rate');
-    const beyla = defaultContainersMock.data.find((c) => c.name === 'beyla')!;
-    // 0 traffic — explicit zero, not en-dash.
-    expect(cellText(rateCol, beyla)).toMatch(/^0\.00/);
+    const { container } = render(cellResult);
+    const tagButton = container.querySelector('button');
+    expect(tagButton).not.toBeNull();
+    expect(tagButton?.className).toContain('whitespace-nowrap');
   });
 });
