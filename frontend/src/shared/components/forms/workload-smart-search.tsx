@@ -47,13 +47,11 @@ export function WorkloadSmartSearch({
   const [mode, setMode] = useState<SearchMode>('filter');
   const [aiResult, setAiResult] = useState<NlQueryResult | null>(null);
   const [aiFilteredCount, setAiFilteredCount] = useState<number | null>(null);
-  const [filteredCount, setFilteredCount] = useState(containers.length);
   const nlQuery = useNlQuery();
 
   const applyFilter = useCallback(
     (q: string, conts: Container[]) => {
       const filtered = filterContainers(conts, q, knownStackNames);
-      setFilteredCount(filtered.length);
       onFiltered(filtered);
     },
     [knownStackNames, onFiltered],
@@ -76,7 +74,6 @@ export function WorkloadSmartSearch({
 
   // Re-apply filter when upstream containers change (dropdown filter changed)
   useEffect(() => {
-    setFilteredCount(containers.length);
     if (query && mode === 'filter') {
       applyFilter(query, containers);
     }
@@ -120,7 +117,6 @@ export function WorkloadSmartSearch({
     setMode('filter');
     setAiResult(null);
     setAiFilteredCount(null);
-    setFilteredCount(containers.length);
     onFiltered(containers);
   }, [containers, onFiltered]);
 
@@ -164,7 +160,6 @@ export function WorkloadSmartSearch({
 
   const isAiMode = mode === 'ai';
   const isAiFilterActive = isAiMode && aiResult?.action === 'filter' && aiFilteredCount !== null;
-  const showFilteredCount = query && mode === 'filter' && filteredCount !== totalCount;
 
   return (
     <div className="space-y-3">
@@ -336,15 +331,6 @@ export function WorkloadSmartSearch({
           )}
         </div>
       )}
-
-      {/* Count display */}
-      <p className="text-sm text-muted-foreground">
-        {isAiFilterActive
-          ? `AI found ${aiFilteredCount} of ${totalCount} container${totalCount !== 1 ? 's' : ''}`
-          : showFilteredCount
-            ? `Showing ${filteredCount} of ${totalCount} container${totalCount !== 1 ? 's' : ''}`
-            : `${totalCount} container${totalCount !== 1 ? 's' : ''}`}
-      </p>
     </div>
   );
 }
