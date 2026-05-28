@@ -66,6 +66,46 @@ describe('cors plugin', () => {
     await app.close();
   });
 
+  it('sends credentials header for 127.0.0.1:8080 (loopback alias of localhost)', async () => {
+    process.env.NODE_ENV = 'development';
+    const app = Fastify();
+    await app.register(corsPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { origin: 'http://127.0.0.1:8080' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:8080');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+
+    await app.close();
+  });
+
+  it('sends credentials header for 127.0.0.1:5273 (loopback alias of localhost)', async () => {
+    process.env.NODE_ENV = 'development';
+    const app = Fastify();
+    await app.register(corsPlugin);
+    app.get('/ping', async () => ({ ok: true }));
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/ping',
+      headers: { origin: 'http://127.0.0.1:5273' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5273');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+
+    await app.close();
+  });
+
   it('does not send CORS headers for disallowed origins', async () => {
     process.env.NODE_ENV = 'development';
     const app = Fastify();
