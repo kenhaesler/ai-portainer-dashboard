@@ -405,7 +405,7 @@ describe('WorkloadExplorerPage', () => {
 
   it('merges filter dropdowns and table into a single pane (#1313)', () => {
     mockQueryString = 'endpoint=1';
-    const { container } = render(<WorkloadExplorerPage />);
+    render(<WorkloadExplorerPage />);
 
     // The state dropdown (a filter control) and the data table must share
     // the same SpotlightCard ancestor, rather than living in two separate
@@ -413,14 +413,12 @@ describe('WorkloadExplorerPage', () => {
     const stateSelect = screen.getByTestId('state-select');
     const table = screen.getByTestId('workloads-table');
 
-    const stateAncestor = stateSelect.closest('.rounded-lg.border.bg-card.p-6.shadow-sm');
-    const tableAncestor = table.closest('.rounded-lg.border.bg-card.p-6.shadow-sm');
-    expect(stateAncestor).not.toBeNull();
-    expect(stateAncestor).toBe(tableAncestor);
+    const pane = screen.getByTestId('workload-pane');
+    expect(pane.contains(stateSelect)).toBe(true);
+    expect(pane.contains(table)).toBe(true);
 
-    // Only one inner pane card exists on the page.
-    const innerPanes = container.querySelectorAll('.rounded-lg.border.bg-card.p-6.shadow-sm');
-    expect(innerPanes.length).toBe(1);
+    // Only one inner pane exists on the page.
+    expect(screen.getAllByTestId('workload-pane')).toHaveLength(1);
   });
 
   it('renders state filter dropdown', () => {
