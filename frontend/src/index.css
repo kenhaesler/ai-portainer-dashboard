@@ -1973,11 +1973,13 @@ html[data-potato-mode] body {
 
 /* ====== SPOTLIGHT CARD (mouse-follow radial glow) ====== */
 .spotlight-card {
+  /* Note: do NOT add `transform` here. A transformed ancestor creates a
+     containing block for `position: fixed` descendants, which breaks Radix
+     popover/select portal placement (dropdowns rendered at viewport 0,0).
+     See #1310. */
   position: relative;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
   clip-path: inset(0 round var(--radius-lg));
 }
 
