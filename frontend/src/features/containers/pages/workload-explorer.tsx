@@ -23,7 +23,6 @@ import { formatDate, getImageShortName, truncate, formatRelativeAge } from '@/sh
 import { transition } from '@/shared/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/shared/components/forms/workload-smart-search';
 import { SelectionActionBar } from '@/shared/components/layout/selection-action-bar';
-import { WorkloadStatusSummary } from '@/features/containers/components/workload/workload-status-summary';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { ContainerComparisonView } from '@/features/containers/components/container-comparison-view';
 
@@ -564,98 +563,89 @@ export default function WorkloadExplorerPage() {
       ) : (
         // ── Original table / filter pane / selection-action-bar block ──
         <>
-          {/* Filter pane: dropdowns + status summary */}
-          <SpotlightCard>
-          <div className="rounded-lg border bg-card p-6 shadow-sm space-y-3">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <label htmlFor="endpoint-select" className="text-sm font-medium">
-                  Endpoint
-                </label>
-                <ThemedSelect
-                  id="endpoint-select"
-                  value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
-                  onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
-                  options={[
-                    { value: '__all__', label: 'All endpoints' },
-                    ...(endpoints?.map((ep) => ({
-                      value: String(ep.id),
-                      label: `${ep.name} (ID: ${ep.id})`,
-                    })) ?? []),
-                  ]}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label htmlFor="stack-select" className="text-sm font-medium">
-                  Stack
-                </label>
-                <ThemedSelect
-                  id="stack-select"
-                  value={selectedStack ?? '__all__'}
-                  onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
-                  options={[
-                    { value: '__all__', label: 'All stacks' },
-                    ...availableStacks.map((stackName) => ({
-                      value: stackName,
-                      label: stackName,
-                    })),
-                  ]}
-                  disabled={!containers || availableStacks.length === 0}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label htmlFor="group-select" className="text-sm font-medium">
-                  Group
-                </label>
-                <ThemedSelect
-                  id="group-select"
-                  value={selectedGroup ?? '__all__'}
-                  onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
-                  options={[
-                    { value: '__all__', label: 'All groups' },
-                    { value: 'system', label: 'System' },
-                    { value: 'workload', label: 'Workload' },
-                  ]}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label htmlFor="state-select" className="text-sm font-medium">
-                  State
-                </label>
-                <ThemedSelect
-                  id="state-select"
-                  value={selectedState ?? '__all__'}
-                  onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
-                  options={[
-                    { value: '__all__', label: 'All states' },
-                    ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
-                      value: state,
-                      label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
-                    })),
-                  ]}
-                />
-              </div>
-            </div>
-
-            {preStateFilteredContainers.length > 0 && (
-              <WorkloadStatusSummary
-                containers={preStateFilteredContainers}
-                activeStateFilter={selectedState}
-                onStateFilterChange={setSelectedState}
-              />
-            )}
-          </div>
-          </SpotlightCard>
-
-          {/* Table pane: filter chips + search + table */}
+          {/* Merged filter + table pane (#1313): dropdowns → chips → search → table */}
           {isLoading ? (
             <SkeletonChart size="lg" />
           ) : filteredContainers ? (
             <SpotlightCard>
-            <div className="rounded-lg border bg-card p-6 shadow-sm space-y-4">
+            <div
+              data-testid="workload-pane"
+              className="rounded-lg border bg-card p-6 shadow-sm space-y-4"
+            >
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="endpoint-select" className="text-sm font-medium">
+                    Endpoint
+                  </label>
+                  <ThemedSelect
+                    id="endpoint-select"
+                    value={selectedEndpoint !== undefined ? String(selectedEndpoint) : '__all__'}
+                    onValueChange={(val) => setSelectedEndpoint(val === '__all__' ? undefined : Number(val))}
+                    options={[
+                      { value: '__all__', label: 'All endpoints' },
+                      ...(endpoints?.map((ep) => ({
+                        value: String(ep.id),
+                        label: `${ep.name} (ID: ${ep.id})`,
+                      })) ?? []),
+                    ]}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label htmlFor="stack-select" className="text-sm font-medium">
+                    Stack
+                  </label>
+                  <ThemedSelect
+                    id="stack-select"
+                    value={selectedStack ?? '__all__'}
+                    onValueChange={(value) => setSelectedStack(value === '__all__' ? undefined : value)}
+                    options={[
+                      { value: '__all__', label: 'All stacks' },
+                      ...availableStacks.map((stackName) => ({
+                        value: stackName,
+                        label: stackName,
+                      })),
+                    ]}
+                    disabled={!containers || availableStacks.length === 0}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label htmlFor="group-select" className="text-sm font-medium">
+                    Group
+                  </label>
+                  <ThemedSelect
+                    id="group-select"
+                    value={selectedGroup ?? '__all__'}
+                    onValueChange={(value) => setSelectedGroup(value === '__all__' ? undefined : (value as ContainerGroup))}
+                    options={[
+                      { value: '__all__', label: 'All groups' },
+                      { value: 'system', label: 'System' },
+                      { value: 'workload', label: 'Workload' },
+                    ]}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label htmlFor="state-select" className="text-sm font-medium">
+                    State
+                  </label>
+                  <ThemedSelect
+                    id="state-select"
+                    value={selectedState ?? '__all__'}
+                    onValueChange={(value) => setSelectedState(value === '__all__' ? undefined : value)}
+                    options={[
+                      { value: '__all__', label: 'All states' },
+                      ...['running', 'stopped', 'exited', 'paused', 'created', 'restarting', 'dead'].map((state) => ({
+                        value: state,
+                        label: `${state.charAt(0).toUpperCase() + state.slice(1)} (${stateCounts[state] || 0})`,
+                      })),
+                    ]}
+                  />
+                </div>
+
+              </div>
+
               {/* Active filter chips */}
               {activeFilters.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap" aria-live="polite">
