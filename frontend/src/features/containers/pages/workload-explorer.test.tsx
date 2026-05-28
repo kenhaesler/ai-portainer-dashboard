@@ -847,6 +847,76 @@ describe('WorkloadExplorerPage — header Compare button', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Header toolbar — pill-style Compare / Export CSV (#1311)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('WorkloadExplorerPage — header toolbar pill buttons (#1311)', () => {
+  beforeEach(() => {
+    mockQueryString = 'endpoint=1';
+    mockSetSearchParams.mockReset();
+    mockNavigate.mockReset();
+    mockUseContainers.mockReturnValue(defaultContainersMock);
+  });
+
+  it('renders Export CSV in the header toolbar (not in the filter pane)', () => {
+    render(<WorkloadExplorerPage />);
+
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    const compareBtn = screen.getByRole('button', { name: /^Compare$/ });
+    // Both must share an ancestor `<div>` (the header toolbar). The filter
+    // pane sits inside a SpotlightCard; the header is just a flex row.
+    const headerToolbar = compareBtn.parentElement;
+    expect(headerToolbar).not.toBeNull();
+    expect(headerToolbar?.contains(exportBtn)).toBe(true);
+  });
+
+  it('renders header buttons left-to-right as Compare → Export CSV → Refresh', () => {
+    render(<WorkloadExplorerPage />);
+
+    const compareBtn = screen.getByRole('button', { name: /^Compare$/ });
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    // Refresh button comes from the RefreshButton primitive; match by name.
+    const refreshBtn = screen.getByRole('button', { name: /Refresh/i });
+
+    const order = [compareBtn, exportBtn, refreshBtn].map((el) =>
+      Array.prototype.indexOf.call(el.parentElement?.children ?? [], el),
+    );
+    // All three sit in the same flex row (header toolbar), and their
+    // indices are strictly ascending.
+    expect(compareBtn.parentElement).toBe(exportBtn.parentElement);
+    expect(order[0]).toBeLessThan(order[1]);
+    expect(order[1]).toBeLessThan(order[2]);
+  });
+
+  it('Compare and Export CSV use the pill chrome (rounded-full + h-10)', () => {
+    render(<WorkloadExplorerPage />);
+
+    const compareBtn = screen.getByRole('button', { name: /^Compare$/ });
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+
+    for (const btn of [compareBtn, exportBtn]) {
+      expect(btn).toHaveClass('rounded-full');
+      expect(btn).toHaveClass('h-10');
+      expect(btn).toHaveClass('border-input');
+      expect(btn).toHaveClass('bg-background');
+    }
+  });
+
+  it('Compare stays disabled when fewer than 2 containers are selected', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByRole('button', { name: /^Compare$/ })).toBeDisabled();
+  });
+
+  it('Export CSV disabled-state semantics still trigger handleExportCsv when clicked enabled', () => {
+    render(<WorkloadExplorerPage />);
+    const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
+    expect(exportBtn).not.toBeDisabled();
+    fireEvent.click(exportBtn);
+    expect(mockExportToCsv).toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Column set, ordering, and cell rendering (#1288)
 // ─────────────────────────────────────────────────────────────────────────────
 

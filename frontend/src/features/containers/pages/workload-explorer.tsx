@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { type ColumnDef, type RowSelectionState } from '@tanstack/react-table';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, Boxes, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
+import { AlertTriangle, Boxes, Download, Eye, GitCompareArrows, ScrollText, X } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { useContainers, type Container } from '@/features/containers/hooks/use-containers';
 import { useEndpoints } from '@/features/containers/hooks/use-endpoints';
@@ -19,7 +19,7 @@ import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { resolveContainerStackName } from '@/features/containers/lib/container-stack-grouping';
 import { exportToCsv } from '@/shared/lib/csv-export';
 import { getContainerGroup, getContainerGroupLabel, type ContainerGroup } from '@/features/containers/lib/system-container-grouping';
-import { cn, formatDate, getImageShortName, truncate, formatRelativeAge } from '@/shared/lib/utils';
+import { formatDate, getImageShortName, truncate, formatRelativeAge } from '@/shared/lib/utils';
 import { transition } from '@/shared/lib/motion-tokens';
 import { WorkloadSmartSearch } from '@/shared/components/forms/workload-smart-search';
 import { SelectionActionBar } from '@/shared/components/layout/selection-action-bar';
@@ -483,23 +483,30 @@ export default function WorkloadExplorerPage() {
             </>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!compareMode && (
-            <button
-              type="button"
-              onClick={handleCompare}
-              disabled={selectedContainers.length < 2}
-              title={selectedContainers.length < 2 ? 'Select 2 or more containers to compare' : `Compare ${selectedContainers.length} selected containers`}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-sm font-medium transition-colors',
-                selectedContainers.length < 2
-                  ? 'cursor-not-allowed bg-muted/30 text-muted-foreground'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90',
-              )}
-            >
-              <GitCompareArrows className="h-4 w-4" />
-              {selectedContainers.length < 2 ? 'Compare' : `Compare ${selectedContainers.length}`}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleCompare}
+                disabled={selectedContainers.length < 2}
+                title={selectedContainers.length < 2 ? 'Select 2 or more containers to compare' : `Compare ${selectedContainers.length} selected containers`}
+                className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
+              >
+                <GitCompareArrows className="h-4 w-4" />
+                {selectedContainers.length < 2 ? 'Compare' : `Compare ${selectedContainers.length}`}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                disabled={!exportRows.length}
+                title={!exportRows.length ? 'Nothing to export' : 'Export the current view as CSV'}
+                className="inline-flex h-10 items-center gap-2 rounded-full border border-input bg-background px-4 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </button>
+            </>
           )}
           <AutoRefreshToggle interval={interval} onIntervalChange={setInterval} />
           <RefreshButton onClick={() => refetch()} onForceRefresh={forceRefresh} isLoading={isFetching || isForceRefreshing} />
@@ -631,15 +638,6 @@ export default function WorkloadExplorerPage() {
                   ]}
                 />
               </div>
-
-              <button
-                type="button"
-                onClick={handleExportCsv}
-                disabled={!exportRows.length}
-                className="inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-              >
-                Export CSV
-              </button>
             </div>
 
             {preStateFilteredContainers.length > 0 && (
