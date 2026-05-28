@@ -23,6 +23,10 @@
 - **Elasticsearch Integration** — Optional Kibana/Elasticsearch log search
 - **Modern UI** — Apple-inspired glassmorphism theme with light/dark modes and command palette (`Ctrl+K`)
 
+### Data freshness & caching
+
+A Redis-backed server cache sits between Portainer and the dashboard so background polls and auto-refresh intervals don't hammer the upstream API. Clicking **Refresh** on any page is treated as a foreground request for the latest data — it invalidates the cache for that resource and re-fetches from Portainer directly. Non-admin users still get a fresh page render (the cache-invalidate endpoint is admin-only, so non-admin clicks gracefully degrade to a plain refetch with no error toast). Auto-refresh and React Query background revalidation continue to read the cache.
+
 ---
 
 ## Architecture

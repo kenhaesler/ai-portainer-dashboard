@@ -137,6 +137,21 @@ export function GeneralTab({ theme }: GeneralTabProps) {
           </div>
         </div>
       </div>
+
+      {/* Caching model — informational, not a toggle. See #1312. */}
+      <div
+        data-testid="caching-model-note"
+        className="rounded-lg border border-border/60 bg-muted/30 p-4"
+      >
+        <h3 className="text-sm font-semibold">About data freshness</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Auto-refresh and background polls read from the server cache to reduce load on Portainer.
+          Clicking <strong className="font-medium text-foreground">Refresh</strong> on any page
+          invalidates the cache for that resource and fetches fresh data from Portainer directly.
+          Cache invalidation requires admin permissions; non-admin clicks fall back to a plain
+          refresh.
+        </p>
+      </div>
     </div>
   );
 }
