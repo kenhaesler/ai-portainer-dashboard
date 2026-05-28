@@ -864,7 +864,9 @@ describe('InfrastructurePage — forceRefresh error toast', () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /Bypass cache/i }));
+    // Clicking the single Refresh pill triggers the force-refresh path
+    // when `onForceRefresh` is wired (the page wires it via useForceRefresh).
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/i }));
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to refresh endpoints');
@@ -885,7 +887,9 @@ describe('InfrastructurePage — forceRefresh error toast', () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /Bypass cache/i }));
+    // Clicking the single Refresh pill triggers the force-refresh path
+    // when `onForceRefresh` is wired (the page wires it via useForceRefresh).
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/i }));
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to refresh stacks');
@@ -898,7 +902,9 @@ describe('InfrastructurePage — forceRefresh error toast', () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /Bypass cache/i }));
+    // Clicking the single Refresh pill triggers the force-refresh path
+    // when `onForceRefresh` is wired (the page wires it via useForceRefresh).
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/i }));
 
     // Wait a tick for async resolution
     await waitFor(() => {

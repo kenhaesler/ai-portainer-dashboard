@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RefreshButton } from './refresh-button';
 
-function getButtons() {
-  return screen.getAllByRole('button');
+function getButton() {
+  return screen.getByRole('button', { name: /refresh/i });
 }
 
 describe('RefreshButton', () => {
@@ -15,32 +15,45 @@ describe('RefreshButton', () => {
     vi.useRealTimers();
   });
 
-  it('always renders split control with two buttons', () => {
+  it('renders a single pill button labelled Refresh', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} />);
 
-    const buttons = getButtons();
-    expect(buttons).toHaveLength(2);
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(1);
     expect(buttons[0]).toHaveTextContent('Refresh');
-    expect(buttons[1]).toHaveTextContent('Bypass cache');
+    expect(buttons[0]).toHaveClass('rounded-full');
+    expect(buttons[0]).toHaveClass('h-10');
+    expect(buttons[0]).toHaveClass('border-input');
+    expect(buttons[0]).toHaveClass('bg-background');
   });
 
-  it('calls onClick when primary refresh button is clicked', () => {
+  it('clicking the button prefers onForceRefresh when supplied', () => {
+    const onClick = vi.fn();
+    const onForceRefresh = vi.fn();
+    render(<RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} />);
+
+    fireEvent.click(getButton());
+    expect(onForceRefresh).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('clicking the button falls back to onClick when no force handler is supplied', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} />);
 
-    fireEvent.click(getButtons()[0]);
+    fireEvent.click(getButton());
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Refresh label when loading to avoid width changes', () => {
+  it('keeps the Refresh label while loading (no width jitter)', () => {
     const onClick = vi.fn();
     render(<RefreshButton onClick={onClick} isLoading={true} />);
 
-    expect(getButtons()[0]).toHaveTextContent('Refresh');
+    expect(getButton()).toHaveTextContent('Refresh');
   });
 
-  it('applies spin animation to icon when loading', () => {
+  it('applies the spin animation to the icon while loading', () => {
     const onClick = vi.fn();
     const { container } = render(<RefreshButton onClick={onClick} isLoading={true} />);
 
@@ -48,7 +61,7 @@ describe('RefreshButton', () => {
     expect(icon).toHaveClass('animate-spin');
   });
 
-  it('keeps spin visible briefly after loading ends', () => {
+  it('keeps the spin visible for the minimum duration after loading ends', () => {
     const onClick = vi.fn();
     const { container, rerender } = render(<RefreshButton onClick={onClick} isLoading={true} />);
 
@@ -64,50 +77,10 @@ describe('RefreshButton', () => {
     expect(icon).not.toHaveClass('animate-spin');
   });
 
-  it('applies custom className to outer container', () => {
+  it('forwards className onto the button', () => {
     const onClick = vi.fn();
-    const { container } = render(<RefreshButton onClick={onClick} className="custom-class" />);
+    render(<RefreshButton onClick={onClick} className="custom-class" />);
 
-    expect(container.firstElementChild).toHaveClass('custom-class');
-  });
-
-  it('uses rounded-full pill styling', () => {
-    const onClick = vi.fn();
-    render(<RefreshButton onClick={onClick} />);
-
-    expect(getButtons()[0]).toHaveClass('rounded-full');
-    expect(getButtons()[1]).toHaveClass('rounded-full');
-  });
-
-  it('calls onForceRefresh when flash button is clicked and handler exists', () => {
-    const onClick = vi.fn();
-    const onForceRefresh = vi.fn();
-    render(<RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} />);
-
-    fireEvent.click(getButtons()[1]);
-    expect(onForceRefresh).toHaveBeenCalledTimes(1);
-    expect(onClick).not.toHaveBeenCalled();
-  });
-
-  it('falls back to onClick when flash button is clicked without force handler', () => {
-    const onClick = vi.fn();
-    render(<RefreshButton onClick={onClick} />);
-
-    fireEvent.click(getButtons()[1]);
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('uses clear bypass-cache tooltip when force handler exists', () => {
-    const onClick = vi.fn();
-    const onForceRefresh = vi.fn();
-    render(<RefreshButton onClick={onClick} onForceRefresh={onForceRefresh} />);
-
-    expect(getButtons()[1]).toHaveAttribute('title', 'Bypass cache and fetch fresh data');
-  });
-
-  it('uses fallback tooltip when force handler is unavailable', () => {
-    const onClick = vi.fn();
-    render(<RefreshButton onClick={onClick} />);
-    expect(getButtons()[1]).toHaveAttribute('title', 'Refresh (cache bypass unavailable on this page)');
+    expect(getButton()).toHaveClass('custom-class');
   });
 });

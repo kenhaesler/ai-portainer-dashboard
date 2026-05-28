@@ -184,6 +184,16 @@ Each feature contains: `pages/`, `components/`, `hooks/`, and optionally `lib/`.
 Composition order in `App.tsx`:
 ThemeProvider > QueryProvider > AuthProvider > SocketProvider > SearchProvider > LazyMotion > RouterProvider
 
+## Caching model
+
+```
+[Portainer API]  →  [Server cache (Redis)]  →  [React Query]  →  [UI]
+```
+
+- The **server cache** is a Redis-backed layer in front of Portainer. Auto-refresh intervals, React Query background revalidation, and cross-panel re-renders read from it so the upstream Portainer API isn't hammered on every poll.
+- The **explicit Refresh button** (`frontend/src/shared/components/ui/refresh-button.tsx`) treats a user click as a foreground freshness signal: it invalidates the server cache for the active resource via `POST /api/admin/cache/invalidate?resource=…` and then re-fetches. `useForceRefresh` (`frontend/src/shared/hooks/use-force-refresh.ts`) swallows the 403 non-admins get from the admin-only invalidate endpoint and falls through to a plain refetch — non-admins keep working, no error toast.
+- The invalidate endpoint is admin-only (`packages/foundation/src/routes/cache-admin.ts`). Cache TTLs, keys, and invalidation patterns belong to the kernel (`packages/core/src/portainer/`).
+
 ## Key Patterns
 
 - **Observer-first**: Visibility prioritized; mutating actions require explicit approval via remediation workflow.
