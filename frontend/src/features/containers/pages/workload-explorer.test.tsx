@@ -243,15 +243,6 @@ vi.mock('@/shared/components/forms/workload-smart-search', () => ({
   },
 }));
 
-let mockOnStateFilterChange: ((state: string | undefined) => void) | undefined;
-
-vi.mock('@/features/containers/components/workload/workload-status-summary', () => ({
-  WorkloadStatusSummary: ({ containers, activeStateFilter, onStateFilterChange }: { containers: unknown[]; activeStateFilter: string | undefined; onStateFilterChange: (s: string | undefined) => void }) => {
-    mockOnStateFilterChange = onStateFilterChange;
-    return <div data-testid="workload-status-summary" data-count={containers.length} data-active={activeStateFilter ?? ''} />;
-  },
-}));
-
 import WorkloadExplorerPage from './workload-explorer';
 
 describe('WorkloadExplorerPage', () => {
@@ -262,7 +253,6 @@ describe('WorkloadExplorerPage', () => {
     mockNavigate.mockReset();
     mockOnFiltered = undefined;
     mockOnSelectionChange = undefined;
-    mockOnStateFilterChange = undefined;
     mockColumns = undefined;
     mockUseContainers.mockReturnValue(defaultContainersMock);
   });
@@ -407,23 +397,30 @@ describe('WorkloadExplorerPage', () => {
     expect(params.get('group')).toBeNull();
   });
 
-  it('renders WorkloadStatusSummary with pre-state container count', () => {
+  it('does not render the WorkloadStatusSummary totals row (#1313)', () => {
     mockQueryString = 'endpoint=1';
     render(<WorkloadExplorerPage />);
-
-    const summary = screen.getByTestId('workload-status-summary');
-    expect(summary).toBeInTheDocument();
-    // All 3 containers (no stack/group filter, no state filter)
-    expect(summary).toHaveAttribute('data-count', '3');
-    expect(summary).toHaveAttribute('data-active', '');
+    expect(screen.queryByTestId('workload-status-summary')).not.toBeInTheDocument();
   });
 
-  it('renders WorkloadStatusSummary with active state from URL', () => {
-    mockQueryString = 'endpoint=1&state=running';
-    render(<WorkloadExplorerPage />);
+  it('merges filter dropdowns and table into a single pane (#1313)', () => {
+    mockQueryString = 'endpoint=1';
+    const { container } = render(<WorkloadExplorerPage />);
 
-    const summary = screen.getByTestId('workload-status-summary');
-    expect(summary).toHaveAttribute('data-active', 'running');
+    // The state dropdown (a filter control) and the data table must share
+    // the same SpotlightCard ancestor, rather than living in two separate
+    // SpotlightCard blocks the way they did before #1313.
+    const stateSelect = screen.getByTestId('state-select');
+    const table = screen.getByTestId('workloads-table');
+
+    const stateAncestor = stateSelect.closest('.rounded-lg.border.bg-card.p-6.shadow-sm');
+    const tableAncestor = table.closest('.rounded-lg.border.bg-card.p-6.shadow-sm');
+    expect(stateAncestor).not.toBeNull();
+    expect(stateAncestor).toBe(tableAncestor);
+
+    // Only one inner pane card exists on the page.
+    const innerPanes = container.querySelectorAll('.rounded-lg.border.bg-card.p-6.shadow-sm');
+    expect(innerPanes.length).toBe(1);
   });
 
   it('renders state filter dropdown', () => {
