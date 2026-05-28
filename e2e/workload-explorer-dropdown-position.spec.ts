@@ -58,6 +58,26 @@ test.describe('Workload Explorer filter dropdowns anchor to trigger', () => {
     });
   }
 
+  test('first-click during MotionStagger entrance animation still anchors', async ({ page }) => {
+    // This is the variation that actually reproduces the bug pre-fix.
+    // Override the default beforeEach navigation by re-navigating with no
+    // waitFor, then attempting to click the trigger as fast as possible —
+    // while the parent SpotlightCard is still animating in. With the
+    // pre-fix `.spotlight-card { transform: translateZ(0); }`, Floating UI
+    // snapshots a transforming `getBoundingClientRect()` and the dropdown
+    // lands at viewport (0, 0).
+    await page.goto('/workloads', { waitUntil: 'domcontentloaded' });
+    const trigger = page.locator('#endpoint-select');
+    await expect(trigger).toBeAttached({ timeout: 15_000 });
+    // `{ timeout: 100 }` keeps the click attempt from blocking on a slow
+    // mount; `force: true` skips the actionability checks (visible, stable,
+    // enabled) that would otherwise wait until the entrance animation
+    // settles — defeating the point of the variation.
+    await trigger.click({ timeout: 100, force: true });
+    await expectAnchored(page, 'endpoint-select');
+    await page.keyboard.press('Escape');
+  });
+
   test('rapid reopen does not collapse Endpoint dropdown to (0, 0)', async ({ page }) => {
     const trigger = page.locator('#endpoint-select');
     await expect(trigger).toBeVisible({ timeout: 15_000 });
