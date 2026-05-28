@@ -89,7 +89,12 @@ describe('WorkloadSmartSearch', () => {
 
   it('does not render the redundant container-count label (issue #1309)', () => {
     renderComponent();
-    expect(screen.queryByText('3 containers')).not.toBeInTheDocument();
+    // Cover all three branches of the deleted label, with arbitrary totals:
+    // - `N container(s)` (no filter)
+    // - `Showing N of M container(s)` (text filter)
+    // - `AI found N of M container(s)` would only render via the AI-filter
+    //   card, which is preserved — we explicitly do NOT assert it absent.
+    expect(screen.queryByText(/^\d+ containers?$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Showing \d+ of \d+ containers?$/)).not.toBeInTheDocument();
   });
 
