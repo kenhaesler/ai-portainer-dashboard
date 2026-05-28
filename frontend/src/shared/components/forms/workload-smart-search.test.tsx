@@ -87,9 +87,15 @@ describe('WorkloadSmartSearch', () => {
     expect(screen.getByRole('button', { name: /all nginx containers on prod/i })).toBeInTheDocument();
   });
 
-  it('shows container count when empty', () => {
+  it('does not render the redundant container-count label (issue #1309)', () => {
     renderComponent();
-    expect(screen.getByText('3 containers')).toBeInTheDocument();
+    // Cover all three branches of the deleted label, with arbitrary totals:
+    // - `N container(s)` (no filter)
+    // - `Showing N of M container(s)` (text filter)
+    // - `AI found N of M container(s)` would only render via the AI-filter
+    //   card, which is preserved — we explicitly do NOT assert it absent.
+    expect(screen.queryByText(/^\d+ containers?$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Showing \d+ of \d+ containers?$/)).not.toBeInTheDocument();
   });
 
   it('typing calls onFiltered and stays in filter mode (no AI mutate)', () => {
@@ -120,12 +126,6 @@ describe('WorkloadSmartSearch', () => {
     renderComponent();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'nginx' } });
     expect(screen.queryByRole('button', { name: /state:running/i })).not.toBeInTheDocument();
-  });
-
-  it('shows "Showing X of Y" count when filtered', () => {
-    renderComponent();
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'nginx' } });
-    expect(screen.getByText('Showing 1 of 3 containers')).toBeInTheDocument();
   });
 
   it('pressing Enter calls mutate (AI mode) and shows AI badge', async () => {
@@ -177,7 +177,6 @@ describe('WorkloadSmartSearch', () => {
     // onFiltered called with all containers after clear
     const lastCall = onFiltered.mock.calls[onFiltered.mock.calls.length - 1][0] as Container[];
     expect(lastCall).toHaveLength(3);
-    expect(screen.getByText('3 containers')).toBeInTheDocument();
   });
 
   it('Escape key resets all state', () => {
@@ -254,11 +253,6 @@ describe('WorkloadSmartSearch', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/logs');
   });
 
-  it('shows singular "container" for totalCount=1', () => {
-    renderComponent({ containers: [containers[0]], totalCount: 1 });
-    expect(screen.getByText('1 container')).toBeInTheDocument();
-  });
-
   describe('filter action (AI search filtering)', () => {
     it('applies AI filter and calls onFiltered with matching containers', async () => {
       const { onFiltered } = renderComponent();
@@ -304,9 +298,9 @@ describe('WorkloadSmartSearch', () => {
       });
 
       await waitFor(() => {
-        // The count text appears in the card badge area and the footer count display
-        const matches = screen.getAllByText('AI found 2 of 3 containers');
-        expect(matches.length).toBeGreaterThanOrEqual(1);
+        // The count text now only appears inside the AI result card badge
+        // (the footer count label was removed in #1309).
+        expect(screen.getByText('AI found 2 of 3 containers')).toBeInTheDocument();
       });
     });
 
