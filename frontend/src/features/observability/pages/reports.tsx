@@ -199,6 +199,7 @@ export function DienststellenOverview({
   const dienststelleColumns = useMemo<ColumnDef<ContainerWithStack, unknown>[]>(() => [
     {
       accessorKey: 'name',
+      enableSorting: false,
       header: () => <span className="pl-8">Container</span>,
       cell: ({ row }) => (
         <span className="block pl-8 font-medium truncate max-w-[200px]" title={row.original.name}>
@@ -237,6 +238,7 @@ export function DienststellenOverview({
     },
     {
       accessorKey: 'image',
+      enableSorting: false,
       header: 'Image',
       cell: ({ row }) => (
         <span className="block text-muted-foreground truncate max-w-[250px]" title={row.original.image}>
@@ -246,6 +248,7 @@ export function DienststellenOverview({
     },
     {
       accessorKey: 'state',
+      enableSorting: false,
       header: 'State',
       cell: ({ row }) => {
         const state = row.original.state;
