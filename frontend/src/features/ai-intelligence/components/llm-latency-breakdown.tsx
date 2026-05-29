@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   BarChart,
   Bar,
@@ -11,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '@/shared/lib/api';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { NoTraceDataCallout } from '@/features/observability/components/no-trace-data-callout';
 
 /**
@@ -32,6 +34,16 @@ interface PeerSpan {
   duration?: number;
   duration_ms?: number;
   attributes?: Record<string, unknown>;
+}
+
+interface BreakdownRow {
+  peer: string;
+  p50: number;
+  p95: number;
+  p99: number;
+  calls: number;
+  network: number;
+  model: number;
 }
 
 interface LlmLatencyBreakdownProps {
@@ -98,7 +110,7 @@ export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdo
   const isLoading = queries.some((q) => q.isLoading);
   const allSpans = queries.flatMap((q) => q.data ?? []);
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo<BreakdownRow[]>(() => {
     return peerList
       .map((peer, idx) => {
         const spans = queries[idx]?.data ?? [];
@@ -141,6 +153,36 @@ export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdo
       .filter((row) => row.calls > 0);
   }, [peerList, queries]);
 
+  const columns = useMemo<ColumnDef<BreakdownRow, unknown>[]>(() => [
+    {
+      accessorKey: 'peer',
+      header: 'Provider',
+      cell: ({ getValue }) => (
+        <span className="font-mono text-xs">{getValue<string>()}</span>
+      ),
+    },
+    {
+      accessorKey: 'calls',
+      header: () => <span className="block text-right">Calls</span>,
+      cell: ({ getValue }) => <span className="block text-right">{getValue<number>()}</span>,
+    },
+    {
+      accessorKey: 'p50',
+      header: () => <span className="block text-right">p50 (ms)</span>,
+      cell: ({ getValue }) => <span className="block text-right">{getValue<number>().toFixed(0)}</span>,
+    },
+    {
+      accessorKey: 'p95',
+      header: () => <span className="block text-right">p95 (ms)</span>,
+      cell: ({ getValue }) => <span className="block text-right">{getValue<number>().toFixed(0)}</span>,
+    },
+    {
+      accessorKey: 'p99',
+      header: () => <span className="block text-right">p99 (ms)</span>,
+      cell: ({ getValue }) => <span className="block text-right">{getValue<number>().toFixed(0)}</span>,
+    },
+  ], []);
+
   if (!isLoading && allSpans.length === 0) {
     return (
       <NoTraceDataCallout
@@ -170,29 +212,14 @@ export function LlmLatencyBreakdown({ peers, fromIso, toIso }: LlmLatencyBreakdo
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-2 py-1.5 font-medium">Provider</th>
-              <th className="px-2 py-1.5 font-medium text-right">Calls</th>
-              <th className="px-2 py-1.5 font-medium text-right">p50 (ms)</th>
-              <th className="px-2 py-1.5 font-medium text-right">p95 (ms)</th>
-              <th className="px-2 py-1.5 font-medium text-right">p99 (ms)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {chartData.map((row) => (
-              <tr key={row.peer} className="border-b last:border-0">
-                <td className="px-2 py-1.5 font-mono text-xs">{row.peer}</td>
-                <td className="px-2 py-1.5 text-right">{row.calls}</td>
-                <td className="px-2 py-1.5 text-right">{row.p50.toFixed(0)}</td>
-                <td className="px-2 py-1.5 text-right">{row.p95.toFixed(0)}</td>
-                <td className="px-2 py-1.5 text-right">{row.p99.toFixed(0)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mt-4">
+        <DataTable
+          columns={columns}
+          data={chartData}
+          hideSearch
+          pageSize={100}
+          getRowId={(row) => row.peer}
+        />
       </div>
     </section>
   );
