@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { Loader2, PlugZap, Plus, TestTube2, Trash2, Activity, Radio, RefreshCw, Webhook as WebhookIcon } from 'lucide-react';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText } from '@/shared/components/feedback/skeleton';
+import { DataTable } from '@/shared/components/tables/data-table';
 import {
   useCreateWebhook,
   useDeleteWebhook,
@@ -14,6 +16,7 @@ import {
   useWebhooks,
   streamDashboardEvents,
   type Webhook,
+  type WebhookDelivery,
 } from '@/features/core/hooks/use-webhooks';
 import { formatDate } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -104,6 +107,44 @@ export function WebhooksPanel() {
     if (filter === 'disabled') return all.filter((w) => w.enabled === 0);
     return all;
   }, [filter, webhooksQuery.data]);
+
+  const deliveries = useMemo(
+    () => deliveriesQuery.data?.deliveries ?? [],
+    [deliveriesQuery.data],
+  );
+
+  const deliveryColumns = useMemo<ColumnDef<WebhookDelivery, unknown>[]>(() => [
+    {
+      accessorKey: 'event_type',
+      header: 'Event',
+      cell: ({ getValue }) => <span className="text-xs">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ getValue }) => <span className="text-xs capitalize">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'http_status',
+      header: 'HTTP',
+      cell: ({ getValue }) => <span className="text-xs">{getValue<number | null>() ?? '-'}</span>,
+    },
+    {
+      id: 'attempt',
+      header: 'Attempt',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-xs">{row.original.attempt}/{row.original.max_attempts}</span>
+      ),
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Created',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">{formatDate(getValue<string>())}</span>
+      ),
+    },
+  ], []);
 
   const beginCreate = () => {
     setEditingId(null);
@@ -394,33 +435,17 @@ export function WebhooksPanel() {
               <div className="h-9 animate-pulse rounded bg-muted" />
               <div className="h-9 animate-pulse rounded bg-muted" />
             </div>
+          ) : deliveries.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">No deliveries recorded yet.</p>
           ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-2 py-2 font-medium">Event</th>
-                    <th className="px-2 py-2 font-medium">Status</th>
-                    <th className="px-2 py-2 font-medium">HTTP</th>
-                    <th className="px-2 py-2 font-medium">Attempt</th>
-                    <th className="px-2 py-2 font-medium">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(deliveriesQuery.data?.deliveries ?? []).map((delivery) => (
-                    <tr key={delivery.id} className="border-b last:border-0">
-                      <td className="px-2 py-2 text-xs">{delivery.event_type}</td>
-                      <td className="px-2 py-2 text-xs capitalize">{delivery.status}</td>
-                      <td className="px-2 py-2 text-xs">{delivery.http_status ?? '-'}</td>
-                      <td className="px-2 py-2 text-xs">{delivery.attempt}/{delivery.max_attempts}</td>
-                      <td className="px-2 py-2 text-xs text-muted-foreground">{formatDate(delivery.created_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {(deliveriesQuery.data?.deliveries ?? []).length === 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">No deliveries recorded yet.</p>
-              )}
+            <div className="mt-3">
+              <DataTable
+                columns={deliveryColumns}
+                data={deliveries}
+                getRowId={(delivery) => delivery.id}
+                hideSearch
+                minTableWidth={640}
+              />
             </div>
           )}
         </section>
