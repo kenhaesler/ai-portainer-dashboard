@@ -261,7 +261,7 @@ export function DataTable<T>({
         <tr key={headerGroup.id} className="border-b transition-colors hover:bg-muted/50">
           {headerGroup.headers.map((header) => {
             const canSort = header.column.getCanSort();
-            const sorted = header.column.getIsSorted(); // 'asc' | 'desc' | false
+            const sorted = header.column.getIsSorted(); // false when the column is not sorted
             return (
               <th
                 key={header.id}

@@ -280,6 +280,10 @@ describe('DataTable', () => {
       // ascending → arrow-up, neutral icon gone
       expect(nameHeader.querySelector('svg.lucide-arrow-up')).toBeInTheDocument();
       expect(nameHeader.querySelector('svg.lucide-arrow-up-down')).not.toBeInTheDocument();
+      // descending → arrow-down replaces arrow-up
+      fireEvent.click(nameHeader);
+      expect(nameHeader.querySelector('svg.lucide-arrow-down')).toBeInTheDocument();
+      expect(nameHeader.querySelector('svg.lucide-arrow-up')).not.toBeInTheDocument();
     });
   });
 
