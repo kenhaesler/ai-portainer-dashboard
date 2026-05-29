@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { NotificationTestButtons } from './tab-monitoring';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { NotificationTestButtons, NotificationHistoryPanel } from './tab-monitoring';
 
 // Mock the api module
 vi.mock('@/shared/lib/api', () => ({
   api: {
     post: vi.fn(),
+    get: vi.fn(),
   },
 }));
 
@@ -102,6 +103,89 @@ describe('NotificationTestButtons', () => {
 
     // Resolve and cleanup
     resolvePromise({ success: true });
+  });
+});
+
+describe('NotificationHistoryPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const sampleEntries = [
+    {
+      id: 1,
+      channel: 'discord' as const,
+      event_type: 'container.health',
+      title: 'Container unhealthy',
+      body: 'web-1 reported an unhealthy status check',
+      severity: 'warning',
+      status: 'sent' as const,
+      error: null,
+      container_name: 'web-1',
+      created_at: '2026-05-29T10:00:00.000Z',
+    },
+    {
+      id: 2,
+      channel: 'email' as const,
+      event_type: 'anomaly.detected',
+      title: 'Anomaly detected',
+      body: 'CPU spike on api-2',
+      severity: 'critical',
+      status: 'failed' as const,
+      error: 'SMTP connection refused',
+      container_name: 'api-2',
+      created_at: '2026-05-29T09:30:00.000Z',
+    },
+  ];
+
+  it('should render the DataTable with notification history rows', { timeout: 15000 }, async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      entries: sampleEntries,
+      total: sampleEntries.length,
+      limit: 200,
+      offset: 0,
+    });
+
+    render(<NotificationHistoryPanel />);
+
+    // DataTable mounts once data loads
+    await waitFor(() => {
+      expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    });
+
+    // Headers preserved from the migrated table (scoped to the table —
+    // "Channel"/"Status" also appear as filter labels above it)
+    const table = within(screen.getByTestId('data-table'));
+    expect(table.getByText('Time')).toBeInTheDocument();
+    expect(table.getByText('Channel')).toBeInTheDocument();
+    expect(table.getByText('Status')).toBeInTheDocument();
+    expect(table.getByText('Event')).toBeInTheDocument();
+    expect(table.getByText('Message')).toBeInTheDocument();
+    expect(table.getByText('Error')).toBeInTheDocument();
+
+    // Cell rendering preserved (titles, statuses, error fallback)
+    expect(screen.getByText('Container unhealthy')).toBeInTheDocument();
+    expect(screen.getByText('Anomaly detected')).toBeInTheDocument();
+    expect(screen.getByText('sent')).toBeInTheDocument();
+    expect(screen.getByText('failed')).toBeInTheDocument();
+    expect(screen.getByText('SMTP connection refused')).toBeInTheDocument();
+  });
+
+  it('should show the empty state when there is no history', { timeout: 15000 }, async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      entries: [],
+      total: 0,
+      limit: 200,
+      offset: 0,
+    });
+
+    render(<NotificationHistoryPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No notification history found')).toBeInTheDocument();
+    });
+    // DataTable should not render when there are no entries
+    expect(screen.queryByTestId('data-table')).not.toBeInTheDocument();
   });
 });
 

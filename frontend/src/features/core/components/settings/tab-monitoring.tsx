@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   Activity,
   AlertTriangle,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react';
 import { SettingsSection, DEFAULT_SETTINGS, type SettingsTabProps } from './shared';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { cn } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
@@ -204,6 +206,76 @@ export function NotificationHistoryPanel() {
   const sentCount = filteredEntries.filter((entry) => entry.status === 'sent').length;
   const failedCount = filteredEntries.filter((entry) => entry.status === 'failed').length;
 
+  const columns = useMemo<ColumnDef<NotificationHistoryEntry, unknown>[]>(() => [
+    {
+      accessorKey: 'created_at',
+      header: 'Time',
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(getValue<string>()).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'channel',
+      header: 'Channel',
+      cell: ({ getValue }) => (
+        <span className="inline-flex rounded-full bg-muted px-2 py-1 text-xs capitalize">
+          {getValue<string>()}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ getValue }) => {
+        const status = getValue<string>();
+        return (
+          <span
+            className={cn(
+              'inline-flex rounded-full px-2 py-1 text-xs font-medium',
+              status === 'sent'
+                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                : 'bg-red-500/15 text-red-700 dark:text-red-400'
+            )}
+          >
+            {status}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'title',
+      header: 'Event',
+      cell: ({ row }) => (
+        <>
+          <p className="font-medium">{row.original.title}</p>
+          <p className="text-xs text-muted-foreground">{row.original.event_type}</p>
+        </>
+      ),
+    },
+    {
+      accessorKey: 'body',
+      header: 'Message',
+      enableSorting: false,
+      cell: ({ getValue }) => (
+        <div className="max-w-[380px] text-xs text-muted-foreground">
+          <p className="line-clamp-2">{getValue<string>()}</p>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'error',
+      header: 'Error',
+      enableSorting: false,
+      cell: ({ getValue }) => (
+        <div className="max-w-[280px] text-xs text-red-700 dark:text-red-400">
+          {getValue<string | null>() ?? 'None'}
+        </div>
+      ),
+    },
+  ], []);
+
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
@@ -295,55 +367,14 @@ export function NotificationHistoryPanel() {
           <p className="mt-1 text-sm text-muted-foreground">Try adjusting channel, status, or date filters.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-4 py-2.5 font-medium">Time</th>
-                <th className="px-4 py-2.5 font-medium">Channel</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Event</th>
-                <th className="px-4 py-2.5 font-medium">Message</th>
-                <th className="px-4 py-2.5 font-medium">Error</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEntries.map((entry) => (
-                <tr key={entry.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {new Date(entry.created_at).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex rounded-full bg-muted px-2 py-1 text-xs capitalize">
-                      {entry.channel}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={cn(
-                        'inline-flex rounded-full px-2 py-1 text-xs font-medium',
-                        entry.status === 'sent'
-                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                          : 'bg-red-500/15 text-red-700 dark:text-red-400'
-                      )}
-                    >
-                      {entry.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{entry.title}</p>
-                    <p className="text-xs text-muted-foreground">{entry.event_type}</p>
-                  </td>
-                  <td className="max-w-[380px] px-4 py-3 text-xs text-muted-foreground">
-                    <p className="line-clamp-2">{entry.body}</p>
-                  </td>
-                  <td className="max-w-[280px] px-4 py-3 text-xs text-red-700 dark:text-red-400">
-                    {entry.error ?? 'None'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="p-4">
+          <DataTable
+            columns={columns}
+            data={filteredEntries}
+            getRowId={(entry) => String(entry.id)}
+            hideSearch
+            minTableWidth={900}
+          />
         </div>
       )}
     </div>
