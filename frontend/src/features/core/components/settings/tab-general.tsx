@@ -1,5 +1,13 @@
+import { useMemo } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { Loader2, RefreshCw, Settings2 } from 'lucide-react';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { useCacheStats, useCacheClear } from '@/features/core/hooks/use-cache-admin';
+
+interface CacheEntryRow {
+  key: string;
+  expiresIn: number;
+}
 
 export interface CacheStatsSummary {
   backend: 'multi-layer' | 'memory-only';
@@ -34,6 +42,26 @@ export function GeneralTab({ theme }: GeneralTabProps) {
   const { data: cacheStats } = useCacheStats();
   const cacheClear = useCacheClear();
   const redisSystemInfo = getRedisSystemInfo(cacheStats);
+
+  const cacheEntryColumns = useMemo<ColumnDef<CacheEntryRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'key',
+        header: 'Key',
+        cell: ({ getValue }) => (
+          <span className="font-mono text-xs">{getValue<string>()}</span>
+        ),
+      },
+      {
+        accessorKey: 'expiresIn',
+        header: () => <span className="block text-right">Expires In (TTL)</span>,
+        cell: ({ getValue }) => (
+          <span className="block text-right text-muted-foreground">{getValue<number>()}s</span>
+        ),
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-6">
@@ -115,22 +143,14 @@ export function GeneralTab({ theme }: GeneralTabProps) {
                       Internal cache identifiers used by the backend for stored query results.
                     </p>
                   </div>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="p-3 text-left font-medium">Key</th>
-                        <th className="p-3 text-right font-medium">Expires In (TTL)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cacheStats.entries.map((entry) => (
-                        <tr key={entry.key} className="border-b last:border-0">
-                          <td className="p-3 font-mono text-xs">{entry.key}</td>
-                          <td className="p-3 text-right text-muted-foreground">{entry.expiresIn}s</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="p-3">
+                    <DataTable
+                      columns={cacheEntryColumns}
+                      data={cacheStats.entries}
+                      getRowId={(entry) => entry.key}
+                      hideSearch
+                    />
+                  </div>
                 </div>
               </div>
             )}
