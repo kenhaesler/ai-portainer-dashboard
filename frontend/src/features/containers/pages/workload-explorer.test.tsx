@@ -1011,4 +1011,26 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     expect(tagButton).not.toBeNull();
     expect(tagButton?.className).toContain('whitespace-nowrap');
   });
+
+  it('renders the Group cell as a labelled icon (System=Cog, Workload=Box)', () => {
+    render(<WorkloadExplorerPage />);
+    const groupCol = mockColumns?.find((c) => c.id === 'group');
+    expect(groupCol).toBeDefined();
+
+    // System container (beyla → grafana/beyla image)
+    const systemCell = groupCol.cell({ row: { original: defaultContainersMock.data[1] } });
+    const { container: sysC } = render(systemCell);
+    const sysWrap = sysC.querySelector('span[aria-label="System"]');
+    expect(sysWrap).not.toBeNull();
+    expect(sysWrap?.querySelector('svg.lucide-cog')).toBeInTheDocument();
+    expect(sysWrap?.className).toContain('bg-amber-100');
+
+    // Workload container (workers-api-1)
+    const workloadCell = groupCol.cell({ row: { original: defaultContainersMock.data[0] } });
+    const { container: wlC } = render(workloadCell);
+    const wlWrap = wlC.querySelector('span[aria-label="Workload"]');
+    expect(wlWrap).not.toBeNull();
+    expect(wlWrap?.querySelector('svg.lucide-box')).toBeInTheDocument();
+    expect(wlWrap?.className).toContain('bg-slate-100');
+  });
 });
