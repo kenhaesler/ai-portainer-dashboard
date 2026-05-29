@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   AlertTriangle,
   Bot,
@@ -31,6 +32,7 @@ import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
 import { SkeletonText, SkeletonChart, SkeletonTableRow } from '@/shared/components/feedback/skeleton';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
 import { InlineChatPanel } from '@/features/ai-intelligence/components/metrics/inline-chat-panel';
 import { useLlmModels } from '@/features/ai-intelligence/hooks/use-llm-models';
@@ -118,6 +120,16 @@ function getForecastRiskScore(forecast: CapacityForecast): number {
   if (forecast.trend === 'stable') return 50 + forecast.currentValue / 2;
   return forecast.currentValue / 2;
 }
+
+const RISK_BADGE_STYLES: Record<ForecastRiskLevel, string> = {
+  critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  warning: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+};
+
+// Risk-rank position is computed once from the pre-sorted ranking so it stays
+// stable when the DataTable re-sorts rows by a different column.
+type RankedForecast = CapacityForecast & { rank: number };
 
 export default function MetricsDashboardPage() {
   const navigate = useNavigate();
@@ -317,9 +329,11 @@ export default function MetricsDashboardPage() {
     };
   }, [cpuData, memoryData, memoryBytesData]);
 
-  const rankedForecasts = useMemo(() => {
+  const rankedForecasts = useMemo<RankedForecast[]>(() => {
     const forecasts = forecastOverviewQuery.data ?? [];
-    return [...forecasts].sort((a, b) => getForecastRiskScore(b) - getForecastRiskScore(a));
+    return [...forecasts]
+      .sort((a, b) => getForecastRiskScore(b) - getForecastRiskScore(a))
+      .map((forecast, index) => ({ ...forecast, rank: index + 1 }));
   }, [forecastOverviewQuery.data]);
 
   const riskBuckets = useMemo(() => {
@@ -352,13 +366,78 @@ export default function MetricsDashboardPage() {
     refetch();
   };
 
-  const drillIntoForecast = (containerId: string) => {
+  const drillIntoForecast = useCallback((containerId: string) => {
     const match = allContainers?.find((container) => container.id === containerId);
     if (match) {
       setSelectedEndpoint(match.endpointId);
       setSelectedContainer(match.id);
     }
-  };
+  }, [allContainers]);
+
+  const forecastColumns = useMemo<ColumnDef<RankedForecast, unknown>[]>(() => [
+    {
+      accessorKey: 'rank',
+      header: 'Rank',
+      cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<number>()}</span>,
+    },
+    {
+      accessorKey: 'containerName',
+      header: 'Container',
+      cell: ({ getValue }) => <span className="font-medium">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'metricType',
+      header: 'Metric',
+      cell: ({ getValue }) => <span className="uppercase text-xs">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'currentValue',
+      header: 'Current',
+      cell: ({ getValue }) => `${getValue<number>().toFixed(1)}%`,
+    },
+    {
+      accessorKey: 'trend',
+      header: 'Trend',
+      cell: ({ getValue }) => <span className="capitalize">{getValue<string>()}</span>,
+    },
+    {
+      accessorKey: 'timeToThreshold',
+      header: 'Threshold ETA',
+      cell: ({ getValue }) => {
+        const eta = getValue<number | null>();
+        return eta !== null ? `~${eta}h` : 'No breach predicted';
+      },
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const riskLevel = getForecastRiskLevel(row.original);
+        return (
+          <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', RISK_BADGE_STYLES[riskLevel])}>
+            {riskLevel}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'action',
+      header: () => <span className="block text-right">Action</span>,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="text-right">
+          <button
+            type="button"
+            onClick={() => drillIntoForecast(row.original.containerId)}
+            className="rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
+          >
+            View Details
+          </button>
+        </div>
+      ),
+    },
+  ], [drillIntoForecast]);
 
   // Treat both isLoading and isPending-without-data as "loading" to avoid
   // rendering a blank page during SPA navigation before data arrives.
@@ -864,58 +943,14 @@ export default function MetricsDashboardPage() {
             description="Keep metrics collection running to build cross-container forecast insights."
           />
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-2 py-2.5 font-medium">Rank</th>
-                  <th className="px-2 py-2.5 font-medium">Container</th>
-                  <th className="px-2 py-2.5 font-medium">Metric</th>
-                  <th className="px-2 py-2.5 font-medium">Current</th>
-                  <th className="px-2 py-2.5 font-medium">Trend</th>
-                  <th className="px-2 py-2.5 font-medium">Threshold ETA</th>
-                  <th className="px-2 py-2.5 font-medium">Status</th>
-                  <th className="px-2 py-2.5 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rankedForecasts.map((forecast, index) => {
-                  const riskLevel = getForecastRiskLevel(forecast);
-                  const riskStyles: Record<ForecastRiskLevel, string> = {
-                    critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                    warning: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                    healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                  };
-
-                  return (
-                    <tr key={`${forecast.containerId}-${forecast.metricType}`} className="border-b last:border-0">
-                      <td className="px-2 py-2.5 text-muted-foreground">{index + 1}</td>
-                      <td className="px-2 py-2.5 font-medium">{forecast.containerName}</td>
-                      <td className="px-2 py-2.5 uppercase text-xs">{forecast.metricType}</td>
-                      <td className="px-2 py-2.5">{forecast.currentValue.toFixed(1)}%</td>
-                      <td className="px-2 py-2.5 capitalize">{forecast.trend}</td>
-                      <td className="px-2 py-2.5">
-                        {forecast.timeToThreshold !== null ? `~${forecast.timeToThreshold}h` : 'No breach predicted'}
-                      </td>
-                      <td className="px-2 py-2.5">
-                        <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', riskStyles[riskLevel])}>
-                          {riskLevel}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => drillIntoForecast(forecast.containerId)}
-                          className="rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="mt-4">
+            <DataTable
+              columns={forecastColumns}
+              data={rankedForecasts}
+              getRowId={(forecast) => `${forecast.containerId}-${forecast.metricType}`}
+              hideSearch
+              minTableWidth={880}
+            />
           </div>
         )}
       </div>
