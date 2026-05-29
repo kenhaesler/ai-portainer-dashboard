@@ -318,6 +318,41 @@ describe('ReportsPage', () => {
     expect(screen.getAllByText('test-web').length).toBeGreaterThan(0);
   });
 
+  it('renders the utilization DataTable with shared column headers', () => {
+    renderWithProviders(<ReportsPage />);
+    // At least one shared DataTable instance exists (utilization table).
+    expect(screen.getAllByTestId('data-table').length).toBeGreaterThan(0);
+    // Utilization-specific column headers are present.
+    expect(screen.getByText('CPU Avg')).toBeTruthy();
+    expect(screen.getByText('CPU p95')).toBeTruthy();
+    expect(screen.getByText('Mem Avg')).toBeTruthy();
+    expect(screen.getByText('Samples')).toBeTruthy();
+  });
+
+  it('toggles sort direction on the shared utilization column header', () => {
+    renderWithProviders(<ReportsPage />);
+    const cpuHeader = screen.getByText('CPU Avg');
+    // No indicator until clicked.
+    expect(cpuHeader.textContent).toBe('CPU Avg');
+    fireEvent.click(cpuHeader);
+    expect(screen.getByText(/CPU Avg ↑/)).toBeTruthy();
+    fireEvent.click(screen.getByText(/CPU Avg ↑/));
+    expect(screen.getByText(/CPU Avg ↓/)).toBeTruthy();
+  });
+
+  it('renders the Dienststelle DataTable when a group is expanded', () => {
+    renderWithProviders(<ReportsPage />);
+    const before = screen.getAllByTestId('data-table').length;
+    // Expand the "Standalone" group (both mock containers have no stack label).
+    fireEvent.click(screen.getByRole('button', { name: /Standalone/i }));
+    const after = screen.getAllByTestId('data-table').length;
+    expect(after).toBeGreaterThan(before);
+    // The Dienststelle table exposes its own column set.
+    expect(screen.getByText('Stack')).toBeTruthy();
+    expect(screen.getByText('Env')).toBeTruthy();
+    expect(screen.getByText('Image')).toBeTruthy();
+  });
+
   it('renders recommendations section', () => {
     renderWithProviders(<ReportsPage />);
     expect(screen.getByText('Right-Sizing Recommendations')).toBeTruthy();
