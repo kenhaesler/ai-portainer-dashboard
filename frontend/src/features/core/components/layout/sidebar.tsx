@@ -46,10 +46,6 @@ interface NavGroup {
   items: NavItem[];
 }
 
-export function getSidebarBottomClass(): 'md:bottom-12' {
-  return 'md:bottom-12';
-}
-
 const navigation: NavGroup[] = [
   {
     title: 'Overview',
@@ -214,9 +210,8 @@ export function Sidebar() {
         data-testid="sidebar"
         data-animated-bg={hasAnimatedBg || undefined}
         className={cn(
-          'fixed left-4 top-4 bottom-2 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10',
+          'fixed left-4 top-4 bottom-4 z-30 flex flex-col rounded-2xl bg-sidebar-background/80 backdrop-blur-xl shadow-lg ring-1 ring-black/5 dark:ring-white/10',
           !potatoMode && 'transition-[width,background-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
-          getSidebarBottomClass(),
           sidebarCollapsed ? 'w-16' : 'w-64'
         )}
       >

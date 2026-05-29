@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Sidebar, getSidebarBottomClass } from './sidebar';
+import { Sidebar } from './sidebar';
 import { useUiStore } from '@/stores/ui-store';
 
 vi.mock('@/features/operations/hooks/use-remediation', () => ({
@@ -35,8 +35,16 @@ describe('Sidebar', () => {
     });
   });
 
-  it('uses collapsed-feed spacing for sidebar bottom offset', () => {
-    expect(getSidebarBottomClass()).toBe('md:bottom-12');
+  it('uses a symmetric 1rem inset on top, left, and bottom', () => {
+    mockUseRemediationActions.mockReturnValue({ data: [] } as any);
+    renderSidebar();
+    const sidebar = screen.getByTestId('sidebar');
+    expect(sidebar.className).toContain('top-4');
+    expect(sidebar.className).toContain('left-4');
+    expect(sidebar.className).toContain('bottom-4');
+    // no leftover activity-feed bottom clearance
+    expect(sidebar.className).not.toContain('bottom-12');
+    expect(sidebar.className).not.toContain('bottom-2');
   });
 
   it('shows pending remediation count as badge', () => {
