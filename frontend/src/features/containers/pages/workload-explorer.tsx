@@ -702,8 +702,8 @@ export default function WorkloadExplorerPage() {
                 columns={columns}
                 data={searchFilteredContainers ?? filteredContainers}
                 hideSearch
-                pageSize={15}
-                windowScroll
+                autoFit
+                minTableWidth={860}
                 enableRowSelection
                 maxSelection={MAX_COMPARE}
                 onSelectionChange={handleSelectionChange}

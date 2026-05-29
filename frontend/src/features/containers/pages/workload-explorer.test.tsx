@@ -123,7 +123,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onSelectionChange,
     selectedRowIds,
     onRowClick,
-    windowScroll,
+    autoFit,
+    minTableWidth,
   }: {
     columns?: any[];
     data: Array<{ name: string }>;
@@ -132,7 +133,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
     onSelectionChange?: (rows: Array<{ id: string; name: string; endpointId: number }>) => void;
     selectedRowIds?: Record<string, boolean>;
     onRowClick?: (row: { id: string; name: string; endpointId: number }) => void;
-    windowScroll?: boolean;
+    autoFit?: boolean;
+    minTableWidth?: number;
   }) => {
     mockOnSelectionChange = onSelectionChange;
     mockColumns = columns;
@@ -143,7 +145,8 @@ vi.mock('@/shared/components/tables/data-table', () => ({
         data-max-selection={maxSelection}
         data-selected-row-ids={selectedRowIds !== undefined ? JSON.stringify(selectedRowIds) : undefined}
         data-has-row-click={onRowClick ? 'true' : undefined}
-        data-window-scroll={windowScroll ? 'true' : undefined}
+        data-auto-fit={autoFit ? 'true' : undefined}
+        data-min-table-width={minTableWidth}
       >
         {data.map((container) => container.name).join(',')}
       </div>
@@ -962,9 +965,14 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     expect(ids.has('age')).toBe(false);
   });
 
-  it('passes windowScroll to the DataTable', () => {
+  it('passes autoFit to the DataTable', () => {
     render(<WorkloadExplorerPage />);
-    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-window-scroll', 'true');
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-auto-fit', 'true');
+  });
+
+  it('passes minTableWidth to the DataTable for horizontal scrolling', () => {
+    render(<WorkloadExplorerPage />);
+    expect(screen.getByTestId('workloads-table')).toHaveAttribute('data-min-table-width', '860');
   });
 
   it('Imagename cell renders only the segment after the last "/" with the full path on title', () => {
