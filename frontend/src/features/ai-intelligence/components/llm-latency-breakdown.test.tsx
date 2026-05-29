@@ -92,4 +92,38 @@ describe('LlmLatencyBreakdown', () => {
     expect(peers).toContain('api.anthropic.com');
     expect(peers).toContain('api.openai.com');
   });
+
+  it('renders the breakdown via the shared DataTable with per-peer rows and columns', async () => {
+    mockApiGet.mockImplementation(async (_path: string, params: Record<string, unknown>) => {
+      const host = params?.netPeerName as string;
+      if (host === 'api.anthropic.com') {
+        return {
+          traces: [
+            { traceId: 't1', duration: 1200, attributes: {} },
+            { traceId: 't2', duration: 1100, attributes: {} },
+          ],
+        };
+      }
+      return { traces: [] };
+    });
+
+    renderWithProviders(<LlmLatencyBreakdown peers={['api.anthropic.com']} />);
+
+    await waitFor(() => {
+      // The shared DataTable shell is mounted and the peer row has populated.
+      expect(screen.getByTestId('data-table')).toBeInTheDocument();
+      // The peer is keyed as a DataTable row (getRowId => row.peer).
+      expect(screen.getByTestId('table-row-api.anthropic.com')).toBeInTheDocument();
+    });
+
+    // Column headers are preserved.
+    expect(screen.getByText('Provider')).toBeInTheDocument();
+    expect(screen.getByText('Calls')).toBeInTheDocument();
+    expect(screen.getByText('p50 (ms)')).toBeInTheDocument();
+    expect(screen.getByText('p95 (ms)')).toBeInTheDocument();
+    expect(screen.getByText('p99 (ms)')).toBeInTheDocument();
+
+    // Calls cell reflects the two spans returned for the peer.
+    expect(screen.getByText('2')).toBeInTheDocument();
+  });
 });
