@@ -480,7 +480,7 @@ export function DataTable<T>({
         <>
           <div
             ref={autoFitWrapperRef}
-            className="overflow-x-auto rounded-md border"
+            className="scrollbar-themed overflow-x-auto rounded-md border"
             data-testid="auto-fit-container"
           >
             <table className="w-full caption-bottom text-sm" style={tableStyle}>
@@ -501,7 +501,7 @@ export function DataTable<T>({
           {renderClientPagination()}
         </>
       ) : useWindowScroll ? (
-        <div className="overflow-x-auto rounded-md border" data-testid="window-scroll-container">
+        <div className="scrollbar-themed overflow-x-auto rounded-md border" data-testid="window-scroll-container">
           <table className="w-full caption-bottom text-sm" style={tableStyle}>
             {renderHeader()}
             <tbody className="[&_tr:last-child]:border-0">
@@ -584,7 +584,7 @@ export function DataTable<T>({
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-md border">
+          <div className="scrollbar-themed overflow-x-auto rounded-md border">
             <table className="w-full caption-bottom text-sm" style={tableStyle}>
               {renderHeader()}
               <tbody className="[&_tr:last-child]:border-0">

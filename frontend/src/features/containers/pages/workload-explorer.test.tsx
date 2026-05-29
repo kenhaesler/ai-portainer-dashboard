@@ -1030,6 +1030,7 @@ describe('WorkloadExplorerPage — columns (#1288)', () => {
     const { container: sysC } = render(systemCell);
     const sysWrap = sysC.querySelector('span[aria-label="System"]');
     expect(sysWrap).not.toBeNull();
+    expect(sysWrap).toHaveAttribute('role', 'img');
     expect(sysWrap?.querySelector('svg.lucide-cog')).toBeInTheDocument();
     expect(sysWrap?.className).toContain('bg-amber-100');
 

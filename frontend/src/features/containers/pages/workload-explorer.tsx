@@ -377,6 +377,7 @@ export default function WorkloadExplorerPage() {
         const Icon = isSystem ? Cog : Box;
         return (
           <span
+            role="img"
             title={label}
             aria-label={label}
             className={
@@ -386,7 +387,6 @@ export default function WorkloadExplorerPage() {
             }
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="sr-only">{label}</span>
           </span>
         );
       },
