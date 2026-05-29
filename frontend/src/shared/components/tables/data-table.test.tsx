@@ -686,6 +686,28 @@ describe('DataTable', () => {
       expect(screen.getByText('container-5')).toBeInTheDocument();
       expect(screen.queryByText(/Page \d+ of \d+/)).not.toBeInTheDocument();
     });
+
+    it('renders selection checkboxes alongside pagination in autoFit mode', () => {
+      setViewport(1000, 200); // 14 rows/page → 3 pages for 30 rows
+      const onSelectionChange = vi.fn();
+      const data = makeRows(30);
+      render(
+        <DataTable
+          columns={testColumns}
+          data={data}
+          autoFit
+          enableRowSelection
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+      const container = screen.getByTestId('auto-fit-container');
+      expect(container.querySelector('[data-testid="select-all-checkbox"]')).toBeInTheDocument();
+      expect(screen.getByTestId('row-checkbox-0')).toBeInTheDocument();
+      expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument();
+      // toggling a row checkbox selects that row
+      fireEvent.click(screen.getByTestId('row-checkbox-0'));
+      expect(onSelectionChange).toHaveBeenCalledWith([data[0]]);
+    });
   });
 
   describe('horizontal scroll (minTableWidth)', () => {
