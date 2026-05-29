@@ -1,7 +1,12 @@
+import { useMemo } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { Box, Server, HardDrive, Clock, Activity, RotateCw, Network, Tag } from 'lucide-react';
 import { type Container } from '@/features/containers/hooks/use-containers';
 import { StatusBadge } from '@/shared/components/feedback/status-badge';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { formatDate } from '@/shared/lib/utils';
+
+type PortMapping = Container['ports'][number];
 
 function formatUptime(createdTimestamp: number): string {
   const now = Date.now();
@@ -54,6 +59,33 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
   const networks = container.networks || [];
   const labels = container.labels || {};
   const labelEntries = Object.entries(labels);
+
+  const portColumns = useMemo<ColumnDef<PortMapping, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'private',
+        header: 'Container Port',
+        cell: ({ getValue }) => <span className="font-mono">{getValue<number>()}</span>,
+      },
+      {
+        accessorKey: 'public',
+        header: 'Host Port',
+        cell: ({ getValue }) => <span className="font-mono">{getValue<number | undefined>() || '-'}</span>,
+      },
+      {
+        accessorKey: 'type',
+        header: 'Type',
+        cell: ({ getValue }) => <span className="uppercase">{getValue<string>()}</span>,
+      },
+      {
+        id: 'hostIp',
+        header: 'Host IP',
+        enableSorting: false,
+        cell: () => <span className="font-mono">0.0.0.0</span>,
+      },
+    ],
+    []
+  );
 
   return (
     <div className="space-y-6">
@@ -172,28 +204,7 @@ export function ContainerOverview({ container }: ContainerOverviewProps) {
             <Network className="h-5 w-5" />
             Port Mappings
           </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground">Container Port</th>
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground">Host Port</th>
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground">Type</th>
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground">Host IP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ports.map((port, index) => (
-                  <tr key={index} className="border-b last:border-0">
-                    <td className="py-2 px-3 font-mono">{port.private}</td>
-                    <td className="py-2 px-3 font-mono">{port.public || '-'}</td>
-                    <td className="py-2 px-3 uppercase">{port.type}</td>
-                    <td className="py-2 px-3 font-mono">0.0.0.0</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={portColumns} data={ports} hideSearch />
         </div>
       )}
 
