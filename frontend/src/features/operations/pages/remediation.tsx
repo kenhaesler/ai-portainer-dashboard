@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { type ColumnDef } from '@tanstack/react-table';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -29,6 +30,7 @@ import { AutoRefreshToggle } from '@/shared/components/ui/auto-refresh-toggle';
 import { RefreshButton } from '@/shared/components/ui/refresh-button';
 import { SkeletonChart } from '@/shared/components/feedback/skeleton';
 import { EmptyState } from '@/shared/components/feedback/empty-state';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { useSockets } from '@/providers/socket-provider';
 import { cn, formatDate } from '@/shared/lib/utils';
 import { SpotlightCard } from '@/shared/components/data-display/spotlight-card';
@@ -188,33 +190,13 @@ function ConfirmDialog({
   );
 }
 
-interface ActionRowProps {
-  action: ActionRecord;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
-  onExecute: (id: string) => void;
-  onDiscuss: (action: ActionRecord) => void;
-  isApproving: boolean;
-  isRejecting: boolean;
-  isExecuting: boolean;
-}
-
-function ActionRow({
-  action,
-  onApprove,
-  onReject,
-  onExecute,
-  onDiscuss,
-  isApproving,
-  isRejecting,
-  isExecuting,
-}: ActionRowProps) {
+/**
+ * Renders the parsed AI analysis (or raw rationale) for a single action with a
+ * collapsible "Show more / Show less" toggle. Owns the local expansion state so
+ * each row can expand independently inside the DataTable.
+ */
+function AnalysisSummaryCell({ action }: { action: ActionRecord }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const actionType = action.action_type || action.type || 'Unknown';
-  const containerId = action.container_id || action.containerId || '';
-  const containerName = action.container_name || action.containerName || 'unknown';
-  const createdAt = action.created_at || action.createdAt || '';
-  const suggestedBy = action.suggested_by || action.suggestedBy || 'AI Monitor';
   const rationale = action.rationale || action.description || 'No rationale provided';
   const parsedAnalysis = parseActionAnalysis(rationale);
   const severityLabel = parsedAnalysis?.severity
@@ -244,174 +226,172 @@ function ActionRow({
     : rationale.length > 180;
 
   return (
-    <tr className="border-b transition-colors hover:bg-muted/30">
-      <td className="p-4">
-        <span className="font-medium">
-          {ACTION_TYPE_LABELS[actionType] || actionType}
-        </span>
-      </td>
-      <td className="p-4">
-        <div className="flex items-center gap-2">
-          <Box className="h-4 w-4 text-muted-foreground" />
-          <p className="font-medium" title={containerId ? `Container ID: ${containerId}` : undefined}>
-            {containerName}
+    <div className="max-w-sm space-y-2 align-top">
+      {parsedAnalysis ? (
+        <div
+          className={cn(
+            'space-y-2 text-xs',
+            shouldCollapse && !isExpanded && 'max-h-28 overflow-hidden'
+          )}
+        >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
+            {severityLabel}
+          </span>
+          <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
+            Confidence: {(parsedAnalysis.confidence_score * 100).toFixed(0)}%
+          </span>
+        </div>
+        <p className="text-muted-foreground">
+          <span className="font-medium text-foreground">Root Cause:</span> {parsedAnalysis.root_cause}
+        </p>
+        {parsedAnalysis.log_analysis && (
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Log Analysis:</span> {parsedAnalysis.log_analysis}
           </p>
-        </div>
-      </td>
-      <td className="p-4">
-        <StatusBadge status={action.status} />
-      </td>
-      <td className="p-4">
-        <div className="flex items-center gap-2">
-          <Bot className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm">{suggestedBy}</span>
-        </div>
-      </td>
-      <td className="p-4">
-        <span className="text-sm text-muted-foreground">
-          {createdAt ? formatDate(createdAt) : '-'}
-        </span>
-      </td>
-      <td className="p-4 max-w-sm align-top">
-        <div className="space-y-2">
-          {parsedAnalysis ? (
-            <div
-              className={cn(
-                'space-y-2 text-xs',
-                shouldCollapse && !isExpanded && 'max-h-28 overflow-hidden'
-              )}
-            >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={cn('rounded px-2 py-0.5 font-medium', severityClasses)}>
-                {severityLabel}
-              </span>
-              <span className="rounded bg-muted px-2 py-0.5 font-medium text-foreground">
-                Confidence: {(parsedAnalysis.confidence_score * 100).toFixed(0)}%
-              </span>
-            </div>
-            <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">Root Cause:</span> {parsedAnalysis.root_cause}
-            </p>
-            {parsedAnalysis.log_analysis && (
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Log Analysis:</span> {parsedAnalysis.log_analysis}
+        )}
+        {parsedAnalysis.recommended_actions.length > 0 && (
+          <div className="space-y-1">
+            <p className="font-medium text-foreground">Recommended Actions:</p>
+            {parsedAnalysis.recommended_actions.map((recommendation, index) => (
+              <p key={`${recommendation.action}-${index}`} className="text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {recommendation.priority.toUpperCase()}:
+                </span>{' '}
+                {recommendation.action}
+                {recommendation.rationale ? ` - ${recommendation.rationale}` : ''}
               </p>
-            )}
-            {parsedAnalysis.recommended_actions.length > 0 && (
-              <div className="space-y-1">
-                <p className="font-medium text-foreground">Recommended Actions:</p>
-                {parsedAnalysis.recommended_actions.map((recommendation, index) => (
-                  <p key={`${recommendation.action}-${index}`} className="text-muted-foreground">
-                    <span className="font-medium text-foreground">
-                      {recommendation.priority.toUpperCase()}:
-                    </span>{' '}
-                    {recommendation.action}
-                    {recommendation.rationale ? ` - ${recommendation.rationale}` : ''}
-                  </p>
-                ))}
-              </div>
-            )}
-            </div>
-          ) : (
-            <p
-              className={cn(
-                'text-xs text-muted-foreground',
-                shouldCollapse && !isExpanded && 'line-clamp-3'
-              )}
-              title={rationale}
-            >
-              {rationale}
-            </p>
-          )}
-          {shouldCollapse && (
-            <button
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="text-xs font-medium text-primary hover:underline"
-              aria-expanded={isExpanded}
-            >
-              {isExpanded ? 'Show less' : 'Show more'}
-            </button>
-          )}
+            ))}
+          </div>
+        )}
         </div>
-      </td>
-      <td className="p-4">
-        <div className="flex items-center gap-2">
+      ) : (
+        <p
+          className={cn(
+            'text-xs text-muted-foreground',
+            shouldCollapse && !isExpanded && 'line-clamp-3'
+          )}
+          title={rationale}
+        >
+          {rationale}
+        </p>
+      )}
+      {shouldCollapse && (
+        <button
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="text-xs font-medium text-primary hover:underline"
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface ActionButtonsCellProps {
+  action: ActionRecord;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onExecute: (id: string) => void;
+  onDiscuss: (action: ActionRecord) => void;
+  isApproving: boolean;
+  isRejecting: boolean;
+  isExecuting: boolean;
+}
+
+/**
+ * Renders the per-row remediation controls (Discuss / Approve / Reject /
+ * Execute) plus the terminal-status indicators. Action gating and handler
+ * wiring are unchanged from the original table — this only relocates the
+ * markup into a DataTable cell.
+ */
+function ActionButtonsCell({
+  action,
+  onApprove,
+  onReject,
+  onExecute,
+  onDiscuss,
+  isApproving,
+  isRejecting,
+  isExecuting,
+}: ActionButtonsCellProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => onDiscuss(action)}
+        className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
+      >
+        <MessageSquare className="h-3 w-3" />
+        Discuss with AI
+      </button>
+      {action.status === 'pending' && (
+        <>
           <button
-            onClick={() => onDiscuss(action)}
-            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
+            onClick={() => onApprove(action.id)}
+            disabled={isApproving}
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-200 disabled:opacity-50 dark:bg-emerald-900/30 dark:text-emerald-400"
           >
-            <MessageSquare className="h-3 w-3" />
-            Discuss with AI
-          </button>
-          {action.status === 'pending' && (
-            <>
-              <button
-                onClick={() => onApprove(action.id)}
-                disabled={isApproving}
-                className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-200 disabled:opacity-50 dark:bg-emerald-900/30 dark:text-emerald-400"
-              >
-                {isApproving ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <ThumbsUp className="h-3 w-3" />
-                )}
-                Approve
-              </button>
-              <button
-                onClick={() => onReject(action.id)}
-                disabled={isRejecting}
-                className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400"
-              >
-                {isRejecting ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <ThumbsDown className="h-3 w-3" />
-                )}
-                Reject
-              </button>
-            </>
-          )}
-          {action.status === 'approved' && (
-            <button
-              onClick={() => onExecute(action.id)}
-              disabled={isExecuting}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {isExecuting ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Play className="h-3 w-3" />
-              )}
-              Execute
-            </button>
-          )}
-          {action.status === 'executing' && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            {isApproving ? (
               <Loader2 className="h-3 w-3 animate-spin" />
-              Running...
-            </span>
-          )}
-          {action.status === 'completed' && (
-            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-3 w-3" />
-              Done
-            </span>
-          )}
-          {action.status === 'failed' && (
-            <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
-              <XCircle className="h-3 w-3" />
-              Failed
-            </span>
-          )}
-          {action.status === 'rejected' && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            ) : (
+              <ThumbsUp className="h-3 w-3" />
+            )}
+            Approve
+          </button>
+          <button
+            onClick={() => onReject(action.id)}
+            disabled={isRejecting}
+            className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400"
+          >
+            {isRejecting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
               <ThumbsDown className="h-3 w-3" />
-              Rejected
-            </span>
+            )}
+            Reject
+          </button>
+        </>
+      )}
+      {action.status === 'approved' && (
+        <button
+          onClick={() => onExecute(action.id)}
+          disabled={isExecuting}
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {isExecuting ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Play className="h-3 w-3" />
           )}
-        </div>
-      </td>
-    </tr>
+          Execute
+        </button>
+      )}
+      {action.status === 'executing' && (
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Running...
+        </span>
+      )}
+      {action.status === 'completed' && (
+        <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 className="h-3 w-3" />
+          Done
+        </span>
+      )}
+      {action.status === 'failed' && (
+        <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+          <XCircle className="h-3 w-3" />
+          Failed
+        </span>
+      )}
+      {action.status === 'rejected' && (
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <ThumbsDown className="h-3 w-3" />
+          Rejected
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -444,7 +424,7 @@ export default function RemediationPage() {
   const executeAction = useExecuteAction();
 
   // Process actions data
-  const actions = useMemo(() => {
+  const actions = useMemo<ActionRecord[]>(() => {
     if (!actionsData) return [];
     // Handle both array and object response formats
     return Array.isArray(actionsData) ? actionsData : (actionsData as any).actions || [];
@@ -477,18 +457,18 @@ export default function RemediationPage() {
     };
   }, [actionsData]);
 
-  const handleApprove = (id: string) => {
+  const handleApprove = useCallback((id: string) => {
     approveAction.mutate(id);
-  };
+  }, [approveAction]);
 
-  const handleReject = (id: string) => {
+  const handleReject = useCallback((id: string) => {
     rejectAction.mutate(id);
-  };
+  }, [rejectAction]);
 
-  const handleExecuteClick = (id: string) => {
+  const handleExecuteClick = useCallback((id: string) => {
     setSelectedActionId(id);
     setExecuteDialogOpen(true);
-  };
+  }, []);
 
   const handleExecuteConfirm = () => {
     if (selectedActionId) {
@@ -501,7 +481,7 @@ export default function RemediationPage() {
     }
   };
 
-  const handleDiscuss = (action: ActionRecord) => {
+  const handleDiscuss = useCallback((action: ActionRecord) => {
     const actionType = action.action_type || action.type || 'UNKNOWN_ACTION';
     const containerName = action.container_name || action.containerName || 'unknown';
     const containerId = action.container_id || action.containerId || 'unknown';
@@ -529,7 +509,107 @@ export default function RemediationPage() {
         containerSummary: action.rationale || action.description || undefined,
       },
     });
-  };
+  }, [navigate]);
+
+  // Per-row pending flags depend on the in-flight mutation variables. Read them
+  // here so the columns memo recomputes when any mutation starts/settles.
+  const approvingId = approveAction.isPending ? approveAction.variables : undefined;
+  const rejectingId = rejectAction.isPending ? rejectAction.variables : undefined;
+  const executingId = executeAction.isPending ? executeAction.variables : undefined;
+
+  const columns = useMemo<ColumnDef<ActionRecord, unknown>[]>(() => [
+    {
+      id: 'action_type',
+      header: 'Action Type',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const action = row.original;
+        const actionType = action.action_type || action.type || 'Unknown';
+        return (
+          <span className="font-medium">
+            {ACTION_TYPE_LABELS[actionType] || actionType}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'container',
+      header: 'Container',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const action = row.original;
+        const containerId = action.container_id || action.containerId || '';
+        const containerName = action.container_name || action.containerName || 'unknown';
+        return (
+          <div className="flex items-center gap-2">
+            <Box className="h-4 w-4 text-muted-foreground" />
+            <p className="font-medium" title={containerId ? `Container ID: ${containerId}` : undefined}>
+              {containerName}
+            </p>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      enableSorting: false,
+      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+    },
+    {
+      id: 'suggested_by',
+      header: 'Suggested By',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const suggestedBy = row.original.suggested_by || row.original.suggestedBy || 'AI Monitor';
+        return (
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm">{suggestedBy}</span>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'created',
+      header: 'Created',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const createdAt = row.original.created_at || row.original.createdAt || '';
+        return (
+          <span className="text-sm text-muted-foreground">
+            {createdAt ? formatDate(createdAt) : '-'}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'analysis_summary',
+      header: 'Analysis Summary',
+      enableSorting: false,
+      cell: ({ row }) => <AnalysisSummaryCell action={row.original} />,
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const action = row.original;
+        return (
+          <ActionButtonsCell
+            action={action}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            onExecute={handleExecuteClick}
+            onDiscuss={handleDiscuss}
+            isApproving={approvingId === action.id}
+            isRejecting={rejectingId === action.id}
+            isExecuting={executingId === action.id}
+          />
+        );
+      },
+    },
+  ], [handleApprove, handleReject, handleExecuteClick, handleDiscuss, approvingId, rejectingId, executingId]);
 
   // Error state
   if (isError) {
@@ -658,37 +738,14 @@ export default function RemediationPage() {
         />
       ) : (
         <SpotlightCard>
-        <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Action Type</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Container</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Suggested By</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Created</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Analysis Summary</th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {actions.map((action: any) => (
-                  <ActionRow
-                    key={action.id}
-                    action={action}
-                    onApprove={handleApprove}
-                    onReject={handleReject}
-                    onExecute={handleExecuteClick}
-                    onDiscuss={handleDiscuss}
-                    isApproving={approveAction.isPending && approveAction.variables === action.id}
-                    isRejecting={rejectAction.isPending && rejectAction.variables === action.id}
-                    isExecuting={executeAction.isPending && executeAction.variables === action.id}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <DataTable
+            columns={columns}
+            data={actions}
+            getRowId={(action) => action.id}
+            hideSearch
+            minTableWidth={1000}
+          />
         </div>
         </SpotlightCard>
       )}

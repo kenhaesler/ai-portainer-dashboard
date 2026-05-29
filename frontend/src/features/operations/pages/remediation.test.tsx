@@ -76,6 +76,13 @@ describe('RemediationPage', () => {
     vi.clearAllMocks();
   });
 
+  it('renders the actions inside the shared DataTable', () => {
+    renderPage();
+    expect(screen.getByTestId('data-table')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Action Type' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+  });
+
   it('shows container name and hides action/container ids from row display', () => {
     renderPage();
     expect(screen.getByText('api-service')).toBeInTheDocument();
