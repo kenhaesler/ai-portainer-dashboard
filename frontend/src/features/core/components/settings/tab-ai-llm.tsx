@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
 import {
   AlertTriangle,
   Bot,
@@ -65,6 +66,7 @@ import { useUpdateSetting, useDeleteSetting } from '@/features/core/hooks/use-se
 import { usePromptHistory, useRollbackPrompt, type PromptVersion } from '@/features/ai-intelligence/hooks/use-prompt-versions';
 import { ThemedSelect } from '@/shared/components/ui/themed-select';
 import { ConfirmDialog } from '@/shared/components/feedback/confirm-dialog';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { cn, formatBytes } from '@/shared/lib/utils';
 import { api } from '@/shared/lib/api';
 import { toast } from 'sonner';
@@ -73,6 +75,9 @@ import type { LlmModel, LlmTestPromptResponse } from '@/features/ai-intelligence
 
 const LazyAiFeedbackPanel = lazy(() => import('@/features/core/pages/settings-ai-feedback').then((m) => ({ default: m.AiFeedbackPanel })));
 import { getModelUseCase, MODEL_USE_CASE_TABLE } from './model-use-cases';
+
+/** Row shape of the model use-case reference table (rendered via DataTable). */
+type ModelUseCaseRow = (typeof MODEL_USE_CASE_TABLE)[number];
 
 /** Keys that belong to LLM configuration (excluded from parent auto-save). */
 export const LLM_SETTING_KEYS = DEFAULT_SETTINGS.llm.map((s) => s.key);
@@ -306,6 +311,38 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
 
   const activeBackendUrl = apiUrl || 'No URL set';
 
+  // Reference table of model use-cases (DataTable). Static data → no autoFit
+  // (this is a fixed sub-panel, not a full page), no search, no row clicks.
+  // text-xs cell classNames preserve the original compact look.
+  const useCaseColumns = useMemo<ColumnDef<ModelUseCaseRow, unknown>[]>(() => [
+    {
+      accessorKey: 'models',
+      header: 'Model',
+      enableSorting: false,
+      cell: ({ getValue }) => (
+        <span className="font-mono text-xs text-foreground">{getValue<string>()}</span>
+      ),
+    },
+    {
+      accessorKey: 'label',
+      header: 'Label',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className={cn('text-xs font-semibold whitespace-nowrap', row.original.color)}>
+          {row.original.label}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'description',
+      header: 'Description',
+      enableSorting: false,
+      cell: ({ getValue }) => (
+        <span className="hidden text-xs text-muted-foreground sm:inline">{getValue<string>()}</span>
+      ),
+    },
+  ], []);
+
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex items-center justify-between p-4 border-b border-border">
@@ -521,25 +558,14 @@ export function LlmSettingsSection({ values, originalValues, onChange, disabled 
             );
           })()}
           {showUseCaseTable && (
-            <div className="mt-2 rounded-md border border-border/50 bg-muted/20 overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border/50 bg-muted/40">
-                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Model</th>
-                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Label</th>
-                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground hidden sm:table-cell">Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MODEL_USE_CASE_TABLE.map((row) => (
-                    <tr key={row.models} className="border-b border-border/30 last:border-0">
-                      <td className="px-3 py-1.5 font-mono text-foreground">{row.models}</td>
-                      <td className={cn('px-3 py-1.5 font-semibold whitespace-nowrap', row.color)}>{row.label}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground hidden sm:table-cell">{row.description}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-2">
+              <DataTable
+                columns={useCaseColumns}
+                data={MODEL_USE_CASE_TABLE}
+                getRowId={(row) => row.models}
+                hideSearch
+                windowScroll
+              />
             </div>
           )}
         </div>
