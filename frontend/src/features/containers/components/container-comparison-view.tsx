@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import {
   LineChart,
   Line,
@@ -8,9 +8,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { type ColumnDef } from '@tanstack/react-table';
 import { X, BarChart3, GitCompareArrows, Info, Clock } from 'lucide-react';
 import { type Container } from '@/features/containers/hooks/use-containers';
 import { useComparisonMetrics, type ComparisonTarget } from '@/features/containers/hooks/use-container-comparison';
+import { DataTable } from '@/shared/components/tables/data-table';
 import { formatDate, cn } from '@/shared/lib/utils';
 
 export const COMPARISON_CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
@@ -160,120 +162,207 @@ function ComparisonChart({
   );
 }
 
-function SummaryTable({ containers }: { containers: Container[] }) {
+// ─── Comparison matrices on the shared DataTable ────────────────────────────
+//
+// These two views are comparison MATRICES, not paginated lists: rows are
+// metric/config KEYS and columns are the compared CONTAINERS (dynamic). To run
+// them through the shared DataTable we transpose the data — one row object per
+// attribute/label key, one dynamic column per container (keyed by container id)
+// plus a leading "label" column. We omit `autoFit` (these are bounded matrices
+// inside a comparison view, not a viewport-filling list) and pass `windowScroll`
+// so every row stays visible at once, matching the original always-show-all
+// behavior. Sorting is disabled on every column — reordering metric rows or
+// container columns would be meaningless here.
+//
+// Tradeoff: DataTable renders a uniform `<tr>` and exposes no per-row className
+// hook, so ConfigDiff's "values differ" highlight (previously a row-level
+// `bg-yellow-500/5`) is reproduced at the cell level instead (each cell in a
+// differing row carries the tint). The visual intent — flagging label rows that
+// diverge across containers — is preserved.
+
+/** A header cell carrying the chart-line color dot + the container name. */
+function containerColumnHeader(container: Container, index: number): ReactNode {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-left">
-            <th className="pb-2 pr-4 font-medium text-muted-foreground">Attribute</th>
-            {containers.map((c, i) => (
-              <th key={c.id} className="pb-2 pr-4 font-medium">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: COMPARISON_CHART_COLORS[i] }}
-                  />
-                  {c.name}
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">State</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">
-                <span
-                  className={cn(
-                    'rounded-full px-2 py-0.5 text-xs font-medium',
-                    c.state === 'running'
-                      ? 'bg-emerald-500/10 text-emerald-500'
-                      : c.state === 'exited'
-                        ? 'bg-red-500/10 text-red-500'
-                        : 'bg-gray-500/10 text-gray-500',
-                  )}
-                >
-                  {c.state}
-                </span>
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">Status</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">{c.status}</td>
-            ))}
-          </tr>
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">Image</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">
-                <span className="font-mono text-xs">{c.image}</span>
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">Endpoint</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">{c.endpointName}</td>
-            ))}
-          </tr>
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">Health</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">
-                {c.healthStatus ? (
-                  <span
-                    className={cn(
-                      'rounded-full px-2 py-0.5 text-xs font-medium',
-                      c.healthStatus === 'healthy'
-                        ? 'bg-emerald-500/10 text-emerald-500'
-                        : 'bg-red-500/10 text-red-500',
-                    )}
-                  >
-                    {c.healthStatus}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">Networks</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">
-                {c.networks.length > 0
-                  ? c.networks
-                      .map((net) =>
-                        c.networkIPs?.[net] ? `${net} (${c.networkIPs[net]})` : net,
-                      )
-                      .join(', ')
-                  : '—'}
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <td className="py-2 pr-4 text-muted-foreground">Created</td>
-            {containers.map((c) => (
-              <td key={c.id} className="py-2 pr-4">
-                {formatDate(new Date(c.created * 1000).toISOString())}
-              </td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
+    <div className="flex items-center gap-2">
+      <div
+        className="h-2.5 w-2.5 rounded-full"
+        style={{ backgroundColor: COMPARISON_CHART_COLORS[index] }}
+      />
+      {container.name}
     </div>
   );
 }
 
+interface SummaryRow {
+  /** Stable row identity — the attribute name. */
+  attribute: string;
+  /** Cell renderer per compared container, keyed by container id. */
+  cells: Record<string, ReactNode>;
+}
+
+function SummaryTable({ containers }: { containers: Container[] }) {
+  const rows = useMemo<SummaryRow[]>(() => {
+    const cellsFor = (render: (c: Container) => ReactNode): Record<string, ReactNode> =>
+      Object.fromEntries(containers.map((c) => [c.id, render(c)]));
+
+    return [
+      {
+        attribute: 'State',
+        cells: cellsFor((c) => (
+          <span
+            className={cn(
+              'rounded-full px-2 py-0.5 text-xs font-medium',
+              c.state === 'running'
+                ? 'bg-emerald-500/10 text-emerald-500'
+                : c.state === 'exited'
+                  ? 'bg-red-500/10 text-red-500'
+                  : 'bg-gray-500/10 text-gray-500',
+            )}
+          >
+            {c.state}
+          </span>
+        )),
+      },
+      { attribute: 'Status', cells: cellsFor((c) => c.status) },
+      {
+        attribute: 'Image',
+        cells: cellsFor((c) => <span className="font-mono text-xs">{c.image}</span>),
+      },
+      { attribute: 'Endpoint', cells: cellsFor((c) => c.endpointName) },
+      {
+        attribute: 'Health',
+        cells: cellsFor((c) =>
+          c.healthStatus ? (
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-xs font-medium',
+                c.healthStatus === 'healthy'
+                  ? 'bg-emerald-500/10 text-emerald-500'
+                  : 'bg-red-500/10 text-red-500',
+              )}
+            >
+              {c.healthStatus}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+        ),
+      },
+      {
+        attribute: 'Networks',
+        cells: cellsFor((c) =>
+          c.networks.length > 0
+            ? c.networks
+                .map((net) => (c.networkIPs?.[net] ? `${net} (${c.networkIPs[net]})` : net))
+                .join(', ')
+            : '—',
+        ),
+      },
+      {
+        attribute: 'Created',
+        cells: cellsFor((c) => formatDate(new Date(c.created * 1000).toISOString())),
+      },
+    ];
+  }, [containers]);
+
+  const columns = useMemo<ColumnDef<SummaryRow, unknown>[]>(() => {
+    const attributeColumn: ColumnDef<SummaryRow, unknown> = {
+      id: 'attribute',
+      header: 'Attribute',
+      enableSorting: false,
+      cell: ({ row }) => <span className="text-muted-foreground">{row.original.attribute}</span>,
+    };
+
+    const containerColumns: ColumnDef<SummaryRow, unknown>[] = containers.map((c, i) => ({
+      id: c.id,
+      header: () => containerColumnHeader(c, i),
+      enableSorting: false,
+      cell: ({ row }) => row.original.cells[c.id] ?? null,
+    }));
+
+    return [attributeColumn, ...containerColumns];
+  }, [containers]);
+
+  return (
+    <DataTable
+      columns={columns}
+      data={rows}
+      hideSearch
+      windowScroll
+      getRowId={(row) => row.attribute}
+    />
+  );
+}
+
+interface ConfigRow {
+  /** Stable row identity — the label key. */
+  label: string;
+  /** Raw label value per compared container, keyed by container id. */
+  values: Record<string, string>;
+  /** True when every compared container shares the same value for this key. */
+  allSame: boolean;
+}
+
 function ConfigDiff({ containers }: { containers: Container[] }) {
   // Collect all unique label keys
-  const allLabelKeys = Array.from(
-    new Set(containers.flatMap((c) => Object.keys(c.labels))),
-  ).sort();
+  const allLabelKeys = useMemo(
+    () => Array.from(new Set(containers.flatMap((c) => Object.keys(c.labels)))).sort(),
+    [containers],
+  );
+
+  const rows = useMemo<ConfigRow[]>(
+    () =>
+      allLabelKeys.map((key) => {
+        const values = Object.fromEntries(containers.map((c) => [c.id, c.labels[key] || '']));
+        const valueList = containers.map((c) => values[c.id]);
+        const allSame = valueList.every((v) => v === valueList[0]);
+        return { label: key, values, allSame };
+      }),
+    [allLabelKeys, containers],
+  );
+
+  const columns = useMemo<ColumnDef<ConfigRow, unknown>[]>(() => {
+    const labelColumn: ColumnDef<ConfigRow, unknown> = {
+      id: 'label',
+      header: 'Label',
+      enableSorting: false,
+      // The "values differ" highlight lived on the row in the old markup;
+      // DataTable has no per-row className hook, so it's tinted per-cell here.
+      cell: ({ row }) => (
+        <span
+          className={cn(
+            'font-mono text-xs text-muted-foreground',
+            !row.original.allSame && 'bg-yellow-500/5',
+          )}
+        >
+          {row.original.label}
+        </span>
+      ),
+    };
+
+    const containerColumns: ColumnDef<ConfigRow, unknown>[] = containers.map((c, i) => ({
+      id: c.id,
+      header: () => containerColumnHeader(c, i),
+      enableSorting: false,
+      cell: ({ row }) => {
+        const val = row.original.values[c.id];
+        const highlight = !row.original.allSame;
+        return (
+          <span
+            className={cn(
+              'font-mono text-xs',
+              highlight && 'bg-yellow-500/5',
+              highlight && val && 'font-medium text-yellow-600 dark:text-yellow-400',
+            )}
+          >
+            {val || <span className="text-muted-foreground">—</span>}
+          </span>
+        );
+      },
+    }));
+
+    return [labelColumn, ...containerColumns];
+  }, [containers]);
 
   if (allLabelKeys.length === 0) {
     return (
@@ -284,51 +373,13 @@ function ConfigDiff({ containers }: { containers: Container[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-left">
-            <th className="pb-2 pr-4 font-medium text-muted-foreground">Label</th>
-            {containers.map((c, i) => (
-              <th key={c.id} className="pb-2 pr-4 font-medium">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: COMPARISON_CHART_COLORS[i] }}
-                  />
-                  {c.name}
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {allLabelKeys.map((key) => {
-            const values = containers.map((c) => c.labels[key] || '');
-            const allSame = values.every((v) => v === values[0]);
-
-            return (
-              <tr key={key} className={allSame ? '' : 'bg-yellow-500/5'}>
-                <td className="py-1.5 pr-4 font-mono text-xs text-muted-foreground">
-                  {key}
-                </td>
-                {values.map((val, i) => (
-                  <td
-                    key={containers[i].id}
-                    className={cn(
-                      'py-1.5 pr-4 font-mono text-xs',
-                      !allSame && val ? 'text-yellow-600 dark:text-yellow-400 font-medium' : '',
-                    )}
-                  >
-                    {val || <span className="text-muted-foreground">—</span>}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      columns={columns}
+      data={rows}
+      hideSearch
+      windowScroll
+      getRowId={(row) => row.label}
+    />
   );
 }
 
