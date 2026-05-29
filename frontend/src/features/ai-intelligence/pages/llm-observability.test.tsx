@@ -182,6 +182,25 @@ describe('LlmObservabilityPage', () => {
     expect(screen.getByText('error')).toBeTruthy();
   });
 
+  it('renders both shared DataTables when stats and traces have data', () => {
+    vi.mocked(useLlmStats).mockReturnValue({
+      data: mockStats,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmStats>);
+    vi.mocked(useLlmTraces).mockReturnValue({
+      data: mockTraces,
+      isLoading: false,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useLlmTraces>);
+
+    renderPage();
+    // One DataTable for Model Breakdown, one for Recent Traces
+    expect(screen.getAllByTestId('data-table')).toHaveLength(2);
+    // No per-table search is rendered (both pass hideSearch)
+    expect(screen.queryByTestId('data-table-search')).toBeNull();
+  });
+
   it('blurs query column by default and reveals on toggle', () => {
     vi.mocked(useLlmTraces).mockReturnValue({
       data: mockTraces,
@@ -192,16 +211,20 @@ describe('LlmObservabilityPage', () => {
     renderPage();
     const queryCell = screen.getByText('What containers are using the most memory?');
 
-    // Privacy mode is ON by default — cell should have blur class
-    expect(queryCell.closest('td')?.className).toContain('blur-sm');
+    // Privacy mode is ON by default — the query cell content should have the blur class
+    expect(queryCell.className).toContain('blur-sm');
 
     // Click the Privacy toggle button to reveal
     fireEvent.click(screen.getByText('Privacy'));
-    expect(queryCell.closest('td')?.className).not.toContain('blur-sm');
+    expect(
+      screen.getByText('What containers are using the most memory?').className
+    ).not.toContain('blur-sm');
 
     // Click again to re-blur
     fireEvent.click(screen.getByText('Privacy'));
-    expect(queryCell.closest('td')?.className).toContain('blur-sm');
+    expect(
+      screen.getByText('What containers are using the most memory?').className
+    ).toContain('blur-sm');
   });
 
   it('renders skeleton cards during loading', () => {
